@@ -1,0 +1,76 @@
+# Changelog
+
+All notable changes to Blygger Desktop are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
+[Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
+break things.
+
+To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
+`version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
+release workflow publishes that section as the release notes.
+
+## [Unreleased]
+
+## [0.1.0] - 2026-09-25
+
+The first release: a local-first writing studio for a Blygger blog.
+
+### Added
+
+- **One window, Notational Velocity style.** An always-there omnibar filters
+  your posts as you type, with matches highlighted. ↑/↓ preview each post, ⏎
+  opens it, and ⏎ with no match starts a draft seeded with the query.
+- **Side-by-side list and editor.** Plain Markdown with no toolbar. Every
+  keystroke saves locally, and changes sync to your blyg about 800 ms after you
+  stop typing. There is no save button.
+- **Fragments and threads.** ⌘T toggles the kind. The status bar shows a live
+  1000-character counter for fragments (amber past 900, red past 1000) and
+  says how to fix a fragment that's too long.
+- **Publish with an optional version note** (⌘⏎), from a sheet under the
+  title bar, with a toast that links to the published post (⌘O opens it).
+- **Offline first.** Nothing waits on the network. Edits queue while you're
+  offline and flush when you're back, and the status bar shows how many are
+  waiting.
+- **Conflict resolution.** When the server changed under you, a side-by-side
+  sheet shows both versions: keep mine, take the server's, or keep both.
+- **Images.** Paste or drop an image to upload it and insert its Markdown
+  link.
+- **Quick capture into scratch notes.** A global hotkey (⌃⌥B by default,
+  configurable) opens a floating panel over any app. esc keeps a *scratch
+  note* that lives only on your Mac (images included); ⌘D makes it a draft on
+  your blyg and ⌘⏎ publishes it. Scratch notes are searchable and editable in
+  the main list.
+- **Full editor with a faithful preview.** ⌘1 write, ⌘2 list + editor +
+  preview, ⌘3 editor + preview (⌘E toggles). The preview is a Rust port of the
+  reference Worker's renderer (tested byte-for-byte against it): quotes of
+  other posts, the AI-text tint, YouTube and remote images, in your blyg's own
+  stylesheet.
+- **Reading.** Your reading list with one entry per post however often it's
+  edited; edited posts move to the top with the author's notes. Posts show as
+  their blyg published them (sanitized). Subscriptions, mentions (a list,
+  never a count), thumbs, and your blyg's site settings.
+- **Versions and pins.** For other people's posts the `‹ vN ▾ ›` pill steps
+  through only the current and pinned versions. ⌘Y shows your own full
+  history with restore, and pinning asks you to confirm in words.
+- **Quote, reply and fork.** ⌘K quotes a post you hold into a thread; Reply
+  makes a stub; forks descend from pins only.
+- **Profiles.** ⌘I (or click an author, a quote, or the stub/fork line) shows
+  who someone is: bio, links, their blogroll, recent posts and the blygs they
+  quote, stub or fork. Follow in one click; add to your blogroll separately.
+  Fetched from public files only when you open one, never with your token.
+- **Optional toolbar buttons** (`show-buttons`), generated from the same table
+  as the shortcuts and menus, so every tooltip teaches the key.
+- **First-run onboarding and a replayable tutorial** that runs on sample data.
+- **Tufte-inspired theme** that follows the system's light or dark mode.
+- **Switchable fonts** for writing and for the UI. Literata, Inter, Source
+  Serif 4, iA Writer Quattro and ET Book are bundled, and system fonts are
+  also offered. ⌘+ and ⌘− change the size.
+- **AI helpers (TK)** that work with your own provider accounts: Anthropic or
+  OpenAI API keys, Cloudflare Workers AI, a local Claude Code or Codex
+  install, your blyg server, or Sign in with ChatGPT (unofficial). ⌘G fills a
+  `[TK]` gap, ⇧⌘G shortens to fit, and a palette offers continue, outline,
+  proofread and an AI reply. Generated text is always disclosed as generated.
+- Keychain storage for the owner token and API keys. Secrets never go in a
+  file.
+- A universal macOS app (Apple silicon and Intel), shipped as a dmg and a
+  zip with SHA-256 checksums.
