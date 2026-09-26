@@ -44,7 +44,16 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   (`draft` or `vN`), a dot for unpublished edits, and relative time.
 - **Keys**: `⌘L` focus omnibar · `esc` (in editor) back to omnibar ·
   `⌘⏎` publish · `⌘T` fragment⇄thread · `⌘E` preview (see § Full editor) · `⌘O` open
-  permalink in browser · `⌘,` settings · `⌘+/⌘−` font size.
+  permalink in browser · `⌘,` settings · `⌘+/⌘−` font size · `⇧⌘⌫` delete a
+  draft or scratch note.
+- **Delete / Withdraw** (rule 5 below): `⇧⌘⌫` (Post › Delete Draft…) on a draft
+  or scratch note drops a sheet: "Delete this draft? … This can't be undone."
+  `⏎` deletes, `esc` cancels; the list moves on to the next post and a toast
+  says "Draft deleted". Published posts are never deleted: `⇧⌘⌫` on one says
+  so, and Post › Withdraw… asks instead, with an optional note ("Withdrawn
+  posts stay listed as withdrawn. You can't undo this."), then calls
+  `withdraw(id, note)`. Withdraw has no key on purpose, since it's permanent.
+  (`⌘⌫` stays delete-to-line-start in the editor.)
 - **Publish** (`⌘⏎`): a sheet drops from the title bar: "Publish "…" as vN+1",
   with an optional version note input. `⏎` publishes and `esc` cancels. If the
   item is a fragment over 1000 chars, don't open the sheet: shake the status bar
@@ -254,8 +263,8 @@ Quick capture is for collecting thoughts, not for deciding. So:
 ## Buttons (optional toolbar)
 
 Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**default true** for new installs; the maintainer sets `false`). It's toggled in Settings (⌘,) and offered in the first-run tutorial ("Buttons or keyboard?").
-- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (draft/scratch per `new-note`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
+- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (draft/scratch per `new-note`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
 - **Generated from the single keymap table** (action, key, context, menu label, icon, button label), so buttons, menus and shortcuts can't drift. Every tooltip shows the shortcut, so the buttons teach the keys.
 - Buttons are disabled with a reason in the tooltip when unavailable (e.g. Publish on an over-limit fragment: "Too long for a fragment. ⌘T makes it a thread").
 - With `show-buttons = false`, the window is exactly the minimalist layout in the mocks.
-- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Icons: ten Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, capture tests.
+- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Delete and Withdraw share a slot (`toolbar::visible`, `vm::discard`); Withdraw is the one button without a key, so its tooltip is just "Withdraw…". Icons: twelve Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, `discard_tests`, capture tests.

@@ -36,6 +36,8 @@ use crate::app::reading::{
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
+// --- delete & withdraw ---
+use crate::app::discard::{DeleteDraft, Withdraw};
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -421,6 +423,30 @@ pub fn table() -> Vec<Keybind> {
             "Blyg › Site Settings…"
         ),
         // --- end reading & versions ---
+        // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
+        // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start
+        // in every text field. Withdraw is irreversible, so it has no key.
+        button!(
+            kb!(
+                "cmd-shift-backspace",
+                Main,
+                DeleteDraft,
+                "Delete this draft or scratch note (asks first)",
+                Some("Post › Delete Draft…")
+            ),
+            "trash-2",
+            "Delete"
+        ),
+        button!(
+            menu_only!(
+                Withdraw,
+                "Withdraw this published post (asks first; permanent and visible)",
+                "Post › Withdraw…"
+            ),
+            "archive-x",
+            "Withdraw"
+        ),
+        // --- end delete & withdraw ---
         // --- profiles --- (inside the sheet: esc, ↑/↓, ⏎, F, ⇥ and ← are
         // the sheet's own keys, like the reading screens' ↑/↓)
         kb!(
@@ -489,6 +515,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = (Disconnect, OpenConfigFile, SiteSettings, SubscribeTo);
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
+    let _ = Withdraw; // --- delete & withdraw ---
 }
 
 /// `⌘⇧,` for `cmd-shift-,`.
@@ -523,6 +550,7 @@ pub fn glyphs(key: &str) -> String {
         "space" => "Space".to_string(),
         "escape" => "esc".to_string(),
         "tab" => "⇥".to_string(),
+        "backspace" => "⌫".to_string(),
         k => k.to_uppercase(),
     };
     sorted.push_str(&k);
@@ -537,6 +565,9 @@ pub const TOOLBAR: &[&[&str]] = &[
     &["NewDraft", "MakeDraft", "Publish"],
     &["ViewWrite", "ViewSplit", "ViewStudio"],
     &["ShowVersions", "AiGenerate"],
+    // One slot: Delete for a draft or scratch note, Withdraw for a published
+    // post (`toolbar::visible`).
+    &["DeleteDraft", "Withdraw"],
     &["ShowCapture"],
 ];
 
@@ -654,6 +685,16 @@ pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("cmd-shift-z", "Redo", None),
     ("cmd-a", "Select all", None),
 ];
+
+/// Toolbar buttons with no key on purpose: Withdraw is permanent, so it's
+/// never one keystroke away (docs/SPEC.md § Buttons).
+#[cfg(test)]
+pub const KEYLESS_BUTTONS: &[&str] = &["Withdraw"];
+
+/// Named keys the native menu does turn into their key equivalent
+/// (gpui-pre-macos `key_to_native`), unlike "enter".
+#[cfg(test)]
+pub const NATIVE_MENU_KEYS: &[&str] = &["backspace"];
 
 /// Keys we bind on purpose over one of gpui-base's own `Input` bindings.
 #[cfg(test)]
@@ -813,6 +854,7 @@ mod tests {
         assert_eq!(glyphs("cmd-enter"), "⌘⏎");
         assert_eq!(glyphs("ctrl-alt-cmd-o"), "⌃⌥⌘O");
         assert_eq!(glyphs("cmd--"), "⌘-");
+        assert_eq!(glyphs("cmd-shift-backspace"), "⇧⌘⌫");
         let l = list();
         assert!(l.contains("⌘⏎") && l.contains("Publish"), "{l}");
         assert_eq!(
@@ -861,9 +903,15 @@ mod tests {
                 }
                 let tip = tooltip(k.button.unwrap_or(action), &k, "ctrl+alt+b");
                 if k.key.is_empty() {
-                    // Quick capture: the configured global hotkey.
-                    assert_eq!(action, "ShowCapture", "{action} has no key");
-                    assert!(tip.ends_with("  ⌃⌥B"), "{tip}");
+                    if action == "ShowCapture" {
+                        // Quick capture: the configured global hotkey.
+                        assert!(tip.ends_with("  ⌃⌥B"), "{tip}");
+                    } else {
+                        // Keyless on purpose (Withdraw is irreversible): menu only.
+                        assert_eq!(KEYLESS_BUTTONS, &[action], "{action} has no key");
+                        assert!(k.menu.is_some(), "{action}: a keyless button needs a menu");
+                        assert_eq!(tip, k.button.unwrap(), "{tip}");
+                    }
                     continue;
                 }
                 assert!(tip.contains(&glyphs(k.key)), "{tip} lacks {}", k.key);
@@ -878,7 +926,7 @@ mod tests {
                     k.key
                 );
             }
-            assert_eq!(seen, 12);
+            assert_eq!(seen, 14);
             // Only listed buttons exist (no orphan labels in the table).
             for k in table().iter().filter(|k| k.button.is_some()) {
                 assert!(
@@ -921,7 +969,9 @@ mod tests {
                 let key = k.menu_key.unwrap_or(k.key);
                 let last = normalize(key).1;
                 assert!(
-                    last.chars().count() == 1 || k.menu_key.is_some(),
+                    last.chars().count() == 1
+                        || k.menu_key.is_some()
+                        || NATIVE_MENU_KEYS.contains(&last.as_str()),
                     "{} ({}) would show as ⌘{} in the menu; give it a menu_key",
                     k.key,
                     k.action,

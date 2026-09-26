@@ -17,6 +17,22 @@ release workflow publishes that section as the release notes.
   thread, `![[` opens the same picker as ⌘K, and what you type next filters
   it. ⏎ inserts the `![[id]]` line; esc puts the `![[` back. Pasting, fenced
   code and fragments don't trigger it (a fragment shows the threads hint).
+- **Delete a draft** (#2). ⇧⌘⌫, Post › Delete Draft…, or the toolbar's
+  Delete button deletes the current draft or scratch note after a short
+  confirmation (⏎ deletes, esc cancels). The list moves on to the next post.
+- **Withdraw a published post.** Post › Withdraw…, or the same toolbar slot
+  on a published post, asks first, takes an optional note, and withdraws it.
+  Withdrawn posts stay listed as withdrawn, and it can't be undone. Published
+  work is never deleted, and ⇧⌘⌫ on a published post says so.
+
+### Fixed
+
+- **Typing stopped working after the window sat in the background** (#4).
+  A preview could keep the keyboard, or drop it to nowhere, so only menu
+  shortcuts like paste worked. The app now takes the keyboard back when the
+  window becomes active again and before hiding a preview.
+- **The tour's Quotes step ringed the editor over the quote picker** (#1).
+  A step's ring now hides while a sheet or picker covers the panes.
 
 ## [0.1.0] - 2026-09-25
 

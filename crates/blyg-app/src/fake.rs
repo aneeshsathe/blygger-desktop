@@ -1037,7 +1037,7 @@ impl Backend for FakeBackend {
         Ok(outcome)
     }
 
-    fn withdraw(&self, id: &LocalId, _note: Option<&str>) -> Result<u32> {
+    fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
         thread::sleep(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
@@ -1048,7 +1048,16 @@ impl Backend for FakeBackend {
             .ok_or(CoreError::NotFound)?;
         it.status = Status::Withdrawn;
         it.version += 1;
-        Ok(it.version)
+        let v = it.version;
+        // The withdraw marker: an endcap version carrying the note.
+        st.versions.entry(id.clone()).or_default().push(Version {
+            version: v,
+            published_at: Utc::now().to_rfc3339(),
+            note: note.map(str::to_string),
+            pinned: false,
+            endcap: true,
+        });
+        Ok(v)
     }
 
     fn pin(&self, id: &LocalId, version: u32) -> Result<()> {
