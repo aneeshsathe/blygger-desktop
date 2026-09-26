@@ -24,6 +24,20 @@ release workflow publishes that section as the release notes.
   on a published post, asks first, takes an optional note, and withdraws it.
   Withdrawn posts stay listed as withdrawn, and it can't be undone. Published
   work is never deleted, and ⇧⌘⌫ on a published post says so.
+- **Search the reading list** (#6). ⌘F or `/` puts the caret in a search field
+  above the reading list; typing filters it by title, author or blyg name, and
+  text, case-insensitively, over posts already held on this Mac (nothing is
+  fetched to search). Matches are highlighted, ↑/↓ and ⏎ work from the field,
+  esc clears the search, and "No posts match “…”" says when nothing does.
+
+### Changed
+
+- **Reading actions say what they create** (#3). The actions under a post now
+  read "Quote into a thread" (adds `![[id]]` to a thread of yours), "Reply ·
+  new stub" (a stub thread, `stub_of`) and "AI reply · new stub", each with a
+  one-sentence tooltip. Fork shows on the current version too, greyed out,
+  explaining that forks descend from pins only and pointing to the 📌 in
+  ‹ vN ▾ › when the post has one.
 
 ### Fixed
 

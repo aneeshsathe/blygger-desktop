@@ -157,7 +157,10 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(pm.label, "v5 · current ▾");
     let listed: Vec<&str> = pm.entries.iter().map(|(l, _, _)| l.as_str()).collect();
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
-    assert_eq!(pm.actions, ["Quote", "Reply", "AI reply", "Open on web"]);
+    assert_eq!(
+        pm.actions,
+        ["Quote", "Reply", "AI reply", "Fork", "Open on web"]
+    );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
         for s in strings(&view, cx) {
@@ -541,4 +544,223 @@ fn without_read_extensions_screens_say_not_available(cx: &mut TestAppContext) {
     )));
     // The window still draws every state.
     cx.run_until_parked();
+}
+
+// ---------------------------------------------------------------- search (#6)
+
+fn query(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |v, _| v.reading.query.clone())
+}
+
+fn shown(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<String> {
+    view.read_with(cx, |v, _| v.reading_shown_ids())
+}
+
+fn search_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+    view.update_in(cx, |v, window, cx| v.reading_search_focused(window, cx))
+}
+
+fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
+    view.read_with(cx, |v, _| {
+        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+    })
+}
+
+#[gpui_kit::test]
+fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    cx.run_until_parked();
+    assert!(shown(&view, cx).len() > 3);
+    cx.simulate_keystrokes("cmd-f");
+    cx.run_until_parked();
+    assert!(search_focused(&view, cx), "⌘F focuses the search field");
+
+    // A title (Lin's "Gardens, not streams") and body text (Omar's "a
+    // garden that finally got…"), in list order, whatever the case.
+    cx.simulate_input("GARDEN");
+    cx.run_until_parked();
+    assert_eq!(query(&view, cx), "GARDEN");
+    assert_eq!(shown(&view, cx), [LIN_GARDENS, OMAR_YEAR]);
+    // Nothing was opened (so nothing marked read) just by typing.
+    assert_eq!(opened(&view, cx), None);
+
+    // ↓ from the field opens the first match; ↑/↓ stay in the matches.
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(opened(&view, cx).as_deref(), Some(LIN_GARDENS));
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(opened(&view, cx).as_deref(), Some(OMAR_YEAR));
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(
+        opened(&view, cx).as_deref(),
+        Some(OMAR_YEAR),
+        "stops at the end"
+    );
+    assert!(search_focused(&view, cx), "the caret stays in the field");
+
+    // An author / subscription name.
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("omar's", window, cx)
+    });
+    assert_eq!(shown(&view, cx), [OMAR_YEAR]);
+    // The origin's host.
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("rue.blyg.example", window, cx)
+    });
+    let rue = shown(&view, cx);
+    assert!(rue.contains(&RUE_TRUST.to_string()), "{rue:?}");
+    assert!(
+        rue.iter().all(|id| id == RUE_TRUST || id == RUE_KEPT),
+        "{rue:?}"
+    );
+    // Held rows only: the hidden tombstone never turns up.
+    view.update_in(cx, |v, window, cx| v.set_reading_query("ada", window, cx));
+    assert!(!shown(&view, cx).contains(&ADA_GONE.to_string()));
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("tide tables", window, cx)
+    });
+    assert_eq!(shown(&view, cx), [ADA_TIDES]);
+}
+
+#[gpui_kit::test]
+fn slash_focuses_search_and_esc_clears_it(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    cx.run_until_parked();
+    let all = shown(&view, cx);
+    cx.simulate_keystrokes("/");
+    cx.run_until_parked();
+    assert!(search_focused(&view, cx), "/ focuses the search field");
+    cx.simulate_input("trust");
+    cx.run_until_parked();
+    assert_eq!(shown(&view, cx), [RUE_TRUST]);
+    // esc in the field clears the search (and stays on Reading).
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(query(&view, cx), "");
+    assert_eq!(shown(&view, cx), all);
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
+    // esc on an empty field hands the keys back to the list…
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(!search_focused(&view, cx));
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
+    // …where j moves again (in the field it would be text).
+    cx.simulate_keystrokes("j");
+    settle(cx);
+    assert!(opened(&view, cx).is_some());
+
+    // From the list, esc clears a search before it leaves the screen.
+    view.update_in(cx, |v, window, cx| v.set_reading_query("trust", window, cx));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(query(&view, cx), "");
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
+}
+
+#[gpui_kit::test]
+fn search_keeps_a_matching_post_open_and_says_when_nothing_matches(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    open_row(&view, RUE_TRUST, cx);
+    // Still a match: the open post and the selection stay.
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("unit of trust", window, cx)
+    });
+    assert_eq!(opened(&view, cx).as_deref(), Some(RUE_TRUST));
+    assert!(view.read_with(cx, |v, _| v.reading.sel.is_some()));
+    // No longer a match: the reader and the selection clear.
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("garden", window, cx)
+    });
+    assert_eq!(opened(&view, cx), None);
+    assert!(view.read_with(cx, |v, _| v.reading.sel.is_none()));
+    // Nothing matches: an empty list and the empty state.
+    view.update_in(cx, |v, window, cx| {
+        v.set_reading_query("  Zeppelin ", window, cx)
+    });
+    cx.run_until_parked();
+    assert!(shown(&view, cx).is_empty());
+    assert_eq!(
+        super::vm::no_match(&query(&view, cx)),
+        "No posts match “Zeppelin”"
+    );
+    // ↓ does nothing on an empty result.
+    view.update_in(cx, |v, window, cx| v.move_reading(1, window, cx));
+    assert_eq!(opened(&view, cx), None);
+    // The search stays when you leave and come back (it's in the field).
+    cx.simulate_keystrokes("cmd-r");
+    cx.simulate_keystrokes("cmd-r");
+    cx.run_until_parked();
+    assert_eq!(query(&view, cx), "  Zeppelin ");
+    assert!(shown(&view, cx).is_empty());
+}
+
+// ---------------------------------------------------------------- actions (#3)
+
+fn chips(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<super::vm::ActionChip> {
+    view.read_with(cx, |v, _| v.reading_action_chips())
+}
+
+fn tip(row: &[super::vm::ActionChip], id: &str) -> String {
+    row.iter().find(|c| c.id == id).expect(id).tip.clone()
+}
+
+#[gpui_kit::test]
+fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    // Rue's post has 📌 v1 and 📌 v3; the current version is v5.
+    open_row(&view, RUE_TRUST, cx);
+    let row = chips(&view, cx);
+    let labels: Vec<&str> = row.iter().map(|c| c.label.as_str()).collect();
+    assert_eq!(
+        labels,
+        [
+            "Quote into a thread",
+            "Reply · new stub",
+            "AI reply · new stub",
+            "Fork",
+            "Open on web"
+        ]
+    );
+    for c in &row {
+        assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);
+        assert_eq!(c.enabled, c.id != "Fork", "{}", c.label);
+    }
+    assert!(tip(&row, "Reply").contains("stub_of"));
+    assert!(tip(&row, "Quote").contains("![[…]]"));
+    let fork = tip(&row, "Fork");
+    assert!(
+        fork.contains("📌 v3") && fork.contains("‹ v5 ▾ ›"),
+        "points to the newest pin: {fork}"
+    );
+    assert!(!fork.contains("v2") && !fork.contains("v4"), "{fork}");
+    // The greyed Fork makes nothing.
+    view.update_in(cx, |v, window, cx| {
+        v.reading_action_for_test("Fork", window, cx)
+    });
+    settle(cx);
+    assert!(fake.items().iter().all(|i| i.forked_from.is_none()));
+
+    // On a pin, Fork this pin is live and says what it makes.
+    cx.simulate_keystrokes("left");
+    settle(cx);
+    let row = chips(&view, cx);
+    assert!(row.iter().all(|c| c.enabled));
+    let f = tip(&row, "Fork this pin");
+    assert!(f.contains("📌 v3") && f.contains("forked_from"), "{f}");
+
+    // A post with no pins: Fork says so.
+    open_row(&view, ADA_FINISHED, cx);
+    assert!(tip(&chips(&view, cx), "Fork").contains("has none"));
+    // A feed post can't be transcluded: Quote says what it does instead.
+    open_row(&view, OMAR_YEAR, cx);
+    assert!(tip(&chips(&view, cx), "Quote").contains("feed posts"));
 }

@@ -69,6 +69,62 @@ pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
     edited
 }
 
+// ---------------------------------------------------------------- search
+
+/// Does `r` match the reading search `query`? Case-insensitive substring
+/// over the title, the author and origin names, and the post's text, all of
+/// it held locally (nothing is fetched to search). An empty query matches.
+pub fn matches_query(r: &ReadingItem, query: &str) -> bool {
+    let q = query.trim().to_lowercase();
+    if q.is_empty() {
+        return true;
+    }
+    let has = |s: &str| s.to_lowercase().contains(&q);
+    let author = r.author.as_ref();
+    has(&r.subscription_title)
+        || has(&host(&r.origin))
+        || author.and_then(|a| a.name.as_deref()).is_some_and(has)
+        || has(&r.content_md)
+        // Held without Markdown (some feeds): search its published text.
+        || (r.content_md.trim().is_empty() && has(&html_text(&r.content_html)))
+}
+
+/// Indices into `rows` of the rows the reading search shows, in order.
+pub fn filter(rows: &[ReadingItem], query: &str) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_, r)| matches_query(r, query))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The list's empty state when the search matches nothing.
+pub fn no_match(query: &str) -> String {
+    format!("No posts match “{}”", query.trim())
+}
+
+/// Visible text of an HTML fragment (tags dropped), for searching only.
+fn html_text(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                out.push(' ');
+            }
+            c if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    out.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+}
+
 /// The first line with readable text, as plain text; `…` when there's none.
 pub fn title(md: &str) -> String {
     blyg_core::plain_title(md).unwrap_or_else(|| "…".into())
@@ -159,13 +215,127 @@ pub struct Pill {
     pub actions: Vec<&'static str>,
 }
 
-pub const CURRENT_ACTIONS: [&str; 4] = ["Quote", "Reply", "AI reply", "Open on web"];
+/// Action ids under the current version. `Fork` is always shown there but
+/// disabled: it says where forking lives (a pin), rather than hiding it.
+pub const CURRENT_ACTIONS: [&str; 5] = ["Quote", "Reply", "AI reply", "Fork", "Open on web"];
 pub const PINNED_ACTIONS: [&str; 4] = [
     "Quote this version",
     "Fork this pin",
     "Diff vs now",
     "Back to current",
 ];
+
+/// What an action row needs to know to label itself.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActionCtx {
+    /// The post comes from a blyg (transcludable), not an RSS feed.
+    pub blyg: bool,
+    /// The version on screen (a pin's number on a pinned view).
+    pub version: u32,
+    /// The current version's number.
+    pub current: u32,
+    /// Pinned versions the pill can step to, oldest first.
+    pub pins: Vec<u32>,
+}
+
+/// One chip in the action row: what it says, what it makes (one plain
+/// sentence, for the tooltip), and whether it can be clicked.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActionChip {
+    pub id: &'static str,
+    pub label: String,
+    pub tip: String,
+    pub enabled: bool,
+}
+
+/// Label each action with the protocol primitive it creates (issue #3):
+/// Reply makes a stub (`stub_of`), Quote puts `![[id]]` in a thread of
+/// yours, and Fork (`forked_from`) descends from pins only.
+pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
+    let on = |label: &str, tip: String| ActionChip {
+        id,
+        label: label.into(),
+        tip,
+        enabled: true,
+    };
+    match id {
+        "Quote" if cx.blyg => on(
+            "Quote into a thread",
+            "Adds ![[…]] to a thread of yours (the draft open, or a new one): \
+             a quote, snapshotted when you publish."
+                .into(),
+        ),
+        "Quote" => on(
+            "Quote into a thread",
+            "Adds a quoted excerpt with a link to a thread of yours \
+             (feed posts can't be transcluded)."
+                .into(),
+        ),
+        "Reply" => on(
+            "Reply · new stub",
+            "Starts a new thread of yours that's a stub of this post (stub_of), \
+             with the post quoted at the top."
+                .into(),
+        ),
+        "AI reply" => on(
+            "AI reply · new stub",
+            "A reply stub with an AI-drafted answer for you to review; nothing is published."
+                .into(),
+        ),
+        "Fork" => ActionChip {
+            id,
+            label: "Fork".into(),
+            tip: fork_needs_pin(cx),
+            enabled: false,
+        },
+        "Open on web" => on(
+            "Open on web",
+            "Opens this post's page in your browser.".into(),
+        ),
+        "Quote this version" => on(
+            "Quote this version",
+            format!(
+                "Adds 📌 v{}'s text as a > quote linking to the pin, in a thread of yours \
+                 (![[…]] would always show the current version).",
+                cx.version
+            ),
+        ),
+        "Fork this pin" => on(
+            "Fork this pin",
+            format!(
+                "Makes a new thread draft of yours from 📌 v{}'s text, recorded as forked \
+                 from it (forked_from).",
+                cx.version
+            ),
+        ),
+        "Diff vs now" => on(
+            "Diff vs now",
+            format!(
+                "Shows what changed between 📌 v{} and the current v{}.",
+                cx.version, cx.current
+            ),
+        ),
+        "Back to current" => on(
+            "Back to current",
+            format!("Shows the current version, v{}, again.", cx.current),
+        ),
+        other => on(other, String::new()),
+    }
+}
+
+/// Why Fork is greyed out on the current version, and where to go instead.
+pub fn fork_needs_pin(cx: &ActionCtx) -> String {
+    match cx.pins.last() {
+        Some(pin) => format!(
+            "Fork needs a pinned version: pick 📌 v{pin} in ‹ v{} ▾ › (or press ←), \
+             then Fork this pin.",
+            cx.current
+        ),
+        None => "Fork needs a pinned version, and this post has none: \
+                 forks descend from pins only."
+            .into(),
+    }
+}
 
 /// Keep only what may be shown: the current version and pinned versions,
 /// oldest first (the backend already filters; this is belt and braces).
@@ -714,6 +884,57 @@ mod tests {
                 assert_eq!(a.list(), [OwnAction::Pin, OwnAction::Restore]);
             }
         }
+    }
+
+    /// The reading search: title, author, origin and text, any case; an
+    /// item held only as HTML is searched by its visible text, not its tags.
+    #[test]
+    fn search_matches_title_author_origin_and_text() {
+        let r = ReadingItem {
+            subscription_id: "s".into(),
+            remote_id: "01K2KIT0KITES0000000000001".into(),
+            subscription_title: "Kit's field notes".into(),
+            origin: "https://kit.blyg.example.com/".into(),
+            kind: Kind::Thread,
+            state: "current".into(),
+            version: 1,
+            created: None,
+            updated: None,
+            observed_at: "2026-09-20T10:00:00Z".into(),
+            content_md: String::new(),
+            content_html: "<h1>On kites</h1><p class=\"lede\">Wind &amp; string.</p>".into(),
+            author: Some(blyg_core::Author {
+                name: Some("Kit Moreno".into()),
+                url: None,
+            }),
+            page: None,
+            thumb: None,
+            hoppers: vec![],
+            pinned_version_retained: None,
+            read_version: None,
+            stub_of: None,
+            forked_from: None,
+            transclusions: vec![],
+        };
+        for q in [
+            "",
+            "  ",
+            "KITES",
+            "wind & string",
+            "moreno",
+            "field notes",
+            "kit.blyg",
+        ] {
+            assert!(matches_query(&r, q), "{q:?}");
+        }
+        for q in ["lede", "class", "h1", "zeppelin"] {
+            assert!(!matches_query(&r, q), "{q:?} is markup or absent");
+        }
+        let mut md = r.clone();
+        md.content_md = "Paper and bamboo.".into();
+        assert!(matches_query(&md, "bamboo"));
+        assert_eq!(filter(&[r.clone(), md, r], "bamboo"), [1]);
+        assert_eq!(no_match(" kites  "), "No posts match “kites”");
     }
 
     /// The quote picker offers someone else's post as the current version

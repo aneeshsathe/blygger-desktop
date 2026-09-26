@@ -273,7 +273,9 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "reading",
         title: "Reading",
-        caption: "⌘R shows the blygs you follow, one entry per post. Press ⌘R again to come \
+        caption: "⌘R shows the blygs you follow, one entry per post; / searches them. Under a \
+                  post, Reply starts a stub (your thread answering it), Quote puts it in a \
+                  thread of yours, and Fork works from a 📌 pinned version. ⌘R again comes \
                   back to your posts.",
         keys: &[Key::ShowReading],
         key_label: "⌘R",
