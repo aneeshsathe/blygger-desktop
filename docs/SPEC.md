@@ -70,7 +70,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 
 Writing: fragments & threads, autosave, publish with note, paste/drop images,
 quick capture, markdown preview, withdraw, version history + restore, pin
-(irrevocable, so it confirms), delete drafts, quote another blyg (picker that
+(irrevocable, so it confirms), delete drafts, quote another blyg (picker, ⌘K or typing `![[`, that
 inserts `![[<id>]]`), fork.
 Reading & managing: open on the web, read subscriptions (reading list), subscribe
 and unsubscribe, blogroll flag, blyg settings (title, bio, links), mentions &
@@ -189,7 +189,7 @@ Core principle: *"anything the protocol can't verify, it declines to represent."
 
 1. **No counts, anywhere social.** Responses and mentions are shown as *a list, never a count*: who, origin, relation, when. Mentions and responses never get numeric badges; use a dot for "something new". There are no follower lists or follower counts: following is client-local and invisible. (A reader-local unread count for *your own* reading list is fine; it's private state, not a social metric.)
 2. **Generation happens in the studio, at authoring time, with review.** Publishing never generates. The TK tint shows in the editor only; published bytes are identical, apart from the `generated` metadata and the `blyg-tk-gen` class. Provenance is self-asserted, so the app always records it (the provenance extension).
-3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL.
+3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL. The picker opens with ⌘K, or by typing `![[` at the start of a line in a thread (after optional indent, outside a fenced code block): the typed `![[` comes out, what you type next filters the picker, ⏎ inserts the whole `![[id]]` line, and esc puts the `![[` back so it can be typed literally. Only typing triggers it, never a paste. In a fragment it shows the "Quotes go in threads" toast and leaves the text alone.
 4. **Forking descends from pins only.** Pins are the costly, irrevocable signal: confirm with plain words ("This version will be served forever. You can't undo this.").
 5. **No deletes of published work. Withdraw instead**: permanent, visible, and irreversible. Only drafts can be discarded. The UI says "Withdraw", never "Delete", for published items.
 6. **No identity layer.** No @handles or accounts. The origin (domain) is the name, and author names are optional decoration.

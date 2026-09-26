@@ -286,8 +286,8 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "quotes",
         title: "Quotes",
-        caption: "In a thread, ⌘K quotes a post you already hold. The quote is a snapshot, \
-                  taken when you publish.",
+        caption: "In a thread, ⌘K (or typing ![[ on a new line) quotes a post you already \
+                  hold. The quote is a snapshot, taken when you publish.",
         keys: &[Key::QuotePicker],
         key_label: "⌘K",
         region: Region::Editor,

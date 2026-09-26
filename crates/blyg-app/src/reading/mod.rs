@@ -194,6 +194,9 @@ pub enum RSheet {
         target: LocalId,
         input: Entity<InputState>,
         sel: usize,
+        /// Opened by typing `![[`: where that text was taken from, and the
+        /// text itself, so esc can put it back.
+        typed: Option<(usize, String)>,
     },
 }
 
