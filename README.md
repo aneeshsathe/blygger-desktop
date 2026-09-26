@@ -110,6 +110,8 @@ first and synced to your blyg in the background. It's written in Rust with
   list with a `scratch` pill, are searchable and editable, and ⌘D or ⌘⏎
   there promotes them. `capture-default = draft` makes esc save a draft
   instead, and `new-note = scratch` makes the omnibar create scratch notes.
+- **Links.** Select some text and paste a web address to link it, as in
+  WordPress: the text becomes `[text](address)`.
 - **Images.** Paste or drop an image to upload it; it goes into the text
   where you pasted it, and the preview shows it.
 - **Full editor.** A live preview beside the editor shows the post exactly as

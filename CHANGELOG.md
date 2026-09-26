@@ -29,6 +29,9 @@ release workflow publishes that section as the release notes.
   text, case-insensitively, over posts already held on this Mac (nothing is
   fetched to search). Matches are highlighted, ↑/↓ and ⏎ work from the field,
   esc clears the search, and "No posts match “…”" says when nothing does.
+- **Paste a link over selected text**, as in WordPress. Select some words
+  and paste a web or mail address: they become `[words](address)`. Pasting
+  anything else, or over a selected address or link, pastes as usual.
 
 ### Changed
 

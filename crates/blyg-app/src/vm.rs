@@ -465,6 +465,54 @@ pub fn relative_time(rfc3339: &str, now: chrono::DateTime<chrono::Utc>) -> Strin
 
 pub const PLACEHOLDER: &str = "![uploading…]()";
 
+/// Pasting a link over selected text (as WordPress does): when `sel` is a
+/// non-empty selection on one line and the clipboard holds just a web or mail
+/// address, the selection becomes `[text](url)`. Returns the new text and the
+/// caret (after the link); `None` means an ordinary paste.
+pub fn link_paste(text: &str, sel: Range<usize>, clip: &str) -> Option<(String, usize)> {
+    let url = clip.trim();
+    let is_link = ["https://", "http://", "mailto:"].iter().any(|p| {
+        url.len() > p.len()
+            && url
+                .get(..p.len())
+                .is_some_and(|h| h.eq_ignore_ascii_case(p))
+    });
+    if !is_link || url.chars().any(char::is_whitespace) || url.contains(['<', '>']) {
+        return None;
+    }
+    let label = text.get(sel.clone())?;
+    if label.trim().is_empty() || label.contains('\n') {
+        return None;
+    }
+    // Already a link (or an address itself): leave it to a normal paste.
+    let before = &text[..sel.start];
+    if label.contains("](")
+        || label.contains("://")
+        || before.ends_with("](")
+        || before.ends_with('<')
+    {
+        return None;
+    }
+    // Keep the selection's own leading/trailing spaces outside the link.
+    let lead = label.len() - label.trim_start().len();
+    let core = label.trim();
+    let tail = &label[lead + core.len()..];
+    let core = core.replace('[', "\\[").replace(']', "\\]");
+    let dest = if url.contains(['(', ')']) {
+        format!("<{url}>")
+    } else {
+        url.to_string()
+    };
+    let link = format!("{}[{core}]({dest})", &label[..lead]);
+    let caret = sel.start + link.len();
+    let mut out = String::with_capacity(text.len() + link.len());
+    out.push_str(before);
+    out.push_str(&link);
+    out.push_str(tail);
+    out.push_str(&text[sel.end..]);
+    Some((out, caret + tail.len()))
+}
+
 /// Insert the upload placeholder at byte `cursor`, on its own paragraph (as
 /// the mock does). Returns the new text and the byte range of the placeholder.
 pub fn insert_placeholder(text: &str, cursor: usize) -> (String, Range<usize>) {
@@ -737,6 +785,55 @@ pub fn capture_counter(chars: usize) -> (String, Level) {
 mod tests {
     use super::*;
     use blyg_core::LocalId;
+
+    #[test]
+    fn a_link_pasted_over_a_selection_wraps_it() {
+        let t = "Read the tide tables first.";
+        let sel = 9..20; // "tide tables"
+        let (out, caret) = link_paste(t, sel.clone(), " https://example.org/tides\n").unwrap();
+        assert_eq!(
+            out,
+            "Read the [tide tables](https://example.org/tides) first."
+        );
+        assert_eq!(
+            &out[..caret],
+            "Read the [tide tables](https://example.org/tides)"
+        );
+        // Spaces caught in the selection stay outside the link.
+        let (out, _) = link_paste(t, 8..21, "https://example.org").unwrap();
+        assert_eq!(out, "Read the [tide tables](https://example.org) first.");
+        // Brackets are escaped; parentheses in the address use <…>.
+        let (out, _) = link_paste("a [b] c", 0..7, "https://example.org/a_(b)").unwrap();
+        assert_eq!(out, "[a \\[b\\] c](<https://example.org/a_(b)>)");
+        assert!(link_paste("mail me", 0..7, "mailto:me@example.org").is_some());
+    }
+
+    #[test]
+    fn an_ordinary_paste_otherwise() {
+        let t = "Read the tide tables first.";
+        assert_eq!(
+            link_paste(t, 9..9, "https://example.org"),
+            None,
+            "no selection"
+        );
+        assert_eq!(link_paste(t, 9..20, "just words"), None, "not a link");
+        assert_eq!(link_paste(t, 9..20, "https://a.org and more"), None);
+        assert_eq!(link_paste(t, 9..20, "ftp://example.org"), None);
+        assert_eq!(
+            link_paste("one\ntwo", 0..7, "https://example.org"),
+            None,
+            "two lines"
+        );
+        assert_eq!(
+            link_paste(t, 8..9, "https://example.org"),
+            None,
+            "only a space"
+        );
+        // Already a link, or an address selected: replace it as usual.
+        let l = "[tide](https://old.example.org)";
+        assert_eq!(link_paste(l, 7..30, "https://example.org"), None);
+        assert_eq!(link_paste(l, 0..31, "https://example.org"), None);
+    }
 
     fn item(id: &str, body: &str) -> Item {
         Item {

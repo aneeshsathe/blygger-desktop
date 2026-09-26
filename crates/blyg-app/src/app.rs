@@ -1240,6 +1240,25 @@ impl MainView {
 
     // ------------------------------------------------------------ images
 
+    /// A web address pasted over selected text links the text: `[text](url)`.
+    fn paste_link(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.current.is_none() {
+            return false;
+        }
+        let Some(clip) = cx.read_from_clipboard().and_then(|c| c.text()) else {
+            return false;
+        };
+        let (text, sel) = {
+            let s = self.editor.read(cx);
+            (s.value().to_string(), s.selected_range())
+        };
+        let Some((new, caret)) = vm::link_paste(&text, sel, &clip) else {
+            return false;
+        };
+        self.splice_editor(&text, &new, Some(caret), window, cx);
+        true
+    }
+
     fn paste_image(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(item) = cx.read_from_clipboard() else {
             return false;
@@ -1958,7 +1977,7 @@ impl MainView {
                 }
             }))
             .capture_action(cx.listener(|this, _: &Paste, window, cx| {
-                if this.paste_image(window, cx) {
+                if this.paste_link(window, cx) || this.paste_image(window, cx) {
                     cx.stop_propagation();
                 }
             }))
