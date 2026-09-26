@@ -11,6 +11,23 @@ release workflow publishes that section as the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Search the reading list** (#6). ⌘F or `/` puts the caret in a search field
+  above the reading list; typing filters it by title, author or blyg name, and
+  text, case-insensitively, over posts already held on this Mac (nothing is
+  fetched to search). Matches are highlighted, ↑/↓ and ⏎ work from the field,
+  esc clears the search, and "No posts match “…”" says when nothing does.
+
+### Changed
+
+- **Reading actions say what they create** (#3). The actions under a post now
+  read "Quote into a thread" (adds `![[id]]` to a thread of yours), "Reply ·
+  new stub" (a stub thread, `stub_of`) and "AI reply · new stub", each with a
+  one-sentence tooltip. Fork shows on the current version too, greyed out,
+  explaining that forks descend from pins only and pointing to the 📌 in
+  ‹ vN ▾ › when the post has one.
+
 ## [0.1.0] - 2026-09-25
 
 The first release: a local-first writing studio for a Blygger blog.

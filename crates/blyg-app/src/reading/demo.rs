@@ -31,6 +31,19 @@ impl MainView {
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),
+            // The reading search, with the first match open (#6).
+            ("rd-search", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-search", 1) => {
+                self.focus_reading_search(window, cx);
+                self.set_reading_query("garden", window, cx);
+                self.move_reading(1, window, cx);
+            }
+            // A search that matches nothing.
+            ("rd-nomatch", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-nomatch", 1) => {
+                self.focus_reading_search(window, cx);
+                self.set_reading_query("zeppelin", window, cx);
+            }
             ("rd-notes", 0) => self.show_view(View::Reading, window, cx),
             ("rd-notes", 1) => open(self, LIN_GARDENS, window, cx),
             // Someone else's post on a pinned version, dropdown open.

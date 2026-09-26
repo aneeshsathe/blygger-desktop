@@ -216,6 +216,13 @@ pub struct State {
     pub sheet: Option<RSheet>,
     pub sheet_gen: usize,
     pub available: bool,
+    /// The reading search field (made on first show; it needs a window).
+    pub search: Option<Entity<InputState>>,
+    /// The reading search, as typed. Filters `rows` into `shown`.
+    pub query: String,
+    /// Indices into `rows` that match `query`, in display order: what the
+    /// list shows and ↑/↓ move through.
+    pub shown: Vec<usize>,
 }
 
 impl State {
@@ -237,7 +244,31 @@ impl State {
             sheet: None,
             sheet_gen: 0,
             available: backend.read_extensions_available(),
+            search: None,
+            query: String::new(),
+            shown: Vec::new(),
         }
+        .refiltered()
+    }
+
+    fn refiltered(mut self) -> Self {
+        self.refilter();
+        self
+    }
+
+    /// Recompute `shown` after `rows` or `query` changed.
+    pub fn refilter(&mut self) {
+        self.shown = vm::filter(&self.rows, &self.query);
+    }
+
+    /// The rows the list shows (all of them without a search).
+    pub fn shown_rows(&self) -> impl Iterator<Item = &ReadingItem> {
+        self.shown.iter().filter_map(|&i| self.rows.get(i))
+    }
+
+    /// Position of `key` in the shown rows.
+    pub fn shown_pos(&self, key: &Key) -> Option<usize> {
+        self.shown_rows().position(|r| &vm::key(r) == key)
     }
 
     pub fn has_new_mentions(&self, now: chrono::DateTime<chrono::Utc>) -> bool {
@@ -302,6 +333,7 @@ impl MainView {
         } else {
             r.rows = vm::order(fresh);
         }
+        r.refilter();
         if let Some(o) = &mut r.opened {
             // Fresh metadata (thumb, state), but keep the read version seen
             // at open time.
@@ -339,12 +371,13 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = vm::order(self.backend.reading());
-                if self.reading.sel.is_none()
-                    || !self
-                        .reading
-                        .rows
-                        .iter()
-                        .any(|r| Some(vm::key(r)) == self.reading.sel)
+                self.reading.refilter();
+                self.ensure_reading_search(window, cx);
+                if self
+                    .reading
+                    .sel
+                    .as_ref()
+                    .is_none_or(|k| self.reading.shown_pos(k).is_none())
                 {
                     self.reading.sel = None;
                     self.reading.opened = None;
@@ -450,7 +483,24 @@ impl MainView {
         if self.reading.sheet.is_some() {
             return;
         }
+        // Typing in the search field is the field's business (its own
+        // esc, ↑/↓ and ⏎ are handled in `render_reading_search`).
+        if self.reading_search_focused(window, cx) {
+            return;
+        }
         let k = &ev.keystroke;
+        // ⌘F searches the reading list. Handled here, not in the keymap
+        // table: gpui-base's inputs bind ⌘F themselves, and this is the
+        // reading list's own key like `/`, ↑/↓ and ←/→.
+        if self.reading.view == View::Reading
+            && k.modifiers.platform
+            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
+            && k.key == "f"
+        {
+            self.focus_reading_search(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
             return;
         }
@@ -462,6 +512,15 @@ impl MainView {
                     o.dropdown = false;
                 }
                 cx.notify();
+                true
+            }
+            // esc clears a search before it leaves the screen.
+            (View::Reading, "escape") if !self.reading.query.is_empty() => {
+                self.set_reading_query("", window, cx);
+                true
+            }
+            (View::Reading, "/") => {
+                self.focus_reading_search(window, cx);
                 true
             }
             (_, "escape") => {
@@ -653,6 +712,28 @@ impl MainView {
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.ink)
             .hover(|s| s.border_color(p.accent))
+            .child(label.into())
+    }
+
+    /// A chip that can't be clicked now: greyed, dashed, its tooltip says why.
+    fn chip_disabled(
+        &self,
+        id: impl Into<SharedString>,
+        label: impl Into<SharedString>,
+    ) -> Stateful<Div> {
+        let p = self.palette;
+        div()
+            .id(ElementId::Name(id.into()))
+            .px(px(8.))
+            .py(px(3.))
+            .rounded(px(6.))
+            .border_1()
+            .border_dashed()
+            .border_color(p.line)
+            .font_family("Inter")
+            .text_size(px(11.5))
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(p.muted)
             .child(label.into())
     }
 
