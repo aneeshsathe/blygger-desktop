@@ -70,6 +70,9 @@ pub(crate) mod profiles;
 // --- delete & withdraw --- (drafts are deleted, published posts withdrawn)
 #[path = "discard.rs"]
 pub(crate) mod discard;
+// --- auto-update --- (the status-bar notice; logic in crate::update)
+#[path = "update/view.rs"]
+mod update_view;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -2088,6 +2091,7 @@ impl MainView {
                     .children(banner),
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
+            .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(
                 div()

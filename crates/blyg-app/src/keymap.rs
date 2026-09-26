@@ -38,6 +38,8 @@ use crate::app::reading::{
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
 use crate::app::discard::{DeleteDraft, Withdraw};
+// --- auto-update ---
+use crate::update::CheckForUpdates;
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -313,6 +315,12 @@ pub fn table() -> Vec<Keybind> {
             OpenConfigFile,
             "Open the config file",
             "Blygger › Open Config File"
+        ),
+        // --- auto-update ---
+        menu_only!(
+            CheckForUpdates,
+            "Check for a new release now (whatever auto-update says)",
+            "Blygger › Check for Updates…"
         ),
         // --- buttons --- The quick-capture hotkey is `capture-hotkey`, not a
         // binding here; its button's tooltip shows the configured one.
