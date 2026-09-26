@@ -527,6 +527,24 @@ impl MainView {
         })
     }
 
+    /// Where the step's ring goes, if anywhere. A sheet or picker the step
+    /// opened sits on top of the panes: a ring around a pane would draw over
+    /// it (only a Sheet step rings the sheet).
+    pub(super) fn tutorial_ring(
+        &self,
+        region: Region,
+        window: &Window,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let covered = self.sheet.is_some()
+            || self.reading.sheet.is_some()
+            || self.ai.has_overlay()
+            || self.profile_sheet_open();
+        if covered && region != Region::Sheet {
+            return None;
+        }
+        self.tutorial_region(region, window)
+    }
+
     pub(super) fn render_tutorial(
         &mut self,
         window: &mut Window,
@@ -726,7 +744,7 @@ impl MainView {
                         ),
                 );
 
-        let rect = self.tutorial_region(step.region, window);
+        let rect = self.tutorial_ring(step.region, window);
         let toolbar = (buttons && step.button.is_some()).then(|| {
             let w = f32::from(window.viewport_size().width);
             (90., 0., (w - 420.).max(60.), TITLEBAR_H)
