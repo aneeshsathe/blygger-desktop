@@ -123,10 +123,33 @@ pub struct Media {
     pub duplicate: bool,
 }
 
-/// `GET /api/reading` (patch 3) → `{items, next}`.
+/// `GET /api/reading` (patch 3) → `{items, next}`, plus `read_state: true`
+/// from a server that stores read state (extension 5; each item then carries
+/// its `read_version`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReadingPage {
     pub items: Vec<ReadingItem>,
     #[serde(default)]
     pub next: Option<String>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state: Option<bool>,
 }
+
+impl ReadingPage {
+    /// The server advertises read-state sync (extension 5).
+    pub fn read_sync(&self) -> bool {
+        self.read_state == Some(true)
+    }
+}
+
+/// One row's read state as sent to the server: `(sub, remote_id)` is a
+/// reading row, `version` the highest version read.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+pub struct ReadMark {
+    pub sub: String,
+    pub remote_id: String,
+    pub version: u32,
+}
+
+/// At most this many entries per `POST /api/reading/read`.
+pub const READ_BATCH_MAX: usize = 500;

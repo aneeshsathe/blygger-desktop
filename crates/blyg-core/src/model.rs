@@ -191,11 +191,17 @@ pub struct ReadingItem {
     /// with a link to the pin (`pin_url`). `None` on a tombstone = no content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned_version_retained: Option<u32>,
-    /// Local read state (never from the server): the highest version the user
-    /// has seen, set by `Backend::mark_read`. `None` = unread. Only the number
-    /// is kept, never the text of that version (spec §8.4: unpinned history of
-    /// other people's posts is not retained). See `Backend::pinned_diff_base`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Read state: the highest version the user has seen, set by
+    /// `Backend::mark_read`. `None` = unread. Only the number is kept, never
+    /// the text of that version (spec §8.4: unpinned history of other people's
+    /// posts is not retained). See `Backend::pinned_diff_base`. On a pulled
+    /// reading page it's the server's copy (owner-API extension 5), which the
+    /// store merges as `max(local, server)`. Lenient: junk reads as `None`.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub read_version: Option<u32>,
     // --- profiles ---
     /// `stub_of` from the item document (v0.3, threads only): the post this

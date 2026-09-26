@@ -4,13 +4,15 @@
 //! method ever holds the lock across network I/O.
 //!
 //! The outbox is an ordered op log (`create`, `save`, `recreate`, plus
-//! `delete_remote` to retire a recreated draft). Edit ops carry no
+//! `delete_remote` to retire a recreated draft, and `read` for read-state
+//! sync, see `read_sync`). Edit ops carry no
 //! content: the content pushed is the item's working copy *at push time*, which
 //! is what makes coalescing trivial (50 keystrokes = one pending `save` whose
 //! `not_before` keeps moving).
 
 mod provenance;
 pub use provenance::Tracked;
+mod read_sync;
 mod reading;
 mod remote;
 mod schema;
@@ -47,6 +49,9 @@ pub enum OpKind {
     Recreate,
     /// Delete a retired server draft (left behind by `Recreate`); payload = server id.
     DeleteRemote,
+    /// Send a reading row's read state (extension 5); payload = a `ReadMark`,
+    /// `local_id` = `read_sync::read_key`, not an item.
+    Read,
 }
 
 impl OpKind {
@@ -56,6 +61,7 @@ impl OpKind {
             OpKind::Save => "save",
             OpKind::Recreate => "recreate",
             OpKind::DeleteRemote => "delete_remote",
+            OpKind::Read => "read",
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -63,6 +69,7 @@ impl OpKind {
             "create" => OpKind::Create,
             "recreate" => OpKind::Recreate,
             "delete_remote" => OpKind::DeleteRemote,
+            "read" => OpKind::Read,
             _ => OpKind::Save,
         }
     }

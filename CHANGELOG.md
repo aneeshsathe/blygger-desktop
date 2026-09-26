@@ -9,6 +9,19 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Added
+
+- **Read state syncs between your Macs.** A post you read on one Mac now reads
+  as read on your others, and a fresh install no longer shows everything
+  unread. It syncs through your own blyg when the server supports it (the
+  optional owner-API extension 5, see `docs/SERVER.md`). Marking a post read
+  is still instant and works offline; the change is sent when you're back
+  online, and read state never goes backwards. The first sync uploads what
+  you've already read on this Mac. On a server without the extension,
+  nothing changes.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
