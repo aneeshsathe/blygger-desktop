@@ -831,7 +831,14 @@ impl MainView {
                     cx.notify();
                 }
             }
-            InputEvent::Change if !self.loading_editor => self.after_edit(cx),
+            InputEvent::Change if !self.loading_editor => {
+                // Typing `![[` at the start of a line opens the quote picker.
+                let typed = self.typed_transclusion(cx);
+                self.after_edit(cx);
+                if let Some(typed) = typed {
+                    self.open_quote_picker_from_typing(typed, window, cx);
+                }
+            }
             _ => {}
         }
     }

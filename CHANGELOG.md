@@ -11,6 +11,13 @@ release workflow publishes that section as the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Typing `![[` opens the quote picker** (#5). At the start of a line in a
+  thread, `![[` opens the same picker as ⌘K, and what you type next filters
+  it. ⏎ inserts the `![[id]]` line; esc puts the `![[` back. Pasting, fenced
+  code and fragments don't trigger it (a fragment shows the threads hint).
+
 ## [0.1.0] - 2026-09-25
 
 The first release: a local-first writing studio for a Blygger blog.
