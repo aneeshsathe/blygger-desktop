@@ -4,7 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/aneeshsathe/blygger-desktop/main/scripts/install.sh | bash
 #
 # What it does: downloads Blygger-macos-universal.zip from the latest GitHub
-# release, checks it against the release's SHA256SUMS, and unzips Blygger.app
+# release, checks it against the release's SHA256SUMS (and that file's
+# Ed25519 signature, when OpenSSL 3 is installed), and unzips Blygger.app
 # into /Applications (or ~/Applications if /Applications isn't writable).
 #
 # Files downloaded with curl don't get macOS's quarantine attribute, so
@@ -21,6 +22,9 @@ set -euo pipefail
 REPO="aneeshsathe/blygger-desktop" # set with scripts/set-repo.sh
 ASSET="Blygger-macos-universal.zip"
 APP="Blygger.app"
+# The release signing key (raw Ed25519 public key, base64); the same one is
+# embedded in the app (crates/blyg-app/src/update/verify.rs).
+UPDATE_PUBKEY="mnXJcOWPGSTrMKx38w6FqoKQxky6+pj3Ch2IVPrk3+I="
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'blygger install: %s\n' "$*" >&2; exit 1; }
@@ -54,6 +58,29 @@ curl -fL --progress-bar -o "$tmp/$ASSET" "$base/$ASSET" || die "download failed:
 
 if [ -z "${BLYGGER_NO_VERIFY:-}" ]; then
   curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "couldn't download SHA256SUMS"
+  # Releases from 0.3.0 on also sign SHA256SUMS with the project's Ed25519
+  # key (the one the app's updater trusts). Check it when OpenSSL 3 is
+  # installed; older releases have no .sig and skip this.
+  if curl -fsSL -o "$tmp/SHA256SUMS.sig" "$base/SHA256SUMS.sig" 2>/dev/null; then
+    ossl=""
+    for c in /opt/homebrew/opt/openssl@3/bin/openssl /usr/local/opt/openssl@3/bin/openssl openssl; do
+      if command -v "$c" >/dev/null 2>&1 && "$c" version 2>/dev/null | grep -q '^OpenSSL 3'; then
+        ossl="$c"
+        break
+      fi
+    done
+    if [ -n "$ossl" ]; then
+      # The raw 32-byte public key as SPKI DER (fixed Ed25519 prefix + key).
+      { printf '302a300506032b6570032100' | xxd -r -p
+        printf '%s' "$UPDATE_PUBKEY" | "$ossl" base64 -d -A; } > "$tmp/pub.der"
+      "$ossl" pkeyutl -verify -pubin -keyform DER -inkey "$tmp/pub.der" -rawin \
+        -in "$tmp/SHA256SUMS" -sigfile "$tmp/SHA256SUMS.sig" >/dev/null 2>&1 \
+        || die "SHA256SUMS signature check failed; not installing."
+      say "Signature OK."
+    else
+      say "(Skipping the signature check: it needs OpenSSL 3, e.g. brew install openssl@3.)"
+    fi
+  fi
   (cd "$tmp" && grep " $ASSET\$" SHA256SUMS | shasum -a 256 -c -) >/dev/null \
     || die "checksum mismatch for $ASSET; not installing."
   say "Checksum OK."

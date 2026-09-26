@@ -9,6 +9,22 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Added
+
+- **Automatic, signed updates.** Blygger checks GitHub for a new release at
+  launch and about once a day, downloads it in the background, and shows
+  "Blygger X is ready · Restart to update" in the status bar (quitting
+  installs it too). **Blygger › Check for Updates…** checks right away. An
+  update is installed only if its `SHA256SUMS` has a valid Ed25519 signature
+  from the project's release key, the zip matches it, and the new app is
+  `org.blygger.desktop`, newer, and passes `codesign --verify`; otherwise
+  nothing changes. `auto-update = install | notify | off` (default install)
+  in the config. Releases now include `SHA256SUMS.sig`, and the one-line
+  installer checks it when OpenSSL 3 is installed. People on 0.2.0 or
+  earlier need to run the installer once more.
+
 ## [0.2.0] - 2026-09-25
 
 ### Added
