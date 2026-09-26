@@ -21,6 +21,10 @@ pub struct AppState {
     /// `focus`): the full editor's ⌘1/⌘2/⌘3/⌘E, remembered per viewer.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub view: Option<String>,
+    /// When an update check last found nothing newer (Unix seconds), so a
+    /// relaunch doesn't ask GitHub again within a day (`auto-update`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_update_check: Option<u64>,
 }
 
 impl AppState {

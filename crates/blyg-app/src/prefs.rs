@@ -75,6 +75,29 @@ impl From<Layout> for LayoutPref {
     }
 }
 
+// --- auto-update ---
+/// `auto-update`: what the app does about new releases (see `crate::update`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AutoUpdate {
+    /// Download and verify in the background, then offer "Restart to update".
+    #[default]
+    Install,
+    /// Only say a new release is available.
+    Notify,
+    /// Never check on its own (Check for Updates… still does).
+    Off,
+}
+
+impl AutoUpdate {
+    pub fn from_value(v: Option<&str>) -> Self {
+        match v {
+            Some("notify") => AutoUpdate::Notify,
+            Some("off") => AutoUpdate::Off,
+            _ => AutoUpdate::Install,
+        }
+    }
+}
+
 /// A font the user can pick. `family` is what GPUI resolves; `bundled` says
 /// which embedded files (if any) must be registered first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +223,8 @@ pub struct Prefs {
     // --- buttons ---
     /// `show-buttons`: the title-bar toolbar and quick capture's button row.
     pub show_buttons: bool,
+    // --- auto-update --- (read-only here: set in the config file)
+    pub auto_update: AutoUpdate,
 }
 
 impl Default for Prefs {
@@ -220,6 +245,7 @@ impl Prefs {
             capture_default: c.capture_default(),
             new_note: c.new_note(),
             show_buttons: c.show_buttons(), // --- buttons ---
+            auto_update: AutoUpdate::from_value(c.get("auto-update")), // --- auto-update ---
         }
     }
 
@@ -375,6 +401,21 @@ mod tests {
                 .ends_with("layout = stacked\nshow-buttons = false\n")
         );
         assert_eq!(Prefs::from_config(s.config()), new);
+    }
+
+    // --- auto-update ---
+    #[test]
+    fn auto_update_defaults_to_install() {
+        assert_eq!(Prefs::default().auto_update, AutoUpdate::Install);
+        for (text, want) in [
+            ("auto-update = notify\n", AutoUpdate::Notify),
+            ("auto-update = OFF\n", AutoUpdate::Off),
+            ("auto-update = install\n", AutoUpdate::Install),
+            ("auto-update = sometimes\n", AutoUpdate::Install),
+        ] {
+            let s = ConfigStore::in_memory(text);
+            assert_eq!(Prefs::from_config(s.config()).auto_update, want, "{text}");
+        }
     }
 
     #[test]

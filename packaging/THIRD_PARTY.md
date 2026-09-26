@@ -36,7 +36,7 @@ The full text of both licenses is in `crates/blyg-app/assets/icons/LICENSE`.
 
 ## Rust crates
 
-The binary statically links about 580 crates (counting the aarch64 and x86_64
+The binary statically links about 590 crates (counting the aarch64 and x86_64
 builds together). `packaging/rust-dependencies.tsv` lists each one with its
 version, license and repository. To regenerate it:
 
@@ -49,12 +49,12 @@ The licenses in use (crate counts):
 
 | License (SPDX) | Crates |
 |---|---|
-| Apache-2.0 OR MIT | 348 |
+| Apache-2.0 OR MIT | 357 |
 | MIT | 108 |
 | Apache-2.0 OR MIT OR Zlib | 29 |
 | Apache-2.0 (including GPUI) | 24 |
 | Unicode-3.0 | 18 |
-| BSD-3-Clause | 9 |
+| BSD-3-Clause | 11 |
 | MIT OR Unlicense | 8 |
 | Zlib | 7 |
 | BSD-2-Clause | 4 |
@@ -71,6 +71,12 @@ from crates.io.
 The Reading screen sanitizes other people's HTML with
 [`ammonia`](https://github.com/rust-ammonia/ammonia) (Apache-2.0 OR MIT),
 on `html5ever` (Apache-2.0 OR MIT).
+
+In-app updates check release signatures with
+[`ed25519-dalek`](https://github.com/dalek-cryptography/curve25519-dalek)
+and `curve25519-dalek` (BSD-3-Clause; Copyright (c) 2016-2021 isis agora
+lovecruft, Copyright (c) 2016-2021 Henry de Valence), plus `semver` and
+`base64` (Apache-2.0 OR MIT).
 
 SQLite (via `rusqlite`'s bundled build) is in the public domain.
 

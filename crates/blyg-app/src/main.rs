@@ -22,6 +22,7 @@ mod platform;
 mod prefs;
 mod settings;
 mod theme;
+mod update;
 mod vm;
 
 use std::process::ExitCode;
@@ -115,6 +116,8 @@ fn main() -> ExitCode {
         },
     };
 
+    let state_dir = connection.data_dir.clone(); // --- auto-update ---
+
     let app = gpui_kit::application();
     // Dock click with no window open → reopen the main window.
     {
@@ -157,6 +160,8 @@ fn main() -> ExitCode {
         cx.on_action(|_: &app::ShowCapture, cx| capture::toggle(cx));
         cx.set_menus(menus());
         capture::init(backend.clone(), &prefs, cx);
+        // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
+        update::init(state_dir, cx);
 
         open_main(backend.clone(), fake.clone(), prefs.clone(), launched, cx);
         // Polite activation in automation: don't steal focus from the user.
@@ -234,6 +239,7 @@ fn menus() -> Vec<Menu> {
             name: "Blygger".into(),
             items: vec![
                 MenuItem::action("Settings…", app::OpenSettings),
+                MenuItem::action("Check for Updates…", update::CheckForUpdates), // --- auto-update ---
                 MenuItem::action("Open Config File", app::OpenConfigFile),
                 MenuItem::action("Reload Config", app::ReloadConfig),
                 MenuItem::action("Quick Capture", app::ShowCapture),

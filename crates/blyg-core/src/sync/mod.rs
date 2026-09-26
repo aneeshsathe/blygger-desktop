@@ -24,6 +24,15 @@ pub(crate) use worker::{Msg, spawn};
 /// `meta` key set when the server answered 404 to the provenance endpoint.
 pub const PROVENANCE_UNAVAILABLE: &str = "tk_provenance_unavailable";
 
+/// `meta` key: "1" while the server advertises read-state sync (the last
+/// `GET /api/reading` said `read_state: true`, extension 5), "0" or absent
+/// otherwise. Persisted so a read marked offline after a restart still queues.
+pub const READ_SYNC: &str = "read_sync";
+
+/// `meta` key set once this database's read state has been batch-uploaded
+/// (the first time the server advertised read-state sync).
+pub const READ_SYNC_UPLOADED: &str = "read_sync_uploaded";
+
 /// Timings. Defaults follow the spec; tests shrink them.
 #[derive(Debug, Clone)]
 pub struct SyncOptions {
@@ -322,6 +331,9 @@ impl Engine {
     }
 
     fn run_op(&self, op: &Op) -> Result<()> {
+        if op.kind == OpKind::Read {
+            return self.run_read(op);
+        }
         if op.kind == OpKind::DeleteRemote {
             self.store.set_in_flight(op.seq, true)?;
             return match self.api.delete_item(&op.payload) {
@@ -428,7 +440,7 @@ impl Engine {
                 )?;
                 self.store.queue_prov_push(&item.local_id)
             }
-            OpKind::DeleteRemote => unreachable!(),
+            OpKind::DeleteRemote | OpKind::Read => unreachable!(),
         }
     }
 
@@ -569,6 +581,7 @@ impl Engine {
             Err(CoreError::NotFound) => {}
             Err(e) => return Err(e),
         }
+        let mut reading_err = None;
         if let Some((items, complete)) = self.fetch_reading()? {
             let kinds = self
                 .store
@@ -577,11 +590,86 @@ impl Engine {
                 .map(|s| (s.id, s.kind))
                 .collect();
             reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
+            if self.read_sync_on() {
+                reading_err = self.reconcile_reads(&items).err();
+            }
         }
         if reading_changed {
             self.emit(CoreEvent::ReadingChanged);
         }
+        reading_err.map_or(Ok(()), Err)
+    }
+
+    // ------------------------------------------------------------ read state
+
+    /// The server syncs read state (extension 5), as of the last reading pull.
+    pub fn read_sync_on(&self) -> bool {
+        self.store.meta(READ_SYNC).as_deref() == Some("1")
+    }
+
+    fn set_read_sync(&self, on: bool) -> Result<()> {
+        if self.read_sync_on() == on {
+            return Ok(());
+        }
+        self.store.set_meta(READ_SYNC, if on { "1" } else { "0" })?;
+        if !on {
+            // Nothing to send them to any more.
+            self.store.drop_read_ops()?;
+        }
         Ok(())
+    }
+
+    /// After a pull from a server that syncs read state: the first time, send
+    /// everything read here in batches; afterwards, queue a read op for every
+    /// row held here that is ahead of what the server just reported (a read
+    /// made while the server couldn't take it, or an RSS row that inherited
+    /// read state from its renamed predecessor).
+    fn reconcile_reads(&self, pulled: &[ReadingItem]) -> Result<()> {
+        if self.store.meta(READ_SYNC_UPLOADED).is_none() {
+            let marks = self.store.read_marks()?;
+            for chunk in marks.chunks(crate::api::wire::READ_BATCH_MAX) {
+                match self.api.put_reads(chunk) {
+                    Ok(()) => {}
+                    Err(CoreError::NotFound) => return self.set_read_sync(false),
+                    // Refused outright (a row it doesn't like): the rest
+                    // still goes, and a retry wouldn't do better.
+                    Err(CoreError::Rejected { .. }) => {}
+                    Err(e) => return Err(e),
+                }
+            }
+            return self.store.set_meta(READ_SYNC_UPLOADED, "1");
+        }
+        let server = pulled
+            .iter()
+            .map(|i| {
+                (
+                    (i.subscription_id.clone(), i.remote_id.clone()),
+                    i.read_version,
+                )
+            })
+            .collect();
+        let ahead = self.store.reads_ahead_of(&server)?;
+        self.store.queue_reads(&ahead)
+    }
+
+    /// Run one `read` op: `PUT /api/reading/:sub/:remoteId/read`.
+    fn run_read(&self, op: &Op) -> Result<()> {
+        let Ok(m) = serde_json::from_str::<crate::api::wire::ReadMark>(&op.payload) else {
+            return self.store.drop_op(op.seq);
+        };
+        if !self.read_sync_on() {
+            return self.store.drop_op(op.seq);
+        }
+        self.store.set_in_flight(op.seq, true)?;
+        match self.api.put_read(&m.sub, &m.remote_id, m.version) {
+            Ok(()) => self.store.drop_op(op.seq),
+            Err(CoreError::NotFound) => {
+                // The endpoint is gone (a downgraded Worker).
+                self.store.drop_op(op.seq)?;
+                self.set_read_sync(false)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// `None` when the server doesn't have `/api/reading` yet. The flag is
@@ -589,14 +677,18 @@ impl Engine {
     fn fetch_reading(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
-        for _ in 0..self.opts.reading_pages.max(1) {
+        for i in 0..self.opts.reading_pages.max(1) {
             match self.api.reading(500, cursor.as_deref())? {
                 None => {
                     self.state().reading_unavailable = true;
+                    self.set_read_sync(false)?;
                     return Ok(None);
                 }
                 Some(page) => {
                     self.state().reading_unavailable = false;
+                    if i == 0 {
+                        self.set_read_sync(page.read_sync())?;
+                    }
                     all.extend(page.items);
                     match page.next {
                         // Opaque cursor: passed back verbatim as `before`.

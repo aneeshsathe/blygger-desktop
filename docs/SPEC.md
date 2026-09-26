@@ -155,6 +155,12 @@ Read it before guessing a body shape. The key points:
 - `GET /api/hoppers` → `{hoppers: [{id, name, slug, public, count}]}`
 - `show_responses: bool` added to the Item JSON.
 
+**Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading` adds
+`read_state: true` and a per-item `read_version: number|null`;
+`PUT /api/reading/:sub/:remoteId/read {version}` and
+`POST /api/reading/read {items: [{sub, remote_id, version}]}` (≤ 500) store
+`max(existing, version)`.
+
 Transclusion syntax is `![[<26-char id>]]` alone on its own line, and is only
 valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolve
 (local and/or imported).
@@ -169,6 +175,8 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 ## Reading
 
 **One entry per post, however many times it's edited.** An edit updates the existing row (the "edited · vN" badge plus a diff since you last read it) and never creates a new unread item. Cross-subscription duplicates (someone's blyg + their RSS feed) collapse to one row, preferring the blyg row. RSS items whose id changes on edit are matched by their resolved page URL. Tombstones are hidden unless signalled or hoppered. The mock is at `docs/prototype/ai-and-reading.html` §5.
+
+**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (extension 5, `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI.
 
 **Search, Notational Velocity style.** A search field sits above the reading list (the Posts omnibar isn't on this screen). ⌘F or `/` (with the list focused) puts the caret in it; typing filters the list live: a case-insensitive substring over the title, the author and blyg (subscription, origin) names, and the post's text (`content_md`, or the published HTML's text when an item has no Markdown), over posts **already held locally**. Nothing is fetched to search. Title matches are highlighted as in the Posts list. ↑/↓ move through the matches from the field, ⏎ goes to the list (opening the first match when nothing is open), and esc clears the search (esc on an empty field returns to the list; esc in the list with a search clears it before it leaves the screen). An empty result shows "No posts match “…”". The open post stays open while it still matches; otherwise the selection and the reader clear, so typing never opens (or marks read) anything.
 
@@ -275,3 +283,21 @@ Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**def
 - Buttons are disabled with a reason in the tooltip when unavailable (e.g. Publish on an over-limit fragment: "Too long for a fragment. ⌘T makes it a thread").
 - With `show-buttons = false`, the window is exactly the minimalist layout in the mocks.
 - As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Delete and Withdraw share a slot (`toolbar::visible`, `vm::discard`); Withdraw is the one button without a key, so its tooltip is just "Withdraw…". Icons: twelve Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, `discard_tests`, capture tests.
+
+## Updates (in-app, signed)
+
+Config `auto-update = install | notify | off` (**default install**). Blygger › Check for Updates… always checks, whatever the key says, and answers with a toast ("You're up to date (0.3.0)").
+
+- **When:** 15 s after launch, then about every 24 h while running. `state.json` remembers the last check that found nothing newer (`last_update_check`), so relaunches within a day don't call the API again; a check that found an update isn't recorded, so a relaunch looks again. A failed check retries in an hour. Never in `cfg(test)`, with `BLYGGER_FAKE=1`, or with `BLYGGER_NO_UPDATE=1`.
+- **What:** `GET https://api.github.com/repos/<repo>/releases/latest` (unauthenticated, with a User-Agent). Drafts, prereleases and pre-release tags are skipped; the tag is compared as semver against `CARGO_PKG_VERSION`.
+- **install:** download and verify in the background, then a quiet status-bar notice: "Blygger X is ready · Restart to update · What's new". Restart installs and relaunches; quitting with an update ready installs it too (no relaunch). **notify:** "Blygger X is available · Download · What's new"; Download proceeds as install. **off:** no automatic checks.
+- **Security model** (all must pass, or nothing is installed):
+  1. HTTPS only, from `api.github.com`, `github.com`, and GitHub's release-asset storage hosts (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`). Redirects are followed by hand and every hop is checked.
+  2. The release workflow signs `SHA256SUMS` with the project's Ed25519 key (secret `UPDATE_SIGNING_KEY`, `scripts/sign-sums.sh`, OpenSSL 3 `pkeyutl -sign -rawin`) and publishes `SHA256SUMS.sig`: the **raw 64-byte signature** over the exact bytes of `SHA256SUMS` (not base64). CI verifies it with the key embedded in the app before uploading, so a wrong key fails the release.
+  3. The app embeds the public key (`update/verify.rs`, `RELEASE_PUBLIC_KEY_B64`, raw 32 bytes base64) and checks the signature with `ed25519-dalek`'s `verify_strict` before downloading the zip.
+  4. `Blygger-<ver>-macos-universal.zip` must match its SHA-256 line in the signed `SHA256SUMS`.
+  5. The zip is extracted with `ditto -x -k` into a staging folder on the same volume as the running bundle; the extracted `Blygger.app` must have `CFBundleIdentifier = org.blygger.desktop`, a `CFBundleShortVersionString` equal to the release's version and strictly newer than the running one, its executable, and pass `codesign --verify --strict` (the ad-hoc signature). These checks run again right before installing.
+  6. Only the bundle the app runs from is replaced (from `current_exe()` → `…/X.app/Contents/MacOS/blygger`, and only if that bundle is `org.blygger.desktop`). The swap: old bundle → `.X.app.old`, new bundle in, old removed; if the new one can't be moved in, the old one is put back. A detached `/bin/sh` waits for the process to exit and runs `open -n <bundle>`.
+  7. Not running from a bundle (`cargo run`), a translocated copy, or an unwritable folder → notify-only: "Can't update in place: …; download from the release page". A release without `SHA256SUMS.sig` (0.2.0 and earlier) is notify-only too. Quarantine is neither added nor stripped (the app's own downloads aren't quarantined).
+- `scripts/install.sh` also checks `SHA256SUMS.sig` when OpenSSL 3 is installed (and the release has one).
+- As built: `crates/blyg-app/src/update/` (`check.rs`, `verify.rs`, `net.rs` with the `Http` trait, `install.rs` with the `Tools` trait, `mod.rs` GPUI glue, `view.rs` the status-bar notice). Tests are offline: a fake HTTP client serving a release signed with a throwaway key, fake bundles in temp dirs, swap and rollback. Debug builds only: `BLYGGER_UPDATE_URL` (a local test server; plain HTTP to localhost allowed), `BLYGGER_UPDATE_PUBKEY` (a test key) and `BLYGGER_UPDATE_SMOKE=restart|quit` (act on a ready update without input) for manual smoke tests.

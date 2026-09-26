@@ -64,6 +64,28 @@ Or skip all that with Terminal:
 
 On macOS 14 and earlier, Control-click → **Open** → **Open** still works.
 
+## Updates
+
+From 0.3.0 on, Blygger updates itself. About once a day it checks the
+[Releases page](../../releases/latest), downloads a new version in the
+background, and shows **Blygger X is ready · Restart to update** in the
+status bar (quitting installs it too). **Blygger › Check for Updates…** checks
+right away.
+
+Updates are signed: the app installs a release only if its `SHA256SUMS` carries
+a valid Ed25519 signature from the project's release key (built into the app),
+the download matches that file, and the new app is Blygger, newer, and passes
+`codesign --verify`. Downloads come only from GitHub, over HTTPS. The one-line
+installer checks the same signature when OpenSSL 3 is installed.
+
+`auto-update = notify` in the config only tells you a new version is out, and
+`auto-update = off` stops the automatic checks. If Blygger can't replace
+itself (say, the folder it's in isn't writable), it says so and links to the
+release page.
+
+**On 0.2.0 or earlier?** Those versions can't update themselves. Run the
+one-line installer above once more; after that, updates are automatic.
+
 ## Disclaimer
 
 > **Blygger Desktop is entirely vibecoded:** it was written with AI assistance.

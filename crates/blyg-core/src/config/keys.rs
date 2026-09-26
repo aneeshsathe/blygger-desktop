@@ -114,6 +114,19 @@ pub const KEYS: &[KeySpec] = &[
          capture. Every button's tooltip shows its shortcut. false keeps the window \
          keyboard-only and minimal. Settings (⌘,) toggles it.",
     ),
+    // --- auto-update ---
+    docs(
+        key(
+            "auto-update",
+            ValueKind::Choice(&["install", "notify", "off"]),
+            Some("install"),
+        ),
+        "Updates from the project's GitHub releases. install downloads a new release in the \
+         background, checks its signature, and shows \"Restart to update\" in the status bar \
+         (quitting installs it too); notify only says a new release is available; off never \
+         checks on its own. Blygger › Check for Updates… always checks. An update is refused \
+         unless it's signed with the project's release key.",
+    ),
     docs(
         key("font-family-writing", ValueKind::Text, Some("Literata")),
         "Font for the editor and preview. Run `blygger +list-fonts` to see the choices.",

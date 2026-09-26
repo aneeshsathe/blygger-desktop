@@ -5,7 +5,9 @@
 //! Error mapping: transport failures → `Offline`, 401 → `Unauthorized`,
 //! 404 → `NotFound`, any other non-2xx → `Rejected{status, error, errors}`.
 //! Patch-3 read endpoints (`reading`, `mentions`, `settings`, `hoppers`) return
-//! `Ok(None)` on 404: the server simply doesn't have them yet.
+//! `Ok(None)` on 404: the server simply doesn't have them yet. The read-state
+//! writes (extension 5) are only called once `GET /api/reading` advertised
+//! `read_state: true`.
 
 pub mod public;
 pub mod wire;
@@ -458,12 +460,36 @@ impl Api {
         }
         let page: Option<ReadingPage> = Self::optional(self.call_as("GET", &path, None))?;
         Ok(page.map(|mut p| {
+            let read_sync = p.read_sync();
             for it in &mut p.items {
                 it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
-                it.read_version = None;
+                if !read_sync {
+                    // Only a server that advertises read state means it.
+                    it.read_version = None;
+                }
             }
             p
         }))
+    }
+
+    // ---------- extension 5: read state (404 = not deployed) ----------
+
+    /// `PUT /api/reading/:sub/:remoteId/read {version}`. The server keeps
+    /// `max(stored, version)`, so a replay is harmless.
+    pub fn put_read(&self, sub: &str, remote_id: &str, version: u32) -> Result<()> {
+        self.call(
+            "PUT",
+            &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
+            Some(json!({ "version": version })),
+        )
+        .map(|_| ())
+    }
+
+    /// `POST /api/reading/read {items: [{sub, remote_id, version}]}`, at most
+    /// `READ_BATCH_MAX` entries (the caller chunks).
+    pub fn put_reads(&self, items: &[ReadMark]) -> Result<()> {
+        self.call("POST", "/api/reading/read", Some(json!({ "items": items })))
+            .map(|_| ())
     }
 
     pub fn mentions(&self) -> Result<Option<Vec<Mention>>> {

@@ -23,6 +23,15 @@ objc2 = "0.6"
 blyg-render = { path = "../blyg-render" }
 wry = { version = "0.57", default-features = false }
 ammonia = "4"
+# --- auto-update --- (signed release check + in-place install; src/update/)
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+base64 = "0.22"
+semver = "1"
+url = "2"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
 
 [dev-dependencies]
 # --- full editor ---
