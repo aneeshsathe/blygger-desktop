@@ -11,6 +11,16 @@ release workflow publishes that section as the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Delete a draft** (#2). ⇧⌘⌫, Post › Delete Draft…, or the toolbar's
+  Delete button deletes the current draft or scratch note after a short
+  confirmation (⏎ deletes, esc cancels). The list moves on to the next post.
+- **Withdraw a published post.** Post › Withdraw…, or the same toolbar slot
+  on a published post, asks first, takes an optional note, and withdraws it.
+  Withdrawn posts stay listed as withdrawn, and it can't be undone. Published
+  work is never deleted, and ⇧⌘⌫ on a published post says so.
+
 ## [0.1.0] - 2026-09-25
 
 The first release: a local-first writing studio for a Blygger blog.
