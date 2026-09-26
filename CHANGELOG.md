@@ -9,7 +9,7 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-25
 
 ### Added
 
