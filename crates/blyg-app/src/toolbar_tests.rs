@@ -9,8 +9,8 @@ use blyg_core::{Backend, ConfigStore, Item, Kind, LocalId, Status};
 use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
 use super::{
-    Button, CLOSE_SHEET, Facts, Fit, LEFT, NEED_AI, NEED_POST, NEED_POSTS, NOT_SCRATCH, Screen,
-    TOO_LONG, ViewMode, buttons, fit, rule,
+    ALREADY_WITHDRAWN, Button, CLOSE_SHEET, Facts, Fit, LEFT, NEED_AI, NEED_POST, NEED_POSTS,
+    NOT_SCRATCH, Screen, TOO_LONG, ViewMode, buttons, fit, rule, visible,
 };
 use crate::app::{MainView, Sheet, TITLEBAR_H};
 use crate::fake::{FakeBackend, Timing};
@@ -134,6 +134,45 @@ fn versions_need_a_published_post() {
 }
 
 #[test]
+fn delete_and_withdraw_share_a_slot() {
+    let draft = item("01J9QK3");
+    let mut scratch = item("01J9QK3");
+    scratch.status = Status::Scratch;
+    for i in [&draft, &scratch] {
+        let f = facts(Some(i));
+        assert!(visible("DeleteDraft", &f) && !visible("Withdraw", &f));
+        assert_eq!(reason("DeleteDraft", &f), None);
+    }
+    // A published post shows Withdraw, never Delete.
+    let public = item("01J9PX1");
+    let f = facts(Some(&public));
+    assert!(!visible("DeleteDraft", &f) && visible("Withdraw", &f));
+    assert_eq!(reason("Withdraw", &f), None);
+    let labels: Vec<&str> = buttons(&f, "").iter().map(|b| b.label).collect();
+    assert!(labels.contains(&"Withdraw") && !labels.contains(&"Delete"));
+    let tip = buttons(&f, "")
+        .into_iter()
+        .find(|b| b.action == "Withdraw")
+        .unwrap()
+        .tooltip;
+    assert_eq!(tip, "Withdraw…", "no key: it's permanent");
+    let mut withdrawn = public.clone();
+    withdrawn.status = Status::Withdrawn;
+    let f = facts(Some(&withdrawn));
+    assert!(visible("Withdraw", &f));
+    assert_eq!(reason("Withdraw", &f).as_deref(), Some(ALREADY_WITHDRAWN));
+    // Nothing selected: Delete, disabled.
+    let f = facts(None);
+    assert!(visible("DeleteDraft", &f) && !visible("Withdraw", &f));
+    assert_eq!(reason("DeleteDraft", &f).as_deref(), Some(NEED_POST));
+    let sheet = Facts {
+        sheet_open: true,
+        ..facts(Some(&draft))
+    };
+    assert_eq!(reason("DeleteDraft", &sheet).as_deref(), Some(CLOSE_SHEET));
+}
+
+#[test]
 fn generate_needs_an_enabled_provider() {
     let draft = item("01J9QK3");
     let off = Facts {
@@ -191,6 +230,7 @@ fn buttons_come_from_the_keymap_with_keys_in_tooltips() {
             "Full editor",
             "Versions",
             "Generate",
+            "Delete",
             "Capture"
         ]
     );
@@ -199,6 +239,7 @@ fn buttons_come_from_the_keymap_with_keys_in_tooltips() {
     assert_eq!(tip("NewDraft"), "New draft  ⌘N");
     assert_eq!(tip("ViewStudio"), "Full editor: editor + preview  ⌘3");
     assert_eq!(tip("ShowCapture"), "Quick capture  ⌃⌥B");
+    assert_eq!(tip("DeleteDraft"), "Delete draft or scratch note…  ⇧⌘⌫");
     let scratchy = Facts {
         new_note: NewNote::Scratch,
         ..facts(Some(&draft))

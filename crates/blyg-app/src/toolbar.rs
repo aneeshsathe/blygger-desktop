@@ -46,6 +46,8 @@ pub const ICONS: &[(&str, &[u8])] = &[
     ("sparkles", icon!("sparkles")),
     ("zap", icon!("zap")),
     ("sticky-note", icon!("sticky-note")),
+    ("trash-2", icon!("trash-2")),
+    ("archive-x", icon!("archive-x")),
 ];
 
 pub fn icon_svg(name: &str) -> Option<&'static [u8]> {
@@ -109,6 +111,20 @@ pub const CLOSE_SHEET: &str = "Close the sheet first (esc)";
 pub const TOO_LONG: &str = "Too long for a fragment. ⌘T makes it a thread";
 pub const NEED_AI: &str = "Enable AI in Settings › AI accounts";
 pub const NOT_SCRATCH: &str = "Make draft is for scratch notes";
+pub const ALREADY_WITHDRAWN: &str = "Already withdrawn";
+
+/// Whether `action`'s button shows at all. Delete and Withdraw share a slot
+/// (docs/SPEC.md rule 5): a published post shows Withdraw, never Delete.
+pub fn visible(action: &str, f: &Facts) -> bool {
+    let published = f
+        .current
+        .is_some_and(|i| vm::discard(i) != vm::Discard::Delete);
+    match action {
+        "DeleteDraft" => !published,
+        "Withdraw" => published,
+        _ => true,
+    }
+}
 
 /// Why `action`'s button is disabled (`None`: it's enabled), and whether it
 /// shows as active.
@@ -175,6 +191,22 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
             }
             (r, false)
         }
+        // --- delete & withdraw ---
+        "DeleteDraft" => (
+            gate(need_item(&|i| {
+                (vm::discard(i) != vm::Discard::Delete)
+                    .then(|| "Published posts are withdrawn, not deleted".to_string())
+            })),
+            false,
+        ),
+        "Withdraw" => (
+            gate(need_item(&|i| match vm::discard(i) {
+                vm::Discard::Withdraw => None,
+                vm::Discard::AlreadyWithdrawn => Some(ALREADY_WITHDRAWN.into()),
+                vm::Discard::Delete => Some("Not published: a draft is deleted instead".into()),
+            })),
+            false,
+        ),
         "AiGenerate" => (
             gate(if !f.ai_enabled {
                 Some(NEED_AI.into())
@@ -198,6 +230,8 @@ fn tip_label(k: &Keybind, new_note: NewNote) -> &'static str {
         ("ViewWrite", _) => "Write: list + editor",
         ("AiGenerate", _) => "Generate (AI)",
         ("ShowCapture", _) => "Quick capture",
+        ("DeleteDraft", _) => "Delete draft or scratch note…",
+        ("Withdraw", _) => "Withdraw…",
         _ => k.button.unwrap_or(k.label),
     }
 }
@@ -207,6 +241,9 @@ pub fn buttons(f: &Facts, capture_hotkey: &str) -> Vec<Button> {
     let mut out = Vec::new();
     for (group, actions) in keymap::TOOLBAR.iter().enumerate() {
         for action in *actions {
+            if !visible(action, f) {
+                continue;
+            }
             let Some(k) = keymap::button_row(action) else {
                 continue;
             };
@@ -593,7 +630,8 @@ impl MainView {
 
     /// `BLYGGER_DEMO=tb-…` (fake mode, screenshots): `tb-settings`, `tb-main` (a draft
     /// open), `tb-long` (an over-limit fragment, Publish's tooltip up),
-    /// `tb-capture` (the quick-capture panel's row). `BLYGGER_SNAPSHOT_WIDTH`
+    /// `tb-capture` (the quick-capture panel's row), `tb-delete` / `tb-withdraw`
+    /// (the confirmation sheets). `BLYGGER_SNAPSHOT_WIDTH`
     /// resizes the window first; `BLYGGER_DEMO_HOVER=<action>` points at a
     /// button (an in-app event, not an OS one) so its tooltip shows.
     pub(crate) fn toolbar_demo(
@@ -619,6 +657,8 @@ impl MainView {
                 self.after_edit(cx);
             }
             ("tb-settings", 0) => self.open_settings(&OpenSettings, window, cx),
+            // --- delete & withdraw --- the confirmation sheets (discard.rs)
+            ("tb-delete" | "tb-withdraw", 0) => self.discard_demo(scenario, window, cx),
             ("tb-capture", 0) => crate::capture::toggle(cx),
             ("tb-capture", 1) => crate::capture::demo_fill(
                 "An idea on the stairs: tide tables as a writing prompt.",

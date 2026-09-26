@@ -201,6 +201,13 @@ pub struct Studio {
 }
 
 impl Studio {
+    /// The window became active again: if a WebView kept the keyboard (or it
+    /// fell to the window itself), give it back to GPUI so typing works.
+    pub fn reclaim_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
+        self.reader.reclaim_keyboard();
+    }
+
     pub fn new(data_dir: Option<PathBuf>) -> Studio {
         let (tx, rx) = async_channel::unbounded();
         Studio {

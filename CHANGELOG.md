@@ -11,6 +11,43 @@ release workflow publishes that section as the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- **Typing `![[` opens the quote picker** (#5). At the start of a line in a
+  thread, `![[` opens the same picker as ⌘K, and what you type next filters
+  it. ⏎ inserts the `![[id]]` line; esc puts the `![[` back. Pasting, fenced
+  code and fragments don't trigger it (a fragment shows the threads hint).
+- **Delete a draft** (#2). ⇧⌘⌫, Post › Delete Draft…, or the toolbar's
+  Delete button deletes the current draft or scratch note after a short
+  confirmation (⏎ deletes, esc cancels). The list moves on to the next post.
+- **Withdraw a published post.** Post › Withdraw…, or the same toolbar slot
+  on a published post, asks first, takes an optional note, and withdraws it.
+  Withdrawn posts stay listed as withdrawn, and it can't be undone. Published
+  work is never deleted, and ⇧⌘⌫ on a published post says so.
+- **Search the reading list** (#6). ⌘F or `/` puts the caret in a search field
+  above the reading list; typing filters it by title, author or blyg name, and
+  text, case-insensitively, over posts already held on this Mac (nothing is
+  fetched to search). Matches are highlighted, ↑/↓ and ⏎ work from the field,
+  esc clears the search, and "No posts match “…”" says when nothing does.
+
+### Changed
+
+- **Reading actions say what they create** (#3). The actions under a post now
+  read "Quote into a thread" (adds `![[id]]` to a thread of yours), "Reply ·
+  new stub" (a stub thread, `stub_of`) and "AI reply · new stub", each with a
+  one-sentence tooltip. Fork shows on the current version too, greyed out,
+  explaining that forks descend from pins only and pointing to the 📌 in
+  ‹ vN ▾ › when the post has one.
+
+### Fixed
+
+- **Typing stopped working after the window sat in the background** (#4).
+  A preview could keep the keyboard, or drop it to nowhere, so only menu
+  shortcuts like paste worked. The app now takes the keyboard back when the
+  window becomes active again and before hiding a preview.
+- **The tour's Quotes step ringed the editor over the quote picker** (#1).
+  A step's ring now hides while a sheet or picker covers the panes.
+
 ## [0.1.0] - 2026-09-25
 
 The first release: a local-first writing studio for a Blygger blog.

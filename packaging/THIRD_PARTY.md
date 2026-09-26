@@ -23,13 +23,13 @@ Font Names.
 
 ## Icons
 
-The toolbar icons (`show-buttons`) are ten [Lucide](https://lucide.dev) icons,
+The toolbar icons (`show-buttons`) are twelve [Lucide](https://lucide.dev) icons,
 compiled into the binary from `crates/blyg-app/assets/icons/`. The only change
 is a thinner stroke (1.75 instead of 2).
 
 | Icons | License | Copyright |
 |---|---|---|
-| Lucide (plus, file-up, send, panel-left, columns-2, columns-3, rotate-ccw-clock, sparkles, zap, sticky-note) | ISC | Lucide Icons and Contributors |
+| Lucide (plus, file-up, send, panel-left, columns-2, columns-3, rotate-ccw-clock, sparkles, zap, sticky-note, trash-2, archive-x) | ISC | Lucide Icons and Contributors |
 
 Lucide's icons derived from Feather (`plus` among them) are MIT, Copyright Cole Bemis.
 The full text of both licenses is in `crates/blyg-app/assets/icons/LICENSE`.

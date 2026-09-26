@@ -67,6 +67,9 @@ pub(crate) mod toolbar;
 // --- profiles --- (the profile sheet; hooks marked the same way)
 #[path = "profiles/mod.rs"]
 pub(crate) mod profiles;
+// --- delete & withdraw --- (drafts are deleted, published posts withdrawn)
+#[path = "discard.rs"]
+pub(crate) mod discard;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -110,6 +113,20 @@ enum Sheet {
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
     Disconnect { host: String, focus: FocusHandle },
+    // --- delete & withdraw --- (discard.rs)
+    /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
+    DeleteDraft {
+        id: LocalId,
+        title: String,
+        noun: &'static str,
+        focus: FocusHandle,
+    },
+    /// Post › Withdraw… on a published post, with an optional note.
+    Withdraw {
+        id: LocalId,
+        title: String,
+        note: Entity<InputState>,
+    },
 }
 
 struct Toast {
@@ -190,6 +207,13 @@ impl MainView {
         subs.push(cx.observe_window_appearance(window, |this, window, cx| {
             this.palette = Palette::resolve(this.prefs.theme, window.appearance());
             cx.notify();
+        }));
+        // A WebView can end up holding (or dropping) the keyboard while the
+        // window is in the background; typing must work when it comes back.
+        subs.push(cx.observe_window_activation(window, |this, window, _| {
+            if window.is_window_active() {
+                this.studio.reclaim_keyboard();
+            }
         }));
 
         // Core events arrive on a background thread; hop them onto the UI.
@@ -831,7 +855,14 @@ impl MainView {
                     cx.notify();
                 }
             }
-            InputEvent::Change if !self.loading_editor => self.after_edit(cx),
+            InputEvent::Change if !self.loading_editor => {
+                // Typing `![[` at the start of a line opens the quote picker.
+                let typed = self.typed_transclusion(cx);
+                self.after_edit(cx);
+                if let Some(typed) = typed {
+                    self.open_quote_picker_from_typing(typed, window, cx);
+                }
+            }
             _ => {}
         }
     }
@@ -1515,6 +1546,7 @@ impl Render for MainView {
             Some(Sheet::Publish { note, .. }) => vec![note],
             Some(Sheet::Settings { hotkey, .. }) => vec![hotkey],
             Some(Sheet::Connect { url, token, .. }) => vec![url, token],
+            Some(Sheet::Withdraw { note, .. }) => vec![note], // --- delete & withdraw ---
             _ => vec![],
         };
         for input in [&self.omni].into_iter().chain(sheet_inputs) {
@@ -1563,6 +1595,7 @@ impl Render for MainView {
             .map(|d| self.reading_actions(d, cx)) // --- reading & versions ---
             .map(|d| self.onboarding_actions(d, cx)) // --- onboarding ---
             .map(|d| self.profile_actions(d, cx)) // --- profiles ---
+            .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
             .size_full()
             .relative()
             .flex()
@@ -2361,6 +2394,99 @@ impl MainView {
                             key_hint("⏎", "next · connect"),
                             key_hint("esc", "not now"),
                         ]))
+                        .into_any_element(),
+                )
+            }
+            // --- delete & withdraw --- (discard.rs): the keys are buttons too.
+            Sheet::DeleteDraft {
+                title, noun, focus, ..
+            } => (
+                440.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" => this.confirm_delete(window, cx),
+                            "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading(format!("Delete this {noun}?")))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(div().text_color(p.ink).child(format!("“{title}”")))
+                            .child(discard::DELETE_NOTE),
+                    )
+                    .child(
+                        keys_row(vec![])
+                            .child(
+                                key_hint("⏎", "delete")
+                                    .id("sheet-delete")
+                                    .debug_selector(|| "sheet-delete".into())
+                                    .cursor_pointer()
+                                    .text_color(p.over)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.confirm_delete(window, cx)
+                                    })),
+                            )
+                            .child(
+                                key_hint("esc", "cancel")
+                                    .id("sheet-cancel")
+                                    .debug_selector(|| "sheet-cancel".into())
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.close_sheet(window, cx)
+                                    })),
+                            ),
+                    )
+                    .into_any_element(),
+            ),
+            Sheet::Withdraw { title, note, .. } => {
+                let note = note.clone();
+                (
+                    460.,
+                    div()
+                        .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                            cx.stop_propagation();
+                            this.close_sheet(window, cx);
+                        }))
+                        .child(heading(format!("Withdraw “{title}”?")))
+                        .child(
+                            div()
+                                .mb(px(8.))
+                                .text_color(p.muted)
+                                .line_height(relative(1.45))
+                                .child(discard::WITHDRAW_NOTE),
+                        )
+                        .child(input_box(
+                            gpui_kit::base::input::Input::new(&note).into_any_element(),
+                        ))
+                        .child(
+                            keys_row(vec![])
+                                .child(
+                                    key_hint("⏎", "withdraw")
+                                        .id("sheet-withdraw")
+                                        .debug_selector(|| "sheet-withdraw".into())
+                                        .cursor_pointer()
+                                        .text_color(p.over)
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            let text = note.read(cx).value().to_string();
+                                            this.confirm_withdraw(text, window, cx)
+                                        })),
+                                )
+                                .child(
+                                    key_hint("esc", "cancel")
+                                        .id("sheet-cancel")
+                                        .debug_selector(|| "sheet-cancel".into())
+                                        .cursor_pointer()
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.close_sheet(window, cx)
+                                        })),
+                                ),
+                        )
                         .into_any_element(),
                 )
             }

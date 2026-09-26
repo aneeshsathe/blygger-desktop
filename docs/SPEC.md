@@ -44,7 +44,16 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   (`draft` or `vN`), a dot for unpublished edits, and relative time.
 - **Keys**: `⌘L` focus omnibar · `esc` (in editor) back to omnibar ·
   `⌘⏎` publish · `⌘T` fragment⇄thread · `⌘E` preview (see § Full editor) · `⌘O` open
-  permalink in browser · `⌘,` settings · `⌘+/⌘−` font size.
+  permalink in browser · `⌘,` settings · `⌘+/⌘−` font size · `⇧⌘⌫` delete a
+  draft or scratch note.
+- **Delete / Withdraw** (rule 5 below): `⇧⌘⌫` (Post › Delete Draft…) on a draft
+  or scratch note drops a sheet: "Delete this draft? … This can't be undone."
+  `⏎` deletes, `esc` cancels; the list moves on to the next post and a toast
+  says "Draft deleted". Published posts are never deleted: `⇧⌘⌫` on one says
+  so, and Post › Withdraw… asks instead, with an optional note ("Withdrawn
+  posts stay listed as withdrawn. You can't undo this."), then calls
+  `withdraw(id, note)`. Withdraw has no key on purpose, since it's permanent.
+  (`⌘⌫` stays delete-to-line-start in the editor.)
 - **Publish** (`⌘⏎`): a sheet drops from the title bar: "Publish "…" as vN+1",
   with an optional version note input. `⏎` publishes and `esc` cancels. If the
   item is a fragment over 1000 chars, don't open the sheet: shake the status bar
@@ -70,7 +79,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 
 Writing: fragments & threads, autosave, publish with note, paste/drop images,
 quick capture, markdown preview, withdraw, version history + restore, pin
-(irrevocable, so it confirms), delete drafts, quote another blyg (picker that
+(irrevocable, so it confirms), delete drafts, quote another blyg (picker, ⌘K or typing `![[`, that
 inserts `![[<id>]]`), fork.
 Reading & managing: open on the web, read subscriptions (reading list), subscribe
 and unsubscribe, blogroll flag, blyg settings (title, bio, links), mentions &
@@ -156,6 +165,8 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 
 **One entry per post, however many times it's edited.** An edit updates the existing row (the "edited · vN" badge plus a diff since you last read it) and never creates a new unread item. Cross-subscription duplicates (someone's blyg + their RSS feed) collapse to one row, preferring the blyg row. RSS items whose id changes on edit are matched by their resolved page URL. Tombstones are hidden unless signalled or hoppered. The mock is at `docs/prototype/ai-and-reading.html` §5.
 
+**Search, Notational Velocity style.** A search field sits above the reading list (the Posts omnibar isn't on this screen). ⌘F or `/` (with the list focused) puts the caret in it; typing filters the list live: a case-insensitive substring over the title, the author and blyg (subscription, origin) names, and the post's text (`content_md`, or the published HTML's text when an item has no Markdown), over posts **already held locally**. Nothing is fetched to search. Title matches are highlighted as in the Posts list. ↑/↓ move through the matches from the field, ⏎ goes to the list (opening the first match when nothing is open), and esc clears the search (esc on an empty field returns to the list; esc in the list with a search clears it before it leaves the screen). An empty result shows "No posts match “…”". The open post stays open while it still matches; otherwise the selection and the reader clear, so typing never opens (or marks read) anything.
+
 **The post is shown as its blyg published it.** The body is the published `content_html` (a pin's own `content_html` when the pill is on a pin), with its transclusion snapshots already baked in, followed by the attached images from the item document's `media[]`. It is sanitized (an `ammonia` allowlist: no scripts, handlers, `javascript:` URLs, forms, objects, or iframes other than youtube-nocookie embeds; images get `referrerpolicy="no-referrer"`) and shown in a WKWebView under a strict CSP, with `<base href>` at the author's origin (protocol media paths such as `media/x.png` are origin-relative) and the app's reader theme (Literata, Tufte palette, light/dark). Only an item without HTML falls back to rendering its `content_md` with `blyg-render`, resolving quotes from items held for the same origin. The header, pill, thumbs, notes, diff and actions stay native. The same view shows the current version in ⌘Y. Only one WebView is on screen at a time: the studio preview hides wherever the reader shows.
 
 ## AI / TK
@@ -189,11 +200,11 @@ Core principle: *"anything the protocol can't verify, it declines to represent."
 
 1. **No counts, anywhere social.** Responses and mentions are shown as *a list, never a count*: who, origin, relation, when. Mentions and responses never get numeric badges; use a dot for "something new". There are no follower lists or follower counts: following is client-local and invisible. (A reader-local unread count for *your own* reading list is fine; it's private state, not a social metric.)
 2. **Generation happens in the studio, at authoring time, with review.** Publishing never generates. The TK tint shows in the editor only; published bytes are identical, apart from the `generated` metadata and the `blyg-tk-gen` class. Provenance is self-asserted, so the app always records it (the provenance extension).
-3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL.
+3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL. The picker opens with ⌘K, or by typing `![[` at the start of a line in a thread (after optional indent, outside a fenced code block): the typed `![[` comes out, what you type next filters the picker, ⏎ inserts the whole `![[id]]` line, and esc puts the `![[` back so it can be typed literally. Only typing triggers it, never a paste. In a fragment it shows the "Quotes go in threads" toast and leaves the text alone.
 4. **Forking descends from pins only.** Pins are the costly, irrevocable signal: confirm with plain words ("This version will be served forever. You can't undo this.").
 5. **No deletes of published work. Withdraw instead**: permanent, visible, and irreversible. Only drafts can be discarded. The UI says "Withdraw", never "Delete", for published items.
 6. **No identity layer.** No @handles or accounts. The origin (domain) is the name, and author names are optional decoration.
-7. **Stubs are the reply shape.** "Reply to a reading item" creates a stub thread (`stub_of`), usually transcluding the source.
+7. **Stubs are the reply shape.** "Reply to a reading item" creates a stub thread (`stub_of`), usually transcluding the source. The reading actions name the primitive they create: **Reply · new stub** (`stub_of`), **Quote into a thread** (`![[id]]` in a thread of yours) and **Fork** (`forked_from`, from a pin), each with a one-sentence tooltip saying what gets made.
 8. **Tolerate the unknown.** Ignore unknown kinds and fields; never reject. The wire is v0.3 and pre-1.0 unstable.
 
 ## Client-recorded provenance (owner-API extension, see `docs/SERVER.md`)
@@ -205,7 +216,7 @@ Core principle: *"anything the protocol can't verify, it declines to represent."
 ## Versions & pins (user requirement + spec §5.2/§8.4, mock: `docs/prototype/versions.html`)
 
 - **Reading list: one entry per post** (latest version). A **version browser** (⌘Y) opens from any post.
-- **Other people's posts:** the version UI shows **only the current version and pinned versions**. Unpinned versions don't appear at all, in any form (§8.4, and a deliberate product decision). The pinned list comes from the public item document's `changelog` (`pinned: true`) and each pinned body from `{origin}items/{id}/v{n}.json`. **Compact control:** there's no sidebar. The version pill in the post header is a `‹ vN ▾ ›` control: the arrows step through current + pinned versions, and the pill opens a small dropdown list. Actions are shown inline: Quote / Reply / Open on web for the current version; Quote this version / Fork this pin / Diff vs now / Back to current for a pinned one. Fork is available only on pinned versions.
+- **Other people's posts:** the version UI shows **only the current version and pinned versions**. Unpinned versions don't appear at all, in any form (§8.4, and a deliberate product decision). The pinned list comes from the public item document's `changelog` (`pinned: true`) and each pinned body from `{origin}items/{id}/v{n}.json`. **Compact control:** there's no sidebar. The version pill in the post header is a `‹ vN ▾ ›` control: the arrows step through current + pinned versions, and the pill opens a small dropdown list. Actions are shown inline, labelled with what they create: **Quote into a thread** / **Reply · new stub** / **AI reply · new stub** / **Fork** / **Open on web** for the current version; **Quote this version** / **Fork this pin** / **Diff vs now** / **Back to current** for a pinned one. Fork is available only on pinned versions: on the current version it's shown **greyed out**, and its tooltip says why and where to go ("Fork needs a pinned version: pick 📌 vN in ‹ vM ▾ › (or press ←), then Fork this pin", or that the post has no pins). Every action chip has a one-sentence tooltip saying what gets made (a stub thread, `![[id]]` in a thread, a quoted pin with a link, a forked thread draft).
 - **"Edited since you read it":** store only `read_version` (a number). Show the author's changelog notes for the versions in between. A **text diff only when the version you read was pinned** (both sides public). Never retain the unpinned text of past versions of other people's posts.
 - **Withdrawal of others' posts:** drop the content locally (*"Local hoarding past withdrawal is nonconforming"*), except pinned versions, which may be retained with attribution linking the pin.
 - **Own posts:** your history is private to you. Every version can be opened and restored (a restore loads it into the editor; publishing makes vN+1, and versions never go backwards). Pinning uses a type-to-confirm sheet ("You can't undo this").
@@ -254,8 +265,8 @@ Quick capture is for collecting thoughts, not for deciding. So:
 ## Buttons (optional toolbar)
 
 Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**default true** for new installs; the maintainer sets `false`). It's toggled in Settings (⌘,) and offered in the first-run tutorial ("Buttons or keyboard?").
-- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (draft/scratch per `new-note`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
+- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (draft/scratch per `new-note`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
 - **Generated from the single keymap table** (action, key, context, menu label, icon, button label), so buttons, menus and shortcuts can't drift. Every tooltip shows the shortcut, so the buttons teach the keys.
 - Buttons are disabled with a reason in the tooltip when unavailable (e.g. Publish on an over-limit fragment: "Too long for a fragment. ⌘T makes it a thread").
 - With `show-buttons = false`, the window is exactly the minimalist layout in the mocks.
-- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Icons: ten Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, capture tests.
+- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Delete and Withdraw share a slot (`toolbar::visible`, `vm::discard`); Withdraw is the one button without a key, so its tooltip is just "Withdraw…". Icons: twelve Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, `discard_tests`, capture tests.

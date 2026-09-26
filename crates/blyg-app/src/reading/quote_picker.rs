@@ -1,10 +1,17 @@
 //! The quote picker (⌘K): inserts `![[id]]` on its own line in a thread.
 //! It offers only what's already held (your own posts plus imported posts
 //! from blyg subscriptions) and never fetches anything by URL.
+//!
+//! Typing `![[` at the start of a line in a thread opens it too (see
+//! [`transclusion_trigger`]); esc then puts the typed `![[` back.
 
 use gpui_kit::base::input::{Escape, InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+
+use std::ops::Range;
+
+use blyg_core::Item;
 
 use super::vm::{self, Quotable};
 use super::{RSheet, View};
@@ -13,16 +20,23 @@ use crate::app::MainView;
 impl MainView {
     pub(super) fn open_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.reading.sheet, Some(RSheet::Quote { .. })) {
-            self.close_reading_sheet(window, cx);
+            self.cancel_quote_picker(window, cx);
             return;
         }
+        if let Some(item) = self.quote_target(cx) {
+            self.open_quote_sheet(item, None, window, cx);
+        }
+    }
+
+    /// The thread a quote would go into, or `None` after showing why not.
+    fn quote_target(&mut self, cx: &mut Context<Self>) -> Option<Item> {
         if self.reading.view != View::Posts || self.reading.own.is_some() {
             self.show_toast("Open a thread to quote into it", None, cx);
-            return;
+            return None;
         }
         let Some(item) = self.current.clone() else {
             self.show_toast("Open a thread to quote into it", None, cx);
-            return;
+            return None;
         };
         if !vm::can_quote_into(Some(&item)) {
             self.show_toast(
@@ -30,8 +44,18 @@ impl MainView {
                 Some("⌘T makes this a thread".into()),
                 cx,
             );
-            return;
+            return None;
         }
+        Some(item)
+    }
+
+    fn open_quote_sheet(
+        &mut self,
+        item: Item,
+        typed: Option<(usize, String)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let input = cx.new(|cx| {
             InputState::new(window, cx).placeholder("Quote… (your posts and your reading)")
         });
@@ -52,9 +76,62 @@ impl MainView {
                 target: item.local_id,
                 input,
                 sel: 0,
+                typed,
             },
             cx,
         );
+    }
+
+    /// Did the edit that just happened type the `[` of a line-leading `![[`?
+    /// Call before `after_edit`, while `current` still holds the old text.
+    pub(crate) fn typed_transclusion(&self, cx: &App) -> Option<Range<usize>> {
+        let old = &self.current.as_ref()?.content_md;
+        let s = self.editor.read(cx);
+        transclusion_trigger(old, &s.value(), s.cursor())
+    }
+
+    /// Typing `![[` opens the picker: the typed text comes out of the editor
+    /// (the pick puts a whole `![[id]]` line there), and esc puts it back.
+    pub(crate) fn open_quote_picker_from_typing(
+        &mut self,
+        typed: Range<usize>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.reading.sheet.is_some() {
+            return;
+        }
+        let Some(item) = self.quote_target(cx) else {
+            return;
+        };
+        let text = self.editor.read(cx).value().to_string();
+        let Some(removed) = text.get(typed.clone()).map(str::to_string) else {
+            return;
+        };
+        let mut new_text = text.clone();
+        new_text.replace_range(typed.clone(), "");
+        self.splice_editor(&text, &new_text, Some(typed.start), window, cx);
+        self.open_quote_sheet(item, Some((typed.start, removed)), window, cx);
+    }
+
+    /// Esc (or ⌘K again): close the picker, putting back a typed `![[`.
+    fn cancel_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let typed = match self.reading.sheet.as_mut() {
+            Some(RSheet::Quote { typed, .. }) => typed.take(),
+            _ => None,
+        };
+        self.close_reading_sheet(window, cx);
+        let Some((at, removed)) = typed else {
+            return;
+        };
+        let text = self.editor.read(cx).value().to_string();
+        let at = at.min(text.len());
+        if !text.is_char_boundary(at) {
+            return;
+        }
+        let mut new_text = text.clone();
+        new_text.insert_str(at, &removed);
+        self.splice_editor(&text, &new_text, Some(at + removed.len()), window, cx);
     }
 
     /// What the picker offers right now.
@@ -125,7 +202,7 @@ impl MainView {
         div()
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 cx.stop_propagation();
-                this.close_reading_sheet(window, cx);
+                this.cancel_quote_picker(window, cx);
             }))
             .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
                 cx.stop_propagation();
@@ -179,3 +256,94 @@ impl MainView {
             .into_any_element()
     }
 }
+
+/// If `old -> new` typed a single `[` at `cursor` that completes a `![[` at
+/// the start of its line (after optional spaces/tabs), outside a fenced code
+/// block, the byte range of that line prefix (indent + `![[`) in `new`.
+/// Anything else, a paste included, is `None`.
+pub(crate) fn transclusion_trigger(old: &str, new: &str, cursor: usize) -> Option<Range<usize>> {
+    if new.len() != old.len() + 1 || cursor == 0 || cursor > new.len() {
+        return None;
+    }
+    if !new.is_char_boundary(cursor) || !new[..cursor].ends_with('[') {
+        return None;
+    }
+    let line_start = new[..cursor].rfind('\n').map_or(0, |i| i + 1);
+    let prefix = &new[line_start..cursor];
+    if prefix.trim_start_matches([' ', '\t']) != "![[" {
+        return None;
+    }
+    // Exactly one `[` was typed at the caret.
+    if new[..cursor - 1] != old[..cursor - 1] || new[cursor..] != old[cursor - 1..] {
+        return None;
+    }
+    if in_code_fence(&new[..line_start]) {
+        return None;
+    }
+    Some(line_start..cursor)
+}
+
+/// Whether text ending here leaves a ``` or ~~~ fence open.
+fn in_code_fence(before: &str) -> bool {
+    let mut open: Option<(char, usize)> = None;
+    for line in before.lines() {
+        let t = line.trim_start_matches(' ');
+        let Some(c) = t.chars().next().filter(|c| *c == '`' || *c == '~') else {
+            continue;
+        };
+        let run = t.chars().take_while(|x| *x == c).count();
+        if run < 3 {
+            continue;
+        }
+        match open {
+            None => open = Some((c, run)),
+            Some((oc, orun)) if oc == c && run >= orun && t[run..].trim().is_empty() => open = None,
+            Some(_) => {}
+        }
+    }
+    open.is_some()
+}
+
+#[cfg(test)]
+mod trigger_tests {
+    use super::transclusion_trigger as trig;
+
+    fn typed(before: &str, after: &str) -> Option<std::ops::Range<usize>> {
+        let old = format!("{}{after}", &before[..before.len() - 1]);
+        let new = format!("{before}{after}");
+        trig(&old, &new, before.len())
+    }
+
+    #[test]
+    fn fires_on_a_line_leading_bracket_pair() {
+        assert_eq!(typed("![[", ""), Some(0..3));
+        assert_eq!(typed("One.\n\n![[", "\nTwo."), Some(6..9));
+        assert_eq!(typed("One.\n  ![[", ""), Some(5..10));
+    }
+
+    #[test]
+    fn ignores_mid_line_and_other_text() {
+        assert_eq!(typed("see ![[", ""), None);
+        assert_eq!(typed("![[x", ""), None);
+        assert_eq!(typed("[[", ""), None);
+        assert_eq!(typed("![", ""), None);
+    }
+
+    #[test]
+    fn ignores_pastes_and_restores() {
+        // Three characters at once (a paste, or esc putting `![[` back).
+        assert_eq!(trig("One.\n", "One.\n![[", 8), None);
+        assert_eq!(trig("", "![[abc]]", 3), None);
+    }
+
+    #[test]
+    fn ignores_fenced_code() {
+        assert_eq!(typed("```\n![[", "\n```"), None);
+        assert_eq!(typed("~~~md\n![[", ""), None);
+        assert_eq!(typed("```\ncode\n```\n![[", ""), Some(13..16));
+    }
+}
+
+#[cfg(test)]
+#[path = "quote_picker_tests.rs"]
+mod typing_tests;

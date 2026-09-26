@@ -83,6 +83,22 @@ impl ListModel {
         }
     }
 
+    /// Drop a deleted row. If it was selected, the row after it (or, at the
+    /// end, the one before) becomes the selection, so the list moves on.
+    pub fn remove(&mut self, id: &LocalId) {
+        let Some(ix) = self.results.iter().position(|i| &i.local_id == id) else {
+            return;
+        };
+        self.results.remove(ix);
+        if self.selected.as_ref() == Some(id) {
+            self.selected = self
+                .results
+                .get(ix)
+                .or_else(|| self.results.last())
+                .map(|i| i.local_id.clone());
+        }
+    }
+
     pub fn select(&mut self, id: &LocalId) {
         if self.results.iter().any(|i| &i.local_id == id) {
             self.selected = Some(id.clone());
@@ -292,6 +308,38 @@ pub fn make_draft_blocked(item: &Item) -> Option<&'static str> {
         Status::Scratch => None,
         Status::Draft => Some("Already a draft"),
         _ => Some("Already on your blyg"),
+    }
+}
+
+// ---------------------------------------------------------------- delete / withdraw
+
+/// What getting rid of `item` means (docs/SPEC.md rule 5): drafts and
+/// scratch notes are deleted; published work is only ever withdrawn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Discard {
+    /// A scratch note, or a draft that was never published.
+    Delete,
+    /// A published post: withdrawn (permanent, visible), never deleted.
+    Withdraw,
+    AlreadyWithdrawn,
+}
+
+pub fn discard(item: &Item) -> Discard {
+    match item.status {
+        Status::Scratch => Discard::Delete,
+        // The server refuses to delete anything with a version (live.rs).
+        Status::Draft if item.version == 0 => Discard::Delete,
+        Status::Withdrawn => Discard::AlreadyWithdrawn,
+        Status::Draft | Status::Public => Discard::Withdraw,
+    }
+}
+
+/// The noun for a deletable item, for the sheet and the toast.
+pub fn discard_noun(item: &Item) -> &'static str {
+    if item.status == Status::Scratch {
+        "scratch note"
+    } else {
+        "draft"
     }
 }
 
@@ -765,6 +813,42 @@ mod tests {
         assert_eq!(m.selected(), Some(&LocalId("b".into())));
         m.refresh(ids(&["x"]));
         assert_eq!(m.selected(), Some(&LocalId("x".into())));
+    }
+
+    #[test]
+    fn remove_moves_the_selection_on() {
+        let mut m = ListModel::default();
+        m.set_query("", ids(&["a", "b", "c"]));
+        m.select(&LocalId("b".into()));
+        m.remove(&LocalId("b".into()));
+        assert_eq!(m.selected(), Some(&LocalId("c".into())), "the next row");
+        m.remove(&LocalId("c".into()));
+        assert_eq!(
+            m.selected(),
+            Some(&LocalId("a".into())),
+            "at the end: the one before"
+        );
+        m.remove(&LocalId("zzz".into()));
+        assert_eq!(m.results().len(), 1);
+        m.remove(&LocalId("a".into()));
+        assert_eq!(m.selected(), None);
+    }
+
+    #[test]
+    fn drafts_are_deleted_published_posts_withdrawn() {
+        let mut it = item("a", "x");
+        assert_eq!(discard(&it), Discard::Delete);
+        assert_eq!(discard_noun(&it), "draft");
+        it.status = Status::Scratch;
+        assert_eq!(discard(&it), Discard::Delete);
+        assert_eq!(discard_noun(&it), "scratch note");
+        it.status = Status::Public;
+        it.version = 2;
+        assert_eq!(discard(&it), Discard::Withdraw);
+        it.status = Status::Draft; // a draft with history is still published work
+        assert_eq!(discard(&it), Discard::Withdraw);
+        it.status = Status::Withdrawn;
+        assert_eq!(discard(&it), Discard::AlreadyWithdrawn);
     }
 
     #[test]

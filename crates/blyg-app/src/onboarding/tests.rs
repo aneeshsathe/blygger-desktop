@@ -473,6 +473,28 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn tutorial_ring_never_draws_over_a_picker(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    let quotes = STEPS.iter().position(|s| s.id == "quotes").unwrap();
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.tutorial_enter(quotes, window, cx);
+    });
+    settle(&mut e);
+    let region = STEPS[quotes].region;
+    let ring = |e: &mut Env| {
+        e.view
+            .update_in(e.cx, |v, window, _| v.tutorial_ring(region, window))
+    };
+    assert!(ring(&mut e).is_some(), "the editor is ringed before ⌘K");
+    e.cx.simulate_keystrokes("cmd-k");
+    e.cx.run_until_parked();
+    assert!(e.view.read_with(e.cx, |v, _| v.reading.sheet.is_some()));
+    assert_eq!(ring(&mut e), None, "the picker covers the editor");
+}
+
+#[gpui_kit::test]
 fn tutorial_on_launch_shows_it_on_start(cx: &mut TestAppContext) {
     let mut e = setup(cx, &format!("{CONNECTED}tutorial-on-launch = true\n"), true);
     assert_eq!(tour_step(&mut e), Some("search"));

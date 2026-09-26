@@ -24,6 +24,7 @@ enum Call {
     Load(String),
     Eval(String),
     FocusParent,
+    Reclaim,
     Dark(bool),
 }
 
@@ -77,6 +78,9 @@ impl PreviewSurface for Stub {
     }
     fn set_dark(&mut self, dark: bool) {
         self.0.borrow_mut().0.push(Call::Dark(dark));
+    }
+    fn reclaim_keyboard(&mut self) {
+        self.0.borrow_mut().0.push(Call::Reclaim);
     }
 }
 
@@ -152,6 +156,29 @@ fn send(view: &Entity<MainView>, ev: SurfaceEvent, cx: &mut VisualTestContext) {
 
 fn view_mode(view: &Entity<MainView>, cx: &mut VisualTestContext) -> ViewMode {
     view.read_with(cx, |v, _| v.studio.view)
+}
+
+/// Issue #4: a WebView can keep (or drop) the keyboard while the window is
+/// in the background; coming back hands it to GPUI so typing works.
+#[gpui_kit::test]
+fn reactivating_the_window_reclaims_the_keyboard(cx: &mut TestAppContext) {
+    let (view, fake, log, cx) = setup(cx, true);
+    open_sample(&view, &fake, cx);
+    cx.simulate_keystrokes("cmd-2");
+    frame(cx);
+    let reclaims = |log: &Rc<RefCell<Log>>| {
+        log.borrow()
+            .0
+            .iter()
+            .filter(|c| **c == Call::Reclaim)
+            .count()
+    };
+    let before = reclaims(&log);
+    cx.deactivate_window();
+    assert_eq!(reclaims(&log), before, "nothing while in the background");
+    cx.update(|window, _| window.activate_window());
+    cx.run_until_parked();
+    assert_eq!(reclaims(&log), before + 1);
 }
 
 #[gpui_kit::test]

@@ -97,7 +97,9 @@ first and synced to your blyg in the background. It's written in Rust with
 - **Fragments and threads.** ⌘T switches between them, and a live counter
   keeps fragments within 1000 characters.
 - **Publish with a version note** (⌘⏎). Versions, pins and withdrawals follow
-  the Blygger protocol, and there are no deletes of published work.
+  the Blygger protocol, and there are no deletes of published work: ⇧⌘⌫
+  deletes a draft or scratch note (it asks first), and Post › Withdraw…
+  withdraws a published post, with an optional note.
 - **Works offline.** Edits queue up and sync when you're back online. When the
   server changed under you, a side-by-side sheet lets you keep yours, take
   the server's, or keep both.
@@ -115,7 +117,8 @@ first and synced to your blyg in the background. It's written in Rust with
   spans, video. ⌘1 writes, ⌘2 adds the preview, ⌘3 hides the list, ⌘E toggles
   the preview. Click a paragraph in the preview to jump to it.
 - **Buttons or keyboard.** A quiet toolbar in the title bar (New, Make draft,
-  Publish, Write / Preview / Full editor, Versions, Generate, Quick capture),
+  Publish, Write / Preview / Full editor, Versions, Generate, Delete or
+  Withdraw, Quick capture),
   and a Scratch · Draft · Publish row in quick capture. Every tooltip shows
   the shortcut, so the buttons teach the keys, and a greyed-out button says
   why ("Too long for a fragment. ⌘T makes it a thread"). Narrow windows get
