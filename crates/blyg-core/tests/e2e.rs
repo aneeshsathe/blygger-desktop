@@ -1322,3 +1322,62 @@ fn reading_items_carry_the_published_html() {
     );
     me.unsubscribe(&sub.id).unwrap();
 }
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn read_state_syncs_between_two_macs() {
+    // Extension 5: a post read on one Mac reads as read on another Mac
+    // signed in to the same blyg, and the server never lowers it.
+    let e = e2e();
+    let api = Api::new(&e.url, &e.token);
+    if !api.reading(1, None).unwrap().is_some_and(|p| p.read_sync()) {
+        eprintln!("SKIP: this Worker doesn't advertise read_state (extension 5)");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let mac1 = manual(d1.path());
+    let mac2 = manual(d2.path());
+    let source = backend_at(d3.path(), &src_url, &e.token, false);
+    let t = tag("read");
+    let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
+    let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();
+    mac1.sync_now().unwrap();
+    mac2.sync_now().unwrap();
+    assert!(reading_item(&mac1, &rid).unwrap().is_unread());
+    assert!(reading_item(&mac2, &rid).unwrap().is_unread());
+
+    mac1.mark_read(&sub.id, &rid).unwrap();
+    mac1.sync_now().unwrap(); // flushes the read op
+    mac2.sync_now().unwrap();
+    let r = reading_item(&mac2, &rid).unwrap();
+    assert_eq!(r.read_version, Some(1), "read on the other Mac");
+    assert!(!r.is_unread());
+
+    // Edited and read at v2 on the second Mac; a stale write can't lower it.
+    source.save(&sid, &format!("{t} v2")).unwrap();
+    source.publish(&sid, None).unwrap();
+    poll(&mac2, &sub.id, &rid, 2);
+    mac2.mark_read(&sub.id, &rid).unwrap();
+    mac2.sync_now().unwrap();
+    api.put_read(&sub.id, &rid, 1).unwrap();
+    mac1.sync_now().unwrap();
+    assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
+    let page = api.reading(500, None).unwrap().unwrap();
+    let row = page.items.iter().find(|i| i.remote_id == rid).unwrap();
+    assert_eq!(row.read_version, Some(2), "the server kept the max");
+
+    // A fresh install sees it read.
+    let d4 = tempfile::tempdir().unwrap();
+    let mac3 = manual(d4.path());
+    mac3.sync_now().unwrap();
+    assert_eq!(reading_item(&mac3, &rid).unwrap().read_version, Some(2));
+
+    mac1.unsubscribe(&sub.id).unwrap();
+    let page = api.reading(500, None).unwrap().unwrap();
+    assert!(!page.items.iter().any(|i| i.remote_id == rid));
+}

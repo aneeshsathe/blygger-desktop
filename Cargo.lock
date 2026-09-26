@@ -748,7 +748,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ai"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "blyg-core",
@@ -764,7 +764,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-app"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "ammonia",
  "async-channel",
@@ -790,7 +790,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "keyring",
  "rusqlite",
@@ -806,7 +806,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-render"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "fancy-regex",
  "markdown-it",

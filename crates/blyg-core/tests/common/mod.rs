@@ -42,6 +42,13 @@ pub struct State {
     /// `None` = endpoint not deployed (404).
     pub reading: Option<Vec<Value>>,
     pub reading_page_size: usize,
+    /// Extension 5 "deployed": `GET /api/reading` says `read_state: true`
+    /// and carries `read_version`, and the read-state writes exist (else 404).
+    pub read_sync: bool,
+    /// Stored read state, `(sub, remote_id)` → version (max-merged).
+    pub reads: BTreeMap<(String, String), u32>,
+    /// Body of every `POST /api/reading/read`, in order.
+    pub read_batches: Vec<Value>,
     pub mentions: Option<Vec<Value>>,
     pub settings: Option<Value>,
     pub hoppers: Option<Vec<Value>>,
@@ -283,6 +290,14 @@ fn item_json(it: &SItem) -> Value {
         } else { Value::Null },
         "show_responses": it.show_responses,
     })
+}
+
+/// Percent-decode one path segment.
+fn decode(seg: &str) -> String {
+    url::form_urlencoded::parse(format!("x={}", seg.replace('+', "%2B")).as_bytes())
+        .next()
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
 }
 
 fn not_found() -> (u16, Value) {
@@ -575,13 +590,71 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 .query_param("before")
                 .and_then(|c| c.strip_prefix("c:").and_then(|n| n.parse::<usize>().ok()))
                 .unwrap_or(0);
-            let page: Vec<Value> = all.iter().skip(start).take(limit).cloned().collect();
+            let mut page: Vec<Value> = all.iter().skip(start).take(limit).cloned().collect();
             let next = if start + limit < all.len() {
                 json!(format!("c:{}", start + limit))
             } else {
                 Value::Null
             };
-            (200, json!({ "items": page, "next": next }))
+            if !s.read_sync {
+                return (200, json!({ "items": page, "next": next }));
+            }
+            for it in &mut page {
+                if it.get("read_version").is_some() {
+                    continue; // a test wants this exact value served
+                }
+                let key = (
+                    it["subscription_id"].as_str().unwrap_or("").to_string(),
+                    it["remote_id"].as_str().unwrap_or("").to_string(),
+                );
+                it["read_version"] = s.reads.get(&key).map_or(Value::Null, |v| json!(v));
+            }
+            (
+                200,
+                json!({ "items": page, "next": next, "read_state": true }),
+            )
+        }
+        // ---- extension 5 (404 until "deployed")
+        ("PUT", ["api", "reading", sub, rid, "read"]) if s.read_sync => {
+            let Some(v) = body["version"].as_u64() else {
+                return (
+                    400,
+                    json!({ "error": "version must be a non-negative integer" }),
+                );
+            };
+            let e = s
+                .reads
+                .entry((decode(sub), decode(rid)))
+                .or_insert(v as u32);
+            *e = (*e).max(v as u32);
+            (
+                200,
+                json!({ "ok": true, "stored": true, "read_version": *e }),
+            )
+        }
+        ("POST", ["api", "reading", "read"]) if s.read_sync => {
+            let Some(items) = body["items"].as_array().cloned() else {
+                return (400, json!({ "error": "items array required" }));
+            };
+            if items.len() > 500 {
+                return (400, json!({ "error": "at most 500 items per call" }));
+            }
+            s.read_batches.push(body.clone());
+            for it in &items {
+                let (Some(sub), Some(rid), Some(v)) = (
+                    it["sub"].as_str(),
+                    it["remote_id"].as_str(),
+                    it["version"].as_u64(),
+                ) else {
+                    return (400, json!({ "error": "invalid items" }));
+                };
+                let e = s
+                    .reads
+                    .entry((sub.to_string(), rid.to_string()))
+                    .or_insert(v as u32);
+                *e = (*e).max(v as u32);
+            }
+            (200, json!({ "ok": true, "received": items.len() }))
         }
         ("GET", ["api", "mentions"]) => match &s.mentions {
             None => not_found(),

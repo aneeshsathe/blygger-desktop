@@ -610,8 +610,15 @@ impl Backend for LiveBackend {
     }
 
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
-        if self.e().store.mark_read(sub_id, remote_id)? {
+        // Instant and local; on a server that syncs read state (extension 5)
+        // the same write queues one `read` op per row it raised.
+        let sync = self.e().read_sync_on();
+        let marked = self.e().store.mark_read_rows(sub_id, remote_id, sync)?;
+        if !marked.is_empty() {
             self.e().emit(CoreEvent::ReadingChanged);
+            if sync {
+                self.wake();
+            }
         }
         Ok(())
     }

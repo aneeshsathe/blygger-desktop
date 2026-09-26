@@ -155,6 +155,12 @@ Read it before guessing a body shape. The key points:
 - `GET /api/hoppers` → `{hoppers: [{id, name, slug, public, count}]}`
 - `show_responses: bool` added to the Item JSON.
 
+**Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading` adds
+`read_state: true` and a per-item `read_version: number|null`;
+`PUT /api/reading/:sub/:remoteId/read {version}` and
+`POST /api/reading/read {items: [{sub, remote_id, version}]}` (≤ 500) store
+`max(existing, version)`.
+
 Transclusion syntax is `![[<26-char id>]]` alone on its own line, and is only
 valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolve
 (local and/or imported).
@@ -169,6 +175,8 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 ## Reading
 
 **One entry per post, however many times it's edited.** An edit updates the existing row (the "edited · vN" badge plus a diff since you last read it) and never creates a new unread item. Cross-subscription duplicates (someone's blyg + their RSS feed) collapse to one row, preferring the blyg row. RSS items whose id changes on edit are matched by their resolved page URL. Tombstones are hidden unless signalled or hoppered. The mock is at `docs/prototype/ai-and-reading.html` §5.
+
+**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (extension 5, `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI.
 
 **Search, Notational Velocity style.** A search field sits above the reading list (the Posts omnibar isn't on this screen). ⌘F or `/` (with the list focused) puts the caret in it; typing filters the list live: a case-insensitive substring over the title, the author and blyg (subscription, origin) names, and the post's text (`content_md`, or the published HTML's text when an item has no Markdown), over posts **already held locally**. Nothing is fetched to search. Title matches are highlighted as in the Posts list. ↑/↓ move through the matches from the field, ⏎ goes to the list (opening the first match when nothing is open), and esc clears the search (esc on an empty field returns to the list; esc in the list with a search clears it before it leaves the screen). An empty result shows "No posts match “…”". The open post stays open while it still matches; otherwise the selection and the reader clear, so typing never opens (or marks read) anything.
 

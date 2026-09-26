@@ -2,10 +2,12 @@
 //!
 //! - Rows are keyed by `(subscription_id, remote_id)` and upserted, never
 //!   appended; an edit bumps `version`/`observed_at` on the same row.
-//! - Local read state (`read_version`, a number only) survives edits, so an
+//! - Read state (`read_version`, a number only) survives edits, so an
 //!   edited post reads as "edited · vN", not as a new unread item. The text of
 //!   the version you read is never kept (spec §8.4); a diff is only possible
-//!   when that version is pinned (`remote_pins`, see `LiveBackend`).
+//!   when that version is pinned (`remote_pins`, see `LiveBackend`). It is
+//!   set locally, and merged up (never down) from a server that syncs it
+//!   (extension 5, `read_sync.rs`).
 //! - RSS items whose guid changes on edit: a new remote id in the same
 //!   subscription with the same resolved page URL replaces the old row and
 //!   inherits its read state.
@@ -74,6 +76,20 @@ fn retainable(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<ReadingItem
     Ok(it)
 }
 
+/// Merge the server's read state into a stored row: `max(local, server)`.
+/// Never lowers the local value. True if it rose.
+fn raise_read(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<bool> {
+    let Some(v) = it.read_version else {
+        return Ok(false);
+    };
+    let n = tx.execute(
+        "UPDATE reading SET read_version = ?3 WHERE subscription_id = ?1 AND remote_id = ?2 \
+         AND (read_version IS NULL OR read_version < ?3)",
+        params![it.subscription_id, it.remote_id, v],
+    )?;
+    Ok(n > 0)
+}
+
 fn kind_str(k: SubscriptionKind) -> &'static str {
     match k {
         SubscriptionKind::Blyg => "blyg",
@@ -131,6 +147,7 @@ impl Store {
                      version = ?8, json = ?9 WHERE subscription_id = ?1 AND remote_id = ?2",
                     fields,
                 )?;
+                changed |= raise_read(&tx, it)?;
                 continue;
             }
             changed = true;
@@ -179,6 +196,7 @@ impl Store {
                     )?;
                 }
             }
+            raise_read(&tx, it)?;
         }
 
         // Prune rows the server no longer returns.
@@ -273,6 +291,18 @@ impl Store {
     /// Mark a reading item, and every duplicate of the same post, as read at
     /// its current version.
     pub fn mark_read(&self, sub: &str, remote_id: &str) -> Result<bool> {
+        Ok(!self.mark_read_rows(sub, remote_id, false)?.is_empty())
+    }
+
+    /// `mark_read`, returning each row whose read state rose. With `queue`,
+    /// the same transaction puts a `read` op per such row in the outbox
+    /// (extension 5: the server keeps read state per subscription row).
+    pub fn mark_read_rows(
+        &self,
+        sub: &str,
+        remote_id: &str,
+        queue: bool,
+    ) -> Result<Vec<crate::api::wire::ReadMark>> {
         let rows = self.reading_rows();
         let Some(target) = rows
             .iter()
@@ -283,20 +313,29 @@ impl Store {
         let key = group_key(&target.item);
         let mut c = self.conn();
         let tx = c.transaction()?;
-        let mut changed = false;
+        let mut marked = Vec::new();
         for r in rows.iter().filter(|r| group_key(&r.item) == key) {
             let it = &r.item;
-            if it.read_version == Some(it.version) {
+            // Never lower: a version read elsewhere may be ahead of this row.
+            if it.read_version >= Some(it.version) {
                 continue;
             }
             tx.execute(
                 "UPDATE reading SET read_version = ?3 WHERE subscription_id = ?1 AND remote_id = ?2",
                 params![it.subscription_id, it.remote_id, it.version],
             )?;
-            changed = true;
+            let m = crate::api::wire::ReadMark {
+                sub: it.subscription_id.clone(),
+                remote_id: it.remote_id.clone(),
+                version: it.version,
+            };
+            if queue {
+                super::read_sync::queue_read(&tx, &m)?;
+            }
+            marked.push(m);
         }
         tx.commit()?;
-        Ok(changed)
+        Ok(marked)
     }
 
     /// One cached row (not de-duplicated, tombstones included) and its
