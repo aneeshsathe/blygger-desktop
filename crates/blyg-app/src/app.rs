@@ -191,6 +191,13 @@ impl MainView {
             this.palette = Palette::resolve(this.prefs.theme, window.appearance());
             cx.notify();
         }));
+        // A WebView can end up holding (or dropping) the keyboard while the
+        // window is in the background; typing must work when it comes back.
+        subs.push(cx.observe_window_activation(window, |this, window, _| {
+            if window.is_window_active() {
+                this.studio.reclaim_keyboard();
+            }
+        }));
 
         // Core events arrive on a background thread; hop them onto the UI.
         let (tx, rx) = async_channel::unbounded::<CoreEvent>();

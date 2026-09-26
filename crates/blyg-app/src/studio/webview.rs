@@ -45,6 +45,9 @@ pub trait PreviewSurface {
     fn eval(&mut self, js: &str);
     /// Hand the keyboard back to GPUI's view.
     fn focus_parent(&mut self);
+    /// Hand the keyboard back to GPUI's view if the page (or no view at all)
+    /// has it. Called when the window becomes active again.
+    fn reclaim_keyboard(&mut self) {}
     /// Follow the app's light/dark choice (the page's `prefers-color-scheme`).
     fn set_dark(&mut self, dark: bool);
     /// `BLYGGER_TIMING=1`: print what the page shows (smoke tests).
@@ -244,7 +247,47 @@ mod wry_surface {
         }
     }
 
+    /// Where the window's keyboard is, as far as the WebView is concerned.
+    #[derive(PartialEq, Eq)]
+    enum Keyboard {
+        /// The WebView (or something inside it) is first responder.
+        InPage,
+        /// No view has it: the window itself (or nothing) is first responder.
+        Nowhere,
+        /// Some other view, normally GPUI's.
+        Elsewhere,
+    }
+
     impl WrySurface {
+        fn keyboard(&self) -> Keyboard {
+            let wk = self.view.webview();
+            // SAFETY: main thread; plain AppKit getters on live objects.
+            unsafe {
+                use objc2::runtime::AnyObject;
+                let win: *mut AnyObject = objc2::msg_send![&*wk, window];
+                if win.is_null() {
+                    return Keyboard::Elsewhere;
+                }
+                let responder: *mut AnyObject = objc2::msg_send![win, firstResponder];
+                if responder.is_null() || std::ptr::eq(responder, win) {
+                    return Keyboard::Nowhere;
+                }
+                let is_view: bool = objc2::msg_send![
+                    responder,
+                    respondsToSelector: objc2::sel!(isDescendantOf:)
+                ];
+                if !is_view {
+                    return Keyboard::Nowhere;
+                }
+                let mine: bool = objc2::msg_send![responder, isDescendantOf: &*wk];
+                if mine {
+                    Keyboard::InPage
+                } else {
+                    Keyboard::Elsewhere
+                }
+            }
+        }
+
         pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
             let (ipc_tx, nav_tx, new_tx) = (tx.clone(), tx.clone(), tx);
             let view = WebViewBuilder::new()
@@ -285,7 +328,19 @@ mod wry_surface {
         }
 
         fn set_visible(&mut self, visible: bool) {
+            // Hiding the first responder leaves the window itself as first
+            // responder, and then typing reaches nobody (menu shortcuts like
+            // paste still work). Hand the keyboard back first.
+            if !visible && self.keyboard() != Keyboard::Elsewhere {
+                let _ = self.view.focus_parent();
+            }
             let _ = self.view.set_visible(visible);
+        }
+
+        fn reclaim_keyboard(&mut self) {
+            if self.keyboard() != Keyboard::Elsewhere {
+                let _ = self.view.focus_parent();
+            }
         }
 
         fn load(&mut self, html: &str) {
@@ -302,29 +357,7 @@ mod wry_surface {
 
         fn probe(&mut self) {
             // Who has the keyboard: it must not be the WebView.
-            let wk = self.view.webview();
-            // SAFETY: main thread; plain AppKit getters on live objects.
-            let focused = unsafe {
-                use objc2::runtime::AnyObject;
-                let win: *mut AnyObject = objc2::msg_send![&*wk, window];
-                let responder: *mut AnyObject = if win.is_null() {
-                    std::ptr::null_mut()
-                } else {
-                    objc2::msg_send![win, firstResponder]
-                };
-                if responder.is_null() {
-                    false
-                } else {
-                    let is_view: bool = objc2::msg_send![
-                        responder,
-                        respondsToSelector: objc2::sel!(isDescendantOf:)
-                    ];
-                    is_view && {
-                        let mine: bool = objc2::msg_send![responder, isDescendantOf: &*wk];
-                        mine
-                    }
-                }
-            };
+            let focused = self.keyboard() == Keyboard::InPage;
             println!("preview-first-responder-is-webview={focused}");
             let _ = self
                 .view

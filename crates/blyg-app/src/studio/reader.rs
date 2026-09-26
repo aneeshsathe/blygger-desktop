@@ -88,6 +88,10 @@ pub struct Reader {
 }
 
 impl Reader {
+    pub(super) fn reclaim_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
+    }
+
     pub fn new() -> Reader {
         let (tx, rx) = async_channel::unbounded();
         Reader {
