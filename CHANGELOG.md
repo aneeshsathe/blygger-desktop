@@ -9,7 +9,7 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-25
 
 ### Added
 
@@ -29,6 +29,9 @@ release workflow publishes that section as the release notes.
   text, case-insensitively, over posts already held on this Mac (nothing is
   fetched to search). Matches are highlighted, ↑/↓ and ⏎ work from the field,
   esc clears the search, and "No posts match “…”" says when nothing does.
+- **Paste a link over selected text**, as in WordPress. Select some words
+  and paste a web or mail address: they become `[words](address)`. Pasting
+  anything else, or over a selected address or link, pastes as usual.
 
 ### Changed
 

@@ -58,6 +58,11 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   with an optional version note input. `⏎` publishes and `esc` cancels. If the
   item is a fragment over 1000 chars, don't open the sheet: shake the status bar
   and say ⌘T. A toast shows the result: "Published v2 · blyg.example.com/f/… · ⌘O opens it".
+- **Paste a link over selected text** (as WordPress does): when the selection
+  is on one line and the clipboard holds only a web or `mailto:` address, ⌘V
+  makes it `[text](url)` (brackets escaped, `<…>` around an address with
+  parentheses; spaces caught in the selection stay outside). An address or an
+  existing link that's selected is simply replaced. One undo step.
 - **Paste/drop an image**: this inserts `![uploading…]()` at the caret, uploads
   via `POST /api/media` (without `item_id`), then replaces the placeholder with
   `![](<blyg origin>/media/<id>.<ext>)`. Two Worker behaviours decide this: public

@@ -501,4 +501,32 @@ mod tests {
         assert_eq!(t, "one\n\n![](blyg-local:x)\n\ntwo");
         assert_eq!(&t[..caret], "one\n\n![](blyg-local:x)");
     }
+
+    // A web address pasted over selected text links it (any note, not only
+    // scratch ones).
+    #[gpui_kit::test]
+    fn pasting_a_link_over_a_selection_links_it(cx: &mut TestAppContext) {
+        let (view, fake, cx) = setup(cx, CONNECTED);
+        let id = open_scratch(&view, &fake, "Check the tide tables first", cx);
+        let paste_over = |range: std::ops::Range<usize>, clip: &str, cx: &mut VisualTestContext| {
+            view.update_in(cx, |v, window, cx| {
+                v.editor.update(cx, |s, cx| s.set_selected_range(range, cx));
+                window.focus(&gpui_kit::Focusable::focus_handle(&v.editor, cx), cx);
+            });
+            cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(clip.to_string()));
+            cx.simulate_keystrokes("cmd-v");
+            cx.run_until_parked();
+        };
+        paste_over(10..21, "https://example.org/tides", cx);
+        let text = editor_text(&view, cx);
+        assert_eq!(
+            text,
+            "Check the [tide tables](https://example.org/tides) first"
+        );
+        assert_eq!(fake.item(&id).unwrap().content_md, text, "saved");
+
+        // Not an address: an ordinary paste replaces the selection.
+        paste_over(0..5, "Read", cx);
+        assert!(editor_text(&view, cx).starts_with("Read the [tide tables]"));
+    }
 }
