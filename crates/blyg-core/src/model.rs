@@ -679,6 +679,21 @@ pub struct Hopper {
     pub count: u32,
 }
 
+// --- reader folders ---
+
+/// A folder of subscriptions in the Reader's sources pane. Local only: kept
+/// in this Mac's store, never sent to the blyg (unlike the server's
+/// hoppers, which are for posts). A subscription is in at most one folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Folder {
+    pub id: String,
+    pub name: String,
+    /// Display order, 0-based, dense.
+    pub position: u32,
+}
+
+// --- end reader folders ---
+
 /// A published fragment a generated TK scope drew on (`![[id]]` inside it).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProvenanceSource {

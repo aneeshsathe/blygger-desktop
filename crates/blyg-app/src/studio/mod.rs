@@ -512,6 +512,7 @@ impl MainView {
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
             // --- quote targets --- in the studio preview, still the profile.
             SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
+            SurfaceEvent::PageEnd => {} // --- reader folders --- (the reader's)
         }
     }
 

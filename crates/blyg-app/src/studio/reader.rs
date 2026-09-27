@@ -534,7 +534,9 @@ impl MainView {
             || self.onboarding.tutorial.is_some()
             // Every GPUI overlay that can sit over the body belongs here (and
             // in `studio_frame`): a native view draws above all GPUI content.
-            || self.profile_sheet_open();
+            || self.profile_sheet_open()
+            // --- reader folders --- the sources pane's context menu.
+            || self.reading.src_menu.is_some();
         let active = self.studio.reader.active;
         let mut slot = self.studio.reader.slot.borrow_mut();
         slot.suppressed = suppressed;
@@ -563,6 +565,9 @@ impl MainView {
                     .borrow_mut()
                     .with(|s| s.focus_parent());
                 if self.reading.view == View::Reading {
+                    // --- reader folders --- a click in the post: its pane.
+                    self.reading.pane = crate::app::reading::sources_vm::Pane::Post;
+                    cx.notify();
                     window.focus(&self.reading.focus, cx);
                 } else {
                     window.focus(&self.focus, cx);
@@ -578,7 +583,24 @@ impl MainView {
                 id,
                 version,
             } => self.open_original(origin, id, version, window, cx),
+            // --- reader folders --- Space at the end of the page.
+            SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
         }
+    }
+
+    /// --- reader folders --- Run `js` in the reader's page. False when
+    /// there's no page to run it in (not created yet, or failed).
+    pub(crate) fn reader_eval(&self, js: &str) -> bool {
+        let r = &self.studio.reader;
+        if r.failed.is_some() || !r.active {
+            return false;
+        }
+        let mut slot = r.slot.borrow_mut();
+        if slot.surface.is_none() {
+            return false;
+        }
+        slot.with(|s| s.eval(js));
+        true
     }
 
     /// The body: the WebView is placed over this element's bounds.

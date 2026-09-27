@@ -248,7 +248,7 @@ fn stepping_the_pill_swaps_the_body(cx: &mut TestAppContext) {
     assert!(current.contains("Spend it carefully."), "{current}");
 
     // ‹ : pinned v3, from its public document.
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     let pinned = last(&log, Which::Reader);
     assert!(

@@ -10,6 +10,7 @@
 //! is what makes coalescing trivial (50 keystrokes = one pending `save` whose
 //! `not_before` keeps moving).
 
+mod folders; // --- reader folders ---
 mod provenance;
 pub use provenance::Tracked;
 mod read_sync;
@@ -1166,3 +1167,6 @@ mod tests;
 
 #[cfg(test)]
 mod reading_tests;
+
+#[cfg(test)]
+mod folders_tests; // --- reader folders ---

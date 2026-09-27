@@ -75,6 +75,16 @@ pub fn cache_path(dir: &Path, url: &str) -> PathBuf {
     dir.join(format!("{hash}.{ext}"))
 }
 
+/// --- reader folders --- The cached file for `url`, if it's already on
+/// disk. Never fetches (the sources pane shows only avatars already here).
+pub fn cached(url: &str) -> Option<PathBuf> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    let path = cache_path(&images()?.dir, url);
+    path.exists().then_some(path)
+}
+
 /// Where `url` stands; starts a background fetch the first time.
 pub fn state(url: &str) -> ImageState {
     if !(url.starts_with("http://") || url.starts_with("https://")) {

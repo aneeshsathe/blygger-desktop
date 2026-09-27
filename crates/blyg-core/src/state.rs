@@ -32,6 +32,13 @@ pub struct AppState {
     /// The reading screen's last mode (`stream` or `reader`, ⌥⌘1 / ⌥⌘2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading_mode: Option<String>,
+    // --- reader folders ---
+    /// The Reader's sources pane was hidden (⌥⌘S).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub reader_sources_hidden: bool,
+    /// The sources pane's width in points, when the user dragged it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reader_sources_width: Option<u32>,
 }
 
 impl AppState {

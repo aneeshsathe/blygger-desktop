@@ -138,6 +138,8 @@ struct State {
     profile_fetches: Vec<String>,
     /// Public item documents fetched (`public_item`), for tests.
     public_fetches: Vec<String>,
+    // --- reader folders --- ids handed out by `create_folder`.
+    folder_seq: u64,
 }
 
 pub struct FakeBackend {
@@ -274,6 +276,7 @@ impl FakeBackend {
                 profiles: HashMap::new(),    // --- profiles ---
                 profile_fetches: Vec::new(), // --- profiles ---
                 public_fetches: Vec::new(),
+                folder_seq: 0,
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -1479,6 +1482,94 @@ impl Backend for FakeBackend {
         out
     }
 
+    // --- reader folders --- the same rules as the store (folders.rs).
+    fn folders(&self) -> Vec<Folder> {
+        let mut v = self.lock().rd.folders.clone();
+        v.sort_by_key(|f| f.position);
+        v
+    }
+
+    fn subscription_folders(&self) -> HashMap<String, String> {
+        self.lock().rd.filed.clone()
+    }
+
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        let name = fake_folder_name(name)?;
+        let mut st = self.lock();
+        fake_folder_unique(&st.rd.folders, &name, None)?;
+        st.folder_seq += 1;
+        let f = Folder {
+            id: format!("fld-{}", st.folder_seq),
+            name,
+            position: st.rd.folders.len() as u32,
+        };
+        st.rd.folders.push(f.clone());
+        Ok(f)
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let name = fake_folder_name(name)?;
+        let mut st = self.lock();
+        fake_folder_unique(&st.rd.folders, &name, Some(id))?;
+        let f = st
+            .rd
+            .folders
+            .iter_mut()
+            .find(|f| f.id == id)
+            .ok_or(CoreError::NotFound)?;
+        f.name = name;
+        Ok(())
+    }
+
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        let mut st = self.lock();
+        let before = st.rd.folders.len();
+        st.rd.folders.retain(|f| f.id != id);
+        if st.rd.folders.len() == before {
+            return Err(CoreError::NotFound);
+        }
+        st.rd.filed.retain(|_, f| f != id);
+        st.rd.folders.sort_by_key(|f| f.position);
+        for (i, f) in st.rd.folders.iter_mut().enumerate() {
+            f.position = i as u32;
+        }
+        Ok(())
+    }
+
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        let mut st = self.lock();
+        st.rd.folders.sort_by_key(|f| f.position);
+        let from = st
+            .rd
+            .folders
+            .iter()
+            .position(|f| f.id == id)
+            .ok_or(CoreError::NotFound)?;
+        let f = st.rd.folders.remove(from);
+        let at = index.min(st.rd.folders.len());
+        st.rd.folders.insert(at, f);
+        for (i, f) in st.rd.folders.iter_mut().enumerate() {
+            f.position = i as u32;
+        }
+        Ok(())
+    }
+
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        let mut st = self.lock();
+        match folder {
+            None => {
+                st.rd.filed.remove(sub_id);
+            }
+            Some(fid) => {
+                if !st.rd.folders.iter().any(|f| f.id == fid) {
+                    return Err(CoreError::NotFound);
+                }
+                st.rd.filed.insert(sub_id.to_string(), fid.to_string());
+            }
+        }
+        Ok(())
+    }
+
     // --- responses --- the sample reading list's references, newest first.
     fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
         let key = blyg_core::post_key(origin, id);
@@ -1535,6 +1626,33 @@ impl Backend for FakeBackend {
                 details: vec![],
             })
     }
+}
+
+// --- reader folders --- the store's name rules (blyg-core `store/folders.rs`).
+fn fake_folder_name(name: &str) -> Result<String> {
+    let n = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    if n.is_empty() {
+        return Err(CoreError::Rejected {
+            status: 400,
+            message: "A folder needs a name".into(),
+            details: vec![],
+        });
+    }
+    Ok(n)
+}
+
+fn fake_folder_unique(folders: &[Folder], name: &str, except: Option<&str>) -> Result<()> {
+    let clash = folders
+        .iter()
+        .any(|f| Some(f.id.as_str()) != except && f.name.to_lowercase() == name.to_lowercase());
+    if clash {
+        return Err(CoreError::Rejected {
+            status: 409,
+            message: format!("There's already a folder called “{name}”"),
+            details: vec![],
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
