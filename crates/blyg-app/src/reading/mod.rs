@@ -24,6 +24,8 @@ mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
 pub(crate) mod stream;
 pub(crate) mod stream_vm;
+// --- quote targets --- (issue #3)
+pub(crate) mod original;
 mod subscriptions;
 mod versions;
 pub(crate) mod vm;
@@ -235,6 +237,10 @@ pub struct State {
     /// Stream (the default) or Reader (list + post), remembered in state.json.
     pub mode: stream_vm::ReadMode,
     pub stream: stream::Stream,
+    // --- quote targets ---
+    /// The version to show once the post being opened has its versions
+    /// (a quote's version), when it's current or pinned.
+    pub want_version: Option<u32>,
 }
 
 impl State {
@@ -264,6 +270,7 @@ impl State {
                     .map(|c| c.data_dir.as_path()),
             ),
             stream: stream::Stream::new(),
+            want_version: None,
         }
         .refiltered()
     }

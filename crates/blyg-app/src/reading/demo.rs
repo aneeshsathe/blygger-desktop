@@ -65,6 +65,18 @@ impl MainView {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("bench", window, cx);
             }
+            // --- quote targets --- a held quote's original opens at once;
+            // one nobody here follows is fetched, at its quoted pinned v1.
+            ("rd-stream-original", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-original", 1) => {
+                use crate::fake::reading_seed::{ADA, ADA_TIDES};
+                self.open_original(ADA.into(), ADA_TIDES.into(), Some(2), window, cx)
+            }
+            ("rd-stream-fetch", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-fetch", 1) => {
+                use crate::fake::reading_seed::{KIT, KIT_TIDES};
+                self.open_original(KIT.into(), KIT_TIDES.into(), Some(1), window, cx)
+            }
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),

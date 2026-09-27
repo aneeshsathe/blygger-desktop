@@ -31,6 +31,14 @@ pub enum SurfaceEvent {
     OpenUrl(String),
     /// A quote from another blyg was clicked: open that origin's profile.
     OpenOrigin(String),
+    // --- quote targets ---
+    /// A quote's text was clicked: open the original post (`origin` from the
+    /// quote box's footer, the quoted `version` when the markup has it).
+    OpenQuote {
+        origin: String,
+        id: String,
+        version: Option<u32>,
+    },
 }
 
 /// A place to show the preview page. `wry` implements it for real; tests use
@@ -105,6 +113,19 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
     if let Some(o) = msg.strip_prefix("origin:") {
         let web = o.starts_with("https://") || o.starts_with("http://");
         return web.then(|| SurfaceEvent::OpenOrigin(o.to_string()));
+    }
+    // --- quote targets --- `quote:<origin>\u{1f}<id>\u{1f}<version>`
+    if let Some(q) = msg.strip_prefix("quote:") {
+        let mut parts = q.split('\u{1f}');
+        let (origin, id, version) = (parts.next()?, parts.next()?, parts.next().unwrap_or(""));
+        let web = origin.starts_with("https://") || origin.starts_with("http://");
+        let id_ok =
+            !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric());
+        return (web && id_ok).then(|| SurfaceEvent::OpenQuote {
+            origin: origin.to_string(),
+            id: id.to_string(),
+            version: version.parse().ok(),
+        });
     }
     msg.strip_prefix("line:")
         .and_then(|n| n.parse().ok())
@@ -215,9 +236,18 @@ pub const HOST_SCRIPT: &str = r#"
   document.addEventListener("click", function (e) {
     var t = e.target;
     if (!t || !t.closest || t.closest("a[href]") || t.closest(".blyg-yt")) return;
-    // A quote from another blyg: its profile.
-    var q = t.closest("blockquote[data-blyg-origin]");
-    if (q) { post("origin:" + q.getAttribute("data-blyg-origin")); return; }
+    // --- quote targets --- a quote box: its footer's name opens the
+    // profile, the rest opens the original post (the footer is the reader's).
+    var qo = t.closest(".blyg-qorigin");
+    if (qo) { post("origin:" + qo.getAttribute("data-blyg-origin")); return; }
+    var q = t.closest("blockquote.blyg-transclusion[data-blyg-id]");
+    var qf = q && q.querySelector(":scope > .blyg-qfoot .blyg-qorigin");
+    if (q && qf) {
+      post("quote:" + qf.getAttribute("data-blyg-origin") + "\u001f" + q.getAttribute("data-blyg-id") +
+        "\u001f" + (q.getAttribute("data-blyg-version") || ""));
+      return;
+    }
+    if (q && q.hasAttribute("data-blyg-origin")) { post("origin:" + q.getAttribute("data-blyg-origin")); return; }
     var b = t.closest(".item-content [data-line]");
     post(b ? "line:" + b.getAttribute("data-line") : "focus");
   }, true);
@@ -406,6 +436,27 @@ mod tests {
             Some(SurfaceEvent::OpenOrigin("https://ada.example.net/".into()))
         );
         assert_eq!(parse_ipc("origin:javascript:alert(1)"), None);
+        assert_eq!(
+            parse_ipc("quote:https://ada.example.net/\u{1f}01K2ADA0TIDES0000000000001\u{1f}2"),
+            Some(SurfaceEvent::OpenQuote {
+                origin: "https://ada.example.net/".into(),
+                id: "01K2ADA0TIDES0000000000001".into(),
+                version: Some(2),
+            })
+        );
+        assert_eq!(
+            parse_ipc("quote:https://ada.example.net/\u{1f}01K2ADA0TIDES0000000000001\u{1f}"),
+            Some(SurfaceEvent::OpenQuote {
+                origin: "https://ada.example.net/".into(),
+                id: "01K2ADA0TIDES0000000000001".into(),
+                version: None,
+            })
+        );
+        assert_eq!(parse_ipc("quote:javascript:x\u{1f}01K2\u{1f}1"), None);
+        assert_eq!(
+            parse_ipc("quote:https://a.example/\u{1f}../../x\u{1f}1"),
+            None
+        );
         assert_eq!(parse_ipc("<script>"), None);
     }
 

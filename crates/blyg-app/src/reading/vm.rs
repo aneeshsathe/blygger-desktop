@@ -311,6 +311,11 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             "Open on web",
             "Opens this post's page in your browser.".into(),
         ),
+        // --- quote targets --- a post shown without a subscription.
+        "Subscribe" => on(
+            "Subscribe",
+            "Follows this blyg, so its posts come to your reading list (private to you).".into(),
+        ),
         "Quote this version" => on(
             "Quote this version",
             format!(

@@ -278,3 +278,112 @@ fn the_selected_posts_actions_work_without_opening_it(cx: &mut TestAppContext) {
     assert_eq!(fake.items().len(), drafts + 1, "a stub draft");
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
 }
+
+// --- quote targets --- (issue #3)
+
+fn opened_key(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<(String, String)> {
+    view.read_with(cx, |v, _| v.reading.opened.as_ref().map(|o| o.key.clone()))
+}
+
+fn on_screen_version(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<u32> {
+    view.read_with(cx, |v, _| {
+        let o = v.reading.opened.as_ref()?;
+        Some(o.shown.ready()?.get(o.ix?)?.version)
+    })
+}
+
+#[gpui_kit::test]
+fn a_held_original_opens_at_once_at_the_quoted_pin(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    settle(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.open_original(ADA.into(), ADA_TIDES.into(), Some(1), window, cx)
+    });
+    settle(cx);
+    assert_eq!(
+        opened_key(&view, cx),
+        Some(("sub-ada".into(), ADA_TIDES.into()))
+    );
+    assert_eq!(on_screen_version(&view, cx), Some(1), "the quoted pin");
+    let pin_loaded = view.read_with(cx, |v, _| {
+        let o = v.reading.opened.as_ref().unwrap();
+        o.pins.get(&1).and_then(|l| l.ready()).is_some()
+    });
+    assert!(pin_loaded);
+    assert!(fake.public_fetches().is_empty(), "held: nothing fetched");
+    // An unpinned version can't be shown: the current one instead.
+    view.update_in(cx, |v, window, cx| {
+        v.open_original(RUE.into(), RUE_TRUST.into(), Some(4), window, cx)
+    });
+    settle(cx);
+    assert_eq!(on_screen_version(&view, cx), Some(5));
+}
+
+#[gpui_kit::test]
+fn an_original_nobody_follows_is_fetched_with_a_subscribe_action(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    settle(cx);
+    let reads = |fake: &FakeBackend| -> Vec<_> {
+        fake.reading()
+            .into_iter()
+            .map(|r| (r.remote_id, r.read_version))
+            .collect()
+    };
+    let before = reads(&fake);
+    view.update_in(cx, |v, window, cx| {
+        v.open_original(KIT.into(), KIT_TIDES.into(), Some(1), window, cx)
+    });
+    settle(cx);
+    assert_eq!(fake.public_fetches().len(), 1);
+    let key = opened_key(&view, cx).expect("opened");
+    assert!(super::original::is_external(&key));
+    assert_eq!(key.1, KIT_TIDES);
+    assert_eq!(on_screen_version(&view, cx), Some(1), "Kit's pinned v1");
+    let chips: Vec<&str> = view.read_with(cx, |v, _| {
+        v.reading_action_chips().into_iter().map(|c| c.id).collect()
+    });
+    assert_eq!(chips, ["Subscribe", "Reply", "Open on web"]);
+    assert_eq!(reads(&fake), before, "nothing marked read");
+    let subs = fake.subscriptions().len();
+    view.update_in(cx, |v, window, cx| {
+        v.reading_action_for_test("Subscribe", window, cx)
+    });
+    settle(cx);
+    assert_eq!(fake.subscriptions().len(), subs + 1, "followed");
+    // Asking again while it's open doesn't fetch again.
+    view.update_in(cx, |v, window, cx| {
+        v.open_original(KIT.into(), KIT_TIDES.into(), None, window, cx)
+    });
+    settle(cx);
+    assert_eq!(fake.public_fetches().len(), 1);
+}
+
+#[gpui_kit::test]
+fn the_lineage_lines_name_opens_the_profile_and_the_rest_the_post(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("alt-cmd-2");
+    settle(cx);
+    let key = view.read_with(cx, |v, _| {
+        v.reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == LIN_GARDENS)
+            .map(super::vm::key)
+            .unwrap()
+    });
+    view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+    settle(cx);
+    let b = cx
+        .debug_bounds("pf-lineage-stub-post")
+        .expect("the stub line's title");
+    cx.simulate_click(b.center(), Modifiers::none());
+    settle(cx);
+    assert_eq!(
+        opened(&view, cx).as_deref(),
+        Some(ADA_TIDES),
+        "the stubbed post"
+    );
+    assert!(!view.read_with(cx, |v, _| v.profile_sheet_open()));
+}

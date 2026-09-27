@@ -252,6 +252,8 @@ impl MainView {
         else {
             return;
         };
+        // --- quote targets --- opened from a quote: show its version.
+        let want = self.reading.want_version.take();
         self.reading.sel = Some(key.clone());
         let tombstone = item.state == "tombstone";
         self.reading.opened = Some(Opened {
@@ -284,11 +286,18 @@ impl MainView {
                 let Some(o) = v.reading.opened.as_mut().filter(|o| o.key == key) else {
                     return;
                 };
+                let mut pick = None;
                 if let Some((base, log, shown)) = fetched {
                     o.diff_base = base;
                     o.changelog = Load::from_result(log);
                     o.shown = Load::from_result(shown.map(|s| vm::shown(&s)));
                     o.ix = o.shown.ready().and_then(|s| vm::current_ix(s));
+                    pick = want
+                        .and_then(|w| o.shown.ready()?.iter().position(|s| s.version == w))
+                        .filter(|&i| Some(i) != o.ix);
+                }
+                if let Some(i) = pick {
+                    v.select_version(i, cx);
                 }
                 cx.notify();
             });
@@ -328,8 +337,15 @@ impl MainView {
             let key = o.key.clone();
             let backend = self.backend.clone();
             let version = v.version;
-            let task =
-                cx.background_spawn(async move { backend.remote_pinned(&sub, &rid, version) });
+            // --- quote targets --- a post fetched without a subscription
+            // reads its pins straight from its origin.
+            let origin = super::original::is_external(&key).then(|| o.item.origin.clone());
+            let task = cx.background_spawn(async move {
+                match origin {
+                    Some(origin) => backend.public_pinned(&origin, &rid, version),
+                    None => backend.remote_pinned(&sub, &rid, version),
+                }
+            });
             cx.spawn(async move |this, cx| {
                 let r = task.await;
                 let _ = this.update(cx, |v, cx| {
@@ -442,6 +458,7 @@ impl MainView {
                 })
                 .detach();
             }
+            "Subscribe" => self.follow_url(item.origin.clone(), cx),
             "Diff vs now" => {
                 if let Some(o) = self.reading.opened.as_mut() {
                     o.diff_vs_now = !o.diff_vs_now;
@@ -527,6 +544,19 @@ impl MainView {
             return vec![];
         };
         let item = &o.item;
+        // --- quote targets --- not followed: Subscribe, Reply, Open on web.
+        if super::original::is_external(&o.key) {
+            let ctx = vm::ActionCtx {
+                blyg: true,
+                version: item.version,
+                current: item.version,
+                pins: vec![],
+            };
+            return ["Subscribe", "Reply", "Open on web"]
+                .into_iter()
+                .map(|id| vm::action_chip(id, &ctx))
+                .collect();
+        }
         let ids = match self.pill_model() {
             Some(pm) => pm.actions,
             None if item.state == "tombstone" => vec![],
@@ -840,6 +870,14 @@ impl MainView {
                 ),
                 None => (None, Some("Withdrawn by the author".into())),
             },
+            // --- quote targets --- fetched on demand, not from a subscription.
+            None if super::original::is_external(&o.key) => (
+                Some(item.content_md.clone()),
+                Some(format!(
+                    "From {}'s public files · you don't follow this blyg",
+                    vm::host(&item.origin)
+                )),
+            ),
             None => (Some(item.content_md.clone()), None),
         };
 
@@ -858,7 +896,9 @@ impl MainView {
             // --- end profiles ---
             .children(self.render_pill(o, cx))
             .child(div().flex_1())
-            .child(self.render_thumbs(item.thumb, cx))
+            .when(!super::original::is_external(&o.key), |d| {
+                d.child(self.render_thumbs(item.thumb, cx))
+            })
             // --- profiles --- "↳ stub of …" / "⑂ forked from …" on its own line
             .children(
                 self.render_lineage(

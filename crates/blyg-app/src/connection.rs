@@ -513,6 +513,13 @@ impl Backend for SwitchBackend {
     fn cached_profile(&self, url: &str) -> Option<blyg_core::Profile> {
         self.cur().cached_profile(url)
     }
+    // --- quote targets ---
+    fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
+        self.cur().public_item(origin, id)
+    }
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        self.cur().public_pinned(origin, id, version)
+    }
 }
 
 #[cfg(test)]

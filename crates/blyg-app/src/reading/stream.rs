@@ -736,18 +736,53 @@ impl MainView {
                 .text_color(p.muted)
                 .children(parts.into_iter().map(|l| {
                     let url = l.url.clone();
-                    div().flex().gap(px(4.)).child(l.lead).child(
-                        div()
-                            .id(l.id)
-                            .cursor_pointer()
-                            .text_color(p.ink)
-                            .hover(|s| s.text_color(p.accent))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                cx.stop_propagation();
-                                this.open_profile(url.clone(), window, cx)
-                            }))
-                            .child(l.link),
-                    )
+                    // The name opens the profile; the rest, the post itself.
+                    let post =
+                        |el: Stateful<Div>, target: Option<(String, String, Option<u32>)>| {
+                            el.when_some(target, |d, (o, i, v)| {
+                                d.cursor_pointer()
+                                    .hover(|s| s.text_color(p.accent))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.open_original(o.clone(), i.clone(), v, window, cx)
+                                    }))
+                            })
+                        };
+                    div()
+                        .flex()
+                        .gap(px(4.))
+                        .child(
+                            post(
+                                div().id(SharedString::from(format!("{}-lead", l.id))),
+                                l.target.clone(),
+                            )
+                            .child(l.lead),
+                        )
+                        .child(
+                            div()
+                                .id(l.id)
+                                .cursor_pointer()
+                                .text_color(p.ink)
+                                .border_b_1()
+                                .border_dashed()
+                                .border_color(p.muted.opacity(0.6))
+                                .hover(|s| s.text_color(p.accent))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    cx.stop_propagation();
+                                    this.open_profile(url.clone(), window, cx)
+                                }))
+                                .child(l.name),
+                        )
+                        .when(!l.rest.is_empty(), |d| {
+                            d.child(
+                                post(
+                                    div().id(SharedString::from(format!("{}-rest", l.id))),
+                                    l.target.clone(),
+                                )
+                                .ml(px(-4.))
+                                .child(l.rest),
+                            )
+                        })
                 }))
                 .into_any_element(),
         )
@@ -1073,8 +1108,7 @@ impl MainView {
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| vm::host(&origin));
         let prof = origin.clone();
-        let held_key = held.map(vm::key);
-        let k_open = held_key.clone();
+        let (q_origin, q_id) = (origin.clone(), id.to_string());
         div()
             .id(("stream-quote", box_id))
             .px(px(12.))
@@ -1088,11 +1122,11 @@ impl MainView {
             .gap(px(6.))
             .text_size(px((self.prefs.font_size * 15.0 / 19.0).round()))
             .cursor_pointer()
+            // --- quote targets --- the quoted text opens the original (at
+            // the quoted version); the footer's name, the profile.
             .on_click(cx.listener(move |this, _, window, cx| {
                 cx.stop_propagation();
-                if let Some(k) = k_open.clone() {
-                    this.open_reading(k, window, cx);
-                }
+                this.open_original(q_origin.clone(), q_id.clone(), version, window, cx);
             }))
             .children(quoted)
             .child(
@@ -1119,7 +1153,7 @@ impl MainView {
                             .child(name),
                     )
                     .when_some(version, |d, v| d.child(format!("· v{v}")))
-                    .when(held_key.is_some(), |d| d.child("· open original")),
+                    .child("· open original"),
             )
             .into_any_element()
     }

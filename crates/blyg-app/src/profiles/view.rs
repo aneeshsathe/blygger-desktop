@@ -514,21 +514,61 @@ impl MainView {
                 .children(parts.into_iter().map(|l| {
                     let url = l.url.clone();
                     let id = l.id;
-                    div().flex().gap(px(5.)).child(l.lead).child(
-                        div()
-                            .id(id)
-                            .debug_selector(move || id.to_string())
-                            .cursor_pointer()
-                            .text_color(p.ink)
-                            .border_b_1()
-                            .border_dashed()
-                            .border_color(p.muted.opacity(0.6))
-                            .hover(|s| s.text_color(p.accent))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.open_profile(url.clone(), window, cx)
-                            }))
-                            .child(l.link),
-                    )
+                    // --- quote targets --- the name opens the profile; the
+                    // lead and the rest open the post itself.
+                    let post =
+                        |el: Stateful<Div>, target: Option<(String, String, Option<u32>)>| {
+                            el.when_some(target, |d, (o, i, v)| {
+                                d.cursor_pointer()
+                                    .hover(|s| s.text_color(p.accent))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.open_original(o.clone(), i.clone(), v, window, cx)
+                                    }))
+                            })
+                        };
+                    let post_id = format!("{id}-post");
+                    let sel = post_id.clone();
+                    div()
+                        .flex()
+                        .gap(px(5.))
+                        .child(
+                            post(
+                                div().id(SharedString::from(format!("{id}-lead"))),
+                                l.target.clone(),
+                            )
+                            .child(l.lead),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .child(
+                                    div()
+                                        .id(id)
+                                        .debug_selector(move || id.to_string())
+                                        .cursor_pointer()
+                                        .text_color(p.ink)
+                                        .border_b_1()
+                                        .border_dashed()
+                                        .border_color(p.muted.opacity(0.6))
+                                        .hover(|s| s.text_color(p.accent))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            this.open_profile(url.clone(), window, cx)
+                                        }))
+                                        .child(l.name),
+                                )
+                                .when(!l.rest.is_empty(), |d| {
+                                    d.child(
+                                        post(
+                                            div()
+                                                .id(SharedString::from(post_id))
+                                                .debug_selector(move || sel.clone())
+                                                .whitespace_nowrap(),
+                                            l.target.clone(),
+                                        )
+                                        .child(l.rest),
+                                    )
+                                }),
+                        )
                 }))
                 .into_any_element(),
         )

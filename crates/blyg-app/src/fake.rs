@@ -136,6 +136,8 @@ struct State {
     profiles: HashMap<String, Profile>,
     /// Profile fetches that reached the "network" (tests).
     profile_fetches: Vec<String>,
+    /// Public item documents fetched (`public_item`), for tests.
+    public_fetches: Vec<String>,
 }
 
 pub struct FakeBackend {
@@ -271,6 +273,7 @@ impl FakeBackend {
                 fail_uploads: false,
                 profiles: HashMap::new(),    // --- profiles ---
                 profile_fetches: Vec::new(), // --- profiles ---
+                public_fetches: Vec::new(),
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -576,6 +579,12 @@ impl FakeBackend {
     }
 
     // --- profiles ---
+
+    /// Tests: every public item document fetched, in order.
+    #[cfg(test)]
+    pub fn public_fetches(&self) -> Vec<String> {
+        self.lock().public_fetches.clone()
+    }
 
     /// Tests: every URL a profile was fetched for, in order.
     #[cfg(test)]
@@ -1452,6 +1461,43 @@ impl Backend for FakeBackend {
         let key = blyg_core::profile::clean_url(url)?;
         let p = self.lock().profiles.get(&key).cloned()?;
         Some(self.finish_profile(p))
+    }
+
+    // --- quote targets --- posts nobody here follows, "served" publicly.
+
+    fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        st.public_fetches.push(format!("{origin}items/{id}.json"));
+        st.rd
+            .public
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.item.origin, origin) && p.item.remote_id == id
+            })
+            .cloned()
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        self.lock()
+            .rd
+            .public_pins
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.origin, origin)
+                    && p.id == id
+                    && p.version == version
+            })
+            .cloned()
+            .ok_or(CoreError::Rejected {
+                status: 404,
+                message: "not pinned".into(),
+                details: vec![],
+            })
     }
 }
 

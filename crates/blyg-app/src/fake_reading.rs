@@ -28,6 +28,10 @@ pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
 pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
 /// A fragment of Lin's with emphasis, code and a bare link.
 pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
+/// A blyg nobody here follows, and the post of Kit's that Lin's fork quotes:
+/// opening it fetches it "publicly" (`Backend::public_item`).
+pub const KIT: &str = "https://kit.blyg.example.net/";
+pub const KIT_TIDES: &str = "01K2KIT0T1DES0000000000001";
 
 /// Lin's thread as Lin's blyg published it: the quote of Ada's post baked in
 /// as a transclusion snapshot, and an image with a relative (origin-relative)
@@ -55,6 +59,9 @@ pub struct Seed {
     pub own_texts: HashMap<(LocalId, u32), String>,
     /// Own posts: local id → versions with notes and pins.
     pub own_versions: HashMap<LocalId, Vec<Version>>,
+    // --- quote targets --- public posts of blygs nobody here follows.
+    pub public: Vec<PublicItem>,
+    pub public_pins: Vec<PinnedVersion>,
 }
 
 fn sub(
@@ -277,7 +284,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         None,
         now - d(2),
         "Lin",
-        "Tides, revised\n\nForked from Ada's pinned first draft, with a longer tail:\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
+        "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01K2KIT0T1DES0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
     );
     fork.created = Some((now - d(2)).to_rfc3339());
     fork.updated = Some((now - h(30)).to_rfc3339());
@@ -286,6 +293,11 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         id: ADA_TIDES.into(),
         version: 1,
     });
+    fork.transclusions = vec![TransclusionRef {
+        id: KIT_TIDES.into(),
+        version: Some(1),
+        origin: Some(KIT.into()),
+    }];
     reading.push(fork);
     reading.push(post(
         &lin,
@@ -509,7 +521,53 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         ],
     );
 
+    // Kit's post, as its public item document would give it.
+    let kit_text = "The tide keeps its own calendar, and we keep borrowing it.";
+    let kit_item = ReadingItem {
+        subscription_id: String::new(),
+        remote_id: KIT_TIDES.into(),
+        subscription_title: "Kit".into(),
+        origin: KIT.into(),
+        kind: Kind::Fragment,
+        state: "current".into(),
+        version: 3,
+        created: Some((now - d(12)).to_rfc3339()),
+        updated: Some((now - d(10)).to_rfc3339()),
+        observed_at: now.to_rfc3339(),
+        content_md: kit_text.into(),
+        content_html: blyg_render::render_markdown(kit_text),
+        author: Some(Author {
+            name: Some("Kit".into()),
+            url: Some(KIT.into()),
+        }),
+        page: Some(format!("f/{KIT_TIDES}")),
+        thumb: None,
+        hoppers: vec![],
+        pinned_version_retained: None,
+        read_version: None,
+        stub_of: None,
+        forked_from: None,
+        transclusions: vec![],
+    };
+    let public = vec![PublicItem {
+        item: kit_item,
+        versions: vec![
+            rv(1, now - d(12), Some("first"), true, false),
+            rv(2, now - d(11), None, false, false),
+            rv(3, now - d(10), Some("borrowing"), false, true),
+        ],
+    }];
+    let public_pins = vec![pin(
+        KIT,
+        KIT_TIDES,
+        1,
+        now - d(12),
+        "The tide keeps its own calendar.",
+    )];
+
     Seed {
+        public,
+        public_pins,
         reading,
         subs: vec![rue, ada, lin, omar],
         changelogs,
