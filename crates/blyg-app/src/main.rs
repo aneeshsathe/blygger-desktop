@@ -292,6 +292,9 @@ fn menus() -> Vec<Menu> {
             name: "Blyg".into(),
             items: vec![
                 MenuItem::action("Reading", app::reading::ShowReading),
+                // --- stream ---
+                MenuItem::action("Stream", app::reading::stream::StreamMode),
+                MenuItem::action("Reader", app::reading::stream::ReaderMode),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),

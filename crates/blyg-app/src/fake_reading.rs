@@ -21,6 +21,13 @@ pub const OMAR_YEAR: &str = "01K2OMAR0YEAR0000000000001";
 pub const ADA_GONE: &str = "01K2ADA0GONE00000000000001";
 pub const RUE_KEPT: &str = "01K2RUE0KEPT00000000000001";
 pub const ADA_TIDES: &str = "01K2ADA0TIDES0000000000001";
+// --- stream --- posts that stub, fork and quote each other (issue #1).
+/// Ada's reply to Lin's bench note: a stub thread that quotes it.
+pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
+/// Lin's thread forked from Ada's pinned first draft of the tides post.
+pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
+/// A fragment of Lin's with emphasis, code and a bare link.
+pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
 
 /// Lin's thread as Lin's blyg published it: the quote of Ada's post baked in
 /// as a transclusion snapshot, and an image with a relative (origin-relative)
@@ -239,6 +246,57 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             _ => {}
         }
     }
+    // --- stream --- threads and fragments that point at each other.
+    let mut reply = post(
+        &ada,
+        ADA_REPLY,
+        Kind::Thread,
+        1,
+        None,
+        now - h(2),
+        "Ada",
+        "On turning beds over\n\nLin's bench note made me think about how often I tear a post down to the studs.\n\n![[01K2LIN0BENCH0000000000001]]\n\nMy rule of thumb: *keep the first line*, rewrite the rest, and say what changed in the version note. A few things I have learned:\n\n- Short notes age better than long ones.\n- A pin is a promise; an edit is a conversation.\n- Links rot, quotes don't.\n\nMore on this [in the protocol notes](https://blyg.example.org/notes).",
+    );
+    reply.stub_of = Some(StubOf {
+        origin: Some(LIN.into()),
+        id: Some(LIN_BENCH.into()),
+        version: Some(1),
+        url: None,
+    });
+    reply.transclusions = vec![TransclusionRef {
+        id: LIN_BENCH.into(),
+        version: Some(1),
+        origin: Some(LIN.into()),
+    }];
+    reading.push(reply);
+    let mut fork = post(
+        &lin,
+        LIN_FORK,
+        Kind::Thread,
+        2,
+        None,
+        now - d(2),
+        "Lin",
+        "Tides, revised\n\nForked from Ada's pinned first draft, with a longer tail:\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
+    );
+    fork.created = Some((now - d(2)).to_rfc3339());
+    fork.updated = Some((now - h(30)).to_rfc3339());
+    fork.forked_from = Some(RemoteRef {
+        origin: ADA.into(),
+        id: ADA_TIDES.into(),
+        version: 1,
+    });
+    reading.push(fork);
+    reading.push(post(
+        &lin,
+        LIN_BENCH,
+        Kind::Fragment,
+        1,
+        None,
+        now - h(26),
+        "Lin",
+        "Three things on the bench this week: **seed trays**, a borrowed _dibber_, and `twine` that refuses to stay wound. Notes at https://lin.blyg.example.com/notes",
+    ));
     // Withdrawn, never signalled: hidden.
     let mut gone = post(
         &ada,

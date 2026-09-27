@@ -33,6 +33,8 @@ use crate::app::reading::{
     QuotePicker, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions, SiteSettings,
     SubscribeTo,
 };
+// --- stream --- (the reading screen's Stream | Reader toggle)
+use crate::app::reading::stream::{ReaderMode, StreamMode};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -430,6 +432,23 @@ pub fn table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- stream --- (issue #1) the reading screen's two modes; the
+        // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
+        kb!(
+            "alt-cmd-1",
+            Main,
+            StreamMode,
+            "Reading as a stream (the default)",
+            Some("Blyg › Stream")
+        ),
+        kb!(
+            "alt-cmd-2",
+            Main,
+            ReaderMode,
+            "Reading as a list with the post beside it",
+            Some("Blyg › Reader")
+        ),
+        // --- end stream ---
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start

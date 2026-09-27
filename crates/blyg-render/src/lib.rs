@@ -19,6 +19,7 @@ mod emph;
 mod linemap;
 mod linkify;
 mod markdown;
+mod native;
 mod punycode;
 mod shell;
 mod tk;
@@ -26,6 +27,7 @@ mod transclusion;
 mod util;
 
 pub use embeds::{embed_css, preview_script, youtube_facade_html, youtube_id};
+pub use native::{Block, Span, native_blocks};
 pub use shell::{
     Attachment, Citation, ShellOpts, article_html, csp, fork_lineage_html, media_html, page_shell,
     page_shell_with, preview_media, stub_citation_html, studio_css,

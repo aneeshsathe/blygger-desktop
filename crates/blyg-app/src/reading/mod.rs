@@ -21,10 +21,15 @@ mod list;
 mod mentions;
 mod quote_picker;
 mod site_settings;
+// --- stream --- (issue #1: the default reading mode)
+pub(crate) mod stream;
+pub(crate) mod stream_vm;
 mod subscriptions;
 mod versions;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;
 
@@ -226,6 +231,10 @@ pub struct State {
     /// Indices into `rows` that match `query`, in display order: what the
     /// list shows and ↑/↓ move through.
     pub shown: Vec<usize>,
+    // --- stream ---
+    /// Stream (the default) or Reader (list + post), remembered in state.json.
+    pub mode: stream_vm::ReadMode,
+    pub stream: stream::Stream,
 }
 
 impl State {
@@ -250,6 +259,11 @@ impl State {
             search: None,
             query: String::new(),
             shown: Vec::new(),
+            mode: stream_vm::load_mode(
+                cx.try_global::<crate::connection::Connection>()
+                    .map(|c| c.data_dir.as_path()),
+            ),
+            stream: stream::Stream::new(),
         }
         .refiltered()
     }
@@ -262,6 +276,7 @@ impl State {
     /// Recompute `shown` after `rows` or `query` changed.
     pub fn refilter(&mut self) {
         self.shown = vm::filter(&self.rows, &self.query);
+        self.stream.sync(&self.rows, &self.shown);
     }
 
     /// The rows the list shows (all of them without a search).
@@ -310,6 +325,7 @@ impl MainView {
             cx.listener(|this, _: &SiteSettings, window, cx| this.open_site_settings(window, cx)),
         )
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
+        .map(|d| self.stream_actions(d, cx))
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -376,6 +392,9 @@ impl MainView {
                 self.reading.rows = vm::order(self.backend.reading());
                 self.reading.refilter();
                 self.ensure_reading_search(window, cx);
+                if self.reading.mode == stream_vm::ReadMode::Stream {
+                    self.ensure_stream_timer(window, cx);
+                }
                 if self
                     .reading
                     .sel
@@ -507,6 +526,7 @@ impl MainView {
         if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
             return;
         }
+        let stream = self.reading.mode == stream_vm::ReadMode::Stream;
         let handled = match (self.reading.view, k.key.as_str()) {
             (View::Reading, "escape")
                 if self.reading.opened.as_ref().is_some_and(|o| o.dropdown) =>
@@ -517,6 +537,8 @@ impl MainView {
                 cx.notify();
                 true
             }
+            // --- stream --- j/k select, ⏎/Space read more, esc closes the pane.
+            (View::Reading, key) if stream && self.stream_key(key, window, cx) => true,
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);

@@ -139,10 +139,12 @@ impl MainView {
             .as_ref()
             .and_then(|k| self.reading.shown_pos(k));
         match keep {
-            Some(ix) => self
-                .reading
-                .list_scroll
-                .scroll_to_item(ix, ScrollStrategy::Nearest),
+            Some(ix) => {
+                self.reading.stream.list.scroll_to_reveal_item(ix);
+                self.reading
+                    .list_scroll
+                    .scroll_to_item(ix, ScrollStrategy::Nearest)
+            }
             None => {
                 self.reading.sel = None;
                 self.reading.opened = None;
@@ -155,7 +157,7 @@ impl MainView {
     }
 
     /// The search field above the reading list.
-    fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let Some(search) = self.reading.search.as_ref() else {
             return div().into_any_element();
@@ -207,6 +209,11 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // --- stream --- the stream selects; the pane follows when open.
+        if self.reading.mode == super::stream_vm::ReadMode::Stream {
+            self.stream_move(delta, window, cx);
+            return;
+        }
         // ↑/↓ move through what the list shows (the search's matches).
         let n = self.reading.shown.len();
         if n == 0 {
@@ -341,13 +348,24 @@ impl MainView {
         let Some(o) = self.reading.opened.as_ref() else {
             return;
         };
+        self.toggle_thumb_for(o.key.clone(), o.item.thumb, up, cx);
+    }
+
+    /// 👍 / 👎 on a post whose thumb is `current` (again clears it).
+    pub(super) fn toggle_thumb_for(
+        &mut self,
+        key: Key,
+        current: Option<i8>,
+        up: bool,
+        cx: &mut Context<Self>,
+    ) {
         let want = if up { 1 } else { -1 };
-        let thumb = if o.item.thumb == Some(want) {
+        let thumb = if current == Some(want) {
             None
         } else {
             Some(want)
         };
-        let (sub, rid) = o.key.clone();
+        let (sub, rid) = key;
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.signal(&sub, &rid, thumb) });
         cx.spawn(async move |this, cx| {
@@ -381,55 +399,11 @@ impl MainView {
         };
         let item = o.item.clone();
         let pinned = o.pinned_on_screen().cloned();
-        let blyg = self
-            .reading
-            .subs
-            .iter()
-            .find(|s| s.id == item.subscription_id)
-            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
         match action {
-            "Quote" => {
-                let snippet = if blyg {
-                    format!("![[{}]]", item.remote_id)
-                } else {
-                    // RSS items aren't transcludable: quote with a link.
-                    let text = vm::title(&item.content_md);
-                    let link = vm::web_url(&item).unwrap_or_default();
-                    format!("> {text}\n>\n> — [{}]({link})", vm::host(&item.origin))
-                };
-                self.quote_into_thread(snippet, window, cx);
-            }
-            "Reply" => {
-                let of = RemoteRef {
-                    origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
-                    version: item.version,
-                };
-                match self
-                    .backend
-                    .create_stub(&of, &vm::stub_body(&item.remote_id))
-                {
-                    Ok(id) => {
-                        self.open_new_draft(&id, window, cx);
-                        self.show_toast(
-                            format!("Reply to {} · a stub thread", vm::host(&item.origin)),
-                            None,
-                            cx,
-                        );
-                    }
-                    Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
-                }
-            }
-            // --- follow-ups --- a stub with a generated reply, for review.
-            // Only ever the current version (pinned views don't offer it).
-            "AI reply" if pinned.is_none() => self.ai_reply_to(item, window, cx),
-            "Open on web" => match vm::web_url(&item) {
-                Some(u) => {
-                    cx.open_url(&u);
-                    self.show_toast("Opening in your browser…", None, cx);
-                }
-                None => self.show_toast("No web address for this post", None, cx),
-            },
+            // The current version's actions work on any post (the stream's
+            // selected one too); "AI reply" never on a pinned view.
+            "Quote" | "Reply" | "Open on web" => self.item_action(item, action, window, cx),
+            "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
             "Quote this version" => {
                 let Some(v) = pinned else { return };
                 let text = o
@@ -484,6 +458,67 @@ impl MainView {
         }
     }
 
+    /// The current version's actions on any post (the open one, or the
+    /// stream's selected one): Quote, Reply, AI reply, Open on web.
+    pub(super) fn item_action(
+        &mut self,
+        item: blyg_core::ReadingItem,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let blyg = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == item.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        match action {
+            "Quote" => {
+                let snippet = if blyg {
+                    format!("![[{}]]", item.remote_id)
+                } else {
+                    // RSS items aren't transcludable: quote with a link.
+                    let text = vm::title(&item.content_md);
+                    let link = vm::web_url(&item).unwrap_or_default();
+                    format!("> {text}\n>\n> — [{}]({link})", vm::host(&item.origin))
+                };
+                self.quote_into_thread(snippet, window, cx);
+            }
+            "Reply" => {
+                let of = RemoteRef {
+                    origin: item.origin.clone(),
+                    id: item.remote_id.clone(),
+                    version: item.version,
+                };
+                match self
+                    .backend
+                    .create_stub(&of, &vm::stub_body(&item.remote_id))
+                {
+                    Ok(id) => {
+                        self.open_new_draft(&id, window, cx);
+                        self.show_toast(
+                            format!("Reply to {} · a stub thread", vm::host(&item.origin)),
+                            None,
+                            cx,
+                        );
+                    }
+                    Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
+                }
+            }
+            // --- follow-ups --- a stub with a generated reply, for review.
+            "AI reply" => self.ai_reply_to(item, window, cx),
+            "Open on web" => match vm::web_url(&item) {
+                Some(u) => {
+                    cx.open_url(&u);
+                    self.show_toast("Opening in your browser…", None, cx);
+                }
+                None => self.show_toast("No web address for this post", None, cx),
+            },
+            _ => {}
+        }
+    }
+
     /// The action row under the open post: each chip names what it
     /// creates (a stub, a quote in a thread, a fork of a pin), with a
     /// one-sentence tooltip; Fork shows greyed on the current version.
@@ -530,15 +565,22 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
+        let keys = if stream {
+            "j/k move · ⏎ read more · / search · esc back"
+        } else {
+            "↑↓ move · ←→ versions · / search · esc back"
+        };
         let hint = if !self.reading.available {
             String::new()
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · ↑↓ move · ←→ versions · / search · esc back")
+            format!("{unread} to read · {keys}")
         } else {
-            "↑↓ move · ←→ versions · / search · esc back".into()
+            keys.into()
         };
-        let header = self.screen_header("Reading", hint, vec![]);
+        // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
+        let header = self.screen_header("Reading", hint, vec![self.render_mode_toggle(cx)]);
         if !self.reading.available {
             return div()
                 .flex_1()
@@ -546,6 +588,16 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.unavailable())
+                .into_any_element();
+        }
+        if stream {
+            return div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(header)
+                .child(self.render_stream_body(body_font, cx))
                 .into_any_element();
         }
         let held = self.reading.rows.len();
@@ -733,7 +785,7 @@ impl MainView {
             .into_any_element()
     }
 
-    fn render_reading_detail(
+    pub(super) fn render_reading_detail(
         &self,
         body_font: &SharedString,
         cx: &mut Context<Self>,
