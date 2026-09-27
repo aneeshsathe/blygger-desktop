@@ -25,6 +25,10 @@ pub struct AppState {
     /// relaunch doesn't ask GitHub again within a day (`auto-update`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_update_check: Option<u64>,
+    /// --- browser --- Hosts where the browser pane's shield is off
+    /// (content blocking skipped), sorted.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub browser_unblocked_hosts: Vec<String>,
 }
 
 impl AppState {

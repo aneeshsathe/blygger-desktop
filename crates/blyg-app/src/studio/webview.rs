@@ -227,16 +227,50 @@ pub const HOST_SCRIPT: &str = r#"
 "#;
 
 #[cfg(all(target_os = "macos", not(test)))]
+pub(crate) use wry_surface::{Keyboard, keyboard_of, rect, set_appearance};
+
+// --- browser --- The modifier keys held when a link was followed (⌘ and ⌥),
+// read when WebKit asks about the navigation, so the browser pane knows a
+// ⌘-click from a click even though the event reaches it a moment later.
+thread_local! {
+    static CLICK_MODIFIERS: std::cell::Cell<Option<(std::time::Instant, bool, bool)>> =
+        const { std::cell::Cell::new(None) };
+}
+
+/// (⌘, ⌥) for the link just followed in a reader or preview page, if one was
+/// followed in the last second.
+pub fn take_click_modifiers() -> Option<(bool, bool)> {
+    CLICK_MODIFIERS
+        .take()
+        .filter(|(t, ..)| t.elapsed() < std::time::Duration::from_secs(1))
+        .map(|(_, cmd, alt)| (cmd, alt))
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
+fn note_click_modifiers() {
+    // SAFETY: `+[NSEvent modifierFlags]` is a plain class getter of the
+    // keys held right now; main thread (WebKit's delegate callbacks).
+    let flags: usize = unsafe { objc2::msg_send![objc2::class!(NSEvent), modifierFlags] };
+    const COMMAND: usize = 1 << 20;
+    const OPTION: usize = 1 << 19;
+    CLICK_MODIFIERS.set(Some((
+        std::time::Instant::now(),
+        flags & COMMAND != 0,
+        flags & OPTION != 0,
+    )));
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
 mod wry_surface {
     use super::*;
     use wry::dpi::{LogicalPosition, LogicalSize};
-    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS};
+    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
 
     pub struct WrySurface {
         view: WebView,
     }
 
-    fn rect(b: Bounds<Pixels>) -> Rect {
+    pub(crate) fn rect(b: Bounds<Pixels>) -> Rect {
         Rect {
             position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
             size: LogicalSize::new(
@@ -247,9 +281,9 @@ mod wry_surface {
         }
     }
 
-    /// Where the window's keyboard is, as far as the WebView is concerned.
-    #[derive(PartialEq, Eq)]
-    enum Keyboard {
+    /// Where the window's keyboard is, as far as a WebView is concerned.
+    #[derive(Debug, PartialEq, Eq)]
+    pub(crate) enum Keyboard {
         /// The WebView (or something inside it) is first responder.
         InPage,
         /// No view has it: the window itself (or nothing) is first responder.
@@ -258,34 +292,57 @@ mod wry_surface {
         Elsewhere,
     }
 
+    /// Who has the keyboard, relative to `wk` (the preview's, the reader's
+    /// or the browser pane's WKWebView).
+    pub(crate) fn keyboard_of(wk: &WryWebView) -> Keyboard {
+        // SAFETY: main thread; plain AppKit getters on live objects.
+        unsafe {
+            use objc2::runtime::AnyObject;
+            let win: *mut AnyObject = objc2::msg_send![wk, window];
+            if win.is_null() {
+                return Keyboard::Elsewhere;
+            }
+            let responder: *mut AnyObject = objc2::msg_send![win, firstResponder];
+            if responder.is_null() || std::ptr::eq(responder, win) {
+                return Keyboard::Nowhere;
+            }
+            let is_view: bool = objc2::msg_send![
+                responder,
+                respondsToSelector: objc2::sel!(isDescendantOf:)
+            ];
+            if !is_view {
+                return Keyboard::Nowhere;
+            }
+            let mine: bool = objc2::msg_send![responder, isDescendantOf: wk];
+            if mine {
+                Keyboard::InPage
+            } else {
+                Keyboard::Elsewhere
+            }
+        }
+    }
+
+    /// Follow the app's light/dark choice (the page's `prefers-color-scheme`).
+    pub(crate) fn set_appearance(wk: &WryWebView, dark: bool) {
+        let name = if dark {
+            "NSAppearanceNameDarkAqua"
+        } else {
+            "NSAppearanceNameAqua"
+        };
+        // SAFETY: main thread (GPUI's foreground); `wk` is a live WKWebView,
+        // and NSAppearance/appearanceNamed: is a plain AppKit class method.
+        unsafe {
+            use objc2::runtime::AnyObject;
+            let ns_name = objc2_foundation_string(name);
+            let cls = objc2::class!(NSAppearance);
+            let appearance: *mut AnyObject = objc2::msg_send![cls, appearanceNamed: ns_name];
+            let _: () = objc2::msg_send![wk, setAppearance: appearance];
+        }
+    }
+
     impl WrySurface {
         fn keyboard(&self) -> Keyboard {
-            let wk = self.view.webview();
-            // SAFETY: main thread; plain AppKit getters on live objects.
-            unsafe {
-                use objc2::runtime::AnyObject;
-                let win: *mut AnyObject = objc2::msg_send![&*wk, window];
-                if win.is_null() {
-                    return Keyboard::Elsewhere;
-                }
-                let responder: *mut AnyObject = objc2::msg_send![win, firstResponder];
-                if responder.is_null() || std::ptr::eq(responder, win) {
-                    return Keyboard::Nowhere;
-                }
-                let is_view: bool = objc2::msg_send![
-                    responder,
-                    respondsToSelector: objc2::sel!(isDescendantOf:)
-                ];
-                if !is_view {
-                    return Keyboard::Nowhere;
-                }
-                let mine: bool = objc2::msg_send![responder, isDescendantOf: &*wk];
-                if mine {
-                    Keyboard::InPage
-                } else {
-                    Keyboard::Elsewhere
-                }
-            }
+            keyboard_of(&self.view.webview())
         }
 
         pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
@@ -304,6 +361,7 @@ mod wry_surface {
                 .with_navigation_handler(move |url| match navigation(&url) {
                     Nav::Allow => true,
                     Nav::OpenExternally(u) => {
+                        note_click_modifiers();
                         let _ = nav_tx.try_send(SurfaceEvent::OpenUrl(u));
                         false
                     }
@@ -311,6 +369,7 @@ mod wry_surface {
                 })
                 .with_new_window_req_handler(move |url, _| {
                     if let Nav::OpenExternally(u) = navigation(&url) {
+                        note_click_modifiers();
                         let _ = new_tx.try_send(SurfaceEvent::OpenUrl(u));
                     }
                     NewWindowResponse::Deny
@@ -365,21 +424,7 @@ mod wry_surface {
         }
 
         fn set_dark(&mut self, dark: bool) {
-            let wk = self.view.webview();
-            let name = if dark {
-                "NSAppearanceNameDarkAqua"
-            } else {
-                "NSAppearanceNameAqua"
-            };
-            // SAFETY: main thread (GPUI's foreground); `wk` is a live WKWebView,
-            // and NSAppearance/appearanceNamed: is a plain AppKit class method.
-            unsafe {
-                use objc2::runtime::AnyObject;
-                let ns_name = objc2_foundation_string(name);
-                let cls = objc2::class!(NSAppearance);
-                let appearance: *mut AnyObject = objc2::msg_send![cls, appearanceNamed: ns_name];
-                let _: () = objc2::msg_send![&*wk, setAppearance: appearance];
-            }
+            set_appearance(&self.view.webview(), dark);
         }
     }
 

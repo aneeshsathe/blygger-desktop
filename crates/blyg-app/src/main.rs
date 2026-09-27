@@ -340,6 +340,9 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),
                 MenuItem::action("Actual Size", app::FontReset),
+                // --- browser ---
+                MenuItem::separator(),
+                MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
             ],
             disabled: false,
         },

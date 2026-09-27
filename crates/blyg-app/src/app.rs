@@ -80,6 +80,9 @@ pub(crate) mod discard;
 // --- auto-update --- (the status-bar notice; logic in crate::update)
 #[path = "update/view.rs"]
 mod update_view;
+// --- browser --- (the in-app browser pane; hooks marked the same way)
+#[path = "browser/mod.rs"]
+pub(crate) mod browser;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -196,6 +199,8 @@ pub struct MainView {
     onboarding: onboarding::State,
     // --- profiles ---
     profiles: profiles::State,
+    // --- browser ---
+    browser: browser::Browser,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -230,6 +235,7 @@ impl MainView {
         subs.push(cx.observe_window_activation(window, |this, window, _| {
             if window.is_window_active() {
                 this.studio.reclaim_keyboard();
+                this.browser.reclaim_lost_keyboard(); // --- browser ---
             }
         }));
 
@@ -276,7 +282,14 @@ impl MainView {
         let notice = cx.global_mut::<crate::settings::AppConfig>().notice.take();
         // --- reading & versions ---
         let reading = reading::State::new(&*backend, cx);
+        // --- browser ---
+        let browser = browser::Browser::new(
+            cx.try_global::<crate::connection::Connection>()
+                .map(|c| c.data_dir.clone()),
+            prefs.content_blocking,
+        );
         let mut this = Self {
+            browser, // --- browser ---
             reading,
             onboarding: onboarding::State::new(cx), // --- onboarding ---
             profiles: Default::default(),           // --- profiles ---
@@ -322,6 +335,7 @@ impl MainView {
         this.list.set_query("", results);
         this.load_selected(window, cx);
         this.studio_init(window, cx);
+        this.browser_init(window, cx); // --- browser ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -1541,6 +1555,7 @@ impl Render for MainView {
 
         // --- full editor: which panes are on screen (⌘1/⌘2/⌘3/⌘E) ---
         self.studio_frame(window, cx);
+        self.browser_frame(window, cx); // --- browser ---
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
@@ -1638,6 +1653,7 @@ impl Render for MainView {
             .map(|d| self.onboarding_actions(d, cx)) // --- onboarding ---
             .map(|d| self.profile_actions(d, cx)) // --- profiles ---
             .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
+            .map(|d| self.browser_actions(d, cx)) // --- browser ---
             .size_full()
             .relative()
             .flex()
@@ -1684,6 +1700,7 @@ impl Render for MainView {
                 ),
             })
             .child(self.render_status_bar(cx))
+            .children(self.render_browser_pane(cx)) // --- browser ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---

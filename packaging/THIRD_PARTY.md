@@ -36,7 +36,7 @@ The full text of both licenses is in `crates/blyg-app/assets/icons/LICENSE`.
 
 ## Rust crates
 
-The binary statically links about 590 crates (counting the aarch64 and x86_64
+The binary statically links about 593 crates (counting the aarch64 and x86_64
 builds together). `packaging/rust-dependencies.tsv` lists each one with its
 version, license and repository. To regenerate it:
 
@@ -52,21 +52,30 @@ The licenses in use (crate counts):
 | Apache-2.0 OR MIT | 357 |
 | MIT | 108 |
 | Apache-2.0 OR MIT OR Zlib | 29 |
-| Apache-2.0 (including GPUI) | 24 |
+| Apache-2.0 (including GPUI) | 25 |
 | Unicode-3.0 | 18 |
 | BSD-3-Clause | 11 |
 | MIT OR Unlicense | 8 |
 | Zlib | 7 |
 | BSD-2-Clause | 4 |
-| MPL-2.0 (`option-ext`, `cssparser`, `dtoa-short`) | 3 |
+| MPL-2.0 (`option-ext`, `cssparser`, `dtoa-short`, `adblock`) | 4 |
 | Apache-2.0 OR BSD-2-Clause OR MIT | 3 |
 | ISC, CDLA-Permissive-2.0, Apache-2.0 OR BSD-3-Clause, 0BSD | 2 each |
 | CC0-1.0, bzip2-1.0.6, and single crates under other permissive combinations | 1 each |
 
 None of these are copyleft for the application as a whole. The MPL-2.0
-crates (`option-ext`, and `cssparser` and `dtoa-short`, which `ammonia`
-uses) are file-level copyleft: their sources are unmodified and available
-from crates.io.
+crates (`option-ext`, `cssparser` and `dtoa-short`, which `ammonia` uses,
+and `adblock`) are file-level copyleft: their sources are unmodified and
+available from crates.io.
+
+The browser pane converts ad-blocking filter lists with Brave's
+[`adblock`](https://github.com/brave/adblock-rust) crate (MPL-2.0, unmodified;
+it brings in `flatbuffers`, Apache-2.0). The filter lists themselves are
+**not** shipped with the app: it downloads them from their publishers at run
+time (uBlock Origin's filters, GPL-3.0; EasyList and EasyPrivacy, GPL-3.0 or
+CC BY-SA 3.0; Peter Lowe's list, under its own terms at pgl.yoyo.org). The
+small fallback list compiled into the app (`crates/blyg-app/src/browser/bundled.txt`)
+was written for Blygger and is MIT like the rest of the code.
 
 The Reading screen sanitizes other people's HTML with
 [`ammonia`](https://github.com/rust-ammonia/ammonia) (Apache-2.0 OR MIT),

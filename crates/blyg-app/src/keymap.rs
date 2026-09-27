@@ -44,6 +44,10 @@ use crate::update::CheckForUpdates;
 use crate::about::ShowAbout;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
+// --- browser ---
+use crate::app::browser::{
+    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
+};
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -51,12 +55,17 @@ pub const MAIN_INPUT: &str = "Blygger > Input";
 /// A context that never matches: bindings here exist only so the native
 /// menu shows the right key equivalent (see `Keybind::menu_key`).
 const MENU_ONLY: &str = "BlyggerMenuKeyEquivalent";
+/// --- browser --- The browser pane (its own place: its keys may reuse
+/// main-window keys, which it out-ranks while it has focus).
+pub const BROWSER: &str = "Blygger > Browser";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Global,
     Main,
     MainInput,
+    /// --- browser --- `Blygger > Browser`: the browser pane.
+    Browser,
 }
 
 impl Scope {
@@ -65,6 +74,7 @@ impl Scope {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
             Scope::MainInput => Some(MAIN_INPUT),
+            Scope::Browser => Some(BROWSER), // --- browser ---
         }
     }
 
@@ -72,7 +82,10 @@ impl Scope {
     /// window counts as one place.
     #[cfg(test)]
     fn place(self) -> &'static str {
-        "main window"
+        match self {
+            Scope::Browser => "browser pane", // --- browser ---
+            _ => "main window",
+        }
     }
 }
 
@@ -525,6 +538,37 @@ pub fn table() -> Vec<Keybind> {
             "Help › About Blygger"
         ),
         // --- end about ---
+        // --- browser --- (esc, which closes the pane, is the pane's own key)
+        kb!(
+            "cmd-shift-b",
+            Main,
+            ToggleBrowser,
+            "Browser pane: close it, or bring back the last page",
+            Some("View › Browser Pane")
+        ),
+        kb!("cmd-[", Browser, BrowserBack, "Browser pane: back", None),
+        kb!(
+            "cmd-]",
+            Browser,
+            BrowserForward,
+            "Browser pane: forward",
+            None
+        ),
+        kb!(
+            "cmd-r",
+            Browser,
+            BrowserReload,
+            "Browser pane: reload (or stop)",
+            None
+        ),
+        kb!(
+            "cmd-l",
+            Browser,
+            BrowserAddress,
+            "Browser pane: edit the address",
+            None
+        ),
+        // --- end browser ---
     ]
 }
 
@@ -747,6 +791,7 @@ pub fn list() -> String {
             Scope::Global => "anywhere",
             Scope::Main => "main window",
             Scope::MainInput => "text fields",
+            Scope::Browser => "browser", // --- browser ---
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -814,7 +859,12 @@ mod tests {
             })
         };
         assert!(!input_keys.is_empty(), "read gpui-base's bindings");
-        for k in live().iter().filter(|k| k.scope != Scope::Global) {
+        // --- browser --- The pane's keys (⌘[ ⌘] ⌘R ⌘L) yield to its address
+        // field on purpose while you type an address, so they're exempt.
+        for k in live()
+            .iter()
+            .filter(|k| k.scope != Scope::Global && k.scope != Scope::Browser)
+        {
             let shadowed = input_keys.contains(&normalize(k.key));
             let deliberate = OUTRANKS_INPUT.contains(&k.key);
             assert!(

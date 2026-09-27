@@ -135,6 +135,25 @@ pub const KEYS: &[KeySpec] = &[
          checks on its own. Blygger › Check for Updates… always checks. An update is refused \
          unless it's signed with the project's release key.",
     ),
+    // --- browser ---
+    docs(
+        key(
+            "open-links",
+            ValueKind::Choice(&["app", "browser"]),
+            Some("app"),
+        ),
+        "Where a link clicked in a post opens: app opens it in Blygger's browser pane (from \
+         the right, over the reading view; esc closes it), browser opens your default \
+         browser. ⌘-click opens the pane over the whole reading area, and ⌥-click does the \
+         other one (the default browser with app, the pane with browser).",
+    ),
+    docs(
+        key("content-blocking", ValueKind::Bool, Some("true")),
+        "Block ads and trackers in the browser pane, with uBlock Origin's default filter \
+         lists (downloaded about once a week; a small built-in list until then). The shield \
+         button turns it off for one site. false turns it off everywhere.",
+    ),
+    // --- end browser ---
     docs(
         key("font-family-writing", ValueKind::Text, Some("Literata")),
         "Font for the editor and preview. Run `blygger +list-fonts` to see the choices.",

@@ -182,6 +182,8 @@ impl MainView {
             (s, n) if s.starts_with("cm-") => self.composer_demo(s, n, window, cx),
             // --- buttons --- (tb-main, tb-long, tb-capture; toolbar.rs)
             (s, n) if s.starts_with("tb-") => self.toolbar_demo(s, n, window, cx),
+            // --- browser --- (br-block, br-slide, br-full; browser/view.rs)
+            (s, n) if s.starts_with("br-") => self.browser_demo(s, n, window, cx),
             _ => {}
         }
     }
