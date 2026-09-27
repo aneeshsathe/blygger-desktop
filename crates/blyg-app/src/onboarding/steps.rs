@@ -24,8 +24,25 @@ pub enum Key {
     AiGenerate,
     AiShorten,
     ShowVersions,
-    ShowReading,
     QuotePicker,
+    // Seen on screen rather than as an action (`tutorial_observed`): each
+    // counts when it becomes true after the step began.
+    /// The stream's side pane opened (⏎, Space or "Read more").
+    ReadMore,
+    /// A quote's original post opened (a click on the quote box).
+    OpenOriginal,
+    /// A profile opened (a click on a name).
+    OpenProfile,
+    /// Reader mode is on (⌥⌘2 or the toggle).
+    ReaderMode,
+    /// The notes drawer is out (⇧⌘N or → Notes).
+    Notes,
+    /// The browser pane was closed (esc or ×).
+    CloseBrowser,
+    /// The @-mention popup is open.
+    Mention,
+    /// The spelling menu is open (a right-click on an underlined word).
+    SpellMenu,
 }
 
 /// The part of the window a step highlights.
@@ -38,8 +55,16 @@ pub enum Region {
     Editor,
     /// The status bar's left end: ◦ fragment / ≡ thread and the counter.
     Counter,
-    /// The Posts · Reading · … switcher in the title bar.
-    ViewSwitcher,
+    /// The stream's column of posts (left of its side pane, if open).
+    Stream,
+    /// The selected post in the stream.
+    StreamPost,
+    /// The Stream | Reader toggle; in Reader mode, the sources pane.
+    Reader,
+    /// The Reader's post pane (header, responses and actions).
+    ReaderPost,
+    /// The browser pane's toolbar (back, address, 🛡, ↗, → Notes).
+    BrowserChrome,
     /// A sheet dropping from the title bar.
     Sheet,
     /// The whole window (no ring).
@@ -74,6 +99,18 @@ pub enum Setup {
     Posts,
     /// A thread draft opened (quotes go in threads).
     Thread,
+    /// The draft with this sentence appended (a misspelling in it), caret
+    /// at the end.
+    Mentions(&'static str),
+    /// Reading, in the Stream, the side pane closed, the newest post
+    /// selected.
+    Stream,
+    /// Reading, in the Stream, the post with a quote selected.
+    StreamQuote,
+    /// Reading, in Reader mode, a post open.
+    Reader,
+    /// The browser pane on a blank sample page (nothing is loaded).
+    Browser,
 }
 
 /// One step of the tour.
@@ -108,6 +145,10 @@ impl Step {
 pub const DRAFT: &str = "01J9QK3";
 pub const VERSIONED: &str = "01J9M2A";
 pub const THREAD: &str = "01J9H4C";
+/// The sample reading post that quotes another (and stubs it).
+pub const QUOTING: &str = crate::fake::reading_seed::ADA_REPLY;
+/// The post it quotes (it lists the quoting post as a response).
+pub const QUOTED: &str = crate::fake::reading_seed::LIN_BENCH;
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -166,7 +207,8 @@ pub const STEPS: &[Step] = &[
         id: "capture",
         title: "Quick capture keeps scratch notes",
         caption: "{hotkey} opens quick capture over any app. What you jot down stays on this \
-                  Mac as a scratch note, never synced. ⌘D makes it a draft; ⌘⏎ publishes it.",
+                  Mac as a scratch note, listed here with its scratch pill and never synced. \
+                  ⌘D makes it a draft; ⌘⏎ publishes it.",
         keys: &[Key::MakeDraft],
         key_label: "⌘D",
         region: Region::List,
@@ -260,29 +302,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "versions",
         title: "Versions and pins",
-        caption: "⌘Y lists every version of your post; the ‹ vN ▾ › pill steps through them. \
-                  Pinning a version serves it forever: a pin can't be undone.",
+        caption: "⌘Y shows every version of your post here, to compare or restore one. Pinning \
+                  a version serves it forever: a pin can't be undone.",
         keys: &[Key::ShowVersions],
         key_label: "⌘Y",
         region: Region::Editor,
         button: Some("Versions"),
         setup: Setup::Versioned,
         pause_ms: 2800,
-        settle: false,
-    },
-    Step {
-        id: "reading",
-        title: "Reading",
-        caption: "⌘R shows the blygs you follow, one entry per post; / searches them. Under a \
-                  post, Reply starts a stub (your thread answering it), Quote puts it in a \
-                  thread of yours, and Fork works from a 📌 pinned version. ⌘R again comes \
-                  back to your posts.",
-        keys: &[Key::ShowReading],
-        key_label: "⌘R",
-        region: Region::ViewSwitcher,
-        button: None,
-        setup: Setup::Posts,
-        pause_ms: 2400,
         settle: false,
     },
     Step {
@@ -297,6 +324,89 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Thread,
         pause_ms: 800,
         settle: true,
+    },
+    Step {
+        id: "mentions",
+        title: "Mentions and spelling",
+        caption: "Type @ and a name to link a blyg you know (↑ ↓ choose, ⏎ inserts). It's a \
+                  plain link, so it notifies no one. A red underline marks a misspelling: \
+                  right-click it for suggestions.",
+        keys: &[Key::Mention, Key::SpellMenu],
+        key_label: "@",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Mentions("The fog horn sounded twice this mornign. Ask "),
+        pause_ms: 1800,
+        settle: false,
+    },
+    Step {
+        id: "stream",
+        title: "Reading, in the Stream",
+        caption: "⌘R opens Reading: posts from the blygs you follow, newest first by their own \
+                  date. j/k move, and a post a second on screen counts as read. ⏎, Space or \
+                  Read more opens it in a side pane.",
+        keys: &[Key::ReadMore],
+        key_label: "⏎",
+        region: Region::Stream,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1800,
+        settle: false,
+    },
+    Step {
+        id: "original",
+        title: "Quotes lead to the original",
+        caption: "The grey box quotes another post: click its text to open the original beside \
+                  it, or the name for the author's profile. ↩ marks a post with responses; its \
+                  pane lists who quoted, stubbed or forked it.",
+        keys: &[Key::OpenOriginal, Key::OpenProfile],
+        key_label: "click",
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 2600,
+        settle: false,
+    },
+    Step {
+        id: "reader",
+        title: "Reader: sources, posts, post",
+        caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
+                  All), your folders, which stay on this Mac, and subscriptions. [ and ] step \
+                  through a post's versions; ⌥⌘1 is the Stream again.",
+        keys: &[Key::ReaderMode],
+        key_label: "⌥⌘2",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 3000,
+        settle: false,
+    },
+    Step {
+        id: "notes",
+        title: "Notes while you read",
+        caption: "⇧⌘N slides in the Notes drawer: running notes, kept on this Mac as a scratch \
+                  note. → Notes, at the bottom of a post, adds the post to them.",
+        keys: &[Key::Notes],
+        key_label: "⇧⌘N",
+        region: Region::ReaderPost,
+        button: None,
+        setup: Setup::Reader,
+        pause_ms: 2200,
+        settle: false,
+    },
+    Step {
+        id: "browser",
+        title: "Links open beside your reading",
+        caption: "A link in a post opens in this pane (a blank sample here). 🛡 turns ad and \
+                  tracker blocking off for one site; ↗, or ⌥-click on the link, uses your \
+                  default browser. esc closes it; ⇧⌘B brings it back.",
+        keys: &[Key::CloseBrowser],
+        key_label: "esc",
+        region: Region::BrowserChrome,
+        button: None,
+        setup: Setup::Browser,
+        pause_ms: 700,
+        settle: false,
     },
     Step {
         id: "done",
@@ -347,8 +457,13 @@ mod tests {
             Key::AiGenerate,
             Key::AiShorten,
             Key::ShowVersions,
-            Key::ShowReading,
             Key::QuotePicker,
+            Key::Mention,
+            Key::ReadMore,
+            Key::OpenOriginal,
+            Key::ReaderMode,
+            Key::Notes,
+            Key::CloseBrowser,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

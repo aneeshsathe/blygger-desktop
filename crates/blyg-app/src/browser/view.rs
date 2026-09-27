@@ -39,6 +39,10 @@ pub const SLIDE_WIDTH: f32 = 0.66;
 
 const CHROME_H: f32 = 38.;
 
+/// --- onboarding --- The tutorial's sample page.
+const TOUR_TITLE: &str = "Sample page · a link from a post";
+const TOUR_BODY: &str = "A link you click in a post opens here. (Tour sample: nothing is loaded.)";
+
 /// The web view and where it was last put, shared with the pane's canvas.
 #[derive(Default)]
 struct Placed {
@@ -128,6 +132,10 @@ pub struct Browser {
     poll: Option<Task<()>>,
     teardown: Option<Task<()>>,
     dark: Option<bool>,
+    /// --- onboarding --- The tutorial's sample page is up: what it replaced
+    /// (the page, the mode, and whether the pane was open), put back when
+    /// the tour ends.
+    tour: Option<(PageState, OpenMode, bool)>,
     /// URLs loaded (tests).
     #[cfg(test)]
     pub(crate) loads: Vec<String>,
@@ -164,6 +172,7 @@ impl Browser {
             poll: None,
             teardown: None,
             dark: None,
+            tour: None,
             #[cfg(test)]
             loads: Vec::new(),
         }
@@ -646,6 +655,87 @@ impl MainView {
         super::is_web_url(url).then(|| super::notes_link(&self.browser.page.title, url))
     }
 
+    // ------------------------------------------------------------ onboarding
+
+    /// --- onboarding --- The tutorial's browser step: the pane slides in on
+    /// a blank sample page. No web view is made and nothing is loaded (the
+    /// tour hides web views anyway); what it replaces comes back with
+    /// [`Self::browser_tour_end`].
+    pub(crate) fn browser_tour_open(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.browser_tour_park(cx);
+        let b = &mut self.browser;
+        b.page = PageState {
+            url: "about:blank".into(),
+            title: TOUR_TITLE.into(),
+            ..PageState::default()
+        };
+        if !b.open || b.mode != OpenMode::Slide {
+            b.shown += 1;
+        }
+        b.open = true;
+        b.mode = OpenMode::Slide;
+        b.editing = false;
+        b.close_gen += 1;
+        let focus = b.focus.get_or_insert_with(|| cx.focus_handle()).clone();
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+
+    /// --- onboarding --- The tutorial starts: remember the page, mode and
+    /// pane (once), and take the pane away.
+    pub(crate) fn browser_tour_park(&mut self, cx: &mut Context<Self>) {
+        let b = &mut self.browser;
+        if b.tour.is_none() {
+            b.tour = Some((b.page.clone(), b.mode, b.open));
+        }
+        self.browser_tour_hide(cx);
+    }
+
+    /// --- onboarding --- Take the pane away between the tour's steps (no
+    /// teardown: a web view from before the tour keeps its page).
+    pub(crate) fn browser_tour_hide(&mut self, cx: &mut Context<Self>) {
+        let b = &mut self.browser;
+        if b.open {
+            b.open = false;
+            b.editing = false;
+            cx.notify();
+        }
+    }
+
+    /// --- onboarding --- The tour is over: the page, mode and pane the
+    /// user had before it.
+    pub(crate) fn browser_tour_end(&mut self, cx: &mut Context<Self>) {
+        let b = &mut self.browser;
+        let Some((page, mode, open)) = b.tour.take() else {
+            return;
+        };
+        b.page = page;
+        b.mode = mode;
+        b.editing = false;
+        if open {
+            b.open = true;
+            b.close_gen += 1; // a pending teardown no longer applies
+            b.teardown = None;
+        } else {
+            b.open = false;
+        }
+        cx.notify();
+    }
+
+    /// --- onboarding --- Where the pane is (x, y, w, h) in a window `w`×`h`,
+    /// and its toolbar, while it's open.
+    pub(crate) fn browser_rects(&self, w: f32, h: f32) -> Option<[(f32, f32, f32, f32); 2]> {
+        if !self.browser.open {
+            return None;
+        }
+        let room_w = w - f32::from(self.notes.room());
+        let left = f32::from(self.browser.left_edge(px(room_w)));
+        let top = crate::app::TITLEBAR_H;
+        let pane = (left, top, room_w - left, h - top);
+        let chrome = (left, top, room_w - left, CHROME_H);
+        Some([pane, chrome])
+    }
+
     /// Per frame, before layout (after `studio_frame`): hide the web view
     /// when the pane is closed or covered, and keep the reader's and the
     /// preview's web views out from under the pane.
@@ -756,7 +846,22 @@ impl MainView {
                     .id("browser-body")
                     .flex_1()
                     .min_h_0()
+                    .relative()
                     .bg(p.bg)
+                    // --- onboarding --- the tour's sample: nothing is loaded.
+                    .when(b.tour.is_some(), |d| {
+                        d.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .text_color(p.muted)
+                                .text_size(px(13.))
+                                .child(TOUR_BODY),
+                        )
+                    })
                     .child(
                         canvas(
                             |bounds, _, _| bounds,

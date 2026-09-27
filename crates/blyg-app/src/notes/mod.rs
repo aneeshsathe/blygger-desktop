@@ -25,7 +25,8 @@ use gpui_kit::*;
 
 use blyg_core::LocalId;
 
-pub use drawer::{SELECTION_JS, ToggleNotes};
+pub(crate) use drawer::NotesPark;
+pub use drawer::{SELECTION_JS, ToggleNotes}; // --- onboarding ---
 
 use crate::vm;
 

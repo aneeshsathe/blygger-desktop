@@ -190,6 +190,7 @@ impl MainView {
         self.onboarding_sync(window, cx);
         if self.onboarding.tutorial.is_some() {
             self.tutorial_watch_typing(window, cx);
+            self.tutorial_watch_observed(window, cx);
             return self.render_tutorial(window, cx);
         }
         self.render_onboarding(cx)
@@ -998,12 +999,17 @@ impl MainView {
             ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
             ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
             ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
+            // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
             (s, 0) if s.starts_with("tut-") => {
                 self.start_tutorial(window, cx);
-                let id = s.trim_start_matches("tut-");
+                let id = s.trim_start_matches("tut-").trim_end_matches('+');
                 if let Some(i) = steps::STEPS.iter().position(|st| st.id == id) {
                     self.tutorial_enter(i, window, cx);
                 }
+            }
+            (s, 1) if s.starts_with("tut-") && s.ends_with('+') => {
+                let id = s.trim_start_matches("tut-").trim_end_matches('+');
+                self.tutorial_demo_act(id, window, cx);
             }
             _ => {}
         }
