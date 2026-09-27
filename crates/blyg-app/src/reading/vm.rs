@@ -148,6 +148,25 @@ pub fn badge(r: &ReadingItem) -> Option<String> {
     }
 }
 
+/// The date a row shows (issue #6): the post's own date, never the day you
+/// subscribed. "edited 3d ago" when the author edited it after publishing,
+/// else when it was published ("3h", "Sep 3"). Only a post with no usable
+/// date shows when it was imported.
+pub fn when_label(r: &ReadingItem, now: chrono::DateTime<chrono::Utc>) -> String {
+    let t = r.post_time();
+    let rel = crate::vm::relative_time(&t.at, now);
+    if !t.edited || rel.is_empty() {
+        return rel;
+    }
+    if rel == "now" {
+        "edited just now".into()
+    } else if rel.ends_with(['m', 'h']) && rel.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+        format!("edited {rel} ago")
+    } else {
+        format!("edited {rel}")
+    }
+}
+
 /// Byline for a row: `Rue · blyg`, `Omar's notes · RSS`.
 pub fn source_line(r: &ReadingItem, subs: &[Subscription]) -> String {
     let kind = subs
@@ -1000,5 +1019,35 @@ mod tests {
         let s = screen_status(View::Subscriptions, 12);
         assert_eq!((s.post, s.to_read), (false, None));
         assert!(screen_status(View::Posts, 3).post);
+    }
+
+    /// Issue #6: a row shows the post's own date. Subscribing today never
+    /// makes an old post say "now"; an author's edit says "edited …".
+    #[test]
+    fn rows_show_the_posts_own_date() {
+        use chrono::{Duration, Utc};
+        let now = Utc::now();
+        let iso = |d: Duration| (now - d).to_rfc3339();
+        let mut r = crate::fake::reading_seed::seed(now).reading.remove(0);
+        r.observed_at = iso(Duration::seconds(5)); // just subscribed
+        r.created = Some(iso(Duration::hours(3)));
+        r.updated = r.created.clone();
+        assert_eq!(when_label(&r, now), "3h");
+        r.updated = Some(iso(Duration::minutes(20)));
+        assert_eq!(when_label(&r, now), "edited 20m ago");
+        r.updated = Some(iso(Duration::seconds(10)));
+        assert_eq!(when_label(&r, now), "edited just now");
+        r.created = Some(iso(Duration::days(40)));
+        r.updated = Some(iso(Duration::days(30)));
+        assert!(when_label(&r, now).starts_with("edited "));
+        assert!(!when_label(&r, now).ends_with("ago"), "a date, not 'ago'");
+        // A quick fix right after publishing isn't "edited".
+        r.created = Some(iso(Duration::hours(2)));
+        r.updated = Some(iso(Duration::hours(2) - Duration::minutes(3)));
+        assert_eq!(when_label(&r, now), "1h");
+        // No dates at all: the import time is all there is.
+        r.created = None;
+        r.updated = Some("not a date".into());
+        assert_eq!(when_label(&r, now), "now");
     }
 }

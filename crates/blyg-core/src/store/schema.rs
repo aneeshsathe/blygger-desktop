@@ -147,6 +147,15 @@ const MIGRATIONS: &[&str] = &[
         fetched_at  INTEGER NOT NULL    -- unix ms
     );
     "#,
+    // v5: the reading list sorts by the post's own date (issue #6), not by
+    // when the server imported it. `sort_at` = `ReadingItem::sort_at()`
+    // (updated, else created, else observed_at; normalized UTC), written on
+    // every upsert. Existing rows are filled in by `Store::init`
+    // (`backfill_sort_at`), which parses dates the way the app does.
+    r#"
+    ALTER TABLE reading ADD COLUMN sort_at TEXT NOT NULL DEFAULT '';
+    CREATE INDEX reading_sort ON reading(sort_at DESC, subscription_id, remote_id);
+    "#,
 ];
 
 /// Returns whether any migration ran.

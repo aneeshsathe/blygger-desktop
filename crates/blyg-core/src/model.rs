@@ -372,6 +372,38 @@ impl ReadingItem {
         self.read_version.is_none()
     }
 
+    /// The post's own date for the reading list (issue #6): when the author
+    /// last wrote it (`updated`, else `created`), falling back to when your
+    /// blyg first imported it (`observed_at`) only when neither exists or
+    /// parses. `edited` = `updated` is meaningfully later than `created`
+    /// (more than [`EDIT_GRACE_MS`]), so the UI says "edited …".
+    pub fn post_time(&self) -> PostTime {
+        let ms = |s: &Option<String>| s.as_deref().and_then(crate::util::parse_ts_ms);
+        let (created, updated) = (ms(&self.created), ms(&self.updated));
+        let edited = matches!((created, updated), (Some(c), Some(u)) if u - c > EDIT_GRACE_MS);
+        match updated.or(created) {
+            Some(t) => PostTime {
+                at: crate::util::iso_from_ms(t),
+                edited,
+                observed: false,
+            },
+            None => PostTime {
+                at: crate::util::parse_ts_ms(&self.observed_at)
+                    .map(crate::util::iso_from_ms)
+                    .unwrap_or_else(|| self.observed_at.clone()),
+                edited: false,
+                observed: true,
+            },
+        }
+    }
+
+    /// The reading list's sort key, newest first: [`Self::post_time`] as a
+    /// normalized UTC timestamp (`2026-09-24T12:34:56.789Z`), so an edit by
+    /// the author moves the post up. Stored in `reading.sort_at`.
+    pub fn sort_at(&self) -> String {
+        self.post_time().at
+    }
+
     /// Read before, and the author has published a newer version since.
     pub fn edited_since_read(&self) -> bool {
         self.read_version.is_some_and(|v| v < self.version)
@@ -382,6 +414,23 @@ impl ReadingItem {
         self.pinned_version_retained
             .and_then(|v| pin_doc_url(&self.origin, &self.remote_id, v))
     }
+}
+
+/// How much later than `created` an `updated` must be to count as an edit
+/// ("edited 3d ago" in the reading list): ten minutes, so a quick fix right
+/// after publishing doesn't.
+pub const EDIT_GRACE_MS: i64 = 10 * 60 * 1000;
+
+/// A reading item's date as the UI shows it (see [`ReadingItem::post_time`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostTime {
+    /// Normalized UTC RFC 3339 (`…T…Z`), or `observed_at` as given when even
+    /// that doesn't parse.
+    pub at: String,
+    /// The author edited it after publishing: show "edited …".
+    pub edited: bool,
+    /// The post carried no usable date: this is when it was imported.
+    pub observed: bool,
 }
 
 /// `"sha256:" + hex(SHA-256(content_md as UTF-8))`, the protocol's

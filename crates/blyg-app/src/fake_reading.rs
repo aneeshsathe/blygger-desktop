@@ -218,6 +218,19 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         ),
     ];
     for r in reading.iter_mut() {
+        // Issue #6: the whole list was imported ten minutes ago (a fresh
+        // subscription), but each post keeps its own dates; the edited ones
+        // were published well before their last edit.
+        let published = match r.remote_id.as_str() {
+            RUE_TRUST => Some(now - d(6)),
+            LIN_GARDENS => Some(now - d(9)),
+            ADA_TIDES => Some(now - d(4)),
+            _ => None,
+        };
+        if let Some(p) = published {
+            r.created = Some(p.to_rfc3339());
+        }
+        r.observed_at = (now - Duration::minutes(10)).to_rfc3339();
         match r.remote_id.as_str() {
             LIN_GARDENS => r.content_html = LIN_GARDENS_HTML.into(),
             // An RSS item that carries only text: the Markdown is rendered

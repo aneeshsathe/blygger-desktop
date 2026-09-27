@@ -940,6 +940,8 @@ impl Backend for FakeBackend {
         let mut v = st.rd.reading.clone();
         // The full editor's sample thread quotes this imported post.
         v.push(sample_reading());
+        // Newest first by the post's own date, as the store sorts (#6).
+        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
         v
     }
 

@@ -127,6 +127,7 @@ impl Store {
                     |r| r.get(0),
                 )
                 .optional()?;
+            let sort_at = it.sort_at();
             let fields = params![
                 it.subscription_id,
                 it.remote_id,
@@ -136,7 +137,8 @@ impl Store {
                 sub_kind,
                 it.state,
                 it.version,
-                json
+                json,
+                sort_at
             ];
             if let Some(old) = existing {
                 if old != json {
@@ -144,7 +146,7 @@ impl Store {
                 }
                 tx.execute(
                     "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
-                     version = ?8, json = ?9 WHERE subscription_id = ?1 AND remote_id = ?2",
+                     version = ?8, json = ?9, sort_at = ?10 WHERE subscription_id = ?1 AND remote_id = ?2",
                     fields,
                 )?;
                 changed |= raise_read(&tx, it)?;
@@ -173,7 +175,7 @@ impl Store {
                 Some(old_rid) => {
                     tx.execute(
                         "UPDATE reading SET remote_id = ?2, origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, \
-                         state = ?7, version = ?8, json = ?9 WHERE subscription_id = ?1 AND remote_id = ?10",
+                         state = ?7, version = ?8, json = ?9, sort_at = ?11 WHERE subscription_id = ?1 AND remote_id = ?10",
                         params![
                             it.subscription_id,
                             it.remote_id,
@@ -184,14 +186,15 @@ impl Store {
                             it.state,
                             it.version,
                             json,
-                            old_rid
+                            old_rid,
+                            sort_at
                         ],
                     )?;
                 }
                 None => {
                     tx.execute(
                         "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, page_url, sub_kind, \
-                         state, version, json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                         state, version, json, sort_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                         fields,
                     )?;
                 }
@@ -238,7 +241,7 @@ impl Store {
         let c = self.conn();
         let Ok(mut st) = c.prepare_cached(
             "SELECT json, read_version, sub_kind FROM reading \
-             ORDER BY observed_at DESC, subscription_id, remote_id",
+             ORDER BY sort_at DESC, subscription_id, remote_id",
         ) else {
             return vec![];
         };
@@ -261,7 +264,9 @@ impl Store {
         .unwrap_or_default()
     }
 
-    /// The reading list as the UI shows it: newest first, one entry per post.
+    /// The reading list as the UI shows it: newest first by the post's own
+    /// date (`sort_at`: updated, else created, else observed_at), one entry
+    /// per post.
     pub fn reading(&self) -> Vec<ReadingItem> {
         let rows = self.reading_rows();
         // group key → index into `out` (position = the group's newest row)
@@ -389,4 +394,29 @@ fn better(a: &Row, b: &Row) -> bool {
         )
     };
     rank(a) > rank(b)
+}
+
+/// Fill `sort_at` for rows written before it existed (schema v5): parse
+/// each row's dates as `ReadingItem::sort_at` does. A row whose JSON doesn't
+/// parse falls back to `observed_at`.
+pub(super) fn backfill_sort_at(conn: &mut rusqlite::Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    let rows: Vec<(String, String, String, String)> = {
+        let mut st = tx.prepare(
+            "SELECT subscription_id, remote_id, json, observed_at FROM reading WHERE sort_at = ''",
+        )?;
+        st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+            .collect::<rusqlite::Result<_>>()?
+    };
+    for (sub, rid, json, observed) in rows {
+        let at = serde_json::from_str::<ReadingItem>(&json)
+            .map(|it| it.sort_at())
+            .unwrap_or(observed);
+        tx.execute(
+            "UPDATE reading SET sort_at = ?3 WHERE subscription_id = ?1 AND remote_id = ?2",
+            params![sub, rid, at],
+        )?;
+    }
+    tx.commit()?;
+    Ok(())
 }

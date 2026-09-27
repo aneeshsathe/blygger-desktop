@@ -658,7 +658,7 @@ impl MainView {
                 )
             })
             .collect();
-        let when = crate::vm::relative_time(&r.observed_at, self.now);
+        let when = vm::when_label(r, self.now);
         div()
             .id(("reading-row", ix))
             .px(px(14.))
