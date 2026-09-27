@@ -80,6 +80,19 @@ jobs:
             exit 1
           fi
 
+      # crates/blyg-app/build.rs embeds `git rev-parse --short HEAD` (plus
+      # "-dirty" when `git status --porcelain` lists anything) for the About
+      # window. The checkout above is a git repository, so the SHA is real;
+      # make sure it isn't marked dirty.
+      - name: Check the commit the About window will show
+        run: |
+          git rev-parse --short HEAD
+          if [ -n "$(git status --porcelain)" ]; then
+            git status --porcelain
+            echo "::error::the tree is dirty before the build; the app would say <sha>-dirty"
+            exit 1
+          fi
+
       - name: Build, sign and package (universal)
         env:
           BUILD_NUMBER: ${{ github.run_number }}

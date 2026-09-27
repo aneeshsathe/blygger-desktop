@@ -9,6 +9,7 @@
 //! --default --docs`); `blygger +action` runs a command-line action instead
 //! of the app (see `cli.rs`).
 
+mod about; // --- about ---
 mod ai;
 mod app;
 mod capture;
@@ -162,6 +163,7 @@ fn main() -> ExitCode {
         capture::init(backend.clone(), &prefs, cx);
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
+        about::init(cx); // --- about ---
 
         open_main(backend.clone(), fake.clone(), prefs.clone(), launched, cx);
         // Polite activation in automation: don't steal focus from the user.
@@ -238,6 +240,9 @@ fn menus() -> Vec<Menu> {
         Menu {
             name: "Blygger".into(),
             items: vec![
+                // --- about --- (also in Help)
+                MenuItem::action("About Blygger", about::ShowAbout),
+                MenuItem::separator(),
                 MenuItem::action("Settings…", app::OpenSettings),
                 MenuItem::action("Check for Updates…", update::CheckForUpdates), // --- auto-update ---
                 MenuItem::action("Open Config File", app::OpenConfigFile),
@@ -323,10 +328,12 @@ fn menus() -> Vec<Menu> {
         // --- onboarding ---
         Menu {
             name: "Help".into(),
-            items: vec![MenuItem::action(
-                "Blygger Tutorial",
-                app::onboarding::ShowTutorial,
-            )],
+            items: vec![
+                MenuItem::action("Blygger Tutorial", app::onboarding::ShowTutorial),
+                // --- about --- (also in the Blygger menu)
+                MenuItem::separator(),
+                MenuItem::action("About Blygger", about::ShowAbout),
+            ],
             disabled: false,
         },
     ]

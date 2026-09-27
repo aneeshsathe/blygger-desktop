@@ -536,6 +536,28 @@ fn install_on_quit(cx: &mut App) {
     }
 }
 
+/// --- about --- The updater's state in words, for the About window.
+pub fn status_text(cx: &App) -> String {
+    if let Some(why) = disabled_reason() {
+        return format!("checks are off ({why})");
+    }
+    let Some(u) = cx.try_global::<Updater>() else {
+        return "not running".into();
+    };
+    match &u.phase {
+        Phase::Idle => "no update waiting".into(),
+        Phase::Checking { .. } => "checking…".into(),
+        Phase::Available { offer, .. } => format!("Blygger {} is available", offer.version),
+        Phase::Downloading { offer, .. } => format!("downloading Blygger {}…", offer.version),
+        Phase::Ready { offer, .. } => {
+            format!(
+                "Blygger {} is downloaded and ready (restart to update)",
+                offer.version
+            )
+        }
+    }
+}
+
 /// The status bar notice, if any (no global in tests and dev builds).
 pub fn notice(cx: &App) -> Option<Notice> {
     cx.try_global::<Updater>().and_then(|u| u.phase.notice())
