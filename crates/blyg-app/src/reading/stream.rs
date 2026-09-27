@@ -857,8 +857,16 @@ impl MainView {
                 .into_any_element()
         };
         row.push(div().flex_1().into_any_element());
-        row.push(t("stream-thumb-up", "👍", 1));
-        row.push(t("stream-thumb-down", "👎", -1));
+        // --- notes --- the thumbs wrap together (the row grew a chip).
+        row.push(
+            div()
+                .flex_none()
+                .flex()
+                .gap(px(6.))
+                .child(t("stream-thumb-up", "👍", 1))
+                .child(t("stream-thumb-down", "👎", -1))
+                .into_any_element(),
+        );
         div()
             .id("stream-actions")
             .debug_selector(|| "stream-actions".into())
