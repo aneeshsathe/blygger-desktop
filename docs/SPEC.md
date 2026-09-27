@@ -301,3 +301,14 @@ Config `auto-update = install | notify | off` (**default install**). Blygger ›
   7. Not running from a bundle (`cargo run`), a translocated copy, or an unwritable folder → notify-only: "Can't update in place: …; download from the release page". A release without `SHA256SUMS.sig` (0.2.0 and earlier) is notify-only too. Quarantine is neither added nor stripped (the app's own downloads aren't quarantined).
 - `scripts/install.sh` also checks `SHA256SUMS.sig` when OpenSSL 3 is installed (and the release has one).
 - As built: `crates/blyg-app/src/update/` (`check.rs`, `verify.rs`, `net.rs` with the `Http` trait, `install.rs` with the `Tools` trait, `mod.rs` GPUI glue, `view.rs` the status-bar notice). Tests are offline: a fake HTTP client serving a release signed with a throwaway key, fake bundles in temp dirs, swap and rollback. Debug builds only: `BLYGGER_UPDATE_URL` (a local test server; plain HTTP to localhost allowed), `BLYGGER_UPDATE_PUBKEY` (a test key) and `BLYGGER_UPDATE_SMOKE=restart|quit` (act on a ready update without input) for manual smoke tests.
+
+## About window
+
+**Blygger › About Blygger** (the standard app-menu place) and **Help › About Blygger** open one small window (`ShowAbout`; a second request brings it forward):
+
+- **Build:** version, commit short SHA (`-dirty` if the tree was dirty), build date (UTC), profile, architecture of the running slice (and "universal binary" when the executable is fat), macOS version.
+- **Updates:** `auto-update`, the last check (`state.json` `last_update_check`), the updater's state (ready to install, available, checking, or why checks are off), and a **Check for Updates…** button (the menu's check).
+- **Connection:** the blyg's host only (never the token), and what the backend has recorded about the server: reading extensions (`read_extensions_available`), read-state sync (meta `read_sync`, `Backend::read_state_sync`), provenance (`provenance_available`).
+- **Files:** the data directory and config file, each with **Reveal in Finder**.
+- **Links:** GitHub, this version's release page (`/releases/tag/v<version>`), License. **Copy build info** puts a plain-text block with all of the above except the paths (they contain the user name) on the clipboard, for bug reports.
+- As built: `crates/blyg-app/build.rs` embeds `git rev-parse --short HEAD` and `git status --porcelain` (as `unknown` when git is missing or the source isn't a checkout of this repo) and the build time (`SOURCE_DATE_EPOCH` when set; `scripts/bundle.sh` sets one for all slices). It re-runs only when HEAD, the index, the refs or a file under `crates/` changes. The release workflow fails on a dirty tree. `crates/blyg-app/src/about/` (`info.rs` is the pure data and copy text). Snapshot: `BLYGGER_DEMO=about`.

@@ -53,12 +53,7 @@ fn main() -> ExitCode {
         eprintln!("blygger: {d}");
     }
     let mut prefs = Prefs::from_config(store.config());
-    // Dev/screenshot override; not persisted unless a setting is changed.
-    match std::env::var("BLYGGER_THEME").as_deref() {
-        Ok("light") => prefs.theme = prefs::ThemePref::Light,
-        Ok("dark") => prefs.theme = prefs::ThemePref::Dark,
-        _ => {}
-    }
+    prefs.apply_theme_override();
     // Fake mode never touches the real Keychain.
     let fake_mode = std::env::var_os("BLYGGER_FAKE").is_some();
     // BLYGGER_TEST_TOKEN (automation against a local `wrangler dev`): an

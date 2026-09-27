@@ -85,3 +85,53 @@ fn copy_build_info_puts_the_report_on_the_clipboard(cx: &mut TestAppContext) {
     assert!(text.contains("Blyg:         not connected"), "{text}");
     assert!(!text.contains('/'), "no paths: {text}");
 }
+
+/// Live: the host only (never the URL's path, never the token) and what the
+/// backend found out about the server.
+#[gpui_kit::test]
+fn a_live_connection_shows_the_host_and_capabilities(cx: &mut TestAppContext) {
+    use std::sync::Arc;
+
+    use blyg_core::config::{MemoryTokenStore, TokenStore as _};
+    use blyg_core::{Backend, ConfigStore};
+
+    use crate::connection::{Connection, Mode, SwitchBackend};
+    use crate::fake::FakeBackend;
+
+    setup(cx);
+    let dir = tempfile::tempdir().unwrap();
+    let url = "https://blyg.example.com/";
+    let tokens = MemoryTokenStore::default();
+    tokens.set(url, "sekrit-owner-token").unwrap();
+    let fake = Arc::new(FakeBackend::new());
+    fake.set_provenance_available(false);
+    let backend: Arc<dyn Backend> = fake;
+    cx.update(|cx| {
+        crate::settings::init(
+            ConfigStore::in_memory(&format!("blyg-url = {url}\n")),
+            Arc::new(tokens),
+            None,
+            cx,
+        );
+        cx.set_global(Connection {
+            switch: SwitchBackend::new(backend, Mode::Live),
+            data_dir: dir.path().to_path_buf(),
+            verify: crate::connection::fake_verifier,
+        });
+    });
+    let r = cx.update(|cx| super::report(cx));
+    assert_eq!(
+        r.connection,
+        super::info::ConnectionInfo::Live {
+            host: "blyg.example.com".into(),
+            caps: super::info::capabilities(true, true, false),
+        }
+    );
+    let text = r.copy_text();
+    assert!(
+        text.contains("Blyg:               blyg.example.com\n"),
+        "{text}"
+    );
+    assert!(text.contains("Provenance:         no\n"), "{text}");
+    assert!(!text.contains("sekrit"), "{text}");
+}

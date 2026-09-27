@@ -29,7 +29,7 @@ gpui_kit::actions!(blygger, [ShowAbout]);
 static ICON_PNG: &[u8] = include_bytes!("../../../../packaging/icon-512.png");
 
 const W: f32 = 460.;
-const H: f32 = 660.;
+const H: f32 = 770.;
 
 /// The open About window, if any (there's only ever one).
 #[derive(Default)]
@@ -97,10 +97,12 @@ fn activate(window: &mut Window) {
 }
 
 fn prefs(cx: &App) -> Prefs {
-    match cx.try_global::<crate::settings::AppConfig>() {
+    let mut prefs = match cx.try_global::<crate::settings::AppConfig>() {
         Some(c) => Prefs::from_config(c.store.config()),
         None => Prefs::from_config(ConfigStore::in_memory("").config()),
-    }
+    };
+    prefs.apply_theme_override();
+    prefs
 }
 
 fn data_dir(cx: &App) -> PathBuf {
@@ -258,14 +260,14 @@ impl Render for AboutView {
                 .flex()
                 .items_start()
                 .gap(px(10.))
-                .py(px(3.))
+                .py(px(2.5))
                 .child(label(l))
                 .child(div().flex_1().min_w_0().child(value))
         };
         let text = |s: String| div().child(s).into_any_element();
         let section = |title: &'static str| {
             div()
-                .mt(px(14.))
+                .mt(px(12.))
                 .mb(px(4.))
                 .pb(px(3.))
                 .border_b_1()
@@ -304,22 +306,30 @@ impl Render for AboutView {
                 .as_deref()
                 .map(blyg_core::config::paths::tilde)
                 .unwrap_or_else(|| "unknown".into());
-            row(
-                l,
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(div().flex_1().min_w_0().truncate().child(shown))
-                    .when_some(path, |d, path| {
-                        d.child(
-                            link(id, "Reveal in Finder")
-                                .flex_none()
-                                .on_click(move |_, _, _| reveal(&path)),
-                        )
-                    })
-                    .into_any_element(),
-            )
+            // The path wraps in the value column; the link sits under the
+            // label, so a long path doesn't squeeze it.
+            div()
+                .flex()
+                .items_start()
+                .gap(px(10.))
+                .py(px(2.5))
+                .child(
+                    div()
+                        .w(px(104.))
+                        .flex_none()
+                        .flex()
+                        .flex_col()
+                        .gap(px(2.))
+                        .child(label(l))
+                        .when_some(path, |d, path| {
+                            d.child(
+                                link(id, "Reveal in Finder")
+                                    .text_size(px(11.))
+                                    .on_click(move |_, _, _| reveal(&path)),
+                            )
+                        }),
+                )
+                .child(div().flex_1().min_w_0().child(shown))
         };
 
         let header = div()
@@ -414,7 +424,6 @@ impl Render for AboutView {
                     .pb(px(12.))
                     .child(header)
                     .child(section("BUILD"))
-                    .child(row("Version", text(b.version.to_string())))
                     .child(row("Commit", text(b.commit())))
                     .child(row("Built", text(b.date())))
                     .child(row("Profile", text(b.profile.to_string())))
