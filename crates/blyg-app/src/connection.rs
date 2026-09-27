@@ -526,6 +526,28 @@ impl Backend for SwitchBackend {
     fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
         self.cur().responses(origin, id)
     }
+    // --- reader folders ---
+    fn folders(&self) -> Vec<blyg_core::Folder> {
+        self.cur().folders()
+    }
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        self.cur().subscription_folders()
+    }
+    fn create_folder(&self, name: &str) -> Result<blyg_core::Folder> {
+        self.cur().create_folder(name)
+    }
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        self.cur().rename_folder(id, name)
+    }
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        self.cur().delete_folder(id)
+    }
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        self.cur().move_folder(id, index)
+    }
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        self.cur().set_subscription_folder(sub_id, folder)
+    }
     // --- quote targets ---
     fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
         self.cur().public_item(origin, id)

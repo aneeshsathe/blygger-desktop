@@ -351,7 +351,7 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
 pub fn fork_needs_pin(cx: &ActionCtx) -> String {
     match cx.pins.last() {
         Some(pin) => format!(
-            "Fork needs a pinned version: pick 📌 v{pin} in ‹ v{} ▾ › (or press ←), \
+            "Fork needs a pinned version: pick 📌 v{pin} in ‹ v{} ▾ › (or press [), \
              then Fork this pin.",
             cx.current
         ),

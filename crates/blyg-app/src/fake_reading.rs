@@ -32,6 +32,9 @@ pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
 /// opening it fetches it "publicly" (`Backend::public_item`).
 pub const KIT: &str = "https://kit.blyg.example.net/";
 pub const KIT_TIDES: &str = "01K2KIT0T1DES0000000000001";
+// --- reader folders ---
+pub const FOLDER_FRIENDS: &str = "fld-friends";
+pub const FOLDER_GARDENS: &str = "fld-gardens";
 
 /// Lin's thread as Lin's blyg published it: the quote of Ada's post baked in
 /// as a transclusion snapshot, and an image with a relative (origin-relative)
@@ -62,6 +65,10 @@ pub struct Seed {
     // --- quote targets --- public posts of blygs nobody here follows.
     pub public: Vec<PublicItem>,
     pub public_pins: Vec<PinnedVersion>,
+    // --- reader folders --- local folders of subscriptions.
+    pub folders: Vec<Folder>,
+    /// Subscription id → folder id.
+    pub filed: HashMap<String, String>,
 }
 
 fn sub(
@@ -565,7 +572,28 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         "The tide keeps its own calendar.",
     )];
 
+    // --- reader folders --- two folders; Omar's feed and the sample
+    // "Shoreline Notes" stay unfiled.
+    let folders = vec![
+        Folder {
+            id: FOLDER_FRIENDS.into(),
+            name: "Friends".into(),
+            position: 0,
+        },
+        Folder {
+            id: FOLDER_GARDENS.into(),
+            name: "Gardens".into(),
+            position: 1,
+        },
+    ];
+    let filed = HashMap::from([
+        (rue.id.clone(), FOLDER_FRIENDS.to_string()),
+        (ada.id.clone(), FOLDER_FRIENDS.to_string()),
+        (lin.id.clone(), FOLDER_GARDENS.to_string()),
+    ]);
     Seed {
+        folders,
+        filed,
         public,
         public_pins,
         reading,

@@ -172,6 +172,23 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX reading_refs_target ON reading_refs(target_id, target_origin);
     "#,
+    // v7 --- reader folders --- the Reader's folders of subscriptions. Local
+    // only (never synced; the server's hoppers are something else). One
+    // folder per subscription; deleting a folder unfiles its subscriptions.
+    // Membership is keyed by subscription id without a foreign key, because
+    // `subscriptions` is rewritten on every pull.
+    r#"
+    CREATE TABLE folders (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL,
+        position  INTEGER NOT NULL
+    );
+    CREATE TABLE folder_members (
+        subscription_id  TEXT PRIMARY KEY,
+        folder_id        TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE
+    );
+    CREATE INDEX folder_members_folder ON folder_members(folder_id);
+    "#,
 ];
 
 /// Returns whether any migration ran.

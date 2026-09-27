@@ -163,6 +163,14 @@ impl MainView {
             let confirming = self.reading.unsub_confirm.as_deref() == Some(s.id.as_str());
             let (id1, id2, id3) = (s.id.clone(), s.id.clone(), s.id.clone());
             let blogroll = s.in_blogroll;
+            // --- reader folders --- which folder it's in (local only).
+            let id4 = s.id.clone();
+            let folder = self
+                .reading
+                .filed
+                .get(&s.id)
+                .and_then(|f| self.reading.folders.iter().find(|x| &x.id == f))
+                .map(|f| f.name.clone());
             div()
                 .id(("sub-row", i))
                 .flex()
@@ -220,6 +228,32 @@ impl MainView {
                                 .truncate()
                                 .child(super::vm::host(&s.origin)),
                         ),
+                )
+                // --- reader folders --- choose its folder.
+                .child(
+                    self.chip(
+                        format!("folder-{i}"),
+                        format!("{} ▾", folder.as_deref().unwrap_or("No folder")),
+                    )
+                    .when(folder.is_none(), |d| d.text_color(p.muted))
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            super::Tip("The Reader's folder for it (on this Mac only)".into())
+                        })
+                        .into()
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_source_menu(
+                                super::sources::MenuTarget::Sub(id4.clone()),
+                                e.position,
+                                true,
+                                cx,
+                            )
+                        }),
+                    ),
                 )
                 .child(
                     self.chip(
@@ -289,6 +323,7 @@ impl MainView {
                     })
                     .children(rows),
             )
+            .children(self.render_source_menu(cx)) // --- reader folders ---
             .into_any_element()
     }
 

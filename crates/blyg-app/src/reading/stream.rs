@@ -205,6 +205,12 @@ impl MainView {
         if self.reading.mode != mode {
             self.reading.mode = mode;
             stream_vm::save_mode(self.reading_data_dir(cx).as_deref(), mode);
+            // --- reader folders --- the Reader lists its source only; the
+            // post open in the stream stays listed there.
+            if let Some(k) = self.reading.sel.clone() {
+                self.reading.sticky.insert(k);
+            }
+            self.reading.refilter();
         }
         if self.reading.view != super::View::Reading {
             self.show_view(super::View::Reading, window, cx);
