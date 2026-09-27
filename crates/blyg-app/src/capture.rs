@@ -18,12 +18,16 @@ use blyg_core::config::CaptureDefault;
 use blyg_core::{Backend, Kind, Promote};
 use global_hotkey::hotkey::HotKey;
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
-use gpui_kit::base::input::{Enter, Escape, InputEditorStyle, InputEvent, Textarea, TextareaState};
+use gpui_kit::base::input::{
+    Enter, Escape, IndentInline, InputEditorStyle, InputEvent, MoveDown, MoveUp, Paste, Textarea,
+    TextareaState,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::app::scratch::{KeepCapture, MakeDraft};
 use crate::app::{MainView, Publish};
+use crate::composer::{Assist, AssistKey}; // --- composer ---
 use crate::prefs::{self, Prefs};
 use crate::theme::Palette;
 use crate::vm;
@@ -201,6 +205,8 @@ fn refresh_main(cx: &mut App) {
 pub struct CaptureView {
     backend: Arc<dyn Backend>,
     editor: Entity<TextareaState>,
+    /// --- composer --- @-mentions and spellcheck, as in the main editor.
+    assist: Entity<Assist>,
     prefs: Prefs,
     done: Option<SharedString>,
     note: Option<SharedString>,
@@ -287,6 +293,11 @@ impl CaptureView {
                 .placeholder("What's on your mind…")
         });
         editor.update(cx, |s, cx| s.focus(window, cx));
+        let assist = {
+            let (editor, backend) = (editor.clone(), backend.clone());
+            let p = Palette::resolve(prefs.theme, window.appearance());
+            cx.new(|cx| Assist::new(editor, backend, p, window, cx))
+        };
         let subs = vec![
             cx.subscribe(&editor, |this: &mut Self, _, ev: &InputEvent, cx| {
                 if matches!(ev, InputEvent::Change) {
@@ -308,6 +319,7 @@ impl CaptureView {
         Self {
             backend,
             editor,
+            assist,
             prefs,
             done: None,
             note: None,
@@ -315,6 +327,19 @@ impl CaptureView {
             was_active: window.is_window_active(),
             _subs: subs,
         }
+    }
+
+    /// --- composer --- Give a popup key to the mention popup or the
+    /// spelling menu if one is up; `true` when it took the key.
+    fn route_key(&mut self, key: AssistKey, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let took = self.assist.read(cx).wants_keys()
+            && self
+                .assist
+                .update(cx, |a, cx| a.handle_key(key, window, cx));
+        if took {
+            cx.stop_propagation();
+        }
+        took
     }
 
     fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -397,6 +422,7 @@ impl Render for CaptureView {
         let p = Palette::resolve(self.prefs.theme, window.appearance());
         let body_font: SharedString = self.prefs.writing().family.into();
         let ui_font: SharedString = self.prefs.ui().family.into();
+        self.assist.update(cx, |a, _| a.set_palette(p)); // --- composer ---
         self.editor.update(cx, |s, _| {
             s.set_editor_style(InputEditorStyle {
                 foreground: p.ink,
@@ -508,13 +534,31 @@ impl Render for CaptureView {
             .border_1()
             .border_color(p.line)
             .text_color(p.ink)
+            // --- composer --- the mention popup / spelling menu keys first.
+            .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
+                this.route_key(AssistKey::Up, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &MoveDown, window, cx| {
+                this.route_key(AssistKey::Down, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &IndentInline, window, cx| {
+                this.route_key(AssistKey::Tab, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &Paste, _, cx| {
+                this.assist.update(cx, |a, _| a.note_paste());
+            }))
             .capture_action(cx.listener(|this, a: &Enter, window, cx| {
                 if a.secondary {
                     cx.stop_propagation();
                     this.publish(window, cx);
+                } else {
+                    this.route_key(AssistKey::Enter, window, cx);
                 }
             }))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                if this.route_key(AssistKey::Escape, window, cx) {
+                    return;
+                }
                 cx.stop_propagation();
                 let how = Keep::default_for(this.prefs.capture_default);
                 this.keep(how, window, cx);
@@ -537,7 +581,9 @@ impl Render for CaptureView {
                     .font_family(body_font.clone())
                     .text_size(px(self.prefs.font_size))
                     .line_height(relative(1.5))
-                    .child(Textarea::new(&self.editor)),
+                    .relative()
+                    .child(Textarea::new(&self.editor))
+                    .child(self.assist.clone()), // --- composer ---
             )
             .child(footer)
             .when_some(self.done.clone(), |d, msg| {
@@ -575,6 +621,7 @@ pub fn demo_fill(text: &str, cx: &mut App) {
         let text = text.to_string();
         let _ = h.update(cx, |v, window, cx| {
             v.editor.update(cx, |s, cx| s.set_value(text, window, cx));
+            v.assist.update(cx, |a, cx| a.reset(cx)); // --- composer ---
             cx.notify();
         });
     }
@@ -798,5 +845,29 @@ mod tests {
         let (_fake, cx) = open_panel(cx, "show-buttons = false\n");
         assert!(cx.debug_bounds("cap-Publish").is_none());
         assert!(cx.debug_bounds("cap-KeepCapture").is_none());
+    }
+
+    // --- composer ---
+    #[gpui_kit::test]
+    fn at_mentions_work_in_the_panel_and_esc_closes_only_the_popup(cx: &mut TestAppContext) {
+        let (fake, cx) = open_panel(cx, "");
+        cx.simulate_input("thanks @ru");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert!(
+            kept(&fake).is_none(),
+            "the first esc closed the popup, not the panel"
+        );
+        cx.simulate_input(" and @lin");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        let it = kept(&fake).expect("kept");
+        assert_eq!(
+            it.content_md,
+            format!("thanks @ru and [Lin]({})", crate::fake::reading_seed::LIN)
+        );
     }
 }

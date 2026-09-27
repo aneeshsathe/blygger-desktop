@@ -1053,4 +1053,8 @@ impl Backend for LiveBackend {
         let (p, _) = self.e().store.cached_profile(&key)?;
         Some(self.finish_profile(p))
     }
+
+    fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        self.e().store.cached_profiles()
+    }
 }

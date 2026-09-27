@@ -63,6 +63,20 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   makes it `[text](url)` (brackets escaped, `<…>` around an address with
   parentheses; spaces caught in the selection stay outside). An address or an
   existing link that's selected is simply replaced. One undo step.
+- **@-mentions** (editor and quick capture): typing `@` at the start of a word
+  opens a small popup under it, filtered as you type, of the blygs you know
+  (subscriptions, blogrolls, authors in your reading, profiles already fetched;
+  matched on author name, site title and host; recently read and quoted ones
+  first). `↑/↓` choose, `⏎`/`⇥` insert, esc closes it and keeps the typed text.
+  Not in code or on a paste. There's no identity layer (rule 6), so the pick is
+  a plain link, `[Author or title or host](https://blyg.example.org/)`, and
+  nothing else: a plain link notifies nobody.
+- **Spellcheck** (`spellcheck = true`, Edit › Spelling › Check Spelling While
+  Typing): the macOS spell checker (system languages, learned words), a red
+  wavy underline, and a menu on right-click/ctrl-click with suggestions, Learn
+  Spelling and Ignore. Code, links and their targets, addresses, `![[id]]`, the
+  TK markers and front matter are skipped. It runs ~300 ms after typing stops,
+  only on changed lines, off the UI thread; typing never waits on it.
 - **Paste/drop an image**: this inserts `![uploading…]()` at the caret, uploads
   via `POST /api/media` (without `item_id`), then replaces the placeholder with
   `![](<blyg origin>/media/<id>.<ext>)`. Two Worker behaviours decide this: public

@@ -513,6 +513,9 @@ impl Backend for SwitchBackend {
     fn cached_profile(&self, url: &str) -> Option<blyg_core::Profile> {
         self.cur().cached_profile(url)
     }
+    fn cached_profiles(&self) -> Vec<blyg_core::Profile> {
+        self.cur().cached_profiles()
+    }
 }
 
 #[cfg(test)]

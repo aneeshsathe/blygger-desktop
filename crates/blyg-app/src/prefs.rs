@@ -225,6 +225,8 @@ pub struct Prefs {
     pub show_buttons: bool,
     // --- auto-update --- (read-only here: set in the config file)
     pub auto_update: AutoUpdate,
+    // --- spellcheck --- (read-only here: Edit › Spelling writes the file)
+    pub spellcheck: bool,
 }
 
 impl Default for Prefs {
@@ -246,6 +248,7 @@ impl Prefs {
             new_note: c.new_note(),
             show_buttons: c.show_buttons(), // --- buttons ---
             auto_update: AutoUpdate::from_value(c.get("auto-update")), // --- auto-update ---
+            spellcheck: c.spellcheck(),     // --- spellcheck ---
         }
     }
 

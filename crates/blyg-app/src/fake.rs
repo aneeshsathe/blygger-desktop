@@ -1451,6 +1451,16 @@ impl Backend for FakeBackend {
         let p = self.lock().profiles.get(&key).cloned()?;
         Some(self.finish_profile(p))
     }
+
+    fn cached_profiles(&self) -> Vec<Profile> {
+        let mut out: Vec<Profile> = Vec::new();
+        for p in self.lock().profiles.values() {
+            if !out.iter().any(|o| o.origin == p.origin) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]

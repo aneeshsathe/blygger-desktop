@@ -33,6 +33,11 @@ semver = "1"
 url = "2"
 ed25519-dalek = { version = "2", default-features = false, features = ["std", "fast", "zeroize"] }
 
+# --- spellcheck --- (the system spell checker: NSSpellChecker)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSArray", "NSRange", "NSTextCheckingResult"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSpellChecker"] }
+
 [dev-dependencies]
 # --- full editor ---
 tempfile = "3"
