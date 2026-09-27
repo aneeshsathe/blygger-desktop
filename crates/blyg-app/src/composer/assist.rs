@@ -301,6 +301,16 @@ impl Assist {
         .detach();
     }
 
+    /// The mention popup is up (the tutorial watches for it).
+    pub fn mention_open(&self) -> bool {
+        self.mention.is_some()
+    }
+
+    /// The spelling menu is up (the tutorial watches for it).
+    pub fn menu_open(&self) -> bool {
+        self.menu.is_some()
+    }
+
     /// What the mention popup shows now (tests read it).
     #[cfg(test)]
     pub fn mention_labels(&self) -> Option<Vec<String>> {

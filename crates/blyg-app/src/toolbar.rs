@@ -511,6 +511,42 @@ impl MainView {
         Some((fit(w, labels, icons, switcher, title), buttons))
     }
 
+    /// --- onboarding --- Where the button labelled `label` is drawn,
+    /// (x, y, w, h), by the same widths as `row_width` (`None`: buttons are
+    /// off, or that button isn't in the row now).
+    pub(crate) fn toolbar_button_rect(
+        &self,
+        label: &str,
+        window: &Window,
+        cx: &App,
+    ) -> Option<(f32, f32, f32, f32)> {
+        let (fit, buttons) = self.toolbar_fit(window, cx)?;
+        let ui: &str = self.prefs.ui().family;
+        let mut x = LEFT;
+        for (i, b) in buttons.iter().enumerate() {
+            if i > 0 {
+                x += if buttons[i - 1].group != b.group {
+                    SEPARATOR
+                } else {
+                    BUTTON_GAP
+                };
+            }
+            let w = if fit.labels() {
+                PAD_LABEL * 2.
+                    + ICON
+                    + ICON_GAP
+                    + self.text_width(b.label, LABEL_SIZE, FontWeight::NORMAL, ui, window)
+            } else {
+                PAD_ICON * 2. + ICON
+            };
+            if b.label == label {
+                return Some((x, (TITLEBAR_H - 22.) / 2., w, 22.));
+            }
+            x += w;
+        }
+        None
+    }
+
     /// Hook: the toolbar, over the left of the title bar.
     pub(crate) fn render_toolbar(
         &self,
