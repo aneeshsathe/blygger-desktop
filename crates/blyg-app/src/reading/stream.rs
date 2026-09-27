@@ -924,7 +924,7 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         match b {
-            Block::Para(spans) => self.render_spans(spans, post, n, None),
+            Block::Para(spans) => self.render_spans(spans, post, n, None, cx),
             Block::Heading(level, spans) => div()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(match level {
@@ -933,7 +933,7 @@ impl MainView {
                     _ => 16.5,
                 }))
                 .line_height(relative(1.3))
-                .child(self.render_spans(spans, post, n, None))
+                .child(self.render_spans(spans, post, n, None, cx))
                 .into_any_element(),
             Block::Quote(inner) => div()
                 .pl(px(12.))
@@ -1008,6 +1008,7 @@ impl MainView {
         post: &ReadingItem,
         n: &mut usize,
         size: Option<f32>,
+        cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette;
         let mut text = String::new();
@@ -1061,10 +1062,14 @@ impl MainView {
             div().child(styled).into_any_element()
         } else {
             let (ranges, urls): (Vec<_>, Vec<_>) = links.into_iter().unzip();
+            // Links go where the reader's do: the browser pane, or the
+            // default browser (click modifiers and `open-links` decide).
+            let view = cx.entity().downgrade();
             InteractiveText::new(("stream-text", *n), styled)
-                .on_click(ranges, move |i, _, cx| {
+                .on_click(ranges, move |i, window, cx| {
                     if let Some(u) = urls.get(i) {
-                        cx.open_url(u);
+                        let u = u.clone();
+                        let _ = view.update(cx, |this, cx| this.open_link(u, window, cx));
                     }
                 })
                 .into_any_element()
