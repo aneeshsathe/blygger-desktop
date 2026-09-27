@@ -99,6 +99,9 @@ pub struct Browser {
     global: Rc<Cell<bool>>,
     data_dir: Option<PathBuf>,
     close_gen: u64,
+    /// Times the pane was shown (a new slide-in animation each time).
+    shown: u64,
+    viewport_w: Pixels,
     poll: Option<Task<()>>,
     teardown: Option<Task<()>>,
     dark: Option<bool>,
@@ -133,6 +136,8 @@ impl Browser {
             global: Rc::new(Cell::new(content_blocking)),
             data_dir,
             close_gen: 0,
+            shown: 0,
+            viewport_w: px(0.),
             poll: None,
             teardown: None,
             dark: None,
@@ -224,6 +229,9 @@ impl MainView {
             return;
         }
         let b = &mut self.browser;
+        if !b.open || b.mode != mode {
+            b.shown += 1;
+        }
         b.open = true;
         b.mode = mode;
         b.editing = false;
@@ -256,6 +264,7 @@ impl MainView {
             let mode = self.browser.mode;
             if self.browser.alive() {
                 self.browser.open = true;
+                self.browser.shown += 1;
                 self.browser.close_gen += 1;
                 self.browser.teardown = None;
                 if let Some(f) = self.browser.focus.clone() {
@@ -631,7 +640,8 @@ impl MainView {
                 p.hide();
             }
         }
-        let edge = showing.then(|| self.browser.left_edge(window.viewport_size().width));
+        self.browser.viewport_w = window.viewport_size().width;
+        let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w));
         self.studio.clip_webviews(edge);
         let dark = self.palette.dark;
         if self.browser.dark != Some(dark) && self.browser.alive() {
@@ -766,7 +776,20 @@ impl MainView {
                 .font_family("Inter")
                 .child(self.render_browser_chrome(&p, cx))
                 .child(body)
-                .into_any_element(),
+                // Slides in from the right (the web view follows the
+                // pane's bounds frame by frame).
+                .map(|d| {
+                    if full {
+                        return d.into_any_element();
+                    }
+                    let w = f32::from(b.viewport_w) * SLIDE_WIDTH;
+                    d.with_animation(
+                        ElementId::NamedInteger("browser-slide".into(), b.shown),
+                        Animation::new(Duration::from_millis(180)).with_easing(ease_out_quint()),
+                        move |d, t| d.right(px(-(1.0 - t) * w)),
+                    )
+                    .into_any_element()
+                }),
         )
     }
 
@@ -1062,9 +1085,39 @@ impl MainView {
             // Back on, so the snapshot (and the state file) show the default.
             let _ = this.update(cx, |v, cx| v.browser_toggle_shield(cx));
             wait_loaded(cx).await;
-            let _ = this.update_in(cx, |v, window, cx| {
+            let _ = this.update(cx, |v, _| {
                 v.browser
                     .with(|s| s.probe(PROBE_JS, "browser-probe shield=on-again"));
+            });
+            cx.background_executor()
+                .timer(Duration::from_millis(300))
+                .await;
+            // Shield off here again, then the page itself goes to another
+            // host (BLYGGER_DEMO_URL2) whose shield is on: the navigation
+            // hook must put the lists back before that page loads.
+            if let Ok(url2) = std::env::var("BLYGGER_DEMO_URL2") {
+                let _ = this.update(cx, |v, cx| v.browser_toggle_shield(cx));
+                wait_loaded(cx).await;
+                let js = format!(
+                    "(location.href = {}, 'navigating')",
+                    crate::app::studio::webview::js_string(&url2)
+                );
+                let _ = this.update(cx, |v, _| {
+                    v.browser.with(|s| s.probe(&js, "browser-navigate"));
+                });
+                cx.background_executor()
+                    .timer(Duration::from_millis(300))
+                    .await;
+                wait_loaded(cx).await;
+                let _ = this.update(cx, |v, _| {
+                    v.browser
+                        .with(|s| s.probe(PROBE_JS, "browser-probe other-host"));
+                });
+                cx.background_executor()
+                    .timer(Duration::from_millis(300))
+                    .await;
+            }
+            let _ = this.update_in(cx, |v, window, cx| {
                 // esc and ⇧⌘B while the web view is alive: no reload.
                 v.close_browser(window, cx);
                 let t = std::time::Instant::now();

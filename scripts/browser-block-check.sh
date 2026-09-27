@@ -51,6 +51,18 @@ cat > "$SCRATCH/site/index.html" <<EOF
 <script src="http://127.0.0.1:$PORT/ads.js"></script>
 </body></html>
 EOF
+# The same "ads", from localhost, on a page served as 127.0.0.1 (another
+# host, whose shield stays on).
+cat > "$SCRATCH/site/page2.html" <<EOF
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Page two (test page)</title></head>
+<body>
+<h1>Page two</h1>
+<div class="ad-slot" style="width:300px;height:80px;background:#fc0">AD SLOT</div>
+<img id="ad-img" src="http://localhost:$PORT/ad.png" alt="">
+<script src="http://localhost:$PORT/ads.js"></script>
+</body></html>
+EOF
 echo 'window.__adScript = true;' > "$SCRATCH/site/ads.js"
 python3 - "$SCRATCH/site/ad.png" <<'EOF'
 import struct, sys, zlib
@@ -67,7 +79,7 @@ EOF
 if [ -n "${BLYGGER_REAL_LISTS:-}" ]; then
   cp "$BLYGGER_REAL_LISTS"/*.txt "$SCRATCH/data/browser/lists/"
 fi
-printf '\n! Test rules\n||127.0.0.1^$third-party\n##.ad-slot\n' \
+printf '\n! Test rules\n||127.0.0.1^$third-party\n||localhost^$third-party\n##.ad-slot\n' \
   >> "$SCRATCH/data/browser/lists/easylist.txt"
 printf '{"fetched_at": %s}\n' "$(date +%s)" > "$SCRATCH/data/browser/manifest.json"
 : > "$SCRATCH/config/config"
@@ -85,6 +97,7 @@ for run in $(seq "${BLYGGER_RUNS:-1}"); do
 BLYGGER_FAKE=1 BLYGGER_NO_ACTIVATE=1 BLYGGER_TIMING=1 BLYGGER_NO_UPDATE=1 \
   BLYGGER_CONFIG="$SCRATCH/config/config" BLYGGER_DATA_DIR="$SCRATCH/data" \
   BLYGGER_DEMO=br-block BLYGGER_DEMO_URL="http://localhost:$PORT/" \
+  BLYGGER_DEMO_URL2="http://127.0.0.1:$PORT/page2.html" \
   BLYGGER_SNAPSHOT="$OUT" "$BIN" >"$LOG" 2>&1 &
 APP_PID=$!
 for _ in $(seq 600); do
@@ -100,6 +113,7 @@ done
 
 on="$(grep '^browser-probe shield=on ' "$LOG" | tr -d '\\' || true)"
 off="$(grep '^browser-probe shield=off ' "$LOG" | tr -d '\\' || true)"
+other="$(grep '^browser-probe other-host ' "$LOG" | tr -d '\\' || true)"
 fail=0
 case "$on" in
   *'"img":0'*'"script":false'*'"slot":"none"'*'"ipc":"undefined"'*) echo "ok: blocked with the shield on" ;;
@@ -108,5 +122,9 @@ esac
 case "$off" in
   *'"img":4'*'"script":true'*'"slot":"block"'*) echo "ok: loaded with the shield off" ;;
   *) echo "FAIL: shield off: $off" >&2; fail=1 ;;
+esac
+case "$other" in
+  *'"img":0'*'"script":false'*'"slot":"none"'*'Page two'*) echo "ok: blocked again on another host (shield applied per navigation)" ;;
+  *) echo "FAIL: other host: $other" >&2; fail=1 ;;
 esac
 exit "$fail"
