@@ -116,6 +116,8 @@ first and synced to your blyg in the background. It's written in Rust with
 
 ## Features
 
+### Writing
+
 - **Search is the interface.** The omnibar filters your posts as you type. ↑/↓
   previews each post, ⏎ opens it, and ⏎ with no match starts a new draft.
 - **Plain Markdown, no save button.** Every keystroke is saved locally and
@@ -136,8 +138,15 @@ first and synced to your blyg in the background. It's written in Rust with
   list with a `scratch` pill, are searchable and editable, and ⌘D or ⌘⏎
   there promotes them. `capture-default = draft` makes esc save a draft
   instead, and `new-note = scratch` makes the omnibar create scratch notes.
-- **Links.** Select some text and paste a web address to link it, as in
-  WordPress: the text becomes `[text](address)`.
+- **Links and mentions.** Select some text and paste a web address to link
+  it, as in WordPress: the text becomes `[text](address)`. Type `@` to pick
+  from the blygs you know (subscriptions, blogroll, authors you read); it
+  inserts a plain link to that blyg, since Blygger has no handles.
+- **Spellcheck** with the macOS spell checker, your languages and learned
+  words: a red wavy underline, and right-click for suggestions, Learn
+  Spelling and Ignore. Code, links, quotes and TK markers are skipped, and
+  checking runs in the background after you pause, so typing stays instant.
+  `spellcheck = false` turns it off.
 - **Images.** Paste or drop an image to upload it; it goes into the text
   where you pasted it, and the preview shows it.
 - **Full editor.** A live preview beside the editor shows the post exactly as
@@ -158,6 +167,32 @@ first and synced to your blyg in the background. It's written in Rust with
 - **AI helpers, with disclosure.** Fill a `[TK]` gap, shorten a post to fit,
   continue a thought, outline a thread, or proofread. Generation happens at
   writing time, you review it, and generated text is always disclosed.
+
+### Reading
+
+- **The stream.** Reading opens as one timeline of everything you follow,
+  newest first, drawn natively so it stays fast with hundreds of posts.
+  Fragments show in full, threads show a few lines and **Read more** (⏎ or
+  Space) opens the whole post in a side pane. j/k move; a post counts as
+  read after a second on screen, and unread posts get a dot. Posts are dated
+  by when their author published or last edited them.
+- **The Reader** (⌥⌘2): three panes like NetNewsWire, with sources on the
+  left (All unread, Today, Thumbed, your folders, then the rest), the posts
+  from that source in the middle, and the post on the right. Folders stay on
+  your Mac; drag a subscription onto one to file it. Space scrolls the post,
+  then moves to the next unread one.
+- **Quotes, stubs and forks you can follow.** Click a quote's text to open
+  the post it quotes, at the quoted version, or its author's name for their
+  profile. Each post lists who quoted, stubbed or forked it, from the blygs
+  you follow (your own posts list their verified mentions): a list, never a
+  count.
+- **Notes while you read** (⇧⌘N). A drawer slides in over the right edge with
+  a scratchpad, "Reading notes", which stays on your Mac until you make it a
+  draft (⌘D). **→ Notes** on a post adds a quote of it, → Notes in the
+  browser adds the page's link, and selected text goes in as a quote with
+  its source.
+- **Read state syncs** between your Macs through your blyg (optional server
+  extension 5), and search (⌘F or /) filters whatever you're reading.
 - **Profiles.** ⌘I on a post (or a click on its author's address, its
   "↳ stub of" / "⑂ forked from" line, a mention, or a blogroll entry) shows
   who wrote it: name, bio, links, their blogroll, recent posts, and the blygs
@@ -172,11 +207,20 @@ first and synced to your blyg in the background. It's written in Rust with
   The pane has its own cookies and no access to the app.
   `open-links = browser` and `content-blocking = false` turn these off.
 
+### And
+
+- **Signed automatic updates** (see [Updates](#updates)), and **Blygger ›
+  About Blygger** for the version, commit, update status and what your
+  server supports, with **Copy build info** for bug reports.
+
 | | |
 |---|---|
-| ![Dark theme](docs/screenshots/dark.png) | ![Quick capture](docs/screenshots/quick-capture.png) |
-| ![Publish sheet](docs/screenshots/publish-sheet.png) | ![Conflict resolution](docs/screenshots/conflict.png) |
-| ![Toolbar, with a disabled button's reason](docs/screenshots/toolbar.png) | ![Quick capture's button row](docs/screenshots/quick-capture-buttons.png) |
+| ![The stream](docs/screenshots/stream.png) | ![The three-pane Reader with folders](docs/screenshots/reader-three-pane.png) |
+| ![The notes drawer over the stream](docs/screenshots/notes-drawer.png) | ![Spelling suggestions](docs/screenshots/spellcheck.png) |
+| ![Picking a blyg after @](docs/screenshots/mention-picker.png) | ![Dark theme](docs/screenshots/dark.png) |
+| ![Quick capture](docs/screenshots/quick-capture.png) | ![Publish sheet](docs/screenshots/publish-sheet.png) |
+| ![Conflict resolution](docs/screenshots/conflict.png) | ![Toolbar, with a disabled button's reason](docs/screenshots/toolbar.png) |
+| ![Quick capture's button row](docs/screenshots/quick-capture-buttons.png) | ![Mentions](docs/screenshots/mentions.png) |
 | ![A profile, opened from a reading item](docs/screenshots/profile.png) | ![Your own profile, with blogroll toggles](docs/screenshots/profile-own.png) |
 
 ## Requirements: a blyg the app can talk to
@@ -185,13 +229,15 @@ first and synced to your blyg in the background. It's written in Rust with
 > upstream Blygger yet.
 
 The app talks to your blyg through its owner API. Today that means a Blygger
-Worker with four small, additive extensions:
+Worker with four small, additive extensions, plus an optional fifth:
 
 1. **Bearer-token owner auth.** Upstream uses a browser cookie session.
 2. **JSON reads** for your items and subscriptions.
 3. **Read extensions** for the reading list, mentions, settings and hoppers.
 4. **Client-recorded AI provenance**, so text generated in the app is disclosed
    like text the server generates.
+5. *Optional:* **read-state sync**, so what you read on one Mac reads as read
+   on your others.
 
 These aren't in upstream Blygger yet. The plan is to propose them there. Details,
 contracts and what the app does without each one: [`docs/SERVER.md`](docs/SERVER.md).

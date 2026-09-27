@@ -18,7 +18,7 @@ use super::{RSheet, View};
 use crate::app::MainView;
 
 impl MainView {
-    pub(super) fn open_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_quote_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.reading.sheet, Some(RSheet::Quote { .. })) {
             self.cancel_quote_picker(window, cx);
             return;

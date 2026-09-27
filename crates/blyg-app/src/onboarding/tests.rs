@@ -10,7 +10,7 @@ use blyg_core::*;
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::FlowStep;
-use super::steps::STEPS;
+use super::steps::{self, Region, STEPS};
 use crate::app::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::{FakeBackend, Timing};
@@ -485,13 +485,252 @@ fn tutorial_ring_never_draws_over_a_picker(cx: &mut TestAppContext) {
     let region = STEPS[quotes].region;
     let ring = |e: &mut Env| {
         e.view
-            .update_in(e.cx, |v, window, _| v.tutorial_ring(region, window))
+            .update_in(e.cx, |v, window, cx| v.tutorial_ring(region, window, cx))
     };
     assert!(ring(&mut e).is_some(), "the editor is ringed before ⌘K");
     e.cx.simulate_keystrokes("cmd-k");
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| v.reading.sheet.is_some()));
     assert_eq!(ring(&mut e), None, "the picker covers the editor");
+}
+
+fn enter(e: &mut Env, id: &str) -> usize {
+    let i = STEPS
+        .iter()
+        .position(|s| s.id == id)
+        .unwrap_or_else(|| panic!("no step {id}"));
+    e.view
+        .update_in(e.cx, |v, window, cx| v.tutorial_enter(i, window, cx));
+    e.cx.run_until_parked();
+    i
+}
+
+fn ring_now(e: &mut Env, region: Region) -> Option<(f32, f32, f32, f32)> {
+    e.view
+        .update_in(e.cx, |v, window, cx| v.tutorial_ring(region, window, cx))
+}
+
+fn tour_done(e: &mut Env) -> bool {
+    e.view.read_with(e.cx, |v, _| {
+        v.onboarding.tutorial.as_ref().is_some_and(|t| t.done)
+    })
+}
+
+/// Do what step `id` asks, the way the user would (keys where there are
+/// keys; the click's own call for a click).
+fn do_step(e: &mut Env, id: &str) {
+    match id {
+        "search" => e.cx.simulate_keystrokes("down"),
+        "create" => e.cx.simulate_keystrokes("enter"),
+        "autosave" => e.cx.simulate_input(" at dusk"),
+        "kinds" => e.cx.simulate_keystrokes("cmd-t"),
+        "capture" => e.cx.simulate_keystrokes("cmd-d"),
+        "publish" => e.cx.simulate_keystrokes("cmd-enter"),
+        "publish-note" => e.cx.simulate_keystrokes("enter"),
+        "full-editor" => e.cx.simulate_keystrokes("cmd-3"),
+        "write-view" => e.cx.simulate_keystrokes("cmd-1"),
+        "tk" => e.cx.simulate_keystrokes("cmd-g"),
+        "shorten" => e.cx.simulate_keystrokes("cmd-shift-g"),
+        "versions" => e.cx.simulate_keystrokes("cmd-y"),
+        "quotes" => e.cx.simulate_keystrokes("cmd-k"),
+        "mentions" => e.cx.simulate_input("@"),
+        "stream" => e.cx.simulate_keystrokes("enter"),
+        "original" => e.view.update_in(e.cx, |v, window, cx| {
+            let origin = v
+                .reading
+                .rows
+                .iter()
+                .find(|r| r.remote_id == steps::QUOTED)
+                .map(|r| r.origin.clone())
+                .expect("the quoted post is held");
+            v.open_original(origin, steps::QUOTED.into(), Some(1), window, cx)
+        }),
+        "reader" => e.cx.simulate_keystrokes("alt-cmd-2"),
+        "notes" => e.cx.simulate_keystrokes("cmd-shift-n"),
+        "browser" => e.cx.simulate_keystrokes("escape"),
+        other => panic!("no way to do step {other}"),
+    }
+    e.cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.real.take();
+    for (i, step) in STEPS.iter().enumerate() {
+        if step.keys.is_empty() {
+            continue; // the last step waits for Finish
+        }
+        enter(&mut e, step.id);
+        assert!(!tour_done(&mut e), "{}: done before its key", step.id);
+        do_step(&mut e, step.id);
+        assert!(tour_done(&mut e), "{}: its key didn't count", step.id);
+        // Leave what the key opened (a proposal, the picker) so it moves on.
+        settle(&mut e);
+        if tour_step(&mut e) == Some(step.id) {
+            e.cx.simulate_keystrokes("escape");
+            settle(&mut e);
+        }
+        assert_eq!(
+            tour_step(&mut e),
+            Some(STEPS[i + 1].id),
+            "{} moves on after its key",
+            step.id
+        );
+    }
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+}
+
+#[gpui_kit::test]
+fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    let (vw, vh) = e.cx.update(|window, _| {
+        let s = window.viewport_size();
+        (f32::from(s.width), f32::from(s.height))
+    });
+    for step in STEPS {
+        enter(&mut e, step.id);
+        settle(&mut e);
+        let ring = ring_now(&mut e, step.region);
+        if step.region == Region::Whole {
+            assert_eq!(ring, None, "{}: no ring", step.id);
+            continue;
+        }
+        let (x, y, w, h) =
+            ring.unwrap_or_else(|| panic!("{}: no ring on {:?}", step.id, step.region));
+        assert!(w > 20. && h > 20., "{}: {w}×{h}", step.id);
+        assert!(
+            x >= -1. && y >= -1. && x + w <= vw + 1. && y + h <= vh + 1.,
+            "{}: ({x}, {y}, {w}, {h}) is off the {vw}×{vh} window",
+            step.id
+        );
+        // What the caption points at is inside the ring.
+        let inside: &[&str] = match step.region {
+            Region::Reader => &["mode-stream", "mode-reader"],
+            Region::StreamPost => &["stream-actions"],
+            Region::ReaderPost => &["responses"],
+            Region::BrowserChrome => &["browser-shield", "browser-close"],
+            _ => &[],
+        };
+        for sel in inside {
+            let b =
+                e.cx.debug_bounds(sel)
+                    .unwrap_or_else(|| panic!("{}: no {sel} on screen", step.id));
+            let (bx, by) = (f32::from(b.left()), f32::from(b.top()));
+            let (bx1, by1) = (f32::from(b.right()), f32::from(b.bottom()));
+            // The browser pane may still be sliding in from the right (the
+            // ring is where it lands): only its left and vertical edges.
+            let sliding = step.region == Region::BrowserChrome;
+            assert!(
+                bx >= x - 1. && by >= y - 1. && (sliding || bx1 <= x + w + 1.) && by1 <= y + h + 1.,
+                "{}: {sel} ({bx}, {by})–({bx1}, {by1}) is outside the ring ({x}, {y}, {w}, {h})",
+                step.id
+            );
+        }
+    }
+}
+
+#[gpui_kit::test]
+fn the_ring_steps_aside_for_the_drawer_the_browser_and_popups(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+
+    // The notes drawer slides over the post pane the notes step rings.
+    enter(&mut e, "notes");
+    assert!(ring_now(&mut e, Region::ReaderPost).is_some());
+    e.cx.simulate_keystrokes("cmd-shift-n");
+    e.cx.run_until_parked();
+    assert!(e.view.read_with(e.cx, |v, _| v.notes.open));
+    assert_eq!(
+        ring_now(&mut e, Region::ReaderPost),
+        None,
+        "under the drawer"
+    );
+
+    // The browser pane covers the Reader, but its own step rings it.
+    enter(&mut e, "browser");
+    assert!(e.view.read_with(e.cx, |v, _| v.browser.open));
+    assert!(ring_now(&mut e, Region::BrowserChrome).is_some());
+    assert_eq!(ring_now(&mut e, Region::ReaderPost), None, "under the pane");
+    assert!(
+        ring_now(&mut e, Region::Reader).is_some(),
+        "the sources pane is left of it"
+    );
+    // Nothing was loaded for the sample.
+    e.view.read_with(e.cx, |v, _| {
+        assert!(v.browser.loads.is_empty(), "{:?}", v.browser.loads);
+        assert!(!v.browser.alive(), "no web view for the sample");
+    });
+
+    // The stream's side pane: the post list's ring shrinks beside it.
+    enter(&mut e, "stream");
+    assert!(e.view.read_with(e.cx, |v, _| !v.browser.open), "tidied");
+    let full = ring_now(&mut e, Region::Stream).expect("the stream");
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    let beside = ring_now(&mut e, Region::Stream).expect("beside the pane");
+    assert!(beside.2 < full.2 * 0.6, "{beside:?} vs {full:?}");
+
+    // The @-mention popup sits in the editor: no ring over it.
+    enter(&mut e, "mentions");
+    assert!(ring_now(&mut e, Region::Editor).is_some());
+    e.cx.simulate_input("@");
+    e.cx.run_until_parked();
+    assert!(
+        e.view
+            .read_with(e.cx, |v, cx| v.assist.read(cx).mention_open())
+    );
+    assert_eq!(ring_now(&mut e, Region::Editor), None, "the popup is up");
+}
+
+#[gpui_kit::test]
+fn the_tour_puts_reading_mode_notes_and_browser_back(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    // The user reads in Reader mode.
+    e.cx.simulate_keystrokes("alt-cmd-2");
+    e.cx.run_until_parked();
+    assert_eq!(
+        state::AppState::load(e.dir.path()).reading_mode.as_deref(),
+        Some("reader")
+    );
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    enter(&mut e, "stream");
+    assert_eq!(
+        state::AppState::load(e.dir.path()).reading_mode.as_deref(),
+        Some("stream")
+    );
+    enter(&mut e, "notes");
+    e.cx.simulate_keystrokes("cmd-shift-n");
+    e.cx.simulate_input("a note in the tour");
+    e.cx.run_until_parked();
+    enter(&mut e, "browser");
+    e.view
+        .update_in(e.cx, |v, window, cx| v.finish_tutorial(window, cx));
+    e.cx.run_until_parked();
+    assert_eq!(
+        state::AppState::load(e.dir.path()).reading_mode.as_deref(),
+        Some("reader"),
+        "the user's mode"
+    );
+    assert_eq!(
+        state::AppState::load(e.dir.path()).notes_note,
+        None,
+        "the tour's note isn't remembered"
+    );
+    e.view.read_with(e.cx, |v, _| {
+        assert!(!v.notes.open && !v.browser.open);
+        assert!(v.browser.page.url.is_empty(), "no sample page left for ⇧⌘B");
+        assert_eq!(
+            v.reading.mode,
+            crate::app::reading::stream_vm::ReadMode::Reader
+        );
+    });
 }
 
 #[gpui_kit::test]

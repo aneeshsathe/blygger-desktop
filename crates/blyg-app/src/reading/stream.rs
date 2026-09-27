@@ -340,7 +340,12 @@ impl MainView {
         }
     }
 
-    fn stream_select(&mut self, ix: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn stream_select(
+        &mut self,
+        ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let old = self
             .reading
             .sel

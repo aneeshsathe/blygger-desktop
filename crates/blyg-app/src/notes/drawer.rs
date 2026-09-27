@@ -26,6 +26,14 @@ gpui_kit::actions!(
     ]
 );
 
+/// --- onboarding --- The user's notes while the tutorial runs.
+pub(crate) struct NotesPark {
+    id: Option<LocalId>,
+    resolved: bool,
+    /// `state.json`'s `notes_note` before the tour.
+    stored: Option<String>,
+}
+
 /// Where a selection is read from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SelSource {
@@ -399,6 +407,48 @@ impl MainView {
                 None => window.focus(&self.focus, cx),
             }
         }
+        cx.notify();
+    }
+
+    // ------------------------------------------------------------ onboarding
+
+    /// --- onboarding --- The tutorial starts: the drawer goes away at once,
+    /// and forgets the user's note so the tour's drawer writes to the sample
+    /// data. Hand the result back to [`Self::notes_tour_restore`].
+    pub(crate) fn notes_tour_park(&mut self, cx: &mut Context<Self>) -> NotesPark {
+        let park = NotesPark {
+            id: self.notes.id.take(),
+            resolved: std::mem::replace(&mut self.notes.resolved, false),
+            stored: self
+                .notes
+                .data_dir
+                .as_deref()
+                .map(blyg_core::state::AppState::load)
+                .and_then(|s| s.notes_note),
+        };
+        self.notes_tour_hide(cx);
+        park
+    }
+
+    /// --- onboarding --- The tour is over: the drawer hidden and the user's
+    /// note back (in memory and in `state.json`).
+    pub(crate) fn notes_tour_restore(&mut self, park: NotesPark, cx: &mut Context<Self>) {
+        self.notes_tour_hide(cx);
+        self.notes.id = park.id;
+        self.notes.resolved = park.resolved;
+        if let Some(d) = &self.notes.data_dir {
+            let stored = park.stored;
+            let _ = blyg_core::state::AppState::update(d, |s| s.notes_note = stored);
+        }
+    }
+
+    /// Hide the drawer without sliding (the keyboard is the caller's).
+    pub(crate) fn notes_tour_hide(&mut self, cx: &mut Context<Self>) {
+        self.notes.open = false;
+        self.notes.closing = false;
+        self.notes.menu = false;
+        self.notes.moved = None;
+        self.notes.close_gen += 1;
         cx.notify();
     }
 
