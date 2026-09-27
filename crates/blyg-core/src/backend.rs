@@ -353,6 +353,16 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    // --- responses --- (issue #7)
+
+    /// Posts in the local reading list that quote, stub or fork the post
+    /// `(origin, id)`: "seen in your network". Local, instant; a list, never
+    /// a count. Additive; the default knows none.
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        let _ = (origin, id);
+        Vec::new()
+    }
+
     // --- quote targets ---
     // Opening a quote's (or a stub's, or a fork's) original that isn't held
     // here: its public files, fetched unauthenticated with `PublicClient`

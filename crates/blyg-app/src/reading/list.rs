@@ -256,7 +256,12 @@ impl MainView {
         let want = self.reading.want_version.take();
         self.reading.sel = Some(key.clone());
         let tombstone = item.state == "tombstone";
+        let responses = self.backend.responses(&item.origin, &item.remote_id);
+        if self.is_own_origin(&item.origin) && matches!(self.reading.mentions, Load::Idle) {
+            self.load_mentions(cx);
+        }
         self.reading.opened = Some(Opened {
+            responses,
             key: key.clone(),
             item,
             changelog: if tombstone { Load::Idle } else { Load::Loading },
@@ -1042,6 +1047,8 @@ impl MainView {
             .child(div().px(px(32.)).flex_none().child(header))
             .child(notes)
             .child(body)
+            // --- responses --- a list, never a count.
+            .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
             .child(actions_row)
             .into_any_element()
     }

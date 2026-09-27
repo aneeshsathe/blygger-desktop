@@ -26,6 +26,8 @@ pub(crate) mod stream;
 pub(crate) mod stream_vm;
 // --- quote targets --- (issue #3)
 pub(crate) mod original;
+// --- responses --- (issue #7)
+pub(crate) mod responses;
 mod subscriptions;
 mod versions;
 pub(crate) mod vm;
@@ -145,6 +147,8 @@ pub struct Opened {
     pub dropdown: bool,
     pub pins: HashMap<u32, Load<PinnedVersion>>,
     pub diff_vs_now: bool,
+    // --- responses --- posts here that quote, stub or fork this one.
+    pub responses: Vec<blyg_core::Response>,
 }
 
 impl Opened {
@@ -241,6 +245,10 @@ pub struct State {
     /// The version to show once the post being opened has its versions
     /// (a quote's version), when it's current or pinned.
     pub want_version: Option<u32>,
+    // --- responses ---
+    /// Posts that someone in the reading list quotes, stubs or forks
+    /// (`post_key`s): the stream's "responses" marker, never a count.
+    pub responded: HashSet<(String, String)>,
 }
 
 impl State {
@@ -271,6 +279,7 @@ impl State {
             ),
             stream: stream::Stream::new(),
             want_version: None,
+            responded: HashSet::new(),
         }
         .refiltered()
     }
@@ -284,6 +293,12 @@ impl State {
     pub fn refilter(&mut self) {
         self.shown = vm::filter(&self.rows, &self.query);
         self.stream.sync(&self.rows, &self.shown);
+        self.responded = self
+            .rows
+            .iter()
+            .flat_map(|r| r.references())
+            .map(|f| (f.origin, f.id))
+            .collect();
     }
 
     /// The rows the list shows (all of them without a search).
@@ -368,6 +383,7 @@ impl MainView {
                 o.item = n.clone();
                 o.item.read_version = read;
             }
+            o.responses = self.backend.responses(&o.item.origin, &o.item.remote_id);
         }
         cx.notify();
     }

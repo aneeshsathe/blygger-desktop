@@ -118,6 +118,7 @@ impl Store {
         for it in items {
             let kept = retainable(&tx, it)?;
             let it = &kept;
+            put_refs(&tx, it)?;
             let json = to_json(it)?;
             let sub_kind = sub_kinds.get(&it.subscription_id).map(|k| kind_str(*k));
             let existing: Option<String> = tx
@@ -173,6 +174,7 @@ impl Store {
             };
             match renamed {
                 Some(old_rid) => {
+                    drop_refs(&tx, &it.subscription_id, &old_rid)?;
                     tx.execute(
                         "UPDATE reading SET remote_id = ?2, origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, \
                          state = ?7, version = ?8, json = ?9, sort_at = ?11 WHERE subscription_id = ?1 AND remote_id = ?10",
@@ -231,6 +233,7 @@ impl Store {
                 "DELETE FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
                 [&s, &rid],
             )?;
+            drop_refs(&tx, &s, &rid)?;
             changed = true;
         }
         tx.commit()?;
@@ -359,6 +362,58 @@ impl Store {
         Some((item, sub_kind))
     }
 
+    /// Posts held here that quote, stub or fork `(origin, id)`, newest
+    /// first, one per post (duplicates collapse as in [`Self::reading`]);
+    /// withdrawn ones only when kept. An index lookup (`reading_refs`).
+    pub fn responses_to(&self, origin: &str, id: &str) -> Vec<crate::model::Response> {
+        let (origin, id) = crate::model::post_key(origin, id);
+        let c = self.conn();
+        let Ok(mut st) = c.prepare_cached(
+            "SELECT r.json, r.read_version, r.sub_kind, f.relation, f.version \
+             FROM reading_refs f JOIN reading r \
+               ON r.subscription_id = f.subscription_id AND r.remote_id = f.remote_id \
+             WHERE f.target_id = ?1 AND f.target_origin = ?2 \
+             ORDER BY r.sort_at DESC, r.subscription_id, r.remote_id",
+        ) else {
+            return vec![];
+        };
+        let rows = st
+            .query_map([&id, &origin], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, Option<i64>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                ))
+            })
+            .map(|it| it.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            .unwrap_or_default();
+        let mut seen = HashSet::new();
+        let mut out = Vec::new();
+        for (json, rv, _kind, rel, version) in rows {
+            let Ok(mut item) = serde_json::from_str::<ReadingItem>(&json) else {
+                continue;
+            };
+            item.read_version = rv.map(|v| v as u32);
+            if item.state == "tombstone" && item.thumb.is_none() && item.hoppers.is_empty() {
+                continue;
+            }
+            let Some(relation) = relation_of(&rel) else {
+                continue;
+            };
+            if !seen.insert((group_key(&item), rel)) {
+                continue;
+            }
+            out.push(crate::model::Response {
+                item,
+                relation,
+                version: version.map(|v| v as u32),
+            });
+        }
+        out
+    }
+
     pub fn set_thumb(&self, sub: &str, remote_id: &str, thumb: Option<i8>) -> Result<bool> {
         let mut c = self.conn();
         let tx = c.transaction()?;
@@ -394,6 +449,71 @@ fn better(a: &Row, b: &Row) -> bool {
         )
     };
     rank(a) > rank(b)
+}
+
+// --- responses ---
+
+fn relation_str(r: crate::profile::Relation) -> &'static str {
+    match r {
+        crate::profile::Relation::Quotes => "quotes",
+        crate::profile::Relation::Stubs => "stubs",
+        crate::profile::Relation::Forks => "forks",
+    }
+}
+
+fn relation_of(s: &str) -> Option<crate::profile::Relation> {
+    Some(match s {
+        "quotes" => crate::profile::Relation::Quotes,
+        "stubs" => crate::profile::Relation::Stubs,
+        "forks" => crate::profile::Relation::Forks,
+        _ => return None,
+    })
+}
+
+fn drop_refs(tx: &rusqlite::Connection, sub: &str, rid: &str) -> Result<()> {
+    tx.execute(
+        "DELETE FROM reading_refs WHERE subscription_id = ?1 AND remote_id = ?2",
+        [sub, rid],
+    )?;
+    Ok(())
+}
+
+/// Rewrite a row's references (`reading_refs`).
+fn put_refs(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<()> {
+    drop_refs(tx, &it.subscription_id, &it.remote_id)?;
+    for r in it.references() {
+        tx.execute(
+            "INSERT OR IGNORE INTO reading_refs (subscription_id, remote_id, target_origin, target_id, \
+             relation, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                it.subscription_id,
+                it.remote_id,
+                r.origin,
+                r.id,
+                relation_str(r.relation),
+                r.version
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+/// Rebuild `reading_refs` from every row (after a migration).
+pub(super) fn backfill_refs(conn: &mut rusqlite::Connection) -> Result<()> {
+    let tx = conn.transaction()?;
+    let rows: Vec<String> = {
+        let mut st = tx.prepare("SELECT json FROM reading")?;
+        st.query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?
+    };
+    tx.execute("DELETE FROM reading_refs", [])?;
+    for json in rows {
+        if let Ok(it) = serde_json::from_str::<ReadingItem>(&json) {
+            put_refs(&tx, &it)?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// Fill `sort_at` for rows written before it existed (schema v5): parse

@@ -1054,6 +1054,12 @@ impl Backend for LiveBackend {
         Some(self.finish_profile(p))
     }
 
+    // --- responses ---
+
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        self.e().store.responses_to(origin, id)
+    }
+
     // --- quote targets ---
 
     fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {

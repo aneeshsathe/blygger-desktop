@@ -156,6 +156,22 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE reading ADD COLUMN sort_at TEXT NOT NULL DEFAULT '';
     CREATE INDEX reading_sort ON reading(sort_at DESC, subscription_id, remote_id);
     "#,
+    // v6 --- responses --- (issue #7): what each reading row quotes, stubs
+    // or forks (`ReadingItem::references`), so "who responded to this post,
+    // in your network" is an index lookup. Derived from `reading.json`,
+    // rewritten on every upsert, filled for existing rows by `Store::init`.
+    r#"
+    CREATE TABLE reading_refs (
+        subscription_id  TEXT NOT NULL,
+        remote_id        TEXT NOT NULL,
+        target_origin    TEXT NOT NULL,   -- normalized (post_key)
+        target_id        TEXT NOT NULL,   -- lowercased
+        relation         TEXT NOT NULL,   -- quotes | stubs | forks
+        version          INTEGER,
+        PRIMARY KEY (subscription_id, remote_id, target_origin, target_id, relation)
+    );
+    CREATE INDEX reading_refs_target ON reading_refs(target_id, target_origin);
+    "#,
 ];
 
 /// Returns whether any migration ran.

@@ -120,6 +120,10 @@ impl MainView {
 
     /// ⌘Y: your post's history (Posts), or the version list (Reading).
     pub(super) fn toggle_versions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- responses --- your own post's verified mentions, listed under it.
+        if matches!(self.reading.mentions, Load::Idle) && self.reading.available {
+            self.load_mentions(cx);
+        }
         if self.reading.view == View::Reading {
             if let Some(o) = self.reading.opened.as_mut() {
                 o.dropdown = !o.dropdown;
@@ -563,7 +567,13 @@ impl MainView {
                                 .child(doc_header)
                                 .children(dirty_note),
                         )
-                        .child(body),
+                        .child(body)
+                        // --- responses --- who quoted, stubbed or forked it.
+                        .children(item.server_id.as_ref().and_then(|sid| {
+                            let origin = self.backend.base_url()?;
+                            let network = self.backend.responses(&origin, &sid.0);
+                            self.render_responses(&origin, &sid.0, &network, cx)
+                        })),
                 )
                 .child(
                     div()

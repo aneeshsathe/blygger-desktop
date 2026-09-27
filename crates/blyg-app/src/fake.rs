@@ -1463,6 +1463,26 @@ impl Backend for FakeBackend {
         Some(self.finish_profile(p))
     }
 
+    // --- responses --- the sample reading list's references, newest first.
+    fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
+        let key = blyg_core::post_key(origin, id);
+        self.reading()
+            .into_iter()
+            .filter(|r| r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty())
+            .flat_map(|r| {
+                r.references()
+                    .into_iter()
+                    .filter(|f| (f.origin.clone(), f.id.clone()) == key)
+                    .map(|f| blyg_core::Response {
+                        item: r.clone(),
+                        relation: f.relation,
+                        version: f.version,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
     // --- quote targets --- posts nobody here follows, "served" publicly.
 
     fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {

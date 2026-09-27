@@ -387,3 +387,74 @@ fn the_lineage_lines_name_opens_the_profile_and_the_rest_the_post(cx: &mut TestA
     );
     assert!(!view.read_with(cx, |v, _| v.profile_sheet_open()));
 }
+
+// --- responses --- (issue #7)
+
+#[gpui_kit::test]
+fn responses_seen_in_the_network_are_listed_in_the_pane(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    settle(cx);
+    // The stream marks the post, without a number.
+    assert!(view.read_with(cx, |v, _| v.has_responses(LIN, LIN_BENCH)));
+    assert!(!view.read_with(cx, |v, _| v.has_responses(ADA, ADA_FINISHED)));
+    let key = view.read_with(cx, |v, _| {
+        v.reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == LIN_BENCH)
+            .map(super::vm::key)
+            .unwrap()
+    });
+    view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+    settle(cx);
+    let responses: Vec<(String, blyg_core::profile::Relation)> = view.read_with(cx, |v, _| {
+        v.reading
+            .opened
+            .as_ref()
+            .unwrap()
+            .responses
+            .iter()
+            .map(|r| (r.item.remote_id.clone(), r.relation))
+            .collect()
+    });
+    use blyg_core::profile::Relation;
+    assert_eq!(
+        responses,
+        [
+            (ADA_REPLY.to_string(), Relation::Stubs),
+            (ADA_REPLY.to_string(), Relation::Quotes)
+        ]
+    );
+    assert!(cx.debug_bounds("responses").is_some(), "the list");
+    // A post nobody responded to has no list at all.
+    let key = view.read_with(cx, |v, _| {
+        v.reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == ADA_FINISHED)
+            .map(super::vm::key)
+            .unwrap()
+    });
+    view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+    settle(cx);
+    assert!(cx.debug_bounds("responses").is_none());
+}
+
+#[gpui_kit::test]
+fn your_own_posts_list_their_verified_mentions(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.open(&blyg_core::LocalId("01J9M2A".into()), window, cx);
+        v.toggle_versions(window, cx);
+    });
+    settle(cx);
+    assert!(
+        view.read_with(cx, |v, _| v.reading.mentions.ready().is_some()),
+        "mentions fetched"
+    );
+    assert!(
+        cx.debug_bounds("responses").is_some(),
+        "listed under the post"
+    );
+}

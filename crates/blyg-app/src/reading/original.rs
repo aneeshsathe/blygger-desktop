@@ -70,7 +70,9 @@ impl MainView {
                 Ok(p) => {
                     let shown = vm::shown(&p.versions);
                     let current = vm::current_ix(&shown);
+                    let responses = v.backend.responses(&p.item.origin, &p.item.remote_id);
                     v.reading.opened = Some(Opened {
+                        responses,
                         key: key.clone(),
                         item: p.item,
                         changelog: Load::Ready(p.versions),

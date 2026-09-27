@@ -77,6 +77,11 @@ impl MainView {
                 use crate::fake::reading_seed::{KIT, KIT_TIDES};
                 self.open_original(KIT.into(), KIT_TIDES.into(), Some(1), window, cx)
             }
+            // --- responses --- Lin's bench note: Ada stubbed and quoted it.
+            ("rd-stream-responses", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-responses", 1) => {
+                open(self, crate::fake::reading_seed::LIN_BENCH, window, cx)
+            }
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),

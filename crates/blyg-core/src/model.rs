@@ -416,6 +416,77 @@ impl ReadingItem {
     }
 }
 
+// --- responses --- (issue #7) who quoted, stubbed or forked a post.
+
+/// One post pointing at another: its `stub_of`, `forked_from`, or a
+/// `transclusions[]` entry. `origin` is normalized
+/// ([`crate::profile::normalize_origin`]) and `id` lowercased, so two
+/// spellings of the same post compare equal.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PostRef {
+    pub origin: String,
+    pub id: String,
+    pub relation: crate::profile::Relation,
+    pub version: Option<u32>,
+}
+
+/// A post in your reading list that quotes, stubs or forks another post
+/// ("seen in your network"). A list entry, never a count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Response {
+    /// The responding post.
+    pub item: ReadingItem,
+    pub relation: crate::profile::Relation,
+    /// The version of the target it responds to, when it says.
+    pub version: Option<u32>,
+}
+
+/// `(origin, id)` as [`PostRef`] keys them.
+pub fn post_key(origin: &str, id: &str) -> (String, String) {
+    (
+        crate::profile::normalize_origin(origin)
+            .unwrap_or_else(|| origin.trim().trim_end_matches('/').to_lowercase()),
+        id.trim().to_lowercase(),
+    )
+}
+
+impl ReadingItem {
+    /// The posts this one points at. A quote without an origin is from the
+    /// quoting post's own blyg; a `stub_of` that's only a URL is left out.
+    pub fn references(&self) -> Vec<PostRef> {
+        use crate::profile::Relation;
+        let mut out = Vec::new();
+        let mut push = |origin: &str, id: &str, relation, version| {
+            if id.trim().is_empty() || origin.trim().is_empty() {
+                return;
+            }
+            let (origin, id) = post_key(origin, id);
+            let r = PostRef {
+                origin,
+                id,
+                relation,
+                version,
+            };
+            if !out.contains(&r) {
+                out.push(r);
+            }
+        };
+        if let Some(s) = &self.stub_of
+            && let (Some(o), Some(id)) = (&s.origin, &s.id)
+        {
+            push(o, id, Relation::Stubs, s.version);
+        }
+        if let Some(f) = &self.forked_from {
+            push(&f.origin, &f.id, Relation::Forks, Some(f.version));
+        }
+        for t in &self.transclusions {
+            let o = t.origin.as_deref().unwrap_or(&self.origin);
+            push(o, &t.id, Relation::Quotes, t.version);
+        }
+        out
+    }
+}
+
 /// How much later than `created` an `updated` must be to count as an edit
 /// ("edited 3d ago" in the reading list): ten minutes, so a quick fix right
 /// after publishing doesn't.

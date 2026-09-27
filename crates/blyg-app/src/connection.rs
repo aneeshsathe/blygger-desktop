@@ -513,6 +513,10 @@ impl Backend for SwitchBackend {
     fn cached_profile(&self, url: &str) -> Option<blyg_core::Profile> {
         self.cur().cached_profile(url)
     }
+    // --- responses ---
+    fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
+        self.cur().responses(origin, id)
+    }
     // --- quote targets ---
     fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
         self.cur().public_item(origin, id)

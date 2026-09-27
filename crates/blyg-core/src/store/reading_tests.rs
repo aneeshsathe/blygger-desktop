@@ -626,3 +626,121 @@ fn read_state_survives_the_reorder() {
     assert_eq!(r.read_version, Some(1));
     assert!(r.edited_since_read());
 }
+
+// ---------------------------------------------------------------- responses (#7)
+
+fn responder(sub: &str, rid: &str, origin: &str, sort: &str) -> ReadingItem {
+    let mut it = ri(sub, rid, origin, None, 1, sort, rid);
+    it.created = Some(sort.into());
+    it.kind = Kind::Thread;
+    it
+}
+
+#[test]
+fn responses_are_found_by_origin_and_id() {
+    let s = store();
+    let target = ri(
+        "sa",
+        "T1",
+        "https://ada.example/",
+        None,
+        2,
+        "2030-01-01T00:00:00Z",
+        "t",
+    );
+    let mut quote = responder("sb", "Q1", "https://bo.example/", "2030-01-03T00:00:00Z");
+    quote.transclusions = vec![TransclusionRef {
+        id: "t1".into(), // another spelling of the id
+        version: Some(2),
+        origin: Some("https://ADA.example".into()),
+    }];
+    let mut stub = responder("sc", "S1", "https://cy.example/", "2030-01-04T00:00:00Z");
+    stub.stub_of = Some(StubOf {
+        origin: Some("https://ada.example/".into()),
+        id: Some("T1".into()),
+        version: Some(1),
+        url: None,
+    });
+    let mut fork = responder("sc", "F1", "https://cy.example/", "2030-01-02T00:00:00Z");
+    fork.forked_from = Some(RemoteRef {
+        origin: "https://ada.example/".into(),
+        id: "T1".into(),
+        version: 1,
+    });
+    // Same id on another origin: not a response.
+    let mut other = responder("sd", "O1", "https://dee.example/", "2030-01-05T00:00:00Z");
+    other.stub_of = Some(StubOf {
+        origin: Some("https://elsewhere.example/".into()),
+        id: Some("T1".into()),
+        version: None,
+        url: None,
+    });
+    // A quote without an origin is from its own blyg.
+    let mut own = responder("sa", "A2", "https://ada.example/", "2030-01-06T00:00:00Z");
+    own.transclusions = vec![TransclusionRef {
+        id: "T1".into(),
+        version: None,
+        origin: None,
+    }];
+    s.merge_reading(
+        &[target, quote, stub.clone(), fork, other, own],
+        true,
+        &HashMap::new(),
+    )
+    .unwrap();
+    let r = s.responses_to("https://ada.example", "T1");
+    let got: Vec<(&str, crate::profile::Relation, Option<u32>)> = r
+        .iter()
+        .map(|x| (x.item.remote_id.as_str(), x.relation, x.version))
+        .collect();
+    use crate::profile::Relation::*;
+    assert_eq!(
+        got,
+        [
+            ("A2", Quotes, None),
+            ("S1", Stubs, Some(1)),
+            ("Q1", Quotes, Some(2)),
+            ("F1", Forks, Some(1)),
+        ]
+    );
+    // An edit that drops the stub drops the response; a pruned row too.
+    let mut edited = stub;
+    edited.stub_of = None;
+    s.merge_reading(&[edited], false, &HashMap::new()).unwrap();
+    assert!(
+        !s.responses_to("https://ada.example/", "t1")
+            .iter()
+            .any(|x| x.item.remote_id == "S1")
+    );
+    s.merge_reading(&[], true, &HashMap::new()).unwrap();
+    assert!(s.responses_to("https://ada.example/", "T1").is_empty());
+}
+
+#[test]
+fn migration_indexes_existing_rows_references() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("v5.db");
+    let json = serde_json::json!({
+        "subscription_id": "s", "remote_id": "R", "subscription_title": "s",
+        "origin": "https://b.example/", "kind": "thread", "state": "current",
+        "version": 1, "created": "2030-01-01T00:00:00Z", "updated": null,
+        "observed_at": "2030-01-01T00:00:00Z", "content_md": "r", "content_html": "",
+        "author": null, "page": null, "thumb": null, "hoppers": [],
+        "stub_of": { "origin": "https://a.example/", "id": "X", "version": 1 }
+    })
+    .to_string();
+    {
+        let mut c = rusqlite::Connection::open(&path).unwrap();
+        super::schema::migrate_to(&mut c, 5).unwrap();
+        c.execute(
+            "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, state, version, json) \
+             VALUES ('s', 'R', 'https://b.example/', '2030-01-01T00:00:00Z', 'current', 1, ?1)",
+            [json],
+        )
+        .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    let r = s.responses_to("https://a.example/", "x");
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0].relation, crate::profile::Relation::Stubs);
+}

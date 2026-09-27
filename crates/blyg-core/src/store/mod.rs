@@ -186,6 +186,7 @@ impl Store {
         conn.pragma_update(None, "secure_delete", "ON")?;
         if schema::migrate(&mut conn)? {
             reading::backfill_sort_at(&mut conn)?;
+            reading::backfill_refs(&mut conn)?;
             // Don't leave pre-migration pages sitting in the WAL.
             conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
         }
