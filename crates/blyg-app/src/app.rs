@@ -42,9 +42,16 @@ gpui_kit::actions!(
 #[cfg(test)]
 #[path = "ui_tests.rs"]
 mod ui_tests;
+// --- composer --- (its GPUI tests need MainView's insides)
+#[cfg(test)]
+#[path = "composer/assist_tests.rs"]
+mod composer_tests;
 
 #[path = "demo.rs"]
 mod demo;
+// --- composer --- (the cm-* demo scenarios)
+#[path = "composer/demo.rs"]
+mod composer_demo;
 
 #[path = "scratch.rs"]
 pub(crate) mod scratch;
@@ -145,6 +152,8 @@ pub struct MainView {
     focus: FocusHandle,
     omni: Entity<InputState>,
     editor: Entity<TextareaState>,
+    /// --- composer --- @-mentions and spellcheck over the editor.
+    assist: Entity<crate::composer::Assist>,
     list: ListModel,
     list_scroll: UniformListScrollHandle,
     current: Option<Item>,
@@ -203,6 +212,11 @@ impl MainView {
         let omni = cx.new(|cx| InputState::new(window, cx).placeholder("Search or start writing…"));
         let editor = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
         let palette = Palette::resolve(prefs.theme, window.appearance());
+        // --- composer ---
+        let assist = {
+            let (editor, backend) = (editor.clone(), backend.clone());
+            cx.new(|cx| crate::composer::Assist::new(editor, backend, palette, window, cx))
+        };
 
         let mut subs = Vec::new();
         subs.push(cx.subscribe_in(&omni, window, Self::on_omni_event));
@@ -271,6 +285,7 @@ impl MainView {
             focus: cx.focus_handle(),
             omni,
             editor,
+            assist, // --- composer ---
             list: ListModel::default(),
             list_scroll: UniformListScrollHandle::new(),
             current: None,
@@ -433,6 +448,9 @@ impl MainView {
         }
         self.problems_dismissed = false;
         self.refresh_problems(cx);
+        // --- composer ---
+        crate::composer::set_spellcheck(self.prefs.spellcheck, cx);
+        crate::refresh_menus(cx);
         if !self.config_problems.is_empty() {
             let n = self.config_problems.len();
             msg = format!("{msg} · {n} problem{}", if n == 1 { "" } else { "s" });
@@ -638,6 +656,7 @@ impl MainView {
         self.editor
             .update(cx, |s, cx| s.set_value(text.to_string(), window, cx));
         self.loading_editor = false;
+        self.assist.update(cx, |a, cx| a.reset(cx)); // --- composer ---
     }
 
     /// Load the selected row into the editor (NV preview-as-you-move).
@@ -1547,6 +1566,7 @@ impl Render for MainView {
         let side_pad = ((pane_w - measure) / 2.).max(px(34.));
 
         // Project the palette + measure onto the editor each frame (cheap: copies).
+        self.assist.update(cx, |a, _| a.set_palette(p)); // --- composer ---
         self.editor.update(cx, |s, _| {
             s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
                 foreground: p.ink,
@@ -1964,6 +1984,8 @@ impl MainView {
             .font_family(body_font.clone())
             .text_size(px(size))
             .line_height(relative(1.6))
+            // --- composer --- the mention popup / spelling menu keys come first.
+            .map(|d| self.composer_keys(d, cx))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 if this.sheet.is_none() {
                     cx.stop_propagation();
@@ -1980,6 +2002,7 @@ impl MainView {
                 }
             }))
             .capture_action(cx.listener(|this, _: &Paste, window, cx| {
+                this.assist.update(cx, |a, _| a.note_paste()); // --- composer ---
                 if this.paste_link(window, cx) || this.paste_image(window, cx) {
                     cx.stop_propagation();
                 }
@@ -1998,8 +2021,51 @@ impl MainView {
             .child(
                 div()
                     .size_full()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor)),
+                    .relative()
+                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                    .child(self.assist.clone()), // --- composer ---
             )
+    }
+
+    // --- composer ---
+    /// While the mention popup or the spelling menu is up, ↑/↓/⏎/⇥/esc are
+    /// theirs (checked before the editor's own and the pane's esc).
+    fn composer_keys(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
+        use crate::composer::AssistKey;
+        use gpui_kit::base::input::IndentInline;
+        fn route(
+            this: &mut MainView,
+            key: AssistKey,
+            window: &mut Window,
+            cx: &mut Context<MainView>,
+        ) {
+            if this.assist.read(cx).wants_keys()
+                && this
+                    .assist
+                    .update(cx, |a, cx| a.handle_key(key, window, cx))
+            {
+                cx.stop_propagation();
+            }
+        }
+        d.capture_action(
+            cx.listener(|this, _: &MoveUp, window, cx| route(this, AssistKey::Up, window, cx)),
+        )
+        .capture_action(
+            cx.listener(|this, _: &MoveDown, window, cx| route(this, AssistKey::Down, window, cx)),
+        )
+        .capture_action(cx.listener(|this, a: &Enter, window, cx| {
+            if !a.secondary {
+                route(this, AssistKey::Enter, window, cx)
+            }
+        }))
+        .capture_action(
+            cx.listener(|this, _: &IndentInline, window, cx| {
+                route(this, AssistKey::Tab, window, cx)
+            }),
+        )
+        .capture_action(
+            cx.listener(|this, _: &Escape, window, cx| route(this, AssistKey::Escape, window, cx)),
+        )
     }
 
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {

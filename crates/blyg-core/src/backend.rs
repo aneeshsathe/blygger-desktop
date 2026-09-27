@@ -351,4 +351,10 @@ pub trait Backend: Send + Sync {
     fn read_state_sync(&self) -> bool {
         false
     }
+
+    /// Every profile fetched so far, one per origin, whatever its age.
+    /// Local, no network (the composer's @-mentions read it). Additive.
+    fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        Vec::new()
+    }
 }

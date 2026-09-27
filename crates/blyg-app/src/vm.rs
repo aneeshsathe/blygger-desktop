@@ -497,13 +497,12 @@ pub fn link_paste(text: &str, sel: Range<usize>, clip: &str) -> Option<(String, 
     let lead = label.len() - label.trim_start().len();
     let core = label.trim();
     let tail = &label[lead + core.len()..];
-    let core = core.replace('[', "\\[").replace(']', "\\]");
-    let dest = if url.contains(['(', ')']) {
-        format!("<{url}>")
-    } else {
-        url.to_string()
-    };
-    let link = format!("{}[{core}]({dest})", &label[..lead]);
+    let link = format!(
+        "{}[{}]({})",
+        &label[..lead],
+        escape_link_text(core),
+        link_destination(url)
+    );
     let caret = sel.start + link.len();
     let mut out = String::with_capacity(text.len() + link.len());
     out.push_str(before);
@@ -511,6 +510,20 @@ pub fn link_paste(text: &str, sel: Range<usize>, clip: &str) -> Option<(String, 
     out.push_str(tail);
     out.push_str(&text[sel.end..]);
     Some((out, caret + tail.len()))
+}
+
+/// Link text as Markdown needs it inside `[…]`: brackets escaped.
+pub fn escape_link_text(text: &str) -> String {
+    text.replace('[', "\\[").replace(']', "\\]")
+}
+
+/// A link destination for `(…)`: wrapped in `<…>` when it has parentheses.
+pub fn link_destination(url: &str) -> String {
+    if url.contains(['(', ')']) {
+        format!("<{url}>")
+    } else {
+        url.to_string()
+    }
 }
 
 /// Insert the upload placeholder at byte `cursor`, on its own paragraph (as

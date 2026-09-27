@@ -14,6 +14,7 @@ mod ai;
 mod app;
 mod capture;
 mod cli;
+mod composer; // --- composer --- (@-mentions and spellcheck)
 mod connection;
 mod fake;
 mod fonts;
@@ -154,7 +155,14 @@ fn main() -> ExitCode {
         app::bind_keys(cx);
         cx.on_action(|_: &app::Quit, cx| cx.quit());
         cx.on_action(|_: &app::ShowCapture, cx| capture::toggle(cx));
-        cx.set_menus(menus());
+        // --- composer --- the system spell checker, on unless `spellcheck = false`.
+        composer::init(composer::system_engine(), prefs.spellcheck, cx);
+        cx.on_action(|_: &composer::ToggleSpellcheck, cx| {
+            if let Err(e) = composer::toggle_spellcheck(cx) {
+                eprintln!("blygger: {e}");
+            }
+        });
+        cx.set_menus(menus(prefs.spellcheck));
         capture::init(backend.clone(), &prefs, cx);
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
@@ -229,7 +237,12 @@ pub fn order_front_regardless(window: &Window) {
     }
 }
 
-fn menus() -> Vec<Menu> {
+/// --- composer --- Rebuild the menu bar (the Spelling item's check mark).
+pub(crate) fn refresh_menus(cx: &mut App) {
+    cx.set_menus(menus(composer::spellcheck_enabled(cx)));
+}
+
+fn menus(spellcheck: bool) -> Vec<Menu> {
     use gpui_kit::base::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
     vec![
         Menu {
@@ -260,6 +273,16 @@ fn menus() -> Vec<Menu> {
                 MenuItem::action("Copy", Copy),
                 MenuItem::action("Paste", Paste),
                 MenuItem::action("Select All", SelectAll),
+                // --- composer ---
+                MenuItem::separator(),
+                MenuItem::submenu(Menu {
+                    name: "Spelling".into(),
+                    items: vec![
+                        MenuItem::action("Check Spelling While Typing", composer::ToggleSpellcheck)
+                            .checked(spellcheck),
+                    ],
+                    disabled: false,
+                }),
             ],
             disabled: false,
         },
@@ -346,13 +369,28 @@ mod menu_tests {
     fn menus_match_the_keymap_table() {
         let table = crate::keymap::table();
         let mut shown = Vec::new();
-        for menu in super::menus() {
-            if menu.name == "Edit" {
-                continue; // the standard text-editing items (gpui-base's actions)
-            }
-            for item in menu.items {
+        for menu in super::menus(true) {
+            let items: Vec<(String, MenuItem)> = if menu.name == "Edit" {
+                // The standard text-editing items are gpui-base's actions;
+                // only its submenus (Spelling) are ours.
+                menu.items
+                    .into_iter()
+                    .filter_map(|i| match i {
+                        MenuItem::Submenu(sub) => Some(sub),
+                        _ => None,
+                    })
+                    .flat_map(|sub| {
+                        let prefix = format!("Edit › {}", sub.name);
+                        sub.items.into_iter().map(move |i| (prefix.clone(), i))
+                    })
+                    .collect()
+            } else {
+                let name = menu.name.to_string();
+                menu.items.into_iter().map(|i| (name.clone(), i)).collect()
+            };
+            for (menu_name, item) in items {
                 if let MenuItem::Action { name, action, .. } = item {
-                    let path = format!("{} › {}", menu.name, name);
+                    let path = format!("{menu_name} › {name}");
                     let action = action.name().rsplit("::").next().unwrap_or_default();
                     assert!(
                         table

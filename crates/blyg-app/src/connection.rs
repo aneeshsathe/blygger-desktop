@@ -517,6 +517,10 @@ impl Backend for SwitchBackend {
     fn read_state_sync(&self) -> bool {
         self.cur().read_state_sync()
     }
+
+    fn cached_profiles(&self) -> Vec<blyg_core::Profile> {
+        self.cur().cached_profiles()
+    }
 }
 
 #[cfg(test)]

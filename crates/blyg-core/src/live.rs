@@ -1059,4 +1059,8 @@ impl Backend for LiveBackend {
     fn read_state_sync(&self) -> bool {
         self.e().read_sync_on()
     }
+
+    fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
+        self.e().store.cached_profiles()
+    }
 }

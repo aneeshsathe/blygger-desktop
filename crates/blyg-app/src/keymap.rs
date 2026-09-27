@@ -42,6 +42,8 @@ use crate::app::discard::{DeleteDraft, Withdraw};
 use crate::update::CheckForUpdates;
 // --- about ---
 use crate::about::ShowAbout;
+// --- composer ---
+use crate::composer::ToggleSpellcheck;
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -201,6 +203,16 @@ pub fn table() -> Vec<Keybind> {
             "Preview on/off, in place",
             Some("View › Preview")
         ),
+        // --- composer --- (@-mentions and spellcheck in the editor and quick
+        // capture). The mention popup's ↑/↓/⏎/⇥/esc and the spelling menu
+        // (right-click or ctrl-click a flagged word) are the popups' own keys,
+        // like the quote picker's; the toggle has no key.
+        menu_only!(
+            ToggleSpellcheck,
+            "Check spelling while typing (on/off; the spellcheck config key)",
+            "Edit › Spelling › Check Spelling While Typing"
+        ),
+        // --- end composer ---
         kb!(
             "cmd-o",
             Main,
@@ -539,6 +551,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
+    let _ = ToggleSpellcheck; // --- composer ---
 }
 
 /// `⌘⇧,` for `cmd-shift-,`.

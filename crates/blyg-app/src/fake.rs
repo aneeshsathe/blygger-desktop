@@ -1457,6 +1457,16 @@ impl Backend for FakeBackend {
     fn read_state_sync(&self) -> bool {
         self.lock().read_ext
     }
+
+    fn cached_profiles(&self) -> Vec<Profile> {
+        let mut out: Vec<Profile> = Vec::new();
+        for p in self.lock().profiles.values() {
+            if !out.iter().any(|o| o.origin == p.origin) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
 }
 
 #[cfg(test)]

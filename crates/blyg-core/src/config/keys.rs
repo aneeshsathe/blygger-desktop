@@ -114,6 +114,14 @@ pub const KEYS: &[KeySpec] = &[
          capture. Every button's tooltip shows its shortcut. false keeps the window \
          keyboard-only and minimal. Settings (⌘,) toggles it.",
     ),
+    // --- spellcheck ---
+    docs(
+        key("spellcheck", ValueKind::Bool, Some("true")),
+        "Check spelling while you type, with the macOS spell checker (your system languages \
+         and the words you've taught it). Misspelled words get a red wavy underline; right-click \
+         one for suggestions, Learn Spelling and Ignore. Code, links, addresses and blyg markup \
+         are never checked. Edit › Spelling › Check Spelling While Typing toggles it.",
+    ),
     // --- auto-update ---
     docs(
         key(
