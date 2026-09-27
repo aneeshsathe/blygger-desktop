@@ -92,6 +92,11 @@ impl Reader {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
     }
 
+    /// --- browser --- (`Studio::clip_webviews`)
+    pub(super) fn set_clip(&self, edge: Option<Pixels>) {
+        self.slot.borrow_mut().set_clip(edge);
+    }
+
     pub fn new() -> Reader {
         let (tx, rx) = async_channel::unbounded();
         Reader {
@@ -441,7 +446,9 @@ impl MainView {
                     window.focus(&self.focus, cx);
                 }
             }
-            SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
+            // --- browser --- a link: the browser pane, or the default browser
+            // (the click's modifiers and `open-links` decide).
+            SurfaceEvent::OpenUrl(url) => self.open_link(url, window, cx),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
         }
     }

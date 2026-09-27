@@ -225,6 +225,9 @@ pub struct Prefs {
     pub show_buttons: bool,
     // --- auto-update --- (read-only here: set in the config file)
     pub auto_update: AutoUpdate,
+    // --- browser --- (read-only here: set in the config file)
+    pub open_links: crate::app::browser::OpenLinks,
+    pub content_blocking: bool,
 }
 
 impl Default for Prefs {
@@ -246,6 +249,9 @@ impl Prefs {
             new_note: c.new_note(),
             show_buttons: c.show_buttons(), // --- buttons ---
             auto_update: AutoUpdate::from_value(c.get("auto-update")), // --- auto-update ---
+            // --- browser ---
+            open_links: crate::app::browser::OpenLinks::from_value(c.get("open-links")),
+            content_blocking: c.get("content-blocking") != Some("false"),
         }
     }
 
