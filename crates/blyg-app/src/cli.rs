@@ -61,6 +61,26 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
             o.stdout = format!("blygger {}\n", env!("CARGO_PKG_VERSION"));
         }
         "+help" => o.stdout = HELP.to_string(),
+        // --- browser --- internal (not in +help): the app runs this as a
+        // child process to convert the block lists (browser/driver.rs).
+        "+convert-blocklists" => {
+            let out_dir = args.first().map(std::path::PathBuf::from);
+            let unless = args.iter().find_map(|a| a.strip_prefix("--unless-key="));
+            let data_dir = blyg_core::config::data_dir();
+            match out_dir
+                .map(|d| crate::app::browser::blocklist::convert_to_dir(&data_dir, &d, unless))
+            {
+                Some(Ok(r)) => o.stdout = serde_json::to_string(&r).unwrap_or_default() + "\n",
+                Some(Err(e)) => {
+                    o.stderr = format!("blygger +convert-blocklists: {e}\n");
+                    o.code = 1;
+                }
+                None => {
+                    o.stderr = "usage: blygger +convert-blocklists <out dir>\n".into();
+                    o.code = 2;
+                }
+            }
+        }
         "+list-keybinds" => o.stdout = crate::keymap::list(),
         "+show-config" => match ShowOptions::from_args(args.iter().copied()) {
             Ok(opts) => {

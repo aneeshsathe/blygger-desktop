@@ -2,6 +2,7 @@ name	version	authors	repository	license	license_file	description
 accesskit	0.24.1	The AccessKit contributors	https://github.com/AccessKit/accesskit	Apache-2.0 OR MIT		UI accessibility infrastructure across platforms
 accesskit_consumer	0.38.0	The AccessKit contributors	https://github.com/AccessKit/accesskit	Apache-2.0 OR MIT		AccessKit consumer library (internal)
 accesskit_macos	0.26.3	The AccessKit contributors	https://github.com/AccessKit/accesskit	Apache-2.0 OR MIT		AccessKit UI accessibility infrastructure: macOS adapter
+adblock	0.13.3	Anton Lazarev <alazarev@brave.com>|Andrius Aucinas	https://github.com/brave/adblock-rust/	MPL-2.0		Native Rust module for Adblock Plus syntax (e.g. EasyList, EasyPrivacy) filter parsing and matching.
 addr2line	0.25.1		https://github.com/gimli-rs/addr2line	Apache-2.0 OR MIT		A cross-platform symbolication library written in Rust, using `gimli`
 adler2	2.0.1	Jonas Schievink <jonasschievink@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>	https://github.com/oyvindln/adler2	0BSD OR Apache-2.0 OR MIT		A simple clean-room implementation of the Adler-32 checksum
 aho-corasick	1.1.5	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/aho-corasick	MIT OR Unlicense		Fast multiple substring searching.
@@ -152,6 +153,7 @@ fax	0.2.7	Sebastian K <s3bk@protonmail.com>	https://github.com/pdf-rs/fax	MIT		D
 fdeflate	0.3.7	The image-rs Developers	https://github.com/image-rs/fdeflate	Apache-2.0 OR MIT		Fast specialized deflate implementation
 filetime	0.2.29	Alex Crichton <alex@alexcrichton.com>	https://github.com/alexcrichton/filetime	Apache-2.0 OR MIT		Platform-agnostic accessors of timestamps in File metadata
 fixedbitset	0.5.7	bluss	https://github.com/petgraph/fixedbitset	Apache-2.0 OR MIT		FixedBitSet is a simple bitset collection
+flatbuffers	25.12.19	Robert Winslow <hello@rwinslow.com>|FlatBuffers Maintainers	https://github.com/google/flatbuffers	Apache-2.0		Official FlatBuffers Rust runtime library.
 flate2	1.1.10	Alex Crichton <alex@alexcrichton.com>|Josh Triplett <josh@joshtriplett.org>	https://github.com/rust-lang/flate2-rs	Apache-2.0 OR MIT		DEFLATE compression and decompression exposed as Read/BufRead/Write streams. Supports miniz_oxide and multiple zlib implementations. Supports zlib, gzip, and raw deflate streams.
 float_next_after	1.0.0	Bronson Brown-deVost <bronsonbdevost@gmail.com>	https://gitlab.com/bronsonbdevost/next_afterf	MIT		A trait for native rust f64/f32 nextafter
 float-cmp	0.9.0	Mike Dilger <mike@mikedilger.com>	https://github.com/mikedilger/float-cmp	MIT		Floating point approximate comparison traits

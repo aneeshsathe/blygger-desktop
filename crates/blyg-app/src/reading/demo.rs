@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{LIN_GARDENS, RUE_TRUST};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, RUE_TRUST};
 
 impl MainView {
     pub(crate) fn reading_demo(
@@ -27,7 +27,61 @@ impl MainView {
                 this.open_reading(k, window, cx);
             }
         };
+        // The list + post scenarios below predate the stream: show them on
+        // the Reader layout. `rd-stream*` use the stream.
+        if n == 0 {
+            self.reading.mode = if scenario.starts_with("rd-stream") {
+                super::stream_vm::ReadMode::Stream
+            } else {
+                super::stream_vm::ReadMode::Reader
+            };
+        }
         match (scenario, n) {
+            // --- stream --- the default reading view, a thread selected.
+            ("rd-stream", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream", 1) => {
+                self.stream_move(1, window, cx);
+                self.stream_move(1, window, cx);
+            }
+            // Scrolled to Ada's stub (lineage line + a quote box).
+            ("rd-stream-quote", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-quote", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == ADA_REPLY);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            // "Read more": the side pane beside the stream.
+            ("rd-stream-pane", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-pane", 1) => open(self, LIN_GARDENS, window, cx),
+            // The search filtering the stream.
+            ("rd-stream-search", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-search", 1) => {
+                self.focus_reading_search(window, cx);
+                self.set_reading_query("bench", window, cx);
+            }
+            // --- quote targets --- a held quote's original opens at once;
+            // one nobody here follows is fetched, at its quoted pinned v1.
+            ("rd-stream-original", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-original", 1) => {
+                use crate::fake::reading_seed::{ADA, ADA_TIDES};
+                self.open_original(ADA.into(), ADA_TIDES.into(), Some(2), window, cx)
+            }
+            ("rd-stream-fetch", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-fetch", 1) => {
+                use crate::fake::reading_seed::{KIT, KIT_TIDES};
+                self.open_original(KIT.into(), KIT_TIDES.into(), Some(1), window, cx)
+            }
+            // --- responses --- Lin's bench note: Ada stubbed and quoted it.
+            ("rd-stream-responses", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-responses", 1) => {
+                open(self, crate::fake::reading_seed::LIN_BENCH, window, cx)
+            }
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),

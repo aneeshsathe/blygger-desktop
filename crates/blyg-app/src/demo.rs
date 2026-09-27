@@ -25,7 +25,7 @@ impl MainView {
         .detach();
     }
 
-    fn demo_type(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn demo_type(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.editor
             .update(cx, |s, cx| s.insert(text.to_string(), window, cx));
         self.after_edit(cx);
@@ -97,6 +97,8 @@ impl MainView {
             }
             ("offline", 1) => self.demo_type(" Written on a plane.", window, cx),
             ("settings", 0) => self.open_settings(&super::OpenSettings, window, cx),
+            // --- about --- (the window, then its snapshot)
+            ("about", n) => crate::about::demo(n, cx),
             ("capture", 0) => crate::capture::toggle(cx),
             ("capture", 1) => crate::capture::demo_fill(
                 "The best interface for writing is the one that is already open.",
@@ -176,8 +178,12 @@ impl MainView {
             (s, n) if s.starts_with("ob-") || s.starts_with("tut-") => {
                 self.onboarding_demo(s, n, window, cx)
             }
+            // --- composer --- (cm-mention, cm-spell, cm-spell-menu; composer/demo.rs)
+            (s, n) if s.starts_with("cm-") => self.composer_demo(s, n, window, cx),
             // --- buttons --- (tb-main, tb-long, tb-capture; toolbar.rs)
             (s, n) if s.starts_with("tb-") => self.toolbar_demo(s, n, window, cx),
+            // --- browser --- (br-block, br-slide, br-full; browser/view.rs)
+            (s, n) if s.starts_with("br-") => self.browser_demo(s, n, window, cx),
             _ => {}
         }
     }

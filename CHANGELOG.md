@@ -9,6 +9,75 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Added
+
+- **The stream is the new default reading view.** Reading now opens as one
+  scrolling timeline, newest first, drawn natively without a web view per
+  post. Fragments show in full; threads show their title, a few lines and
+  "Read more". Quotes appear as grey boxes with the quoted text; images and
+  videos are small placeholders. Use j/k to move, ⏎ or Space to open the
+  whole post in a side pane, and esc to close it; the stream keeps your
+  place. A post counts as read once it has been on screen for a second, and
+  unread posts get a dot. The Stream | Reader toggle (⌥⌘1 / ⌥⌘2) brings back
+  the list-and-post layout and is remembered. Search (⌘F or /) filters the
+  stream too.
+- **Quotes open the post they quote.** Clicking a quote's text, in the stream
+  or the reader, opens the original post beside it, at the quoted version
+  when that version is pinned. The footer reads "quoted from <name> · v2 ·
+  open original", and the name still opens the profile. "↳ stub of …" and
+  "⑂ forked from …" work the same way. A post you don't follow is fetched
+  from its author's public files, without your token, with a Subscribe
+  button.
+- **See who responded to a post.** The bottom of the reading pane lists who
+  quoted, stubbed or forked the post you're reading, and when, from the posts
+  already in your reading list. Your own posts list their verified mentions
+  the same way. It's a list, never a count; the stream marks posts that have
+  responses with a small ↩.
+- **In-app browser.** Links in posts open in a browser pane that slides in
+  from the right over the reading view: ⌘-click opens it over the whole
+  reading area, ⌥-click opens your default browser, esc closes it, and ⇧⌘B
+  brings back the last page. It has back, forward and reload, an address
+  field that shows the page title, a progress bar, "Open in default
+  browser", and "→ Notes", which copies a `[title](url)` link. The pane has
+  its own cookies (kept across launches on macOS 14 and later) and no bridge
+  into the app, so pages never see your token. `open-links = browser`
+  restores the old behaviour.
+- **Ad and tracker blocking** in the browser pane, with uBlock Origin's
+  default filter lists (uBlock filters, EasyList, EasyPrivacy and Peter
+  Lowe's list) run as WebKit content blockers. The lists are downloaded about
+  once a week and compiled in the background; a small built-in list covers
+  you until the first download. 🛡 turns blocking off for one site, and
+  `content-blocking = false` turns it off everywhere. Scriptlet filters
+  can't run in WebKit content blockers and are skipped.
+- **Spellcheck.** Misspelled words get a red wavy underline, using the macOS
+  spell checker with your system languages and the words you've taught it.
+  Right-click (or ctrl-click) one for suggestions, Learn Spelling and Ignore.
+  Code, links, addresses, quotes (`![[…]]`) and TK markers are never checked.
+  Checking happens in the background after you pause, only on the lines you
+  changed, so typing stays instant. Turn it off with Edit › Spelling › Check
+  Spelling While Typing, or `spellcheck = false`.
+- **@-mentions.** Type `@` at the start of a word, in the editor or quick
+  capture, to pick from the blygs you know: subscriptions, blogroll, authors
+  in your reading, and profiles you've opened. ↑/↓ choose, ⏎ or ⇥ insert,
+  esc keeps what you typed. Blyg has no handles, so a mention is a plain link
+  to the blyg, `[Name](https://…/)`, and it notifies no one.
+- **About Blygger** (Blygger menu and Help): version, commit, build date,
+  architecture and macOS version; the auto-update setting, last check and
+  whether an update is ready, with Check for Updates…; the blyg you're
+  connected to (host only) and what its server supports; the data folder and
+  config file with Reveal in Finder; links to the repository, this version's
+  release notes and the license. **Copy build info** copies a summary for bug
+  reports, without your token or file paths.
+
+### Fixed
+
+- **Reading shows each post's own date** (not when your blyg first imported
+  it), so a new subscription no longer makes every post look like it arrived
+  today. The list is sorted by when the author published or last edited a
+  post; edited posts say "edited 3d ago" and still move to the top.
+
 ## [0.3.0] - 2026-09-25
 
 ### Added

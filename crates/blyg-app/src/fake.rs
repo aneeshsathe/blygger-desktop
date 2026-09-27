@@ -136,6 +136,8 @@ struct State {
     profiles: HashMap<String, Profile>,
     /// Profile fetches that reached the "network" (tests).
     profile_fetches: Vec<String>,
+    /// Public item documents fetched (`public_item`), for tests.
+    public_fetches: Vec<String>,
 }
 
 pub struct FakeBackend {
@@ -271,6 +273,7 @@ impl FakeBackend {
                 fail_uploads: false,
                 profiles: HashMap::new(),    // --- profiles ---
                 profile_fetches: Vec::new(), // --- profiles ---
+                public_fetches: Vec::new(),
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -576,6 +579,12 @@ impl FakeBackend {
     }
 
     // --- profiles ---
+
+    /// Tests: every public item document fetched, in order.
+    #[cfg(test)]
+    pub fn public_fetches(&self) -> Vec<String> {
+        self.lock().public_fetches.clone()
+    }
 
     /// Tests: every URL a profile was fetched for, in order.
     #[cfg(test)]
@@ -940,6 +949,8 @@ impl Backend for FakeBackend {
         let mut v = st.rd.reading.clone();
         // The full editor's sample thread quotes this imported post.
         v.push(sample_reading());
+        // Newest first by the post's own date, as the store sorts (#6).
+        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
         v
     }
 
@@ -1450,6 +1461,79 @@ impl Backend for FakeBackend {
         let key = blyg_core::profile::clean_url(url)?;
         let p = self.lock().profiles.get(&key).cloned()?;
         Some(self.finish_profile(p))
+    }
+
+    // --- about --- The sample server syncs read state whenever it has the
+    // read extensions.
+    fn read_state_sync(&self) -> bool {
+        self.lock().read_ext
+    }
+
+    fn cached_profiles(&self) -> Vec<Profile> {
+        let mut out: Vec<Profile> = Vec::new();
+        for p in self.lock().profiles.values() {
+            if !out.iter().any(|o| o.origin == p.origin) {
+                out.push(p.clone());
+            }
+        }
+        out
+    }
+
+    // --- responses --- the sample reading list's references, newest first.
+    fn responses(&self, origin: &str, id: &str) -> Vec<blyg_core::Response> {
+        let key = blyg_core::post_key(origin, id);
+        self.reading()
+            .into_iter()
+            .filter(|r| r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty())
+            .flat_map(|r| {
+                r.references()
+                    .into_iter()
+                    .filter(|f| (f.origin.clone(), f.id.clone()) == key)
+                    .map(|f| blyg_core::Response {
+                        item: r.clone(),
+                        relation: f.relation,
+                        version: f.version,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    // --- quote targets --- posts nobody here follows, "served" publicly.
+
+    fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        st.public_fetches.push(format!("{origin}items/{id}.json"));
+        st.rd
+            .public
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.item.origin, origin) && p.item.remote_id == id
+            })
+            .cloned()
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        self.lock()
+            .rd
+            .public_pins
+            .iter()
+            .find(|p| {
+                blyg_core::profile::same_origin(&p.origin, origin)
+                    && p.id == id
+                    && p.version == version
+            })
+            .cloned()
+            .ok_or(CoreError::Rejected {
+                status: 404,
+                message: "not pinned".into(),
+                details: vec![],
+            })
     }
 }
 

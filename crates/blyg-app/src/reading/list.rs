@@ -139,10 +139,12 @@ impl MainView {
             .as_ref()
             .and_then(|k| self.reading.shown_pos(k));
         match keep {
-            Some(ix) => self
-                .reading
-                .list_scroll
-                .scroll_to_item(ix, ScrollStrategy::Nearest),
+            Some(ix) => {
+                self.reading.stream.list.scroll_to_reveal_item(ix);
+                self.reading
+                    .list_scroll
+                    .scroll_to_item(ix, ScrollStrategy::Nearest)
+            }
             None => {
                 self.reading.sel = None;
                 self.reading.opened = None;
@@ -155,7 +157,7 @@ impl MainView {
     }
 
     /// The search field above the reading list.
-    fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let Some(search) = self.reading.search.as_ref() else {
             return div().into_any_element();
@@ -207,6 +209,11 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // --- stream --- the stream selects; the pane follows when open.
+        if self.reading.mode == super::stream_vm::ReadMode::Stream {
+            self.stream_move(delta, window, cx);
+            return;
+        }
         // ↑/↓ move through what the list shows (the search's matches).
         let n = self.reading.shown.len();
         if n == 0 {
@@ -245,9 +252,16 @@ impl MainView {
         else {
             return;
         };
+        // --- quote targets --- opened from a quote: show its version.
+        let want = self.reading.want_version.take();
         self.reading.sel = Some(key.clone());
         let tombstone = item.state == "tombstone";
+        let responses = self.backend.responses(&item.origin, &item.remote_id);
+        if self.is_own_origin(&item.origin) && matches!(self.reading.mentions, Load::Idle) {
+            self.load_mentions(cx);
+        }
         self.reading.opened = Some(Opened {
+            responses,
             key: key.clone(),
             item,
             changelog: if tombstone { Load::Idle } else { Load::Loading },
@@ -277,11 +291,18 @@ impl MainView {
                 let Some(o) = v.reading.opened.as_mut().filter(|o| o.key == key) else {
                     return;
                 };
+                let mut pick = None;
                 if let Some((base, log, shown)) = fetched {
                     o.diff_base = base;
                     o.changelog = Load::from_result(log);
                     o.shown = Load::from_result(shown.map(|s| vm::shown(&s)));
                     o.ix = o.shown.ready().and_then(|s| vm::current_ix(s));
+                    pick = want
+                        .and_then(|w| o.shown.ready()?.iter().position(|s| s.version == w))
+                        .filter(|&i| Some(i) != o.ix);
+                }
+                if let Some(i) = pick {
+                    v.select_version(i, cx);
                 }
                 cx.notify();
             });
@@ -321,8 +342,15 @@ impl MainView {
             let key = o.key.clone();
             let backend = self.backend.clone();
             let version = v.version;
-            let task =
-                cx.background_spawn(async move { backend.remote_pinned(&sub, &rid, version) });
+            // --- quote targets --- a post fetched without a subscription
+            // reads its pins straight from its origin.
+            let origin = super::original::is_external(&key).then(|| o.item.origin.clone());
+            let task = cx.background_spawn(async move {
+                match origin {
+                    Some(origin) => backend.public_pinned(&origin, &rid, version),
+                    None => backend.remote_pinned(&sub, &rid, version),
+                }
+            });
             cx.spawn(async move |this, cx| {
                 let r = task.await;
                 let _ = this.update(cx, |v, cx| {
@@ -341,13 +369,24 @@ impl MainView {
         let Some(o) = self.reading.opened.as_ref() else {
             return;
         };
+        self.toggle_thumb_for(o.key.clone(), o.item.thumb, up, cx);
+    }
+
+    /// 👍 / 👎 on a post whose thumb is `current` (again clears it).
+    pub(super) fn toggle_thumb_for(
+        &mut self,
+        key: Key,
+        current: Option<i8>,
+        up: bool,
+        cx: &mut Context<Self>,
+    ) {
         let want = if up { 1 } else { -1 };
-        let thumb = if o.item.thumb == Some(want) {
+        let thumb = if current == Some(want) {
             None
         } else {
             Some(want)
         };
-        let (sub, rid) = o.key.clone();
+        let (sub, rid) = key;
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move { backend.signal(&sub, &rid, thumb) });
         cx.spawn(async move |this, cx| {
@@ -381,6 +420,75 @@ impl MainView {
         };
         let item = o.item.clone();
         let pinned = o.pinned_on_screen().cloned();
+        match action {
+            // The current version's actions work on any post (the stream's
+            // selected one too); "AI reply" never on a pinned view.
+            "Quote" | "Reply" | "Open on web" => self.item_action(item, action, window, cx),
+            "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
+            "Quote this version" => {
+                let Some(v) = pinned else { return };
+                let text = o
+                    .pins
+                    .get(&v.version)
+                    .and_then(|l| l.ready())
+                    .map(|p| p.content_md.clone());
+                let Some(text) = text else {
+                    self.show_toast("The pinned version is still loading", None, cx);
+                    return;
+                };
+                let url = blyg_core::pin_doc_url(&item.origin, &item.remote_id, v.version);
+                let snippet =
+                    vm::quote_pinned(&text, &vm::host(&item.origin), v.version, url.as_deref());
+                self.quote_into_thread(snippet, window, cx);
+            }
+            "Fork this pin" => {
+                // Forking descends from pins only.
+                let Some(v) = pinned else { return };
+                let of = RemoteRef {
+                    origin: item.origin.clone(),
+                    id: item.remote_id.clone(),
+                    version: v.version,
+                };
+                let backend = self.backend.clone();
+                let task = cx.background_spawn(async move { backend.fork(&of) });
+                cx.spawn_in(window, async move |this, cx| {
+                    let r = task.await;
+                    let _ = this.update_in(cx, |this, window, cx| match r {
+                        Ok(id) => {
+                            this.open_new_draft(&id, window, cx);
+                            this.show_toast(format!("Forked 📌 v{}", v.version), None, cx);
+                        }
+                        Err(e) => this.show_toast(format!("Couldn't fork: {e}"), None, cx),
+                    });
+                })
+                .detach();
+            }
+            "Subscribe" => self.follow_url(item.origin.clone(), cx),
+            "Diff vs now" => {
+                if let Some(o) = self.reading.opened.as_mut() {
+                    o.diff_vs_now = !o.diff_vs_now;
+                }
+                cx.notify();
+            }
+            "Back to current" => {
+                let ix = o.shown.ready().and_then(|s| vm::current_ix(s));
+                if let Some(ix) = ix {
+                    self.select_version(ix, cx);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// The current version's actions on any post (the open one, or the
+    /// stream's selected one): Quote, Reply, AI reply, Open on web.
+    pub(super) fn item_action(
+        &mut self,
+        item: blyg_core::ReadingItem,
+        action: &'static str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let blyg = self
             .reading
             .subs
@@ -421,8 +529,7 @@ impl MainView {
                 }
             }
             // --- follow-ups --- a stub with a generated reply, for review.
-            // Only ever the current version (pinned views don't offer it).
-            "AI reply" if pinned.is_none() => self.ai_reply_to(item, window, cx),
+            "AI reply" => self.ai_reply_to(item, window, cx),
             "Open on web" => match vm::web_url(&item) {
                 Some(u) => {
                     cx.open_url(&u);
@@ -430,56 +537,6 @@ impl MainView {
                 }
                 None => self.show_toast("No web address for this post", None, cx),
             },
-            "Quote this version" => {
-                let Some(v) = pinned else { return };
-                let text = o
-                    .pins
-                    .get(&v.version)
-                    .and_then(|l| l.ready())
-                    .map(|p| p.content_md.clone());
-                let Some(text) = text else {
-                    self.show_toast("The pinned version is still loading", None, cx);
-                    return;
-                };
-                let url = blyg_core::pin_doc_url(&item.origin, &item.remote_id, v.version);
-                let snippet =
-                    vm::quote_pinned(&text, &vm::host(&item.origin), v.version, url.as_deref());
-                self.quote_into_thread(snippet, window, cx);
-            }
-            "Fork this pin" => {
-                // Forking descends from pins only.
-                let Some(v) = pinned else { return };
-                let of = RemoteRef {
-                    origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
-                    version: v.version,
-                };
-                let backend = self.backend.clone();
-                let task = cx.background_spawn(async move { backend.fork(&of) });
-                cx.spawn_in(window, async move |this, cx| {
-                    let r = task.await;
-                    let _ = this.update_in(cx, |this, window, cx| match r {
-                        Ok(id) => {
-                            this.open_new_draft(&id, window, cx);
-                            this.show_toast(format!("Forked 📌 v{}", v.version), None, cx);
-                        }
-                        Err(e) => this.show_toast(format!("Couldn't fork: {e}"), None, cx),
-                    });
-                })
-                .detach();
-            }
-            "Diff vs now" => {
-                if let Some(o) = self.reading.opened.as_mut() {
-                    o.diff_vs_now = !o.diff_vs_now;
-                }
-                cx.notify();
-            }
-            "Back to current" => {
-                let ix = o.shown.ready().and_then(|s| vm::current_ix(s));
-                if let Some(ix) = ix {
-                    self.select_version(ix, cx);
-                }
-            }
             _ => {}
         }
     }
@@ -492,6 +549,19 @@ impl MainView {
             return vec![];
         };
         let item = &o.item;
+        // --- quote targets --- not followed: Subscribe, Reply, Open on web.
+        if super::original::is_external(&o.key) {
+            let ctx = vm::ActionCtx {
+                blyg: true,
+                version: item.version,
+                current: item.version,
+                pins: vec![],
+            };
+            return ["Subscribe", "Reply", "Open on web"]
+                .into_iter()
+                .map(|id| vm::action_chip(id, &ctx))
+                .collect();
+        }
         let ids = match self.pill_model() {
             Some(pm) => pm.actions,
             None if item.state == "tombstone" => vec![],
@@ -530,15 +600,22 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
+        let keys = if stream {
+            "j/k move · ⏎ read more · / search · esc back"
+        } else {
+            "↑↓ move · ←→ versions · / search · esc back"
+        };
         let hint = if !self.reading.available {
             String::new()
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · ↑↓ move · ←→ versions · / search · esc back")
+            format!("{unread} to read · {keys}")
         } else {
-            "↑↓ move · ←→ versions · / search · esc back".into()
+            keys.into()
         };
-        let header = self.screen_header("Reading", hint, vec![]);
+        // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
+        let header = self.screen_header("Reading", hint, vec![self.render_mode_toggle(cx)]);
         if !self.reading.available {
             return div()
                 .flex_1()
@@ -546,6 +623,16 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.unavailable())
+                .into_any_element();
+        }
+        if stream {
+            return div()
+                .flex_1()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(header)
+                .child(self.render_stream_body(body_font, cx))
                 .into_any_element();
         }
         let held = self.reading.rows.len();
@@ -658,7 +745,7 @@ impl MainView {
                 )
             })
             .collect();
-        let when = crate::vm::relative_time(&r.observed_at, self.now);
+        let when = vm::when_label(r, self.now);
         div()
             .id(("reading-row", ix))
             .px(px(14.))
@@ -733,7 +820,7 @@ impl MainView {
             .into_any_element()
     }
 
-    fn render_reading_detail(
+    pub(super) fn render_reading_detail(
         &self,
         body_font: &SharedString,
         cx: &mut Context<Self>,
@@ -788,6 +875,14 @@ impl MainView {
                 ),
                 None => (None, Some("Withdrawn by the author".into())),
             },
+            // --- quote targets --- fetched on demand, not from a subscription.
+            None if super::original::is_external(&o.key) => (
+                Some(item.content_md.clone()),
+                Some(format!(
+                    "From {}'s public files · you don't follow this blyg",
+                    vm::host(&item.origin)
+                )),
+            ),
             None => (Some(item.content_md.clone()), None),
         };
 
@@ -806,7 +901,9 @@ impl MainView {
             // --- end profiles ---
             .children(self.render_pill(o, cx))
             .child(div().flex_1())
-            .child(self.render_thumbs(item.thumb, cx))
+            .when(!super::original::is_external(&o.key), |d| {
+                d.child(self.render_thumbs(item.thumb, cx))
+            })
             // --- profiles --- "↳ stub of …" / "⑂ forked from …" on its own line
             .children(
                 self.render_lineage(
@@ -950,6 +1047,8 @@ impl MainView {
             .child(div().px(px(32.)).flex_none().child(header))
             .child(notes)
             .child(body)
+            // --- responses --- a list, never a count.
+            .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
             .child(actions_row)
             .into_any_element()
     }

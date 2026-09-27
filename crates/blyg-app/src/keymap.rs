@@ -33,6 +33,8 @@ use crate::app::reading::{
     QuotePicker, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions, SiteSettings,
     SubscribeTo,
 };
+// --- stream --- (the reading screen's Stream | Reader toggle)
+use crate::app::reading::stream::{ReaderMode, StreamMode};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -40,6 +42,14 @@ use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 use crate::app::discard::{DeleteDraft, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
+// --- about ---
+use crate::about::ShowAbout;
+// --- composer ---
+use crate::composer::ToggleSpellcheck;
+// --- browser ---
+use crate::app::browser::{
+    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
+};
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -47,12 +57,17 @@ pub const MAIN_INPUT: &str = "Blygger > Input";
 /// A context that never matches: bindings here exist only so the native
 /// menu shows the right key equivalent (see `Keybind::menu_key`).
 const MENU_ONLY: &str = "BlyggerMenuKeyEquivalent";
+/// --- browser --- The browser pane (its own place: its keys may reuse
+/// main-window keys, which it out-ranks while it has focus).
+pub const BROWSER: &str = "Blygger > Browser";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
     Global,
     Main,
     MainInput,
+    /// --- browser --- `Blygger > Browser`: the browser pane.
+    Browser,
 }
 
 impl Scope {
@@ -61,6 +76,7 @@ impl Scope {
             Scope::Global => None,
             Scope::Main => Some(MAIN),
             Scope::MainInput => Some(MAIN_INPUT),
+            Scope::Browser => Some(BROWSER), // --- browser ---
         }
     }
 
@@ -68,7 +84,10 @@ impl Scope {
     /// window counts as one place.
     #[cfg(test)]
     fn place(self) -> &'static str {
-        "main window"
+        match self {
+            Scope::Browser => "browser pane", // --- browser ---
+            _ => "main window",
+        }
     }
 }
 
@@ -199,6 +218,16 @@ pub fn table() -> Vec<Keybind> {
             "Preview on/off, in place",
             Some("View › Preview")
         ),
+        // --- composer --- (@-mentions and spellcheck in the editor and quick
+        // capture). The mention popup's ↑/↓/⏎/⇥/esc and the spelling menu
+        // (right-click or ctrl-click a flagged word) are the popups' own keys,
+        // like the quote picker's; the toggle has no key.
+        menu_only!(
+            ToggleSpellcheck,
+            "Check spelling while typing (on/off; the spellcheck config key)",
+            "Edit › Spelling › Check Spelling While Typing"
+        ),
+        // --- end composer ---
         kb!(
             "cmd-o",
             Main,
@@ -430,6 +459,23 @@ pub fn table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- stream --- (issue #1) the reading screen's two modes; the
+        // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
+        kb!(
+            "alt-cmd-1",
+            Main,
+            StreamMode,
+            "Reading as a stream (the default)",
+            Some("Blyg › Stream")
+        ),
+        kb!(
+            "alt-cmd-2",
+            Main,
+            ReaderMode,
+            "Reading as a list with the post beside it",
+            Some("Blyg › Reader")
+        ),
+        // --- end stream ---
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start
@@ -498,6 +544,50 @@ pub fn table() -> Vec<Keybind> {
             "Help › Blygger Tutorial"
         ),
         // --- end onboarding ---
+        // --- about --- One action, two menus (the standard app-menu place
+        // and Help), so two rows.
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Blygger › About Blygger"
+        ),
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Help › About Blygger"
+        ),
+        // --- end about ---
+        // --- browser --- (esc, which closes the pane, is the pane's own key)
+        kb!(
+            "cmd-shift-b",
+            Main,
+            ToggleBrowser,
+            "Browser pane: close it, or bring back the last page",
+            Some("View › Browser Pane")
+        ),
+        kb!("cmd-[", Browser, BrowserBack, "Browser pane: back", None),
+        kb!(
+            "cmd-]",
+            Browser,
+            BrowserForward,
+            "Browser pane: forward",
+            None
+        ),
+        kb!(
+            "cmd-r",
+            Browser,
+            BrowserReload,
+            "Browser pane: reload (or stop)",
+            None
+        ),
+        kb!(
+            "cmd-l",
+            Browser,
+            BrowserAddress,
+            "Browser pane: edit the address",
+            None
+        ),
+        // --- end browser ---
     ]
 }
 
@@ -524,6 +614,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
+    let _ = ToggleSpellcheck; // --- composer ---
 }
 
 /// `⌘⇧,` for `cmd-shift-,`.
@@ -719,6 +810,7 @@ pub fn list() -> String {
             Scope::Global => "anywhere",
             Scope::Main => "main window",
             Scope::MainInput => "text fields",
+            Scope::Browser => "browser", // --- browser ---
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -786,7 +878,12 @@ mod tests {
             })
         };
         assert!(!input_keys.is_empty(), "read gpui-base's bindings");
-        for k in live().iter().filter(|k| k.scope != Scope::Global) {
+        // --- browser --- The pane's keys (⌘[ ⌘] ⌘R ⌘L) yield to its address
+        // field on purpose while you type an address, so they're exempt.
+        for k in live()
+            .iter()
+            .filter(|k| k.scope != Scope::Global && k.scope != Scope::Browser)
+        {
             let shadowed = input_keys.contains(&normalize(k.key));
             let deliberate = OUTRANKS_INPUT.contains(&k.key);
             assert!(

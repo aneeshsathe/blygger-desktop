@@ -86,6 +86,10 @@ release page.
 **On 0.2.0 or earlier?** Those versions can't update themselves. Run the
 one-line installer above once more; after that, updates are automatic.
 
+**Blygger › About Blygger** shows the version, commit, update status and what
+your blyg's server supports. Its **Copy build info** button copies all of that
+(no paths, no token) for a bug report.
+
 ## Disclaimer
 
 > **Blygger Desktop is entirely vibecoded:** it was written with AI assistance.
@@ -161,6 +165,12 @@ first and synced to your blyg in the background. It's written in Rust with
   or add them to your own public blogroll. ⇧⌘O opens any address. Profiles are
   fetched from the blyg's public files without your token, only when you open
   one, and kept for offline use. There are no follower counts anywhere.
+- **A browser pane for links.** A link in a post opens in a pane that slides
+  in from the right (⌘-click: the whole area; ⌥-click: your default browser;
+  esc closes it). Ads and trackers are blocked with uBlock Origin's default
+  filter lists, as WebKit content blockers; 🛡 turns blocking off for a site.
+  The pane has its own cookies and no access to the app.
+  `open-links = browser` and `content-blocking = false` turn these off.
 
 | | |
 |---|---|

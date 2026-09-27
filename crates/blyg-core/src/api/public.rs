@@ -56,6 +56,23 @@ pub struct ItemDoc {
     pub forked_from: Option<RemoteRef>,
     #[serde(default, deserialize_with = "crate::model::lenient_vec")]
     pub transclusions: Vec<TransclusionRef>,
+    // --- quote targets --- what's needed to show a post that isn't held
+    // (a quote's or a stub's original, opened from its quote box).
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub id: Option<String>,
+    /// `fragment` | `thread` | `withdrawn`.
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub kind: Option<String>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub page: Option<String>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub author: Option<Author>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub created: Option<String>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub content_md: Option<String>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub content_html: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -124,6 +141,50 @@ impl ItemDoc {
             });
         }
         out
+    }
+
+    /// The document as a reading item that no subscription holds
+    /// (`subscription_id` empty), for showing a post fetched on demand.
+    /// `origin` is the origin that was fetched, not the one it claims.
+    pub fn reading_item(&self, origin: &str, id: &str) -> crate::model::ReadingItem {
+        use crate::model::{Kind, ReadingItem};
+        let withdrawn = self.kind.as_deref() == Some("withdrawn");
+        let host = url::Url::parse(origin)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_string))
+            .unwrap_or_else(|| origin.to_string());
+        ReadingItem {
+            subscription_id: String::new(),
+            remote_id: id.to_string(),
+            subscription_title: self
+                .author
+                .as_ref()
+                .and_then(|a| a.name.clone())
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or(host),
+            origin: origin.to_string(),
+            kind: if self.kind.as_deref() == Some("thread") {
+                Kind::Thread
+            } else {
+                Kind::Fragment
+            },
+            state: if withdrawn { "tombstone" } else { "current" }.into(),
+            version: self.version,
+            created: self.created.clone(),
+            updated: self.updated.clone(),
+            observed_at: crate::util::now_iso(),
+            content_md: self.content_md.clone().unwrap_or_default(),
+            content_html: self.content_html.clone().unwrap_or_default(),
+            author: self.author.clone(),
+            page: self.page.clone(),
+            thumb: None,
+            hoppers: vec![],
+            pinned_version_retained: None,
+            read_version: None,
+            stub_of: self.stub_of.clone(),
+            forked_from: self.forked_from.clone(),
+            transclusions: self.transclusions.clone(),
+        }
     }
 
     /// `stub_of`, `forked_from` and `transclusions` as the document has them.

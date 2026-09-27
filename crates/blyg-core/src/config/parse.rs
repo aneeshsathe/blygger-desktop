@@ -505,6 +505,11 @@ impl Config {
         self.get("show-buttons") != Some("false")
     }
 
+    // --- spellcheck ---
+    pub fn spellcheck(&self) -> bool {
+        self.get("spellcheck") != Some("false")
+    }
+
     pub fn font_family_writing(&self) -> &str {
         self.get("font-family-writing").unwrap_or("Literata")
     }

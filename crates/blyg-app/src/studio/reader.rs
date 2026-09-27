@@ -92,6 +92,11 @@ impl Reader {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
     }
 
+    /// --- browser --- (`Studio::clip_webviews`)
+    pub(super) fn set_clip(&self, edge: Option<Pixels>) {
+        self.slot.borrow_mut().set_clip(edge);
+    }
+
     pub fn new() -> Reader {
         let (tx, rx) = async_channel::unbounded();
         Reader {
@@ -194,12 +199,13 @@ body {{ padding: 4px 32px 44px; font-size: {font_px}px; }}
 article {{ max-width: 38em; margin: 0; }}
 .blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; }}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
-blockquote.blyg-transclusion[data-blyg-origin] {{ cursor: pointer; }}
-blockquote.blyg-transclusion[data-blyg-origin]::after {{
-  content: 'quoted from ' attr(data-blyg-origin) ' · click for profile';
-  display: block; margin-top: .45em; opacity: .6;
+blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
+.blyg-qfoot {{
+  display: block; margin-top: .45em; color: var(--muted, #888);
   font: 11.5px Inter, -apple-system, system-ui, sans-serif;
 }}
+.blyg-qorigin {{ color: inherit; border-bottom: 1px dashed currentColor; }}
+.blyg-qorigin:hover, .blyg-qopen:hover {{ color: var(--accent, #a4271b); }}
 .blyg-attachments {{ margin-top: 1.2em; }}
 .blyg-provenance, figcaption, .stub-cite {{ font-family: Inter, -apple-system, system-ui, sans-serif; }}
 ",
@@ -210,8 +216,28 @@ blockquote.blyg-transclusion[data-blyg-origin]::after {{
 /// The complete page for the reader: `content` (untrusted) sanitized, the
 /// attachments after it, the item's `<article>`, the app theme, and the
 /// reader CSP with `<base href>` at the author's origin.
+#[cfg(test)]
 pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
+    reader_page_named(content, doc, font_px, &|_| None)
+}
+
+/// [`reader_page`], naming quote origins with `name_of` (a subscription's
+/// title) in the quote boxes' footers; the host otherwise.
+pub fn reader_page_named(
+    content: &str,
+    doc: &Doc,
+    font_px: f32,
+    name_of: &dyn Fn(&str) -> Option<String>,
+) -> String {
     let clean = sanitize(&format!("{content}\n{}", attachments_html(&doc.media)));
+    let post_origin = match &doc.scope {
+        Scope::Remote { origin, .. } => Some(origin.clone()),
+        Scope::Own(_) => doc.base.clone(),
+    };
+    let clean = match post_origin {
+        Some(o) => quote_footers(&clean, &o, name_of),
+        None => clean,
+    };
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
     let css = format!("{BUILTIN_CSS}\n{}", reader_css(font_px));
     blyg_render::page_shell_with(
@@ -223,6 +249,100 @@ pub fn reader_page(content: &str, doc: &Doc, font_px: f32) -> String {
             reader: true,
         },
     )
+}
+
+// --- quote targets ---
+
+fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
+    let pat = format!(" {name}=\"");
+    let at = tag.find(&pat)? + pat.len();
+    let end = tag[at..].find('"')?;
+    Some(&tag[at..at + end])
+}
+
+/// Give each (resolved) quote box a footer: "quoted from <name> · v2 · open
+/// original". The name (`.blyg-qorigin`, carrying the origin) opens the
+/// profile; a click anywhere else in the box opens the original post (the
+/// host script, `webview::HOST_SCRIPT`). `html` is already sanitized; the
+/// footer's own text is escaped here. A quote without `data-blyg-origin` is
+/// from the post's own blyg (`post_origin`).
+pub fn quote_footers(
+    html: &str,
+    post_origin: &str,
+    name_of: &dyn Fn(&str) -> Option<String>,
+) -> String {
+    // Per open blockquote: the footer to put before its end tag, if any.
+    let mut stack: Vec<Option<String>> = Vec::new();
+    let mut inserts: Vec<(usize, String)> = Vec::new();
+    for (start, tag) in blockquote_tags(html) {
+        if tag.starts_with("</") {
+            if let Some(Some(footer)) = stack.pop() {
+                inserts.push((start, footer));
+            }
+            continue;
+        }
+        let quote = attr(tag, "class").is_some_and(|c| {
+            let mut cls = c.split_whitespace();
+            cls.clone().any(|x| x == "blyg-transclusion") && !cls.any(|x| x == "unresolved")
+        }) && attr(tag, "data-blyg-id").is_some();
+        stack.push(quote.then(|| {
+            let origin = attr(tag, "data-blyg-origin")
+                .map(unescape)
+                .filter(|o| o.starts_with("https://") || o.starts_with("http://"))
+                .unwrap_or_else(|| post_origin.to_string());
+            let name = name_of(&origin).unwrap_or_else(|| {
+                crate::vm::url_host(&origin).unwrap_or_else(|| origin.clone())
+            });
+            let version = attr(tag, "data-blyg-version")
+                .and_then(|v| v.parse::<u32>().ok())
+                .map(|v| format!(" · v{v}"))
+                .unwrap_or_default();
+            format!(
+                "<div class=\"blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
+                 data-blyg-origin=\"{}\">{}</span>{version} · <span class=\"blyg-qopen\">open original</span></div>\n",
+                blyg_render::escape_html(&origin),
+                blyg_render::escape_html(&name),
+            )
+        }));
+    }
+    let mut out = html.to_string();
+    for (at, footer) in inserts.into_iter().rev() {
+        out.insert_str(at, &footer);
+    }
+    out
+}
+
+/// Every `<blockquote …>` and `</blockquote>` tag in `html`, with its offset.
+fn blockquote_tags(html: &str) -> Vec<(usize, &str)> {
+    let mut out = Vec::new();
+    let mut at = 0;
+    while let Some(i) = html[at..].find('<') {
+        let start = at + i;
+        let rest = &html[start..];
+        let lower = rest
+            .get(..12)
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        let open = lower.starts_with("<blockquote")
+            && rest[11..].starts_with(|c: char| c == '>' || c.is_whitespace());
+        let close = lower.starts_with("</blockquote");
+        if open || close {
+            let Some(end) = rest.find('>') else { break };
+            out.push((start, &rest[..=end]));
+            at = start + end + 1;
+        } else {
+            at = start + 1;
+        }
+    }
+    out
+}
+
+fn unescape(s: &str) -> String {
+    s.replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
 }
 
 /// Render a Markdown-only item of someone else's with `blyg-render`,
@@ -390,7 +510,14 @@ impl MainView {
             let has_surface = self.studio.reader.slot.borrow().surface.is_some();
             if has_surface && self.studio.reader.shown.as_ref() != Some(&shown) {
                 let content = self.reader_content(&shown.doc);
-                let page = reader_page(&content, &shown.doc, shown.font_px as f32);
+                let subs = self.backend.subscriptions();
+                let name_of = |o: &str| {
+                    subs.iter()
+                        .find(|s| blyg_core::profile::same_origin(&s.origin, o))
+                        .map(|s| s.title.clone())
+                        .filter(|t| !t.trim().is_empty())
+                };
+                let page = reader_page_named(&content, &shown.doc, shown.font_px as f32, &name_of);
                 self.studio.reader.slot.borrow_mut().with(|s| s.load(&page));
                 #[cfg(test)]
                 self.studio.reader.pages.push(page);
@@ -441,8 +568,16 @@ impl MainView {
                     window.focus(&self.focus, cx);
                 }
             }
-            SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
+            // --- browser --- a link: the browser pane, or the default browser
+            // (the click's modifiers and `open-links` decide).
+            SurfaceEvent::OpenUrl(url) => self.open_link(url, window, cx),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
+            // --- quote targets --- the quote's original, in the reading pane.
+            SurfaceEvent::OpenQuote {
+                origin,
+                id,
+                version,
+            } => self.open_original(origin, id, version, window, cx),
         }
     }
 
@@ -481,7 +616,42 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{Body, Doc, RemoteMedia, Scope, body_of, origin_base, reader_page};
+    use super::{Body, Doc, RemoteMedia, Scope, body_of, origin_base, quote_footers, reader_page};
+
+    /// Issue #3: each resolved quote box gets "quoted from <name> · vN ·
+    /// open original"; the name carries the origin (profile), the rest of
+    /// the box opens the post. Nested quotes each get their own footer.
+    #[test]
+    fn quote_boxes_get_a_footer_naming_the_origin() {
+        let html = "<p>intro</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01aaa\" \
+                    data-blyg-version=\"2\" data-blyg-origin=\"https://ada.blyg.example.com/\">\n\
+                    <p>outer</p>\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01bbb\" \
+                    data-blyg-version=\"1\">\n<p>inner</p>\n</blockquote>\n</blockquote>\n\
+                    <blockquote><p>plain</p></blockquote>\n\
+                    <blockquote class=\"blyg-transclusion unresolved\"><p>⚠</p></blockquote>";
+        let names = |o: &str| (o == "https://ada.blyg.example.com/").then(|| "Ada <3".to_string());
+        let out = quote_footers(html, "https://lin.blyg.example.com/", &names);
+        assert_eq!(out.matches("class=\"blyg-qfoot\"").count(), 2, "{out}");
+        // The inner quote (no origin: the post's own blyg) closes first.
+        let inner = out.find("<p>inner</p>").unwrap();
+        let inner_foot = out[inner..].find("blyg-qfoot").unwrap() + inner;
+        assert!(out[inner_foot..].starts_with(
+            "blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
+             data-blyg-origin=\"https://lin.blyg.example.com/\">lin.blyg.example.com</span> · v1 · \
+             <span class=\"blyg-qopen\">open original</span></div>\n</blockquote>"
+        ));
+        assert!(out.contains(
+            "data-blyg-origin=\"https://ada.blyg.example.com/\">Ada &lt;3</span> · v2 · "
+        ));
+        assert!(!out.contains("click for profile"));
+        assert!(out.contains("<blockquote><p>plain</p></blockquote>"));
+        assert!(out.contains("unresolved\"><p>⚠</p></blockquote>"));
+        // Nothing to do: unchanged.
+        assert_eq!(
+            quote_footers("<p>x</p>", "https://a.example/", &|_| None),
+            "<p>x</p>"
+        );
+    }
 
     fn doc(html: &str, media: Vec<RemoteMedia>) -> Doc {
         Doc {

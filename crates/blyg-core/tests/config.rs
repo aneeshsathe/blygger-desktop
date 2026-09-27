@@ -564,6 +564,25 @@ fn capture_default_and_new_note_parse() {
     assert!(out.contains("\nnew-note = draft\n"), "{out}");
 }
 
+// ------------------------------------------------------------ spellcheck
+
+#[test]
+fn spellcheck_defaults_on_and_is_documented() {
+    assert!(load_text("").config.spellcheck(), "default true");
+    let l = load_text("spellcheck = false\n");
+    assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
+    assert!(!l.config.spellcheck());
+    let l = load_text("spellcheck = sometimes\n");
+    assert_eq!(l.diagnostics.len(), 1, "{:?}", l.diagnostics);
+    assert!(l.config.spellcheck(), "a bad value keeps the default");
+    let out = show_config(
+        &Default::default(),
+        ShowOptions::from_args(["--default", "--docs"]).unwrap(),
+    );
+    assert!(out.contains("\nspellcheck = true\n"), "{out}");
+    assert!(out.contains("Check Spelling While Typing"), "{out}");
+}
+
 // ------------------------------------------------------------ buttons
 
 #[test]

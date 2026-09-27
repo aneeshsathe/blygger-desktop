@@ -13,6 +13,8 @@ macro_rules! repo {
         "aneeshsathe/blygger-desktop"
     };
 }
+/// `owner/name`, for the About window's links.
+pub const REPO: &str = repo!();
 pub const LATEST_URL: &str = concat!("https://api.github.com/repos/", repo!(), "/releases/latest");
 
 /// How often to check while running (and between launches).

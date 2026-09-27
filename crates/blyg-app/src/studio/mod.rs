@@ -135,6 +135,10 @@ struct Slot {
     visible: bool,
     /// A sheet is open: stay hidden even though the pane is laid out.
     suppressed: bool,
+    /// --- browser --- The browser pane's left edge, while it's open: the
+    /// view is cut off there (hidden if nothing is left), since a native
+    /// view would cover the pane's GPUI chrome.
+    clip_right: Option<Pixels>,
 }
 
 impl Slot {
@@ -142,6 +146,18 @@ impl Slot {
         let Some(s) = self.surface.as_mut() else {
             return;
         };
+        // --- browser ---
+        let mut bounds = bounds;
+        if let Some(edge) = self.clip_right {
+            bounds.size.width = bounds.size.width.min(edge - bounds.origin.x);
+            if bounds.size.width < px(40.) {
+                if self.visible {
+                    s.set_visible(false);
+                    self.visible = false;
+                }
+                return;
+            }
+        }
         if self.frame != Some(bounds) {
             s.set_frame(bounds);
             self.frame = Some(bounds);
@@ -154,6 +170,22 @@ impl Slot {
 
     fn hide(&mut self) {
         if let (Some(s), true) = (self.surface.as_mut(), self.visible) {
+            s.set_visible(false);
+            self.visible = false;
+        }
+    }
+
+    /// --- browser --- See `clip_right`; hides at once when nothing is left.
+    fn set_clip(&mut self, edge: Option<Pixels>) {
+        if self.clip_right == edge {
+            return;
+        }
+        self.clip_right = edge;
+        self.frame = None;
+        if let (Some(e), Some(s)) = (edge, self.surface.as_mut())
+            && e <= px(40.)
+            && self.visible
+        {
             s.set_visible(false);
             self.visible = false;
         }
@@ -206,6 +238,13 @@ impl Studio {
     pub fn reclaim_keyboard(&self) {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
         self.reader.reclaim_keyboard();
+    }
+
+    /// --- browser --- Keep the preview and the reader out from under the
+    /// browser pane (`None`: it's closed).
+    pub fn clip_webviews(&self, edge: Option<Pixels>) {
+        self.slot.borrow_mut().set_clip(edge);
+        self.reader.set_clip(edge);
     }
 
     pub fn new(data_dir: Option<PathBuf>) -> Studio {
@@ -471,6 +510,8 @@ impl MainView {
             }
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
+            // --- quote targets --- in the studio preview, still the profile.
+            SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
         }
     }
 
