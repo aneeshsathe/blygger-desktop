@@ -42,6 +42,16 @@ pub struct PublishOutcome {
     pub warning: Option<String>,
 }
 
+/// Someone's post fetched from its public item document because it isn't
+/// held here (see [`Backend::public_item`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PublicItem {
+    /// Not subscribed: `subscription_id` is empty and it's never marked read.
+    pub item: ReadingItem,
+    /// Its public changelog, oldest first (current row with media and lineage).
+    pub versions: Vec<RemoteVersion>,
+}
+
 pub struct MediaRef {
     /// Relative, e.g. "media/abc123.webp" — what goes in the markdown.
     pub url: String,
@@ -356,5 +366,35 @@ pub trait Backend: Send + Sync {
     /// Local, no network (the composer's @-mentions read it). Additive.
     fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
         Vec::new()
+    }
+
+    // --- responses --- (issue #7)
+
+    /// Posts in the local reading list that quote, stub or fork the post
+    /// `(origin, id)`: "seen in your network". Local, instant; a list, never
+    /// a count. Additive; the default knows none.
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        let _ = (origin, id);
+        Vec::new()
+    }
+
+    // --- quote targets ---
+    // Opening a quote's (or a stub's, or a fork's) original that isn't held
+    // here: its public files, fetched unauthenticated with `PublicClient`
+    // (never the owner token) and only when the user opens it.
+
+    /// `{origin}items/{id}.json` as a post to show. Blocking. Additive; the
+    /// default refuses so implementors compile.
+    fn public_item(&self, origin: &str, id: &str) -> Result<PublicItem> {
+        let _ = (origin, id);
+        Err(CoreError::Other("not supported here".into()))
+    }
+
+    /// A pinned version of a post that isn't held, `{origin}items/{id}/v{n}.json`
+    /// (cached forever). Refused without a request when its changelog doesn't
+    /// mark `version` pinned (§8.4), as `remote_pinned` does. Additive.
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        let _ = (origin, id, version);
+        Err(CoreError::Other("not supported here".into()))
     }
 }

@@ -42,6 +42,11 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
         )
     });
     cx.run_until_parked();
+    // These tests are about the list + post layout (Reader); the stream,
+    // the default, has its own in `stream_tests.rs`.
+    view.update(cx, |v, _| {
+        v.reading.mode = super::stream_vm::ReadMode::Reader
+    });
     (view, fake, cx)
 }
 

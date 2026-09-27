@@ -1063,4 +1063,40 @@ impl Backend for LiveBackend {
     fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
         self.e().store.cached_profiles()
     }
+
+    // --- responses ---
+
+    fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
+        self.e().store.responses_to(origin, id)
+    }
+
+    // --- quote targets ---
+
+    fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {
+        // `PublicClient` holds no token: nothing but a public GET leaves.
+        let doc = self.public.item_doc(origin, id)?;
+        let versions = doc.versions_at(origin);
+        let _ = self.e().store.put_changelog(origin, id, &versions);
+        Ok(crate::backend::PublicItem {
+            item: doc.reading_item(origin, id),
+            versions,
+        })
+    }
+
+    fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
+        if let Some(p) = self.e().store.cached_pin(origin, id, version) {
+            return Ok(p);
+        }
+        // §8.4: no request for a version the changelog doesn't mark pinned.
+        let log = match self.e().store.cached_changelog(origin, id) {
+            Some((v, _)) if v.iter().any(|r| r.version == version) => v,
+            _ => self.public.item_doc(origin, id)?.versions_at(origin),
+        };
+        if !log.iter().any(|v| v.version == version && v.pinned) {
+            return Err(not_pinned(version));
+        }
+        let p = self.public.pinned(origin, id, version)?;
+        self.e().store.put_pin(&p)?;
+        Ok(p)
+    }
 }

@@ -21,10 +21,19 @@ mod list;
 mod mentions;
 mod quote_picker;
 mod site_settings;
+// --- stream --- (issue #1: the default reading mode)
+pub(crate) mod stream;
+pub(crate) mod stream_vm;
+// --- quote targets --- (issue #3)
+pub(crate) mod original;
+// --- responses --- (issue #7)
+pub(crate) mod responses;
 mod subscriptions;
 mod versions;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod stream_tests;
 #[cfg(test)]
 mod tests;
 
@@ -138,6 +147,8 @@ pub struct Opened {
     pub dropdown: bool,
     pub pins: HashMap<u32, Load<PinnedVersion>>,
     pub diff_vs_now: bool,
+    // --- responses --- posts here that quote, stub or fork this one.
+    pub responses: Vec<blyg_core::Response>,
 }
 
 impl Opened {
@@ -226,6 +237,18 @@ pub struct State {
     /// Indices into `rows` that match `query`, in display order: what the
     /// list shows and ↑/↓ move through.
     pub shown: Vec<usize>,
+    // --- stream ---
+    /// Stream (the default) or Reader (list + post), remembered in state.json.
+    pub mode: stream_vm::ReadMode,
+    pub stream: stream::Stream,
+    // --- quote targets ---
+    /// The version to show once the post being opened has its versions
+    /// (a quote's version), when it's current or pinned.
+    pub want_version: Option<u32>,
+    // --- responses ---
+    /// Posts that someone in the reading list quotes, stubs or forks
+    /// (`post_key`s): the stream's "responses" marker, never a count.
+    pub responded: HashSet<(String, String)>,
 }
 
 impl State {
@@ -250,6 +273,13 @@ impl State {
             search: None,
             query: String::new(),
             shown: Vec::new(),
+            mode: stream_vm::load_mode(
+                cx.try_global::<crate::connection::Connection>()
+                    .map(|c| c.data_dir.as_path()),
+            ),
+            stream: stream::Stream::new(),
+            want_version: None,
+            responded: HashSet::new(),
         }
         .refiltered()
     }
@@ -262,6 +292,13 @@ impl State {
     /// Recompute `shown` after `rows` or `query` changed.
     pub fn refilter(&mut self) {
         self.shown = vm::filter(&self.rows, &self.query);
+        self.stream.sync(&self.rows, &self.shown);
+        self.responded = self
+            .rows
+            .iter()
+            .flat_map(|r| r.references())
+            .map(|f| (f.origin, f.id))
+            .collect();
     }
 
     /// The rows the list shows (all of them without a search).
@@ -310,6 +347,7 @@ impl MainView {
             cx.listener(|this, _: &SiteSettings, window, cx| this.open_site_settings(window, cx)),
         )
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
+        .map(|d| self.stream_actions(d, cx))
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -345,6 +383,7 @@ impl MainView {
                 o.item = n.clone();
                 o.item.read_version = read;
             }
+            o.responses = self.backend.responses(&o.item.origin, &o.item.remote_id);
         }
         cx.notify();
     }
@@ -376,6 +415,9 @@ impl MainView {
                 self.reading.rows = vm::order(self.backend.reading());
                 self.reading.refilter();
                 self.ensure_reading_search(window, cx);
+                if self.reading.mode == stream_vm::ReadMode::Stream {
+                    self.ensure_stream_timer(window, cx);
+                }
                 if self
                     .reading
                     .sel
@@ -507,6 +549,7 @@ impl MainView {
         if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
             return;
         }
+        let stream = self.reading.mode == stream_vm::ReadMode::Stream;
         let handled = match (self.reading.view, k.key.as_str()) {
             (View::Reading, "escape")
                 if self.reading.opened.as_ref().is_some_and(|o| o.dropdown) =>
@@ -517,6 +560,8 @@ impl MainView {
                 cx.notify();
                 true
             }
+            // --- stream --- j/k select, ⏎/Space read more, esc closes the pane.
+            (View::Reading, key) if stream && self.stream_key(key, window, cx) => true,
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);

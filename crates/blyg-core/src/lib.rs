@@ -15,7 +15,8 @@ pub mod tk;
 mod util;
 
 pub use backend::{
-    Backend, CoreError, MediaRef, Promote, Promoted, PublishOutcome, Result, promotion_kind,
+    Backend, CoreError, MediaRef, Promote, Promoted, PublicItem, PublishOutcome, Result,
+    promotion_kind,
 };
 pub use config::{Config, ConfigStore};
 pub use live::LiveBackend;

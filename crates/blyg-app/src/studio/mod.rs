@@ -510,6 +510,8 @@ impl MainView {
             }
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
+            // --- quote targets --- in the studio preview, still the profile.
+            SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
         }
     }
 

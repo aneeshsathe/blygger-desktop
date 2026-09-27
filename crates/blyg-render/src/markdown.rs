@@ -123,6 +123,16 @@ pub(crate) fn render(src: &str, line_of: Option<&dyn Fn(usize) -> usize>) -> (St
     (root.render(), stats)
 }
 
+/// The parsed tree before any HTML rewriting (links linkified, bare YouTube
+/// links turned into [`YtFacade`]s), for `native.rs`. Rendering never uses
+/// this, so it can't change the published HTML.
+pub(crate) fn parse_tree(src: &str) -> Node {
+    let mut root = engine().parse(src);
+    linkify_core(&mut root);
+    youtube_facades(&mut root);
+    root
+}
+
 /// The engine's block rules alone: block structure never depends on inline
 /// parsing, so this finds the same code blocks as [`engine`] without paying
 /// for emphasis and linkify.
