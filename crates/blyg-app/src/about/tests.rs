@@ -30,7 +30,7 @@ fn the_menu_action_opens_the_about_window_once(cx: &mut TestAppContext) {
 #[test]
 fn both_menus_have_about_blygger() {
     for menu in ["Blygger", "Help"] {
-        let m = crate::menus()
+        let m = crate::menus(true)
             .into_iter()
             .find(|m| m.name == menu)
             .unwrap_or_else(|| panic!("no {menu} menu"));
@@ -44,7 +44,7 @@ fn both_menus_have_about_blygger() {
         );
     }
     // The standard place: first in the app menu.
-    let app = crate::menus().into_iter().next().expect("app menu");
+    let app = crate::menus(true).into_iter().next().expect("app menu");
     assert!(matches!(
         &app.items[0],
         gpui_kit::MenuItem::Action { name, .. } if name == "About Blygger"
