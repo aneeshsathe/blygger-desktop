@@ -46,6 +46,8 @@ use crate::update::CheckForUpdates;
 use crate::about::ShowAbout;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
+// --- notes ---
+use crate::app::notes::ToggleNotes;
 // --- browser ---
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
@@ -588,6 +590,15 @@ pub fn table() -> Vec<Keybind> {
             None
         ),
         // --- end browser ---
+        // --- notes --- (esc, which closes the drawer, is the drawer's own key)
+        kb!(
+            "cmd-shift-n",
+            Main,
+            ToggleNotes,
+            "Notes drawer: open or close it (quotes a selected passage)",
+            Some("View › Notes")
+        ),
+        // --- end notes ---
     ]
 }
 

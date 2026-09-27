@@ -32,6 +32,9 @@ pub struct AppState {
     /// The reading screen's last mode (`stream` or `reader`, ⌥⌘1 / ⌥⌘2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reading_mode: Option<String>,
+    /// --- notes --- The scratch note the notes drawer writes to (a local id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_note: Option<String>,
 }
 
 impl AppState {

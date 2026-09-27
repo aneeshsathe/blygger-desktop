@@ -819,12 +819,13 @@ impl MainView {
                 .into_any_element(),
         ];
         if r.state != "tombstone" {
-            for id in ["Quote", "Reply", "AI reply", "Open on web"] {
+            for id in ["Quote", "Reply", "AI reply", "Open on web", "Notes"] {
                 let chip = vm::action_chip(id, &ctx);
                 let tip = chip.tip.clone();
                 let k = key.clone();
                 row.push(
                     self.chip(format!("stream-act-{id}"), chip.label)
+                        .debug_selector(move || format!("stream-act-{id}")) // --- notes ---
                         .tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                         .on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();

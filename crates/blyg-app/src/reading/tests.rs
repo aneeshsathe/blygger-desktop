@@ -164,7 +164,7 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
     assert_eq!(
         pm.actions,
-        ["Quote", "Reply", "AI reply", "Fork", "Open on web"]
+        ["Quote", "Reply", "AI reply", "Fork", "Open on web", "Notes"]
     );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
@@ -732,7 +732,8 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Reply · new stub",
             "AI reply · new stub",
             "Fork",
-            "Open on web"
+            "Open on web",
+            "→ Notes" // --- notes ---
         ]
     );
     for c in &row {
