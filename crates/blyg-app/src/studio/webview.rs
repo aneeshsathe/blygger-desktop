@@ -64,6 +64,11 @@ pub trait PreviewSurface {
     fn set_dark(&mut self, dark: bool);
     /// `BLYGGER_TIMING=1`: print what the page shows (smoke tests).
     fn probe(&mut self) {}
+    /// --- notes --- Send the page's selected text on `reply` ("" when
+    /// nothing is selected).
+    fn selection(&mut self, reply: async_channel::Sender<String>) {
+        let _ = reply.try_send(String::new());
+    }
 }
 
 /// Reports the page's geometry and what it rendered, as one JSON line.
@@ -482,6 +487,16 @@ mod wry_surface {
 
         fn set_dark(&mut self, dark: bool) {
             set_appearance(&self.view.webview(), dark);
+        }
+
+        // --- notes ---
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            let _ = self.view.evaluate_script_with_callback(
+                crate::app::notes::SELECTION_JS,
+                move |json| {
+                    let _ = reply.try_send(crate::app::notes::parse_selection(&json));
+                },
+            );
         }
     }
 

@@ -427,6 +427,7 @@ impl MainView {
             // selected one too); "AI reply" never on a pinned view.
             "Quote" | "Reply" | "Open on web" => self.item_action(item, action, window, cx),
             "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
+            "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
             "Quote this version" => {
                 let Some(v) = pinned else { return };
                 let text = o
@@ -532,6 +533,7 @@ impl MainView {
             }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" => self.ai_reply_to(item, window, cx),
+            "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
             "Open on web" => match vm::web_url(&item) {
                 Some(u) => {
                     cx.open_url(&u);

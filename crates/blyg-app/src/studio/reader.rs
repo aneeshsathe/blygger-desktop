@@ -92,6 +92,18 @@ impl Reader {
         self.slot.borrow_mut().with(|s| s.reclaim_keyboard());
     }
 
+    /// --- notes --- Ask the web view for its selected text (`false`: there's
+    /// no web view to ask).
+    pub fn selection(&self, reply: async_channel::Sender<String>) -> bool {
+        match self.slot.borrow_mut().surface.as_mut() {
+            Some(s) => {
+                s.selection(reply);
+                true
+            }
+            None => false,
+        }
+    }
+
     /// --- browser --- (`Studio::clip_webviews`)
     pub(super) fn set_clip(&self, edge: Option<Pixels>) {
         self.slot.borrow_mut().set_clip(edge);

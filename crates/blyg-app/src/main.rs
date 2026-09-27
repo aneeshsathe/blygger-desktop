@@ -349,6 +349,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- browser ---
                 MenuItem::separator(),
                 MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
+                MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
             ],
             disabled: false,
         },

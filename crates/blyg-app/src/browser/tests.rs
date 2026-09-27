@@ -439,7 +439,7 @@ mod pane {
     }
 
     #[gpui_kit::test]
-    fn notes_link_goes_to_the_clipboard(cx: &mut TestAppContext) {
+    fn notes_link_goes_to_the_notes_drawer(cx: &mut TestAppContext) {
         let (view, cx, _log) = setup(cx);
         view.update_in(cx, |v, window, cx| {
             v.open_url_in_app(
@@ -450,14 +450,20 @@ mod pane {
             );
         });
         cx.run_until_parked();
-        view.update_in(cx, |v, _, cx| {
+        view.update_in(cx, |v, window, cx| {
             v.browser_refresh_state(cx);
-            v.browser_send_to_notes(cx);
+            v.browser_send_to_notes(window, cx);
         });
-        let clip = cx.read_from_clipboard().and_then(|c| c.text());
-        assert_eq!(
-            clip.as_deref(),
-            Some("[Tide tables](https://blyg.example.com/f/abc/)")
-        );
+        cx.run_until_parked();
+        // --- notes --- into the drawer, not the clipboard.
+        assert!(cx.read_from_clipboard().is_none());
+        view.read_with(cx, |v, cx| {
+            assert!(v.notes.open);
+            assert!(
+                v.notes
+                    .text(cx)
+                    .ends_with("[Tide tables](https://blyg.example.com/f/abc/)\n\n")
+            );
+        });
     }
 }

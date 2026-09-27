@@ -39,6 +39,9 @@ pub struct AppState {
     /// The sources pane's width in points, when the user dragged it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reader_sources_width: Option<u32>,
+    /// --- notes --- The scratch note the notes drawer writes to (a local id).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_note: Option<String>,
 }
 
 impl AppState {

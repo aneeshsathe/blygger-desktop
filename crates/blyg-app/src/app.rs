@@ -83,6 +83,9 @@ mod update_view;
 // --- browser --- (the in-app browser pane; hooks marked the same way)
 #[path = "browser/mod.rs"]
 pub(crate) mod browser;
+// --- notes --- (the notes drawer; hooks marked the same way)
+#[path = "notes/mod.rs"]
+pub(crate) mod notes;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -201,6 +204,8 @@ pub struct MainView {
     profiles: profiles::State,
     // --- browser ---
     browser: browser::Browser,
+    // --- notes ---
+    notes: notes::Notes,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -288,8 +293,14 @@ impl MainView {
                 .map(|c| c.data_dir.clone()),
             prefs.content_blocking,
         );
+        // --- notes ---
+        let notes = notes::Notes::new(
+            cx.try_global::<crate::connection::Connection>()
+                .map(|c| c.data_dir.clone()),
+        );
         let mut this = Self {
             browser, // --- browser ---
+            notes,   // --- notes ---
             reading,
             onboarding: onboarding::State::new(cx), // --- onboarding ---
             profiles: Default::default(),           // --- profiles ---
@@ -1556,6 +1567,7 @@ impl Render for MainView {
         // --- full editor: which panes are on screen (⌘1/⌘2/⌘3/⌘E) ---
         self.studio_frame(window, cx);
         self.browser_frame(window, cx); // --- browser ---
+        self.notes_frame(cx); // --- notes ---
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
@@ -1654,6 +1666,7 @@ impl Render for MainView {
             .map(|d| self.profile_actions(d, cx)) // --- profiles ---
             .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
             .map(|d| self.browser_actions(d, cx)) // --- browser ---
+            .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .size_full()
             .relative()
             .flex()
@@ -1701,6 +1714,7 @@ impl Render for MainView {
             })
             .child(self.render_status_bar(cx))
             .children(self.render_browser_pane(cx)) // --- browser ---
+            .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
