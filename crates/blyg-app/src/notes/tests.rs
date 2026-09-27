@@ -575,6 +575,79 @@ mod ui {
         assert_eq!(f.size.width, full.size.width);
     }
 
+    /// The browser pane's chrome (shield, open, → Notes, close) is never
+    /// under the drawer: the pane makes room, in both modes, and gets it
+    /// back after.
+    #[gpui_kit::test]
+    fn the_browser_pane_makes_room_for_the_drawer(cx: &mut TestAppContext) {
+        use crate::app::browser::OpenMode;
+        let (view, _, _, cx) = setup(cx);
+        let viewport = cx.update(|window, _| window.viewport_size().width);
+        let edge = viewport - px(crate::app::notes::WIDTH);
+        for mode in [OpenMode::Slide, OpenMode::Full] {
+            view.update_in(cx, |v, window, cx| {
+                v.open_url_in_app("https://blyg.example.com/", mode, window, cx);
+            });
+            settle(cx);
+            let close = cx.debug_bounds("browser-close").expect("chrome");
+            assert!(close.right() > edge, "flush right without the drawer");
+            view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
+            // The pane slides alongside the drawer.
+            slide_out(cx);
+            let drawer = cx.debug_bounds("notes-drawer").expect("drawer");
+            for b in [
+                "browser-shield",
+                "browser-external",
+                "browser-notes",
+                "browser-close",
+            ] {
+                let r = cx.debug_bounds(b).expect("a chrome button");
+                assert!(
+                    r.right() <= drawer.left() + px(0.5),
+                    "{b} {r:?} under {drawer:?}"
+                );
+            }
+            if mode == OpenMode::Full {
+                let back = cx.debug_bounds("browser-back").expect("back");
+                assert!(back.left() < px(40.), "full mode keeps its left edge");
+            }
+            view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
+            slide_out(cx);
+            let close = cx.debug_bounds("browser-close").expect("chrome");
+            assert!(close.right() > edge, "the room is given back");
+        }
+    }
+
+    /// "→ Notes" clicked while the drawer is out isn't a click away: it
+    /// adds, and the drawer stays put (no slide out and back in). A click
+    /// anywhere else still closes it.
+    #[gpui_kit::test]
+    fn clicking_an_add_action_keeps_the_drawer_out(cx: &mut TestAppContext) {
+        let (view, _, _, cx) = setup(cx);
+        reading(&view, ReadMode::Stream, cx);
+        view.update_in(cx, |v, window, cx| v.stream_move(1, window, cx));
+        settle(cx);
+        view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
+        settle(cx);
+        let shown = view.read_with(cx, |v, _| v.notes.shown);
+        let chip = cx.debug_bounds("stream-act-Notes").expect("chip");
+        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        view.read_with(cx, |v, cx| {
+            assert!(v.notes.open && !v.notes.closing, "stayed out");
+            assert_eq!(v.notes.shown, shown, "no new slide-in");
+            assert!(v.notes.text(cx).contains("![["), "added");
+        });
+        // A click on the stream, away from any action: closes it.
+        let row = cx.debug_bounds("stream-actions").expect("row");
+        cx.simulate_click(
+            gpui_kit::point(row.left() + px(4.), row.top() - px(30.)),
+            gpui_kit::Modifiers::none(),
+        );
+        settle(cx);
+        assert!(!is_open(&view, cx), "closed by a click outside");
+    }
+
     #[gpui_kit::test]
     fn the_drawer_leaves_esc_to_the_other_panes(cx: &mut TestAppContext) {
         let (view, _, _, cx) = setup(cx);

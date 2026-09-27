@@ -169,7 +169,7 @@ pub struct Notes {
     /// Sliding out: still drawn (and the web views still cut off).
     pub closing: bool,
     /// Times shown (a new slide-in animation each time).
-    shown: u64,
+    pub(crate) shown: u64,
     close_gen: u64,
     /// The scratch note it writes to, once there is one.
     pub id: Option<LocalId>,
@@ -182,6 +182,12 @@ pub struct Notes {
     return_focus: Option<FocusHandle>,
     /// The header's ⋯ menu.
     menu: bool,
+    /// A mouse press outside the drawer: it closes once the click is over,
+    /// unless the click was an add action ("→ Notes"), which disarms it.
+    outside_click: bool,
+    /// When it last started to slide in or out (the browser pane's room
+    /// follows it).
+    moved: Option<std::time::Instant>,
     /// Setting the editor's text programmatically (not an edit to save).
     loading: bool,
     data_dir: Option<std::path::PathBuf>,
@@ -201,6 +207,8 @@ impl Notes {
             focus: None,
             return_focus: None,
             menu: false,
+            outside_click: false,
+            moved: None,
             loading: false,
             data_dir,
         }
@@ -215,6 +223,30 @@ impl Notes {
     /// native views are cut off there.
     pub fn left_edge(&self, width: Pixels) -> Option<Pixels> {
         self.drawn().then(|| (width - px(WIDTH)).max(px(0.)))
+    }
+
+    /// How far the browser pane moves in from the right to make room for
+    /// the drawer (its final place; `drawer::wrap_browser` animates it).
+    pub fn room(&self) -> Pixels {
+        if self.open { px(WIDTH) } else { px(0.) }
+    }
+
+    /// [`Self::room`] at `now`, part way through a slide.
+    pub fn room_at(&self, now: std::time::Instant) -> Pixels {
+        let target = f32::from(self.room());
+        let Some(at) = self.moved else {
+            return px(target);
+        };
+        let t = now.saturating_duration_since(at).as_secs_f32() * 1000. / SLIDE_MS as f32;
+        if t >= 1. {
+            return px(target);
+        }
+        let eased = 1.0 - (1.0 - t).powi(5); // ease_out_quint, as the drawer
+        px(if self.open {
+            eased * WIDTH
+        } else {
+            (1. - eased) * WIDTH
+        })
     }
 
     /// The editor's text ("" before the drawer was first opened).

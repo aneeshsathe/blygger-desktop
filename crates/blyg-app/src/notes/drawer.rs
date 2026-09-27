@@ -91,6 +91,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.notes.outside_click = false; // an add action, not a click away
         let Some(src) = src else {
             return self.notes_fallback(then, window, cx);
         };
@@ -206,6 +207,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.notes.outside_click = false;
         self.open_notes(window, cx);
         let Some(editor) = self.notes.editor.clone() else {
             return;
@@ -344,6 +346,7 @@ impl MainView {
             if !self.notes.closing {
                 self.notes.shown += 1;
             }
+            self.notes.moved = Some(cx.background_executor().now());
         }
         self.notes.open = true;
         self.notes.closing = false;
@@ -371,6 +374,7 @@ impl MainView {
             .is_some_and(|f| f.contains_focused(window, cx));
         self.notes.open = false;
         self.notes.closing = true;
+        self.notes.moved = Some(cx.background_executor().now());
         self.notes.menu = false;
         self.notes.close_gen += 1;
         let gen_ = self.notes.close_gen;
@@ -848,11 +852,29 @@ impl MainView {
                     this.notes_open_in_editor(window, cx);
                     this.publish(window, cx);
                 }))
-                .on_mouse_down_out(cx.listener(|this, _, window, cx| {
-                    if this.notes.open {
-                        this.close_notes(window, cx);
-                    }
+                // A click outside closes it, once the click is over: a click
+                // on an add action ("→ Notes") disarms this and keeps it open.
+                .on_mouse_down_out(cx.listener(|this, _, _, _| {
+                    this.notes.outside_click = this.notes.open;
                 }))
+                .on_mouse_up_out(
+                    MouseButton::Left,
+                    cx.listener(|this, _, window, cx| {
+                        if !this.notes.outside_click {
+                            return;
+                        }
+                        // After this event's own handlers (the click) have run.
+                        cx.spawn_in(window, async move |this, cx| {
+                            let _ = this.update_in(cx, |v, window, cx| {
+                                if v.notes.outside_click {
+                                    v.notes.outside_click = false;
+                                    v.close_notes(window, cx);
+                                }
+                            });
+                        })
+                        .detach();
+                    }),
+                )
                 .child(header)
                 .child(
                     div()
@@ -885,6 +907,26 @@ impl MainView {
                 )
                 .into_any_element(),
         )
+    }
+
+    /// Hook: the browser pane inside a box whose right edge meets the
+    /// drawer's left edge while the drawer is out, so the pane's chrome
+    /// (🛡, ↗, → Notes, ×) stays uncovered. The box slides with the drawer.
+    /// The box's inset follows the drawer's slide frame by frame (the
+    /// drawer's own animation redraws the window meanwhile). It's computed
+    /// here rather than animated with an element id, so the pane inside
+    /// keeps its element state (its own slide-in never replays).
+    pub(crate) fn notes_wrap_browser(&self, pane: AnyElement, cx: &App) -> AnyElement {
+        let now = cx.background_executor().now();
+        div()
+            .debug_selector(|| "browser-room".into())
+            .absolute()
+            .top(px(TITLEBAR_H))
+            .bottom_0()
+            .left_0()
+            .right(self.notes.room_at(now))
+            .child(pane)
+            .into_any_element()
     }
 
     // ------------------------------------------------------------ demos

@@ -665,8 +665,10 @@ impl MainView {
             }
         }
         self.browser.viewport_w = window.viewport_size().width;
-        let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w));
-        // --- notes --- the drawer cuts the web views off at its edge too.
+        // --- notes --- the pane makes room for the drawer (`notes_wrap_browser`),
+        // and the drawer cuts the web views off at its edge too.
+        let room = self.notes.room();
+        let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w - room));
         let notes_edge = self.notes.left_edge(self.browser.viewport_w);
         self.browser.placed.borrow_mut().set_clip(notes_edge);
         let edge = match (edge, notes_edge) {
@@ -766,61 +768,65 @@ impl MainView {
             }
         };
         Some(
-            div()
-                .id("browser-pane")
-                .key_context(CONTEXT)
-                .track_focus(&focus)
-                .on_action(cx.listener(Self::browser_back))
-                .on_action(cx.listener(Self::browser_forward))
-                .on_action(cx.listener(Self::browser_reload))
-                .on_action(cx.listener(Self::browser_address))
-                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                    let k = &ev.keystroke;
-                    let bare = !(k.modifiers.platform
-                        || k.modifiers.control
-                        || k.modifiers.alt
-                        || k.modifiers.shift);
-                    if bare && k.key == "escape" && !this.browser.editing {
-                        cx.stop_propagation();
-                        this.close_browser(window, cx);
-                    }
-                }))
-                // Clicks on the chrome take the keyboard back from the page.
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, _| {
-                        this.browser.with(|s| s.focus_parent());
-                    }),
-                )
-                .absolute()
-                .top(px(crate::app::TITLEBAR_H))
-                .bottom_0()
-                .right_0()
-                .when(full, |d| d.left_0())
-                .when(!full, |d| d.w(relative(SLIDE_WIDTH)))
-                .flex()
-                .flex_col()
-                .bg(p.bg)
-                .border_l_1()
-                .border_color(p.line)
-                .shadow_lg()
-                .font_family("Inter")
-                .child(self.render_browser_chrome(&p, cx))
-                .child(body)
-                // Slides in from the right (the web view follows the
-                // pane's bounds frame by frame).
-                .map(|d| {
-                    if full {
-                        return d.into_any_element();
-                    }
-                    let w = f32::from(b.viewport_w) * SLIDE_WIDTH;
-                    d.with_animation(
-                        ElementId::NamedInteger("browser-slide".into(), b.shown),
-                        Animation::new(Duration::from_millis(180)).with_easing(ease_out_quint()),
-                        move |d, t| d.right(px(-(1.0 - t) * w)),
+            self.notes_wrap_browser(
+                div()
+                    .id("browser-pane")
+                    .key_context(CONTEXT)
+                    .track_focus(&focus)
+                    .on_action(cx.listener(Self::browser_back))
+                    .on_action(cx.listener(Self::browser_forward))
+                    .on_action(cx.listener(Self::browser_reload))
+                    .on_action(cx.listener(Self::browser_address))
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        let k = &ev.keystroke;
+                        let bare = !(k.modifiers.platform
+                            || k.modifiers.control
+                            || k.modifiers.alt
+                            || k.modifiers.shift);
+                        if bare && k.key == "escape" && !this.browser.editing {
+                            cx.stop_propagation();
+                            this.close_browser(window, cx);
+                        }
+                    }))
+                    // Clicks on the chrome take the keyboard back from the page.
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| {
+                            this.browser.with(|s| s.focus_parent());
+                        }),
                     )
-                    .into_any_element()
-                }),
+                    .absolute()
+                    .top_0() // --- notes --- inside `notes_wrap_browser`'s box
+                    .bottom_0()
+                    .right_0()
+                    .when(full, |d| d.left_0())
+                    .when(!full, |d| d.w(relative(SLIDE_WIDTH)))
+                    .flex()
+                    .flex_col()
+                    .bg(p.bg)
+                    .border_l_1()
+                    .border_color(p.line)
+                    .shadow_lg()
+                    .font_family("Inter")
+                    .child(self.render_browser_chrome(&p, cx))
+                    .child(body)
+                    // Slides in from the right (the web view follows the
+                    // pane's bounds frame by frame).
+                    .map(|d| {
+                        if full {
+                            return d.into_any_element();
+                        }
+                        let w = f32::from(b.viewport_w - self.notes.room()) * SLIDE_WIDTH;
+                        d.with_animation(
+                            ElementId::NamedInteger("browser-slide".into(), b.shown),
+                            Animation::new(Duration::from_millis(180))
+                                .with_easing(ease_out_quint()),
+                            move |d, t| d.right(px(-(1.0 - t) * w)),
+                        )
+                        .into_any_element()
+                    }),
+                cx,
+            ),
         )
     }
 
@@ -830,6 +836,7 @@ impl MainView {
         let button = |id: &'static str, label: &'static str, enabled: bool, tip: &'static str| {
             div()
                 .id(id)
+                .debug_selector(move || id.into()) // --- notes --- (tests)
                 .flex_none()
                 .px(px(7.))
                 .h(px(24.))
