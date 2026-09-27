@@ -342,4 +342,13 @@ pub trait Backend: Send + Sync {
         let _ = url;
         None
     }
+
+    // --- about ---
+
+    /// Whether read state syncs with the server (the last `GET /api/reading`
+    /// advertised `read_state: true`, extension 5; meta key `read_sync`).
+    /// For the About window. Additive; the default says no.
+    fn read_state_sync(&self) -> bool {
+        false
+    }
 }

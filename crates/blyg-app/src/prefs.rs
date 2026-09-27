@@ -234,6 +234,16 @@ impl Default for Prefs {
 }
 
 impl Prefs {
+    /// `BLYGGER_THEME=light|dark`: a dev/screenshot override, not persisted
+    /// unless a setting is changed.
+    pub fn apply_theme_override(&mut self) {
+        match std::env::var("BLYGGER_THEME").as_deref() {
+            Ok("light") => self.theme = ThemePref::Light,
+            Ok("dark") => self.theme = ThemePref::Dark,
+            _ => {}
+        }
+    }
+
     pub fn from_config(c: &Config) -> Self {
         Self {
             writing_font: c.font_family_writing().to_string(),

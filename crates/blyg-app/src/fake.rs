@@ -1451,6 +1451,12 @@ impl Backend for FakeBackend {
         let p = self.lock().profiles.get(&key).cloned()?;
         Some(self.finish_profile(p))
     }
+
+    // --- about --- The sample server syncs read state whenever it has the
+    // read extensions.
+    fn read_state_sync(&self) -> bool {
+        self.lock().read_ext
+    }
 }
 
 #[cfg(test)]

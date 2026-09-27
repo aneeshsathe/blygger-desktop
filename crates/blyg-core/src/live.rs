@@ -1053,4 +1053,10 @@ impl Backend for LiveBackend {
         let (p, _) = self.e().store.cached_profile(&key)?;
         Some(self.finish_profile(p))
     }
+
+    // --- about ---
+
+    fn read_state_sync(&self) -> bool {
+        self.e().read_sync_on()
+    }
 }

@@ -513,6 +513,10 @@ impl Backend for SwitchBackend {
     fn cached_profile(&self, url: &str) -> Option<blyg_core::Profile> {
         self.cur().cached_profile(url)
     }
+    // --- about ---
+    fn read_state_sync(&self) -> bool {
+        self.cur().read_state_sync()
+    }
 }
 
 #[cfg(test)]

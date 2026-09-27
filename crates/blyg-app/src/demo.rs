@@ -97,6 +97,8 @@ impl MainView {
             }
             ("offline", 1) => self.demo_type(" Written on a plane.", window, cx),
             ("settings", 0) => self.open_settings(&super::OpenSettings, window, cx),
+            // --- about --- (the window, then its snapshot)
+            ("about", n) => crate::about::demo(n, cx),
             ("capture", 0) => crate::capture::toggle(cx),
             ("capture", 1) => crate::capture::demo_fill(
                 "The best interface for writing is the one that is already open.",

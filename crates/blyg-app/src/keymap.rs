@@ -40,6 +40,8 @@ use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 use crate::app::discard::{DeleteDraft, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
+// --- about ---
+use crate::about::ShowAbout;
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -498,6 +500,19 @@ pub fn table() -> Vec<Keybind> {
             "Help › Blygger Tutorial"
         ),
         // --- end onboarding ---
+        // --- about --- One action, two menus (the standard app-menu place
+        // and Help), so two rows.
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Blygger › About Blygger"
+        ),
+        menu_only!(
+            ShowAbout,
+            "Version, build, updates and connection info",
+            "Help › About Blygger"
+        ),
+        // --- end about ---
     ]
 }
 

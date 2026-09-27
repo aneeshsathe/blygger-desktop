@@ -51,6 +51,9 @@ done
 
 # ---- build ------------------------------------------------------------------
 export MACOSX_DEPLOYMENT_TARGET="$MACOS_MIN"
+# One build time for every slice of a universal binary (the About window
+# shows it; crates/blyg-app/build.rs reads SOURCE_DATE_EPOCH when set).
+export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(date +%s)}"
 BINS=()
 for t in "${TARGETS[@]}"; do
   echo "==> cargo build --release --target $t"

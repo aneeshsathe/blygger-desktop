@@ -86,6 +86,10 @@ release page.
 **On 0.2.0 or earlier?** Those versions can't update themselves. Run the
 one-line installer above once more; after that, updates are automatic.
 
+**Blygger › About Blygger** shows the version, commit, update status and what
+your blyg's server supports. Its **Copy build info** button copies all of that
+(no paths, no token) for a bug report.
+
 ## Disclaimer
 
 > **Blygger Desktop is entirely vibecoded:** it was written with AI assistance.
