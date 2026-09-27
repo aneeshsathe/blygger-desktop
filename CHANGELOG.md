@@ -9,7 +9,7 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
-## [Unreleased]
+## [0.4.0] - 2026-09-27
 
 ### Added
 
@@ -89,6 +89,12 @@ release workflow publishes that section as the release notes.
   config file with Reveal in Finder; links to the repository, this version's
   release notes and the license. **Copy build info** copies a summary for bug
   reports, without your token or file paths.
+- **The tutorial covers the new reading features:** the Stream, quotes that
+  open the original, who responded, Reader with sources and folders, the
+  Notes drawer, links in the browser pane (a blank sample; nothing loads),
+  and @-mentions and spellcheck while writing. Its highlight steps aside for
+  panes and popups, and the tour puts your reading mode, notes and browser
+  page back when it ends.
 
 ### Fixed
 
