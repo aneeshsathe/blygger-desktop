@@ -378,6 +378,54 @@ pub trait Backend: Send + Sync {
         Vec::new()
     }
 
+    // --- reader folders ---
+    // The Reader's folders of subscriptions: local only (this Mac's store),
+    // never sent to the blyg and unrelated to the server's hoppers. One
+    // folder per subscription. All local and instant. Additive; the
+    // defaults know no folders and refuse changes, so implementors compile.
+
+    /// Every folder, in display order.
+    fn folders(&self) -> Vec<Folder> {
+        Vec::new()
+    }
+
+    /// Subscription id → folder id, for each filed subscription.
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        Default::default()
+    }
+
+    /// A new folder at the end. `Rejected{400}` for an empty name,
+    /// `Rejected{409}` for a name another folder has (any case).
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        let _ = name;
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        let _ = (id, name);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// Its subscriptions go back to unfiled.
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// Move a folder to `index` in the display order (clamped).
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        let _ = (id, index);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    /// File a subscription in a folder, or unfile it (`None`).
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        let _ = (sub_id, folder);
+        Err(CoreError::Other("folders aren't supported here".into()))
+    }
+
+    // --- end reader folders ---
+
     // --- quote targets ---
     // Opening a quote's (or a stub's, or a fork's) original that isn't held
     // here: its public files, fetched unauthenticated with `PublicClient`

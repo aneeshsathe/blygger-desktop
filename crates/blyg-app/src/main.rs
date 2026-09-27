@@ -318,6 +318,9 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- stream ---
                 MenuItem::action("Stream", app::reading::stream::StreamMode),
                 MenuItem::action("Reader", app::reading::stream::ReaderMode),
+                // --- reader folders ---
+                MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
+                MenuItem::action("New Folder…", app::reading::sources::NewFolder),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),
@@ -346,6 +349,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- browser ---
                 MenuItem::separator(),
                 MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
+                MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
             ],
             disabled: false,
         },

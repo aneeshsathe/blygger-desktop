@@ -47,6 +47,9 @@ struct Placed {
     visible: bool,
     /// Closed, or something GPUI draws is over it: stay hidden.
     suppressed: bool,
+    /// --- notes --- The notes drawer's left edge while it's out: the view
+    /// is cut off there (a native view would cover the drawer).
+    clip_right: Option<Pixels>,
 }
 
 impl Placed {
@@ -54,6 +57,18 @@ impl Placed {
         let Some(s) = self.surface.as_mut() else {
             return;
         };
+        // --- notes ---
+        let mut bounds = bounds;
+        if let Some(edge) = self.clip_right {
+            bounds.size.width = bounds.size.width.min(edge - bounds.origin.x);
+            if bounds.size.width < px(40.) {
+                if self.visible {
+                    s.set_visible(false);
+                    self.visible = false;
+                }
+                return;
+            }
+        }
         if self.frame != Some(bounds) {
             s.set_frame(bounds);
             self.frame = Some(bounds);
@@ -73,6 +88,14 @@ impl Placed {
 
     fn with<R>(&mut self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
         self.surface.as_mut().map(|s| f(s.as_mut()))
+    }
+
+    /// --- notes --- See `clip_right`.
+    fn set_clip(&mut self, edge: Option<Pixels>) {
+        if self.clip_right != edge {
+            self.clip_right = edge;
+            self.frame = None;
+        }
     }
 }
 
@@ -177,6 +200,11 @@ impl Browser {
 
     fn with<R>(&self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
         self.placed.borrow_mut().with(f)
+    }
+
+    /// --- notes --- Ask the page for its selected text (`false`: no page).
+    pub fn selection(&self, reply: async_channel::Sender<String>) -> bool {
+        self.open && self.with(|s| s.selection(reply)).is_some()
     }
 }
 
@@ -469,7 +497,7 @@ impl MainView {
         }));
     }
 
-    pub(super) fn browser_refresh_state(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn browser_refresh_state(&mut self, cx: &mut Context<Self>) {
         if let Some(st) = self.browser.with(|s| s.state()) {
             // about:blank before the first page: keep the URL we asked for.
             let blank = st.url.is_empty() || st.url == "about:blank";
@@ -603,17 +631,13 @@ impl MainView {
         cx.notify();
     }
 
-    /// "→ Notes": `[title](url)` for the page.
-    ///
-    /// TODO(notes drawer): a later change sends this to the notes drawer
-    /// instead of the clipboard; call the drawer from here and keep
-    /// [`MainView::browser_note_link`] as the one place the link is made.
-    pub(super) fn browser_send_to_notes(&mut self, cx: &mut Context<Self>) {
+    /// "→ Notes": `[title](url)` for the page into the notes drawer (or
+    /// the page's selection, quoted with that link).
+    pub(crate) fn browser_send_to_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(link) = self.browser_note_link() else {
             return;
         };
-        cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
-        self.show_toast("Link copied for your notes", Some(link.into()), cx);
+        self.notes_add_page(link, window, cx); // --- notes ---
     }
 
     /// The Markdown link for the current page, if it's a web page.
@@ -641,7 +665,16 @@ impl MainView {
             }
         }
         self.browser.viewport_w = window.viewport_size().width;
-        let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w));
+        // --- notes --- the pane makes room for the drawer (`notes_wrap_browser`),
+        // and the drawer cuts the web views off at its edge too.
+        let room = self.notes.room();
+        let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w - room));
+        let notes_edge = self.notes.left_edge(self.browser.viewport_w);
+        self.browser.placed.borrow_mut().set_clip(notes_edge);
+        let edge = match (edge, notes_edge) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        };
         self.studio.clip_webviews(edge);
         let dark = self.palette.dark;
         if self.browser.dark != Some(dark) && self.browser.alive() {
@@ -735,61 +768,65 @@ impl MainView {
             }
         };
         Some(
-            div()
-                .id("browser-pane")
-                .key_context(CONTEXT)
-                .track_focus(&focus)
-                .on_action(cx.listener(Self::browser_back))
-                .on_action(cx.listener(Self::browser_forward))
-                .on_action(cx.listener(Self::browser_reload))
-                .on_action(cx.listener(Self::browser_address))
-                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                    let k = &ev.keystroke;
-                    let bare = !(k.modifiers.platform
-                        || k.modifiers.control
-                        || k.modifiers.alt
-                        || k.modifiers.shift);
-                    if bare && k.key == "escape" && !this.browser.editing {
-                        cx.stop_propagation();
-                        this.close_browser(window, cx);
-                    }
-                }))
-                // Clicks on the chrome take the keyboard back from the page.
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, _| {
-                        this.browser.with(|s| s.focus_parent());
-                    }),
-                )
-                .absolute()
-                .top(px(crate::app::TITLEBAR_H))
-                .bottom_0()
-                .right_0()
-                .when(full, |d| d.left_0())
-                .when(!full, |d| d.w(relative(SLIDE_WIDTH)))
-                .flex()
-                .flex_col()
-                .bg(p.bg)
-                .border_l_1()
-                .border_color(p.line)
-                .shadow_lg()
-                .font_family("Inter")
-                .child(self.render_browser_chrome(&p, cx))
-                .child(body)
-                // Slides in from the right (the web view follows the
-                // pane's bounds frame by frame).
-                .map(|d| {
-                    if full {
-                        return d.into_any_element();
-                    }
-                    let w = f32::from(b.viewport_w) * SLIDE_WIDTH;
-                    d.with_animation(
-                        ElementId::NamedInteger("browser-slide".into(), b.shown),
-                        Animation::new(Duration::from_millis(180)).with_easing(ease_out_quint()),
-                        move |d, t| d.right(px(-(1.0 - t) * w)),
+            self.notes_wrap_browser(
+                div()
+                    .id("browser-pane")
+                    .key_context(CONTEXT)
+                    .track_focus(&focus)
+                    .on_action(cx.listener(Self::browser_back))
+                    .on_action(cx.listener(Self::browser_forward))
+                    .on_action(cx.listener(Self::browser_reload))
+                    .on_action(cx.listener(Self::browser_address))
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        let k = &ev.keystroke;
+                        let bare = !(k.modifiers.platform
+                            || k.modifiers.control
+                            || k.modifiers.alt
+                            || k.modifiers.shift);
+                        if bare && k.key == "escape" && !this.browser.editing {
+                            cx.stop_propagation();
+                            this.close_browser(window, cx);
+                        }
+                    }))
+                    // Clicks on the chrome take the keyboard back from the page.
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, _, _| {
+                            this.browser.with(|s| s.focus_parent());
+                        }),
                     )
-                    .into_any_element()
-                }),
+                    .absolute()
+                    .top_0() // --- notes --- inside `notes_wrap_browser`'s box
+                    .bottom_0()
+                    .right_0()
+                    .when(full, |d| d.left_0())
+                    .when(!full, |d| d.w(relative(SLIDE_WIDTH)))
+                    .flex()
+                    .flex_col()
+                    .bg(p.bg)
+                    .border_l_1()
+                    .border_color(p.line)
+                    .shadow_lg()
+                    .font_family("Inter")
+                    .child(self.render_browser_chrome(&p, cx))
+                    .child(body)
+                    // Slides in from the right (the web view follows the
+                    // pane's bounds frame by frame).
+                    .map(|d| {
+                        if full {
+                            return d.into_any_element();
+                        }
+                        let w = f32::from(b.viewport_w - self.notes.room()) * SLIDE_WIDTH;
+                        d.with_animation(
+                            ElementId::NamedInteger("browser-slide".into(), b.shown),
+                            Animation::new(Duration::from_millis(180))
+                                .with_easing(ease_out_quint()),
+                            move |d, t| d.right(px(-(1.0 - t) * w)),
+                        )
+                        .into_any_element()
+                    }),
+                cx,
+            ),
         )
     }
 
@@ -799,6 +836,7 @@ impl MainView {
         let button = |id: &'static str, label: &'static str, enabled: bool, tip: &'static str| {
             div()
                 .id(id)
+                .debug_selector(move || id.into()) // --- notes --- (tests)
                 .flex_none()
                 .px(px(7.))
                 .h(px(24.))
@@ -938,9 +976,11 @@ impl MainView {
                     "browser-notes",
                     "→ Notes",
                     has_page,
-                    "Copy [title](url) for your notes",
+                    "Add [title](url) to your notes (a selection on the page is quoted)  ⇧⌘N",
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.browser_send_to_notes(cx))),
+                .on_click(
+                    cx.listener(|this, _, window, cx| this.browser_send_to_notes(window, cx)),
+                ),
             )
             .child(
                 button("browser-close", "×", true, "Close  esc")

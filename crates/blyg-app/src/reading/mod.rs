@@ -30,8 +30,13 @@ pub(crate) mod original;
 pub(crate) mod responses;
 mod subscriptions;
 mod versions;
+// --- reader folders --- the Reader's sources pane (smart feeds, folders).
+pub(crate) mod sources;
+pub(crate) mod sources_vm;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
 #[cfg(test)]
@@ -201,6 +206,18 @@ pub enum RSheet {
         busy: bool,
         focus: FocusHandle,
     },
+    // --- reader folders --- New Folder… / Rename…
+    Folder {
+        input: Entity<InputState>,
+        /// Renaming this folder (else a new one).
+        rename: Option<String>,
+        /// File this subscription in the new folder once it's made
+        /// ("Move to folder › New Folder…").
+        then_file: Option<String>,
+        error: Option<String>,
+        /// The name the error is about.
+        tried: String,
+    },
     Quote {
         target: LocalId,
         input: Entity<InputState>,
@@ -249,10 +266,33 @@ pub struct State {
     /// Posts that someone in the reading list quotes, stubs or forks
     /// (`post_key`s): the stream's "responses" marker, never a count.
     pub responded: HashSet<(String, String)>,
+    // --- reader folders --- the Reader's three panes.
+    /// Local folders, in order, and subscription id → folder id.
+    pub folders: Vec<blyg_core::Folder>,
+    pub filed: HashMap<String, String>,
+    /// What the list shows (Reader mode; the stream shows everything).
+    pub source: sources_vm::Source,
+    /// Which pane has the keyboard.
+    pub pane: sources_vm::Pane,
+    /// The sources pane is shown (⌥⌘S), and its width (drag its edge).
+    pub sources_open: bool,
+    pub sources_w: f32,
+    /// Folders whose subscriptions are hidden.
+    pub collapsed: HashSet<String>,
+    /// Posts opened since the source was picked: they stay listed even when
+    /// they no longer match (read in "All unread", unthumbed in "Thumbed").
+    pub sticky: HashSet<Key>,
+    /// The sources pane's (or a subscription's) context menu.
+    pub src_menu: Option<sources::SourceMenu>,
+    /// (origin, avatar URL) of every cached profile, for the source rows.
+    pub avatars: Vec<(String, String)>,
 }
 
 impl State {
     pub fn new(backend: &dyn blyg_core::Backend, cx: &mut App) -> Self {
+        let data_dir = cx
+            .try_global::<crate::connection::Connection>()
+            .map(|c| c.data_dir.clone());
         Self {
             view: View::Posts,
             focus: cx.focus_handle(),
@@ -280,6 +320,16 @@ impl State {
             stream: stream::Stream::new(),
             want_version: None,
             responded: HashSet::new(),
+            folders: backend.folders(),
+            filed: backend.subscription_folders(),
+            source: sources_vm::Source::default(),
+            pane: sources_vm::Pane::default(),
+            sources_open: sources::load_open(data_dir.as_deref()),
+            sources_w: sources::load_width(data_dir.as_deref()),
+            collapsed: HashSet::new(),
+            sticky: HashSet::new(),
+            src_menu: None,
+            avatars: sources::avatars(backend),
         }
         .refiltered()
     }
@@ -291,7 +341,20 @@ impl State {
 
     /// Recompute `shown` after `rows` or `query` changed.
     pub fn refilter(&mut self) {
-        self.shown = vm::filter(&self.rows, &self.query);
+        let searched = vm::filter(&self.rows, &self.query);
+        // --- reader folders --- Reader lists the selected source only.
+        self.shown = if self.mode == stream_vm::ReadMode::Reader {
+            sources_vm::filter_source(
+                &self.rows,
+                &searched,
+                &self.source,
+                &self.filed,
+                &self.sticky,
+                chrono::Utc::now(),
+            )
+        } else {
+            searched
+        };
         self.stream.sync(&self.rows, &self.shown);
         self.responded = self
             .rows
@@ -348,6 +411,7 @@ impl MainView {
         )
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
         .map(|d| self.stream_actions(d, cx))
+        .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -355,6 +419,10 @@ impl MainView {
         let r = &mut self.reading;
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
+        // --- reader folders ---
+        r.folders = self.backend.folders();
+        r.filed = self.backend.subscription_folders();
+        r.avatars = sources::avatars(self.backend.as_ref());
         let fresh = self.backend.reading();
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
@@ -413,6 +481,10 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = vm::order(self.backend.reading());
+                // --- reader folders ---
+                self.reading.subs = self.backend.subscriptions();
+                self.reading.folders = self.backend.folders();
+                self.reading.filed = self.backend.subscription_folders();
                 self.reading.refilter();
                 self.ensure_reading_search(window, cx);
                 if self.reading.mode == stream_vm::ReadMode::Stream {
@@ -431,6 +503,9 @@ impl MainView {
             View::Mentions => self.load_mentions(cx),
             View::Subscriptions => {
                 self.reading.subs = self.backend.subscriptions();
+                // --- reader folders --- the folder chooser on each row.
+                self.reading.folders = self.backend.folders();
+                self.reading.filed = self.backend.subscription_folders();
                 self.reading.unsub_confirm = None;
             }
         }
@@ -560,8 +635,26 @@ impl MainView {
                 cx.notify();
                 true
             }
+            // --- reader folders --- a context menu takes esc first.
+            (View::Reading | View::Subscriptions, "escape") if self.reading.src_menu.is_some() => {
+                self.reading.src_menu = None;
+                cx.notify();
+                true
+            }
+            // [ / ] step through the versions (←/→ in the stream).
+            (View::Reading, "[") => {
+                self.step_version(-1, cx);
+                true
+            }
+            (View::Reading, "]") => {
+                self.step_version(1, cx);
+                true
+            }
             // --- stream --- j/k select, ⏎/Space read more, esc closes the pane.
             (View::Reading, key) if stream && self.stream_key(key, window, cx) => true,
+            // --- reader folders --- ←/→ between the panes, ↑/↓ within one,
+            // j/k posts from anywhere, Space pages then next unread.
+            (View::Reading, key) if !stream && self.reader_key(key, window, cx) => true,
             // esc clears a search before it leaves the screen.
             (View::Reading, "escape") if !self.reading.query.is_empty() => {
                 self.set_reading_query("", window, cx);
@@ -621,6 +714,7 @@ impl MainView {
             RSheet::Subscribe { .. } => (500., self.render_subscribe_sheet(sheet, cx)),
             RSheet::Site { .. } => (540., self.render_site_sheet(sheet, cx)),
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
+            RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
         };
         Some(self.sheet_frame(width, content))
     }

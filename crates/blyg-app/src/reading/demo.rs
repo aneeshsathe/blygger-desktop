@@ -82,6 +82,54 @@ impl MainView {
             ("rd-stream-responses", 1) => {
                 open(self, crate::fake::reading_seed::LIN_BENCH, window, cx)
             }
+            // --- reader folders --- the three panes: a folder picked, a post open.
+            ("rd-three-pane", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-three-pane", 1) => {
+                use super::sources_vm::Source;
+                use crate::fake::reading_seed::FOLDER_FRIENDS;
+                self.select_source(Source::Folder(FOLDER_FRIENDS.into()), cx);
+                open(self, RUE_TRUST, window, cx);
+            }
+            // A subscription's context menu, on its "Move to folder ›" list.
+            ("rd-folder-menu", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-folder-menu", 1) => {
+                use super::sources::MenuTarget;
+                self.set_pane(super::sources_vm::Pane::Sources, cx);
+                self.open_source_menu(
+                    MenuTarget::Sub("sub-omar".into()),
+                    point(px(96.), px(392.)),
+                    true,
+                    cx,
+                );
+            }
+            // The "Today" smart feed, the first post open, keys in the post.
+            ("rd-smart-today", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-smart-today", 1) => {
+                use super::sources_vm::{Pane, Smart, Source};
+                self.select_source(Source::Smart(Smart::Today), cx);
+                self.move_reading(1, window, cx);
+                self.set_pane(Pane::Post, cx);
+            }
+            // The sources pane hidden (⌥⌘S): list + post as before.
+            ("rd-sources-hidden", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-sources-hidden", 1) => {
+                self.toggle_sources(window, cx);
+                open(self, LIN_GARDENS, window, cx);
+            }
+            // The Subscriptions screen's folder chooser.
+            ("rd-subs-folder", 0) => self.show_view(View::Subscriptions, window, cx),
+            ("rd-subs-folder", 1) => {
+                use super::sources::MenuTarget;
+                self.open_source_menu(
+                    MenuTarget::Sub("sub-omar".into()),
+                    point(px(560.), px(250.)),
+                    true,
+                    cx,
+                );
+            }
+            // New Folder…
+            ("rd-new-folder", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-new-folder", 1) => self.open_folder_sheet(None, None, window, cx),
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),

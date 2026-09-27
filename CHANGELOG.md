@@ -35,13 +35,32 @@ release workflow publishes that section as the release notes.
   already in your reading list. Your own posts list their verified mentions
   the same way. It's a list, never a count; the stream marks posts that have
   responses with a small ↩.
+- **Reader: three panes, smart feeds and folders.** Reader mode (⌥⌘2) is
+  laid out like NetNewsWire: sources on the left (smart feeds All unread,
+  Today, Thumbed and All, then your folders, then subscriptions in no
+  folder), the post list for the source you pick in the middle (⌘F or /
+  searches within it), and the post on the right. Folders live on this Mac
+  only and are never sent to your blyg: make one with Blyg › New Folder…,
+  file a subscription by dragging it onto a folder, with "Move to folder ›",
+  or on the Subscriptions screen; rename, reorder and delete them. ←/→ move
+  between panes, j/k between posts, Space scrolls the post and then opens
+  the next unread one, and ⌥⌘S hides the sources pane (drag its edge to
+  resize it). Version stepping in the Reader moved to [ / ].
+- **Notes drawer** (⇧⌘N, View › Notes): a scratchpad that slides in over the
+  right edge while you read the Stream, the Reader, the browser pane or your
+  Posts, and slides away with esc, ⇧⌘N or a click outside. Your notes are a
+  local scratch note, "Reading notes", saved as you type and listed in
+  Posts; ⌘D makes them a draft and ⋯ › New notes page starts a fresh page.
+  **→ Notes** on a post adds it (`![[…]]` for a blyg post, a link for a feed
+  post), the browser pane's → Notes adds the page's link, and text selected
+  in a post or web page goes in as a quote with its source.
 - **In-app browser.** Links in posts open in a browser pane that slides in
   from the right over the reading view: ⌘-click opens it over the whole
   reading area, ⌥-click opens your default browser, esc closes it, and ⇧⌘B
   brings back the last page. It has back, forward and reload, an address
   field that shows the page title, a progress bar, "Open in default
-  browser", and "→ Notes", which copies a `[title](url)` link. The pane has
-  its own cookies (kept across launches on macOS 14 and later) and no bridge
+  browser", and "→ Notes", which adds the page's link to your notes. The
+  pane has its own cookies (kept across launches on macOS 14 and later) and no bridge
   into the app, so pages never see your token. `open-links = browser`
   restores the old behaviour.
 - **Ad and tracker blocking** in the browser pane, with uBlock Origin's

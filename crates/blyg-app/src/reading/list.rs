@@ -255,6 +255,8 @@ impl MainView {
         // --- quote targets --- opened from a quote: show its version.
         let want = self.reading.want_version.take();
         self.reading.sel = Some(key.clone());
+        // --- reader folders --- stays listed in its source once read.
+        self.reading.sticky.insert(key.clone());
         let tombstone = item.state == "tombstone";
         let responses = self.backend.responses(&item.origin, &item.remote_id);
         if self.is_own_origin(&item.origin) && matches!(self.reading.mentions, Load::Idle) {
@@ -425,6 +427,7 @@ impl MainView {
             // selected one too); "AI reply" never on a pinned view.
             "Quote" | "Reply" | "Open on web" => self.item_action(item, action, window, cx),
             "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
+            "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
             "Quote this version" => {
                 let Some(v) = pinned else { return };
                 let text = o
@@ -530,6 +533,7 @@ impl MainView {
             }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" => self.ai_reply_to(item, window, cx),
+            "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
             "Open on web" => match vm::web_url(&item) {
                 Some(u) => {
                     cx.open_url(&u);
@@ -604,7 +608,8 @@ impl MainView {
         let keys = if stream {
             "j/k move · ⏎ read more · / search · esc back"
         } else {
-            "↑↓ move · ←→ versions · / search · esc back"
+            // --- reader folders ---
+            "←→ panes · j/k posts · space next unread · [ ] versions · / search"
         };
         let hint = if !self.reading.available {
             String::new()
@@ -615,7 +620,12 @@ impl MainView {
             keys.into()
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
-        let header = self.screen_header("Reading", hint, vec![self.render_mode_toggle(cx)]);
+        let mut actions = vec![self.render_mode_toggle(cx)];
+        if !stream {
+            // --- reader folders --- the sources pane's button (⌥⌘S).
+            actions.insert(0, self.render_sources_button(cx));
+        }
+        let header = self.screen_header("Reading", hint, actions);
         if !self.reading.available {
             return div()
                 .flex_1()
@@ -637,21 +647,32 @@ impl MainView {
         }
         let held = self.reading.rows.len();
         let count = self.reading.shown.len();
+        // --- reader folders --- a source with nothing in it (no search).
+        let empty_source = held > 0 && count == 0 && self.reading.query.trim().is_empty();
         let list = div()
-            .w(relative(0.38))
+            .id("reader-list-pane")
+            .w(relative(if self.reading.sources_open { 0.3 } else { 0.38 }))
             .flex_none()
             .h_full()
             .flex()
             .flex_col()
             .border_r_1()
             .border_color(p.line)
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, cx| this.set_pane(super::sources_vm::Pane::List, cx)),
+            )
+            .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
                 d.child(
                     self.muted_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
                 )
             })
-            .when(held > 0 && count == 0, |d| {
+            .when(empty_source, |d| {
+                d.child(self.muted_note(super::sources_vm::empty_label(&self.reading.source)))
+            })
+            .when(held > 0 && count == 0 && !empty_source, |d| {
                 d.child(
                     div()
                         .id("reading-no-match")
@@ -700,14 +721,12 @@ impl MainView {
             .flex()
             .flex_col()
             .child(header)
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(list)
-                    .child(self.render_reading_detail(body_font, cx)),
-            )
+            // --- reader folders --- sources | list | post.
+            .child(self.render_three_panes(
+                list.into_any_element(),
+                self.render_reading_detail(body_font, cx),
+                cx,
+            ))
             .into_any_element()
     }
 
@@ -724,6 +743,14 @@ impl MainView {
         };
         let key = vm::key(r);
         let selected = self.reading.sel.as_ref() == Some(&key);
+        // --- reader folders --- the selection is stronger in the pane with the keys.
+        let sel_bg = if self.reading.pane == super::sources_vm::Pane::List
+            && self.reading.mode == super::stream_vm::ReadMode::Reader
+        {
+            p.accent.opacity(0.14)
+        } else {
+            p.sel
+        };
         let badge = vm::badge(r);
         let edited = r.edited_since_read() && r.state != "tombstone";
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
@@ -754,7 +781,7 @@ impl MainView {
             .border_b_1()
             .border_color(p.line)
             .cursor_pointer()
-            .when(selected, |d| d.bg(p.sel))
+            .when(selected, |d| d.bg(sel_bg))
             .when(r.is_unread() || edited, |d| {
                 // Unread / edited: an accent bar on the left, as in the mock.
                 d.child(
@@ -769,6 +796,7 @@ impl MainView {
             })
             .on_click(cx.listener(move |this, _, window, cx| {
                 window.focus(&this.reading.focus, cx);
+                this.set_pane(super::sources_vm::Pane::List, cx);
                 this.open_reading(key.clone(), window, cx)
             }))
             .child(

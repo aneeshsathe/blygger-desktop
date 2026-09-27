@@ -35,6 +35,8 @@ use crate::app::reading::{
 };
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
+// --- reader folders ---
+use crate::app::reading::sources::{NewFolder, ToggleSources};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -46,6 +48,8 @@ use crate::update::CheckForUpdates;
 use crate::about::ShowAbout;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
+// --- notes ---
+use crate::app::notes::ToggleNotes;
 // --- browser ---
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
@@ -476,6 +480,22 @@ pub fn table() -> Vec<Keybind> {
             Some("Blyg › Reader")
         ),
         // --- end stream ---
+        // --- reader folders --- the Reader's sources pane. Its own keys
+        // (←/→ between panes, ↑/↓, j/k, Space, [ ], esc) live in
+        // reading_key_down / sources::reader_key.
+        kb!(
+            "alt-cmd-s",
+            Main,
+            ToggleSources,
+            "Show or hide the Reader's sources pane (smart feeds, folders)",
+            Some("Blyg › Sources Pane")
+        ),
+        menu_only!(
+            NewFolder,
+            "A new folder for your subscriptions (on this Mac only)",
+            "Blyg › New Folder…"
+        ),
+        // --- end reader folders ---
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start
@@ -588,6 +608,15 @@ pub fn table() -> Vec<Keybind> {
             None
         ),
         // --- end browser ---
+        // --- notes --- (esc, which closes the drawer, is the drawer's own key)
+        kb!(
+            "cmd-shift-n",
+            Main,
+            ToggleNotes,
+            "Notes drawer: open or close it (quotes a selected passage)",
+            Some("View › Notes")
+        ),
+        // --- end notes ---
     ]
 }
 

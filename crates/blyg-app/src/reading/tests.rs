@@ -164,7 +164,7 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
     assert_eq!(
         pm.actions,
-        ["Quote", "Reply", "AI reply", "Fork", "Open on web"]
+        ["Quote", "Reply", "AI reply", "Fork", "Open on web", "Notes"]
     );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
@@ -174,7 +174,8 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
                 "unpinned leaked: {s}"
             );
         }
-        cx.simulate_keystrokes("left");
+        // --- reader folders --- [ steps back (←/→ now move between panes).
+        cx.simulate_keystrokes("[");
         settle(cx);
     }
     view.read_with(cx, |v, _| {
@@ -436,7 +437,7 @@ fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
     assert!(!view.read_with(cx, |v, _| {
         v.pill_model().unwrap().actions.contains(&"Fork this pin")
     }));
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Fork this pin", window, cx)
@@ -732,7 +733,8 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Reply · new stub",
             "AI reply · new stub",
             "Fork",
-            "Open on web"
+            "Open on web",
+            "→ Notes" // --- notes ---
         ]
     );
     for c in &row {
@@ -755,7 +757,7 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     assert!(fake.items().iter().all(|i| i.forked_from.is_none()));
 
     // On a pin, Fork this pin is live and says what it makes.
-    cx.simulate_keystrokes("left");
+    cx.simulate_keystrokes("["); // --- reader folders --- (was ←)
     settle(cx);
     let row = chips(&view, cx);
     assert!(row.iter().all(|c| c.enabled));

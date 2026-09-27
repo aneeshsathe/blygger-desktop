@@ -39,6 +39,10 @@ pub enum SurfaceEvent {
         id: String,
         version: Option<u32>,
     },
+    // --- reader folders ---
+    /// Space in the Reader when the page was already scrolled to its end:
+    /// go on to the next post to read.
+    PageEnd,
 }
 
 /// A place to show the preview page. `wry` implements it for real; tests use
@@ -60,6 +64,11 @@ pub trait PreviewSurface {
     fn set_dark(&mut self, dark: bool);
     /// `BLYGGER_TIMING=1`: print what the page shows (smoke tests).
     fn probe(&mut self) {}
+    /// --- notes --- Send the page's selected text on `reply` ("" when
+    /// nothing is selected).
+    fn selection(&mut self, reply: async_channel::Sender<String>) {
+        let _ = reply.try_send(String::new());
+    }
 }
 
 /// Reports the page's geometry and what it rendered, as one JSON line.
@@ -109,6 +118,9 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
     }
     if msg == "focus" {
         return Some(SurfaceEvent::Refocus);
+    }
+    if msg == "end" {
+        return Some(SurfaceEvent::PageEnd); // --- reader folders ---
     }
     if let Some(o) = msg.strip_prefix("origin:") {
         let web = o.starts_with("https://") || o.starts_with("http://");
@@ -196,6 +208,18 @@ pub fn scroll_js(index: usize) -> String {
     format!("window.__blyg && window.__blyg.scrollTo({index});")
 }
 
+/// --- reader folders --- Space in the Reader: a page down, or `end` when
+/// the page is already at its bottom.
+pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
+
+/// ↑/↓ with the post pane focused: scroll a little.
+pub fn nudge_js(down: bool) -> String {
+    format!(
+        "window.__blyg && window.__blyg.nudge({});",
+        if down { 1 } else { -1 }
+    )
+}
+
 /// Host-side helpers, injected at document start (main frame only).
 #[cfg_attr(test, allow(dead_code))]
 pub const HOST_SCRIPT: &str = r#"
@@ -251,8 +275,16 @@ pub const HOST_SCRIPT: &str = r#"
     var b = t.closest(".item-content [data-line]");
     post(b ? "line:" + b.getAttribute("data-line") : "focus");
   }, true);
+  // --- reader folders --- Space pages down; at the bottom it says "end".
+  function scroller() { return document.scrollingElement || document.documentElement; }
+  function page(d) {
+    var el = scroller(), h = window.innerHeight;
+    if (d > 0 && el.scrollTop + h >= el.scrollHeight - 4) { post("end"); return; }
+    window.scrollBy({ top: d * Math.max(40, h * 0.85), behavior: "smooth" });
+  }
+  function nudge(d) { window.scrollBy({ top: d * 48 }); }
   document.addEventListener("DOMContentLoaded", function () { tag(); post("ready"); });
-  window.__blyg = { patch: patch, scrollTo: scrollTo };
+  window.__blyg = { patch: patch, scrollTo: scrollTo, page: page, nudge: nudge };
 })();
 "#;
 
@@ -456,6 +488,16 @@ mod wry_surface {
         fn set_dark(&mut self, dark: bool) {
             set_appearance(&self.view.webview(), dark);
         }
+
+        // --- notes ---
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            let _ = self.view.evaluate_script_with_callback(
+                crate::app::notes::SELECTION_JS,
+                move |json| {
+                    let _ = reply.try_send(crate::app::notes::parse_selection(&json));
+                },
+            );
+        }
     }
 
     /// An autoreleased NSString (no objc2-foundation dependency needed).
@@ -474,6 +516,7 @@ mod tests {
     fn ipc_messages() {
         assert_eq!(parse_ipc("ready"), Some(SurfaceEvent::Ready));
         assert_eq!(parse_ipc("focus"), Some(SurfaceEvent::Refocus));
+        assert_eq!(parse_ipc("end"), Some(SurfaceEvent::PageEnd));
         assert_eq!(parse_ipc("line:12"), Some(SurfaceEvent::JumpToLine(12)));
         assert_eq!(parse_ipc("line:x"), None);
         assert_eq!(

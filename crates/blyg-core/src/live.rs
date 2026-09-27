@@ -1070,6 +1070,36 @@ impl Backend for LiveBackend {
         self.e().store.responses_to(origin, id)
     }
 
+    // --- reader folders --- local only: the store, nothing queued.
+
+    fn folders(&self) -> Vec<Folder> {
+        self.e().store.folders()
+    }
+
+    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+        self.e().store.subscription_folders()
+    }
+
+    fn create_folder(&self, name: &str) -> Result<Folder> {
+        self.e().store.create_folder(name)
+    }
+
+    fn rename_folder(&self, id: &str, name: &str) -> Result<()> {
+        self.e().store.rename_folder(id, name)
+    }
+
+    fn delete_folder(&self, id: &str) -> Result<()> {
+        self.e().store.delete_folder(id)
+    }
+
+    fn move_folder(&self, id: &str, index: usize) -> Result<()> {
+        self.e().store.move_folder(id, index)
+    }
+
+    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+        self.e().store.set_subscription_folder(sub_id, folder)
+    }
+
     // --- quote targets ---
 
     fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {
