@@ -599,3 +599,46 @@ fn tests_never_check() {
     assert_eq!(disabled_reason(), Some("test build"));
     check::current_version(); // CARGO_PKG_VERSION is semver
 }
+
+#[test]
+fn a_ready_update_asks_to_restart_and_an_available_one_to_download() {
+    let staged = install::Staged {
+        version: Version::parse("0.3.0").unwrap(),
+        app: "/tmp/x".into(),
+        dir: "/tmp".into(),
+    };
+    let a = Phase::Ready {
+        offer: offer(true),
+        staged,
+    }
+    .ask()
+    .unwrap();
+    assert_eq!(a.text, "Blygger 0.3.0 is ready to install");
+    assert_eq!(a.yes, "Restart Now");
+    assert!(a.ready);
+
+    let a = Phase::Available {
+        offer: offer(true),
+        blocked: None,
+    }
+    .ask()
+    .unwrap();
+    assert_eq!(a.yes, "Download and Install");
+    assert!(!a.ready);
+
+    // Nothing to ask when it can't be installed from here, or mid-way.
+    let blocked = Phase::Available {
+        offer: offer(true),
+        blocked: Some("no".into()),
+    };
+    assert_eq!(blocked.ask(), None);
+    assert_eq!(Phase::Idle.ask(), None);
+    assert_eq!(
+        Phase::Downloading {
+            offer: offer(true),
+            shown: true
+        }
+        .ask(),
+        None
+    );
+}

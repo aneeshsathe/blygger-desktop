@@ -443,3 +443,32 @@ fn composer_hook_costs() {
         old.len() / 1024
     );
 }
+
+/// Through the editor's own right-click, not `open_spell_menu_at`: its
+/// callback runs inside the editor's update, which once crashed the app.
+#[gpui_kit::test]
+fn a_real_right_click_opens_the_spelling_menu(cx: &mut TestAppContext) {
+    let (view, _spell, cx) = setup(cx);
+    open_at_end(&view, DRAFT_THREAD, cx);
+    cx.simulate_input("I saw teh sea");
+    cx.executor().advance_clock(Duration::from_secs(2));
+    cx.run_until_parked();
+    assert_eq!(misspelled(&view, cx), vec!["teh".to_string()]);
+    let at = view.read_with(cx, |v, cx| {
+        let s = v.editor.read(cx);
+        let off = s.value().find("teh").unwrap() + 1;
+        s.range_to_bounds(&(off..off)).unwrap().center()
+    });
+    cx.simulate_mouse_down(
+        at,
+        gpui_kit::MouseButton::Right,
+        gpui_kit::Modifiers::default(),
+    );
+    cx.simulate_mouse_up(
+        at,
+        gpui_kit::MouseButton::Right,
+        gpui_kit::Modifiers::default(),
+    );
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, cx| v.assist.read(cx).menu_open()));
+}
