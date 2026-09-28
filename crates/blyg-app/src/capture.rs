@@ -92,7 +92,7 @@ pub fn set_main(handle: WindowHandle<MainView>, cx: &mut App) {
 }
 
 pub fn main_window(cx: &App) -> Option<WindowHandle<MainView>> {
-    cx.global::<CaptureGlobal>().main
+    cx.try_global::<CaptureGlobal>()?.main
 }
 
 pub fn prefs_changed(prefs: &Prefs, cx: &mut App) {

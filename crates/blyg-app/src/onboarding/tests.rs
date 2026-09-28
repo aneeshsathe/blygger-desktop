@@ -569,7 +569,12 @@ fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
         assert!(tour_done(&mut e), "{}: its key didn't count", step.id);
         // Leave what the key opened (a proposal, the picker) so it moves on.
         settle(&mut e);
-        if tour_step(&mut e) == Some(step.id) {
+        if step.stay {
+            // It opened something to look at: it waits for Next.
+            assert_eq!(tour_step(&mut e), Some(step.id), "{} stays", step.id);
+            e.cx.simulate_keystrokes("alt-cmd-right");
+            settle(&mut e);
+        } else if tour_step(&mut e) == Some(step.id) {
             e.cx.simulate_keystrokes("escape");
             settle(&mut e);
         }
@@ -851,4 +856,29 @@ fn replay_from_settings(cx: &mut TestAppContext) {
     assert_eq!(tour_step(&mut e), None);
     assert_eq!(flow_step(&mut e), Some(FlowStep::Welcome));
     assert!(real_is_back(&e));
+}
+
+/// ⏎ in the @ popup inserts the mention; the tour stays on the step (it
+/// used to move on as soon as @ opened the popup).
+#[gpui_kit::test]
+fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    enter(&mut e, "mentions");
+    e.cx.simulate_input("@");
+    settle(&mut e);
+    assert!(tour_done(&mut e));
+    assert_eq!(tour_step(&mut e), Some("mentions"));
+    assert!(
+        e.view
+            .read_with(e.cx, |v, cx| v.assist.read(cx).mention_open())
+    );
+    e.cx.simulate_keystrokes("enter");
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("mentions"), "still here after ⏎");
+    let text = e
+        .view
+        .read_with(e.cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert!(text.contains("]("), "a mention link was inserted: {text}");
 }

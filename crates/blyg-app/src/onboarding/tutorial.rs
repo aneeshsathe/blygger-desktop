@@ -268,7 +268,8 @@ impl MainView {
     }
 
     /// The user did `key`. If the step waits for it, show ✓ and move on
-    /// after the step's pause (once things have settled, if it asks).
+    /// after the step's pause (once things have settled, if it asks), or,
+    /// for a step that `stay`s, leave the moving on to Next.
     pub(super) fn tutorial_key(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
         let Some(t) = self.onboarding.tutorial.as_mut() else {
             return;
@@ -280,6 +281,9 @@ impl MainView {
         t.done = true;
         let (generation, at, pause, settle) = (t.generation, t.step, step.pause_ms, step.settle);
         cx.notify();
+        if step.stay {
+            return; // ✓, and Next when they're ready
+        }
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(pause))
@@ -910,6 +914,14 @@ impl MainView {
                 .text_color(p.green)
                 .font_weight(FontWeight::MEDIUM)
                 .child("✓ That's it")
+                .when(step.stay, |d| {
+                    d.child(
+                        div()
+                            .text_color(p.muted)
+                            .font_weight(FontWeight::NORMAL)
+                            .child("Look around, then Next ›"),
+                    )
+                })
                 .into_any_element()
         } else if step.keys.is_empty() {
             div().into_any_element()
@@ -1035,7 +1047,9 @@ impl MainView {
                                             "Next ›  ⌥⌘→".into()
                                         },
                                     )
-                                    .when(last, |d| d.border_color(p.accent).text_color(p.accent))
+                                    .when(last || (done && step.stay), |d| {
+                                        d.border_color(p.accent).text_color(p.accent)
+                                    })
                                     .on_click(cx.listener(
                                         |this, _, window, cx| this.tutorial_next(window, cx),
                                     )),
