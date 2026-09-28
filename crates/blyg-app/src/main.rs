@@ -211,6 +211,17 @@ fn open_main(
     }
 }
 
+/// Run a backend call that parses other people's content (profiles, public
+/// items) on a background thread, turning a parser panic into an error. A
+/// panic that escapes a background task aborts the whole app.
+pub(crate) fn guarded<T>(f: impl FnOnce() -> blyg_core::Result<T>) -> blyg_core::Result<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| {
+        Err(blyg_core::CoreError::Other(
+            "couldn't read that page (it has something Blygger didn't expect)".into(),
+        ))
+    })
+}
+
 /// `BLYGGER_NO_ACTIVATE=1`: never take focus from the frontmost app (used by
 /// automated screenshot runs so they can't swallow the user's keystrokes).
 pub fn no_activate() -> bool {

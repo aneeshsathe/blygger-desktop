@@ -356,7 +356,8 @@ pub fn xml_unescape(s: &str) -> String {
     while let Some(i) = rest.find('&') {
         out.push_str(&rest[..i]);
         let tail = &rest[i..];
-        let Some(end) = tail[..tail.len().min(12)].find(';') else {
+        // Bytes, not a str slice: byte 12 can fall inside a multi-byte char.
+        let Some(end) = tail.bytes().take(12).position(|b| b == b';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
@@ -887,6 +888,15 @@ mod tests {
     use serde_json::json;
 
     const O: &str = "https://jd.example.org/";
+
+    /// An entity followed by a multi-byte char right at the 12-byte lookahead
+    /// used to panic (it sliced a str mid-char) and take the app down.
+    #[test]
+    fn unescape_survives_multibyte_after_an_entity() {
+        assert_eq!(xml_unescape("&lt;/a&gt; · q"), "</a> · q");
+        assert_eq!(xml_unescape("a & ·····"), "a & ·····");
+        assert_eq!(xml_unescape("&#x1F600;é"), "😀é");
+    }
 
     #[test]
     fn manifest_reads_what_is_there_and_resolves_urls() {

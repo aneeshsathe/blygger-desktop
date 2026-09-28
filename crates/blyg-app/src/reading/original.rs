@@ -63,7 +63,8 @@ impl MainView {
         );
         let backend = self.backend.clone();
         let (o2, i2) = (origin.clone(), id.clone());
-        let task = cx.background_spawn(async move { backend.public_item(&o2, &i2) });
+        let task =
+            cx.background_spawn(async move { crate::guarded(|| backend.public_item(&o2, &i2)) });
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, window, cx| match r {
