@@ -9,6 +9,18 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [0.4.1] - 2026-09-27
+
+### Changed
+
+- When an update has downloaded and passed its checks, a sheet asks **Restart Now** or **Later**; in `auto-update = notify` mode it offers **Download and Install**. Check for Updates… asks again, and the status bar notice stays after Later.
+- Tour: steps that open a pane, popup or mode (the full editor, versions, @ mentions, the stream pane, the original, Reader, notes) show ✓ and wait for Next instead of moving on by themselves. You can now pick someone from the @ popup.
+
+### Fixed
+
+- Opening the profile of some blygs crashed the app (a feed with a multi-byte character just after an `&…;` entity). Profile and original-post fetches now show an error instead of crashing if a page can't be read.
+- Right-clicking a misspelled word crashed the app.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added
