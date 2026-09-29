@@ -256,7 +256,7 @@ impl StubOf {
     }
 }
 
-/// One `transclusions[]` entry: `{id, version, origin?}`.
+/// One `transclusions[]` entry: `{id, version, origin?, cited?}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransclusionRef {
     pub id: String,
@@ -264,6 +264,61 @@ pub struct TransclusionRef {
     pub version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// The citation frozen when the quote was made (protocol 0.3 §16.1;
+    /// remote entries only). Remote data: shown as plain text, never markup.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cited: Option<Cited>,
+}
+
+/// A reference's human half (`cited`): who and what was quoted, as the
+/// quoting blyg saw it. Every field is optional; one we can't read is absent.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Cited {
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub author: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub excerpt: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub url: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub retrieved: Option<String>,
+}
+
+impl Cited {
+    /// Who to name: the author, else the source blyg, trimmed and non-empty.
+    pub fn name(&self) -> Option<&str> {
+        [&self.author, &self.source]
+            .into_iter()
+            .flatten()
+            .map(|s| s.trim())
+            .find(|s| !s.is_empty())
+    }
 }
 
 /// A post's lineage: what it stubs, forks and quotes. On a reading item the
@@ -668,6 +723,10 @@ pub struct Settings {
     pub avatar_media_id: Option<String>,
     #[serde(default)]
     pub author_links: Vec<AuthorLink>,
+    /// Whether the blyg receives webmentions (protocol 0.3; on by default).
+    /// `None` when the server doesn't report it, and then never sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept_mentions: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -809,8 +868,8 @@ mod len_tests {
 
 /// A list-row title from Markdown: the first line with readable text, TK
 /// markup reduced to its output, and Markdown syntax removed. Transclusion
-/// lines (`![[id]]`) and image-only lines are skipped; links keep their text;
-/// emphasis and code marks go. `None` when no line has any text.
+/// lines (`![[id]]`) and image-only lines are skipped; links keep their text,
+/// and an internal link (`[[id]]`) shows as "↗"; emphasis and code marks go. `None` when no line has any text.
 pub fn plain_title(md: &str) -> Option<String> {
     strip_tk(md).lines().map(plain_line).find(|l| !l.is_empty())
 }
@@ -833,6 +892,17 @@ fn plain_line(line: &str) -> String {
             && c.get(i + 2) == Some(&'[')
             && let Some(end) = find(&c, i + 3, &[']', ']'])
         {
+            i = end + 2;
+            continue;
+        }
+        // [[id]] (an internal link): an arrow, as the list has no titles.
+        if c[i] == '['
+            && c.get(i + 1) == Some(&'[')
+            && let Some(end) = find(&c, i + 2, &[']', ']'])
+            && end > i + 2
+            && c[i + 2..end].iter().all(char::is_ascii_alphanumeric)
+        {
+            out.push('↗');
             i = end + 2;
             continue;
         }
@@ -901,5 +971,7 @@ mod title_tests {
         );
         assert_eq!(t("> quoted line"), "quoted line");
         assert_eq!(plain_title("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n\n"), None);
+        assert_eq!(t("See [[0a1b2c3d4e5f6g7h8j9k0m1n2p]] too"), "See ↗ too");
+        assert_eq!(t("[[not an id]]"), "[[not an id]]");
     }
 }

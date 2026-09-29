@@ -57,6 +57,13 @@ pub enum Resolution {
 /// imported reading items). Publishing never fetches, and neither does this.
 pub trait Resolver {
     fn resolve(&self, id: &str) -> Resolution;
+
+    /// Resolve the target of a `[[id]]` link. A link bakes nothing, so a
+    /// resolver's cycle or depth guards for quotes need not apply; the
+    /// default is [`Resolver::resolve`].
+    fn resolve_link(&self, id: &str) -> Resolution {
+        self.resolve(id)
+    }
 }
 
 /// A resolver that knows nothing (every quote is unresolved).

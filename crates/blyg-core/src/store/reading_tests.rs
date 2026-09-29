@@ -653,6 +653,7 @@ fn responses_are_found_by_origin_and_id() {
         id: "t1".into(), // another spelling of the id
         version: Some(2),
         origin: Some("https://ADA.example".into()),
+        cited: None,
     }];
     let mut stub = responder("sc", "S1", "https://cy.example/", "2030-01-04T00:00:00Z");
     stub.stub_of = Some(StubOf {
@@ -681,6 +682,7 @@ fn responses_are_found_by_origin_and_id() {
         id: "T1".into(),
         version: None,
         origin: None,
+        cited: None,
     }];
     s.merge_reading(
         &[target, quote, stub.clone(), fork, other, own],

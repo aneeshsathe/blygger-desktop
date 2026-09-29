@@ -40,7 +40,7 @@ await esbuild.build({
     contents: `
       export { renderMarkdown } from "./markdown.ts";
       export { parseScopes, previewStrip, annotateGenerated, applyGeneratedWrappers } from "./tk.ts";
-      export { previewTransclusions } from "./transclusion.ts";
+      export { previewTransclusions, previewInternalLinks, applyInternalLinks, remapRanges } from "./transclusion.ts";
       export { injectProvenance, transclusionProvenance, mediaHtml } from "./pages.ts";
       export { previewMedia } from "./attachments.ts";
     `,
@@ -123,20 +123,24 @@ async function render(c) {
     scopes: tk.scopes.map((s) => ({ instruction: s.instruction, generated: s.output !== null, block: s.block, source_ids: s.sourceIds })),
     errors: tk.errors,
   };
+  const db = fakeDb();
+  // `[[id]]` plain links resolve in both previews, against siteOrigin (here
+  // the mount plus "/", which is what the Rust side derives from `mount`).
+  const links = await W.previewInternalLinks(db, tk.text, store.mount + "/");
   if (c.kind === "fragment") {
     // studio.post("/preview"): fragments never resolve transclusions.
-    return { html: tk.finish(W.renderMarkdown(tk.text)), tk: tkOut, transclusions: [], errors: [] };
+    const html = W.applyInternalLinks(tk.finish(W.renderMarkdown(links.text)), links);
+    return { html, tk: tkOut, transclusions: [], errors: links.errors };
   }
   // studio.post("/preview-thread") + the public page's injectProvenance().
-  const db = fakeDb();
-  const resolved = await W.previewTransclusions(db, tk.text, store.self_id, tk.inert);
-  const preview = tk.finish(resolved.html);
+  const resolved = await W.previewTransclusions(db, links.text, store.self_id, W.remapRanges(tk.inert, links));
+  const preview = W.applyInternalLinks(tk.finish(resolved.html), links);
   const provenance = await W.transclusionProvenance(db, resolved.transclusions, store.mount);
   return {
     html: W.injectProvenance(preview, provenance),
     tk: tkOut,
     transclusions: resolved.transclusions,
-    errors: resolved.errors,
+    errors: [...resolved.errors, ...links.errors],
   };
 }
 

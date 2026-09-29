@@ -74,21 +74,25 @@ fn parity_with_worker() {
             ));
         }
 
-        // Unresolved reasons and quotes must agree with the Worker too.
+        // Unresolved quotes and links (reason and directive, in order) and
+        // quotes must agree with the Worker too.
+        let errors: Vec<(String, String)> = f["errors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| {
+                let s = |k: &str| e[k].as_str().unwrap().to_string();
+                (s("directive"), s("reason"))
+            })
+            .collect();
+        let got_errors: Vec<(String, String)> = got
+            .stats
+            .unresolved
+            .iter()
+            .map(|u| (u.directive.clone(), u.reason.to_string()))
+            .collect();
+        assert_eq!(got_errors, errors, "{name}: unresolved");
         if kind == Kind::Thread {
-            let reasons: Vec<String> = f["errors"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|e| e["reason"].as_str().unwrap().to_string())
-                .collect();
-            let got_reasons: Vec<String> = got
-                .stats
-                .unresolved
-                .iter()
-                .map(|u| u.reason.to_string())
-                .collect();
-            assert_eq!(got_reasons, reasons, "{name}: unresolved reasons");
             let ids: Vec<String> = f["transclusions"]
                 .as_array()
                 .unwrap()

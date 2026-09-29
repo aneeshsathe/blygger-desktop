@@ -12,11 +12,13 @@ working copy ─┬─ parse TK scopes (tk.rs, as tk.ts parseScopes)
               ├─ preview strip: scope → output, or "⚠ ungenerated — <instruction>"
               ├─ annotate: block spans → one-line placeholder token (rendered on its own),
               │            inline spans → U+0002…U+0003 sentinels (Markdown parses across them)
+              ├─ [[id]] links → U+0004 tokens, except in code (links.rs)
               ├─ fragment: Markdown                     thread: line walker (transclusion.rs)
               │                                           own-line ![[id]] → Resolver → blockquote,
               │                                             except in code or generated text
               │                                           prose runs → Markdown
               ├─ splice generated blocks, sentinels → span.blyg-tk-gen, strip stray markers
+              ├─ splice link anchors (or the unresolved marker) for the tokens
               └─ thread: inject the provenance line into each top-level quote
 ```
 
@@ -32,6 +34,23 @@ The thread walker leaves a line as prose when Markdown renders it as code
 (fenced or indented, at any depth: `markdown::code_lines`) or when it
 overlaps a generated TK span. Inside a scope, `![[id]]` is a generation
 source, never a quote.
+
+**`[[id]]` links** (protocol 0.3 §16.2) work in both kinds (`links.rs`, the
+Worker's `resolveInternalLinks` / `previewInternalLinks` /
+`applyInternalLinks`). A link is inline and bakes nothing: no
+`transclusions[]` entry, no mention, no self or cycle check. It resolves
+through the same `Resolver` as a quote (`Resolver::resolve_link`, which
+defaults to `resolve`) and becomes `<a href="…">“excerpt”</a>`, where the
+excerpt is the first 60 UTF-16 units of the target's text (else "a thread"
+or "a fragment"). Your own items link to `{mount}/{f|t}/{id}/`, imported ones
+to their origin's `page` or `{origin}{f|t}/{id}/`. An unresolved link shows
+`span.blyg-link-unresolved` and joins `Stats::unresolved` after the quotes,
+with `directive` `[[id]]`; publish refuses it ("one or more references do not
+resolve"). A link Markdown renders inside `<code>` (span, fence or indented)
+stays literal text; that is found by rendering a probe copy, as the Worker
+does. `native_blocks` turns links into `Span { item: Some(id), .. }` for
+the stream to label; its grammar is looser (either case), like its
+directive grammar.
 
 A line map follows every rewrite (`linemap.rs`), so each top-level block can
 carry `data-line="N"` (0-based source line) for source ↔ preview jumping.
@@ -133,7 +152,11 @@ node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/worker/package
 cargo test -p blyg-render
 ```
 
-**Reference version.** The fixtures come from the reference Worker with its
+**Reference version.** The fixtures come from the reference Worker rebased
+onto upstream blygger-studio v0.7.0 (protocol 0.3), with local patches 1–11
+(Worker version `3a25a1bd`, 2026-09-28). Regenerating against v0.7.0 changed
+none of the 161 earlier fixtures; 15 `link_*` cases were added for `[[id]]`.
+Before that, the fixtures came from the reference Worker with its
 local patch 9 applied (commit `fcc0c4425`, "`$`-safe splicing, no marker
 leaks, code/generated text never transcludes, alt keeps escapes"), on
 markdown-it 14.3.0 and linkify-it 5.0.2 (`parity/_manifest.json`). Patch 9
@@ -152,13 +175,14 @@ case is also byte-identical:
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion) | 161 | 161 | 161 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, `[[id]]` links) | 176 | 176 | 176 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`, `previewMedia`) | 3 | 3 | 3 |
 
-Thread fixtures also check the unresolved reasons, the resolved quote ids and
-the TK error count against the Worker. `tests/preview.rs` adds checks that
+Every fixture also checks the unresolved directives and reasons, in order,
+and the TK error count against the Worker; thread fixtures also check the
+resolved quote ids. `tests/preview.rs` adds checks that
 need no Worker:
 
 - Turning `data-line` on changes nothing but the attributes, for every
@@ -167,6 +191,15 @@ need no Worker:
   reaches the output.
 - The stats, the self-quote check, CRLF handling, the page shell, and that
   content can never inject markup.
+
+### Worker behaviour pinned as-is (reported upstream)
+
+- A `[[id]]` inside link text (`[see [[id]]](url)`) nests an `<a>` inside an
+  `<a>`, and one right after a URL (`https://x.test/[[id]]`) ends the
+  linkified URL and follows it (`link_in_attrs`).
+- The studio preview leaves `[[id]]` literal inside a *block* TK scope's
+  output, while publish links it (`link_in_tk`, `link_in_tk_thread`). Inline
+  scopes link in both.
 
 ### Deliberate differences (outside the fixtures' reach, or safer)
 

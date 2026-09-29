@@ -6,8 +6,10 @@
 //! quotes, lists, code, rules, and inline emphasis, code and links. What
 //! can't be drawn as text becomes a placeholder block: an image, a YouTube
 //! embed, a table. In a thread, a `![[id]]` line (outside code) is a
-//! [`Block::Transclusion`] for the caller to fill from what it holds. TK
-//! scopes are shown as their output (what the published page shows).
+//! [`Block::Transclusion`] for the caller to fill from what it holds, and an
+//! inline `[[id]]` link (outside code) is a [`Span`] with `item` set, for
+//! the caller to label. TK scopes are shown as their output (what the
+//! published page shows).
 //!
 //! This never feeds the HTML renderer, so it can't change published output.
 
@@ -43,7 +45,14 @@ pub struct Span {
     pub strike: bool,
     /// The link target, when this run is (inside) a link.
     pub link: Option<String>,
+    /// An `[[id]]` internal link: the target's id. `text` is a neutral
+    /// label ([`LINK_LABEL`]) for the caller to replace with the target's
+    /// excerpt when it holds the target.
+    pub item: Option<String>,
 }
+
+/// The text of an `[[id]]` span before the caller labels it.
+pub const LINK_LABEL: &str = "linked post";
 
 /// One block of a post.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -101,11 +110,71 @@ impl Block {
 /// Parse `md` into blocks. `kind` decides whether `![[id]]` lines are quotes
 /// (threads) or literal text (fragments), as publishing does.
 pub fn native_blocks(md: &str, kind: Kind) -> Vec<Block> {
-    let text = tk_output(md);
+    let (text, ids) = crate::links::tokenize(&tk_output(md));
+    let out = blocks_of(&text, kind);
+    if ids.is_empty() {
+        out
+    } else {
+        out.into_iter().map(|b| untoken_block(b, &ids)).collect()
+    }
+}
+
+/// Turn link tokens back into `[[id]]` spans (or, where only plain text
+/// fits, the label).
+fn untoken_block(b: Block, ids: &[String]) -> Block {
+    let spans = |v: Vec<Span>| merge(v.into_iter().flat_map(|s| untoken_span(s, ids)).collect());
+    let text = |t: String| {
+        crate::links::split_tokens(&t, ids)
+            .into_iter()
+            .map(|p| p.unwrap_or(LINK_LABEL))
+            .collect::<String>()
+    };
+    match b {
+        Block::Para(s) => Block::Para(spans(s)),
+        Block::Heading(l, s) => Block::Heading(l, spans(s)),
+        Block::Quote(bs) => Block::Quote(bs.into_iter().map(|b| untoken_block(b, ids)).collect()),
+        Block::List { ordered, items } => Block::List {
+            ordered,
+            items: items
+                .into_iter()
+                .map(|i| i.into_iter().map(|b| untoken_block(b, ids)).collect())
+                .collect(),
+        },
+        Block::Image { alt, src } => Block::Image {
+            alt: text(alt),
+            src: text(src),
+        },
+        Block::Code(c) => Block::Code(text(c)),
+        Block::Embed { url } => Block::Embed { url: text(url) },
+        b @ (Block::Rule | Block::Table | Block::Transclusion { .. }) => b,
+    }
+}
+
+fn untoken_span(s: Span, ids: &[String]) -> Vec<Span> {
+    if !s.text.contains('\u{4}') {
+        return vec![s];
+    }
+    crate::links::split_tokens(&s.text, ids)
+        .into_iter()
+        .map(|p| match p {
+            Ok(t) => Span {
+                text: t.to_string(),
+                ..s.clone()
+            },
+            Err(id) => Span {
+                text: LINK_LABEL.to_string(),
+                item: Some(id.to_string()),
+                ..s.clone()
+            },
+        })
+        .collect()
+}
+
+fn blocks_of(text: &str, kind: Kind) -> Vec<Block> {
     let mut out = Vec::new();
     if kind == Kind::Thread && text.contains("![[") {
         let lines: Vec<&str> = text.split('\n').collect();
-        let code = crate::markdown::code_lines(&text);
+        let code = crate::markdown::code_lines(text);
         let mut prose: Vec<&str> = Vec::new();
         for (i, line) in lines.iter().enumerate() {
             let directive = (!code.get(i).copied().unwrap_or(false))
@@ -122,7 +191,7 @@ pub fn native_blocks(md: &str, kind: Kind) -> Vec<Block> {
         }
         parse_into(&prose.join("\n"), &mut out);
     } else {
-        parse_into(&text, &mut out);
+        parse_into(text, &mut out);
     }
     out
 }
@@ -355,7 +424,9 @@ fn merge(spans: Vec<Span>) -> Vec<Span> {
                     && l.strong == s.strong
                     && l.code == s.code
                     && l.strike == s.strike
-                    && l.link == s.link =>
+                    && l.link == s.link
+                    && l.item.is_none()
+                    && s.item.is_none() =>
             {
                 l.text.push_str(&s.text)
             }
@@ -467,5 +538,24 @@ mod tests {
     fn empty_is_empty() {
         assert!(native_blocks("", Kind::Thread).is_empty());
         assert!(native_blocks("\n\n  \n", Kind::Fragment).is_empty());
+    }
+
+    #[test]
+    fn internal_links_are_item_spans() {
+        let id = "01j9zq3k4m5n6p7q8r9s0t1v2w";
+        let md = format!("See [[{id}]] and *[[{id}]]*, not `[[{id}]]` or ![[{id}]].");
+        let b = native_blocks(&md, Kind::Fragment);
+        let Block::Para(s) = &b[0] else {
+            panic!("{b:?}")
+        };
+        let items: Vec<_> = s.iter().filter(|s| s.item.is_some()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].text, LINK_LABEL);
+        assert!(items[1].em);
+        assert_eq!(items[0].item.as_deref(), Some(id));
+        let plain = b[0].plain();
+        assert!(plain.contains(&format!("`[[{id}]]`")) || plain.contains(&format!("[[{id}]]")));
+        assert!(plain.contains(&format!("![[{id}]]")));
+        assert!(!plain.contains('\u{4}'));
     }
 }

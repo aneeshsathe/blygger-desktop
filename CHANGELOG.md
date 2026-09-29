@@ -9,6 +9,18 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Added
+
+- **`[[id]]` links (protocol 0.3).** An inline `[[id]]` links to one of your posts or one you read, without quoting it. The preview shows it as the published page will: the target's first words in quotes, linked. Links inside code stay as text. A link that can't be resolved is flagged in the preview, the status bar and the publish sheet, as quotes are; publishing refuses it. In the stream, a link reads as the post it points to and opens it.
+- Quote boxes in the stream show the citation the quoting blyg recorded (`cited`) when the quoted post isn't held on this Mac.
+- Site settings: an **Accept mentions** option, on blygs that report it.
+
+### Changed
+
+- The preview matches the reference client at blygger-studio v0.7.0 (protocol 0.3). The publish error for unresolvable quotes or links is now "one or more references do not resolve".
+
 ## [0.4.1] - 2026-09-27
 
 ### Changed

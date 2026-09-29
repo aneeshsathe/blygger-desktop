@@ -2,7 +2,7 @@
   "generator": "gen_parity.mjs",
   "markdown_it": "14.3.0",
   "linkify_it": "5.0.2",
-  "cases": 161,
+  "cases": 176,
   "commonmark_examples": 652,
   "linkify_vectors": 206,
   "media_cases": 3
