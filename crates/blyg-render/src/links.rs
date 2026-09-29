@@ -57,8 +57,9 @@ fn matches_with(text: &str, re: &Regex) -> Vec<(usize, usize)> {
 }
 
 /// `codeMatches`: which matches Markdown puts inside `<code>`, found by
-/// rendering a copy with each match swapped for a numbered marker.
-fn code_matches(text: &str, ms: &[(usize, usize)]) -> HashSet<usize> {
+/// rendering a copy with each match swapped for a numbered marker (for
+/// `html` input, already rendered, by scanning it as it is).
+fn code_matches(text: &str, ms: &[(usize, usize)], html: bool) -> HashSet<usize> {
     static CODE: OnceLock<Regex> = OnceLock::new();
     static MARK: OnceLock<Regex> = OnceLock::new();
     let mut in_code = HashSet::new();
@@ -75,7 +76,11 @@ fn code_matches(text: &str, ms: &[(usize, usize)]) -> HashSet<usize> {
         last = b;
     }
     probe.push_str(&text[last..]);
-    let html = markdown::render(&probe, None).0;
+    let html = if html {
+        probe
+    } else {
+        markdown::render(&probe, None).0
+    };
     let code = CODE.get_or_init(|| Regex::new(r"(?s)<code\b[^>]*>.*?</code>").expect("code re"));
     let mark = MARK.get_or_init(|| Regex::new("\u{5}([0-9]+)\u{5}").expect("mark re"));
     for c in code.find_iter(&html) {
@@ -96,12 +101,13 @@ pub(crate) fn tokenize(text: &str) -> (String, Vec<String>) {
         return (text.to_string(), Vec::new());
     }
     let ms = matches_with(text, loose_re());
-    let in_code = code_matches(text, &ms);
+    let in_code = code_matches(text, &ms, false);
+    let in_url = url_matches(text, &ms, false);
     let mut ids = Vec::new();
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for (i, &(a, b)) in ms.iter().enumerate() {
-        if in_code.contains(&i) {
+        if in_code.contains(&i) || in_url.contains(&i) {
             continue;
         }
         out.push_str(&text[last..a]);
@@ -142,10 +148,56 @@ pub(crate) fn split_tokens<'a>(s: &'a str, ids: &'a [String]) -> Vec<Result<&'a 
     out
 }
 
-/// A document with its links swapped for tokens, and what replaces them.
+/// Patch 12 `urlMatches`: which matches are part of a URL the author wrote
+/// as a link destination, a CommonMark autolink `<https://x.test/[[id]]>`,
+/// and so stay literal. In `html` input (a rendered block), a match inside
+/// an `<a>` whose `href` carries the same `[[id]]` percent-encoded.
+fn url_matches(text: &str, ms: &[(usize, usize)], html: bool) -> HashSet<usize> {
+    static AUTOLINK: OnceLock<Regex> = OnceLock::new();
+    static ANCHOR: OnceLock<Regex> = OnceLock::new();
+    let mut in_url = HashSet::new();
+    if ms.is_empty() {
+        return in_url;
+    }
+    let mut spans: Vec<(usize, usize, &str)> = Vec::new();
+    if html {
+        let re = ANCHOR.get_or_init(|| {
+            Regex::new(r#"(?s)<a\b[^>]*\bhref="([^"]*)"[^>]*>.*?</a>"#).expect("anchor re")
+        });
+        for c in re.captures_iter(text) {
+            let m = c.get(0).expect("match");
+            spans.push((m.start(), m.end(), c.get(1).map_or("", |h| h.as_str())));
+        }
+    } else {
+        let re = AUTOLINK.get_or_init(|| {
+            Regex::new(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^<>\x00-\x20]*>").expect("autolink re")
+        });
+        let mut at = 0;
+        while let Some(m) = re.find_at(text, at) {
+            // `(?<!\\)`: an escaped `<` starts no autolink.
+            if text[..m.start()].ends_with('\\') {
+                at = m.start() + 1;
+                continue;
+            }
+            spans.push((m.start(), m.end(), ""));
+            at = m.end();
+        }
+    }
+    for (i, &(a, b)) in ms.iter().enumerate() {
+        let id = &text[a + 2..b - 2];
+        let encoded = format!("%5B%5B{id}%5D%5D");
+        if spans
+            .iter()
+            .any(|&(s, e, href)| a > s && b < e && (!html || href.contains(&encoded)))
+        {
+            in_url.insert(i);
+        }
+    }
+    in_url
+}
+
+/// A text's links swapped for tokens: what replaces them, and what failed.
 pub(crate) struct Links {
-    /// The text with each link (outside code) replaced by its token.
-    pub doc: Mapped,
     /// Token → the anchor (or unresolved marker) HTML.
     replacements: Vec<(String, String)>,
     pub resolved: usize,
@@ -195,36 +247,80 @@ fn reason(r: Resolution) -> Result<Found, UnresolvedReason> {
     }
 }
 
-/// `previewInternalLinks` over `doc`. `mount` is the blyg's mount, the base
-/// of links to your own items.
-pub(crate) fn resolve(doc: &Mapped, resolver: &dyn Resolver, mount: &str) -> Links {
-    let text = &doc.text;
-    let ms = if text.contains("[[") {
-        matches(text)
-    } else {
-        Vec::new()
+/// `previewInternalLinks` over the document `doc` (Markdown). `mount` is the
+/// blyg's mount, the base of links to your own items. `seq` numbers tokens
+/// across every text of one render, so their maps can be merged.
+pub(crate) fn resolve(
+    doc: &Mapped,
+    resolver: &dyn Resolver,
+    mount: &str,
+    seq: &mut usize,
+) -> (Mapped, Links) {
+    let (text, links) = substitute(
+        &doc.text,
+        false,
+        &|at| doc.line_at(at),
+        resolver,
+        mount,
+        seq,
+    );
+    // Links are single-line, so every line keeps its source line.
+    let doc = match text {
+        Some(t) => doc.with_text(t),
+        None => doc.clone(),
     };
+    (doc, links)
+}
+
+/// `previewInternalLinks(…, {html: true})`: over a generated block's rendered
+/// HTML (patch 12: the preview resolves these as publish does). Every
+/// unresolved link reports the block's source `line`.
+pub(crate) fn resolve_html(
+    html: &str,
+    line: usize,
+    resolver: &dyn Resolver,
+    mount: &str,
+    seq: &mut usize,
+) -> (Option<String>, Links) {
+    substitute(html, true, &|_| line, resolver, mount, seq)
+}
+
+/// `resolveInternalLinks`: the new text (`None` when nothing matched).
+fn substitute(
+    text: &str,
+    html: bool,
+    line_of: &dyn Fn(usize) -> usize,
+    resolver: &dyn Resolver,
+    mount: &str,
+    seq: &mut usize,
+) -> (Option<String>, Links) {
     let mut links = Links {
-        doc: doc.clone(),
         replacements: Vec::new(),
         resolved: 0,
         unresolved: Vec::new(),
         edits: Vec::new(),
     };
+    let ms = if text.contains("[[") {
+        matches(text)
+    } else {
+        Vec::new()
+    };
     if ms.is_empty() {
-        return links;
+        return (None, links);
     }
-    let in_code = code_matches(text, &ms);
+    let in_code = code_matches(text, &ms, html);
+    let in_url = url_matches(text, &ms, html);
     let origin = our_origin(mount);
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
     for (i, &(a, b)) in ms.iter().enumerate() {
-        if in_code.contains(&i) {
+        if in_code.contains(&i) || in_url.contains(&i) {
             continue;
         }
         out.push_str(&text[last..a]);
         last = b;
-        let token = format!("{SENTINEL}{}{SENTINEL}", links.replacements.len());
+        let token = format!("{SENTINEL}{seq}{SENTINEL}");
+        *seq += 1;
         let id = &text[a + 2..b - 2];
         let html = match reason(resolver.resolve_link(id)) {
             Ok(f) => {
@@ -245,7 +341,7 @@ pub(crate) fn resolve(doc: &Mapped, resolver: &dyn Resolver, mount: &str) -> Lin
                     escape_html(&r.to_string())
                 );
                 links.unresolved.push(Unresolved {
-                    line: doc.line_at(a),
+                    line: line_of(a),
                     directive: text[a..b].to_string(),
                     reason: r,
                 });
@@ -257,9 +353,7 @@ pub(crate) fn resolve(doc: &Mapped, resolver: &dyn Resolver, mount: &str) -> Lin
         links.replacements.push((token, html));
     }
     out.push_str(&text[last..]);
-    // Links are single-line, so every line keeps its source line.
-    links.doc = doc.with_text(out);
-    links
+    (Some(out), links)
 }
 
 impl Links {
@@ -315,8 +409,63 @@ impl Links {
             rest = &rest[gt + 1..];
         }
         out.push_str(rest);
+        // Patch 12: a token inside an `<a>`'s content (`[see [[id]]](url)`)
+        // must not become a second `<a>`: it keeps the replacement minus its
+        // own `<a>`/`</a>` (the unresolved `<span>` stays as it is).
+        if out.contains(SENTINEL) {
+            out = self.unnest(&out);
+        }
         for (token, anchor) in &self.replacements {
             out = out.replace(token.as_str(), anchor);
+        }
+        out
+    }
+
+    /// `/<[^>]*>|[^<]+/g` with `<a>` depth: tokens in link text become the
+    /// anchor's content only.
+    fn unnest(&self, html: &str) -> String {
+        static OPEN: OnceLock<Regex> = OnceLock::new();
+        static CLOSE: OnceLock<Regex> = OnceLock::new();
+        static A_TAG: OnceLock<Regex> = OnceLock::new();
+        let open = OPEN.get_or_init(|| Regex::new(r"(?i)^<a\b").expect("open re"));
+        let close = CLOSE.get_or_init(|| Regex::new(r"(?i)^</a\s*>").expect("close re"));
+        let a_tag = A_TAG.get_or_init(|| Regex::new(r"(?i)</?a\b[^>]*>").expect("a re"));
+        let mut out = String::with_capacity(html.len());
+        let mut depth = 0usize;
+        let mut rest = html;
+        while !rest.is_empty() {
+            if rest.starts_with('<') {
+                match rest.find('>') {
+                    Some(gt) => {
+                        let tag = &rest[..=gt];
+                        if open.is_match(tag) {
+                            depth += 1;
+                        } else if close.is_match(tag) {
+                            depth = depth.saturating_sub(1);
+                        }
+                        out.push_str(tag);
+                        rest = &rest[gt + 1..];
+                    }
+                    // A `<` that opens no tag matches neither alternative.
+                    None => {
+                        out.push('<');
+                        rest = &rest[1..];
+                    }
+                }
+                continue;
+            }
+            let end = rest.find('<').unwrap_or(rest.len());
+            let part = &rest[..end];
+            if depth > 0 && part.contains(SENTINEL) {
+                let mut t = part.to_string();
+                for (token, anchor) in &self.replacements {
+                    t = t.replace(token.as_str(), &a_tag.replace_all(anchor, ""));
+                }
+                out.push_str(&t);
+            } else {
+                out.push_str(part);
+            }
+            rest = &rest[end..];
         }
         out
     }
@@ -450,7 +599,7 @@ mod tests {
     fn code_is_literal() {
         let t = format!("`[[{A}]]` and [[{A}]]");
         let m = matches(&t);
-        assert_eq!(code_matches(&t, &m), HashSet::from([0]));
+        assert_eq!(code_matches(&t, &m, false), HashSet::from([0]));
     }
 
     #[test]
@@ -467,7 +616,6 @@ mod tests {
     #[test]
     fn remap_shifts_offsets_past_tokens() {
         let l = Links {
-            doc: Mapped::identity(""),
             replacements: Vec::new(),
             resolved: 0,
             unresolved: Vec::new(),

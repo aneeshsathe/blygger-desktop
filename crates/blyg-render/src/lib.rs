@@ -172,11 +172,23 @@ pub fn render_preview(
         });
     }
 
-    // `[[id]]` links become tokens here and anchors after rendering. As in
-    // the Worker's preview, links inside a generated block stay literal.
-    let links = links::resolve(&annotated.doc, resolver, &opts.mount);
-    stats.links = links.resolved;
-    let doc = &links.doc;
+    // `[[id]]` links become tokens here and anchors after rendering: the
+    // body's, then each generated block's (its rendered HTML, patch 12).
+    let mut seq = 0;
+    let (link_doc, links) = links::resolve(&annotated.doc, resolver, &opts.mount, &mut seq);
+    let mut link_docs = vec![links];
+    for (block, (_, _, line)) in blocks.iter_mut().zip(&annotated.blocks) {
+        let (html, l) = links::resolve_html(&block.html, *line, resolver, &opts.mount, &mut seq);
+        if let Some(html) = html {
+            block.html = html;
+            link_docs.push(l);
+        }
+    }
+    stats.links = link_docs.iter().map(|l| l.resolved).sum();
+    let link_errors = link_docs.iter().flat_map(|l| l.unresolved.iter().cloned());
+    let splice = |html: String| link_docs.iter().fold(html, |h, l| l.apply(h));
+    let links = &link_docs[0];
+    let doc = &link_doc;
     let (html, block_lines) = match kind {
         Kind::Fragment => {
             let map = |j: usize| doc.lines[j];
@@ -198,10 +210,10 @@ pub fn render_preview(
             stats.videos += w.md.videos;
             stats.quotes = w.quotes.len();
             stats.unresolved = w.unresolved;
-            stats.unresolved.extend(links.unresolved.iter().cloned());
+            stats.unresolved.extend(link_errors);
             stats.transclusions = w.quotes.iter().map(|(q, _)| q.clone()).collect();
             let html = tk::apply_wrappers(w.html, &blocks, annotated.has_inline);
-            let mut html = links.apply(html);
+            let mut html = splice(html);
             if opts.provenance {
                 let lines: Vec<String> = w
                     .quotes
@@ -223,8 +235,8 @@ pub fn render_preview(
             };
         }
     };
-    stats.unresolved = links.unresolved.clone();
-    let html = links.apply(tk::apply_wrappers(html, &blocks, annotated.has_inline));
+    stats.unresolved = link_errors.collect();
+    let html = splice(tk::apply_wrappers(html, &blocks, annotated.has_inline));
     let line_map = block_lines
         .into_iter()
         .enumerate()

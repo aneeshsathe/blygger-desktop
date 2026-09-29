@@ -113,6 +113,7 @@ function annotateTkPreview(contentMd) {
     errors,
     text: annotated.text,
     inert: annotated.inertRanges, // generated spans: `![[id]]` inside them never transcludes
+    blocks: annotated.blockReplacements,
     finish: (html) => W.applyGeneratedWrappers(html, annotated),
   };
 }
@@ -125,22 +126,34 @@ async function render(c) {
   };
   const db = fakeDb();
   // `[[id]]` plain links resolve in both previews, against siteOrigin (here
-  // the mount plus "/", which is what the Rust side derives from `mount`).
-  const links = await W.previewInternalLinks(db, tk.text, store.mount + "/");
+  // the mount plus "/", which is what the Rust side derives from `mount`):
+  // studio.ts previewLinkDocs / spliceLinkDocs (patch 12), verbatim.
+  const origin = store.mount + "/";
+  const linkDocs = [await W.previewInternalLinks(db, tk.text, origin)];
+  for (const [token, blockHtml] of tk.blocks) {
+    const doc = await W.previewInternalLinks(db, blockHtml, origin, { html: true });
+    if (doc.replacements.size || doc.errors.length) {
+      tk.blocks.set(token, doc.text);
+      linkDocs.push(doc);
+    }
+  }
+  const splice = (html) => linkDocs.reduce((acc, doc) => W.applyInternalLinks(acc, doc), html);
+  const links = linkDocs[0];
+  const linkErrors = linkDocs.flatMap((d) => d.errors);
   if (c.kind === "fragment") {
     // studio.post("/preview"): fragments never resolve transclusions.
-    const html = W.applyInternalLinks(tk.finish(W.renderMarkdown(links.text)), links);
-    return { html, tk: tkOut, transclusions: [], errors: links.errors };
+    const html = splice(tk.finish(W.renderMarkdown(links.text)));
+    return { html, tk: tkOut, transclusions: [], errors: linkErrors };
   }
   // studio.post("/preview-thread") + the public page's injectProvenance().
   const resolved = await W.previewTransclusions(db, links.text, store.self_id, W.remapRanges(tk.inert, links));
-  const preview = W.applyInternalLinks(tk.finish(resolved.html), links);
+  const preview = splice(tk.finish(resolved.html));
   const provenance = await W.transclusionProvenance(db, resolved.transclusions, store.mount);
   return {
     html: W.injectProvenance(preview, provenance),
     tk: tkOut,
     transclusions: resolved.transclusions,
-    errors: [...resolved.errors, ...links.errors],
+    errors: [...resolved.errors, ...linkErrors],
   };
 }
 

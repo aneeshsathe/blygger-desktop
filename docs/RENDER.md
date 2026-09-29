@@ -48,7 +48,7 @@ to their origin's `page` or `{origin}{f|t}/{id}/`. An unresolved link shows
 with `directive` `[[id]]`; publish refuses it ("one or more references do not
 resolve"). A link Markdown renders inside `<code>` (span, fence or indented)
 stays literal text; that is found by rendering a probe copy, as the Worker
-does. `native_blocks` turns links into `Span { item: Some(id), .. }` for
+does. So does one inside an autolink's URL. `native_blocks` turns links into `Span { item: Some(id), .. }` for
 the stream to label; its grammar is looser (either case), like its
 directive grammar.
 
@@ -153,7 +153,7 @@ cargo test -p blyg-render
 ```
 
 **Reference version.** The fixtures come from the reference Worker rebased
-onto upstream blygger-studio v0.7.0 (protocol 0.3), with local patches 1–11
+onto upstream blygger-studio v0.7.0 (protocol 0.3), with local patches 1–12
 (Worker version `3a25a1bd`, 2026-09-28). Regenerating against v0.7.0 changed
 none of the 161 earlier fixtures; 15 `link_*` cases were added for `[[id]]`.
 Before that, the fixtures came from the reference Worker with its
@@ -175,7 +175,7 @@ case is also byte-identical:
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, `[[id]]` links) | 176 | 176 | 176 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, `[[id]]` links) | 180 | 180 | 180 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`, `previewMedia`) | 3 | 3 | 3 |
@@ -192,14 +192,24 @@ need no Worker:
 - The stats, the self-quote check, CRLF handling, the page shell, and that
   content can never inject markup.
 
-### Worker behaviour pinned as-is (reported upstream)
+### Worker patch 12 (and what is still pinned as-is)
 
-- A `[[id]]` inside link text (`[see [[id]]](url)`) nests an `<a>` inside an
-  `<a>`, and one right after a URL (`https://x.test/[[id]]`) ends the
-  linkified URL and follows it (`link_in_attrs`).
-- The studio preview leaves `[[id]]` literal inside a *block* TK scope's
-  output, while publish links it (`link_in_tk`, `link_in_tk_thread`). Inline
-  scopes link in both.
+Two Worker bugs these fixtures exposed were fixed in local patch 12 (filed
+upstream as blygger-studio #13 and #14), and the fixtures follow it:
+
+- A `[[id]]` inside link text (`[see [[id]]](url)`) splices only the anchor's
+  text, never a nested `<a>`. Inside a CommonMark autolink
+  (`<https://x.test/[[id]]>`) it stays literal, part of the URL, and is no
+  error (`link_in_attrs`, `link_autolink_literal`,
+  `link_in_link_text_unresolved`).
+- The preview resolves `[[id]]` in a block TK scope's output as publish does,
+  over the block's rendered HTML; an unresolved one is marked and reported
+  with the block's source line (`link_in_tk*`, `link_tk_block_*`).
+
+Still as the Worker has it: a `[[id]]` glued to a bare URL
+(`https://x.test/[[id]]`) ends the linkified URL and follows it as its own
+anchor; inside block TK output, linkify splits it between the two `]` and the
+id stays literal (`link_tk_block_nested`).
 
 ### Deliberate differences (outside the fixtures' reach, or safer)
 

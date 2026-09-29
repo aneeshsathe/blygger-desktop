@@ -557,5 +557,11 @@ mod tests {
         assert!(plain.contains(&format!("`[[{id}]]`")) || plain.contains(&format!("[[{id}]]")));
         assert!(plain.contains(&format!("![[{id}]]")));
         assert!(!plain.contains('\u{4}'));
+        // Part of an autolink's URL: not a link of its own.
+        let b = native_blocks(&format!("<https://x.test/[[{id}]]>"), Kind::Fragment);
+        let Block::Para(s) = &b[0] else {
+            panic!("{b:?}")
+        };
+        assert!(s.iter().all(|s| s.item.is_none()), "{s:?}");
     }
 }
