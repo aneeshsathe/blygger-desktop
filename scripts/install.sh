@@ -53,7 +53,7 @@ mkdir -p "$dest"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-say "Downloading $ASSET…"
+say "Downloading ${ASSET}…"
 curl -fL --progress-bar -o "$tmp/$ASSET" "$base/$ASSET" || die "download failed: $base/$ASSET"
 
 if [ -z "${BLYGGER_NO_VERIFY:-}" ]; then

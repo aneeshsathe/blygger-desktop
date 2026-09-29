@@ -9,6 +9,14 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Fixed
+
+- The one-line installer (`scripts/install.sh`) failed on stock macOS with
+  `ASSET: unbound variable`. `/bin/bash` 3.2 in a UTF-8 locale reads the first
+  byte of the `…` after `$ASSET` as part of the variable name. Braces fix it.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added
