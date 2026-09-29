@@ -109,10 +109,15 @@ impl Assist {
         }
         // Right-click (or ctrl-click): the editor has already put the caret
         // at the click; offer the spelling menu if it's on a flagged word.
+        // The editor calls this from inside its own update, so defer once
+        // more before reading it (reading it there panicked the app).
         let weak = cx.entity().downgrade();
         editor.update(cx, |s, _| {
             s.on_context_menu(std::rc::Rc::new(move |_, _, position, window, cx| {
-                let _ = weak.update(cx, |a, cx| a.open_spell_menu(position, window, cx));
+                let weak = weak.clone();
+                window.defer(cx, move |window, cx| {
+                    let _ = weak.update(cx, |a, cx| a.open_spell_menu(position, window, cx));
+                });
             }));
         });
         let last = editor.read(cx).value().to_string();

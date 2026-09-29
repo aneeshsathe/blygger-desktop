@@ -154,6 +154,20 @@ impl MainView {
         .detach();
     }
 
+    /// Flip "Accept mentions" (saved with the rest on Save).
+    pub(crate) fn toggle_accept_mentions(&mut self, cx: &mut Context<Self>) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(on) = s.accept_mentions.as_mut()
+        {
+            *on = !*on;
+            cx.notify();
+        }
+    }
+
     pub(super) fn render_site_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let RSheet::Site {
@@ -232,6 +246,10 @@ impl MainView {
             }
             Load::Ready(_) => {}
         }
+        let accept = match load {
+            Load::Ready(s) => s.accept_mentions,
+            _ => None,
+        };
         frame
             .child(label("SITE TITLE"))
             .child(self.input_box(
@@ -260,6 +278,27 @@ impl MainView {
                     .text_size(px(13.))
                     .child(gpui_kit::base::input::Textarea::new(links)),
             )
+            .when_some(accept, |d, on| {
+                d.child(
+                    div()
+                        .id("site-accept-mentions")
+                        .mt(px(12.))
+                        .flex()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .child(if on { "☑" } else { "☐" })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child("Accept mentions")
+                                .child(div().text_color(p.muted).child(
+                                    "Other blygs can tell yours when they quote, stub or fork your posts.",
+                                )),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_accept_mentions(cx))),
+                )
+            })
             .when_some(error.clone(), |d, e| {
                 d.child(div().mt(px(6.)).text_color(p.over).child(e))
             })

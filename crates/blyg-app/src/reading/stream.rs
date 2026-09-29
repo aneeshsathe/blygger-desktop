@@ -177,6 +177,14 @@ fn html_paragraphs(html: &str) -> Vec<String> {
         .collect()
 }
 
+/// What a clickable run opens.
+#[derive(Clone)]
+enum Target {
+    Url(String),
+    /// An `[[id]]` link: (origin, id).
+    Post(String, String),
+}
+
 /// A link target as the stream opens it: absolute http(s)/mailto, or
 /// resolved against the post's origin.
 fn link_target(href: &str, origin: &str) -> Option<String> {
@@ -1033,10 +1041,19 @@ impl MainView {
         let p = self.palette;
         let mut text = String::new();
         let mut hl: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
-        let mut links: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+        let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
         for s in spans {
             let start = text.len();
-            text.push_str(&s.text);
+            // An `[[id]]` link reads as the target's excerpt when it's held.
+            let label = s.item.as_deref().map(|id| {
+                let held = stream_vm::quoted(&self.reading.rows, post, id);
+                let (origin, _) = stream_vm::quote_ref(post, id, held);
+                (stream_vm::link_label(held), origin, id.to_string())
+            });
+            match &label {
+                Some((l, ..)) => text.push_str(l),
+                None => text.push_str(&s.text),
+            }
             let r = start..text.len();
             if r.is_empty() {
                 continue;
@@ -1062,7 +1079,15 @@ impl MainView {
                 });
                 styled = true;
             }
-            if let Some(href) = s.link.as_deref().and_then(|h| link_target(h, &post.origin)) {
+            let target = match label {
+                Some((_, origin, id)) => Some(Target::Post(origin, id)),
+                None => s
+                    .link
+                    .as_deref()
+                    .and_then(|h| link_target(h, &post.origin))
+                    .map(Target::Url),
+            };
+            if let Some(t) = target {
                 st.color = Some(p.accent);
                 st.underline = Some(UnderlineStyle {
                     thickness: px(1.),
@@ -1070,7 +1095,7 @@ impl MainView {
                     wavy: false,
                 });
                 styled = true;
-                links.push((r.clone(), href));
+                links.push((r.clone(), t));
             }
             if styled {
                 hl.push((r, st));
@@ -1081,16 +1106,19 @@ impl MainView {
         let el = if links.is_empty() {
             div().child(styled).into_any_element()
         } else {
-            let (ranges, urls): (Vec<_>, Vec<_>) = links.into_iter().unzip();
+            let (ranges, targets): (Vec<_>, Vec<_>) = links.into_iter().unzip();
             // Links go where the reader's do: the browser pane, or the
-            // default browser (click modifiers and `open-links` decide).
+            // default browser (click modifiers and `open-links` decide). An
+            // `[[id]]` link opens the post like a quote box does.
             let view = cx.entity().downgrade();
             InteractiveText::new(("stream-text", *n), styled)
                 .on_click(ranges, move |i, window, cx| {
-                    if let Some(u) = urls.get(i) {
-                        let u = u.clone();
-                        let _ = view.update(cx, |this, cx| this.open_link(u, window, cx));
-                    }
+                    let t = targets.get(i).cloned();
+                    let _ = view.update(cx, |this, cx| match t {
+                        Some(Target::Url(u)) => this.open_link(u, window, cx),
+                        Some(Target::Post(o, id)) => this.open_original(o, id, None, window, cx),
+                        None => {}
+                    });
                 })
                 .into_any_element()
         };
@@ -1112,6 +1140,7 @@ impl MainView {
         let p = self.palette;
         let held = stream_vm::quoted(&self.reading.rows, post, id);
         let (origin, version) = stream_vm::quote_ref(post, id, held);
+        let cited = stream_vm::cited(post, id);
         *n += 1;
         let box_id = *n;
         let quoted: Vec<AnyElement> = match held {
@@ -1124,17 +1153,22 @@ impl MainView {
                 let (shown, _) = stream_vm::preview(&blocks);
                 self.render_blocks(&shown, q, n, cx)
             }
+            // Not held: the citation the quoting blyg froze, when it sent one.
             _ => vec![
-                div()
-                    .italic()
-                    .text_color(p.muted)
-                    .child("The quoted post isn't held on this Mac.")
-                    .into_any_element(),
+                match cited.and_then(|c| c.excerpt.as_deref()).map(str::trim) {
+                    Some(e) if !e.is_empty() => div().child(format!("“{e}”")).into_any_element(),
+                    _ => div()
+                        .italic()
+                        .text_color(p.muted)
+                        .child("The quoted post isn't held on this Mac.")
+                        .into_any_element(),
+                },
             ],
         };
         let name = held
             .and_then(|q| q.author.as_ref().and_then(|a| a.name.clone()))
             .filter(|s| !s.trim().is_empty())
+            .or_else(|| cited.and_then(|c| c.name()).map(str::to_string))
             .unwrap_or_else(|| vm::host(&origin));
         let prof = origin.clone();
         let (q_origin, q_id) = (origin.clone(), id.to_string());

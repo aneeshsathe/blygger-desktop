@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, RUE_TRUST};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST};
 
 impl MainView {
     pub(crate) fn reading_demo(
@@ -50,6 +50,19 @@ impl MainView {
                     .reading
                     .shown_rows()
                     .position(|r| r.remote_id == ADA_REPLY);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            // Lin's reread: a cited quote not held here, and an `[[id]]` link.
+            ("rd-stream-link", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-link", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == LIN_REREAD);
                 if let Some(ix) = ix {
                     for _ in 0..=ix {
                         self.stream_move(1, window, cx);

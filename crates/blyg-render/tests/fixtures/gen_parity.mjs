@@ -40,7 +40,7 @@ await esbuild.build({
     contents: `
       export { renderMarkdown } from "./markdown.ts";
       export { parseScopes, previewStrip, annotateGenerated, applyGeneratedWrappers } from "./tk.ts";
-      export { previewTransclusions } from "./transclusion.ts";
+      export { previewTransclusions, previewInternalLinks, applyInternalLinks, remapRanges } from "./transclusion.ts";
       export { injectProvenance, transclusionProvenance, mediaHtml } from "./pages.ts";
       export { previewMedia } from "./attachments.ts";
     `,
@@ -113,6 +113,7 @@ function annotateTkPreview(contentMd) {
     errors,
     text: annotated.text,
     inert: annotated.inertRanges, // generated spans: `![[id]]` inside them never transcludes
+    blocks: annotated.blockReplacements,
     finish: (html) => W.applyGeneratedWrappers(html, annotated),
   };
 }
@@ -123,20 +124,36 @@ async function render(c) {
     scopes: tk.scopes.map((s) => ({ instruction: s.instruction, generated: s.output !== null, block: s.block, source_ids: s.sourceIds })),
     errors: tk.errors,
   };
+  const db = fakeDb();
+  // `[[id]]` plain links resolve in both previews, against siteOrigin (here
+  // the mount plus "/", which is what the Rust side derives from `mount`):
+  // studio.ts previewLinkDocs / spliceLinkDocs (patch 12), verbatim.
+  const origin = store.mount + "/";
+  const linkDocs = [await W.previewInternalLinks(db, tk.text, origin)];
+  for (const [token, blockHtml] of tk.blocks) {
+    const doc = await W.previewInternalLinks(db, blockHtml, origin, { html: true });
+    if (doc.replacements.size || doc.errors.length) {
+      tk.blocks.set(token, doc.text);
+      linkDocs.push(doc);
+    }
+  }
+  const splice = (html) => linkDocs.reduce((acc, doc) => W.applyInternalLinks(acc, doc), html);
+  const links = linkDocs[0];
+  const linkErrors = linkDocs.flatMap((d) => d.errors);
   if (c.kind === "fragment") {
     // studio.post("/preview"): fragments never resolve transclusions.
-    return { html: tk.finish(W.renderMarkdown(tk.text)), tk: tkOut, transclusions: [], errors: [] };
+    const html = splice(tk.finish(W.renderMarkdown(links.text)));
+    return { html, tk: tkOut, transclusions: [], errors: linkErrors };
   }
   // studio.post("/preview-thread") + the public page's injectProvenance().
-  const db = fakeDb();
-  const resolved = await W.previewTransclusions(db, tk.text, store.self_id, tk.inert);
-  const preview = tk.finish(resolved.html);
+  const resolved = await W.previewTransclusions(db, links.text, store.self_id, W.remapRanges(tk.inert, links));
+  const preview = splice(tk.finish(resolved.html));
   const provenance = await W.transclusionProvenance(db, resolved.transclusions, store.mount);
   return {
     html: W.injectProvenance(preview, provenance),
     tk: tkOut,
     transclusions: resolved.transclusions,
-    errors: resolved.errors,
+    errors: [...resolved.errors, ...linkErrors],
   };
 }
 

@@ -28,6 +28,7 @@ pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
 pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
 /// A fragment of Lin's with emphasis, code and a bare link.
 pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
+pub const LIN_REREAD: &str = "01K2LIN0REREAD000000000001";
 /// A blyg nobody here follows, and the post of Kit's that Lin's fork quotes:
 /// opening it fetches it "publicly" (`Backend::public_item`).
 pub const KIT: &str = "https://kit.blyg.example.net/";
@@ -281,8 +282,34 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         id: LIN_BENCH.into(),
         version: Some(1),
         origin: Some(LIN.into()),
+        cited: None,
     }];
     reading.push(reply);
+    // A quote of a post not held here (the stream shows the citation Lin's
+    // blyg froze) and an `[[id]]` link to one that is.
+    let mut reread = post(
+        &lin,
+        LIN_REREAD,
+        Kind::Thread,
+        1,
+        Some(1),
+        now - h(4),
+        "Lin",
+        "Worth rereading\n\n![[01K2RUE0W0RN00000000000001]]\n\nIt sits well next to my [[01K2LIN0BENCH0000000000001]] note.",
+    );
+    reread.transclusions = vec![TransclusionRef {
+        id: "01K2RUE0W0RN00000000000001".into(),
+        version: Some(2),
+        origin: Some(RUE.into()),
+        cited: Some(blyg_core::Cited {
+            source: Some("Rue's Notebook".into()),
+            author: Some("Rue".into()),
+            excerpt: Some("An edit you can't read is a rewrite you have to trust.".into()),
+            url: None,
+            retrieved: None,
+        }),
+    }];
+    reading.push(reread);
     let mut fork = post(
         &lin,
         LIN_FORK,
@@ -304,6 +331,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         id: KIT_TIDES.into(),
         version: Some(1),
         origin: Some(KIT.into()),
+        cited: None,
     }];
     reading.push(fork);
     reading.push(post(
@@ -389,6 +417,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
                         id: ADA_TIDES.into(),
                         version: Some(2),
                         origin: Some(ADA.into()),
+                        cited: None,
                     }],
                 },
                 ..rv(4, now - d(1), Some("linked the reply"), false, true)
@@ -487,6 +516,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             label: "Feed".into(),
             url: format!("{}/feed.json", super::ORIGIN),
         }],
+        accept_mentions: Some(true),
     };
 
     // "On friction": v1 first, v2 pinned, v3 current.

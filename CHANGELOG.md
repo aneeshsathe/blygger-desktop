@@ -17,6 +17,30 @@ release workflow publishes that section as the release notes.
   `ASSET: unbound variable`. `/bin/bash` 3.2 in a UTF-8 locale reads the first
   byte of the `…` after `$ASSET` as part of the variable name. Braces fix it.
 
+## [0.5.0] - 2026-09-28
+
+### Added
+
+- **`[[id]]` links (protocol 0.3).** An inline `[[id]]` links to one of your posts or one you read, without quoting it. The preview shows it as the published page will: the target's first words in quotes, linked. Links inside code stay as text. A link that can't be resolved is flagged in the preview, the status bar and the publish sheet, as quotes are; publishing refuses it. In the stream, a link reads as the post it points to and opens it.
+- Quote boxes in the stream show the citation the quoting blyg recorded (`cited`) when the quoted post isn't held on this Mac.
+- Site settings: an **Accept mentions** option, on blygs that report it.
+
+### Changed
+
+- The preview matches the reference client at blygger-studio v0.7.0 (protocol 0.3). The publish error for unresolvable quotes or links is now "one or more references do not resolve".
+
+## [0.4.1] - 2026-09-27
+
+### Changed
+
+- When an update has downloaded and passed its checks, a sheet asks **Restart Now** or **Later**; in `auto-update = notify` mode it offers **Download and Install**. Check for Updates… asks again, and the status bar notice stays after Later.
+- Tour: steps that open a pane, popup or mode (the full editor, versions, @ mentions, the stream pane, the original, Reader, notes) show ✓ and wait for Next instead of moving on by themselves. You can now pick someone from the @ popup.
+
+### Fixed
+
+- Opening the profile of some blygs crashed the app (a feed with a multi-byte character just after an `&…;` entity). Profile and original-post fetches now show an error instead of crashing if a page can't be read.
+- Right-clicking a misspelled word crashed the app.
+
 ## [0.4.0] - 2026-09-27
 
 ### Added

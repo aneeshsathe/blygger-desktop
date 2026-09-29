@@ -512,11 +512,13 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
                 cx,
             )
         });
+        v.toggle_accept_mentions(cx);
         v.save_site_settings(window, cx);
     });
     settle(cx);
     let s = fake.saved_settings();
     assert_eq!(s.site_title.as_deref(), Some("Harbour notebook"));
+    assert_eq!(s.accept_mentions, Some(false));
     assert_eq!(s.author_links.len(), 2);
     assert_eq!(
         s.author_bio.as_deref(),

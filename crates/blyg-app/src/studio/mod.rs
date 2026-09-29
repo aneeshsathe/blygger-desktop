@@ -368,6 +368,7 @@ fn count(n: usize, one: &str, many: &str) -> String {
 pub fn stats_label(s: &Stats) -> Option<String> {
     let parts: Vec<String> = [
         (s.quotes, "quote", "quotes"),
+        (s.links, "link", "links"),
         (s.ai_spans, "AI span", "AI spans"),
         (s.videos, "video", "videos"),
         (s.images, "image", "images"),
@@ -379,16 +380,20 @@ pub fn stats_label(s: &Stats) -> Option<String> {
     (!parts.is_empty()).then(|| parts.join(" · "))
 }
 
-/// "⚠ N quote(s) can't be resolved" (publish would refuse them).
+/// "⚠ N quote(s) and M link(s) can't be resolved" (publish would refuse them).
 pub fn unresolved_warning(s: &Stats) -> Option<String> {
-    let n = s.unresolved.len();
-    (n > 0).then(|| {
-        if n == 1 {
-            "⚠ 1 quote can't be resolved".to_string()
-        } else {
-            format!("⚠ {n} quotes can't be resolved")
-        }
-    })
+    let quotes = s
+        .unresolved
+        .iter()
+        .filter(|u| u.directive.starts_with('!'))
+        .count();
+    let links = s.unresolved.len() - quotes;
+    let parts: Vec<String> = [(quotes, "quote", "quotes"), (links, "link", "links")]
+        .into_iter()
+        .filter(|(n, ..)| *n > 0)
+        .map(|(n, one, many)| count(n, one, many))
+        .collect();
+    (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")))
 }
 
 fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
@@ -407,7 +412,7 @@ fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
 fn prepare(backend: &dyn Backend, item: Option<&Item>, md: &str) -> (StoreResolver, RenderOpts) {
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
-    let resolver = if md.contains("![[") {
+    let resolver = if md.contains("[[") {
         StoreResolver::snapshot(backend, &opts.mount)
     } else {
         StoreResolver::empty(&opts.mount)
@@ -749,14 +754,11 @@ impl MainView {
         )
     }
 
-    /// The publish sheet's warning about quotes publish would refuse.
+    /// The publish sheet's warning about quotes and links publish would refuse.
     pub(super) fn studio_publish_warning(&self, cx: &App) -> Option<String> {
         let item = self.current.as_ref()?;
-        if item.kind != blyg_core::Kind::Thread {
-            return None;
-        }
         let md = self.editor.read(cx).value();
-        if !md.contains("![[") {
+        if !md.contains("[[") {
             return None;
         }
         unresolved_warning(&render_doc(&*self.backend, Some(item), &md).stats)
@@ -865,5 +867,16 @@ mod tests {
             unresolved_warning(&s).as_deref(),
             Some("⚠ 2 quotes can't be resolved")
         );
+        s.unresolved.push(blyg_render::Unresolved {
+            line: 5,
+            directive: "[[x]]".into(),
+            reason: blyg_render::UnresolvedReason::UnknownItem,
+        });
+        assert_eq!(
+            unresolved_warning(&s).as_deref(),
+            Some("⚠ 2 quotes and 1 link can't be resolved")
+        );
+        s.links = 1;
+        assert!(stats_label(&s).unwrap().contains("1 link"));
     }
 }

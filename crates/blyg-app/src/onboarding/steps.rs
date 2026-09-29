@@ -133,6 +133,9 @@ pub struct Step {
     /// Also wait until sheets, AI proposals and generations are done
     /// (so the user sees what the key did).
     pub settle: bool,
+    /// After the key, stay until Next: the key opened something to look at
+    /// or use (a pane, a popup, a mode), so the tour doesn't pull it away.
+    pub stay: bool,
 }
 
 impl Step {
@@ -163,6 +166,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Search,
         pause_ms: 900,
         settle: false,
+        stay: false,
     },
     Step {
         id: "create",
@@ -176,6 +180,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Query("tide pools"),
         pause_ms: 500,
         settle: false,
+        stay: false,
     },
     Step {
         id: "autosave",
@@ -189,6 +194,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::EnsureOpen,
         pause_ms: 1600,
         settle: false,
+        stay: false,
     },
     Step {
         id: "kinds",
@@ -202,6 +208,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::EnsureOpen,
         pause_ms: 1500,
         settle: false,
+        stay: false,
     },
     Step {
         id: "capture",
@@ -218,6 +225,7 @@ pub const STEPS: &[Step] = &[
         ),
         pause_ms: 1400,
         settle: false,
+        stay: false,
     },
     Step {
         id: "publish",
@@ -231,6 +239,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Publishable,
         pause_ms: 150,
         settle: false,
+        stay: false,
     },
     Step {
         id: "publish-note",
@@ -244,6 +253,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::PublishSheet,
         pause_ms: 1200,
         settle: false,
+        stay: false,
     },
     Step {
         id: "full-editor",
@@ -257,6 +267,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::StudioSample,
         pause_ms: 2200,
         settle: false,
+        stay: true,
     },
     Step {
         id: "write-view",
@@ -269,6 +280,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Nothing,
         pause_ms: 600,
         settle: false,
+        stay: false,
     },
     Step {
         id: "tk",
@@ -283,6 +295,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Tk("one short sentence about fog, in my voice"),
         pause_ms: 1200,
         settle: true,
+        stay: false,
     },
     Step {
         id: "shorten",
@@ -298,6 +311,7 @@ pub const STEPS: &[Step] = &[
         ),
         pause_ms: 600,
         settle: true,
+        stay: false,
     },
     Step {
         id: "versions",
@@ -311,6 +325,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Versioned,
         pause_ms: 2800,
         settle: false,
+        stay: true,
     },
     Step {
         id: "quotes",
@@ -324,6 +339,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Thread,
         pause_ms: 800,
         settle: true,
+        stay: false,
     },
     Step {
         id: "mentions",
@@ -338,6 +354,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Mentions("The fog horn sounded twice this mornign. Ask "),
         pause_ms: 1800,
         settle: false,
+        stay: true,
     },
     Step {
         id: "stream",
@@ -352,6 +369,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Stream,
         pause_ms: 1800,
         settle: false,
+        stay: true,
     },
     Step {
         id: "original",
@@ -366,6 +384,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::StreamQuote,
         pause_ms: 2600,
         settle: false,
+        stay: true,
     },
     Step {
         id: "reader",
@@ -380,6 +399,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Stream,
         pause_ms: 3000,
         settle: false,
+        stay: true,
     },
     Step {
         id: "notes",
@@ -393,6 +413,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Reader,
         pause_ms: 2200,
         settle: false,
+        stay: true,
     },
     Step {
         id: "browser",
@@ -407,6 +428,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Browser,
         pause_ms: 700,
         settle: false,
+        stay: false,
     },
     Step {
         id: "done",
@@ -420,6 +442,7 @@ pub const STEPS: &[Step] = &[
         setup: Setup::Posts,
         pause_ms: 0,
         settle: false,
+        stay: false,
     },
 ];
 
