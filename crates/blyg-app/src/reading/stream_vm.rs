@@ -247,6 +247,33 @@ pub fn quoted<'a>(
         .or_else(|| rows.iter().find(same_id))
 }
 
+/// The citation the post's `transclusions[]` entry carries for `id`.
+pub fn cited<'a>(post: &'a ReadingItem, id: &str) -> Option<&'a blyg_core::Cited> {
+    post.transclusions
+        .iter()
+        .find(|t| t.id.eq_ignore_ascii_case(id))
+        .and_then(|t| t.cited.as_ref())
+}
+
+/// The text an `[[id]]` link shows: the held target's excerpt in quotes,
+/// as the published page's anchor reads, else a neutral label.
+pub fn link_label(held: Option<&ReadingItem>) -> String {
+    let Some(h) = held else {
+        return blyg_render::LINK_LABEL.to_string();
+    };
+    let html = if h.content_html.trim().is_empty() {
+        blyg_render::render_markdown(&h.content_md)
+    } else {
+        h.content_html.clone()
+    };
+    let e = blyg_render::excerpt_from_html(&html, 60);
+    if e.is_empty() {
+        blyg_render::LINK_LABEL.to_string()
+    } else {
+        format!("“{e}”")
+    }
+}
+
 /// The origin and version a quote box names: the `transclusions[]` entry
 /// when there is one, else the held post, else the quoting post's origin.
 pub fn quote_ref(
@@ -399,6 +426,7 @@ mod tests {
             id: "01AAAAAAAAAAAAAAAAAAAAAAAA".into(),
             version: Some(3),
             origin: Some("https://b.example".into()),
+            cited: None,
         }];
         let held = quoted(&rows, &post, "01AAAAAAAAAAAAAAAAAAAAAAAA");
         assert_eq!(held.map(|r| r.subscription_id.as_str()), Some("sb"));
@@ -407,5 +435,25 @@ mod tests {
             ("https://b.example".to_string(), Some(3))
         );
         assert!(quoted(&rows, &post, "01ZZZZZZZZZZZZZZZZZZZZZZZZ").is_none());
+    }
+
+    #[test]
+    fn links_are_labelled_by_the_held_target() {
+        assert_eq!(link_label(None), blyg_render::LINK_LABEL);
+        let mut held = item("sub", "https://b.example", "01AAAAAAAAAAAAAAAAAAAAAAAA");
+        held.content_md = "Tides keep *time*.".into();
+        held.content_html = String::new();
+        assert_eq!(link_label(Some(&held)), "“Tides keep time.”");
+    }
+
+    #[test]
+    fn citations_ride_on_the_transclusion() {
+        let mut post = item("sub", "https://a.example", "P");
+        let json = r#"[{"id":"01AAAAAAAAAAAAAAAAAAAAAAAA","version":3,"origin":"https://b.example/","cited":{"source":"B Blyg","author":"  ","excerpt":"what they said","url":7}}]"#;
+        post.transclusions = serde_json::from_str(json).unwrap();
+        let c = cited(&post, "01aaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
+        assert_eq!(c.excerpt.as_deref(), Some("what they said"));
+        assert_eq!(c.url, None, "a field of the wrong type reads as absent");
+        assert_eq!(c.name(), Some("B Blyg"));
     }
 }

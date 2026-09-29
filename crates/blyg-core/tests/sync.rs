@@ -294,6 +294,22 @@ fn transclusion_errors_carry_details() {
 }
 
 #[test]
+fn unresolved_link_errors_carry_details() {
+    let env = Env::new();
+    let b = env.manual();
+    let id = b.create_draft(Kind::Fragment, "see [[BAD]]").unwrap();
+    match b.publish(&id, None) {
+        Err(CoreError::Rejected {
+            message, details, ..
+        }) => {
+            assert_eq!(message, "one or more references do not resolve");
+            assert_eq!(details, vec!["[[BAD]]: unknown item"])
+        }
+        other => panic!("{:?}", other.err()),
+    }
+}
+
+#[test]
 fn publish_offline_is_offline() {
     let env = Env::new();
     let b = env.manual();

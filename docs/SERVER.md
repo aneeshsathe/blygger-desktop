@@ -1,7 +1,7 @@
 # Server requirements
 
 Blygger Desktop talks to a blyg's **owner API**. The upstream reference Worker
-(https://github.com/blygger/blygger-spec, `worker/`) has a write-only owner API behind a
+(https://github.com/blygger/blygger-studio, formerly `blygger-spec`'s `worker/`) has a write-only owner API behind a
 studio password cookie. This app needs four small, additive extensions to it. They're
 read-only or bookkeeping endpoints, with no schema changes. Until they're upstream, you
 need a Worker that carries them. A fifth, optional extension syncs reading-list read state
@@ -75,6 +75,13 @@ export reads it. It holds only numbers keyed by subscription and item, never tex
   and `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes
   on the same item. Without them, an abandoned paste leaves its file on the
   server.
+
+- `accept_mentions` (boolean) in `GET /api/settings`: Site settings shows an
+  **Accept mentions** toggle and saves it with `PUT /api/settings`. Without
+  the field the toggle is hidden and never sent.
+- `transclusions[]` on `GET /api/reading` rows, with each entry's `cited`
+  (protocol 0.3): a quote box whose post isn't held here shows the cited
+  excerpt and names the cited author or source.
 
 ## Degrading gracefully
 

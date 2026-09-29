@@ -395,8 +395,16 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                     if it.content_md.contains("![[BAD") {
                         return (
                             400,
-                            json!({ "error": "one or more transclusions do not resolve",
+                            json!({ "error": "one or more references do not resolve",
                                     "errors": [{ "directive": "![[BAD]]", "reason": "unknown item" }] }),
+                        );
+                    }
+                    // Protocol 0.3: an unresolvable `[[id]]` link fails publish too.
+                    if it.content_md.contains("[[BAD") {
+                        return (
+                            400,
+                            json!({ "error": "one or more references do not resolve",
+                                    "errors": [{ "directive": "[[BAD]]", "reason": "unknown item" }] }),
                         );
                     }
                     it.version += 1;

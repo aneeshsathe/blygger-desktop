@@ -428,7 +428,7 @@ impl Api {
 
     // ---------- settings ----------
 
-    /// Sends only the fields that are set (the server ignores non-strings anyway).
+    /// Sends only the fields that are set.
     pub fn put_settings(&self, s: &Settings) -> Result<()> {
         let mut body = serde_json::Map::new();
         let mut put = |k: &str, v: &Option<String>| {
@@ -442,6 +442,9 @@ impl Api {
         put("site_url", &s.site_url);
         put("theme", &s.theme);
         put("avatar_media_id", &s.avatar_media_id);
+        if let Some(on) = s.accept_mentions {
+            body.insert("accept_mentions".into(), json!(on));
+        }
         body.insert(
             "author_links".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
