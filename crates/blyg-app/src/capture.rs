@@ -29,7 +29,7 @@ use crate::app::scratch::{KeepCapture, MakeDraft};
 use crate::app::{MainView, Publish};
 use crate::composer::{Assist, AssistKey}; // --- composer ---
 use crate::prefs::{self, Prefs};
-use crate::theme::Palette;
+use crate::theme::Rule;
 use crate::vm;
 
 struct CaptureGlobal {
@@ -295,7 +295,7 @@ impl CaptureView {
         editor.update(cx, |s, cx| s.focus(window, cx));
         let assist = {
             let (editor, backend) = (editor.clone(), backend.clone());
-            let p = Palette::resolve(prefs.theme, window.appearance());
+            let p = crate::theme::resolve(&prefs, window.appearance(), cx).palette;
             cx.new(|cx| Assist::new(editor, backend, p, window, cx))
         };
         let subs = vec![
@@ -419,7 +419,12 @@ impl CaptureView {
 
 impl Render for CaptureView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = Palette::resolve(self.prefs.theme, window.appearance());
+        // --- themes --- the theme's palette and (unless set) fonts.
+        let theme = crate::theme::resolve(&self.prefs, window.appearance(), cx);
+        let p = theme.palette;
+        self.prefs.adopt_theme_fonts(&theme);
+        crate::fonts::ensure(self.prefs.writing().bundled, cx);
+        crate::fonts::ensure(self.prefs.ui().bundled, cx);
         let body_font: SharedString = self.prefs.writing().family.into();
         let ui_font: SharedString = self.prefs.ui().family.into();
         self.assist.update(cx, |a, _| a.set_palette(p)); // --- composer ---
@@ -427,7 +432,7 @@ impl Render for CaptureView {
             s.set_editor_style(InputEditorStyle {
                 foreground: p.ink,
                 muted_foreground: p.muted,
-                background: p.bg,
+                background: p.editor,
                 border: p.line,
                 selection: p.text_selection,
                 caret: p.accent,
@@ -491,8 +496,7 @@ impl Render for CaptureView {
             .items_center()
             .px(px(16.))
             .py(px(8.))
-            .border_t_1()
-            .border_color(p.line)
+            .rule_t(&p)
             .font_family(ui_font.clone())
             .text_size(px(11.5))
             .text_color(p.muted)

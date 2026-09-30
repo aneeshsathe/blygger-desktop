@@ -1,4 +1,4 @@
-//! Blygger › About Blygger (also Help › About Blygger): a small window with
+//! Burrow › About Burrow (also Help › About Burrow): a small window with
 //! the version and build, the updater's state, the connection (host and
 //! detected server capabilities, never the token), the data and config
 //! paths, links, and "Copy build info" for bug reports.
@@ -20,8 +20,8 @@ use gpui_kit::*;
 
 use crate::connection::{self, Mode};
 use crate::prefs::Prefs;
-use crate::theme::Palette;
-use info::{BuildInfo, ConnectionInfo, Report, UpdateInfo};
+use crate::theme::Rule;
+use info::{BuildInfo, ConnectionInfo, Report, UpdateInfo}; // --- themes --- dividers
 
 gpui_kit::actions!(blygger, [ShowAbout]);
 
@@ -69,7 +69,7 @@ pub fn open(cx: &mut App) {
             cx,
         ))),
         titlebar: Some(TitlebarOptions {
-            title: Some("About Blygger".into()),
+            title: Some("About Burrow".into()),
             appears_transparent: true,
             traffic_light_position: Some(point(px(12.), px(11.))),
         }),
@@ -238,8 +238,13 @@ impl AboutView {
 
 impl Render for AboutView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let prefs = prefs(cx);
-        let p = Palette::resolve(prefs.theme, window.appearance());
+        let mut prefs = prefs(cx);
+        // --- themes ---
+        let theme = crate::theme::resolve(&prefs, window.appearance(), cx);
+        prefs.adopt_theme_fonts(&theme);
+        crate::fonts::ensure(prefs.ui().bundled, cx);
+        crate::fonts::ensure(prefs.writing().bundled, cx);
+        let p = theme.palette;
         let ui_font: SharedString = prefs.ui().family.into();
         let serif: SharedString = prefs.writing().family.into();
         let r = report(cx);
@@ -270,8 +275,7 @@ impl Render for AboutView {
                 .mt(px(12.))
                 .mb(px(4.))
                 .pb(px(3.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .text_size(px(10.5))
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(p.accent)
@@ -353,7 +357,7 @@ impl Render for AboutView {
                         div()
                             .font_family(serif.clone())
                             .text_size(px(28.))
-                            .child("Blygger"),
+                            .child("Burrow"),
                     )
                     .child(div().text_color(p.muted).child(format!(
                         "Version {} ({})",
@@ -365,7 +369,7 @@ impl Render for AboutView {
                             .font_family(serif)
                             .italic()
                             .text_color(p.muted)
-                            .child("A fast, local-first studio for your blyg."),
+                            .child("Burrow is a blygger client."),
                     ),
             );
 
@@ -458,8 +462,7 @@ impl Render for AboutView {
                     .items_center()
                     .gap(px(12.))
                     .bg(p.bar)
-                    .border_t_1()
-                    .border_color(p.line)
+                    .rule_t(&p)
                     .child(link("about-github", "GitHub").on_click(|_, _, cx| {
                         cx.open_url(&info::repo_url());
                     }))

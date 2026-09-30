@@ -10,6 +10,7 @@ use gpui_kit::*;
 use super::vm::{self, Pill};
 use super::{Load, OwnVersions, RSheet, View};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     /// The pill for the open reading item, from the shown versions only.
@@ -32,7 +33,7 @@ impl MainView {
             Load::Ready(_) => self.pill_model()?,
             _ => return None,
         };
-        let pin_color: Hsla = gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x9a7414 }).into();
+        let pin_color: Hsla = p.notice;
         let arrow = |id: &'static str, glyph: &'static str, enabled: bool, delta: isize| {
             div()
                 .id(id)
@@ -338,7 +339,7 @@ impl MainView {
         let item = self.backend.item(&own.id)?;
         let host = crate::vm::url_host(self.base_url.as_deref().unwrap_or("")).unwrap_or_default();
         let kind = crate::vm::kind_label(item.kind);
-        let pin_color: Hsla = gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x9a7414 }).into();
+        let pin_color: Hsla = p.notice;
 
         let side: AnyElement = match &own.list {
             Load::Ready(list) => {
@@ -555,8 +556,7 @@ impl MainView {
                         .flex()
                         .flex_col()
                         .pt(px(22.))
-                        .border_r_1()
-                        .border_color(p.line)
+                        .rule_r(&p)
                         .font_family(body_font.clone())
                         .text_size(px(size))
                         .line_height(relative(1.6))

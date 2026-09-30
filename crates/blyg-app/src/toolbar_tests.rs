@@ -310,6 +310,31 @@ fn setup<'a>(
     (view, fake, cx)
 }
 
+/// Scroll the Settings sheet until `selector` is inside the window, so a
+/// click lands on it whatever the runner's window height and font metrics.
+pub(crate) fn scroll_into_view(cx: &mut VisualTestContext, selector: &'static str) {
+    for _ in 0..40 {
+        let b = cx
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("{selector} isn't on screen"));
+        let view_h = cx.update(|window, _| window.viewport_size().height);
+        if b.bottom() <= view_h - gpui_kit::px(8.) {
+            return;
+        }
+        let sheet = cx.debug_bounds("settings-scroll").expect("settings sheet");
+        cx.simulate_event(gpui_kit::ScrollWheelEvent {
+            position: sheet.center(),
+            delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(
+                gpui_kit::px(0.),
+                gpui_kit::px(-120.),
+            )),
+            ..Default::default()
+        });
+        cx.run_until_parked();
+    }
+    panic!("couldn't scroll {selector} into view");
+}
+
 fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let b = cx
         .debug_bounds(selector)
@@ -430,6 +455,7 @@ fn settings_toggle_writes_show_buttons_and_reload_reads_it(cx: &mut TestAppConte
         cx.update(|window, _| window.refresh());
         cx.run_until_parked();
     }
+    scroll_into_view(cx, "show-buttons-off");
     click(cx, "show-buttons-off");
     assert!(view.read_with(cx, |v, _| !v.prefs.show_buttons));
     let text = cx.update(|_, cx| {

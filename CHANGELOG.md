@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to Blygger Desktop are documented here. The format follows
+All notable changes to Burrow (called Blygger Desktop up to 0.6.0) are
+documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 break things.
@@ -8,6 +9,25 @@ break things.
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
+
+## [0.6.1] - 2026-09-29
+
+### Added
+
+- **Themes.** Eight new themes join Paper and Ink, and they go beyond colour with ornament. The woody ones are **Cutaway** (a lit burrow room in a soil cross-section), **Kumiko** (Kyoto lattice and kintsugi), **Shola** (a mossy Western Ghats thicket) and **Fortress** (Dwarf Fortress stone and glyphs). The oceanic ones are **Portolan** (a chart with rhumb lines and soundings), **Aizome** (indigo, seigaiha waves, sashiko), **Saltspace** (weathered greys and tide lines) and **Konkan harbour** (a lit harbour in a night sea, with a tide sparkline of your writing). Pick one in Settings or with `theme = <name>`, and use `theme-dark` for another when macOS is dark. Themes are plain files: `blygger +copy-theme <name>` copies one into `~/.config/blygger/themes/` to edit, and it reloads when you save. Ornament slots can use your own SVG. `blygger +list-themes` lists them. The studio preview still shows your blyg's own style.
+- The config file now reloads when it's edited outside the app (it used to reload only on ⌘⇧,).
+- A documentation site at https://aneeshsathe.github.io/blygger-desktop/, and a shorter README.
+
+### Changed
+
+- **Blygger is now Burrow.** Burrow is a blygger client. The app, its menus (Burrow › Settings…, Burrow › Check for Updates…, Help › Burrow Tutorial), the About window, the window title and the app's messages say Burrow, and new installs are `Burrow.app`. Release assets are named `Burrow-<version>-macos-universal.{zip,dmg}`.
+- Only the name changed. The bundle ID (`org.blygger.desktop`), your data folder and database, the Keychain items, the config file (`~/.config/blygger/config`), the `BLYGGER_*` environment variables, the `blygger` command and the key-binding contexts are all the same, so nothing needs migrating.
+- **Updating from 0.6.0 or earlier:** the in-app update works as usual. The app replaces itself where it is, so it stays `Blygger.app` on disk (Finder and Spotlight show that name) while being Burrow inside. That's expected. To get `Burrow.app`, run the one-line installer, which replaces a `Blygger.app` in the same folder (posts, settings and sign-ins carry over), or rename the app while it isn't running. A Dock shortcut to the old name may need re-adding.
+- The updater accepts a release zip named `Burrow-…` or `Blygger-…`, holding `Burrow.app` or `Blygger.app`, and prefers Burrow's. For a transition period, each release also publishes `Blygger-<version>-macos-universal.zip` and `Blygger-macos-universal.zip` (the same signed app in a folder called `Blygger.app`) so 0.6.0 and earlier can still update. The signed `SHA256SUMS` covers them too.
+
+### Fixed
+
+- Selecting text with the mouse in the reading pane and the preview works again: the selection stays until you quote it (⇧⌘D, or the new **Quote in draft** pill beside it), and dragging inside a quote no longer opens the original. ⌘C copies a selection in the reading pane. In the browser, **→ Draft** and **→ Notes** keep the page's selection, and the button reads **❝ Quote → Draft** while text is selected. In the stream, dragging over or double-clicking a post opens it where its text can be selected. The notes drawer's footer says when ⇧⌘D will quote your selection.
 
 ## [0.6.0] - 2026-09-29
 
@@ -23,7 +43,7 @@ release workflow publishes that section as the release notes.
 ### Changed
 
 - The preview matches blygger-studio 0.8.3.
-- Titles never come from quoted text. A reply with nothing of its own yet shows as "In response to <host>".
+- Titles never come from quoted text. A reply with nothing of its own yet shows as "In response to `<host>`".
 
 ## [0.5.1] - 2026-09-28
 
@@ -73,7 +93,7 @@ release workflow publishes that section as the release notes.
   stream too.
 - **Quotes open the post they quote.** Clicking a quote's text, in the stream
   or the reader, opens the original post beside it, at the quoted version
-  when that version is pinned. The footer reads "quoted from <name> · v2 ·
+  when that version is pinned. The footer reads "quoted from `<name>` · v2 ·
   open original", and the name still opens the profile. "↳ stub of …" and
   "⑂ forked from …" work the same way. A post you don't follow is fetched
   from its author's public files, without your token, with a Subscribe

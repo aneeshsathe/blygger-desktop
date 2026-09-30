@@ -43,6 +43,15 @@ pub enum SurfaceEvent {
     /// Space in the Reader when the page was already scrolled to its end:
     /// go on to the next post to read.
     PageEnd,
+    // --- selection ---
+    /// The page's text selection became non-empty (`true`) or went away
+    /// (`false`). A selection the page keeps through a focus change (see
+    /// [`HOST_SCRIPT`]) doesn't count as going away.
+    Selected(bool),
+    /// The pill by the selection: "Quote in draft".
+    QuoteSelection,
+    /// The pill by the selection: "Reply with this".
+    ReplySelection,
 }
 
 /// A place to show the preview page. `wry` implements it for real; tests use
@@ -121,6 +130,14 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
     }
     if msg == "end" {
         return Some(SurfaceEvent::PageEnd); // --- reader folders ---
+    }
+    // --- selection ---
+    match msg {
+        "sel:1" => return Some(SurfaceEvent::Selected(true)),
+        "sel:0" => return Some(SurfaceEvent::Selected(false)),
+        "act:quote" => return Some(SurfaceEvent::QuoteSelection),
+        "act:reply" => return Some(SurfaceEvent::ReplySelection),
+        _ => {}
     }
     if let Some(o) = msg.strip_prefix("origin:") {
         let web = o.starts_with("https://") || o.starts_with("http://");
@@ -212,6 +229,13 @@ pub fn scroll_js(index: usize) -> String {
 /// the page is already at its bottom.
 pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
 
+/// --- selection --- Turn on the pill that follows a text selection
+/// ("Quote in draft ⇧⌘D", and "Reply with this" when `reply`). Off by
+/// default: the studio preview never shows it.
+pub fn selection_ui_js(reply: bool) -> String {
+    format!("window.__blyg && window.__blyg.selectionUi({{reply: {reply}}});")
+}
+
 /// ↑/↓ with the post pane focused: scroll a little.
 pub fn nudge_js(down: bool) -> String {
     format!(
@@ -257,21 +281,126 @@ pub const HOST_SCRIPT: &str = r#"
     if (b.top >= 0 && b.bottom <= window.innerHeight) return;
     el.scrollIntoView({ block: b.height > window.innerHeight ? "start" : "center", behavior: "smooth" });
   }
+  // --- selection --- WebKit drops a page's selection as soon as the view
+  // gives up the keyboard, and a click here hands it back to the app
+  // ("focus", "line:"). So the last range is kept, and put back when a
+  // collapse comes with a blur (in either order); a new press in the page
+  // starts over. The pill by the selection (off unless `selectionUi`)
+  // quotes it without leaving the page.
+  var kept = null, lostAt = 0, blurAt = 0, pressing = false, hasSel = false;
+  var ui = null, pill = null, timer = 0, pending = 0;
+  function selected() {
+    var s = window.getSelection();
+    return s && s.rangeCount && !s.isCollapsed && String(s).trim() ? s : null;
+  }
+  function restore() {
+    var k = kept;
+    setTimeout(function () {
+      var s = window.getSelection();
+      if (k && s && (!s.rangeCount || s.isCollapsed)) { s.removeAllRanges(); s.addRange(k); }
+    }, 0);
+  }
+  function schedule(ms) { clearTimeout(timer); timer = setTimeout(update, ms); }
+  function update() {
+    var s = selected(), on = !!s;
+    if (on !== hasSel) { hasSel = on; post(on ? "sel:1" : "sel:0"); }
+    if (on && ui && !pressing) showPill(s); else hidePill();
+  }
+  document.addEventListener("selectionchange", function () {
+    if (selected()) { kept = window.getSelection().getRangeAt(0).cloneRange(); schedule(60); return; }
+    if (!kept) { schedule(60); return; }
+    lostAt = Date.now();
+    if (lostAt - blurAt < 300) { restore(); return; }
+    schedule(350); // a blur may still come
+  });
+  window.addEventListener("blur", function () {
+    blurAt = Date.now();
+    if (kept && blurAt - lostAt < 300) restore();
+  });
+  function inPill(t) { return !!(pill && t && pill.contains(t)); }
+  document.addEventListener("mousedown", function (e) {
+    if (inPill(e.target)) { e.preventDefault(); return; } // keep the selection
+    if (e.button === 0) { pressing = true; kept = null; hidePill(); }
+  }, true);
+  document.addEventListener("mouseup", function () { pressing = false; schedule(60); }, true);
+  function hidePill() { if (pill) pill.style.display = "none"; }
+  function button(act, label, key, tip) {
+    var b = document.createElement("button");
+    b.setAttribute("data-act", act);
+    b.setAttribute("data-label", label);
+    if (key) b.setAttribute("data-key", key);
+    b.title = tip;
+    return b;
+  }
+  function showPill(s) {
+    if (!pill) {
+      var st = document.createElement("style");
+      st.textContent = ".blyg-selpill{position:absolute;z-index:2147483647;display:none;gap:2px;padding:3px;" +
+        "border-radius:8px;background:var(--paper,Canvas);border:1px solid var(--rule,#ccc);" +
+        "box-shadow:0 4px 14px rgba(0,0,0,.18);font:12px/1 Inter,-apple-system,system-ui,sans-serif;" +
+        "-webkit-user-select:none;user-select:none}" +
+        ".blyg-selpill button{all:unset;cursor:pointer;padding:5px 8px;border-radius:5px;" +
+        "color:var(--ink,CanvasText);white-space:nowrap}" +
+        ".blyg-selpill button:hover{background:var(--wash,rgba(127,127,127,.15));color:var(--accent,#a4271b)}" +
+        ".blyg-selpill button::after{content:attr(data-label)}" +
+        ".blyg-selpill button[data-key]::before{content:attr(data-key);opacity:.55;margin-right:6px}";
+      (document.head || document.documentElement).appendChild(st);
+      pill = document.createElement("div");
+      pill.className = "blyg-selpill";
+      pill.setAttribute("role", "toolbar");
+      document.body.appendChild(pill);
+      pill.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("button[data-act]");
+        e.stopPropagation();
+        if (b) post("act:" + b.getAttribute("data-act"));
+      });
+    }
+    // The labels are CSS content, so they never join a selection's text.
+    var want = ui.reply ? "quote reply" : "quote";
+    if (pill.getAttribute("data-acts") !== want) {
+      pill.setAttribute("data-acts", want);
+      pill.textContent = "";
+      pill.appendChild(button("quote", "Quote in draft", "⇧⌘D",
+        "Quote this passage in your draft, with a link to the post"));
+      if (ui.reply) pill.appendChild(button("reply", "Reply with this", "",
+        "Start a reply that quotes this passage"));
+    }
+    var range = s.getRangeAt(0), rects = range.getClientRects();
+    var last = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
+    pill.style.display = "flex";
+    var w = pill.offsetWidth, h = pill.offsetHeight;
+    var top = last.bottom + 6;
+    if (top + h > window.innerHeight - 4) top = (rects.length ? rects[0].top : last.top) - h - 6;
+    var left = Math.min(Math.max(8, last.right - w / 2), window.innerWidth - w - 8);
+    pill.style.top = (top + window.scrollY) + "px";
+    pill.style.left = (left + window.scrollX) + "px";
+  }
+  function selectionUi(o) { ui = o || null; update(); }
+  function go(m) {
+    // Wait out a double-click: its first click mustn't leave the page
+    // before the second one selects a word.
+    clearTimeout(pending);
+    pending = setTimeout(function () { if (!selected()) post(m); }, 260);
+  }
   document.addEventListener("click", function (e) {
     var t = e.target;
-    if (!t || !t.closest || t.closest("a[href]") || t.closest(".blyg-yt")) return;
+    if (!t || !t.closest || inPill(t)) return;
+    if (t.closest("a[href]") || t.closest(".blyg-yt")) return;
+    // A drag or a double-click that selected text isn't a click on what's
+    // under it: hand the keyboard back (the selection is kept) and stop.
+    if (selected() || e.detail > 1) { clearTimeout(pending); post("focus"); return; }
     // --- quote targets --- a quote box: its footer's name opens the
     // profile, the rest opens the original post (the footer is the reader's).
     var qo = t.closest(".blyg-qorigin");
-    if (qo) { post("origin:" + qo.getAttribute("data-blyg-origin")); return; }
+    if (qo) { go("origin:" + qo.getAttribute("data-blyg-origin")); return; }
     var q = t.closest("blockquote.blyg-transclusion[data-blyg-id]");
     var qf = q && q.querySelector(":scope > .blyg-qfoot .blyg-qorigin");
     if (q && qf) {
-      post("quote:" + qf.getAttribute("data-blyg-origin") + "\u001f" + q.getAttribute("data-blyg-id") +
+      go("quote:" + qf.getAttribute("data-blyg-origin") + "\u001f" + q.getAttribute("data-blyg-id") +
         "\u001f" + (q.getAttribute("data-blyg-version") || ""));
       return;
     }
-    if (q && q.hasAttribute("data-blyg-origin")) { post("origin:" + q.getAttribute("data-blyg-origin")); return; }
+    if (q && q.hasAttribute("data-blyg-origin")) { go("origin:" + q.getAttribute("data-blyg-origin")); return; }
     var b = t.closest(".item-content [data-line]");
     post(b ? "line:" + b.getAttribute("data-line") : "focus");
   }, true);
@@ -284,7 +413,7 @@ pub const HOST_SCRIPT: &str = r#"
   }
   function nudge(d) { window.scrollBy({ top: d * 48 }); }
   document.addEventListener("DOMContentLoaded", function () { tag(); post("ready"); });
-  window.__blyg = { patch: patch, scrollTo: scrollTo, page: page, nudge: nudge };
+  window.__blyg = { patch: patch, scrollTo: scrollTo, page: page, nudge: nudge, selectionUi: selectionUi };
 })();
 "#;
 
@@ -546,6 +675,38 @@ mod tests {
             None
         );
         assert_eq!(parse_ipc("<script>"), None);
+        // --- selection ---
+        assert_eq!(parse_ipc("sel:1"), Some(SurfaceEvent::Selected(true)));
+        assert_eq!(parse_ipc("sel:0"), Some(SurfaceEvent::Selected(false)));
+        assert_eq!(parse_ipc("act:quote"), Some(SurfaceEvent::QuoteSelection));
+        assert_eq!(parse_ipc("act:reply"), Some(SurfaceEvent::ReplySelection));
+        assert_eq!(parse_ipc("act:publish"), None);
+    }
+
+    /// The host script keeps a selection through a focus change, doesn't
+    /// treat the click that ends a drag as a click on what's under it, and
+    /// has the pill (off until the host turns it on).
+    #[test]
+    fn the_host_script_keeps_selections() {
+        for part in [
+            "selectionchange",
+            "s.addRange(k)",
+            "window.addEventListener(\"blur\"",
+            "if (selected() || e.detail > 1) { clearTimeout(pending); post(\"focus\"); return; }",
+            "post(\"act:\" + b.getAttribute(\"data-act\"))",
+            "selectionUi: selectionUi",
+            "content:attr(data-label)", // labels never join the selection's text
+        ] {
+            assert!(HOST_SCRIPT.contains(part), "{part}");
+        }
+        assert_eq!(
+            selection_ui_js(true),
+            "window.__blyg && window.__blyg.selectionUi({reply: true});"
+        );
+        assert_eq!(
+            selection_ui_js(false),
+            "window.__blyg && window.__blyg.selectionUi({reply: false});"
+        );
     }
 
     #[test]

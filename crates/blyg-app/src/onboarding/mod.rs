@@ -30,6 +30,7 @@ use gpui_kit::*;
 use super::{MainView, Sheet};
 use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
+use crate::theme::Rule; // --- themes --- dividers
 
 pub use tutorial::Tutorial;
 
@@ -313,7 +314,7 @@ impl MainView {
         self.current = None;
         self.requery(window, cx);
         self.show_toast(
-            "Trying Blygger with sample data",
+            "Trying Burrow with sample data",
             Some("Nothing here reaches a blyg · connect one any time".into()),
             cx,
         );
@@ -346,7 +347,8 @@ impl MainView {
                 // an unsaved dev theme override.
                 let mut fresh = crate::settings::prefs(cx);
                 self.persisted = fresh.clone();
-                fresh.theme = self.prefs.theme;
+                fresh.theme = self.prefs.theme.clone();
+                fresh.theme_dark = self.prefs.theme_dark.clone();
                 self.prefs = fresh;
                 self.onboarding_next(window, cx);
             }
@@ -470,7 +472,7 @@ impl MainView {
 
         let (title, body): (&str, AnyElement) = match step {
             FlowStep::Welcome => (
-                "Welcome to Blygger",
+                "Welcome to Burrow",
                 div()
                     .flex()
                     .flex_col()
@@ -509,10 +511,10 @@ impl MainView {
                     .gap(px(10.))
                     .child(para(match &host {
                         Some(h) => format!(
-                            "Connected to {h}. You can change it later from the Blygger menu."
+                            "Connected to {h}. You can change it later from the Burrow menu."
                         )
                         .into(),
-                        None => "Blygger writes to your own blyg. You'll need its address and its \
+                        None => "Burrow writes to your own blyg. You'll need its address and its \
                                  owner token; the token goes in your macOS Keychain, the \
                                  address in your config file."
                             .into(),
@@ -563,8 +565,7 @@ impl MainView {
                         .items_center()
                         .gap(px(10.))
                         .py(px(4.))
-                        .border_b_1()
-                        .border_color(p.line)
+                        .rule_b(&p)
                         .child(
                             div()
                                 .w(px(150.))
@@ -657,7 +658,7 @@ impl MainView {
                         .flex_col()
                         .gap(px(10.))
                         .child(para(
-                            "Blygger is keyboard-first. A quiet toolbar can show the main actions \
+                            "Burrow is keyboard-first. A quiet toolbar can show the main actions \
                              as buttons too, and every button's tooltip teaches its key. You can \
                              change this in Settings (⌘,)."
                                 .into(),
@@ -729,8 +730,7 @@ impl MainView {
             div()
                 .mt(px(16.))
                 .pt(px(10.))
-                .border_t_1()
-                .border_color(p.line)
+                .rule_t(&p)
                 .flex()
                 .items_center()
                 .gap(px(14.))
@@ -938,7 +938,7 @@ impl MainView {
         self.open_onboarding(FlowStep::Welcome, window, cx);
     }
 
-    /// "Show this tutorial every time I open Blygger" (`tutorial-on-launch`).
+    /// "Show this tutorial every time I open Burrow" (`tutorial-on-launch`).
     pub(super) fn render_tutorial_checkbox(
         &self,
         id: &'static str,
@@ -969,7 +969,7 @@ impl MainView {
                     .text_size(px(10.))
                     .child(if on { "✓" } else { "" }),
             )
-            .child("Show this tutorial every time I open Blygger")
+            .child("Show this tutorial every time I open Burrow")
             .on_click(cx.listener(move |this, _, _, cx| this.set_tutorial_on_launch(!on, cx)))
             .into_any_element()
     }

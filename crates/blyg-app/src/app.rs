@@ -12,8 +12,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::fake::FakeBackend;
-use crate::prefs::{self, LayoutPref, Prefs, ThemePref};
-use crate::theme::Palette;
+use crate::prefs::{self, LayoutPref, Prefs};
+use crate::theme::{Palette, Rule, Theme};
 use crate::vm::{self, DiffOp, EnterAction, ListModel, PublishDecision};
 
 gpui_kit::actions!(
@@ -42,6 +42,10 @@ gpui_kit::actions!(
 #[cfg(test)]
 #[path = "ui_tests.rs"]
 mod ui_tests;
+// --- themes ---
+#[cfg(test)]
+#[path = "theme_tests.rs"]
+mod theme_tests;
 // --- composer --- (its GPUI tests need MainView's insides)
 #[cfg(test)]
 #[path = "composer/assist_tests.rs"]
@@ -187,11 +191,16 @@ pub struct MainView {
     /// Problems in the config file, shown as a dismissible banner.
     config_problems: Vec<blyg_core::config::Diagnostic>,
     problems_dismissed: bool,
-    /// `Blygger — <host>` from the config's `blyg-url`.
+    /// `Burrow — <host>` from the config's `blyg-url`.
     title: String,
     /// The title last given to the native window (Window menu, Mission Control).
     native_title: String,
     palette: Palette,
+    /// The resolved theme (`palette` is `theme.palette`), for ornaments.
+    theme: Arc<Theme>,
+    /// The config files' and themes folder's state when last read, so an
+    /// edit on disk reloads (see `watch_config`).
+    watch_stamp: u64,
     now: chrono::DateTime<chrono::Utc>,
     first_frame: Option<std::time::Instant>,
     /// --- AI --- ⌘G jobs, the helper palette, proposals, Settings › AI.
@@ -221,7 +230,11 @@ impl MainView {
     ) -> Self {
         let omni = cx.new(|cx| InputState::new(window, cx).placeholder("Search or start writing…"));
         let editor = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
-        let palette = Palette::resolve(prefs.theme, window.appearance());
+        let mut prefs = prefs;
+        let theme = crate::theme::resolve(&prefs, window.appearance(), cx);
+        prefs.adopt_theme_fonts(&theme);
+        let palette = theme.palette;
+        crate::theme::set_reader_theme(&theme);
         // --- composer ---
         let assist = {
             let (editor, backend) = (editor.clone(), backend.clone());
@@ -232,7 +245,7 @@ impl MainView {
         subs.push(cx.subscribe_in(&omni, window, Self::on_omni_event));
         subs.push(cx.subscribe_in(&editor, window, Self::on_editor_event));
         subs.push(cx.observe_window_appearance(window, |this, window, cx| {
-            this.palette = Palette::resolve(this.prefs.theme, window.appearance());
+            this.apply_theme(window, cx);
             cx.notify();
         }));
         // A WebView can end up holding (or dropping) the keyboard while the
@@ -336,6 +349,8 @@ impl MainView {
             title,
             native_title: String::new(),
             palette,
+            theme,
+            watch_stamp: 0,
             now: chrono::Utc::now(),
             first_frame: Some(launched),
             ai: Default::default(), // --- AI ---
@@ -347,6 +362,7 @@ impl MainView {
         this.load_selected(window, cx);
         this.studio_init(window, cx);
         this.browser_init(window, cx); // --- browser ---
+        this.watch_config(window, cx);
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -433,10 +449,16 @@ impl MainView {
                 let mut p = self.persisted.clone();
                 for (key, _) in &changes {
                     match *key {
-                        "font-family-writing" => p.writing_font = self.prefs.writing_font.clone(),
-                        "font-family-ui" => p.ui_font = self.prefs.ui_font.clone(),
+                        "font-family-writing" => {
+                            p.writing_font = self.prefs.writing_font.clone();
+                            p.writing_font_set = self.prefs.writing_font_set;
+                        }
+                        "font-family-ui" => {
+                            p.ui_font = self.prefs.ui_font.clone();
+                            p.ui_font_set = self.prefs.ui_font_set;
+                        }
                         "font-size" => p.font_size = self.prefs.font_size,
-                        "theme" => p.theme = self.prefs.theme,
+                        "theme" => p.theme = self.prefs.theme.clone(),
                         "layout" => p.layout = self.prefs.layout,
                         "capture-hotkey" => p.hotkey = self.prefs.hotkey.clone(),
                         "show-buttons" => p.show_buttons = self.prefs.show_buttons, // --- buttons ---
@@ -445,6 +467,8 @@ impl MainView {
                 }
                 self.persisted = p;
                 self.refresh_problems(cx);
+                // Our own write isn't an edit to reload.
+                self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
             }
             Err(e) => self.show_toast(e, None, cx),
         }
@@ -462,7 +486,46 @@ impl MainView {
     /// ⌘⇧, — re-read the config file and apply fonts, theme, layout and the
     /// hotkey without a restart.
     fn reload_config(&mut self, _: &ReloadConfig, window: &mut Window, cx: &mut Context<Self>) {
+        self.reload_config_now(window, cx);
+    }
+
+    /// Poll the config files and the themes folder (cheap `stat`s, once a
+    /// second, off the main thread) and reload when one changes on disk.
+    fn watch_config(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = crate::settings::watched(cx);
+        self.watch_stamp = crate::settings::watch_stamp(&paths);
+        if cfg!(test) {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(1000))
+                    .await;
+                let Ok(paths) = this.update(cx, |_, cx| crate::settings::watched(cx)) else {
+                    break;
+                };
+                let stamp = cx
+                    .background_spawn(async move { crate::settings::watch_stamp(&paths) })
+                    .await;
+                let alive = this.update_in(cx, |v, window, cx| {
+                    if stamp != v.watch_stamp {
+                        v.watch_stamp = stamp;
+                        v.reload_config_now(window, cx);
+                    }
+                });
+                if alive.is_err() {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    fn reload_config_now(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         crate::settings::reload(cx);
+        crate::theme::reload(cx);
+        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
         let fresh = crate::settings::prefs(cx);
         let hotkey_changed = fresh.hotkey != self.prefs.hotkey;
         self.persisted = fresh.clone();
@@ -851,11 +914,22 @@ impl MainView {
     }
 
     fn apply_prefs_live(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        crate::fonts::ensure(self.prefs.writing().bundled, cx);
-        crate::fonts::ensure(self.prefs.ui().bundled, cx);
-        self.palette = Palette::resolve(self.prefs.theme, window.appearance());
+        self.apply_theme(window, cx);
         crate::capture::prefs_changed(&self.prefs, cx);
         cx.notify();
+    }
+
+    /// Resolve the theme for the prefs and this window's appearance, and
+    /// take its palette and suggested fonts.
+    fn apply_theme(&mut self, window: &Window, cx: &mut Context<Self>) {
+        let theme = crate::theme::resolve(&self.prefs, window.appearance(), cx);
+        self.prefs.adopt_theme_fonts(&theme);
+        crate::fonts::ensure(self.prefs.writing().bundled, cx);
+        crate::fonts::ensure(self.prefs.ui().bundled, cx);
+        crate::fonts::ensure(theme.font_chrome.and_then(|f| f.bundled), cx);
+        self.palette = theme.palette;
+        crate::theme::set_reader_theme(&theme);
+        self.theme = theme;
     }
 
     // ------------------------------------------------------------ events
@@ -1182,7 +1256,7 @@ impl MainView {
     fn apply_hotkey(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let clash = crate::keymap::clash_with_hotkey(&text).map(|k| {
             format!(
-                "{} is already {} in Blygger",
+                "{} is already {} in Burrow",
                 crate::keymap::glyphs(k.key),
                 k.label
             )
@@ -1598,7 +1672,7 @@ impl Render for MainView {
             s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
                 foreground: p.ink,
                 muted_foreground: p.muted,
-                background: p.bg,
+                background: p.editor,
                 border: p.line,
                 selection: p.text_selection,
                 caret: p.accent,
@@ -1701,7 +1775,7 @@ impl Render for MainView {
                                 .child(match self.render_own_versions(&body_font, size, cx) {
                                     Some(v) => v,
                                     None => self
-                                        .render_editor_pane(&body_font, size, cx)
+                                        .render_editor_pane(&body_font, size, side_pad, cx)
                                         .into_any_element(),
                                 })
                                 // --- full editor --- (not beside ⌘Y's history,
@@ -1727,17 +1801,21 @@ impl Render for MainView {
 impl MainView {
     fn render_titlebar(&self, ui_font: &SharedString, show_title: bool) -> impl IntoElement {
         let p = self.palette;
+        let plate = crate::ornament::title_plate(&self.theme);
         div()
             .id("titlebar")
             .window_control_area(WindowControlArea::Drag)
             .h(px(TITLEBAR_H))
             .flex_none()
+            .relative()
+            .overflow_hidden()
             .flex()
             .items_center()
             .justify_center()
             .bg(p.bar)
             .border_b_1()
-            .border_color(p.line)
+            .border_color(p.bar_line)
+            .children(crate::ornament::titlebar_band(&self.theme))
             // --- buttons --- the toolbar hides the title when it needs the room
             .when(show_title, |d| {
                 d.child(
@@ -1745,7 +1823,8 @@ impl MainView {
                         .font_family(ui_font.clone())
                         .font_weight(FontWeight::MEDIUM)
                         .text_size(px(12.))
-                        .text_color(p.muted)
+                        .text_color(p.bar_ink)
+                        .when(plate, |d| d.px(px(8.)).rounded(px(3.)).bg(p.bar))
                         .child(self.title.clone()),
                 )
             })
@@ -1773,8 +1852,7 @@ impl MainView {
                 .gap(px(10.))
                 .px(px(14.))
                 .py(px(7.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .bg(p.bar)
                 .font_family("Inter")
                 .text_size(px(11.5))
@@ -1857,8 +1935,7 @@ impl MainView {
             .items_center()
             .gap(px(8.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(div().text_size(px(16.)).text_color(p.muted).child("⌕"))
             .child(
                 div()
@@ -1897,13 +1974,19 @@ impl MainView {
         ui_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let p = self.palette;
+        let p = self.palette.on_side();
         let lsize = self.prefs.list_size();
         let count = self.list.results().len();
+        // --- themes --- the sidebar's ground, then the rows, then the mist.
         let base = div()
             .flex_none()
-            .border_color(p.line)
-            .font_family(ui_font.clone());
+            .relative()
+            .overflow_hidden()
+            .bg(p.bg)
+            .text_color(p.ink)
+            .border_color(self.palette.side_line)
+            .font_family(ui_font.clone())
+            .children(crate::ornament::sidebar_ground(&self.theme));
         let base = match len {
             ListLength::Width(w) => base.w(w).h_full().border_r_1(),
             ListLength::Height(h) => base.h(h).w_full().border_b_1(),
@@ -1917,11 +2000,21 @@ impl MainView {
             };
             return base.child(
                 div()
+                    .relative()
                     .p(px(14.))
-                    .italic()
-                    .text_size(px(lsize))
-                    .text_color(p.muted)
-                    .child(msg),
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .when(q.is_empty(), |d| {
+                        d.children(crate::ornament::empty_art(&self.theme))
+                    })
+                    .child(
+                        div()
+                            .italic()
+                            .text_size(px(lsize))
+                            .text_color(p.muted)
+                            .child(msg),
+                    ),
             );
         }
         base.child(
@@ -1937,12 +2030,19 @@ impl MainView {
             .track_scroll(&self.list_scroll)
             .size_full(),
         )
+        .children(crate::ornament::scroll_edge(&self.theme))
     }
 
     fn render_row(&self, ix: usize, lsize: f32, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
         let item = &self.list.results()[ix];
         let selected = self.list.selected() == Some(&item.local_id);
+        // --- themes --- sidebar colours; the selected row's own.
+        let p = if selected {
+            self.palette.on_sel()
+        } else {
+            self.palette.on_side()
+        };
+        let chrome = self.theme.chrome_font(&self.prefs);
         let title: SharedString = vm::item_title(item).into();
         let highlights: Vec<_> = vm::highlight_ranges(&title, self.list.query())
             .into_iter()
@@ -1959,11 +2059,8 @@ impl MainView {
             .collect();
         let (pill_text, pill_pub) = vm::pill(item);
         let id = item.local_id.clone();
-        div()
-            .id(("row", ix))
-            .px(px(14.))
-            .py(px(6.))
-            .when(selected, |d| d.bg(p.sel))
+        let row = div().id(("row", ix)).py(px(6.)).text_color(p.ink);
+        crate::ornament::row(&self.theme, row, selected)
             .on_click(cx.listener(move |this, _, window, cx| this.open(&id, window, cx)))
             .child(
                 div()
@@ -1978,40 +2075,106 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(7.))
-                    .font_family("Inter")
+                    .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
                     .when(vm::has_unpublished_edits(item), |d| {
-                        d.child(div().size(px(6.)).rounded_full().bg(p.accent))
+                        d.child(
+                            crate::ornament::marker(
+                                &self.theme,
+                                blyg_core::config::theme::Slot::MarkerNew,
+                                p.accent,
+                                chrome,
+                            )
+                            .unwrap_or_else(|| {
+                                div()
+                                    .size(px(6.))
+                                    .rounded_full()
+                                    .bg(p.accent)
+                                    .into_any_element()
+                            }),
+                        )
                     })
                     .child(vm::kind_label(item.kind))
                     .child(
                         div()
                             .px(px(6.))
-                            .rounded_full()
+                            .rounded(px(self.theme.chip_radius))
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
                             .when(pill_pub, |d| d.text_color(p.accent))
                             .child(pill_text),
                     )
+                    .when(pill_pub, |d| {
+                        d.children(crate::ornament::marker(
+                            &self.theme,
+                            blyg_core::config::theme::Slot::MarkerPinned,
+                            p.accent,
+                            chrome,
+                        ))
+                    })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
-            .into_any_element()
+            .map(|cell| crate::ornament::row_wrap(&self.theme, cell))
     }
 
     fn render_editor_pane(
         &self,
         body_font: &SharedString,
         size: f32,
+        side_pad: Pixels,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
+        // --- themes --- a lit harbour (the editor inset in a sea), the
+        // margins' ornaments, and the divider band under the text.
+        let harbour = crate::ornament::harbour(&self.theme);
+        let inset = if harbour.is_some() { 10. } else { 0. };
+        let margins = crate::ornament::editor_margins(&self.theme, f32::from(side_pad) - inset);
+        let band = crate::ornament::divider(&self.theme);
+        let p = self.palette;
+        let radius = self.theme.radius;
+        let paper = div()
+            .size_full()
+            .relative()
+            .flex()
+            .flex_col()
+            .bg(p.editor)
+            .when_some(harbour, |d, (_, glow)| {
+                d.rounded(px(radius)).overflow_hidden().shadow(vec![
+                    BoxShadow {
+                        color: p.line,
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(0.),
+                        spread_radius: px(1.),
+                        inset: false,
+                    },
+                    BoxShadow {
+                        color: glow.opacity(0.28),
+                        offset: point(px(0.), px(0.)),
+                        blur_radius: px(30.),
+                        spread_radius: px(0.),
+                        inset: false,
+                    },
+                ])
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .relative()
+                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                    .children(margins)
+                    .child(self.assist.clone()), // --- composer ---
+            )
+            .children(band);
         div()
             .id("editor-pane")
             .flex_1()
             .min_w_0()
             .min_h_0()
             .relative()
+            .when_some(harbour, |d, (sea, _)| d.bg(sea).p(px(inset)))
             .font_family(body_font.clone())
             .text_size(px(size))
             .line_height(relative(1.6))
@@ -2049,13 +2212,7 @@ impl MainView {
                     this.upload_paths(imgs, window, cx);
                 }
             }))
-            .child(
-                div()
-                    .size_full()
-                    .relative()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
-                    .child(self.assist.clone()), // --- composer ---
-            )
+            .child(paper)
     }
 
     // --- composer ---
@@ -2100,7 +2257,8 @@ impl MainView {
     }
 
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = self.palette;
+        let p = self.palette.on_status();
+        let chrome = self.theme.chrome_font(&self.prefs);
         let disconnected =
             crate::connection::mode(cx) == Some(crate::connection::Mode::Disconnected);
         let (sync_text, dot) = if disconnected {
@@ -2152,9 +2310,9 @@ impl MainView {
             .gap(px(12.))
             .px(px(14.))
             .border_t_1()
-            .border_color(p.line)
-            .bg(p.bar)
-            .font_family("Inter")
+            .border_color(self.palette.status_line)
+            .bg(self.palette.status)
+            .font_family(chrome)
             .text_size(px(11.5))
             .text_color(p.muted)
             .when_some(item, |d, item| {
@@ -2198,7 +2356,13 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
-            .children(item.map(vm::version_label));
+            .children(item.map(vm::version_label))
+            // --- themes ---
+            .children(crate::ornament::status(
+                &self.theme,
+                self.status_data(),
+                chrome,
+            ));
 
         if self.shake_gen > 0 {
             bar.with_animation(
@@ -2210,6 +2374,37 @@ impl MainView {
         } else {
             bar.into_any_element()
         }
+    }
+
+    /// --- themes --- What the status ornaments show: posts touched per day
+    /// over the last two weeks, and the selected post's depth in the list.
+    fn status_data(&self) -> crate::ornament::StatusData {
+        if !self
+            .theme
+            .has(blyg_core::config::theme::Slot::StatusOrnament)
+        {
+            return crate::ornament::StatusData {
+                activity: Vec::new(),
+                depth: None,
+            };
+        }
+        let mut activity = vec![0u32; 14];
+        for item in self.list.results() {
+            if let Ok(t) = chrono::DateTime::parse_from_rfc3339(&item.updated) {
+                let days = (self.now - t.with_timezone(&chrono::Utc)).num_days();
+                if (0..14).contains(&days) {
+                    activity[13 - days as usize] += 1;
+                }
+            }
+        }
+        let depth = self.list.selected().and_then(|id| {
+            self.list
+                .results()
+                .iter()
+                .position(|i| &i.local_id == id)
+                .map(|i| i + 1)
+        });
+        crate::ornament::StatusData { activity, depth }
     }
 
     fn render_toast(&self) -> Option<AnyElement> {
@@ -2224,10 +2419,11 @@ impl MainView {
             .max_w(px(420.))
             .px(px(12.))
             .py(px(9.))
-            .rounded(px(8.))
-            .bg(p.ink)
-            .text_color(p.bg)
-            .font_family("Inter")
+            .rounded(px(self.theme.toast_radius))
+            .bg(p.toast)
+            .text_color(p.toast_ink)
+            .map(|d| crate::ornament::border(d, self.theme.toast_border, p.toast_ink.opacity(0.4)))
+            .font_family(self.theme.chrome_font(&self.prefs))
             .text_size(px(12.5))
             .shadow_md()
             .child(t.text.clone())
@@ -2487,7 +2683,7 @@ impl MainView {
                         }))
                         .child(heading("Connect your blyg".into()))
                         .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            "Blygger writes to your own blyg. Enter its address and its \
+                            "Burrow writes to your own blyg. Enter its address and its \
                                      owner token. The token is kept in your macOS Keychain; the \
                                      address goes in your config file.",
                         ))
@@ -2628,10 +2824,9 @@ impl MainView {
                         .w(px(width))
                         .max_w(relative(0.92))
                         .bg(p.bg)
-                        .border_1()
+                        .map(|d| crate::ornament::border(d, self.theme.sheet_border, p.line))
                         .border_t_0()
-                        .border_color(p.line)
-                        .rounded_b(px(12.))
+                        .rounded_b(px(self.theme.sheet_radius))
                         .shadow(vec![BoxShadow {
                             color: p.shadow,
                             offset: point(px(0.), px(18.)),
@@ -2670,8 +2865,8 @@ impl MainView {
                     .id(id)
                     .px(px(10.))
                     .py(px(3.))
-                    .rounded_full()
-                    .border_1()
+                    .rounded(px(self.theme.chip_radius))
+                    .map(|d| crate::ornament::border(d, self.theme.chip_border, p.line))
                     .cursor_pointer()
                     .border_color(if on { p.accent } else { p.line })
                     .when(on, |d| d.text_color(p.accent))
@@ -2710,6 +2905,7 @@ impl MainView {
                 )
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.prefs.writing_font = label.to_string();
+                    this.prefs.writing_font_set = true;
                     this.apply_prefs(window, cx);
                 }))
                 .into_any_element()
@@ -2724,23 +2920,69 @@ impl MainView {
             )
             .on_click(cx.listener(move |this, _, window, cx| {
                 this.prefs.ui_font = label.to_string();
+                this.prefs.ui_font_set = true;
                 this.apply_prefs(window, cx);
             }))
             .into_any_element()
         });
-        let themes = ThemePref::ALL.iter().map(|t| {
-            let t = *t;
-            chip(
-                format!("th{}", t.label()).into(),
-                t.label().into(),
-                self.prefs.theme == t,
-                None,
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.prefs.theme = t;
-                this.apply_prefs(window, cx);
-            }))
-            .into_any_element()
+        // --- themes --- every theme, grouped, each with a small swatch.
+        let theme_chip = |id: String, label: String, swatch: Option<AnyElement>| {
+            let on = self.prefs.theme == id;
+            let sel = format!("th-{id}");
+            chip(sel.clone().into(), label.into(), on, None)
+                .debug_selector(move || sel.clone())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .children(swatch)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.prefs.theme = id.clone();
+                    this.apply_prefs(window, cx);
+                }))
+                .into_any_element()
+        };
+        let groups = crate::theme::themes(cx).grouped();
+        let themes = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .children(groups.into_iter().map(|(family, list)| {
+                let mut chips: Vec<AnyElement> = Vec::new();
+                if family == blyg_core::config::theme::Family::Plain {
+                    chips.push(theme_chip("system".into(), "System".into(), None));
+                }
+                for t in list {
+                    let label = match t.id.as_str() {
+                        "light" => "Light".to_string(),
+                        "dark" => "Dark".to_string(),
+                        _ => t.name.clone(),
+                    };
+                    chips.push(theme_chip(
+                        t.id.clone(),
+                        label,
+                        Some(crate::ornament::swatch(&t)),
+                    ));
+                }
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .flex_wrap()
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .text_color(p.muted)
+                            .child(family.label()),
+                    )
+                    .children(chips)
+            }));
+        let theme_dark_note = self.prefs.theme_dark.clone().map(|d| {
+            div()
+                .text_size(px(11.))
+                .text_color(p.muted)
+                .child(format!("theme-dark = {d} is used while macOS is dark"))
         });
         let layouts = LayoutPref::ALL.iter().map(|l| {
             let l = *l;
@@ -2766,7 +3008,7 @@ impl MainView {
         div()
             // The rows (fonts, buttons, AI, help…) outgrow a short window.
             .id("settings-scroll")
-            .max_h(px(560.))
+            .max_h(px(680.))
             .overflow_y_scroll()
             .track_focus(focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
@@ -2838,7 +3080,13 @@ impl MainView {
             ))
             .child(row(
                 "THEME",
-                div().flex().gap(px(6.)).children(themes).into_any_element(),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(themes)
+                    .children(theme_dark_note)
+                    .into_any_element(),
             ))
             .child(row(
                 "LAYOUT",

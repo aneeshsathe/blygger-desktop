@@ -9,7 +9,8 @@ use gpui_kit::*;
 use super::vm::{self, Key};
 use super::{Load, Opened};
 use crate::app::MainView;
-use crate::vm::DiffOp;
+use crate::theme::Rule;
+use crate::vm::DiffOp; // --- themes --- dividers
 
 /// What the detail pane shows under the post (for tests and render alike).
 #[derive(Debug, Clone, PartialEq)]
@@ -170,8 +171,7 @@ impl MainView {
             .items_center()
             .gap(px(6.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(div().text_size(px(14.)).text_color(p.muted).child("⌕"))
             .child(
                 div()
@@ -411,7 +411,7 @@ impl MainView {
         self.reading_action(action, window, cx)
     }
 
-    fn reading_action(
+    pub(crate) fn reading_action(
         &mut self,
         action: &'static str,
         window: &mut Window,
@@ -735,8 +735,7 @@ impl MainView {
             .h_full()
             .flex()
             .flex_col()
-            .border_r_1()
-            .border_color(p.line)
+            .rule_r(&p)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _, _, cx| this.set_pane(super::sources_vm::Pane::List, cx)),
@@ -857,8 +856,7 @@ impl MainView {
             .px(px(14.))
             .py(px(7.))
             .relative()
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .cursor_pointer()
             .when(selected, |d| d.bg(sel_bg))
             .when(r.is_unread() || edited, |d| {
@@ -897,7 +895,7 @@ impl MainView {
                     })
                     .when_some(badge, |d, b| {
                         let (fg, bg): (Hsla, Hsla) = if edited {
-                            edited_colors(p.dark)
+                            (p.edited, p.edited_bg)
                         } else if b == "new" {
                             (p.amber, p.sel)
                         } else {
@@ -1036,7 +1034,7 @@ impl MainView {
                     .mt(px(4.))
                     .pl(px(10.))
                     .border_l_2()
-                    .border_color(gpui_kit::rgb(0x8fb3d9))
+                    .border_color(p.edited_rule)
                     .font_family("Inter")
                     .text_size(px(12.5))
                     .text_color(p.muted)
@@ -1065,8 +1063,8 @@ impl MainView {
                         .rounded(px(7.))
                         .font_family("Inter")
                         .text_size(px(12.5))
-                        .bg(gpui_kit::rgba(0xe7c07022))
-                        .text_color(gpui_kit::rgb(if p.dark { 0xe7c070 } else { 0x8a6a10 }))
+                        .bg(p.notice_bg)
+                        .text_color(p.notice)
                         .child(b),
                 )
             })
@@ -1116,8 +1114,7 @@ impl MainView {
             .px(px(32.))
             .pt(px(10.))
             .pb(px(16.))
-            .border_t_1()
-            .border_color(p.line)
+            .rule_t(&p)
             .flex()
             .flex_wrap()
             .gap(px(6.))
@@ -1201,7 +1198,7 @@ impl MainView {
             .mt(px(14.))
             .pl(px(10.))
             .border_l_2()
-            .border_color(gpui_kit::rgb(0x8fb3d9))
+            .border_color(p.edited_rule)
             .child(
                 div()
                     .mb(px(4.))
@@ -1242,20 +1239,5 @@ impl MainView {
             .child(t("thumb-up", "👍", thumb == Some(1), true))
             .child(t("thumb-down", "👎", thumb == Some(-1), false))
             .into_any_element()
-    }
-}
-
-/// The "edited" badge: blue, as in the mock (`.fi .ed`).
-fn edited_colors(dark: bool) -> (Hsla, Hsla) {
-    if dark {
-        (
-            gpui_kit::rgb(0x8fb3d9).into(),
-            gpui_kit::rgb(0x1f2e40).into(),
-        )
-    } else {
-        (
-            gpui_kit::rgb(0x2f5f8f).into(),
-            gpui_kit::rgb(0xdfe9f4).into(),
-        )
     }
 }

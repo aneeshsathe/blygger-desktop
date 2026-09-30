@@ -22,6 +22,8 @@ pub enum ValueKind {
     Path,
     /// `<provider>=<model>`.
     ProviderModel,
+    /// A theme name (lowercase kebab-case); the app checks that it exists.
+    ThemeName,
 }
 
 /// One configuration key.
@@ -91,12 +93,19 @@ pub const KEYS: &[KeySpec] = &[
          The owner token for this blyg is kept in the macOS Keychain, never in this file.",
     ),
     docs(
-        key(
-            "theme",
-            ValueKind::Choice(&["system", "light", "dark"]),
-            Some("system"),
-        ),
-        "Colour theme: system (follow macOS light/dark), light or dark.",
+        key("theme", ValueKind::ThemeName, Some("system")),
+        "Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of \
+         the built-in themes (woody: cutaway, kumiko, shola, fortress; oceanic: portolan, \
+         aizome, saltspace, konkan), or the name of a theme file in \
+         ~/.config/blygger/themes/. `blygger +list-themes` lists them all, and \
+         `blygger +copy-theme <name>` copies a built-in there to edit. Theme files reload \
+         when you save them.",
+    ),
+    docs(
+        key("theme-dark", ValueKind::ThemeName, None),
+        "The theme to use while macOS is dark, whatever theme says, e.g. theme = cutaway with \
+         theme-dark = fortress. Unset, theme = system switches to dark and every other theme \
+         stays as it is.",
     ),
     docs(
         key(
@@ -132,7 +141,7 @@ pub const KEYS: &[KeySpec] = &[
         "Updates from the project's GitHub releases. install downloads a new release in the \
          background, checks its signature, and shows \"Restart to update\" in the status bar \
          (quitting installs it too); notify only says a new release is available; off never \
-         checks on its own. Blygger › Check for Updates… always checks. An update is refused \
+         checks on its own. Burrow › Check for Updates… always checks. An update is refused \
          unless it's signed with the project's release key.",
     ),
     // --- browser ---
@@ -142,7 +151,7 @@ pub const KEYS: &[KeySpec] = &[
             ValueKind::Choice(&["app", "browser"]),
             Some("app"),
         ),
-        "Where a link clicked in a post opens: app opens it in Blygger's browser pane (from \
+        "Where a link clicked in a post opens: app opens it in Burrow's browser pane (from \
          the right, over the reading view; esc closes it), browser opens your default \
          browser. ⌘-click opens the pane over the whole reading area, and ⌥-click does the \
          other one (the default browser with app, the pane with browser).",
@@ -236,7 +245,7 @@ pub const KEYS: &[KeySpec] = &[
     docs(
         list(key("ai-enable", ValueKind::Choice(AI_PROVIDERS), None), &[]),
         "Providers that are switched on. Repeat the key for each one. None by default: \
-         Blygger uses no AI (not even a locally installed claude or codex CLI) until you \
+         Burrow uses no AI (not even a locally installed claude or codex CLI) until you \
          enable a provider here or sign in to one in Settings, which updates this list. \
          An empty `ai-enable =` switches every provider off again.",
     ),
@@ -260,7 +269,7 @@ pub const KEYS: &[KeySpec] = &[
     ),
     docs(
         key("tutorial-on-launch", ValueKind::Bool, Some("false")),
-        "Show the interactive tutorial every time Blygger opens. The very first launch always \
+        "Show the interactive tutorial every time Burrow opens. The very first launch always \
          shows it; after that it follows this setting.",
     ),
     docs(

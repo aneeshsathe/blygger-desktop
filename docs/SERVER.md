@@ -1,6 +1,6 @@
 # Server requirements
 
-Blygger Desktop talks to a blyg's **owner API**. The upstream reference Worker
+Burrow talks to a blyg's **owner API**. The upstream reference Worker
 (https://github.com/blygger/blygger-studio, formerly `blygger-spec`'s `worker/`) has a write-only owner API behind a
 studio password cookie. This app needs four small, additive extensions to it. They're
 read-only or bookkeeping endpoints, with no schema changes. Until they're upstream, you

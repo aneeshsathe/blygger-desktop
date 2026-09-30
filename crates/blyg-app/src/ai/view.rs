@@ -26,6 +26,7 @@ use crate::ai::generate::{self, Under};
 use crate::ai::palette::{self, Action};
 use crate::ai::settings as ais;
 use crate::ai::{self, AiGenerate, AiShorten, Failure, Picked};
+use crate::theme::Rule; // --- themes --- dividers
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
@@ -1282,7 +1283,7 @@ impl MainView {
         if let Some(Overlay::Settings(s)) = self.ai.overlay.as_mut() {
             s.chatgpt_running = Some(cancel.clone());
             s.message = Some((
-                "Approve Blygger in the browser window that opened…".into(),
+                "Approve Burrow in the browser window that opened…".into(),
                 false,
             ));
         }
@@ -1451,7 +1452,7 @@ impl MainView {
                     }))
                     .child(heading("This will publish without AI disclosure".into()))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        "This post has text generated in Blygger, but your blyg doesn't have the \
+                        "This post has text generated in Burrow, but your blyg doesn't have the \
                          provenance extension (it answered 404), so readers won't see that it \
                          was generated. See docs/SERVER.md.",
                     ))
@@ -1735,8 +1736,7 @@ impl MainView {
             div()
                 .id(SharedString::from(format!("ai-row-{name}")))
                 .py(px(7.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .child(
                     div()
                         .flex()

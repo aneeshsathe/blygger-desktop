@@ -42,9 +42,10 @@ use gpui_kit::*;
 
 use super::{MainView, Mode};
 use crate::theme::Palette;
+use crate::theme::Rule;
 use resolver::{StoreResolver, render_kind};
 use style_cache::Theme;
-use webview::{Factory, FactoryGlobal, PreviewSurface, SurfaceEvent};
+use webview::{Factory, FactoryGlobal, PreviewSurface, SurfaceEvent}; // --- themes --- dividers
 
 gpui_kit::actions!(blygger, [ViewWrite, ViewSplit, ViewStudio]);
 
@@ -518,6 +519,11 @@ impl MainView {
             // --- quote targets --- in the studio preview, still the profile.
             SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
             SurfaceEvent::PageEnd => {} // --- reader folders --- (the reader's)
+            // --- selection --- the preview shows no pill (it is your own
+            // draft, the one a quote would go into).
+            SurfaceEvent::Selected(_)
+            | SurfaceEvent::QuoteSelection
+            | SurfaceEvent::ReplySelection => {}
         }
     }
 
@@ -706,8 +712,7 @@ impl MainView {
             .min_w_0()
             .min_h_0()
             .h_full()
-            .border_l_1()
-            .border_color(p.line)
+            .rule_l(p)
             .bg(p.bg);
         if let Some(msg) = self.studio.failed().map(str::to_string) {
             return base

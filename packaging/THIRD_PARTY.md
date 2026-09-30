@@ -1,8 +1,8 @@
 # Third-party notices
 
-Blygger Desktop is MIT licensed (see `LICENSE`). It includes third-party
+Burrow is MIT licensed (see `LICENSE`). It includes third-party
 software under the licenses below. The app bundle carries these files in
-`Blygger.app/Contents/Resources/licenses/`.
+`Burrow.app/Contents/Resources/licenses/`.
 
 ## Fonts
 
@@ -75,7 +75,7 @@ it brings in `flatbuffers`, Apache-2.0). The filter lists themselves are
 time (uBlock Origin's filters, GPL-3.0; EasyList and EasyPrivacy, GPL-3.0 or
 CC BY-SA 3.0; Peter Lowe's list, under its own terms at pgl.yoyo.org). The
 small fallback list compiled into the app (`crates/blyg-app/src/browser/bundled.txt`)
-was written for Blygger and is MIT like the rest of the code.
+was written for Burrow and is MIT like the rest of the code.
 
 The Reading screen sanitizes other people's HTML with
 [`ammonia`](https://github.com/rust-ammonia/ammonia) (Apache-2.0 OR MIT),

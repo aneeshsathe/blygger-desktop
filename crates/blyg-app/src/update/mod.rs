@@ -149,7 +149,7 @@ impl Phase {
             Phase::Idle | Phase::Checking { .. } => None,
             Phase::Downloading { shown: false, .. } => None,
             Phase::Downloading { offer, shown: true } => Some(Notice {
-                text: format!("Downloading Blygger {}…", offer.version),
+                text: format!("Downloading Burrow {}…", offer.version),
                 action: None,
                 link: None,
             }),
@@ -157,7 +157,7 @@ impl Phase {
                 offer,
                 blocked: None,
             } => Some(Notice {
-                text: format!("Blygger {} is available", offer.version),
+                text: format!("Burrow {} is available", offer.version),
                 action: Some(("Download", NoticeAction::Download)),
                 link: Some(("What's new", offer.page_url.clone())),
             }),
@@ -165,12 +165,12 @@ impl Phase {
                 offer,
                 blocked: Some(why),
             } => Some(Notice {
-                text: format!("Blygger {} is available · {why}", offer.version),
+                text: format!("Burrow {} is available · {why}", offer.version),
                 action: None,
                 link: Some(("Release page", offer.page_url.clone())),
             }),
             Phase::Ready { offer, .. } => Some(Notice {
-                text: format!("Blygger {} is ready", offer.version),
+                text: format!("Burrow {} is ready", offer.version),
                 action: Some(("Restart to update", NoticeAction::Restart)),
                 link: Some(("What's new", offer.page_url.clone())),
             }),
@@ -196,7 +196,7 @@ impl Phase {
         match self {
             Phase::Ready { offer, .. } => Some(Ask {
                 version: offer.version.clone(),
-                text: format!("Blygger {} is ready to install", offer.version),
+                text: format!("Burrow {} is ready to install", offer.version),
                 detail: "Restart now to finish updating. Your posts and drafts are saved.",
                 yes: "Restart Now",
                 ready: true,
@@ -206,7 +206,7 @@ impl Phase {
                 blocked: None,
             } => Some(Ask {
                 version: offer.version.clone(),
-                text: format!("Blygger {} is available", offer.version),
+                text: format!("Burrow {} is available", offer.version),
                 detail: "Download it now? You'll be asked to restart once it's ready.",
                 yes: "Download and Install",
                 ready: false,
@@ -357,7 +357,7 @@ fn set_phase(phase: Phase, cx: &mut App) {
     cx.refresh_windows();
 }
 
-/// Blygger › Check for Updates…: always checks (whatever `auto-update`
+/// Burrow › Check for Updates…: always checks (whatever `auto-update`
 /// says) and always answers.
 pub fn check_now(cx: &mut App) {
     if let Some(why) = disabled_reason() {
@@ -370,7 +370,7 @@ pub fn check_now(cx: &mut App) {
         Phase::Checking { .. } => toast("Already checking for updates…", cx),
         Phase::Downloading { offer, .. } => {
             // An automatic download becomes visible once asked about.
-            let msg = format!("Downloading Blygger {}…", offer.version);
+            let msg = format!("Downloading Burrow {}…", offer.version);
             set_phase(Phase::Downloading { offer, shown: true }, cx);
             toast(msg, cx);
         }
@@ -432,7 +432,7 @@ fn on_checked(result: Result<CheckOutcome, UpdateError>, manual: bool, cx: &mut 
                 prompt(false, cx);
             }
             if manual {
-                toast(format!("Blygger {version} is available"), cx);
+                toast(format!("Burrow {version} is available"), cx);
             }
         }
     }
@@ -636,11 +636,11 @@ pub fn status_text(cx: &App) -> String {
     match &u.phase {
         Phase::Idle => "no update waiting".into(),
         Phase::Checking { .. } => "checking…".into(),
-        Phase::Available { offer, .. } => format!("Blygger {} is available", offer.version),
-        Phase::Downloading { offer, .. } => format!("downloading Blygger {}…", offer.version),
+        Phase::Available { offer, .. } => format!("Burrow {} is available", offer.version),
+        Phase::Downloading { offer, .. } => format!("downloading Burrow {}…", offer.version),
         Phase::Ready { offer, .. } => {
             format!(
-                "Blygger {} is downloaded and ready (restart to update)",
+                "Burrow {} is downloaded and ready (restart to update)",
                 offer.version
             )
         }
