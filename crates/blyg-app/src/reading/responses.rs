@@ -158,7 +158,7 @@ impl MainView {
         if rows.is_empty() {
             return None;
         }
-        let p = self.palette;
+        let p = self.palette.on_page();
         Some(
             div()
                 .id("responses")
@@ -170,7 +170,7 @@ impl MainView {
                 .pt(px(10.))
                 .pb(px(6.))
                 .rule_t(&p)
-                .font_family("Inter")
+                .font_family(self.chrome())
                 .text_size(px(12.))
                 .child(
                     div()
@@ -213,7 +213,7 @@ impl MainView {
 
     /// The stream's small "↩" marker (no number).
     pub(crate) fn responses_marker(&self) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id("stream-responses")
             .text_color(p.accent)

@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 use blyg_core::config::theme::{
     Border, Family, Ornament, Registry, Resolved, Rgba as CoreRgba, Slot,
 };
-use gpui_kit::{App, Global, Hsla, Styled, WindowAppearance, rgba};
+use gpui_kit::{App, Global, Hsla, Rgba, Styled, WindowAppearance, rgba};
 
 use crate::prefs::{FontChoice, Prefs};
 
@@ -76,6 +76,18 @@ pub struct Palette {
 /// A core colour as GPUI's.
 pub fn hsla(c: CoreRgba) -> Hsla {
     rgba(c.0).into()
+}
+
+/// `a` moved `t` of the way to `b` (in RGB).
+pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
+    let (a, b) = (a.to_rgb(), b.to_rgb());
+    Rgba {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+    .into()
 }
 
 /// WCAG contrast between two colours (alpha ignored).
@@ -196,16 +208,93 @@ impl Palette {
     /// The palette on the title bar (the toolbar and the view switcher).
     pub fn on_bar(&self) -> Palette {
         let mut p = self.on_chrome(self.bar, self.bar_ink);
-        // The plain look keeps its muted title-bar labels.
+        // The plain look keeps its muted title-bar labels, when they read
+        // there; on a patterned or deeper bar they take the bar's own ink.
         if contrast(self.ink, self.bar) >= 4.5 {
-            p.muted = self.muted;
+            p.muted = if contrast(self.muted, self.bar) >= 4.5 {
+                self.muted
+            } else {
+                self.bar_ink
+            };
+            // The active button's ground: `sel` when it shows on the bar,
+            // else a faint wash of ink (Paper's and Ink's `sel` are nearly
+            // their bar's colour).
+            if contrast(self.sel, self.bar) < 1.15 {
+                p.sel = mix(self.bar, self.ink, if self.dark { 0.14 } else { 0.09 });
+            }
         }
         p
+    }
+
+    /// A tinted panel inside page content (cards, popovers, banners, the
+    /// address field): the title bar's colour when page text reads on it,
+    /// else a faint tint of the page, so a dark title bar never puts
+    /// dark text on dark.
+    pub fn panel(&self) -> Hsla {
+        if contrast(self.ink, self.bar) >= 4.5 && contrast(self.muted, self.bar) >= 3.0 {
+            self.bar
+        } else {
+            let toward = if self.dark {
+                gpui_kit::white()
+            } else {
+                gpui_kit::black()
+            };
+            mix(self.bg, toward, 0.05)
+        }
     }
 
     /// The palette on the status bar.
     pub fn on_status(&self) -> Palette {
         self.on_chrome(self.status, self.status_ink)
+    }
+
+    /// The selected-row surface for a list on the page (the Reader's post
+    /// list, the stream, Subscriptions, versions, profiles): `sel` when page
+    /// text reads on it and it stands apart from the page, else a tint of
+    /// the page toward it (or toward the sidebar, when `sel` is the page's
+    /// own colour). A theme's `sel` is chosen for its sidebar, so a dark
+    /// lantern row (Konkan) would otherwise put dark text on dark.
+    pub fn page_sel(&self) -> Hsla {
+        let apart = contrast(self.sel, self.bg) >= 1.04;
+        if apart && contrast(self.ink, self.sel) >= 4.5 && contrast(self.muted, self.sel) >= 3.0 {
+            return self.sel;
+        }
+        let toward = if apart { self.sel } else { self.side };
+        mix(self.bg, toward, if self.dark { 0.14 } else { 0.1 })
+    }
+
+    /// The palette for page content: `sel` is [`Palette::page_sel`], so
+    /// hovered and selected rows keep page text readable.
+    pub fn on_page(&self) -> Palette {
+        Palette {
+            sel: self.page_sel(),
+            ..*self
+        }
+    }
+
+    /// A small badge's text and ground (`new`, `edited`, `paused`): the
+    /// accent on a wash of it, which reads on every theme (amber on a light
+    /// row did not).
+    pub fn badge(&self) -> (Hsla, Hsla) {
+        let ground = mix(self.bg, self.accent, if self.dark { 0.18 } else { 0.12 });
+        (self.accent, ground)
+    }
+
+    /// A recessed ground on the page (a segmented toggle's trough):
+    /// [`Palette::page_sel`] when it stands apart from the page, else a
+    /// faint wash of ink.
+    pub fn well(&self) -> Hsla {
+        let s = self.page_sel();
+        if contrast(s, self.bg) >= 1.12 {
+            s
+        } else {
+            mix(self.bg, self.ink, if self.dark { 0.1 } else { 0.07 })
+        }
+    }
+
+    /// A quiet badge (`withdrawn`, `paused`): muted text on a wash of it.
+    pub fn quiet_badge(&self) -> (Hsla, Hsla) {
+        (self.muted, mix(self.bg, self.muted, 0.12))
     }
 
     /// The plain light theme (Paper).
@@ -221,21 +310,46 @@ impl Palette {
     }
 
     /// CSS custom properties for the reader's fallback stylesheet
-    /// (`studio::style_cache::BUILTIN_CSS` reads these names).
+    /// (`studio::style_cache::BUILTIN_CSS` and `studio::reader::reader_css`
+    /// read these names): the page, its text, quote boxes, selection, and
+    /// the diff and highlight colours, all from the palette.
     pub fn reader_css_vars(&self) -> String {
         let hex = |c: Hsla| {
             let r = c.to_rgb();
             let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
-            format!("#{:02x}{:02x}{:02x}", b(r.r), b(r.g), b(r.b))
+            if r.a >= 0.999 {
+                format!("#{:02x}{:02x}{:02x}", b(r.r), b(r.g), b(r.b))
+            } else {
+                format!(
+                    "rgba({}, {}, {}, {:.3})",
+                    b(r.r),
+                    b(r.g),
+                    b(r.b),
+                    r.a.clamp(0.0, 1.0)
+                )
+            }
         };
+        let paper = self.editor;
         format!(
             ":root {{ --paper: {}; --ink: {}; --muted: {}; --accent: {}; --rule: {}; \
-             color-scheme: {}; }}\n",
-            hex(self.editor),
+             --wash: {}; --quote-bg: {}; --quote-rule: {}; --selection: {}; \
+             --ins: {}; --del: {}; --over: {}; --mark: {}; \
+             --alert: {}; --alert-wash: {}; color-scheme: {}; }}\n",
+            hex(paper),
             hex(self.ink),
             hex(self.muted),
             hex(self.accent),
             hex(self.line),
+            hex(mix(paper, self.ink, 0.05)),
+            hex(self.quote_bg),
+            hex(self.quote_rule),
+            hex(self.text_selection),
+            hex(self.ins_bg),
+            hex(self.del_bg),
+            hex(self.over),
+            hex(self.accent.opacity(if self.dark { 0.3 } else { 0.18 })),
+            hex(self.over),
+            hex(self.del_bg),
             if self.dark { "dark" } else { "light" }
         )
     }
@@ -304,6 +418,13 @@ impl Theme {
             Some(f) if !prefs.ui_font_set => f.family,
             _ => "Inter",
         }
+    }
+
+    /// A small corner (a button, a field, a banner) drawn at `v` points in
+    /// the plain look, scaled by the theme's `radius` (8 in the plain look):
+    /// square on a chart, soft on moss.
+    pub fn corner(&self, v: f32) -> f32 {
+        v * self.radius / 8.0
     }
 
     /// A few colours for a swatch preview: paper, sidebar, bar, accent, ink.
@@ -417,14 +538,96 @@ pub fn resolve(prefs: &Prefs, appearance: WindowAppearance, cx: &App) -> Arc<The
 /// built-ins, whose colours the fallback stylesheet already has).
 static READER_VARS: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
 
-/// Remember the theme the reader's fallback stylesheet should take.
-pub fn set_reader_theme(t: &Theme) {
+/// The reader's text font: the writing font (the theme's, unless the
+/// config sets one). `None`: the fallback stylesheet's own (Literata).
+static READER_FONT: std::sync::Mutex<Option<FontChoice>> = std::sync::Mutex::new(None);
+
+/// Remember the theme the reader's fallback stylesheet should take, and
+/// the writing font (`Prefs::writing`, after `adopt_theme_fonts`) its text
+/// is set in.
+pub fn set_reader_theme(t: &Theme, writing: FontChoice) {
     let vars = if t.builtin && t.family == Family::Plain {
         String::new()
     } else {
-        t.palette.reader_css_vars()
+        format!(
+            "{}:root {{ --radius: {}px; }}\n{}",
+            t.palette.reader_css_vars(),
+            t.radius.min(12.),
+            reader_quote_css(t)
+        )
     };
     *READER_VARS.lock().unwrap_or_else(|e| e.into_inner()) = vars;
+    *READER_FONT.lock().unwrap_or_else(|e| e.into_inner()) =
+        (writing.family != "Literata").then_some(writing);
+    // The same colours as `Palette::tip()` (theme_ext), which the toolbar
+    // and composer tooltips use: toast ground, ink made to read on it.
+    let (tip_bg, tip_ink) = t.palette.tip();
+    *TIP.lock().unwrap_or_else(|e| e.into_inner()) = Some(TipStyle {
+        bg: tip_bg,
+        ink: tip_ink,
+        font: t.font_chrome.map(|f| f.family).unwrap_or("Inter"),
+        radius: t.toast_radius.min(6.),
+    });
+}
+
+/// How tooltips look: the theme's toast colours, its chrome font and a
+/// corner no rounder than its toasts'.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TipStyle {
+    pub bg: Hsla,
+    pub ink: Hsla,
+    pub font: &'static str,
+    pub radius: f32,
+}
+
+static TIP: std::sync::Mutex<Option<TipStyle>> = std::sync::Mutex::new(None);
+
+/// The tooltip style [`set_reader_theme`] chose (the plain look's dark
+/// pill before any theme is applied).
+pub fn tip_style() -> TipStyle {
+    (*TIP.lock().unwrap_or_else(|e| e.into_inner())).unwrap_or(TipStyle {
+        bg: gpui_kit::black().opacity(0.85),
+        ink: gpui_kit::white(),
+        font: "Inter",
+        radius: 5.,
+    })
+}
+
+/// The reader's quote boxes in the shape of the theme's `quote.frame`, as
+/// the stream draws them natively (a chart's double rule, a sashiko stitch,
+/// a buoy's top edge…). Empty for the plain left rule.
+pub fn reader_quote_css(t: &Theme) -> String {
+    use blyg_core::config::theme::Kind;
+    let o = t.slot(Slot::QuoteFrame);
+    let rule = o.color(0).map(hsla).unwrap_or(t.palette.quote_rule);
+    let r = rule.to_rgb();
+    let b = |v: f32| (v.clamp(0.0, 1.0) * 255.0).round() as u8;
+    let c = format!("#{:02x}{:02x}{:02x}", b(r.r), b(r.g), b(r.b));
+    let rad = t.radius.min(12.);
+    let body = match o.kind {
+        Kind::Arch => format!("border: 1px solid {c}; border-radius: 14px 14px 6px 6px;"),
+        Kind::Cushion => format!("border: 2px solid {c}; border-radius: 22px 12px 18px 10px;"),
+        Kind::Outline | Kind::BoxCorners => {
+            format!("border: 1px solid {c}; border-radius: {rad}px;")
+        }
+        Kind::InsetBar => format!("border: 0; border-left: 3px solid {c}; border-radius: 0;"),
+        Kind::Buoy => format!(
+            "border: 0; border-top: 2px solid {c}; border-radius: 1px; \
+             box-shadow: 0 0 0 1px var(--rule), 2px 2px 0 1px var(--rule);"
+        ),
+        Kind::DoubleRule => format!("border: 3px double {c}; border-radius: 0;"),
+        Kind::Sashiko => format!(
+            "border: 1px dashed {c}; border-radius: 3px; \
+             box-shadow: 0 0 0 3px var(--quote-bg);"
+        ),
+        _ => return String::new(),
+    };
+    format!("blockquote {{ {body} }}\n")
+}
+
+/// The font [`set_reader_theme`] chose (`None`: Literata).
+pub fn reader_font() -> Option<FontChoice> {
+    *READER_FONT.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// The CSS [`set_reader_theme`] chose.
@@ -512,11 +715,88 @@ mod tests {
         assert_eq!(t.pick(&p, WindowAppearance::VibrantLight).id, "light");
     }
 
+    /// Every surface that paints its own ground must carry text that reads
+    /// on it: the sidebars (Posts and the Reader's subscriptions), the
+    /// selected row, the title bar's labels, the status bar, and the tinted
+    /// panels inside pages (a dark title bar once gave dark-on-dark here).
+    #[test]
+    fn text_reads_on_every_surface_of_every_builtin() {
+        let t = builtins();
+        let mut bad = Vec::new();
+        for id in t.registry.ids() {
+            let p = t.get(&id).palette;
+            let mut need = |what: &str, fg: Hsla, bg: Hsla, min: f32| {
+                let c = contrast(fg, bg);
+                if c < min {
+                    bad.push(format!("{id}: {what} {c:.2} < {min}"));
+                }
+            };
+            need("page ink", p.ink, p.bg, 4.5);
+            let side = p.on_side();
+            need("sidebar ink", side.ink, side.bg, 4.5);
+            need("sidebar muted", side.muted, side.bg, 3.0);
+            let sel = p.on_sel();
+            need("selected-row ink", sel.ink, sel.bg, 4.5);
+            let bar = p.on_bar();
+            need("title-bar ink", bar.ink, p.bar, 4.5);
+            need("title-bar labels", bar.muted, p.bar, 3.0);
+            let st = p.on_status();
+            need("status-bar ink", st.ink, p.status, 4.5);
+            need("panel ink", p.ink, p.panel(), 4.5);
+            need("panel muted", p.muted, p.panel(), 3.0);
+            // --- the reading side ---
+            // Lists on the page (the Reader's posts, the stream,
+            // Subscriptions, versions, profiles): the selected ground.
+            let ps = p.page_sel();
+            need("page-selected ink", p.ink, ps, 4.5);
+            need("page-selected muted", p.muted, ps, 3.0);
+            need("page-selected accent", p.accent, ps, 3.0);
+            // Stands apart from the page (1.0 would be invisible).
+            need("page-selected ground vs page", ps, p.bg, 1.03);
+            need("toggle trough muted", p.muted, p.well(), 3.0);
+            need("links on the page", p.accent, p.bg, 3.0);
+            let (fg, bg) = p.badge();
+            need("new badge", fg, bg, 3.0);
+            let (fg, bg) = p.quiet_badge();
+            need("quiet badge", fg, bg, 3.0);
+            need("edited badge", p.edited, over(p.edited_bg, p.bg), 3.0);
+            need("notice banner", p.notice, over(p.notice_bg, p.bg), 3.0);
+            need("pin label on the page", p.notice, p.bg, 3.0);
+            // Stream quote boxes: the quoted text and the footer.
+            need("quote ink", p.ink, p.quote_bg, 4.5);
+            need("quote footer", p.muted, p.quote_bg, 3.0);
+            // Toasts and tooltips; the title bar's active button; a theme
+            // swatch's edge on this theme's sheets.
+            need("toast / tooltip ink", p.toast_ink, p.toast, 4.5);
+            need("title-bar active ground", bar.sel, p.bar, 1.1);
+            need("swatch edge", crate::ornament::edge_on(p.bg), p.bg, 1.5);
+            // The reader's WebView paper.
+            need("reader ink", p.ink, p.editor, 4.5);
+            need("reader muted", p.muted, p.editor, 3.0);
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
+    /// A translucent `c` laid over an opaque `ground`.
+    fn over(c: Hsla, ground: Hsla) -> Hsla {
+        mix(ground, c.opacity(1.0), c.a)
+    }
+
     #[test]
     fn reader_css_takes_the_palette() {
         let css = builtins().get("aizome").palette.reader_css_vars();
         assert!(css.contains("--paper: #f6f3ea"), "{css}");
         assert!(css.contains("--ink: #1c2340"), "{css}");
         assert!(css.contains("color-scheme: light"));
+        // Quote boxes and diff marks from the palette, not generic.
+        assert!(css.contains("--quote-bg: #eef0f6"), "{css}");
+        assert!(css.contains("--quote-rule: #1f2c5c"), "{css}");
+        assert!(css.contains("--selection: rgba("), "{css}");
+        assert!(css.contains("--ins: rgba("), "{css}");
+        // The reader's quote boxes take the theme's `quote.frame` shape.
+        let t = builtins();
+        assert!(reader_quote_css(&t.get("portolan")).contains("3px double #cdb887"));
+        assert!(reader_quote_css(&t.get("aizome")).contains("1px dashed #1f2c5c"));
+        assert!(reader_quote_css(&t.get("light")).is_empty());
     }
 }

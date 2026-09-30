@@ -234,7 +234,7 @@ impl MainView {
         let theme = crate::theme::resolve(&prefs, window.appearance(), cx);
         prefs.adopt_theme_fonts(&theme);
         let palette = theme.palette;
-        crate::theme::set_reader_theme(&theme);
+        crate::theme::set_reader_theme(&theme, prefs.writing());
         // --- composer ---
         let assist = {
             let (editor, backend) = (editor.clone(), backend.clone());
@@ -928,7 +928,7 @@ impl MainView {
         crate::fonts::ensure(self.prefs.ui().bundled, cx);
         crate::fonts::ensure(theme.font_chrome.and_then(|f| f.bundled), cx);
         self.palette = theme.palette;
-        crate::theme::set_reader_theme(&theme);
+        crate::theme::set_reader_theme(&theme, self.prefs.writing());
         self.theme = theme;
     }
 
@@ -1667,7 +1667,11 @@ impl Render for MainView {
         let side_pad = ((pane_w - measure) / 2.).max(px(34.));
 
         // Project the palette + measure onto the editor each frame (cheap: copies).
-        self.assist.update(cx, |a, _| a.set_palette(p)); // --- composer ---
+        let assist_font = self.prefs.ui().family;
+        self.assist.update(cx, |a, _| {
+            a.set_palette(p); // --- composer ---
+            a.set_ui_font(assist_font);
+        });
         self.editor.update(cx, |s, _| {
             s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
                 foreground: p.ink,
@@ -1694,15 +1698,7 @@ impl Render for MainView {
         };
         for input in [&self.omni].into_iter().chain(sheet_inputs) {
             input.update(cx, |s, _| {
-                s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
-                    foreground: p.ink,
-                    muted_foreground: p.muted,
-                    background: gpui_kit::transparent_black(),
-                    border: p.line,
-                    selection: p.text_selection,
-                    caret: p.accent,
-                    ..Default::default()
-                });
+                s.set_editor_style(p.field());
             });
         }
 
@@ -1853,8 +1849,8 @@ impl MainView {
                 .px(px(14.))
                 .py(px(7.))
                 .rule_b(&p)
-                .bg(p.bar)
-                .font_family("Inter")
+                .bg(p.panel())
+                .font_family(self.theme.chrome_font(&self.prefs))
                 .text_size(px(11.5))
                 .text_color(p.muted)
                 .child(
@@ -1960,7 +1956,7 @@ impl MainView {
                 d.child(
                     div()
                         .flex_none()
-                        .font_family("Inter")
+                        .font_family(self.theme.chrome_font(&self.prefs))
                         .text_size(px(12.))
                         .text_color(p.muted)
                         .child(hint),
@@ -2275,6 +2271,9 @@ impl MainView {
             vm::SyncDot::Grey => p.grey,
             vm::SyncDot::Red => p.over,
         };
+        // --- themes --- the dot is a mark on the status bar's own ground.
+        let dot_color =
+            crate::theme_ext::readable(dot_color, self.palette.status, crate::theme_ext::MARK);
         // --- follow-ups --- Reading / Mentions / Subscriptions show their
         // own status, not the current post's.
         let screen = reading::vm::screen_status(self.reading.view, self.unread);
@@ -2328,9 +2327,12 @@ impl MainView {
                 )
                 .child(
                     div()
-                        .when(level == vm::Level::Warn, |d| d.text_color(p.warn))
+                        .when(level == vm::Level::Warn, |d| {
+                            d.text_color(self.palette.on_status_text(p.warn))
+                        })
                         .when(level == vm::Level::Over, |d| {
-                            d.text_color(p.over).font_weight(FontWeight::SEMIBOLD)
+                            d.text_color(self.palette.on_status_text(p.over))
+                                .font_weight(FontWeight::SEMIBOLD)
                         })
                         .child(count),
                 )
@@ -2342,7 +2344,7 @@ impl MainView {
                     .flex_1()
                     .flex()
                     .justify_center()
-                    .text_color(p.over)
+                    .text_color(self.palette.on_status_text(p.over))
                     .children(banner),
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
@@ -2451,18 +2453,14 @@ impl MainView {
     ) -> Option<AnyElement> {
         let sheet = self.sheet.as_ref()?;
         let p = self.palette;
+        let theme = &*self.theme;
         let kbd = |k: &'static str| {
-            div()
+            crate::theme_ext::kbd(div(), theme)
                 .px(px(6.))
                 .py(px(1.))
                 .min_w(px(20.))
                 .flex()
                 .justify_center()
-                .rounded(px(5.))
-                .border_1()
-                .border_b_2()
-                .border_color(p.line)
-                .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
                 .child(k)
@@ -2491,12 +2489,9 @@ impl MainView {
                 .child(s)
         };
         let input_box = |el: AnyElement| {
-            div()
+            crate::theme_ext::field_box(div(), theme)
                 .px(px(10.))
                 .py(px(8.))
-                .rounded(px(7.))
-                .border_1()
-                .border_color(p.line)
                 .text_size(px(14.))
                 .font_family(ui_font.clone())
                 .child(el)
@@ -2521,7 +2516,7 @@ impl MainView {
                         div()
                             .mb(px(8.))
                             .text_size(px(12.5))
-                            .text_color(p.warn)
+                            .text_color(p.warn_text())
                             .child(w)
                     }))
                     .child(input_box(
@@ -2575,13 +2570,13 @@ impl MainView {
                         .max_h(px(260.))
                         .overflow_y_scroll()
                         .p(px(8.))
-                        .rounded(px(7.))
+                        .rounded(px(theme.radius.min(8.)))
                         .border_1()
-                        .border_color(p.line)
+                        .border_color(p.edge())
                         .child(
                             div()
                                 .mb(px(4.))
-                                .font_family("Inter")
+                                .font_family(theme.chrome_font(&self.prefs))
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_size(px(10.5))
                                 .text_color(p.muted)
@@ -2696,7 +2691,7 @@ impl MainView {
                             gpui_kit::base::input::Input::new(token).into_any_element(),
                         ))
                         .when_some(error.clone(), |d, e| {
-                            d.child(div().mt(px(8.)).text_color(p.over).child(e))
+                            d.child(div().mt(px(8.)).text_color(p.over_text()).child(e))
                         })
                         .when(*busy, |d| {
                             d.child(
@@ -2743,7 +2738,7 @@ impl MainView {
                                     .id("sheet-delete")
                                     .debug_selector(|| "sheet-delete".into())
                                     .cursor_pointer()
-                                    .text_color(p.over)
+                                    .text_color(p.over_text())
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.confirm_delete(window, cx)
                                     })),
@@ -2787,7 +2782,7 @@ impl MainView {
                                         .id("sheet-withdraw")
                                         .debug_selector(|| "sheet-withdraw".into())
                                         .cursor_pointer()
-                                        .text_color(p.over)
+                                        .text_color(p.over_text())
                                         .on_click(cx.listener(move |this, _, window, cx| {
                                             let text = note.read(cx).value().to_string();
                                             this.confirm_withdraw(text, window, cx)
@@ -2823,17 +2818,7 @@ impl MainView {
                         .occlude()
                         .w(px(width))
                         .max_w(relative(0.92))
-                        .bg(p.bg)
-                        .map(|d| crate::ornament::border(d, self.theme.sheet_border, p.line))
-                        .border_t_0()
-                        .rounded_b(px(self.theme.sheet_radius))
-                        .shadow(vec![BoxShadow {
-                            color: p.shadow,
-                            offset: point(px(0.), px(18.)),
-                            blur_radius: px(40.),
-                            spread_radius: px(-12.),
-                            inset: false,
-                        }])
+                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))
                         .font_family(ui_font.clone())
@@ -2865,13 +2850,10 @@ impl MainView {
                     .id(id)
                     .px(px(10.))
                     .py(px(3.))
-                    .rounded(px(self.theme.chip_radius))
-                    .map(|d| crate::ornament::border(d, self.theme.chip_border, p.line))
+                    .map(|d| crate::theme_ext::chip(d, &self.theme, on))
                     .cursor_pointer()
-                    .border_color(if on { p.accent } else { p.line })
-                    .when(on, |d| d.text_color(p.accent))
                     .when_some(family, |d, f| d.font_family(f))
-                    .hover(|s| s.border_color(p.accent))
+                    .hover(|s| s.border_color(p.accent).bg(p.hover()))
                     .child(label)
             };
         let row = |label: &'static str, content: AnyElement| {
@@ -2960,7 +2942,7 @@ impl MainView {
                     chips.push(theme_chip(
                         t.id.clone(),
                         label,
-                        Some(crate::ornament::swatch(&t)),
+                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
                     ));
                 }
                 div()
@@ -3105,17 +3087,11 @@ impl MainView {
                     .flex_col()
                     .gap(px(4.))
                     .child(
-                        div()
+                        crate::theme_ext::field_box(div(), &self.theme)
                             .id("hotkey-box")
                             .px(px(10.))
                             .py(px(5.))
-                            .rounded(px(7.))
-                            .border_1()
-                            .border_color(if hotkey_error.is_some() {
-                                p.over
-                            } else {
-                                p.line
-                            })
+                            .when(hotkey_error.is_some(), |d| d.border_color(p.over))
                             .text_size(px(13.))
                             .child(gpui_kit::base::input::Input::new(hotkey)),
                     )
@@ -3123,7 +3099,7 @@ impl MainView {
                         div()
                             .text_size(px(11.5))
                             .text_color(if hotkey_error.is_some() {
-                                p.over
+                                p.over_text()
                             } else {
                                 p.muted
                             })

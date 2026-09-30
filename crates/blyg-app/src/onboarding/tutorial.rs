@@ -885,7 +885,7 @@ impl MainView {
                 .rounded(px(5.))
                 .border_1()
                 .border_b_2()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(12.))
@@ -901,7 +901,7 @@ impl MainView {
                 .py(px(3.))
                 .rounded_full()
                 .border_1()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .cursor_pointer()
                 .hover(|s| s.border_color(p.accent).text_color(p.ink))
                 .child(label)
@@ -912,7 +912,7 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_color(p.green)
+                .text_color(p.green_text())
                 .font_weight(FontWeight::MEDIUM)
                 .child("✓ That's it")
                 .when(step.stay, |d| {
@@ -951,17 +951,8 @@ impl MainView {
                 .bottom(px(STATUS_H + 14.))
                 .w(px(380.))
                 .max_w(relative(0.9))
-                .bg(p.bg)
-                .border_1()
-                .border_color(p.line)
-                .rounded(px(12.))
-                .shadow(vec![BoxShadow {
-                    color: p.shadow,
-                    offset: point(px(0.), px(14.)),
-                    blur_radius: px(36.),
-                    spread_radius: px(-8.),
-                    inset: false,
-                }])
+                // --- themes --- the theme's card.
+                .map(|d| crate::theme_ext::card(d, &self.theme))
                 .px(px(16.))
                 .py(px(13.))
                 .font_family(SharedString::from(self.prefs.ui().family))
@@ -1048,7 +1039,7 @@ impl MainView {
                                         },
                                     )
                                     .when(last || (done && step.stay), |d| {
-                                        d.border_color(p.accent).text_color(p.accent)
+                                        d.border_color(p.accent).text_color(p.accent_text())
                                     })
                                     .on_click(cx.listener(
                                         |this, _, window, cx| this.tutorial_next(window, cx),

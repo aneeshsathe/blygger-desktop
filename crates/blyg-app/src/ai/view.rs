@@ -257,12 +257,17 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .text_color(p.accent)
+                // --- themes --- on the status bar's own ground.
+                .text_color(p.on_status_text(p.accent))
                 .child(
                     div()
                         .size(px(7.))
                         .rounded_full()
-                        .bg(p.accent)
+                        .bg(crate::theme_ext::readable(
+                            p.accent,
+                            p.status,
+                            crate::theme_ext::MARK,
+                        ))
                         .with_animation(
                             "ai-pulse",
                             Animation::new(std::time::Duration::from_millis(1100)).repeat(),
@@ -1057,9 +1062,11 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(chip(p, "ai-open-settings", "AI accounts…", false).on_click(
-                        cx.listener(|this, _, window, cx| this.ai_open_settings(window, cx)),
-                    ))
+                    .child(
+                        chip(&self.theme, "ai-open-settings", "AI accounts…", false).on_click(
+                            cx.listener(|this, _, window, cx| this.ai_open_settings(window, cx)),
+                        ),
+                    )
                     .child(
                         div()
                             .text_size(px(11.5))
@@ -1398,12 +1405,16 @@ impl MainView {
                         .py(px(3.))
                         .child(
                             div()
-                                .text_color(p.over)
+                                .text_color(p.over_text())
                                 .line_through()
                                 .child(s.original.clone()),
                         )
                         .child("→")
-                        .child(div().text_color(p.green).child(s.replacement.clone()))
+                        .child(
+                            div()
+                                .text_color(p.green_text())
+                                .child(s.replacement.clone()),
+                        )
                         .child(div().text_color(p.muted).child(s.reason.clone()))
                 });
                 (
@@ -1461,15 +1472,16 @@ impl MainView {
                             .mt(px(12.))
                             .flex()
                             .gap(px(8.))
-                            .child(chip(p, "ai-warn-cancel", "Cancel  ⏎", true).on_click(
-                                cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
-                            ))
                             .child(
-                                chip(p, "ai-warn-publish", "Publish anyway  P", false).on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.ai_publish_anyway(window, cx)
-                                    }),
+                                chip(&self.theme, "ai-warn-cancel", "Cancel  ⏎", true).on_click(
+                                    cx.listener(|this, _, window, cx| this.ai_close(window, cx)),
                                 ),
+                            )
+                            .child(
+                                chip(&self.theme, "ai-warn-publish", "Publish anyway  P", false)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.ai_publish_anyway(window, cx)
+                                    })),
                             ),
                     )
                     .into_any_element(),
@@ -1480,10 +1492,12 @@ impl MainView {
             div()
                 .absolute()
                 .top(px(TITLEBAR_H))
+                .bottom_0() // --- themes --- so `max_h` (86%) has a height to measure
                 .left_0()
                 .right_0()
                 .flex()
                 .justify_center()
+                .items_start()
                 .child(
                     div()
                         .id("ai-sheet")
@@ -1492,18 +1506,8 @@ impl MainView {
                         .max_w(relative(0.92))
                         .max_h(relative(0.86))
                         .overflow_y_scroll()
-                        .bg(p.bg)
-                        .border_1()
-                        .border_t_0()
-                        .border_color(p.line)
-                        .rounded_b(px(12.))
-                        .shadow(vec![BoxShadow {
-                            color: p.shadow,
-                            offset: point(px(0.), px(18.)),
-                            blur_radius: px(40.),
-                            spread_radius: px(-12.),
-                            inset: false,
-                        }])
+                        // --- themes --- the theme's sheet box.
+                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
                         .px(px(18.))
                         .py(px(16.))
                         .font_family(ui_font.clone())
@@ -1535,7 +1539,7 @@ impl MainView {
                 .px(px(8.))
                 .py(px(5.))
                 .rounded(px(6.))
-                .when(on, |d| d.bg(p.sel))
+                .when(on, |d| d.bg(p.pick()))
                 .when(!enabled, |d| d.opacity(0.45))
                 .when(enabled, |d| d.cursor_pointer())
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -1584,15 +1588,12 @@ impl MainView {
     ) -> AnyElement {
         let p = self.palette;
         let input_box = |id: &'static str, e: &Entity<InputState>| {
-            div()
+            crate::theme_ext::field_box(div(), &self.theme)
                 .id(id)
                 .flex_1()
                 .min_w_0()
                 .px(px(9.))
                 .py(px(4.))
-                .rounded(px(7.))
-                .border_1()
-                .border_color(p.line)
                 .font_family(ui_font.clone())
                 .text_size(px(12.5))
                 .child(gpui_kit::base::input::Input::new(e))
@@ -1604,25 +1605,15 @@ impl MainView {
             &s.cf_token,
             &s.model,
         ] {
-            e.update(cx, |st, _| {
-                st.set_editor_style(gpui_kit::base::input::InputEditorStyle {
-                    foreground: p.ink,
-                    muted_foreground: p.muted,
-                    background: gpui_kit::transparent_black(),
-                    border: p.line,
-                    selection: p.text_selection,
-                    caret: p.accent,
-                    ..Default::default()
-                });
-            });
+            e.update(cx, |st, _| st.set_editor_style(p.field()));
         }
         let rows = s.rows.iter().map(|row| {
             let kind = row.kind;
             let (word, tone) = ais::status_label(row);
             let tone_color = match tone {
-                ais::Tone::Good => p.green,
+                ais::Tone::Good => p.green_text(),
                 ais::Tone::Neutral => p.muted,
-                ais::Tone::Bad => p.over,
+                ais::Tone::Bad => p.over_text(),
             };
             let signed_in = matches!(
                 row.status,
@@ -1642,7 +1633,7 @@ impl MainView {
                 controls = controls.when(installed || on, |d| {
                     d.child(
                         chip(
-                            p,
+                            &self.theme,
                             format!("ai-toggle-{name}"),
                             if on { "Switch off" } else { "Switch on" },
                             false,
@@ -1664,7 +1655,7 @@ impl MainView {
                     )
                     .child(
                         chip(
-                            p,
+                            &self.theme,
                             format!("ai-remove-{name}"),
                             if kind == ProviderKind::ChatgptAccount {
                                 "Sign out"
@@ -1695,20 +1686,22 @@ impl MainView {
                                         .text_color(p.muted)
                                         .child("Waiting for the browser…"),
                                 )
-                                .child(chip(p, "ai-chatgpt-cancel", "Cancel", false).on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        if let Some(Overlay::Settings(s)) = this.ai.overlay.as_mut()
-                                            && let Some(c) = s.chatgpt_running.take()
-                                        {
-                                            c.cancel();
-                                        }
-                                        cx.notify();
-                                    }),
-                                ))
+                                .child(
+                                    chip(&self.theme, "ai-chatgpt-cancel", "Cancel", false)
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            if let Some(Overlay::Settings(s)) =
+                                                this.ai.overlay.as_mut()
+                                                && let Some(c) = s.chatgpt_running.take()
+                                            {
+                                                c.cancel();
+                                            }
+                                            cx.notify();
+                                        })),
+                                )
                         } else {
                             controls.child(
                                 chip(
-                                    p,
+                                    &self.theme,
                                     "ai-chatgpt",
                                     if s.chatgpt_notice {
                                         "Continue to the browser"
@@ -1728,7 +1721,7 @@ impl MainView {
             }
             if ready && !row.is_default {
                 controls = controls.child(
-                    chip(p, format!("ai-use-{name}"), "Use for ⌘G", false).on_click(
+                    chip(&self.theme, format!("ai-use-{name}"), "Use for ⌘G", false).on_click(
                         cx.listener(move |this, _, window, cx| this.ai_use(kind, window, cx)),
                     ),
                 );
@@ -1749,10 +1742,10 @@ impl MainView {
                                 div()
                                     .text_size(px(11.))
                                     .px(px(6.))
-                                    .rounded_full()
+                                    .rounded(px(self.theme.chip_radius))
                                     .border_1()
                                     .border_color(p.accent)
-                                    .text_color(p.accent)
+                                    .text_color(p.accent_text())
                                     .child("⌘G uses this"),
                             )
                         }),
@@ -1828,7 +1821,7 @@ impl MainView {
                         .id("ai-settings-message")
                         .mt(px(8.))
                         .text_size(px(12.))
-                        .text_color(if is_err { p.over } else { p.green })
+                        .text_color(if is_err { p.over_text() } else { p.green_text() })
                         .child(m),
                 )
             })
@@ -1851,22 +1844,20 @@ fn heading(s: String) -> Div {
 }
 
 fn chip(
-    p: crate::theme::Palette,
+    t: &crate::theme::Theme,
     id: impl Into<SharedString>,
     label: &'static str,
     primary: bool,
 ) -> Stateful<Div> {
+    let p = t.palette;
     div()
         .id(ElementId::Name(id.into()))
         .px(px(10.))
         .py(px(3.))
-        .rounded_full()
-        .border_1()
+        .map(|d| crate::theme_ext::chip(d, t, primary))
         .cursor_pointer()
         .text_size(px(12.))
-        .border_color(if primary { p.accent } else { p.line })
-        .when(primary, |d| d.text_color(p.accent))
-        .hover(|s| s.border_color(p.accent))
+        .hover(|s| s.border_color(p.accent).bg(p.hover()))
         .child(label)
 }
 
@@ -1889,7 +1880,7 @@ fn keys(p: crate::theme::Palette, items: &[(&'static str, &'static str)]) -> Div
                         .rounded(px(5.))
                         .border_1()
                         .border_b_2()
-                        .border_color(p.line)
+                        .border_color(p.edge())
                         .text_color(p.ink)
                         .child(*k),
                 )
@@ -1941,11 +1932,10 @@ fn diff_col(
         .p(px(8.))
         .rounded(px(7.))
         .border_1()
-        .border_color(p.line)
+        .border_color(p.edge())
         .child(
             div()
                 .mb(px(4.))
-                .font_family("Inter")
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_size(px(10.5))
                 .text_color(p.muted)

@@ -52,10 +52,10 @@ block-buffer	0.12.1	RustCrypto Developers	https://github.com/RustCrypto/utils	Ap
 block2	0.5.1	Steven Sheldon|Mads Marquart <mads@marquart.dk>	https://github.com/madsmtm/objc2	MIT		Apple's C language extension of blocks
 block2	0.6.2	Mads Marquart <mads@marquart.dk>	https://github.com/madsmtm/objc2	MIT		Apple's C language extension of blocks
 blocking	1.7.0		https://github.com/smol-rs/blocking	Apache-2.0 OR MIT		A thread pool for isolating blocking I/O in async programs
-blyg-ai	0.6.1			MIT		
-blyg-app	0.6.1			MIT		
-blyg-core	0.6.1			MIT		
-blyg-render	0.6.1			MIT		Studio preview renderer: Markdown, TK and transclusion to HTML, as a blyg publishes it
+blyg-ai	0.6.2			MIT		
+blyg-app	0.6.2			MIT		
+blyg-core	0.6.2			MIT		
+blyg-render	0.6.2			MIT		Studio preview renderer: Markdown, TK and transclusion to HTML, as a blyg publishes it
 borsh	1.8.1	Near Inc <hello@near.org>	https://github.com/near/borsh-rs	Apache-2.0 OR MIT		Binary Object Representation Serializer for Hashing
 bstr	1.13.1	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/bstr	Apache-2.0 OR MIT		A string type that is not required to be valid UTF-8.
 bumpalo	3.20.3	Nick Fitzgerald <fitzgen@gmail.com>	https://github.com/fitzgen/bumpalo	Apache-2.0 OR MIT		A fast bump allocation arena for Rust.

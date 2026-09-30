@@ -668,17 +668,21 @@ impl MainView {
     pub(crate) fn notes_frame(&mut self, cx: &mut Context<Self>) {
         let p = self.palette;
         if let Some(a) = &self.notes.assist {
-            a.update(cx, |a, _| a.set_palette(p));
+            let font = self.prefs.ui().family;
+            a.update(cx, |a, _| {
+                a.set_palette(p);
+                a.set_ui_font(font);
+            });
         }
         if let Some(e) = &self.notes.editor {
             e.update(cx, |s, _| {
                 s.set_editor_style(InputEditorStyle {
                     foreground: p.ink,
-                    muted_foreground: p.muted,
+                    muted_foreground: p.placeholder(),
                     background: p.bg,
-                    border: p.line,
+                    border: p.edge(),
                     selection: p.text_selection,
-                    caret: p.accent,
+                    caret: p.caret(),
                     ..Default::default()
                 });
                 s.set_editor_paddings(Edges {
@@ -705,6 +709,7 @@ impl MainView {
         let body_font: SharedString = self.prefs.writing().family.into();
         let text = editor.read(cx).value().to_string();
         let title = blyg_core::plain_title(&text).unwrap_or_else(|| TITLE.to_string());
+        let theme = &*self.theme;
         let chip = |id: &'static str, label: &'static str, tip: &'static str| {
             div()
                 .id(id)
@@ -713,13 +718,11 @@ impl MainView {
                 .h(px(22.))
                 .flex()
                 .items_center()
-                .rounded(px(5.))
-                .border_1()
-                .border_color(p.line)
+                .map(|d| crate::theme_ext::chip(d, theme, false))
                 .text_size(px(11.5))
                 .text_color(p.ink)
                 .cursor_pointer()
-                .hover(|s| s.bg(p.sel))
+                .hover(|s| s.bg(p.hover()))
                 .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
                 .child(label)
         };
@@ -754,8 +757,8 @@ impl MainView {
                         div()
                             .flex_none()
                             .px(px(5.))
-                            .rounded(px(4.))
-                            .bg(p.sel)
+                            .rounded(px(theme.chip_radius.min(4.)))
+                            .bg(p.pick())
                             .text_size(px(10.5))
                             .text_color(p.muted)
                             .child("scratch"),
@@ -813,11 +816,7 @@ impl MainView {
                         .right(px(10.))
                         .py(px(4.))
                         .min_w(px(180.))
-                        .rounded(px(7.))
-                        .border_1()
-                        .border_color(p.line)
-                        .bg(p.bg)
-                        .shadow_md()
+                        .map(|d| crate::theme_ext::popover(d, theme))
                         .text_size(px(12.5))
                         .child(
                             div()
@@ -825,7 +824,7 @@ impl MainView {
                                 .px(px(10.))
                                 .py(px(5.))
                                 .cursor_pointer()
-                                .hover(|s| s.bg(p.sel))
+                                .hover(|s| s.bg(p.hover()))
                                 .child("New notes page")
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.notes_new_page(window, cx)
@@ -837,7 +836,7 @@ impl MainView {
                                 .px(px(10.))
                                 .py(px(5.))
                                 .cursor_pointer()
-                                .hover(|s| s.bg(p.sel))
+                                .hover(|s| s.bg(p.hover()))
                                 .child("Open in editor")
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.notes_open_in_editor(window, cx)
@@ -863,7 +862,7 @@ impl MainView {
                         .id("notes-quote-selection")
                         .debug_selector(|| "notes-quote-selection".into())
                         .cursor_pointer()
-                        .text_color(p.accent)
+                        .text_color(p.accent_text())
                         .hover(|s| s.underline())
                         .child(QUOTE_HINT)
                         .on_click(cx.listener(|this, _, window, cx| {
@@ -892,7 +891,7 @@ impl MainView {
                 .text_color(p.ink)
                 .rule_l(&p)
                 .shadow_lg()
-                .font_family("Inter")
+                .font_family(SharedString::from(self.prefs.ui().family))
                 // --- composer --- the mention popup / spelling menu keys first.
                 .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
                     this.notes_route_key(AssistKey::Up, window, cx);
@@ -1041,6 +1040,17 @@ impl MainView {
         use crate::app::reading::stream_vm::ReadMode;
         let typed = "Trust is a ledger nobody keeps on paper. Rue's post and Lin's garden \
                      note both circle it: write the one about benches.";
+        // --- themes --- `notes-menu`: the drawer with its ⋯ menu open.
+        if scenario == "notes-menu" {
+            if n < 2 {
+                self.notes_demo("notes-open", n, window, cx);
+            }
+            if n == 1 {
+                self.notes.menu = true;
+                cx.notify();
+            }
+            return;
+        }
         match (scenario, n) {
             ("notes-open", 0) | ("notes-after-add", 0) => {
                 self.reading.mode = ReadMode::Stream;

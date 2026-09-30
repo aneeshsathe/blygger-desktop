@@ -193,7 +193,7 @@ impl MainView {
     }
 
     pub(super) fn render_site_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Site {
             title,
             name,
@@ -301,7 +301,7 @@ impl MainView {
                     .h(px(84.))
                     .px(px(10.))
                     .py(px(7.))
-                    .rounded(px(7.))
+                    .rounded(px(self.theme.corner(7.)))
                     .border_1()
                     .border_color(if error.is_some() { p.over } else { p.line })
                     .text_size(px(13.))

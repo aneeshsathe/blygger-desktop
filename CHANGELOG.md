@@ -10,6 +10,19 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [0.6.2] - 2026-09-30
+
+### Fixed
+
+- **Themes now carry through the whole app, and text reads everywhere.**
+  - Konkan's subscriptions column showed dark text on dark. So did its selected rows in the Reader and the stream, Kumiko's title bar, and several menus, popovers and status-bar notices on the darker themes.
+  - Every surface now measures its text against its own background. A new test checks each built-in theme.
+- The Reader's subscriptions column draws the theme's sidebar ornaments. The theme's selected-row style, quote frames, markers and chip and sheet shapes now apply in the Reader, the stream, Mentions, Subscriptions and profiles, as they do in the posts list.
+- The reading pane shows posts in the theme's writing font (e.g. ET Book in Portolan), with quote boxes, highlights and diff marks in the theme's colours.
+- Sheets, cards, popovers, text fields, tooltips and chips take the theme's corners, edges and fonts. Portolan's sheets have a true double rule.
+- Aizome's selection in the Reader's list and the stream was invisible, because the selected colour was the same as the page's.
+- Cutaway's title bar is a deeper green, so its labels read.
+
 ## [0.6.1] - 2026-09-29
 
 ### Added

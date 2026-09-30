@@ -1095,7 +1095,7 @@ mod ui {
             l.page_keyboard = true;
             l.selection = "High water at 6:12".into();
         }
-        let back = cx.debug_bounds("browser-back").expect("chrome");
+        let back = crate::app::toolbar::tests::settled_bounds(cx, "browser-back");
         cx.simulate_click(back.center(), gpui_kit::Modifiers::none());
         settle(cx);
         assert!(log.borrow().selection.is_empty(), "a chrome click drops it");
@@ -1104,7 +1104,7 @@ mod ui {
             l.page_keyboard = true;
             l.selection = "High water at 6:12".into();
         }
-        let draft = cx.debug_bounds("browser-draft").expect("→ Draft");
+        let draft = crate::app::toolbar::tests::settled_bounds(cx, "browser-draft");
         cx.simulate_click(draft.center(), gpui_kit::Modifiers::none());
         settle(cx);
         let text = fake.item(&id).unwrap().content_md;

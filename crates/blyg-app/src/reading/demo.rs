@@ -182,6 +182,40 @@ impl MainView {
             ("rd-pin", 2) => self.ask_pin(window, cx),
             ("rd-mentions", 0) => self.show_view(View::Mentions, window, cx),
             ("rd-subs", 0) => self.show_view(View::Subscriptions, window, cx),
+            // --- themes --- the subscribe sheet with a preview.
+            ("rd-subscribe", 0) => self.show_view(View::Subscriptions, window, cx),
+            ("rd-subscribe", 1) => {
+                self.open_subscribe(window, cx);
+                if let Some(super::RSheet::Subscribe { input, .. }) = &self.reading.sheet {
+                    let input = input.clone();
+                    input.update(cx, |s, cx| {
+                        s.set_value("https://tides.example.org/", window, cx)
+                    });
+                }
+            }
+            ("rd-subscribe", 2) => self.subscribe_enter(window, cx),
+            // --- themes --- the empty states: nothing held, nothing unread,
+            // no subscriptions (the fake's data is cleared on screen only).
+            ("rd-empty" | "rd-stream-empty", 0) => {
+                self.show_view(View::Reading, window, cx);
+                self.reading.rows.clear();
+                self.reading.subs.clear();
+                self.reading.opened = None;
+                self.reading.sel = None;
+                self.reading.refilter();
+            }
+            ("rd-all-read", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-all-read", 1) => {
+                use super::sources_vm::{Smart, Source};
+                for r in &mut self.reading.rows {
+                    r.read_version = Some(r.version);
+                }
+                self.select_source(Source::Smart(Smart::Unread), cx);
+            }
+            ("rd-subs-empty", 0) => {
+                self.show_view(View::Subscriptions, window, cx);
+                self.reading.subs.clear();
+            }
             ("rd-site", 0) => self.open_site_settings(window, cx),
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),

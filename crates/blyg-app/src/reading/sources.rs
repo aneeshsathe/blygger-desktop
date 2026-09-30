@@ -539,7 +539,7 @@ impl MainView {
     }
 
     pub(super) fn render_folder_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Folder {
             input,
             rename,
@@ -703,7 +703,7 @@ impl MainView {
         detail: AnyElement,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let open = self.reading.sources_open;
         let post_focus = self.reading.pane == Pane::Post;
         div()
@@ -777,16 +777,16 @@ impl MainView {
 
     /// The header's sources-pane button (⌥⌘S).
     pub(super) fn render_sources_button(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let on = self.reading.sources_open;
         div()
             .id("sources-toggle")
             .debug_selector(|| "sources-toggle".into())
             .p(px(4.))
-            .rounded(px(5.))
+            .rounded(px(self.theme.corner(5.)))
             .cursor_pointer()
-            .when(on, |d| d.bg(p.sel))
-            .hover(|s| s.bg(p.sel))
+            .when(on, |d| d.bg(p.well()))
+            .hover(|s| s.bg(p.well()))
             .when_some(crate::app::toolbar::icon_svg("panel-left"), |d, bytes| {
                 d.child(svg().data(bytes).size(px(14.)).text_color(if on {
                     p.ink
@@ -809,7 +809,7 @@ impl MainView {
 
     /// The header line above the list: the selected source's name.
     pub(super) fn render_source_title(&self) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let label = sources_vm::source_label(
             &self.reading.source,
             &self.reading.folders,
@@ -821,7 +821,7 @@ impl MainView {
             .px(px(14.))
             .pt(px(8.))
             .pb(px(2.))
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(12.))
             .font_weight(FontWeight::SEMIBOLD)
             .text_color(p.ink)
@@ -831,7 +831,8 @@ impl MainView {
     }
 
     fn render_sources_pane(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        // --- themes --- a sidebar: its own ground and ink.
+        let p = self.palette.on_side();
         let focused = self.reading.pane == Pane::Sources;
         let rows: Vec<AnyElement> = self
             .source_entries()
@@ -847,10 +848,16 @@ impl MainView {
             .h_full()
             .flex()
             .flex_col()
-            .bg(p.bar)
+            .relative()
+            .overflow_hidden()
+            .bg(p.bg)
+            .text_color(p.ink)
             .rule_r(&p)
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(12.5))
+            // --- themes --- the sidebar's ground (strata, moss, waves…)
+            // behind the rows, as on the posts list.
+            .children(crate::ornament::sidebar_ground(&self.theme))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(|this, e: &MouseDownEvent, _, cx| {
@@ -866,6 +873,7 @@ impl MainView {
                     .pb(px(12.))
                     .children(rows),
             )
+            .children(crate::ornament::scroll_edge(&self.theme))
             .into_any_element()
     }
 
@@ -876,13 +884,16 @@ impl MainView {
         focused: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_side();
         let selected = e.source().is_some_and(|s| s == self.reading.source);
-        let sel_bg = if focused {
-            p.accent.opacity(0.16)
-        } else {
-            p.sel
-        };
+        // Focused, the row is the theme's `row.selected` (the plain look:
+        // an accent wash on the sidebar, with sidebar ink); otherwise it's
+        // the selected-row surface, with that row's ink.
+        let shaped = self.theme.has(blyg_core::config::theme::Slot::RowSelected);
+        let wash = focused && !shaped;
+        let ps = if wash { p } else { self.palette.on_sel() };
+        let sel_bg = if wash { p.accent.opacity(0.16) } else { ps.bg };
+        let theme = self.theme.clone();
         let count = |n: usize| {
             // A private, reader-local number, muted (never social).
             div()
@@ -900,9 +911,12 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .rounded(px(5.))
+                .rounded(px(theme.radius.min(6.)))
                 .cursor_pointer()
-                .when(selected, |d| d.bg(sel_bg))
+                .when(selected, |d| d.bg(sel_bg).text_color(ps.ink))
+                .when(selected && focused && shaped, |d| {
+                    crate::ornament::selected_surface(&theme, d, sel_bg)
+                })
                 .when(!selected, |d| d.hover(|s| s.bg(p.sel.opacity(0.6))))
         };
         let icon = |bytes: &'static [u8]| {
@@ -910,7 +924,7 @@ impl MainView {
                 .data(bytes)
                 .size(px(14.))
                 .flex_none()
-                .text_color(if selected { p.accent } else { p.muted })
+                .text_color(if selected { ps.accent } else { p.muted })
         };
         match e {
             Entry::Heading(h) => {
@@ -1043,7 +1057,7 @@ impl MainView {
                     .child(self.source_avatar(&sub))
                     .child(div().flex_1().min_w_0().truncate().child(name.clone()))
                     .when(unread, |d| {
-                        d.child(div().flex_none().size(px(6.)).rounded_full().bg(p.accent))
+                        d.child(div().flex_none().child(self.unread_marker(p.accent)))
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         window.focus(&this.reading.focus, cx);
@@ -1078,7 +1092,6 @@ impl MainView {
     /// A subscription's avatar when its profile's image is already cached,
     /// else a letter badge.
     fn source_avatar(&self, sub: &blyg_core::Subscription) -> AnyElement {
-        let p = self.palette;
         let circle = div()
             .size(px(16.))
             .flex_none()
@@ -1099,10 +1112,12 @@ impl MainView {
                 )
                 .into_any_element();
         }
+        // --- themes --- a letter disc in the sidebar's own ink.
+        let p = self.palette.on_side();
         circle
-            .bg(p.sel)
+            .bg(crate::theme::mix(p.bg, p.ink, 0.08))
             .border_1()
-            .border_color(p.line)
+            .border_color(p.muted.opacity(0.5))
             .flex()
             .items_center()
             .justify_center()
@@ -1116,7 +1131,7 @@ impl MainView {
     /// The context menu, when one is open (drawn above everything).
     pub(crate) fn render_source_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let m = self.reading.src_menu.as_ref()?;
-        let p = self.palette;
+        let p = self.palette.on_page();
         let items = self
             .menu_items()
             .into_iter()
@@ -1130,7 +1145,7 @@ impl MainView {
                     .debug_selector(move || format!("src-menu-{i}"))
                     .px(px(10.))
                     .py(px(4.))
-                    .rounded(px(5.))
+                    .rounded(px(self.theme.corner(5.)))
                     .flex()
                     .items_center()
                     .gap(px(6.))
@@ -1153,7 +1168,7 @@ impl MainView {
             .occlude()
             .min_w(px(170.))
             .p(px(4.))
-            .rounded(px(8.))
+            .rounded(px(self.theme.radius))
             .border_1()
             .border_color(p.line)
             .bg(p.bg)
@@ -1164,7 +1179,7 @@ impl MainView {
                 spread_radius: px(-6.),
                 inset: false,
             }])
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(12.5))
             .text_color(p.ink)
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
