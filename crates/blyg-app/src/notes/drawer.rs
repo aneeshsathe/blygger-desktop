@@ -1041,6 +1041,17 @@ impl MainView {
         use crate::app::reading::stream_vm::ReadMode;
         let typed = "Trust is a ledger nobody keeps on paper. Rue's post and Lin's garden \
                      note both circle it: write the one about benches.";
+        // --- themes --- `notes-menu`: the drawer with its ⋯ menu open.
+        if scenario == "notes-menu" {
+            if n < 2 {
+                self.notes_demo("notes-open", n, window, cx);
+            }
+            if n == 1 {
+                self.notes.menu = true;
+                cx.notify();
+            }
+            return;
+        }
         match (scenario, n) {
             ("notes-open", 0) | ("notes-after-add", 0) => {
                 self.reading.mode = ReadMode::Stream;
