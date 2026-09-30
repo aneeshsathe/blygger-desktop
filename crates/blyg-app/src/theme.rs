@@ -216,6 +216,12 @@ impl Palette {
             } else {
                 self.bar_ink
             };
+            // The active button's ground: `sel` when it shows on the bar,
+            // else a faint wash of ink (Paper's and Ink's `sel` are nearly
+            // their bar's colour).
+            if contrast(self.sel, self.bar) < 1.15 {
+                p.sel = mix(self.bar, self.ink, if self.dark { 0.14 } else { 0.09 });
+            }
         }
         p
     }
@@ -553,6 +559,35 @@ pub fn set_reader_theme(t: &Theme, writing: FontChoice) {
     *READER_VARS.lock().unwrap_or_else(|e| e.into_inner()) = vars;
     *READER_FONT.lock().unwrap_or_else(|e| e.into_inner()) =
         (writing.family != "Literata").then_some(writing);
+    *TIP.lock().unwrap_or_else(|e| e.into_inner()) = Some(TipStyle {
+        bg: t.palette.toast,
+        ink: t.palette.toast_ink,
+        font: t.font_chrome.map(|f| f.family).unwrap_or("Inter"),
+        radius: t.toast_radius.min(6.),
+    });
+}
+
+/// How tooltips look: the theme's toast colours, its chrome font and a
+/// corner no rounder than its toasts'.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TipStyle {
+    pub bg: Hsla,
+    pub ink: Hsla,
+    pub font: &'static str,
+    pub radius: f32,
+}
+
+static TIP: std::sync::Mutex<Option<TipStyle>> = std::sync::Mutex::new(None);
+
+/// The tooltip style [`set_reader_theme`] chose (the plain look's dark
+/// pill before any theme is applied).
+pub fn tip_style() -> TipStyle {
+    (*TIP.lock().unwrap_or_else(|e| e.into_inner())).unwrap_or(TipStyle {
+        bg: gpui_kit::black().opacity(0.85),
+        ink: gpui_kit::white(),
+        font: "Inter",
+        radius: 5.,
+    })
 }
 
 /// The reader's quote boxes in the shape of the theme's `quote.frame`, as
@@ -727,6 +762,11 @@ mod tests {
             // Stream quote boxes: the quoted text and the footer.
             need("quote ink", p.ink, p.quote_bg, 4.5);
             need("quote footer", p.muted, p.quote_bg, 3.0);
+            // Toasts and tooltips; the title bar's active button; a theme
+            // swatch's edge on this theme's sheets.
+            need("toast / tooltip ink", p.toast_ink, p.toast, 4.5);
+            need("title-bar active ground", bar.sel, p.bar, 1.1);
+            need("swatch edge", crate::ornament::edge_on(p.bg), p.bg, 1.5);
             // The reader's WebView paper.
             need("reader ink", p.ink, p.editor, 4.5);
             need("reader muted", p.muted, p.editor, 3.0);

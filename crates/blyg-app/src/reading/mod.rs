@@ -774,20 +774,26 @@ impl MainView {
     /// main sheets (`sheet.radius`, `sheet.border`), in the interface font.
     pub(crate) fn sheet_style<E: Styled>(&self, d: E) -> E {
         let p = self.palette;
-        crate::ornament::border(d.bg(p.bg), self.theme.sheet_border, p.line)
-            .border_t_0()
-            .rounded_b(px(self.theme.sheet_radius))
-            .shadow(vec![BoxShadow {
-                color: p.shadow,
-                offset: point(px(0.), px(18.)),
-                blur_radius: px(40.),
-                spread_radius: px(-12.),
-                inset: false,
-            }])
-            .px(px(18.))
-            .py(px(16.))
-            .font_family(self.prefs.ui().family)
-            .text_size(px(13.))
+        let drop = BoxShadow {
+            color: p.shadow,
+            offset: point(px(0.), px(18.)),
+            blur_radius: px(40.),
+            spread_radius: px(-12.),
+            inset: false,
+        };
+        crate::ornament::border_with_shadow(
+            d.bg(p.bg),
+            self.theme.sheet_border,
+            p.line,
+            p.bg,
+            Some(drop),
+        )
+        .border_t_0()
+        .rounded_b(px(self.theme.sheet_radius))
+        .px(px(18.))
+        .py(px(16.))
+        .font_family(self.prefs.ui().family)
+        .text_size(px(13.))
     }
 
     /// The small-label font: the theme's chrome font (Inter unless the
@@ -1083,13 +1089,15 @@ pub struct Tip(pub String);
 
 impl Render for Tip {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        // --- themes --- the theme's toast colours and chrome font.
+        let s = crate::theme::tip_style();
         div()
             .px(px(7.))
             .py(px(3.))
-            .rounded(px(5.))
-            .bg(gpui_kit::black().opacity(0.85))
-            .text_color(gpui_kit::white())
-            .font_family("Inter")
+            .rounded(px(s.radius))
+            .bg(s.bg)
+            .text_color(s.ink)
+            .font_family(s.font)
             .text_size(px(11.))
             .child(self.0.clone())
     }

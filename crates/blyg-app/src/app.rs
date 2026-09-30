@@ -2824,16 +2824,25 @@ impl MainView {
                         .w(px(width))
                         .max_w(relative(0.92))
                         .bg(p.bg)
-                        .map(|d| crate::ornament::border(d, self.theme.sheet_border, p.line))
+                        // --- themes --- the edge (a double rule: rings
+                        // after the drop shadow).
+                        .map(|d| {
+                            crate::ornament::border_with_shadow(
+                                d,
+                                self.theme.sheet_border,
+                                p.line,
+                                p.bg,
+                                Some(BoxShadow {
+                                    color: p.shadow,
+                                    offset: point(px(0.), px(18.)),
+                                    blur_radius: px(40.),
+                                    spread_radius: px(-12.),
+                                    inset: false,
+                                }),
+                            )
+                        })
                         .border_t_0()
                         .rounded_b(px(self.theme.sheet_radius))
-                        .shadow(vec![BoxShadow {
-                            color: p.shadow,
-                            offset: point(px(0.), px(18.)),
-                            blur_radius: px(40.),
-                            spread_radius: px(-12.),
-                            inset: false,
-                        }])
                         .px(px(18.))
                         .py(px(16.))
                         .font_family(ui_font.clone())
@@ -2960,7 +2969,7 @@ impl MainView {
                     chips.push(theme_chip(
                         t.id.clone(),
                         label,
-                        Some(crate::ornament::swatch(&t)),
+                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
                     ));
                 }
                 div()
