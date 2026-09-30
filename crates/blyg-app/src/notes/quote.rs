@@ -13,6 +13,15 @@ use gpui_kit::*;
 use crate::app::MainView;
 use crate::app::reading::vm::{self, QuoteSource};
 
+/// Where a quoted passage is read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QuoteFrom {
+    /// The browser pane's page.
+    Browser,
+    /// The reading pane's post.
+    Reader,
+}
+
 gpui_kit::actions!(
     blygger,
     [
@@ -34,50 +43,74 @@ impl MainView {
         if let Some((sel, source)) = self.notes_selection(window, cx) {
             return self.quote_into_draft(sel, source, window, cx);
         }
-        let (tx, rx) = async_channel::bounded::<String>(1);
-        let source = if self.browser.open {
-            let page = &self.browser.page;
-            let url = Some(page.url.clone()).filter(|u| crate::app::browser::is_web_url(u));
-            let held = url
-                .as_deref()
-                .and_then(|u| vm::blyg_item_for_url(u, &self.reading.rows, &self.reading.subs));
-            let source = match held {
-                Some(r) => QuoteSource::Blyg {
-                    id: r.remote_id.clone(),
-                    html: r.content_html.clone(),
-                    title: page.title.clone(),
-                    url: url.clone(),
-                },
-                None => QuoteSource::Page {
-                    title: page.title.clone(),
-                    url,
-                },
-            };
-            self.browser.selection(tx.clone()).then_some(source)
-        } else if self.studio.reader.active()
-            && let Some(o) = self.reading.opened.as_ref()
-        {
-            let r = &o.item;
-            let blyg = self
-                .reading
-                .subs
-                .iter()
-                .find(|s| s.id == r.subscription_id)
-                .is_none_or(|s| s.kind == blyg_core::SubscriptionKind::Blyg);
-            let (title, url) = (vm::post_title(r), vm::web_url(r));
-            let source = if blyg {
-                QuoteSource::Blyg {
-                    id: r.remote_id.clone(),
-                    html: r.content_html.clone(),
-                    title,
-                    url,
-                }
-            } else {
-                QuoteSource::Page { title, url }
-            };
-            self.studio.reader.selection(tx.clone()).then_some(source)
+        let from = if self.browser.open {
+            Some(QuoteFrom::Browser)
+        } else if self.studio.reader.active() && self.reading.opened.is_some() {
+            Some(QuoteFrom::Reader)
         } else {
             None
+        };
+        self.quote_from(from, window, cx);
+    }
+
+    /// Quote what's selected in `from` (the reader's pill asks for the
+    /// reader, whatever has the keyboard). `None`, or no page to ask: say
+    /// there's nothing to quote.
+    pub(crate) fn quote_from(
+        &mut self,
+        from: Option<QuoteFrom>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (tx, rx) = async_channel::bounded::<String>(1);
+        let source = match from {
+            Some(QuoteFrom::Browser) if self.browser.open => {
+                let page = &self.browser.page;
+                let url = Some(page.url.clone()).filter(|u| crate::app::browser::is_web_url(u));
+                let held = url
+                    .as_deref()
+                    .and_then(|u| vm::blyg_item_for_url(u, &self.reading.rows, &self.reading.subs));
+                let source = match held {
+                    Some(r) => QuoteSource::Blyg {
+                        id: r.remote_id.clone(),
+                        html: r.content_html.clone(),
+                        title: page.title.clone(),
+                        url: url.clone(),
+                    },
+                    None => QuoteSource::Page {
+                        title: page.title.clone(),
+                        url,
+                    },
+                };
+                self.browser.selection(tx.clone()).then_some(source)
+            }
+            Some(QuoteFrom::Reader) if self.studio.reader.active() => {
+                match self.reading.opened.as_ref() {
+                    Some(o) => {
+                        let r = &o.item;
+                        let blyg = self
+                            .reading
+                            .subs
+                            .iter()
+                            .find(|s| s.id == r.subscription_id)
+                            .is_none_or(|s| s.kind == blyg_core::SubscriptionKind::Blyg);
+                        let (title, url) = (vm::post_title(r), vm::web_url(r));
+                        let source = if blyg {
+                            QuoteSource::Blyg {
+                                id: r.remote_id.clone(),
+                                html: r.content_html.clone(),
+                                title,
+                                url,
+                            }
+                        } else {
+                            QuoteSource::Page { title, url }
+                        };
+                        self.studio.reader.selection(tx.clone()).then_some(source)
+                    }
+                    None => None,
+                }
+            }
+            _ => None,
         };
         let Some(source) = source else {
             return self.show_toast(NOTHING, Some(WHERE.into()), cx);
@@ -110,6 +143,12 @@ impl MainView {
         if !focus.contains_focused(window, cx) {
             return None;
         }
+        self.notes_selected_passage(cx)
+    }
+
+    /// The passage selected in the notes and its quote's source, whether or
+    /// not the drawer has the keyboard (its footer's hint, a click).
+    pub(crate) fn notes_selected_passage(&self, cx: &App) -> Option<(String, QuoteSource)> {
         let editor = self.notes.editor.as_ref()?.read(cx);
         let (text, range) = (editor.value().to_string(), editor.selected_range());
         let (sel, link) = super::notes_passage(&text, range)?;

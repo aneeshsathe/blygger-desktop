@@ -33,6 +33,21 @@ gpui_kit::actions!(blygger, [StreamMode, ReaderMode]);
 /// How often the stream checks what's on screen.
 const TICK: Duration = Duration::from_millis(250);
 
+/// A drag over a post in the stream: the toast once it's open in the pane.
+pub const SELECT_HERE: &str = "Select the passage in the post here";
+pub const SELECT_HOW: &str = "Then ⇧⌘D, or the pill by the selection, quotes it";
+
+/// A post's click as a `stream_vm::PostClick` (keyboard clicks select).
+fn post_click_of(ev: &ClickEvent) -> stream_vm::PostClick {
+    match ev {
+        ClickEvent::Mouse(m) => {
+            let (d, u) = (m.down.position, m.up.position);
+            stream_vm::post_click(f32::from(u.x - d.x), f32::from(u.y - d.y), m.up.click_count)
+        }
+        _ => stream_vm::PostClick::Select,
+    }
+}
+
 /// Parsed posts by (row, version, withdrawn).
 type BlockCache = HashMap<(Key, u32, bool), Rc<Vec<Block>>>;
 
@@ -415,6 +430,25 @@ impl MainView {
         }
     }
 
+    /// A click on a post (`stream_vm::post_click`): select it, or open it
+    /// in the side pane, where its text can be selected and quoted.
+    pub(crate) fn stream_post_click(
+        &mut self,
+        key: Key,
+        click: stream_vm::PostClick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match click {
+            stream_vm::PostClick::Select => self.stream_click(key, window, cx),
+            stream_vm::PostClick::Open => self.stream_read_more(key, window, cx),
+            stream_vm::PostClick::OpenToSelect => {
+                self.stream_read_more(key, window, cx);
+                self.show_toast(SELECT_HERE, Some(SELECT_HOW.into()), cx);
+            }
+        }
+    }
+
     fn stream_read_more(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
         self.stream_click(key.clone(), window, cx);
         self.open_reading(key, window, cx);
@@ -703,8 +737,8 @@ impl MainView {
             .border_color(p.line)
             .when(selected, |d| d.bg(p.sel))
             .when(opened && !selected, |d| d.bg(p.sel.opacity(0.5)))
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.stream_click(k_click.clone(), window, cx)
+            .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                this.stream_post_click(k_click.clone(), post_click_of(ev), window, cx)
             }))
             .when(unread, |d| {
                 // Unread: a small dot, never a count.

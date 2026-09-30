@@ -411,7 +411,7 @@ impl MainView {
         self.reading_action(action, window, cx)
     }
 
-    fn reading_action(
+    pub(crate) fn reading_action(
         &mut self,
         action: &'static str,
         window: &mut Window,

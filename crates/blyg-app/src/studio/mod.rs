@@ -518,6 +518,11 @@ impl MainView {
             // --- quote targets --- in the studio preview, still the profile.
             SurfaceEvent::OpenQuote { origin, .. } => self.open_profile(origin, window, cx),
             SurfaceEvent::PageEnd => {} // --- reader folders --- (the reader's)
+            // --- selection --- the preview shows no pill (it is your own
+            // draft, the one a quote would go into).
+            SurfaceEvent::Selected(_)
+            | SurfaceEvent::QuoteSelection
+            | SurfaceEvent::ReplySelection => {}
         }
     }
 

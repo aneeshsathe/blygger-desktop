@@ -82,6 +82,8 @@ pub struct Reader {
     active: bool,
     dark: Option<bool>,
     viewport_w: Pixels,
+    /// --- selection --- The page has a text selection (it says so).
+    selected: bool,
     /// Pages loaded (tests).
     #[cfg(test)]
     pub(crate) pages: Vec<String>,
@@ -120,6 +122,7 @@ impl Reader {
             active: false,
             dark: None,
             viewport_w: px(0.),
+            selected: false,
             #[cfg(test)]
             pages: Vec::new(),
         }
@@ -127,6 +130,11 @@ impl Reader {
 
     pub fn active(&self) -> bool {
         self.active
+    }
+
+    /// --- selection --- The post on screen has text selected in it.
+    pub fn has_selection(&self) -> bool {
+        self.active && self.selected
     }
 
     #[cfg(test)]
@@ -531,6 +539,7 @@ impl MainView {
                 };
                 let page = reader_page_named(&content, &shown.doc, shown.font_px as f32, &name_of);
                 self.studio.reader.slot.borrow_mut().with(|s| s.load(&page));
+                self.studio.reader.selected = false; // --- selection ---
                 #[cfg(test)]
                 self.studio.reader.pages.push(page);
                 self.studio.reader.shown = Some(shown);
@@ -557,7 +566,7 @@ impl MainView {
         }
     }
 
-    pub(super) fn reader_event(
+    pub(crate) fn reader_event(
         &mut self,
         ev: SurfaceEvent,
         window: &mut Window,
@@ -565,8 +574,24 @@ impl MainView {
     ) {
         match ev {
             SurfaceEvent::Ready => {
+                // --- selection --- the pill by a selection, for someone
+                // else's post (not your own, shown here from Posts).
+                if let Some(reply) = self.reader_selection_ui() {
+                    let js = webview::selection_ui_js(reply);
+                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(&js));
+                }
                 if std::env::var_os("BLYGGER_TIMING").is_some() {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());
+                }
+            }
+            // --- selection ---
+            SurfaceEvent::Selected(on) => self.studio.reader.selected = on,
+            SurfaceEvent::QuoteSelection => {
+                self.quote_from(Some(crate::app::notes::QuoteFrom::Reader), window, cx)
+            }
+            SurfaceEvent::ReplySelection => {
+                if self.reader_selection_ui() == Some(true) {
+                    self.reading_action("Reply", window, cx);
                 }
             }
             // A click in the page: the keyboard goes back to the list.
@@ -598,6 +623,24 @@ impl MainView {
             // --- reader folders --- Space at the end of the page.
             SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
         }
+    }
+
+    /// --- selection --- Whether the page shows the pill by a selection:
+    /// `Some(reply)` for someone else's post in the Reading screen, with
+    /// "Reply with this" when it's the current version of a blyg post (a
+    /// feed post's reply can't quote a passage); `None` otherwise.
+    pub(crate) fn reader_selection_ui(&self) -> Option<bool> {
+        if self.reading.view != View::Reading {
+            return None;
+        }
+        let o = self.reading.opened.as_ref()?;
+        let blyg = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == o.item.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        Some(blyg && o.pinned_on_screen().is_none())
     }
 
     /// --- reader folders --- Run `js` in the reader's page. False when

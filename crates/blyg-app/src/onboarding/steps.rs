@@ -360,8 +360,8 @@ pub const STEPS: &[Step] = &[
         id: "stream",
         title: "Reading, in the Stream",
         caption: "⌘R opens Reading: posts from the blygs you follow, newest first by their own \
-                  date. j/k move, and a post a second on screen counts as read. ⏎, Space or \
-                  Read more opens it in a side pane.",
+                  date. j/k move, and a post a second on screen counts as read. ⏎, Space, a \
+                  double-click or Read more opens it in a side pane.",
         keys: &[Key::ReadMore],
         key_label: "⏎",
         region: Region::Stream,
@@ -405,7 +405,9 @@ pub const STEPS: &[Step] = &[
         id: "notes",
         title: "Notes while you read",
         caption: "⇧⌘N slides in the Notes drawer: running notes, kept on this Mac as a scratch \
-                  note. → Notes, at the bottom of a post, adds the post to them.",
+                  note. → Notes, at the bottom of a post, adds the post to them. Select a \
+                  passage in a post with the mouse: ⇧⌘D, or the pill beside it, quotes it in \
+                  your draft.",
         keys: &[Key::Notes],
         key_label: "⇧⌘N",
         region: Region::ReaderPost,
