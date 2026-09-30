@@ -20,6 +20,8 @@ mod fake;
 mod fonts;
 mod images;
 mod keymap;
+#[cfg(test)]
+mod keymap_docs;
 mod platform;
 mod prefs;
 mod settings;
