@@ -651,7 +651,7 @@ impl MainView {
                     .into_any_element(),
             ]
         } else if r.kind == Kind::Thread {
-            let title = vm::title(&r.content_md);
+            let title = vm::post_title(r);
             let rest = stream_vm::without_title(&blocks, &title);
             let (shown, _more) = stream_vm::preview(&rest);
             let k2 = key.clone();
@@ -838,7 +838,17 @@ impl MainView {
                 .into_any_element(),
         ];
         if r.state != "tombstone" {
-            for id in ["Quote", "Reply", "AI reply", "Open on web", "Notes"] {
+            for id in [
+                "Quote",
+                "Reply",
+                "AI reply",
+                "Link post",
+                "Open on web",
+                "Notes",
+            ] {
+                if id == "Link post" && !blyg {
+                    continue; // a feed post has no id to link
+                }
                 let chip = vm::action_chip(id, &ctx);
                 let tip = chip.tip.clone();
                 let k = key.clone();

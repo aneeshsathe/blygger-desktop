@@ -293,7 +293,7 @@ pub fn publish_decision(item: &Item) -> PublishDecision {
         return PublishDecision::AlreadyPublished(item.version);
     }
     PublishDecision::Sheet {
-        title: truncate_chars(&item.title(), 48),
+        title: truncate_chars(&item_title(item), 48),
         next_version: item.version + 1,
     }
 }
@@ -373,6 +373,19 @@ pub fn window_title(blyg_url: Option<&str>) -> String {
 }
 
 /// The host of an http(s) URL, without port or path.
+/// Your post's title in the posts list: its own first line (never quoted
+/// text); a stub with nothing of its own yet names what it answers.
+pub fn item_title(item: &Item) -> String {
+    match (blyg_core::plain_title(&item.content_md), &item.stub_of) {
+        (Some(t), _) => t,
+        (None, Some(of)) => format!(
+            "In response to {}",
+            url_host(&of.origin).unwrap_or_else(|| of.origin.clone())
+        ),
+        (None, None) => item.title(),
+    }
+}
+
 pub fn url_host(url: &str) -> Option<String> {
     let rest = url.split_once("://").map(|(_, r)| r)?;
     let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
@@ -866,6 +879,22 @@ mod tests {
             pending_sync: false,
             conflict: false,
         }
+    }
+
+    #[test]
+    fn a_stub_is_titled_in_its_authors_words() {
+        let id = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+        let mut it = item("a", &format!("![[{id}]]\n> Their sentence.\n\nMine."));
+        it.kind = Kind::Thread;
+        assert_eq!(item_title(&it), "Mine.");
+        it.content_md = format!("![[{id}]]\n> Their sentence.\n");
+        assert_eq!(item_title(&it), "Untitled");
+        it.stub_of = Some(blyg_core::RemoteRef {
+            origin: "https://rue.blyg.example.com/".into(),
+            id: id.into(),
+            version: 2,
+        });
+        assert_eq!(item_title(&it), "In response to rue.blyg.example.com");
     }
 
     #[test]

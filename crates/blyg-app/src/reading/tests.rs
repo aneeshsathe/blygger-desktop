@@ -164,7 +164,15 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
     assert_eq!(
         pm.actions,
-        ["Quote", "Reply", "AI reply", "Fork", "Open on web", "Notes"]
+        [
+            "Quote",
+            "Reply",
+            "AI reply",
+            "Fork",
+            "Link post",
+            "Open on web",
+            "Notes"
+        ]
     );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
@@ -735,10 +743,12 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Reply · new stub",
             "AI reply · new stub",
             "Fork",
+            "Link post · new fragment",
             "Open on web",
             "→ Notes" // --- notes ---
         ]
     );
+    assert!(tip(&row, "Link post").contains("no stub_of"));
     for c in &row {
         assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);
         assert_eq!(c.enabled, c.id != "Fork", "{}", c.label);
@@ -772,4 +782,67 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     // A feed post can't be transcluded: Quote says what it does instead.
     open_row(&view, OMAR_YEAR, cx);
     assert!(tip(&chips(&view, cx), "Quote").contains("feed posts"));
+    // ...and has no id to link, so no Link post.
+    assert!(!chips(&view, cx).iter().any(|c| c.id == "Link post"));
+}
+
+/// Studio 0.8.0's `link post`: a new fragment holding `[[id]]`, a plain
+/// link, never a stub.
+#[gpui_kit::test]
+fn link_post_starts_a_fragment_that_is_not_a_reply(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    open_row(&view, RUE_TRUST, cx);
+    let before = fake.items().len();
+    view.update_in(cx, |v, window, cx| {
+        v.reading_action_for_test("Link post", window, cx)
+    });
+    settle(cx);
+    let items = fake.items();
+    assert_eq!(items.len(), before + 1);
+    let post = items
+        .iter()
+        .find(|i| i.content_md == format!("[[{RUE_TRUST}]]\n\n"))
+        .expect("a link post");
+    assert_eq!(post.kind, Kind::Fragment);
+    assert!(post.stub_of.is_none() && post.forked_from.is_none());
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
+}
+
+/// Studio 0.8.1's stub prefill: a long post starts with an empty quote line
+/// and the caret on it; a short one with the whole-item form.
+#[gpui_kit::test]
+fn reply_prefills_an_empty_quote_for_a_long_post(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // The seeded posts are all short: one is made long for this test.
+    let long_html = format!("<p>{}</p>", "The tide comes in. ".repeat(40));
+    for (id, want_quote) in [(LIN_BENCH, true), (ADA_FINISHED, false)] {
+        cx.simulate_keystrokes("cmd-r");
+        open_row(&view, id, cx);
+        view.update_in(cx, |v, window, cx| {
+            if want_quote {
+                v.reading.opened.as_mut().unwrap().item.content_html = long_html.clone();
+            }
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
+        let stub = fake
+            .items()
+            .into_iter()
+            .find(|i| i.stub_of.as_ref().is_some_and(|s| s.id == id))
+            .expect("a stub");
+        let (text, cursor) = view.read_with(cx, |v, cx| {
+            let e = v.editor.read(cx);
+            (e.value().to_string(), e.cursor())
+        });
+        assert_eq!(text, stub.content_md);
+        if want_quote {
+            let head = format!("![[{id}]]\n> ");
+            assert_eq!(stub.content_md, format!("{head}\n\n"));
+            assert_eq!(cursor, head.len(), "the caret is on the quote line");
+        } else {
+            assert_eq!(stub.content_md, format!("![[{id}]]\n\n"));
+            assert_eq!(cursor, text.len());
+        }
+    }
 }

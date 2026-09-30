@@ -147,12 +147,23 @@ fn lines_of(b: &Block) -> usize {
     }
 }
 
-/// A post's blocks without its title line (a thread's first block is its
-/// title, shown on its own).
+/// A post's blocks without its title line (a thread's first block of its own
+/// words is its title, shown on its own). Quotes before it stay: the title
+/// is never quoted text, so a stub's title comes after what it quotes.
 pub fn without_title(blocks: &[Block], title: &str) -> Vec<Block> {
-    match blocks.first() {
-        Some(b @ (Block::Para(_) | Block::Heading(..))) if b.plain().trim() == title.trim() => {
-            blocks[1..].to_vec()
+    let first_own = blocks.iter().position(|b| {
+        !matches!(
+            b,
+            Block::Transclusion { .. } | Block::Quote(_) | Block::Image { .. }
+        )
+    });
+    match first_own.map(|i| (i, &blocks[i])) {
+        Some((i, b @ (Block::Para(_) | Block::Heading(..))))
+            if b.plain().trim() == title.trim() =>
+        {
+            let mut out = blocks.to_vec();
+            out.remove(i);
+            out
         }
         _ => blocks.to_vec(),
     }
@@ -380,6 +391,21 @@ mod tests {
         let (p, more) = preview(&without_title(&short, "Title"));
         assert!(!more);
         assert_eq!(p.len(), 1);
+    }
+
+    /// A stub's title is its own first line, after what it quotes: that line
+    /// isn't shown twice, and the quote stays.
+    #[test]
+    fn a_stubs_title_comes_after_its_quote() {
+        let md = "![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n\n> theirs\n\nMine.\n\nMore.";
+        let title = blyg_core::plain_title(md).unwrap();
+        assert_eq!(title, "Mine.");
+        let blocks = native_blocks(md, blyg_render::Kind::Thread);
+        let body = without_title(&blocks, &title);
+        assert_eq!(body.len(), blocks.len() - 1);
+        assert!(matches!(body[0], Block::Transclusion { .. }));
+        assert!(!body.iter().any(|b| b.plain() == "Mine."));
+        assert_eq!(body.last().unwrap().plain(), "More.");
     }
 
     #[test]
