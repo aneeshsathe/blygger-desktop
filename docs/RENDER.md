@@ -15,7 +15,8 @@ working copy ─┬─ parse TK scopes (tk.rs, as tk.ts parseScopes)
               ├─ [[id]] links → U+0004 tokens, except in code (links.rs)
               ├─ fragment: Markdown                     thread: line walker (transclusion.rs)
               │                                           own-line ![[id]] → Resolver → blockquote,
-              │                                             except in code or generated text
+              │                                             except in code or generated text;
+              │                                             an attached `>` run → partial quote
               │                                           prose runs → Markdown
               ├─ splice generated blocks, sentinels → span.blyg-tk-gen, strip stray markers
               ├─ splice link anchors (or the unresolved marker) for the tokens
@@ -34,6 +35,26 @@ The thread walker leaves a line as prose when Markdown renders it as code
 (fenced or indented, at any depth: `markdown::code_lines`) or when it
 overlaps a generated TK span. Inside a scope, `![[id]]` is a generation
 source, never a quote.
+
+**Partial quotes** (spec §16.4, ported from blygger-studio 0.8.3's
+`transclusion.ts`). A `![[id]]` line followed directly (no blank line) by a
+run of `>` lines quotes a passage instead of the whole item. The run ends at
+the first line that is not a quote line, and it belongs to the directive
+even when the target does not resolve. A blank line detaches it: that is a
+whole quote followed by the author's own blockquote, as before. The
+selection is the run's Markdown (each line stripped of `>` and one
+whitespace character), rendered and flattened by `selection_text`: block
+boundaries become `\n`, whitespace inside a block collapses, empty blocks
+drop. It must be a substring of the `selection_text` of the target's
+`content_html`. If it is, the bake is `blockquote.blyg-transclusion.blyg-partial`
+(same `data-blyg-*` attributes) holding the selection's escaped plain text,
+one `<p>` per line, and the quote's `Quote::selector` carries the wire's
+`selector` (`exact`, plus up to 32 UTF-16 units of `prefix`/`suffix`).
+Otherwise the unresolved marker shows "the attached blockquote is empty" or
+"quoted passage not found in the target's version N". The provenance line
+of a partial quote reads "excerpt of vN". Provenance injection matches the
+`blyg-transclusion` class token (skipping `unresolved`), so a partial quote
+keeps later lines paired with their quotes.
 
 **`[[id]]` links** (protocol 0.3 §16.2) work in both kinds (`links.rs`, the
 Worker's `resolveInternalLinks` / `previewInternalLinks` /
@@ -99,6 +120,13 @@ pub struct RenderOpts { data_line: bool /* true */, provenance: bool /* true */,
 pub trait Resolver { fn resolve(&self, id: &str) -> Resolution; }
 pub enum Resolution { Found(Found), NotFound, Ambiguous, RssNotQuotable, ReservedVersion, Unavailable(UnresolvedReason) }
 pub struct Found { origin: Option<String>, id, version: u32, kind: ItemKind, content_html, author: Option<String>, page: Option<String> }
+
+pub struct Quote { id, version: u32, origin: Option<String>, line: usize, selector: Option<TextQuoteSelector> }
+pub struct TextQuoteSelector { exact: String, prefix: Option<String>, suffix: Option<String> }
+pub fn selection_text(html: &str) -> String;           // markdown.ts selectionText (§16.4 normalizer)
+pub fn normalize_selection(text: &str) -> String;      // markdown.ts normalizeSelection
+pub fn selection_from_quote(quote_md: &str) -> String; // transclusion.ts selectionFromQuote
+pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteSelector>;
 
 pub fn render_markdown(md: &str) -> String;           // the Worker's renderMarkdown
 pub fn studio_css() -> String;                         // tint, unresolved marker, facade styles
@@ -179,6 +207,15 @@ case is also byte-identical:
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`, `previewMedia`) | 3 | 3 | 3 |
+
+**Partial quotes are not parity-checked yet.** They follow blygger-studio
+0.8.3, but the fixtures' Worker is still on 0.7 and has no partial grammar,
+so the fixtures were not regenerated. No fixture has a directive followed
+directly by a `>` line, so none changed meaning. Unit tests ported from the
+studio's `selection.test.ts` and `partial-transclusion.test.ts` cover the
+grammar, the normalizer, the bake and the provenance line instead. When the
+Worker moves to 0.8, add `tr_partial_*` cases to `corpus.json` and
+regenerate.
 
 Every fixture also checks the unresolved directives and reasons, in order,
 and the TK error count against the Worker; thread fixtures also check the
