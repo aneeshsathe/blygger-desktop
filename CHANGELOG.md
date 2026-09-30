@@ -19,6 +19,10 @@ release workflow publishes that section as the release notes.
 - **Updating from 0.6.0 or earlier:** the in-app update works as usual. The app replaces itself where it is, so it stays `Blygger.app` on disk (Finder and Spotlight show that name) while being Burrow inside. That's expected. To get `Burrow.app`, run the one-line installer, which replaces a `Blygger.app` in the same folder (posts, settings and sign-ins carry over), or rename the app while it isn't running. A Dock shortcut to the old name may need re-adding.
 - The updater accepts a release zip named `Burrow-…` or `Blygger-…`, holding `Burrow.app` or `Blygger.app`, and prefers Burrow's. For a transition period, each release also publishes `Blygger-<version>-macos-universal.zip` and `Blygger-macos-universal.zip` (the same signed app in a folder called `Blygger.app`) so 0.6.0 and earlier can still update. The signed `SHA256SUMS` covers them too.
 
+### Fixed
+
+- Selecting text with the mouse in the reading pane and the preview works again: the selection stays until you quote it (⇧⌘D, or the new **Quote in draft** pill beside it), and dragging inside a quote no longer opens the original. ⌘C copies a selection in the reading pane. In the browser, **→ Draft** and **→ Notes** keep the page's selection, and the button reads **❝ Quote → Draft** while text is selected. In the stream, dragging over or double-clicking a post opens it where its text can be selected. The notes drawer's footer says when ⇧⌘D will quote your selection.
+
 ## [0.6.0] - 2026-09-29
 
 ### Added
