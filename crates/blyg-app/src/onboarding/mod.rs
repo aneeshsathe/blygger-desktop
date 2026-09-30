@@ -436,7 +436,7 @@ impl MainView {
                 .rounded(px(5.))
                 .border_1()
                 .border_b_2()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .text_color(p.ink)
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
@@ -454,8 +454,8 @@ impl MainView {
                 .rounded(px(8.))
                 .border_1()
                 .cursor_pointer()
-                .border_color(if primary { p.accent } else { p.line })
-                .when(primary, |d| d.text_color(p.accent))
+                .border_color(if primary { p.accent } else { p.edge() })
+                .when(primary, |d| d.text_color(p.accent_text()))
                 .hover(|s| s.border_color(p.accent))
                 .child(kbd(key))
                 .child(label)
@@ -556,9 +556,9 @@ impl MainView {
                     let free = ais::toggles_freely(kind);
                     let on = r.enabled;
                     let tone_color = match tone {
-                        ais::Tone::Good => p.green,
+                        ais::Tone::Good => p.green_text(),
                         ais::Tone::Neutral => p.muted,
-                        ais::Tone::Bad => p.warn,
+                        ais::Tone::Bad => p.warn_text(),
                     };
                     div()
                         .flex()
@@ -591,8 +591,8 @@ impl MainView {
                                 .border_1()
                                 .cursor_pointer()
                                 .text_size(px(11.5))
-                                .border_color(if on { p.accent } else { p.line })
-                                .when(on, |d| d.text_color(p.accent))
+                                .border_color(if on { p.accent } else { p.edge() })
+                                .when(on, |d| d.text_color(p.accent_text()))
                                 .hover(|s| s.border_color(p.accent))
                                 .child(if on { "On" } else { "Off" })
                                 .on_click(cx.listener(move |this, _, _, cx| {
@@ -620,7 +620,11 @@ impl MainView {
                                 .into(),
                         ))
                         .child(div().flex().flex_col().children(rows))
-                        .children(f.message.clone().map(|m| div().text_color(p.over).child(m)))
+                        .children(
+                            f.message
+                                .clone()
+                                .map(|m| div().text_color(p.over_text()).child(m)),
+                        )
                         .child(
                             div()
                                 .mt(px(4.))
@@ -663,7 +667,11 @@ impl MainView {
                              change this in Settings (⌘,)."
                                 .into(),
                         ))
-                        .children(f.message.clone().map(|m| div().text_color(p.over).child(m)))
+                        .children(
+                            f.message
+                                .clone()
+                                .map(|m| div().text_color(p.over_text()).child(m)),
+                        )
                         .child(
                             div()
                                 .mt(px(4.))
@@ -724,7 +732,7 @@ impl MainView {
             div()
                 .size(px(6.))
                 .rounded_full()
-                .bg(if *s == step { p.accent } else { p.line })
+                .bg(if *s == step { p.accent } else { p.edge() })
         });
         let footer =
             div()
@@ -780,17 +788,9 @@ impl MainView {
             }))
             .w(px(540.))
             .max_w(relative(0.92))
-            .bg(p.bg)
-            .border_1()
-            .border_color(p.line)
-            .rounded(px(12.))
-            .shadow(vec![BoxShadow {
-                color: p.shadow,
-                offset: point(px(0.), px(18.)),
-                blur_radius: px(48.),
-                spread_radius: px(-10.),
-                inset: false,
-            }])
+            // --- themes --- the theme's sheet border, radius and a shadow
+            // that shows on dark themes.
+            .map(|d| crate::theme_ext::card(d, &self.theme))
             .px(px(22.))
             .py(px(18.))
             .font_family(SharedString::from(self.prefs.ui().family))
@@ -823,7 +823,7 @@ impl MainView {
                 .absolute()
                 .inset_0()
                 .occlude()
-                .bg(p.ink.opacity(if p.dark { 0.35 } else { 0.12 }))
+                .bg(p.scrim())
                 .flex()
                 .items_center()
                 .justify_center()
@@ -881,7 +881,7 @@ impl MainView {
                 .rounded_full()
                 .border_1()
                 .cursor_pointer()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .hover(|s| s.border_color(p.accent))
                 .child(label)
         };

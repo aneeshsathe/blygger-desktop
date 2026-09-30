@@ -157,6 +157,16 @@ Colours are `#rgb`, `#rrggbb` or `#rrggbbaa`.
 When the title bar or status bar is dark, the buttons and tabs on it take
 their colour from `color-bar-ink` and `color-status-ink`.
 
+Sheets, menus, popups, fields and chips are drawn from the same colours, and
+Burrow adjusts them where a theme's choice wouldn't read there: an accent,
+warning or error colour used as text is darkened (or lightened) until it
+reaches 4.5:1 on its ground, status bar text and links against
+`color-status` too; a menu's chosen row uses `color-sel` only when body text
+reads on it (a dark selected row, meant for a dark sidebar, becomes a tint of
+the page there); borders of fields and popups are kept visible on dark
+grounds; and the veil behind a setup card always darkens. Tooltips take
+`color-toast` and `color-toast-ink`.
+
 ### Ornament slots
 
 A slot takes one ornament from the vocabulary below, optionally with colours

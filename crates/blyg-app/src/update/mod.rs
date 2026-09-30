@@ -649,5 +649,21 @@ pub fn status_text(cx: &App) -> String {
 
 /// The status bar notice, if any (no global in tests and dev builds).
 pub fn notice(cx: &App) -> Option<Notice> {
-    cx.try_global::<Updater>().and_then(|u| u.phase.notice())
+    cx.try_global::<Updater>()
+        .and_then(|u| u.phase.notice())
+        .or_else(|| cx.try_global::<DemoNotice>().map(|d| d.0.clone()))
+}
+
+/// `BLYGGER_DEMO=update` (fake mode, screenshots): a ready update's notice.
+struct DemoNotice(Notice);
+
+impl Global for DemoNotice {}
+
+pub fn demo_notice(cx: &mut App) {
+    cx.set_global(DemoNotice(Notice {
+        text: "Burrow 9.9.0 is ready".into(),
+        action: Some(("Restart to update", NoticeAction::Restart)),
+        link: Some(("What's new", "https://blyg.example.com/".into())),
+    }));
+    cx.refresh_windows();
 }

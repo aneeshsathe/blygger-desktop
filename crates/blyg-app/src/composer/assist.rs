@@ -70,6 +70,8 @@ pub struct Assist {
     editor: Entity<TextareaState>,
     backend: Arc<dyn Backend>,
     palette: Palette,
+    /// --- themes --- the interface font the popups use.
+    ui_font: &'static str,
     /// The text as of the last event, to see what an edit changed.
     last: String,
     /// The next edit is a paste: it never opens the mention popup.
@@ -125,6 +127,7 @@ impl Assist {
             editor,
             backend,
             palette,
+            ui_font: crate::prefs::UI_FONTS[0].family,
             last,
             pasting: false,
             mention: None,
@@ -141,6 +144,11 @@ impl Assist {
 
     pub fn set_palette(&mut self, p: Palette) {
         self.palette = p;
+    }
+
+    /// The interface font (the user's, or the theme's) for the popups.
+    pub fn set_ui_font(&mut self, family: &'static str) {
+        self.ui_font = family;
     }
 
     /// The host replaced the text without an event (`set_value`).
@@ -612,15 +620,17 @@ impl Assist {
 
     fn popup_card(&self) -> Div {
         let p = self.palette;
+        // --- themes --- raised on dark themes, with an edge and a shadow
+        // that show there; the chosen row is `pick()`, never a dark `sel`.
         div()
-            .bg(p.bg)
+            .bg(p.raised())
             .border_1()
-            .border_color(p.line)
+            .border_color(p.edge())
             .rounded(px(8.))
             // A shadow that falls below, never over the line above (where
             // the flagged word's underline is).
             .shadow(vec![BoxShadow {
-                color: p.shadow.opacity(0.45),
+                color: p.drop().opacity(0.6),
                 offset: point(px(0.), px(8.)),
                 blur_radius: px(16.),
                 spread_radius: px(-8.),
@@ -629,7 +639,7 @@ impl Assist {
             .p(px(4.))
             .text_size(px(13.))
             .line_height(relative(1.35))
-            .font_family(SharedString::from(crate::prefs::UI_FONTS[0].family))
+            .font_family(SharedString::from(self.ui_font))
             .text_color(p.ink)
     }
 
@@ -650,8 +660,8 @@ impl Assist {
                 .py(px(4.))
                 .rounded(px(5.))
                 .cursor_pointer()
-                .when(i == m.sel, |d| d.bg(p.sel))
-                .hover(|s| s.bg(p.sel))
+                .when(i == m.sel, |d| d.bg(p.pick()))
+                .when(i != m.sel, |d| d.hover(|s| s.bg(p.hover())))
                 .on_click(cx.listener(move |this, _, window, cx| {
                     this.pick_mention(i, window, cx);
                     cx.notify();
@@ -741,7 +751,7 @@ impl Assist {
         }
         for (i, item) in menu.items.iter().enumerate() {
             if i == guesses {
-                card = card.child(div().my(px(3.)).h(px(1.)).bg(p.line));
+                card = card.child(div().my(px(3.)).h(px(1.)).bg(p.edge()));
             }
             card = card.child(
                 div()
@@ -750,8 +760,8 @@ impl Assist {
                     .py(px(3.))
                     .rounded(px(5.))
                     .cursor_pointer()
-                    .when(i == menu.sel, |d| d.bg(p.sel))
-                    .hover(|s| s.bg(p.sel))
+                    .when(i == menu.sel, |d| d.bg(p.pick()))
+                    .when(i != menu.sel, |d| d.hover(|s| s.bg(p.hover())))
                     .when(matches!(item, MenuItem::Replace(_)), |d| {
                         d.font_weight(FontWeight::SEMIBOLD)
                     })
