@@ -182,9 +182,9 @@ cargo test -p blyg-render
 
 **Reference version.** The fixtures come from the reference Worker rebased
 onto upstream blygger-studio v0.8.3, with local patches 1–12 re-applied
-(2026-09-29). Regenerating against v0.8.3 changed one earlier fixture,
-`tr_provenance_order`, which is now a known divergence (below), and 11
-`tr_partial_*` cases were added for partial quotes. Before that, v0.7.0
+(2026-09-29). Regenerating against v0.8.3 changed none of the 180 earlier
+fixtures (once the generator hid unresolved markers from provenance; see
+below), and 11 `tr_partial_*` cases were added for partial quotes. Before that, v0.7.0
 (protocol 0.3, Worker version `3a25a1bd`, 2026-09-28) changed none of the 161
 earlier fixtures and added 15 `link_*` cases for `[[id]]`.
 Before that, the fixtures came from the reference Worker with its
@@ -206,7 +206,7 @@ case is also byte-identical:
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, partial quotes, `[[id]]` links) | 191 | 190 + 1 known divergence | 190 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, partial quotes, `[[id]]` links) | 191 | 191 | 191 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`, `previewMedia`) | 3 | 3 | 3 |
@@ -219,15 +219,14 @@ target, an unknown target (the run is still consumed), partial then whole
 studio's `selection.test.ts` and `partial-transclusion.test.ts` cover the
 normalizer and selector context as well.
 
-**Known divergence: `tr_provenance_order`.** v0.8.3's provenance pairing
-matches the `blyg-transclusion` class token and so counts the studio
-preview's unresolved markers too. When an unresolved quote comes before
-resolved ones, every provenance line lands one quote early: the marker gets
-the next quote's line, and the last quote gets none. v0.7 matched the literal
-`class="blyg-transclusion"` and skipped markers. This crate skips `unresolved`
-tags, which is the v0.7 behaviour and the correct one. The bug is preview-only,
-since publishing refuses unresolved quotes. Remove the entry when the Worker
-fixes it; the test fails once the fixture passes.
+**Provenance on the preview is the desktop's own combination.** The Worker's
+previews (`/studio/preview-thread`, the thread edit page) show no provenance.
+`injectProvenance` only ever runs on published HTML, which can't hold an
+unresolved marker. `gen_parity.mjs` composes the preview with the page's
+`injectProvenance`, as this crate does, and hides unresolved markers from it,
+as they would be absent on the page. Without that, v0.8.3's class-token
+matching counts the markers, and `tr_provenance_order` pairs each line one
+quote early. That was a generator artifact, not a Worker bug.
 
 Every fixture also checks the unresolved directives and reasons, in order,
 and the TK error count against the Worker; thread fixtures also check the

@@ -146,11 +146,18 @@ async function render(c) {
     return { html, tk: tkOut, transclusions: [], errors: linkErrors };
   }
   // studio.post("/preview-thread") + the public page's injectProvenance().
+  // The Worker never makes this combination: its previews show no provenance,
+  // and injectProvenance only ever sees published HTML, which can't hold an
+  // unresolved marker. The desktop preview makes it on purpose, so the marker
+  // is hidden from injectProvenance here, as it would be absent on the page.
   const resolved = await W.previewTransclusions(db, links.text, store.self_id, W.remapRanges(tk.inert, links));
   const preview = splice(tk.finish(resolved.html));
   const provenance = await W.transclusionProvenance(db, resolved.transclusions, store.mount);
+  const MARKER = 'class="blyg-transclusion unresolved"';
+  const HIDDEN = 'class="\u0000unresolved-marker"';
+  const injected = W.injectProvenance(preview.split(MARKER).join(HIDDEN), provenance).split(HIDDEN).join(MARKER);
   return {
-    html: W.injectProvenance(preview, provenance),
+    html: injected,
     tk: tkOut,
     transclusions: resolved.transclusions,
     errors: [...resolved.errors, ...linkErrors],

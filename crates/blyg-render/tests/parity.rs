@@ -10,11 +10,7 @@ use serde_json::Value;
 
 /// Fixtures whose output is known to differ, with the reason. Keep this
 /// list honest and short; `docs/RENDER.md` explains each entry.
-const KNOWN_DIVERGENCES: &[(&str, &str)] = &[(
-    "tr_provenance_order",
-    "Worker 0.8.3 counts unresolved markers when pairing provenance lines, \
-     so each line lands one quote early; we skip them (docs/RENDER.md)",
-)];
+const KNOWN_DIVERGENCES: &[(&str, &str)] = &[];
 
 fn load_fixtures() -> Vec<Value> {
     let dir = fixtures_dir().join("parity");
