@@ -984,7 +984,7 @@ impl MainView {
     /// An empty list's message, under the theme's `empty.art` (a lit burrow
     /// room, a compass rose…) as the empty posts list shows it.
     fn empty_note(&self, s: impl Into<SharedString>) -> AnyElement {
-        let Some(art) = crate::ornament::empty_art(&self.theme) else {
+        let Some(art) = crate::ornament::empty_art_on(&self.theme, self.palette.bg) else {
             return self.muted_note(s);
         };
         div()

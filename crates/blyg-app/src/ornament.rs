@@ -906,10 +906,15 @@ pub fn selected_surface<E: Styled>(t: &Theme, d: E, sel: Hsla) -> E {
                 spread_radius: px(0.),
                 inset: false,
             }]),
-        Kind::InsetBar => d
-            .bg(p.sel)
-            .border_l(px(3.))
-            .border_color(solid(o, 0, p.accent)),
+        // An inset shadow, not a border: the row's own hairline (a list on
+        // the page has one along its foot) keeps its colour.
+        Kind::InsetBar => d.bg(p.sel).shadow(vec![BoxShadow {
+            color: solid(o, 0, p.accent),
+            offset: point(px(3.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(0.),
+            inset: true,
+        }]),
         _ => d.bg(p.sel),
     }
 }
@@ -1290,8 +1295,15 @@ pub fn marker(t: &Theme, slot: Slot, color: Hsla, chrome_font: &'static str) -> 
     }
 }
 
-/// `empty.art`: a small picture above an empty list's message.
+/// `empty.art`: a small picture above an empty list's message (on the
+/// sidebar).
 pub fn empty_art(t: &Theme) -> Option<AnyElement> {
+    empty_art_on(t, t.palette.side)
+}
+
+/// `empty.art` on `ground` (the page, for the reading side's empty states):
+/// waves are drawn on it rather than on a tile of the sidebar.
+pub fn empty_art_on(t: &Theme, ground: Hsla) -> Option<AnyElement> {
     let o = t.slot(Slot::EmptyArt).clone();
     let p = t.palette;
     let s = 72.;
@@ -1330,7 +1342,7 @@ pub fn empty_art(t: &Theme) -> Option<AnyElement> {
         })
         .into_any_element(),
         Kind::Seigaiha => {
-            let paper = p.side;
+            let paper = ground;
             painter(move |b, w, _| {
                 paint_seigaiha(
                     &Ornament {
