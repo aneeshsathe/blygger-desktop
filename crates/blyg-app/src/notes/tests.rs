@@ -123,6 +123,42 @@ fn pages_and_titles() {
     assert!(super::SELECTION_JS.contains("window.getSelection()"));
 }
 
+/// A passage selected in the notes, for universal quoting: markers dropped,
+/// and the source of the quote it sits in (a note has none of its own).
+#[test]
+fn a_notes_passage_keeps_its_quotes_source() {
+    use super::notes_passage;
+    let text = "# Reading notes\n\nMy own thought.\n\n\
+                > High water at 6:12\n>\n> — [Tide tables \\[2026\\]](https://blyg.example.com/f/abc/)\n\nMore.";
+    let at = |s: &str| {
+        let i = text.find(s).unwrap();
+        i..i + s.len()
+    };
+    // Own words: no link.
+    assert_eq!(
+        notes_passage(text, at("own thought")),
+        Some(("own thought".into(), None))
+    );
+    // Inside a quote from the browser: the passage and that page.
+    let want = Some((
+        "Tide tables [2026]".to_string(),
+        "https://blyg.example.com/f/abc/".to_string(),
+    ));
+    assert_eq!(
+        notes_passage(text, at("water at")),
+        Some(("water at".into(), want.clone()))
+    );
+    // The whole quote selected: markers and the source line dropped.
+    let whole = at(
+        "> High water at 6:12\n>\n> — [Tide tables \\[2026\\]](https://blyg.example.com/f/abc/)",
+    );
+    let (p, link) = notes_passage(text, whole).unwrap();
+    assert_eq!(p.trim(), "High water at 6:12");
+    assert_eq!(link, want);
+    // Nothing selected.
+    assert_eq!(notes_passage(text, 3..3), None);
+}
+
 // ------------------------------------------------------------ the drawer
 
 mod ui {
@@ -687,5 +723,202 @@ mod ui {
         cx.simulate_keystrokes("escape");
         settle(cx);
         view.read_with(cx, |v, _| assert!(!v.browser.open));
+    }
+
+    // ------------------------------------------------ universal quoting
+
+    fn browse(view: &Entity<MainView>, url: &str, cx: &mut VisualTestContext) {
+        view.update_in(cx, |v, window, cx| {
+            v.open_url_in_app(url, crate::app::browser::OpenMode::Slide, window, cx);
+        });
+        settle(cx);
+        view.update_in(cx, |v, _, cx| v.browser_refresh_state(cx));
+    }
+
+    fn quote(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+        view.update_in(cx, |v, window, cx| {
+            v.quote_to_draft(&crate::app::notes::QuoteToDraft, window, cx)
+        });
+        settle(cx);
+    }
+
+    fn editor_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+        view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string())
+    }
+
+    /// A draft being written, with the caret at `caret`.
+    fn writing(
+        view: &Entity<MainView>,
+        fake: &FakeBackend,
+        kind: Kind,
+        text: &str,
+        caret: usize,
+        cx: &mut VisualTestContext,
+    ) -> blyg_core::LocalId {
+        let id = fake.create_draft(kind, text).unwrap();
+        view.update_in(cx, |v, window, cx| {
+            v.open(&id, window, cx);
+            v.editor
+                .update(cx, |s, cx| s.set_selected_range(caret..caret, cx));
+        });
+        settle(cx);
+        id
+    }
+
+    /// A passage on a web page, with no draft open: a new fragment holding
+    /// the quote and the page's link. With nothing selected: nothing made.
+    #[gpui_kit::test]
+    fn a_web_passage_starts_a_draft_with_its_link(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        view.update(cx, |v, _| v.current = None);
+        browse(&view, "https://example.com/tides", cx);
+        let before = fake.items().len();
+        quote(&view, cx);
+        assert_eq!(fake.items().len(), before, "nothing selected, nothing made");
+        log.borrow_mut().selection = "High water\n\nat 6:12".into();
+        quote(&view, cx);
+        let want = "> High water\n>\n> at 6:12\n>\n> — [Tide tables \\[2026\\]](https://example.com/tides)\n\n";
+        let made = fake
+            .items()
+            .into_iter()
+            .find(|i| i.content_md == want)
+            .expect("a new draft with the quote");
+        assert_eq!(made.kind, Kind::Fragment);
+        assert_eq!(made.status, Status::Draft);
+        assert!(made.stub_of.is_none());
+        assert_eq!(editor_text(&view, cx), want);
+        assert!(
+            !view.read_with(cx, |v, _| v.browser.open),
+            "back to the draft"
+        );
+    }
+
+    /// A passage on a held blyg post's page, into the thread being written:
+    /// the partial transclusion, at the caret.
+    #[gpui_kit::test]
+    fn a_blyg_passage_goes_in_the_thread_at_the_caret(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        let id = writing(&view, &fake, Kind::Thread, "Before.\n\nAfter.", 7, cx);
+        browse(&view, &format!("{LIN}t/{LIN_GARDENS}/"), cx);
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        quote(&view, cx);
+        let want = format!("Before.\n\n![[{LIN_GARDENS}]]\n> Gardens, not streams\n\nAfter.");
+        assert_eq!(editor_text(&view, cx), want);
+        assert_eq!(fake.item(&id).unwrap().content_md, want, "saved");
+        // Into a fragment the same passage can't transclude: the plain form.
+        writing(&view, &fake, Kind::Fragment, "", 0, cx);
+        browse(&view, &format!("{LIN}t/{LIN_GARDENS}/"), cx);
+        quote(&view, cx);
+        let text = editor_text(&view, cx);
+        assert!(
+            text.starts_with("> Gardens, not streams\n>\n> — [Tide tables")
+                && !text.contains("![["),
+            "{text}"
+        );
+    }
+
+    /// The reading pane's post: its passage, partial into a new thread.
+    #[gpui_kit::test]
+    fn a_reader_passage_starts_a_thread(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        view.update(cx, |v, _| v.current = None);
+        reading(&view, ReadMode::Reader, cx);
+        let key = key_of(&view, LIN_GARDENS, cx);
+        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+        settle(cx);
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        quote(&view, cx);
+        let want = format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n");
+        let made = fake
+            .items()
+            .into_iter()
+            .find(|i| i.content_md == want)
+            .expect("a thread with the partial quote");
+        assert_eq!(made.kind, Kind::Thread);
+        assert!(made.stub_of.is_none(), "a quote, not a reply");
+    }
+
+    /// Reply with a passage selected in the reading pane: a partial stub
+    /// (studio 0.8.1). A passage that isn't in the post makes nothing.
+    #[gpui_kit::test]
+    fn reply_with_a_selection_makes_a_partial_stub(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        reading(&view, ReadMode::Reader, cx);
+        let key = key_of(&view, LIN_GARDENS, cx);
+        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+        settle(cx);
+        let stubs = |fake: &FakeBackend| {
+            fake.items()
+                .into_iter()
+                .filter(|i| i.stub_of.is_some())
+                .collect::<Vec<_>>()
+        };
+        let before = stubs(&fake).len();
+        log.borrow_mut().selection = "Not in the post".into();
+        view.update_in(cx, |v, window, cx| {
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
+        assert_eq!(stubs(&fake).len(), before, "refused");
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        view.update_in(cx, |v, window, cx| {
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
+        let stub = stubs(&fake)
+            .into_iter()
+            .find(|i| i.stub_of.as_ref().unwrap().id == LIN_GARDENS)
+            .expect("a stub");
+        assert_eq!(
+            stub.content_md,
+            format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n")
+        );
+        assert_eq!(stub.kind, Kind::Thread);
+    }
+
+    /// Your notes: a passage from a quote there keeps that quote's link;
+    /// your own words go without one.
+    #[gpui_kit::test]
+    fn a_notes_passage_keeps_the_link_it_was_quoted_with(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        let id = writing(&view, &fake, Kind::Thread, "Draft.", 6, cx);
+        browse(&view, "https://example.com/tides", cx);
+        log.borrow_mut().selection = "High water at 6:12".into();
+        view.update_in(cx, |v, window, cx| v.browser_send_to_notes(window, cx));
+        settle(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.close_browser(window, cx);
+            v.open_notes(window, cx);
+        });
+        settle(cx);
+        let select = |view: &Entity<MainView>, s: &str, cx: &mut VisualTestContext| {
+            view.update_in(cx, |v, _, cx| {
+                let editor = v.notes.editor.clone().unwrap();
+                let at = editor.read(cx).value().find(s).expect("in the notes");
+                editor.update(cx, |e, cx| e.set_selected_range(at..at + s.len(), cx));
+            });
+        };
+        select(&view, "water at", cx);
+        quote(&view, cx);
+        let text = fake.item(&id).unwrap().content_md;
+        assert!(
+            text.contains("> water at\n>\n> — [Tide tables \\[2026\\]](https://example.com/tides)"),
+            "{text}"
+        );
+        // Own words in the notes: quoted with no link.
+        view.update_in(cx, |v, window, cx| {
+            let editor = v.notes.editor.clone().unwrap();
+            let end = editor.read(cx).value().len();
+            editor.update(cx, |e, cx| {
+                e.set_selected_range(end..end, cx);
+                e.replace("My own idea.".to_string(), window, cx);
+            });
+            v.open_notes(window, cx);
+        });
+        settle(cx);
+        select(&view, "own idea", cx);
+        quote(&view, cx);
+        let text = fake.item(&id).unwrap().content_md;
+        assert!(text.contains("\n\n> own idea\n\n"), "{text}");
     }
 }

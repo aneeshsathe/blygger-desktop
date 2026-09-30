@@ -314,6 +314,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action("Versions…", app::reading::ShowVersions),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
+                MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 // --- delete & withdraw ---
                 MenuItem::separator(),
                 MenuItem::action("Delete Draft…", app::discard::DeleteDraft),

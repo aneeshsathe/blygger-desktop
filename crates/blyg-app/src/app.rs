@@ -1943,7 +1943,7 @@ impl MainView {
         let p = self.palette;
         let item = &self.list.results()[ix];
         let selected = self.list.selected() == Some(&item.local_id);
-        let title: SharedString = item.title().to_string().into();
+        let title: SharedString = vm::item_title(item).into();
         let highlights: Vec<_> = vm::highlight_ranges(&title, self.list.query())
             .into_iter()
             .map(|r| {
