@@ -69,7 +69,7 @@ Different parts of the project are under different licenses:
 | What | License |
 |---|---|
 | Source code (everything not listed below) | [MIT](LICENSE) |
-| Documentation, design mockups and screenshots (`docs/`), and the icon and artwork (`packaging/icon.svg`, `packaging/Burrow.icns`) | [CC BY 4.0](LICENSE-docs). Reuse is fine with credit to "Blygger Desktop contributors". |
+| Documentation, the docs site (`site/`), design mockups and screenshots (`docs/`), and the icon and artwork (`packaging/icon.svg`, `packaging/Burrow.icns`) | [CC BY 4.0](LICENSE-docs). Reuse is fine with credit to "Blygger Desktop contributors". |
 | Bundled fonts (`crates/blyg-app/assets/fonts/`) | Their own licenses: Literata, Inter, Source Serif 4 and iA Writer Quattro are under the SIL Open Font License 1.1, and ET Book is under MIT |
 
 The license texts ship inside the app bundle. See

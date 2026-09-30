@@ -41,7 +41,7 @@ release workflow publishes that section as the release notes.
 ### Changed
 
 - The preview matches blygger-studio 0.8.3.
-- Titles never come from quoted text. A reply with nothing of its own yet shows as "In response to <host>".
+- Titles never come from quoted text. A reply with nothing of its own yet shows as "In response to `<host>`".
 
 ## [0.5.1] - 2026-09-28
 
@@ -91,7 +91,7 @@ release workflow publishes that section as the release notes.
   stream too.
 - **Quotes open the post they quote.** Clicking a quote's text, in the stream
   or the reader, opens the original post beside it, at the quoted version
-  when that version is pinned. The footer reads "quoted from <name> · v2 ·
+  when that version is pinned. The footer reads "quoted from `<name>` · v2 ·
   open original", and the name still opens the profile. "↳ stub of …" and
   "⑂ forked from …" work the same way. A post you don't follow is fetched
   from its author's public files, without your token, with a Subscribe
