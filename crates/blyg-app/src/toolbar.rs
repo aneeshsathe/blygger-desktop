@@ -766,4 +766,4 @@ impl MainView {
 
 #[cfg(test)]
 #[path = "toolbar_tests.rs"]
-mod tests;
+pub(crate) mod tests;

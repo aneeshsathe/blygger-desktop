@@ -312,7 +312,7 @@ fn setup<'a>(
 
 /// Scroll the Settings sheet until `selector` is inside the window, so a
 /// click lands on it whatever the runner's window height and font metrics.
-fn scroll_into_view(cx: &mut VisualTestContext, selector: &'static str) {
+pub(crate) fn scroll_into_view(cx: &mut VisualTestContext, selector: &'static str) {
     for _ in 0..40 {
         let b = cx
             .debug_bounds(selector)
