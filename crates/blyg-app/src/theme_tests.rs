@@ -116,7 +116,7 @@ fn settings_lists_themes_and_writes_the_choice(cx: &mut TestAppContext) {
         assert!(cx.debug_bounds(sel).is_some(), "{sel} isn't in Settings");
     }
     crate::app::toolbar::tests::scroll_into_view(cx, "th-aizome");
-    let b = cx.debug_bounds("th-aizome").expect("aizome chip");
+    let b = crate::app::toolbar::tests::settled_bounds(cx, "th-aizome");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
