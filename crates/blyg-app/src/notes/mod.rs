@@ -28,6 +28,7 @@ use blyg_core::LocalId;
 
 pub(crate) use drawer::NotesPark;
 pub use drawer::{SELECTION_JS, ToggleNotes}; // --- onboarding ---
+pub(crate) use quote::QuoteFrom;
 pub use quote::QuoteToDraft;
 
 use crate::vm;

@@ -130,6 +130,14 @@ pub struct Browser {
     shown: u64,
     viewport_w: Pixels,
     poll: Option<Task<()>>,
+    /// --- selection --- The page has text selected (checked while it has
+    /// the keyboard, which it has once it's been clicked): "→ Draft" says so.
+    pub(crate) selected: bool,
+    sel_watch: Option<Task<()>>,
+    /// A press on "→ Notes" or "→ Draft": the pane's own mouse-down leaves
+    /// the page its keyboard this once, or WebKit would drop the page's
+    /// selection before the click reads it.
+    keep_keyboard: bool,
     teardown: Option<Task<()>>,
     dark: Option<bool>,
     /// --- onboarding --- The tutorial's sample page is up: what it replaced
@@ -170,6 +178,9 @@ impl Browser {
             shown: 0,
             viewport_w: px(0.),
             poll: None,
+            selected: false,
+            sel_watch: None,
+            keep_keyboard: false,
             teardown: None,
             dark: None,
             tour: None,
@@ -361,6 +372,7 @@ impl MainView {
         if self.browser.focus.is_none() {
             self.browser.focus = Some(cx.focus_handle());
         }
+        self.browser_watch_selection(cx); // --- selection ---
         if self.browser.address.is_none() {
             let input = cx.new(|cx| InputState::new(window, cx).placeholder("Address"));
             self._subs.push(cx.subscribe_in(
@@ -476,6 +488,67 @@ impl MainView {
         #[cfg(any(not(target_os = "macos"), test))]
         {
             let _ = (data_dir, cx);
+        }
+    }
+
+    /// --- selection --- While the pane is open, look every so often at
+    /// whether the page has text selected, so "→ Draft" can say it will
+    /// quote it. The page has no bridge to the app (see `surface`), so it
+    /// can't say so itself; a selection can only be made while the page has
+    /// the keyboard, and WebKit drops it when the page loses it.
+    fn browser_watch_selection(&mut self, cx: &mut Context<Self>) {
+        if self.browser.sel_watch.is_some() {
+            return;
+        }
+        self.browser.sel_watch = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(400))
+                    .await;
+                let more = this
+                    .update(cx, |v, cx| {
+                        if !v.browser.open {
+                            v.browser_note_selection(false, cx);
+                            v.browser.sel_watch = None;
+                            return false;
+                        }
+                        v.browser_check_selection(cx);
+                        true
+                    })
+                    .unwrap_or(false);
+                if !more {
+                    break;
+                }
+            }
+        }));
+    }
+
+    fn browser_check_selection(&mut self, cx: &mut Context<Self>) {
+        let page = self
+            .browser
+            .with(|s| s.page_has_keyboard())
+            .unwrap_or(false);
+        if !page {
+            return self.browser_note_selection(false, cx);
+        }
+        let (tx, rx) = async_channel::bounded::<String>(1);
+        if !self.browser.selection(tx) {
+            return self.browser_note_selection(false, cx);
+        }
+        cx.spawn(async move |this, cx| {
+            let text = rx.recv().await.unwrap_or_default();
+            let _ = this.update(cx, |v, cx| {
+                v.browser_note_selection(!text.trim().is_empty(), cx)
+            });
+        })
+        .detach();
+    }
+
+    /// The page has (or no longer has) a selection.
+    pub(crate) fn browser_note_selection(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.browser.selected != on {
+            self.browser.selected = on;
+            cx.notify();
         }
     }
 
@@ -897,6 +970,9 @@ impl MainView {
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(|this, _, _, _| {
+                            if std::mem::take(&mut this.browser.keep_keyboard) {
+                                return; // --- selection ---
+                            }
                             this.browser.with(|s| s.focus_parent());
                         }),
                     )
@@ -937,6 +1013,13 @@ impl MainView {
 
     fn render_browser_chrome(&self, p: &Palette, cx: &mut Context<Self>) -> impl IntoElement {
         let b = &self.browser;
+        // --- selection --- See `Browser::keep_keyboard` (a child's
+        // mouse-down runs before the pane's).
+        let keep_selection = || {
+            cx.listener(|this: &mut MainView, _: &MouseDownEvent, _, _| {
+                this.browser.keep_keyboard = true;
+            })
+        };
         let pg = &b.page;
         let button = |id: &'static str, label: &'static str, enabled: bool, tip: &'static str| {
             div()
@@ -1083,6 +1166,7 @@ impl MainView {
                     has_page,
                     "Add [title](url) to your notes (a selection on the page is quoted)  ⇧⌘N",
                 )
+                .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(
                     cx.listener(|this, _, window, cx| this.browser_send_to_notes(window, cx)),
                 ),
@@ -1090,12 +1174,20 @@ impl MainView {
             .child(
                 button(
                     "browser-draft",
-                    "→ Draft",
+                    if b.selected {
+                        "❝ Quote → Draft"
+                    } else {
+                        "→ Draft"
+                    },
                     has_page,
                     "Quote the passage selected on the page in your draft, with the page's link  ⇧⌘D",
                 )
+                .when(b.selected && has_page, |d| {
+                    d.text_color(p.accent).bg(p.sel.opacity(0.6))
+                })
+                .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(cx.listener(|this, _, window, cx| {
-                    this.quote_to_draft(&crate::app::notes::QuoteToDraft, window, cx)
+                    this.quote_from(Some(crate::app::notes::QuoteFrom::Browser), window, cx)
                 })),
             )
             .child(

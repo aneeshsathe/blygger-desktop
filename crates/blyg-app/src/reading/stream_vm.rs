@@ -304,6 +304,38 @@ pub fn quote_ref(
     (origin, version)
 }
 
+// ---------------------------------------------------------------- clicks
+
+/// How far the pointer may move between press and release for a click
+/// still to be a click (logical pixels).
+pub const DRAG_SLOP: f32 = 6.0;
+
+/// What a mouse click on a post in the stream does. The stream is drawn
+/// natively and its text can't be selected, so the gestures that mean "I
+/// want this text" open the post in the side pane, where it can be.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostClick {
+    /// A plain click: select the post.
+    Select,
+    /// A double-click: open it in the side pane (as ⏎ does).
+    Open,
+    /// A press-and-drag, the way text is selected: open it in the side
+    /// pane and say that's where to select.
+    OpenToSelect,
+}
+
+/// A click that moved (`dx`, `dy`) between press and release, the
+/// `clicks`-th in a row.
+pub fn post_click(dx: f32, dy: f32, clicks: usize) -> PostClick {
+    if dx.hypot(dy) > DRAG_SLOP {
+        PostClick::OpenToSelect
+    } else if clicks >= 2 {
+        PostClick::Open
+    } else {
+        PostClick::Select
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -311,6 +343,19 @@ mod tests {
 
     fn k(s: &str) -> Key {
         ("sub".into(), s.into())
+    }
+
+    #[test]
+    fn a_drag_or_a_double_click_opens_the_post_to_select_in() {
+        assert_eq!(post_click(0., 0., 1), PostClick::Select);
+        assert_eq!(post_click(3., -4., 1), PostClick::Select, "a shaky click");
+        assert_eq!(post_click(1., 0., 2), PostClick::Open);
+        assert_eq!(post_click(40., 2., 1), PostClick::OpenToSelect);
+        assert_eq!(
+            post_click(0., 12., 2),
+            PostClick::OpenToSelect,
+            "a double-click-drag selects words"
+        );
     }
 
     #[test]

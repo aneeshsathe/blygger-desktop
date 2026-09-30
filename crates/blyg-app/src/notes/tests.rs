@@ -187,6 +187,10 @@ mod ui {
         browser_loads: Vec<String>,
         reader_frames: Vec<Bounds<Pixels>>,
         reader_visible: bool,
+        /// Scripts run in the reader's page.
+        reader_evals: Vec<String>,
+        /// The browser's page has the keyboard (it was clicked).
+        page_keyboard: bool,
     }
 
     struct Browser(Rc<RefCell<Log>>);
@@ -217,7 +221,16 @@ mod ui {
             }
         }
         fn refresh_blocking(&mut self) {}
-        fn focus_parent(&mut self) {}
+        /// As WebKit does: a page that loses the keyboard loses its
+        /// selection.
+        fn focus_parent(&mut self) {
+            let mut l = self.0.borrow_mut();
+            l.page_keyboard = false;
+            l.selection.clear();
+        }
+        fn page_has_keyboard(&self) -> bool {
+            self.0.borrow().page_keyboard
+        }
         fn selection(&mut self, reply: async_channel::Sender<String>) {
             let _ = reply.try_send(self.0.borrow().selection.clone());
         }
@@ -233,7 +246,9 @@ mod ui {
             self.0.borrow_mut().reader_visible = v;
         }
         fn load(&mut self, _: &str) {}
-        fn eval(&mut self, _: &str) {}
+        fn eval(&mut self, js: &str) {
+            self.0.borrow_mut().reader_evals.push(js.to_string());
+        }
         fn focus_parent(&mut self) {}
         fn set_dark(&mut self, _: bool) {}
         fn selection(&mut self, reply: async_channel::Sender<String>) {
@@ -920,5 +935,262 @@ mod ui {
         quote(&view, cx);
         let text = fake.item(&id).unwrap().content_md;
         assert!(text.contains("\n\n> own idea\n\n"), "{text}");
+    }
+
+    // ------------------------------------------------ selecting with the mouse
+
+    fn reader_event(
+        view: &Entity<MainView>,
+        ev: webview::SurfaceEvent,
+        cx: &mut VisualTestContext,
+    ) {
+        view.update_in(cx, |v, window, cx| v.reader_event(ev, window, cx));
+        settle(cx);
+    }
+
+    fn open_in_reader(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
+        if view.read_with(cx, |v, _| v.reading.view != View::Reading) {
+            reading(view, ReadMode::Reader, cx);
+        }
+        let key = key_of(view, id, cx);
+        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+        settle(cx);
+    }
+
+    /// The reader's page gets the pill by a selection once it's loaded:
+    /// with "Reply with this" for a blyg post, without it for a feed post.
+    #[gpui_kit::test]
+    fn the_reader_turns_on_the_selection_pill(cx: &mut TestAppContext) {
+        let (view, _, log, cx) = setup(cx);
+        open_in_reader(&view, LIN_GARDENS, cx);
+        reader_event(&view, webview::SurfaceEvent::Ready, cx);
+        assert!(
+            log.borrow()
+                .reader_evals
+                .contains(&webview::selection_ui_js(true)),
+            "{:?}",
+            log.borrow().reader_evals
+        );
+        let feed = view.read_with(cx, |v, _| {
+            v.reading
+                .rows
+                .iter()
+                .find(|r| r.subscription_id == "sub-omar")
+                .map(|r| r.remote_id.clone())
+                .expect("a feed post")
+        });
+        open_in_reader(&view, &feed, cx);
+        log.borrow_mut().reader_evals.clear();
+        reader_event(&view, webview::SurfaceEvent::Ready, cx);
+        assert_eq!(
+            log.borrow().reader_evals,
+            vec![webview::selection_ui_js(false)]
+        );
+        // Not on your own post (Posts shows it here too).
+        view.update_in(cx, |v, window, cx| v.show_view(View::Posts, window, cx));
+        settle(cx);
+        assert_eq!(view.read_with(cx, |v, _| v.reader_selection_ui()), None);
+    }
+
+    /// The pill's "Quote in draft": the passage, partial, into a new
+    /// thread. An empty selection makes nothing.
+    #[gpui_kit::test]
+    fn the_pill_quotes_the_selection(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        view.update(cx, |v, _| v.current = None);
+        open_in_reader(&view, LIN_GARDENS, cx);
+        let before = fake.items().len();
+        reader_event(&view, webview::SurfaceEvent::QuoteSelection, cx);
+        assert_eq!(fake.items().len(), before, "nothing selected, nothing made");
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        reader_event(&view, webview::SurfaceEvent::QuoteSelection, cx);
+        let want = format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n");
+        assert!(
+            fake.items().iter().any(|i| i.content_md == want),
+            "a thread with the partial quote"
+        );
+    }
+
+    /// The pill quotes the post even while the notes drawer has the
+    /// keyboard and a selection of its own (⇧⌘D would take the notes').
+    #[gpui_kit::test]
+    fn the_pill_quotes_the_post_not_the_notes(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        let id = writing(&view, &fake, Kind::Thread, "Draft.", 6, cx);
+        open_in_reader(&view, LIN_GARDENS, cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_notes(window, cx);
+            let editor = v.notes.editor.clone().unwrap();
+            editor.update(cx, |e, cx| {
+                e.replace("A thought of mine.".to_string(), window, cx);
+                e.set_selected_range(2..9, cx);
+            });
+        });
+        settle(cx);
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        reader_event(&view, webview::SurfaceEvent::QuoteSelection, cx);
+        let text = fake.item(&id).unwrap().content_md;
+        assert!(text.contains("> Gardens, not streams"), "{text}");
+        assert!(!text.contains("thought"), "{text}");
+    }
+
+    /// The pill's "Reply with this": a partial stub, as the Reply action.
+    #[gpui_kit::test]
+    fn the_pill_replies_with_the_selection(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        open_in_reader(&view, LIN_GARDENS, cx);
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        reader_event(&view, webview::SurfaceEvent::ReplySelection, cx);
+        let stub = fake
+            .items()
+            .into_iter()
+            .find(|i| i.stub_of.as_ref().is_some_and(|s| s.id == LIN_GARDENS))
+            .expect("a stub");
+        assert_eq!(
+            stub.content_md,
+            format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n")
+        );
+    }
+
+    /// ⌘C with the keyboard on the list copies the post's selection (the
+    /// page says it has one); with none, the clipboard is left alone.
+    #[gpui_kit::test]
+    fn copy_takes_the_posts_selection(cx: &mut TestAppContext) {
+        use gpui_kit::ClipboardItem;
+        use gpui_kit::base::input::Copy;
+        let (view, _, log, cx) = setup(cx);
+        open_in_reader(&view, LIN_GARDENS, cx);
+        cx.write_to_clipboard(ClipboardItem::new_string("before".into()));
+        log.borrow_mut().selection = "Gardens, not streams".into();
+        cx.dispatch_action(Copy);
+        settle(cx);
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|c| c.text()).as_deref(),
+            Some("before"),
+            "the page didn't say it has a selection"
+        );
+        reader_event(&view, webview::SurfaceEvent::Selected(true), cx);
+        cx.dispatch_action(Copy);
+        settle(cx);
+        assert_eq!(
+            cx.read_from_clipboard().and_then(|c| c.text()).as_deref(),
+            Some("Gardens, not streams")
+        );
+    }
+
+    /// "→ Draft" in the browser keeps the page's keyboard, so its
+    /// selection is still there when the click reads it; any other click
+    /// on the chrome gives the keyboard back (and WebKit drops it).
+    #[gpui_kit::test]
+    fn the_draft_button_keeps_the_pages_selection(cx: &mut TestAppContext) {
+        let (view, fake, log, cx) = setup(cx);
+        let id = writing(&view, &fake, Kind::Fragment, "", 0, cx);
+        browse(&view, "https://example.com/tides", cx);
+        // The pane has slid in.
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(300));
+        settle(cx);
+        {
+            let mut l = log.borrow_mut();
+            l.page_keyboard = true;
+            l.selection = "High water at 6:12".into();
+        }
+        let back = cx.debug_bounds("browser-back").expect("chrome");
+        cx.simulate_click(back.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        assert!(log.borrow().selection.is_empty(), "a chrome click drops it");
+        {
+            let mut l = log.borrow_mut();
+            l.page_keyboard = true;
+            l.selection = "High water at 6:12".into();
+        }
+        let draft = cx.debug_bounds("browser-draft").expect("→ Draft");
+        cx.simulate_click(draft.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        let text = fake.item(&id).unwrap().content_md;
+        assert!(
+            text.starts_with("> High water at 6:12\n>\n> — [Tide tables"),
+            "{text}"
+        );
+    }
+
+    /// "→ Draft" says when there's a selection to quote (the pane looks
+    /// while the page has the keyboard).
+    #[gpui_kit::test]
+    fn the_draft_button_notices_a_selection(cx: &mut TestAppContext) {
+        let (view, _, log, cx) = setup(cx);
+        browse(&view, "https://example.com/tides", cx);
+        let selected = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(450));
+            settle(cx);
+            view.read_with(cx, |v, _| v.browser.selected)
+        };
+        log.borrow_mut().selection = "High water".into();
+        assert!(!selected(&view, cx), "the page doesn't have the keyboard");
+        log.borrow_mut().page_keyboard = true;
+        assert!(selected(&view, cx));
+        log.borrow_mut().selection.clear();
+        assert!(!selected(&view, cx));
+    }
+
+    /// The drawer's footer says how to quote a passage selected in the
+    /// notes, and a click on it does.
+    #[gpui_kit::test]
+    fn the_notes_footer_offers_to_quote_the_selection(cx: &mut TestAppContext) {
+        let (view, fake, _, cx) = setup(cx);
+        let id = writing(&view, &fake, Kind::Thread, "Draft.", 6, cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_notes(window, cx);
+            let editor = v.notes.editor.clone().unwrap();
+            editor.update(cx, |e, cx| {
+                e.replace("An idea to keep.".to_string(), window, cx)
+            });
+        });
+        settle(cx);
+        assert!(
+            cx.debug_bounds("notes-quote-selection").is_none(),
+            "nothing selected"
+        );
+        view.update_in(cx, |v, _, cx| {
+            let editor = v.notes.editor.clone().unwrap();
+            let at = editor.read(cx).value().find("idea").unwrap();
+            editor.update(cx, |e, cx| e.set_selected_range(at..at + 4, cx));
+            cx.notify();
+        });
+        settle(cx);
+        let hint = cx
+            .debug_bounds("notes-quote-selection")
+            .expect("the footer's hint");
+        cx.simulate_click(hint.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        let text = fake.item(&id).unwrap().content_md;
+        assert!(text.contains("> idea"), "{text}");
+    }
+
+    /// A drag over a post in the stream (its text can't be selected there)
+    /// opens it in the side pane, where it can; so does a double-click.
+    #[gpui_kit::test]
+    fn a_drag_in_the_stream_opens_the_post_to_select_in(cx: &mut TestAppContext) {
+        use crate::app::reading::stream_vm::PostClick;
+        let (view, _, _, cx) = setup(cx);
+        reading(&view, ReadMode::Stream, cx);
+        let key = key_of(&view, LIN_GARDENS, cx);
+        let opened = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+            view.read_with(cx, |v, _| v.reading.opened.as_ref().map(|o| o.key.clone()))
+        };
+        let click = |view: &Entity<MainView>, c: PostClick, cx: &mut VisualTestContext| {
+            let k = key.clone();
+            view.update_in(cx, |v, window, cx| v.stream_post_click(k, c, window, cx));
+            settle(cx);
+        };
+        click(&view, PostClick::Select, cx);
+        assert_eq!(opened(&view, cx), None, "a click selects");
+        click(&view, PostClick::OpenToSelect, cx);
+        assert_eq!(opened(&view, cx), Some(key.clone()));
+        view.update_in(cx, |v, window, cx| v.close_stream_pane(window, cx));
+        settle(cx);
+        click(&view, PostClick::Open, cx);
+        assert_eq!(opened(&view, cx), Some(key.clone()));
     }
 }

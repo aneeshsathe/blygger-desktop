@@ -5,8 +5,8 @@ use std::time::Duration;
 
 use blyg_core::{Kind, LocalId, Promote, ReadingItem, Status, SubscriptionKind};
 use gpui_kit::base::input::{
-    Enter, Escape, IndentInline, InputEditorStyle, InputEvent, MoveDown, MoveUp, Paste, Textarea,
-    TextareaState,
+    Copy as CopyText, Enter, Escape, IndentInline, InputEditorStyle, InputEvent, MoveDown, MoveUp,
+    Paste, Textarea, TextareaState,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -53,6 +53,9 @@ pub(crate) enum Fallback {
     Block(String),
 }
 
+/// The footer while a passage is selected in the notes (a click quotes it).
+pub const QUOTE_HINT: &str = "⇧⌘D quotes the selection in your draft";
+
 /// The script that reads the selection (the result comes back as JSON).
 pub const SELECTION_JS: &str =
     "(function(){var s=window.getSelection();return s?String(s).slice(0,4000):\"\"})()";
@@ -62,6 +65,29 @@ impl MainView {
     pub(crate) fn notes_actions(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
         d.on_action(cx.listener(Self::toggle_notes))
             .on_action(cx.listener(Self::quote_to_draft))
+            // --- selection --- ⌘C with a passage selected in the reading
+            // pane's post while the keyboard is on the list (a click in the
+            // post hands it back): copy that passage.
+            .on_action(cx.listener(|this, _: &CopyText, _, cx| this.copy_reader_selection(cx)))
+    }
+
+    /// ⌘C for the reading pane's post (see `notes_actions`). Nothing to copy
+    /// when the page has no selection.
+    fn copy_reader_selection(&mut self, cx: &mut Context<Self>) {
+        if !(self.studio.reader.active() && self.studio.reader.has_selection()) {
+            return;
+        }
+        let (tx, rx) = async_channel::bounded::<String>(1);
+        if !self.studio.reader.selection(tx) {
+            return;
+        }
+        cx.spawn(async move |_, cx| {
+            let text = rx.recv().await.unwrap_or_default();
+            if !text.is_empty() {
+                cx.update(|cx| cx.write_to_clipboard(ClipboardItem::new_string(text)));
+            }
+        })
+        .detach();
     }
 
     /// ⇧⌘N / View › Notes.
@@ -819,6 +845,8 @@ impl MainView {
                         ),
                 )
             });
+        // --- selection --- a passage selected here: say how to quote it.
+        let selected = self.notes_selected_passage(cx).is_some();
         let footer = div()
             .flex_none()
             .px(px(14.))
@@ -827,7 +855,25 @@ impl MainView {
             .border_color(p.line)
             .text_size(px(11.))
             .text_color(p.muted)
-            .child("→ Notes on a post or page adds it · esc or ⇧⌘N closes");
+            .map(|d| {
+                if !selected {
+                    return d.child("→ Notes on a post or page adds it · esc or ⇧⌘N closes");
+                }
+                d.child(
+                    div()
+                        .id("notes-quote-selection")
+                        .debug_selector(|| "notes-quote-selection".into())
+                        .cursor_pointer()
+                        .text_color(p.accent)
+                        .hover(|s| s.underline())
+                        .child(QUOTE_HINT)
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            if let Some((sel, source)) = this.notes_selected_passage(cx) {
+                                this.quote_into_draft(sel, source, window, cx);
+                            }
+                        })),
+                )
+            });
         let w = WIDTH;
         Some(
             div()
