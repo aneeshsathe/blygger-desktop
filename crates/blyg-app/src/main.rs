@@ -27,6 +27,7 @@ mod platform;
 mod prefs;
 mod settings;
 mod theme;
+mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
 

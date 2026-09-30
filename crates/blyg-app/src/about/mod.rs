@@ -278,7 +278,11 @@ impl Render for AboutView {
                 .rule_b(&p)
                 .text_size(px(10.5))
                 .font_weight(FontWeight::SEMIBOLD)
-                .text_color(p.accent)
+                .text_color(crate::theme_ext::readable(
+                    p.accent,
+                    p.panel(),
+                    crate::theme_ext::TEXT,
+                ))
                 .child(title)
         };
         let link = |id: &'static str, s: &'static str| {
@@ -286,7 +290,11 @@ impl Render for AboutView {
                 .id(id)
                 .debug_selector(move || id.to_string())
                 .cursor_pointer()
-                .text_color(p.accent)
+                .text_color(crate::theme_ext::readable(
+                    p.accent,
+                    p.panel(),
+                    crate::theme_ext::TEXT,
+                ))
                 .hover(|s| s.underline())
                 .child(s)
         };
@@ -299,10 +307,10 @@ impl Render for AboutView {
                 .flex_none()
                 .rounded(px(5.))
                 .border_1()
-                .border_color(p.line)
+                .border_color(p.edge())
                 .bg(p.panel())
                 .cursor_pointer()
-                .hover(move |s| s.border_color(p.accent).text_color(p.accent))
+                .hover(move |s| s.border_color(p.accent).text_color(p.accent_text()))
                 .child(s)
         };
         let path_row = |l: &'static str, id: &'static str, path: Option<PathBuf>| {
@@ -384,7 +392,13 @@ impl Render for AboutView {
                         div()
                             .size(px(7.))
                             .rounded_full()
-                            .when(c.on, |d| d.bg(p.green))
+                            .when(c.on, |d| {
+                                d.bg(crate::theme_ext::readable(
+                                    p.green,
+                                    p.bg,
+                                    crate::theme_ext::MARK,
+                                ))
+                            })
                             .when(!c.on, |d| d.border_1().border_color(p.grey)),
                     )
                     .child(if c.on { "yes" } else { "no" })

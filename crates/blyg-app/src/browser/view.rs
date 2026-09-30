@@ -847,17 +847,7 @@ impl MainView {
         }
         if let Some(input) = &self.browser.address {
             let p = self.palette;
-            input.update(cx, |s, _| {
-                s.set_editor_style(gpui_kit::base::input::InputEditorStyle {
-                    foreground: p.ink,
-                    muted_foreground: p.muted,
-                    background: gpui_kit::transparent_black(),
-                    border: p.line,
-                    selection: p.text_selection,
-                    caret: p.accent,
-                    ..Default::default()
-                });
-            });
+            input.update(cx, |s, _| s.set_editor_style(p.field()));
         }
     }
 
@@ -988,7 +978,7 @@ impl MainView {
                     .bg(p.bg)
                     .rule_l(&p)
                     .shadow_lg()
-                    .font_family("Inter")
+                    .font_family(SharedString::from(self.prefs.ui().family))
                     .child(self.render_browser_chrome(&p, cx))
                     .child(body)
                     // Slides in from the right (the web view follows the
@@ -1033,7 +1023,7 @@ impl MainView {
                 .rounded(px(5.))
                 .text_size(px(13.))
                 .text_color(if enabled { p.ink } else { p.muted.opacity(0.5) })
-                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.sel)))
+                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover())))
                 .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
                 .child(label)
         };
@@ -1182,7 +1172,7 @@ impl MainView {
                     "Quote the passage selected on the page in your draft, with the page's link  ⇧⌘D",
                 )
                 .when(b.selected && has_page, |d| {
-                    d.text_color(p.accent).bg(p.sel.opacity(0.6))
+                    d.text_color(p.accent_text()).bg(p.pick())
                 })
                 .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(cx.listener(|this, _, window, cx| {

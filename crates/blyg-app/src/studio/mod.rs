@@ -722,7 +722,7 @@ impl MainView {
                 .p(px(24.))
                 .text_color(p.muted)
                 .text_size(px(13.))
-                .font_family("Inter")
+                .font_family(self.theme.chrome_font(&self.prefs))
                 .child(msg)
                 .into_any_element();
         }
@@ -754,7 +754,13 @@ impl MainView {
                 .flex()
                 .gap(px(10.))
                 .children(label)
-                .when_some(warn, |d, w| d.child(div().text_color(p.warn).child(w)))
+                .when_some(warn, |d, w| {
+                    d.child(
+                        div()
+                            .text_color(self.palette.on_status_text(p.warn))
+                            .child(w),
+                    )
+                })
                 .into_any_element(),
         )
     }

@@ -427,15 +427,19 @@ impl Render for CaptureView {
         crate::fonts::ensure(self.prefs.ui().bundled, cx);
         let body_font: SharedString = self.prefs.writing().family.into();
         let ui_font: SharedString = self.prefs.ui().family.into();
-        self.assist.update(cx, |a, _| a.set_palette(p)); // --- composer ---
+        let assist_font = self.prefs.ui().family;
+        self.assist.update(cx, |a, _| {
+            a.set_palette(p); // --- composer ---
+            a.set_ui_font(assist_font);
+        });
         self.editor.update(cx, |s, _| {
             s.set_editor_style(InputEditorStyle {
                 foreground: p.ink,
-                muted_foreground: p.muted,
+                muted_foreground: p.placeholder(),
                 background: p.editor,
-                border: p.line,
+                border: p.edge(),
                 selection: p.text_selection,
-                caret: p.accent,
+                caret: p.caret(),
                 ..Default::default()
             });
             s.set_editor_paddings(Edges {
@@ -452,13 +456,8 @@ impl Render for CaptureView {
             CaptureDefault::Draft => "keep draft",
         };
         let kbd = |k: &'static str| {
-            div()
+            crate::theme_ext::kbd(div(), &theme)
                 .px(px(5.))
-                .rounded(px(4.))
-                .border_1()
-                .border_b_2()
-                .border_color(p.line)
-                .text_color(p.ink)
                 .text_size(px(10.5))
                 .child(k)
         };
@@ -479,6 +478,7 @@ impl Render for CaptureView {
                         b.reason.map(str::to_string),
                         false,
                         &p,
+                        theme.chrome_font(&self.prefs),
                     )
                     .when(b.reason.is_none(), |d| {
                         d.on_click(move |_, window, cx| {
@@ -502,9 +502,10 @@ impl Render for CaptureView {
             .text_color(p.muted)
             .child(
                 div()
-                    .when(level == vm::Level::Warn, |d| d.text_color(p.warn))
+                    .when(level == vm::Level::Warn, |d| d.text_color(p.warn_text()))
                     .when(level == vm::Level::Over, |d| {
-                        d.text_color(p.over).font_weight(FontWeight::SEMIBOLD)
+                        d.text_color(p.over_text())
+                            .font_weight(FontWeight::SEMIBOLD)
                     })
                     .child(self.note.clone().unwrap_or_else(|| counter.into())),
             )
@@ -532,11 +533,12 @@ impl Render for CaptureView {
             .relative()
             .flex()
             .flex_col()
-            .rounded(px(14.))
+            // --- themes --- the theme's sheet corners and a visible edge.
+            .rounded(px(theme.sheet_radius))
             .overflow_hidden()
             .bg(p.bg)
             .border_1()
-            .border_color(p.line)
+            .border_color(p.edge())
             .text_color(p.ink)
             // --- composer --- the mention popup / spelling menu keys first.
             .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
