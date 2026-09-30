@@ -834,7 +834,7 @@ pub fn stub_prefill(
             return Err("That passage isn't in the version held of this post");
         }
         return Ok(StubPrefill {
-            body: format!("![[{remote_id}]]\n{}\n\n", quote_lines(&sel)),
+            body: format!("{}\n\n", partial_quote(remote_id, &sel)),
             caret: None,
         });
     }
@@ -846,6 +846,88 @@ pub fn stub_prefill(
         });
     }
     Ok(whole())
+}
+
+/// A partial transclusion: the directive with the (normalized) passage
+/// attached as a blockquote, no blank line between (spec §16.4).
+pub fn partial_quote(remote_id: &str, selection: &str) -> String {
+    format!("![[{remote_id}]]\n{}", quote_lines(selection))
+}
+
+/// Where a quoted passage came from (universal quoting).
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuoteSource {
+    /// A blyg post we hold: its id, the HTML a passage is checked against,
+    /// and its page (for the plain form).
+    Blyg {
+        id: String,
+        html: String,
+        title: String,
+        url: Option<String>,
+    },
+    /// Any other page (or your notes: no `url`, maybe no title).
+    Page { title: String, url: Option<String> },
+}
+
+/// A highlighted passage as Markdown to put in a draft, without the blank
+/// line after it (the caller adds that); `None` for an empty selection.
+///
+/// - from a blyg post, into a thread, and the passage really is in the post
+///   we hold: a partial transclusion, [`partial_quote`];
+/// - otherwise (a fragment can't transclude, a web page, notes): the passage
+///   as a blockquote, one `>` block per line ([`quote_lines`]), then a
+///   source line inside the quote, `> — [title](url)`, when there's a page
+///   to link (or just the title when there's only that).
+pub fn quote_block(selection: &str, source: &QuoteSource, into_thread: bool) -> Option<String> {
+    let sel = normalize_selection(selection);
+    if sel.is_empty() {
+        return None;
+    }
+    let (title, url) = match source {
+        QuoteSource::Blyg { id, html, .. }
+            if into_thread && selection_text(html).contains(&sel) =>
+        {
+            return Some(partial_quote(id, &sel));
+        }
+        QuoteSource::Blyg { title, url, .. } | QuoteSource::Page { title, url } => (title, url),
+    };
+    let q = quote_lines(&sel);
+    Some(match url {
+        Some(u) => format!("{q}\n>\n> — {}", crate::app::notes::link(title, u)),
+        None if !title.trim().is_empty() => format!("{q}\n>\n> — {}", title.trim()),
+        None => q,
+    })
+}
+
+/// The held blyg post a web page shows, if any: same origin, and one of the
+/// URL's path segments is the post's id (`/t/{id}/`, `/items/{id}.json`, …).
+pub fn blyg_item_for_url<'a>(
+    url: &str,
+    rows: &'a [ReadingItem],
+    subs: &[Subscription],
+) -> Option<&'a ReadingItem> {
+    let path_of = |u: &str| -> Option<(String, String)> {
+        let host = crate::vm::url_host(u)?;
+        let rest = u.split_once("://")?.1;
+        let path = rest.split_once('/').map_or("", |(_, p)| p);
+        let path = path.split(['?', '#']).next().unwrap_or("");
+        Some((host, format!("/{path}")))
+    };
+    let (host, path) = path_of(url)?;
+    rows.iter().find(|r| {
+        let blyg = subs
+            .iter()
+            .find(|s| s.id == r.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        let Some((rhost, base)) = path_of(&r.origin) else {
+            return false;
+        };
+        blyg && rhost == host
+            && path.starts_with(base.trim_end_matches('/'))
+            && path
+                .split('/')
+                .any(|seg| seg.trim_end_matches(".json") == r.remote_id)
+    })
 }
 
 /// A normalized selection as an attached blockquote: one `>` block per line,
@@ -1347,6 +1429,77 @@ mod tests {
         assert_eq!(post_title(&r), "In response to rue.blyg.example.com");
         r.stub_of = None;
         assert_eq!(post_title(&r), "…");
+    }
+
+    #[test]
+    fn quote_block_is_partial_only_where_it_can_be() {
+        let blyg = QuoteSource::Blyg {
+            id: ID.into(),
+            html: "<p>High water at 6:12.</p><p>Low at noon.</p>".into(),
+            title: "Tides".into(),
+            url: Some("https://rue.blyg.example.com/t/x/".into()),
+        };
+        let sel = "High water at 6:12.\n\nLow at noon.";
+        // Into a thread: the partial grammar, no blank line after ![[id]].
+        assert_eq!(
+            quote_block(sel, &blyg, true).unwrap(),
+            format!("![[{ID}]]\n> High water at 6:12.\n>\n> Low at noon.")
+        );
+        // A fragment can't transclude: the plain quote with a link.
+        assert_eq!(
+            quote_block("Low at noon.", &blyg, false).unwrap(),
+            "> Low at noon.\n>\n> — [Tides](https://rue.blyg.example.com/t/x/)"
+        );
+        // Not in the post we hold (edited since?): the plain form, even in a thread.
+        assert!(
+            quote_block("Something else", &blyg, true)
+                .unwrap()
+                .starts_with("> Something else\n>\n> — [Tides]")
+        );
+        // A web page: brackets escaped in the link.
+        let page = QuoteSource::Page {
+            title: "Tide tables [2026]".into(),
+            url: Some("https://example.com/t".into()),
+        };
+        assert_eq!(
+            quote_block("  a  passage ", &page, true).unwrap(),
+            "> a passage\n>\n> — [Tide tables \\[2026\\]](https://example.com/t)"
+        );
+        // Notes without a source: the quote alone.
+        let bare = QuoteSource::Page {
+            title: String::new(),
+            url: None,
+        };
+        assert_eq!(quote_block("mine", &bare, true).unwrap(), "> mine");
+        assert_eq!(quote_block(" \n ", &bare, true), None);
+    }
+
+    #[test]
+    fn a_page_is_a_held_blyg_post_by_origin_and_id() {
+        let now = chrono::Utc::now();
+        let seed = crate::fake::reading_seed::seed(now);
+        let (rows, subs) = (&seed.reading, &seed.subs);
+        let r = rows
+            .iter()
+            .find(|r| r.remote_id == crate::fake::reading_seed::LIN_GARDENS)
+            .unwrap();
+        let base = r.origin.trim_end_matches('/');
+        let id = &r.remote_id;
+        for url in [
+            format!("{base}/t/{id}/"),
+            format!("{base}/items/{id}.json"),
+            format!("{base}/f/{id}?utm=x#top"),
+        ] {
+            assert_eq!(
+                blyg_item_for_url(&url, rows, subs).map(|r| &r.remote_id),
+                Some(id),
+                "{url}"
+            );
+        }
+        assert!(blyg_item_for_url(&format!("{base}/"), rows, subs).is_none());
+        assert!(
+            blyg_item_for_url(&format!("https://other.example.com/t/{id}/"), rows, subs).is_none()
+        );
     }
 
     #[test]

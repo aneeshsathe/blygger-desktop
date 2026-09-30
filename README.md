@@ -191,6 +191,11 @@ first and synced to your blyg in the background. It's written in Rust with
   draft (⌘D). **→ Notes** on a post adds a quote of it, → Notes in the
   browser adds the page's link, and selected text goes in as a quote with
   its source.
+- **Quote anything into your draft** (⇧⌘D). Highlight a passage in the
+  browser pane, a post or your notes and it goes into the draft you're
+  writing, at the caret, with a link to where it came from (a new draft if
+  none is open). A passage from a blyg post you follow, going into a thread,
+  becomes a partial quote: `![[id]]` with the passage under it.
 - **Read state syncs** between your Macs through your blyg (optional server
   extension 5), and search (⌘F or /) filters whatever you're reading.
 - **Profiles.** ⌘I on a post (or a click on its author's address, its

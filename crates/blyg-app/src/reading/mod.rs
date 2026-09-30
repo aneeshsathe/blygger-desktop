@@ -1005,7 +1005,7 @@ impl MainView {
 
 /// Insert a block of markdown on its own paragraph at `cursor`; returns the
 /// text and the caret after the block.
-fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
+pub(crate) fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
     if block.starts_with("![[") && !block.contains('\n') {
         let id = block.trim_start_matches("![[").trim_end_matches("]]");
         return vm::insert_transclusion(text, cursor, id);

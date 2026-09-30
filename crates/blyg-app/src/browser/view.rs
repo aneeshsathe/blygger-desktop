@@ -1088,6 +1088,17 @@ impl MainView {
                 ),
             )
             .child(
+                button(
+                    "browser-draft",
+                    "→ Draft",
+                    has_page,
+                    "Quote the passage selected on the page in your draft, with the page's link  ⇧⌘D",
+                )
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.quote_to_draft(&crate::app::notes::QuoteToDraft, window, cx)
+                })),
+            )
+            .child(
                 button("browser-close", "×", true, "Close  esc")
                     .on_click(cx.listener(|this, _, window, cx| this.close_browser(window, cx))),
             )

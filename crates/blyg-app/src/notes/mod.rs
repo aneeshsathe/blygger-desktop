@@ -15,6 +15,7 @@
 //! - `drawer`: the `MainView` hooks, the drawer itself and its demos.
 
 mod drawer;
+mod quote; // universal quoting (⇧⌘D)
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -27,6 +28,7 @@ use blyg_core::LocalId;
 
 pub(crate) use drawer::NotesPark;
 pub use drawer::{SELECTION_JS, ToggleNotes}; // --- onboarding ---
+pub use quote::QuoteToDraft;
 
 use crate::vm;
 
@@ -95,6 +97,76 @@ pub fn quote_with_source(selection: &str, title: &str, url: Option<&str>) -> Str
         None if !title.trim().is_empty() => format!("{q}\n>\n> — {}", title.trim()),
         None => q,
     }
+}
+
+/// A selection in the notes (byte `range` of `text`) as a passage to quote
+/// elsewhere, and the page it came from when the note says so: `>` markers
+/// dropped, and, when the selection sits in a quote ending in a
+/// `> — [title](url)` source line (what [`quote_with_source`] writes), that
+/// title and URL. `None` for an empty selection. A note has no source URL of
+/// its own, so anything else is quoted without a link.
+pub fn notes_passage(
+    text: &str,
+    range: std::ops::Range<usize>,
+) -> Option<(String, Option<(String, String)>)> {
+    let (start, end) = (range.start.min(text.len()), range.end.min(text.len()));
+    let selected = text.get(start..end)?;
+    let passage: Vec<&str> = selected
+        .lines()
+        .map(|l| {
+            let t = l.trim_start();
+            match t.strip_prefix('>') {
+                Some(rest) => rest.strip_prefix(' ').unwrap_or(rest),
+                None => l,
+            }
+        })
+        .filter(|l| source_line(l).is_none())
+        .collect();
+    let passage = passage.join("\n");
+    if passage.trim().is_empty() {
+        return None;
+    }
+    // The quote block around the selection's first line.
+    let lines: Vec<&str> = text.split('\n').collect();
+    let mut at = 0;
+    let mut first = 0;
+    for (i, l) in lines.iter().enumerate() {
+        if at + l.len() >= start {
+            first = i;
+            break;
+        }
+        at += l.len() + 1;
+    }
+    let quoted = |i: usize| lines[i].trim_start().starts_with('>');
+    let link = quoted(first)
+        .then(|| {
+            (first..lines.len())
+                .take_while(|&i| quoted(i))
+                .find_map(|i| source_line(lines[i].trim_start().trim_start_matches('>').trim()))
+        })
+        .flatten();
+    Some((passage, link))
+}
+
+/// `— [title](url)` (a source line) as its title and URL.
+fn source_line(line: &str) -> Option<(String, String)> {
+    let rest = line.trim().strip_prefix("— [")?;
+    let close = rest.rfind("](")?;
+    let url = rest[close + 2..].strip_suffix(')')?;
+    let url = url
+        .strip_prefix('<')
+        .and_then(|u| u.strip_suffix('>'))
+        .unwrap_or(url);
+    let mut title = String::new();
+    let mut chars = rest[..close].chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            title.extend(chars.next());
+        } else {
+            title.push(c);
+        }
+    }
+    Some((title, url.to_string()))
 }
 
 /// What "→ Notes" adds for a post.
