@@ -159,7 +159,7 @@ impl MainView {
 
     /// The search field above the reading list.
     pub(super) fn render_reading_search(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let Some(search) = self.reading.search.as_ref() else {
             return div().into_any_element();
         };
@@ -177,7 +177,7 @@ impl MainView {
                 div()
                     .flex_1()
                     .min_w_0()
-                    .font_family("Inter")
+                    .font_family(self.prefs.ui().family)
                     .text_size(px(12.5))
                     .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
                         cx.stop_propagation();
@@ -681,7 +681,7 @@ impl MainView {
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
         let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
         let keys = if stream {
@@ -744,11 +744,11 @@ impl MainView {
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
                 d.child(
-                    self.muted_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
+                    self.empty_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
                 )
             })
             .when(empty_source, |d| {
-                d.child(self.muted_note(super::sources_vm::empty_label(&self.reading.source)))
+                d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
             })
             .when(held > 0 && count == 0 && !empty_source, |d| {
                 d.child(
@@ -766,7 +766,7 @@ impl MainView {
                         )
                         .child(
                             div()
-                                .font_family("Inter")
+                                .font_family(self.chrome())
                                 .text_size(px(11.5))
                                 .text_color(p.muted)
                                 .child(
@@ -809,7 +809,7 @@ impl MainView {
     }
 
     fn render_reading_row(&self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         // `ix` is a position in the shown (searched) rows.
         let Some(r) = self
             .reading
@@ -821,10 +821,13 @@ impl MainView {
         };
         let key = vm::key(r);
         let selected = self.reading.sel.as_ref() == Some(&key);
-        // --- reader folders --- the selection is stronger in the pane with the keys.
-        let sel_bg = if self.reading.pane == super::sources_vm::Pane::List
-            && self.reading.mode == super::stream_vm::ReadMode::Reader
-        {
+        // --- reader folders --- the selection is stronger in the pane with
+        // the keys: the theme's `row.selected` (the plain look: an accent
+        // wash), else the selected-row ground.
+        let focused = self.reading.pane == super::sources_vm::Pane::List
+            && self.reading.mode == super::stream_vm::ReadMode::Reader;
+        let shaped = self.theme.has(blyg_core::config::theme::Slot::RowSelected);
+        let sel_bg = if focused && !shaped {
             p.accent.opacity(0.14)
         } else {
             p.sel
@@ -859,6 +862,9 @@ impl MainView {
             .rule_b(&p)
             .cursor_pointer()
             .when(selected, |d| d.bg(sel_bg))
+            // --- themes --- the theme's selected-row shape (lit cell,
+            // outline, lantern…) on the page's selected ground.
+            .map(|d| crate::ornament::page_row(&self.theme, d, selected && focused && shaped))
             .when(r.is_unread() || edited, |d| {
                 // Unread / edited: an accent bar on the left, as in the mock.
                 d.child(
@@ -881,7 +887,7 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(11.))
                     .text_color(p.muted)
                     .child(if r.version > 1 {
@@ -894,12 +900,14 @@ impl MainView {
                         vm::source_line(r, &self.reading.subs)
                     })
                     .when_some(badge, |d, b| {
+                        // --- themes --- badges that read on the row and
+                        // on the selected ground alike.
                         let (fg, bg): (Hsla, Hsla) = if edited {
                             (p.edited, p.edited_bg)
                         } else if b == "new" {
-                            (p.amber, p.sel)
+                            p.badge()
                         } else {
-                            (p.muted, p.sel)
+                            p.quiet_badge()
                         };
                         d.child(
                             div()
@@ -930,7 +938,7 @@ impl MainView {
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let Some(o) = self.reading.opened.as_ref() else {
             return div()
                 .flex_1()
@@ -997,7 +1005,7 @@ impl MainView {
             .items_center()
             .gap(px(8.))
             .mb(px(12.))
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(12.))
             .text_color(p.muted)
             // --- profiles --- the author's address opens their profile
@@ -1035,7 +1043,7 @@ impl MainView {
                     .pl(px(10.))
                     .border_l_2()
                     .border_color(p.edited_rule)
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.5))
                     .text_color(p.muted)
                     .child(div().text_color(p.ink).child(heading))
@@ -1060,8 +1068,8 @@ impl MainView {
                         .mb(px(10.))
                         .px(px(10.))
                         .py(px(6.))
-                        .rounded(px(7.))
-                        .font_family("Inter")
+                        .rounded(px(self.theme.corner(7.)))
+                        .font_family(self.chrome())
                         .text_size(px(12.5))
                         .bg(p.notice_bg)
                         .text_color(p.notice)
@@ -1073,7 +1081,7 @@ impl MainView {
                     div()
                         .id("retained-pin")
                         .mb(px(10.))
-                        .font_family("Inter")
+                        .font_family(self.chrome())
                         .text_size(px(11.5))
                         .text_color(p.muted)
                         .cursor_pointer()
@@ -1164,7 +1172,7 @@ impl MainView {
         runs: &[(DiffOp, String)],
         body_font: &SharedString,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let text: String = runs.iter().map(|(_, s)| s.as_str()).collect();
         let mut hl = Vec::new();
         let mut at = 0;
@@ -1202,7 +1210,7 @@ impl MainView {
             .child(
                 div()
                     .mb(px(4.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.))
                     .text_color(p.muted)
                     .child(heading),
@@ -1218,7 +1226,7 @@ impl MainView {
     }
 
     fn render_thumbs(&self, thumb: Option<i8>, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let t = |id: &'static str, glyph: &'static str, on: bool, up: bool| {
             div()
                 .id(id)

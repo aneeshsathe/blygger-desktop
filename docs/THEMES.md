@@ -9,6 +9,13 @@ Themes change the app around your writing: the window, the lists, the editor
 and the reader's fallback style. The studio preview is never themed. It shows
 your blyg's own `style.css`, which is what readers see.
 
+The Reading screens take the theme too. In the reader, a post's text is set
+in the theme's writing font (yours, if you set `font-family-writing`), and
+its quote boxes, selected text, highlights and diff marks take the theme's
+colours (`color-quote-bg`, `color-quote-rule`, `color-text-selection`,
+`color-ins`, `color-del`, `color-accent`). Small labels (bylines, dates,
+chips) use the theme's `font-chrome`, as the posts list does.
+
 ## Choosing a theme
 
 In Settings (⌘,), under Theme, the themes are grouped into Plain, Woody and
@@ -121,8 +128,8 @@ opacity.
 | `font-writing` | The editor's font. |
 | `font-ui` | The lists' and sheets' font. |
 | `font-chrome` | The status bar's and small labels' font (default Inter). |
-| `radius` | Corner radius in points, 0 to 32 (rows, quote boxes). Default 8. |
-| `sheet.radius`, `toast.radius`, `chip.radius` | Those corners. Defaults: radius + 4, radius, and a pill. |
+| `radius` | Corner radius in points, 0 to 32 (rows, quote boxes). Default 8. Small corners (buttons, fields, banners, the Stream/Reader toggle) scale with it: square on a chart, soft on moss. |
+| `sheet.radius`, `toast.radius`, `chip.radius` | Those corners. Defaults: radius + 4, radius, and a pill. Chips include the reading screens' action chips ("Quote into a thread", "Reply · new stub", …); sheets include the reading sheets (Subscribe, New Folder, the quote picker, Open profile). |
 | `sheet.border`, `chip.border`, `toast.border` | `solid`, `dashed`, `double` or `none`. |
 
 ### Colours
@@ -137,6 +144,8 @@ Colours are `#rgb`, `#rrggbb` or `#rrggbbaa`.
 | `color-line` | hairlines and borders | (base) |
 | `color-accent` | links, the caret, highlights | (base) |
 | `color-sel` | the selected row | (base) |
+
+`color-sel` is picked for the sidebar. Lists on the page (the Reader's posts, the stream, Subscriptions, versions, profiles) use it too when page text reads on it and it stands apart from the page; otherwise (Konkan's dark lantern row, Aizome's row the colour of the page) they use a tint of the page toward it, or toward the sidebar.
 | `color-bar` | the title bar | (base) |
 | `color-warn`, `color-over`, `color-green`, `color-amber`, `color-grey` | the length counter and the sync dot | (base) |
 | `color-shadow` | sheet and toast shadows | (base) |
@@ -176,18 +185,18 @@ spaces both separate arguments, and double quotes keep a glyph together.
 | Slot | Where |
 | --- | --- |
 | `titlebar.band` | behind the title bar |
-| `sidebar.ground` | behind the posts list |
-| `sidebar.top` | along the top of the posts list |
-| `row.selected` | the selected row's shape |
+| `sidebar.ground` | behind the posts list and the Reader's subscriptions column |
+| `sidebar.top` | along the top of the posts list and the Reader's subscriptions column |
+| `row.selected` | the selected row's shape: the posts list, and on the reading side the subscriptions column and the posts list (in the pane with the keys), the stream's selected post, Subscriptions and a profile's lists |
 | `editor.frame` | around the editor's text column, in its margins only |
 | `quote.frame` | a quote box in the stream |
 | `divider` | the band under the editor and between posts in the stream |
 | `status.ornament` | a mark at the right of the status bar |
-| `marker.pinned` | the mark after a published post's version |
-| `marker.new` | the mark on a post with unpublished edits |
-| `texture` | a faint texture on the posts list and the editor's margins |
-| `scroll.edge` | a fade at the bottom of the posts list |
-| `empty.art` | a small picture above an empty posts list |
+| `marker.pinned` | the mark after a published post's version, and beside a pinned version in ⌘Y |
+| `marker.new` | the mark on a post with unpublished edits, an unread post in the stream, an unread subscription and a new mention |
+| `texture` | a faint texture on the posts list, the Reader's subscriptions column and the editor's margins |
+| `scroll.edge` | a fade at the bottom of the posts list and the Reader's subscriptions column |
+| `empty.art` | a small picture above an empty posts list, and above the reading side's empty states (nothing to read, all read, no subscriptions, no mentions) |
 
 Ornaments never sit behind the text you're writing: the editor's ornaments
 are clipped to its margins, and the divider takes its own row under the text.
@@ -267,4 +276,5 @@ the app from starting.
 The built-in themes are tested: each parses cleanly, copies out with
 `+copy-theme` and reads back the same, and keeps body text at a contrast of at
 least 4.5:1 against its background (and the sidebar's and selected row's text
-against theirs).
+against theirs, as well as the reading side's: selected rows on the page,
+badges, notices, quote boxes and the reader's paper).

@@ -819,9 +819,6 @@ pub fn row_inset(t: &Theme) -> bool {
 
 /// `row.selected`: style a list row (selected or not).
 pub fn row(t: &Theme, d: Stateful<Div>, selected: bool) -> Stateful<Div> {
-    let o = t.slot(Slot::RowSelected);
-    let p = t.palette;
-    let r = t.radius;
     let d = if row_inset(t) {
         d.px(px(8.))
     } else {
@@ -830,6 +827,25 @@ pub fn row(t: &Theme, d: Stateful<Div>, selected: bool) -> Stateful<Div> {
     if !selected {
         return d;
     }
+    selected_surface(t, d, t.palette.sel)
+}
+
+/// `row.selected` for a list on the page (the Reader's posts, the stream):
+/// the theme's shape on [`Palette::page_sel`], so page text reads on it.
+/// No padding: the caller's row keeps its own.
+pub fn page_row<E: Styled>(t: &Theme, d: E, selected: bool) -> E {
+    if !selected {
+        return d;
+    }
+    selected_surface(t, d, t.palette.page_sel())
+}
+
+/// The selected row's shape and ground (`sel`), without its padding: the
+/// sidebar's rows, the Reader's sources and the lists on the page share it.
+pub fn selected_surface<E: Styled>(t: &Theme, d: E, sel: Hsla) -> E {
+    let o = t.slot(Slot::RowSelected);
+    let p = Palette { sel, ..t.palette };
+    let r = t.radius;
     match o.kind {
         Kind::LitCell => {
             let c0 = solid(o, 0, p.sel);
@@ -890,10 +906,15 @@ pub fn row(t: &Theme, d: Stateful<Div>, selected: bool) -> Stateful<Div> {
                 spread_radius: px(0.),
                 inset: false,
             }]),
-        Kind::InsetBar => d
-            .bg(p.sel)
-            .border_l(px(3.))
-            .border_color(solid(o, 0, p.accent)),
+        // An inset shadow, not a border: the row's own hairline (a list on
+        // the page has one along its foot) keeps its colour.
+        Kind::InsetBar => d.bg(p.sel).shadow(vec![BoxShadow {
+            color: solid(o, 0, p.accent),
+            offset: point(px(3.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(0.),
+            inset: true,
+        }]),
         _ => d.bg(p.sel),
     }
 }
@@ -1274,8 +1295,15 @@ pub fn marker(t: &Theme, slot: Slot, color: Hsla, chrome_font: &'static str) -> 
     }
 }
 
-/// `empty.art`: a small picture above an empty list's message.
+/// `empty.art`: a small picture above an empty list's message (on the
+/// sidebar).
 pub fn empty_art(t: &Theme) -> Option<AnyElement> {
+    empty_art_on(t, t.palette.side)
+}
+
+/// `empty.art` on `ground` (the page, for the reading side's empty states):
+/// waves are drawn on it rather than on a tile of the sidebar.
+pub fn empty_art_on(t: &Theme, ground: Hsla) -> Option<AnyElement> {
     let o = t.slot(Slot::EmptyArt).clone();
     let p = t.palette;
     let s = 72.;
@@ -1314,7 +1342,7 @@ pub fn empty_art(t: &Theme) -> Option<AnyElement> {
         })
         .into_any_element(),
         Kind::Seigaiha => {
-            let paper = p.side;
+            let paper = ground;
             painter(move |b, w, _| {
                 paint_seigaiha(
                     &Ornament {
@@ -1497,25 +1525,76 @@ pub fn quote_frame(t: &Theme, d: Stateful<Div>) -> AnyElement {
     }
 }
 
-/// Apply a theme border style (`solid`, `dashed`, `double`, `none`).
+/// Apply a theme border style (`solid`, `dashed`, `double`, `none`). A
+/// `double` border is the inner rule here; its outer rule is a ring of
+/// shadows ([`border_rings`]) that the caller puts in its `shadow` list
+/// (GPUI keeps one list, and sheets and toasts have a drop shadow too).
 pub fn border<E: Styled>(e: E, style: Border, color: Hsla) -> E {
     match style {
         Border::None => e,
-        Border::Solid => e.border_1().border_color(color),
+        Border::Solid | Border::Double => e.border_1().border_color(color),
         Border::Dashed => e.border_1().border_dashed().border_color(color),
-        // The inner rule of a double border is the caller's (see sheets).
-        Border::Double => e.border_2().border_color(color),
     }
 }
 
-/// A small swatch of a theme for Settings: five colour chips in a row.
-pub fn swatch(t: &Theme) -> AnyElement {
+/// The shadows a border style adds outside the element: for `double`, a
+/// second thin rule 2px out, the gap in `ground` (a chart's double rule).
+/// Painted in order, so put the drop shadow first and these after it.
+pub fn border_rings(style: Border, color: Hsla, ground: Hsla) -> Vec<BoxShadow> {
+    if style != Border::Double {
+        return Vec::new();
+    }
+    let ring = |spread: f32, color: Hsla| BoxShadow {
+        color,
+        offset: point(px(0.), px(0.)),
+        blur_radius: px(0.),
+        spread_radius: px(spread),
+        inset: false,
+    };
+    vec![ring(3., color), ring(2., ground)]
+}
+
+/// [`border`] with its rings and a drop shadow: the whole edge of a sheet
+/// or a toast on `ground`.
+pub fn border_with_shadow<E: Styled>(
+    e: E,
+    style: Border,
+    color: Hsla,
+    ground: Hsla,
+    drop: Option<BoxShadow>,
+) -> E {
+    let mut shadows: Vec<BoxShadow> = drop.into_iter().collect();
+    shadows.extend(border_rings(style, color, ground));
+    border(e, style, color).shadow(shadows)
+}
+
+/// A hairline that stands out at least 1.5:1 from `ground`: toward black
+/// on a light ground, toward white on a dark one.
+pub fn edge_on(ground: Hsla) -> Hsla {
+    let toward =
+        if crate::theme::contrast(ground, black()) > crate::theme::contrast(ground, white()) {
+            black()
+        } else {
+            white()
+        };
+    let mut k = 0.15;
+    let mut c = crate::theme::mix(ground, toward, k);
+    while crate::theme::contrast(c, ground) < 1.5 && k < 1.0 {
+        k += 0.05;
+        c = crate::theme::mix(ground, toward, k);
+    }
+    c
+}
+
+/// A small swatch of a theme for Settings (five colour chips in a row) on
+/// `ground`, the sheet it sits on: its edge reads there, dark or light.
+pub fn swatch_on(t: &Theme, ground: Hsla) -> AnyElement {
     div()
         .flex()
         .rounded(px(3.))
         .overflow_hidden()
         .border_1()
-        .border_color(black().opacity(0.12))
+        .border_color(edge_on(ground))
         .children(
             t.swatch()
                 .into_iter()
@@ -1556,6 +1635,18 @@ mod tests {
         assert!(harbour(&t.get("konkan")).is_some());
         assert!(row_inset(&t.get("cutaway")));
         assert!(divider(&t.get("kumiko")).is_some());
+    }
+
+    #[test]
+    fn a_double_border_is_two_thin_rules_with_a_gap() {
+        use blyg_core::config::theme::Border;
+        let (line, ground) = (gpui_kit::black(), gpui_kit::white());
+        let rings = super::border_rings(Border::Double, line, ground);
+        assert_eq!(rings.len(), 2);
+        // The outer rule, then the gap painted over its inner part.
+        assert_eq!((rings[0].spread_radius, rings[0].color), (px(3.), line));
+        assert_eq!((rings[1].spread_radius, rings[1].color), (px(2.), ground));
+        assert!(super::border_rings(Border::Solid, line, ground).is_empty());
     }
 
     #[test]

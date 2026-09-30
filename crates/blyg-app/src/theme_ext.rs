@@ -165,30 +165,42 @@ impl Palette {
 /// shadow that shows on dark themes.
 pub fn sheet<E: Styled>(e: E, t: &Theme) -> E {
     let p = &t.palette;
-    crate::ornament::border(e.bg(p.bg).text_color(p.ink), t.sheet_border, p.edge())
-        .border_t_0()
-        .rounded_b(px(t.sheet_radius))
-        .shadow(vec![BoxShadow {
+    // The edge and the drop shadow go together: a double rule is drawn as
+    // rings in the same shadow list, so a later `.shadow()` would erase it.
+    crate::ornament::border_with_shadow(
+        e.bg(p.bg).text_color(p.ink),
+        t.sheet_border,
+        p.edge(),
+        p.bg,
+        Some(BoxShadow {
             color: p.drop(),
             offset: point(px(0.), px(18.)),
             blur_radius: px(40.),
             spread_radius: px(-12.),
             inset: false,
-        }])
+        }),
+    )
+    .border_t_0()
+    .rounded_b(px(t.sheet_radius))
 }
 
 /// A floating card (onboarding, the tour): like a sheet, rounded all round.
 pub fn card<E: Styled>(e: E, t: &Theme) -> E {
     let p = &t.palette;
-    crate::ornament::border(e.bg(p.bg).text_color(p.ink), t.sheet_border, p.edge())
-        .rounded(px(t.sheet_radius))
-        .shadow(vec![BoxShadow {
+    crate::ornament::border_with_shadow(
+        e.bg(p.bg).text_color(p.ink),
+        t.sheet_border,
+        p.edge(),
+        p.bg,
+        Some(BoxShadow {
             color: p.drop(),
             offset: point(px(0.), px(16.)),
             blur_radius: px(44.),
             spread_radius: px(-10.),
             inset: false,
-        }])
+        }),
+    )
+    .rounded(px(t.sheet_radius))
 }
 
 /// A menu or popup over the page: raised ground, a visible edge, the

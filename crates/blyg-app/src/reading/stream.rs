@@ -279,7 +279,7 @@ impl MainView {
 
     /// The Stream | Reader segmented toggle in the reading header.
     pub(super) fn render_mode_toggle(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let seg = |m: ReadMode| {
             let on = self.reading.mode == m;
             div()
@@ -287,7 +287,7 @@ impl MainView {
                 .debug_selector(move || format!("mode-{}", m.as_str()))
                 .px(px(10.))
                 .py(px(2.))
-                .rounded(px(5.))
+                .rounded(px(self.theme.corner(5.)))
                 .cursor_pointer()
                 .when(on, |d| d.bg(p.bg).text_color(p.ink).shadow_sm())
                 .when(!on, |d| {
@@ -305,9 +305,9 @@ impl MainView {
             .flex()
             .p(px(2.))
             .gap(px(2.))
-            .rounded(px(7.))
-            .bg(p.sel)
-            .font_family("Inter")
+            .rounded(px(self.theme.corner(7.)))
+            .bg(p.well())
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .children(ReadMode::ALL.map(seg))
@@ -531,7 +531,7 @@ impl MainView {
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let held = self.reading.rows.len();
         let count = self.reading.shown.len();
         let font = body_font.clone();
@@ -545,7 +545,7 @@ impl MainView {
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
                 d.child(
-                    self.muted_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
+                    self.empty_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
                 )
             })
             .when(held > 0 && count == 0, |d| {
@@ -589,9 +589,9 @@ impl MainView {
                         .top(px(3.))
                         .right(px(10.))
                         .px(px(6.))
-                        .rounded(px(5.))
+                        .rounded(px(self.theme.corner(5.)))
                         .cursor_pointer()
-                        .font_family("Inter")
+                        .font_family(self.chrome())
                         .text_size(px(11.))
                         .text_color(p.muted)
                         .hover(|s| s.text_color(p.ink).bg(p.sel))
@@ -617,7 +617,7 @@ impl MainView {
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let Some(r) = self.reading.shown_rows().nth(ix) else {
             return div().into_any_element();
         };
@@ -641,7 +641,7 @@ impl MainView {
             .flex_wrap()
             .items_center()
             .gap(px(6.))
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .text_color(p.muted)
             .child(
@@ -704,7 +704,7 @@ impl MainView {
                     .id("stream-read-more")
                     .debug_selector(move || format!("stream-read-more-{ix}"))
                     .mt(px(2.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.))
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(p.accent)
@@ -740,20 +740,27 @@ impl MainView {
                     .map(|band| div().absolute().bottom_0().left_0().w_full().child(band)),
             )
             .when(selected, |d| d.bg(p.sel))
+            // --- themes --- the selected post takes the theme's row shape.
+            .map(|d| crate::ornament::page_row(&self.theme, d, selected))
             .when(opened && !selected, |d| d.bg(p.sel.opacity(0.5)))
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 this.stream_post_click(k_click.clone(), post_click_of(ev), window, cx)
             }))
             .when(unread, |d| {
-                // Unread: a small dot, never a count.
+                // Unread: a small dot, never a count (the theme's
+                // `marker.new` when it has one).
                 d.child(
                     div()
                         .absolute()
-                        .left(px(12.))
-                        .top(px(20.))
-                        .size(px(6.))
-                        .rounded_full()
-                        .bg(p.accent),
+                        .left(px(10.))
+                        .top(px(15.))
+                        .w(px(10.))
+                        .h(px(16.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .text_size(px(12.))
+                        .child(self.unread_marker(p.accent)),
                 )
             })
             .child(
@@ -786,13 +793,13 @@ impl MainView {
         if parts.is_empty() {
             return None;
         }
-        let p = self.palette;
+        let p = self.palette.on_page();
         Some(
             div()
                 .flex()
                 .flex_wrap()
                 .gap(px(12.))
-                .font_family("Inter")
+                .font_family(self.chrome())
                 .text_size(px(11.5))
                 .text_color(p.muted)
                 .children(parts.into_iter().map(|l| {
@@ -852,7 +859,7 @@ impl MainView {
     /// The selected post's actions, as in the reader: each names what it
     /// makes.
     fn render_stream_actions(&self, r: &ReadingItem, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let key = vm::key(r);
         let blyg = self
             .reading
@@ -998,7 +1005,7 @@ impl MainView {
         n: &mut usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         match b {
             Block::Para(spans) => self.render_spans(spans, post, n, None, cx),
             Block::Heading(level, spans) => div()
@@ -1014,7 +1021,7 @@ impl MainView {
             Block::Quote(inner) => div()
                 .pl(px(12.))
                 .border_l_2()
-                .border_color(p.line)
+                .border_color(p.quote_rule)
                 .text_color(p.muted)
                 .flex()
                 .flex_col()
@@ -1054,7 +1061,7 @@ impl MainView {
             Block::Code(code) => div()
                 .px(px(10.))
                 .py(px(7.))
-                .rounded(px(6.))
+                .rounded(px(self.theme.corner(6.)))
                 .bg(p.sel)
                 .font_family("Menlo")
                 .text_size(px(12.5))
@@ -1088,7 +1095,7 @@ impl MainView {
         size: Option<f32>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let mut text = String::new();
         let mut hl: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
         let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
@@ -1188,7 +1195,7 @@ impl MainView {
         n: &mut usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let held = stream_vm::quoted(&self.reading.rows, post, id);
         let (origin, version) = stream_vm::quote_ref(post, id, held);
         let cited = stream_vm::cited(post, id);
@@ -1247,7 +1254,7 @@ impl MainView {
                     .flex()
                     .flex_wrap()
                     .gap(px(4.))
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(11.))
                     .text_color(p.muted)
                     .child("quoted from")
@@ -1274,12 +1281,13 @@ impl MainView {
 }
 
 fn badge(p: crate::theme::Palette, s: String) -> Div {
+    let (fg, bg) = p.quiet_badge();
     div()
         .px(px(6.))
         .rounded_full()
         .text_size(px(10.5))
-        .text_color(p.muted)
-        .bg(p.sel)
+        .text_color(fg)
+        .bg(bg)
         .child(s)
 }
 

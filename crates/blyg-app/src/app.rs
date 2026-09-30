@@ -234,7 +234,7 @@ impl MainView {
         let theme = crate::theme::resolve(&prefs, window.appearance(), cx);
         prefs.adopt_theme_fonts(&theme);
         let palette = theme.palette;
-        crate::theme::set_reader_theme(&theme);
+        crate::theme::set_reader_theme(&theme, prefs.writing());
         // --- composer ---
         let assist = {
             let (editor, backend) = (editor.clone(), backend.clone());
@@ -928,7 +928,7 @@ impl MainView {
         crate::fonts::ensure(self.prefs.ui().bundled, cx);
         crate::fonts::ensure(theme.font_chrome.and_then(|f| f.bundled), cx);
         self.palette = theme.palette;
-        crate::theme::set_reader_theme(&theme);
+        crate::theme::set_reader_theme(&theme, self.prefs.writing());
         self.theme = theme;
     }
 
@@ -2942,7 +2942,7 @@ impl MainView {
                     chips.push(theme_chip(
                         t.id.clone(),
                         label,
-                        Some(crate::ornament::swatch(&t)),
+                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
                     ));
                 }
                 div()
