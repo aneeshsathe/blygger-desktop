@@ -12,6 +12,10 @@ release workflow publishes that section as the release notes.
 
 ## [Unreleased]
 
+### Added
+
+- A documentation site at https://aneeshsathe.github.io/blygger-desktop/, and a shorter README.
+
 ### Changed
 
 - **Blygger is now Burrow.** Burrow is a blygger client. The app, its menus (Burrow › Settings…, Burrow › Check for Updates…, Help › Burrow Tutorial), the About window, the window title and the app's messages say Burrow, and new installs are `Burrow.app`. Release assets are named `Burrow-<version>-macos-universal.{zip,dmg}`.
