@@ -27,6 +27,7 @@ fn values(k: &KeySpec) -> String {
         ValueKind::Hotkey => "a key combination, such as `ctrl+alt+b`".into(),
         ValueKind::Path => "a file path (`~/` is expanded; a leading `?` makes it optional)".into(),
         ValueKind::ProviderModel => "`provider=model`".into(),
+        ValueKind::ThemeName => "`system`, `light`, `dark`, a built-in theme (`cutaway`, `kumiko`, `shola`, `fortress`, `portolan`, `aizome`, `saltspace`, `konkan`) or a theme file's name (see Themes)".into(),
     }
 }
 

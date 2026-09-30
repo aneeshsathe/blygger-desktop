@@ -13,10 +13,18 @@ The owner token for this blyg is kept in the macOS Keychain, never in this file.
 
 ### `theme`
 
-- **Values:** `system`, `light`, `dark`
+- **Values:** `system`, `light`, `dark`, a built-in theme (`cutaway`, `kumiko`, `shola`, `fortress`, `portolan`, `aizome`, `saltspace`, `konkan`) or a theme file's name (see Themes)
 - **Default:** `system`
 
-Colour theme: system (follow macOS light/dark), light or dark.
+Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of the built-in themes (woody: cutaway, kumiko, shola, fortress; oceanic: portolan, aizome, saltspace, konkan), or the name of a theme file in ~/.config/blygger/themes/. `blygger +list-themes` lists them all, and `blygger +copy-theme &lt;name>` copies a built-in there to edit. Theme files reload when you save them.
+
+
+### `theme-dark`
+
+- **Values:** `system`, `light`, `dark`, a built-in theme (`cutaway`, `kumiko`, `shola`, `fortress`, `portolan`, `aizome`, `saltspace`, `konkan`) or a theme file's name (see Themes)
+- **Default:** unset
+
+The theme to use while macOS is dark, whatever theme says, e.g. theme = cutaway with theme-dark = fortress. Unset, theme = system switches to dark and every other theme stays as it is.
 
 
 ### `layout`

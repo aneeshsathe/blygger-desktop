@@ -27,6 +27,7 @@ use gpui_kit::*;
 use super::stream_vm::{self, ReadMode, ReadTracker};
 use super::vm::{self, Key};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 gpui_kit::actions!(blygger, [StreamMode, ReaderMode]);
 
@@ -578,8 +579,7 @@ impl MainView {
                 .h_full()
                 .relative()
                 .flex()
-                .border_l_1()
-                .border_color(p.line)
+                .rule_l(&p)
                 .child(self.render_reading_detail(body_font, cx))
                 .child(
                     div()
@@ -733,8 +733,12 @@ impl MainView {
             .w_full()
             .px(px(28.))
             .py(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
+            // --- themes --- the divider band along the post's foot.
+            .children(
+                crate::ornament::divider(&self.theme)
+                    .map(|band| div().absolute().bottom_0().left_0().w_full().child(band)),
+            )
             .when(selected, |d| d.bg(p.sel))
             .when(opened && !selected, |d| d.bg(p.sel.opacity(0.5)))
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
@@ -1226,12 +1230,6 @@ impl MainView {
         let (q_origin, q_id) = (origin.clone(), id.to_string());
         div()
             .id(("stream-quote", box_id))
-            .px(px(12.))
-            .py(px(8.))
-            .rounded(px(6.))
-            .bg(p.muted.opacity(0.09))
-            .border_l_2()
-            .border_color(p.muted.opacity(0.5))
             .flex()
             .flex_col()
             .gap(px(6.))
@@ -1270,7 +1268,8 @@ impl MainView {
                     .when_some(version, |d, v| d.child(format!("· v{v}")))
                     .child("· open original"),
             )
-            .into_any_element()
+            // --- themes --- the frame (the classic box when unset).
+            .map(|d| crate::ornament::quote_frame(&self.theme, d))
     }
 }
 

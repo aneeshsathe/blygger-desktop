@@ -22,6 +22,8 @@ pub enum ValueKind {
     Path,
     /// `<provider>=<model>`.
     ProviderModel,
+    /// A theme name (lowercase kebab-case); the app checks that it exists.
+    ThemeName,
 }
 
 /// One configuration key.
@@ -91,12 +93,19 @@ pub const KEYS: &[KeySpec] = &[
          The owner token for this blyg is kept in the macOS Keychain, never in this file.",
     ),
     docs(
-        key(
-            "theme",
-            ValueKind::Choice(&["system", "light", "dark"]),
-            Some("system"),
-        ),
-        "Colour theme: system (follow macOS light/dark), light or dark.",
+        key("theme", ValueKind::ThemeName, Some("system")),
+        "Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of \
+         the built-in themes (woody: cutaway, kumiko, shola, fortress; oceanic: portolan, \
+         aizome, saltspace, konkan), or the name of a theme file in \
+         ~/.config/blygger/themes/. `blygger +list-themes` lists them all, and \
+         `blygger +copy-theme <name>` copies a built-in there to edit. Theme files reload \
+         when you save them.",
+    ),
+    docs(
+        key("theme-dark", ValueKind::ThemeName, None),
+        "The theme to use while macOS is dark, whatever theme says, e.g. theme = cutaway with \
+         theme-dark = fortress. Unset, theme = system switches to dark and every other theme \
+         stays as it is.",
     ),
     docs(
         key(

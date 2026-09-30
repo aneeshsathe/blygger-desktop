@@ -22,6 +22,7 @@ mod images;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;
+mod ornament; // --- themes ---
 mod platform;
 mod prefs;
 mod settings;
@@ -51,8 +52,10 @@ fn main() -> ExitCode {
 
     let files = ConfigFiles::discover();
     let notice = settings::migrate_on_launch(&files.primary);
+    let themes_dir = files.themes_dir();
     let store = ConfigStore::open(files);
-    for d in settings::diagnostics(store.loaded()) {
+    let themes = theme::Themes::load(Some(themes_dir));
+    for d in settings::diagnostics(store.loaded(), &themes.registry) {
         eprintln!("blygger: {d}");
     }
     let mut prefs = Prefs::from_config(store.config());
@@ -134,6 +137,7 @@ fn main() -> ExitCode {
         gpui_kit::init(cx);
         platform::set_dock_icon_unless_bundled();
         settings::init(store, tokens, notice, cx);
+        cx.set_global(themes); // --- themes ---
         ai::init(cx);
         cx.set_global(connection);
         // A remote image (a profile avatar) landed in the cache: repaint.

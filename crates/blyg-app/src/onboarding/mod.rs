@@ -30,6 +30,7 @@ use gpui_kit::*;
 use super::{MainView, Sheet};
 use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
+use crate::theme::Rule; // --- themes --- dividers
 
 pub use tutorial::Tutorial;
 
@@ -346,7 +347,8 @@ impl MainView {
                 // an unsaved dev theme override.
                 let mut fresh = crate::settings::prefs(cx);
                 self.persisted = fresh.clone();
-                fresh.theme = self.prefs.theme;
+                fresh.theme = self.prefs.theme.clone();
+                fresh.theme_dark = self.prefs.theme_dark.clone();
                 self.prefs = fresh;
                 self.onboarding_next(window, cx);
             }
@@ -563,8 +565,7 @@ impl MainView {
                         .items_center()
                         .gap(px(10.))
                         .py(px(4.))
-                        .border_b_1()
-                        .border_color(p.line)
+                        .rule_b(&p)
                         .child(
                             div()
                                 .w(px(150.))
@@ -729,8 +730,7 @@ impl MainView {
             div()
                 .mt(px(16.))
                 .pt(px(10.))
-                .border_t_1()
-                .border_color(p.line)
+                .rule_t(&p)
                 .flex()
                 .items_center()
                 .gap(px(14.))

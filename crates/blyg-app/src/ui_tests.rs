@@ -400,7 +400,7 @@ fn reload_applies_the_file_live(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
         assert_eq!(v.prefs.layout, crate::prefs::LayoutPref::Stacked);
-        assert_eq!(v.prefs.theme, crate::prefs::ThemePref::Dark);
+        assert_eq!(v.prefs.theme, "dark");
         assert!(v.palette.dark);
         assert_eq!(v.prefs.writing().family, "Charter");
         assert_eq!(v.config_problems.len(), 1, "{:?}", v.config_problems);

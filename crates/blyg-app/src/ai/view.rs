@@ -26,6 +26,7 @@ use crate::ai::generate::{self, Under};
 use crate::ai::palette::{self, Action};
 use crate::ai::settings as ais;
 use crate::ai::{self, AiGenerate, AiShorten, Failure, Picked};
+use crate::theme::Rule; // --- themes --- dividers
 
 #[cfg(test)]
 #[path = "view_tests.rs"]
@@ -1735,8 +1736,7 @@ impl MainView {
             div()
                 .id(SharedString::from(format!("ai-row-{name}")))
                 .py(px(7.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .child(
                     div()
                         .flex()

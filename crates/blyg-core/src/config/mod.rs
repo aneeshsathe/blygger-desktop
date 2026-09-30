@@ -11,13 +11,14 @@ pub mod migrate;
 pub mod parse;
 pub mod paths;
 pub mod show;
+pub mod theme;
 mod tokens;
 
 use std::path::{Path, PathBuf};
 
 pub use edit::Change;
 pub use parse::{
-    CaptureDefault, Config, Diagnostic, EditedPosts, Layout, Loaded, NewNote, Severity, Theme,
+    CaptureDefault, Config, Diagnostic, EditedPosts, Layout, Loaded, NewNote, Severity,
 };
 pub use paths::{APP_ID, ConfigFiles, data_dir};
 #[cfg(feature = "keychain")]
@@ -102,6 +103,14 @@ impl ConfigStore {
         match &self.backing {
             Backing::Files(f) => &f.primary,
             Backing::Memory { path, .. } => path,
+        }
+    }
+
+    /// Where user themes are read from (`None` for in-memory stores).
+    pub fn themes_dir(&self) -> Option<PathBuf> {
+        match &self.backing {
+            Backing::Files(f) => Some(f.themes_dir()),
+            Backing::Memory { .. } => None,
         }
     }
 
