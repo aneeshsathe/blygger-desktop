@@ -616,11 +616,80 @@ fn fork_and_show_responses() {
     let it = b.item(&id).unwrap();
     assert_eq!(it.content_md, "forked content");
     assert_eq!(it.forked_from.as_ref(), Some(&of));
-    b.set_show_responses(&id, true).unwrap();
-    assert!(b.item(&id).unwrap().show_responses);
-    assert!(env.mock.state().items[&it.server_id.unwrap().0].show_responses);
+    let sid = it.server_id.unwrap().0;
+    assert!(b.set_responses(&id, ResponsesMode::Show).unwrap());
+    let it = b.item(&id).unwrap();
+    assert!(it.show_responses);
+    assert_eq!(it.responses_mode, Some(ResponsesMode::Show));
+    assert!(env.mock.state().items[&sid].show_responses);
     b.sync_now().unwrap();
     assert_eq!(b.items().len(), 1, "pull didn't duplicate the fork");
+}
+
+#[test]
+fn responses_follow_the_site_default() {
+    let env = Env::new();
+    let b = env.manual();
+    env.mock.state().responses_default = true;
+    let id = b
+        .fork(&RemoteRef {
+            origin: "https://else.example/".into(),
+            id: "X".repeat(26),
+            version: 1,
+        })
+        .unwrap();
+    let sid = b.item(&id).unwrap().server_id.unwrap().0;
+
+    assert!(!b.set_responses(&id, ResponsesMode::Hide).unwrap());
+    assert!(
+        b.set_responses(&id, ResponsesMode::Default).unwrap(),
+        "the reply's `showing` is the effective state"
+    );
+    let it = b.item(&id).unwrap();
+    assert!(it.show_responses);
+    assert_eq!(it.responses_mode, Some(ResponsesMode::Default));
+    assert_eq!(env.mock.state().items[&sid].responses_override, Some(None));
+
+    // A pull carries the choice (`responses_override: null`) and keeps it.
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(ResponsesMode::Default));
+    assert!(it.show_responses);
+
+    // Another client hides it: the pull follows.
+    {
+        let mut st = env.mock.state();
+        let si = st.items.get_mut(&sid).unwrap();
+        si.responses_override = Some(Some(0));
+        si.show_responses = false;
+    }
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(ResponsesMode::Hide));
+    assert!(!it.show_responses);
+}
+
+#[test]
+fn responses_on_a_pre_0_8_server() {
+    let env = Env::new();
+    let b = env.manual();
+    env.mock.state().legacy_responses = true;
+    let id = b
+        .fork(&RemoteRef {
+            origin: "https://else.example/".into(),
+            id: "X".repeat(26),
+            version: 1,
+        })
+        .unwrap();
+    // Show and hide carry the legacy `show`, so an old server takes them.
+    assert!(b.set_responses(&id, ResponsesMode::Show).unwrap());
+    let it = b.item(&id).unwrap();
+    assert!(it.show_responses);
+    assert_eq!(it.responses_mode, None, "an old server reports no choice");
+    assert!(!b.set_responses(&id, ResponsesMode::Hide).unwrap());
+    // `Default` needs 0.8: refused, and nothing changes locally.
+    assert!(b.set_responses(&id, ResponsesMode::Default).is_err());
+    assert!(!b.item(&id).unwrap().show_responses);
 }
 
 #[test]

@@ -517,6 +517,8 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             url: format!("{}/feed.json", super::ORIGIN),
         }],
         accept_mentions: Some(true),
+        timezone: Some("Europe/Lisbon".into()),
+        show_responses_default: Some(false),
     };
 
     // "On friction": v1 first, v2 pinned, v3 current.

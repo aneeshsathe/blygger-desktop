@@ -108,7 +108,7 @@ pub struct MergeOutcome {
 const ITEM_COLS: &str = "local_id, server_id, kind, status, version, dirty, content_md, created, updated, \
      permalink, stub_of, forked_from, show_responses, conflict, \
      EXISTS(SELECT 1 FROM outbox o WHERE o.local_id = items.local_id AND o.op <> 'delete_remote'), \
-     server_kind, base_content, theirs_content";
+     server_kind, base_content, theirs_content, responses_mode";
 
 fn row_to_sync(r: &Row) -> rusqlite::Result<SyncRow> {
     let json_ref = |s: Option<String>| s.and_then(|s| serde_json::from_str::<RemoteRef>(&s).ok());
@@ -126,6 +126,9 @@ fn row_to_sync(r: &Row) -> rusqlite::Result<SyncRow> {
         stub_of: json_ref(r.get(10)?),
         forked_from: json_ref(r.get(11)?),
         show_responses: r.get(12)?,
+        responses_mode: r
+            .get::<_, Option<String>>(18)?
+            .and_then(|m| ResponsesMode::parse(&m)),
         conflict: r.get(13)?,
         pending_sync: r.get(14)?,
     };
@@ -818,10 +821,17 @@ impl Store {
         Ok(())
     }
 
-    pub fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
+    /// `mode` = `None` keeps the stored choice (a pre-0.8 server).
+    pub fn set_responses(
+        &self,
+        id: &LocalId,
+        show: bool,
+        mode: Option<ResponsesMode>,
+    ) -> Result<()> {
         self.conn().execute(
-            "UPDATE items SET show_responses = ?2 WHERE local_id = ?1",
-            params![id.0, show],
+            "UPDATE items SET show_responses = ?2, responses_mode = COALESCE(?3, responses_mode) \
+             WHERE local_id = ?1",
+            params![id.0, show, mode.map(ResponsesMode::as_str)],
         )?;
         Ok(())
     }
@@ -1031,8 +1041,9 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
     let kind = kind_str(w.local_kind());
     tx.execute(
         "INSERT INTO items (local_id, server_id, kind, server_kind, status, version, dirty, content_md, created, \
-         updated, permalink, stub_of, forked_from, show_responses, base_updated, base_content) \
-         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7)",
+         updated, permalink, stub_of, forked_from, show_responses, base_updated, base_content, \
+         responses_mode) \
+         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7, ?14)",
         params![
             id.0,
             w.id,
@@ -1046,7 +1057,8 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
             w.permalink,
             raw_json(&w.stub_of),
             raw_json(&w.forked_from),
-            w.show_responses,
+            w.shows_responses(),
+            w.responses_mode().map(ResponsesMode::as_str),
         ],
     )?;
     if let Some(v) = &w.versions {
@@ -1096,7 +1108,8 @@ fn merge_one(
     // Metadata the server owns, applied in every case.
     tx.execute(
         "UPDATE items SET status = ?2, version = ?3, permalink = ?4, stub_of = ?5, forked_from = ?6, \
-         show_responses = ?7, server_kind = ?8, base_updated = ?9, updated = ?10 WHERE local_id = ?1",
+         show_responses = ?7, server_kind = ?8, base_updated = ?9, updated = ?10, \
+         responses_mode = COALESCE(?11, responses_mode) WHERE local_id = ?1",
         params![
             id.0,
             w.status,
@@ -1104,16 +1117,19 @@ fn merge_one(
             w.permalink,
             raw_json(&w.stub_of),
             raw_json(&w.forked_from),
-            w.show_responses,
+            w.shows_responses(),
             server_kind,
             w.updated,
             updated,
+            w.responses_mode().map(ResponsesMode::as_str),
         ],
     )?;
     let meta_changed = status_str(it.status) != w.status
         || it.version != w.version
         || it.permalink != w.permalink
-        || it.show_responses != w.show_responses
+        || it.show_responses != w.shows_responses()
+        || w.responses_mode()
+            .is_some_and(|m| it.responses_mode != Some(m))
         || it.updated != updated;
 
     if it.conflict {

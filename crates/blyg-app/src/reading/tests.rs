@@ -311,6 +311,38 @@ fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_post_can_hand_its_responses_back_to_the_site_setting(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-shift-m");
+    settle(cx);
+    let first = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let (_, id, r, _) = v.mention_groups().into_iter().next().unwrap();
+            (id.unwrap(), r)
+        })
+    };
+    let (id, r) = first(&view, cx);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Show));
+    assert!(r.show);
+    view.update(cx, |v, cx| {
+        v.set_responses(id.clone(), blyg_core::ResponsesMode::Default, cx)
+    });
+    settle(cx);
+    // The fake's site default is off, so following it hides them.
+    let it = fake.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(blyg_core::ResponsesMode::Default));
+    assert!(!it.show_responses);
+    let (_, r) = first(&view, cx);
+    assert!(!r.show);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Default));
+    let strings = view.read_with(cx, |v, _| v.mentions_screen_strings());
+    assert!(
+        strings.contains(&"responses hidden from the page · site setting".to_string()),
+        "{strings:?}"
+    );
+}
+
+#[gpui_kit::test]
 fn mentions_are_a_list_without_counts(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     cx.simulate_keystrokes("cmd-shift-m");
@@ -497,13 +529,18 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         let Some(RSheet::Site {
-            title, links, load, ..
+            title,
+            links,
+            timezone,
+            load,
+            ..
         }) = &v.reading.sheet
         else {
             panic!("sheet");
         };
         assert!(matches!(load, Load::Ready(_)));
         assert_eq!(title.read(cx).value().as_ref(), "Harbour notes");
+        assert_eq!(timezone.read(cx).value().as_ref(), "Europe/Lisbon");
         title.update(cx, |s, cx| s.set_value("Harbour notebook", window, cx));
         links.update(cx, |s, cx| {
             s.set_value(
@@ -512,11 +549,15 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
                 cx,
             )
         });
+        timezone.update(cx, |s, cx| s.set_value("Asia/Tokyo", window, cx));
         v.toggle_accept_mentions(cx);
+        v.toggle_responses_default(cx);
         v.save_site_settings(window, cx);
     });
     settle(cx);
     let s = fake.saved_settings();
+    assert_eq!(s.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(s.show_responses_default, Some(true));
     assert_eq!(s.site_title.as_deref(), Some("Harbour notebook"));
     assert_eq!(s.accept_mentions, Some(false));
     assert_eq!(s.author_links.len(), 2);

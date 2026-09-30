@@ -148,9 +148,9 @@ impl Backend for Recording {
         self.rec("fork");
         self.inner.fork(of)
     }
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
-        self.rec("set_show_responses");
-        self.inner.set_show_responses(id, show)
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
+        self.rec("set_responses");
+        self.inner.set_responses(id, mode)
     }
     fn sync_now(&self) -> Result<()> {
         self.rec("sync_now");

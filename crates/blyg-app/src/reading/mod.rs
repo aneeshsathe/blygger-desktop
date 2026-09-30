@@ -201,6 +201,8 @@ pub enum RSheet {
         name: Entity<InputState>,
         bio: Entity<InputState>,
         links: Entity<TextareaState>,
+        /// IANA zone; shown only when the server has the setting (studio 0.8).
+        timezone: Entity<InputState>,
         load: Load<Settings>,
         error: Option<String>,
         busy: bool,

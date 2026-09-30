@@ -93,7 +93,12 @@ pub struct Item {
     pub permalink: Option<String>,
     pub stub_of: Option<RemoteRef>,
     pub forked_from: Option<RemoteRef>,
+    /// Whether the item's page shows its verified responses right now (the
+    /// effective state, after any global default).
     pub show_responses: bool,
+    /// The item's own choice about responses (studio 0.8). `None` when the
+    /// server doesn't report one (pre-0.8), which offers only show and hide.
+    pub responses_mode: Option<ResponsesMode>,
     /// Local edits not yet acknowledged by the server.
     pub pending_sync: bool,
     /// Server changed this item underneath a local edit; see `Backend::resolve_conflict`.
@@ -115,6 +120,45 @@ impl Item {
 
     pub fn over_limit(&self) -> bool {
         self.kind == Kind::Fragment && self.char_count() > FRAGMENT_LIMIT
+    }
+}
+
+/// What one item does about showing its verified responses
+/// (`PUT /api/items/:id/responses {mode}`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponsesMode {
+    /// No choice of its own: follows the blyg's `show_responses_default`.
+    Default,
+    Show,
+    Hide,
+}
+
+impl ResponsesMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ResponsesMode::Default => "default",
+            ResponsesMode::Show => "show",
+            ResponsesMode::Hide => "hide",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "default" => Some(ResponsesMode::Default),
+            "show" => Some(ResponsesMode::Show),
+            "hide" => Some(ResponsesMode::Hide),
+            _ => None,
+        }
+    }
+
+    /// The server's `responses_override` (`1`, `0`, or `null` for none).
+    pub fn from_override(o: Option<i64>) -> Self {
+        match o {
+            None => ResponsesMode::Default,
+            Some(0) => ResponsesMode::Hide,
+            Some(_) => ResponsesMode::Show,
+        }
     }
 }
 
@@ -727,6 +771,14 @@ pub struct Settings {
     /// `None` when the server doesn't report it, and then never sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accept_mentions: Option<bool>,
+    /// IANA zone the blyg renders dates in (studio 0.8); rendering only.
+    /// `None` when unset or unreported, and then never sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    /// Whether items without a choice of their own show their responses
+    /// (studio 0.8). `None` when the server doesn't report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_responses_default: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

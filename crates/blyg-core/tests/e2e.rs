@@ -870,12 +870,12 @@ fn show_responses_round_trips() {
     let b = manual(dir.path());
     let (id, sid) = published(&b, Kind::Fragment, &tag("responses"), None);
     assert!(!b.item(&id).unwrap().show_responses);
-    b.set_show_responses(&id, true).unwrap();
+    b.set_responses(&id, ResponsesMode::Show).unwrap();
     assert!(b.item(&id).unwrap().show_responses);
     assert_eq!(server_item(&sid)["show_responses"], true);
     b.sync_now().unwrap();
     assert!(b.item(&id).unwrap().show_responses, "a pull keeps it");
-    b.set_show_responses(&id, false).unwrap();
+    b.set_responses(&id, ResponsesMode::Hide).unwrap();
     assert_eq!(server_item(&sid)["show_responses"], false);
 }
 

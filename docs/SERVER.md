@@ -79,6 +79,16 @@ export reads it. It holds only numbers keyed by subscription and item, never tex
 - `accept_mentions` (boolean) in `GET /api/settings`: Site settings shows an
   **Accept mentions** toggle and saves it with `PUT /api/settings`. Without
   the field the toggle is hidden and never sent.
+- Studio 0.8 responses: `PUT /api/items/:id/responses {mode: "default" | "show" | "hide"}`
+  answering `{ok, override, showing}`. The app sends `show` alongside
+  `show`/`hide`, so a pre-0.8 server still takes those two. On the item JSON,
+  `responses_override` (`1`, `0` or `null`) enables the per-post **follow site
+  setting** control, and `show_responses` (or `showing`, which wins) must be the
+  *effective* state (studio's `itemShowsResponses`), not the legacy column that
+  0.8 no longer updates.
+- `timezone` (string, `""` = unset) and `show_responses_default` (boolean) in
+  `GET /api/settings`: Site settings shows a time zone field and a **Show
+  responses by default** toggle. Without them both are hidden and never sent.
 - `transclusions[]` on `GET /api/reading` rows, with each entry's `cited`
   (protocol 0.3): a quote box whose post isn't held here shows the cited
   excerpt and names the cited author or source.

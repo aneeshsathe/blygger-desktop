@@ -32,6 +32,9 @@ pub struct SItem {
     pub content_md: String,
     pub versions: Vec<Value>,
     pub show_responses: bool,
+    /// Studio 0.8's `responses_override`; `None` = a pre-0.8 server, which
+    /// doesn't send the key.
+    pub responses_override: Option<Option<i64>>,
     pub forked_from: Value,
 }
 
@@ -55,6 +58,10 @@ pub struct State {
     pub signals: BTreeMap<(String, String), i64>,
     pub hidden: BTreeMap<String, bool>,
     pub settings_puts: Vec<Value>,
+    /// Studio 0.8's `show_responses_default`.
+    pub responses_default: bool,
+    /// A pre-0.8 server: `PUT …/responses` reads only `show`.
+    pub legacy_responses: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -101,6 +108,7 @@ impl State {
                 content_md: content.into(),
                 versions: vec![],
                 show_responses: false,
+                responses_override: None,
                 forked_from: Value::Null,
             },
         );
@@ -273,7 +281,7 @@ fn handle(mut conn: TcpStream, state: Arc<Mutex<State>>) {
 }
 
 fn item_json(it: &SItem) -> Value {
-    json!({
+    let mut v = json!({
         "id": it.id,
         "kind": if it.status == "withdrawn" { "withdrawn" } else { it.kind.as_str() },
         "authored_kind": it.kind,
@@ -289,7 +297,11 @@ fn item_json(it: &SItem) -> Value {
             Value::String(format!("http://mock.test/{}/{}", if it.kind == "thread" { "t" } else { "f" }, it.id))
         } else { Value::Null },
         "show_responses": it.show_responses,
-    })
+    });
+    if let Some(o) = it.responses_override {
+        v["responses_override"] = json!(o);
+    }
+    v
 }
 
 /// Percent-decode one path segment.
@@ -456,6 +468,32 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 }
                 _ => not_found(),
             }
+        }
+        ("PUT", ["api", "items", id, "responses"])
+            if body.get("mode").is_some() && !s.legacy_responses =>
+        {
+            // Studio 0.8: `mode` wins over the legacy `show`.
+            let o = match body["mode"].as_str() {
+                Some("default") => None,
+                Some("show") => Some(1),
+                Some("hide") => Some(0),
+                _ => {
+                    return (
+                        400,
+                        json!({ "error": "mode must be \"default\", \"show\" or \"hide\"" }),
+                    );
+                }
+            };
+            let default = s.responses_default;
+            let Some(it) = s.items.get_mut(*id) else {
+                return not_found();
+            };
+            it.responses_override = Some(o);
+            it.show_responses = o.map_or(default, |o| o == 1);
+            (
+                200,
+                json!({ "ok": true, "override": o, "showing": it.show_responses }),
+            )
         }
         ("PUT", ["api", "items", id, "responses"]) => {
             let Some(show) = body["show"].as_bool() else {
