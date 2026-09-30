@@ -9,6 +9,22 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [0.6.0] - 2026-09-29
+
+### Added
+
+- **Universal quoting.** Highlight text in the built-in browser, in notes or in the reading pane, then press ⇧⌘D (or **→ Draft** in the browser, or Post › Quote Selection in Draft). The passage goes into the open draft at the caret, or into a new draft, with its source. A post from a blyg you follow, quoted into a thread, becomes a partial quote of that post. Anything else becomes a blockquote followed by a link to the page.
+- **Partial quotes (blygger-studio 0.8).** `![[id]]` followed directly by `>` lines quotes just that passage. A blank line in between makes it a whole quote plus your own blockquote. The preview flags a passage that isn't in the quoted post, and publishing refuses it. In the stream, a partial quote shows only its passage.
+- Replying with a passage selected in the reading pane starts the reply as a partial quote of it. Replying to a long post with nothing selected leaves an empty quote line to fill in.
+- **Link post:** a new action next to Fork that starts a fragment linking to the post (`[[id]]`) without responding to it. Reply is still the one way to respond.
+- **Responses:** each post on the Mentions screen can follow the blyg's site setting, or show or hide its responses itself.
+- **Site settings:** a time zone for dates on your pages, and **Show responses by default**, on blygs that report them.
+
+### Changed
+
+- The preview matches blygger-studio 0.8.3.
+- Titles never come from quoted text. A reply with nothing of its own yet shows as "In response to <host>".
+
 ## [0.5.1] - 2026-09-28
 
 ### Fixed
