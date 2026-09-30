@@ -79,9 +79,12 @@ pub enum Block {
     },
     /// A table, shown as a placeholder.
     Table,
-    /// `![[id]]` on its own line in a thread.
+    /// `![[id]]` on its own line in a thread. `excerpt` is the passage of a
+    /// partial quote (the `>` run attached with no blank line, spec §16.4),
+    /// as plain text with paragraphs split by `\n`.
     Transclusion {
         id: String,
+        excerpt: Option<String>,
     },
 }
 
@@ -102,7 +105,7 @@ impl Block {
             Block::Code(c) => c.clone(),
             Block::Rule | Block::Table | Block::Embed { .. } => String::new(),
             Block::Image { alt, .. } => alt.clone(),
-            Block::Transclusion { id } => format!("![[{id}]]"),
+            Block::Transclusion { id, .. } => format!("![[{id}]]"),
         }
     }
 }
@@ -176,15 +179,29 @@ fn blocks_of(text: &str, kind: Kind) -> Vec<Block> {
         let lines: Vec<&str> = text.split('\n').collect();
         let code = crate::markdown::code_lines(text);
         let mut prose: Vec<&str> = Vec::new();
-        for (i, line) in lines.iter().enumerate() {
+        let mut i = 0;
+        while i < lines.len() {
+            let line = lines[i];
             let directive = (!code.get(i).copied().unwrap_or(false))
                 .then(|| directive_id(line))
                 .flatten();
+            i += 1;
             match directive {
                 Some(id) => {
                     parse_into(&prose.join("\n"), &mut out);
                     prose.clear();
-                    out.push(Block::Transclusion { id });
+                    // The attached quote is part of the directive, not the
+                    // author's own blockquote.
+                    let mut run = Vec::new();
+                    while let Some(q) = lines.get(i).filter(|l| l.trim_start().starts_with('>')) {
+                        let q = q.trim_start()[1..].to_string();
+                        run.push(q.strip_prefix([' ', '\t']).map(str::to_string).unwrap_or(q));
+                        i += 1;
+                    }
+                    let excerpt = (!run.is_empty())
+                        .then(|| crate::selection_from_quote(&run.join("\n")))
+                        .filter(|e| !e.is_empty());
+                    out.push(Block::Transclusion { id, excerpt });
                 }
                 None => prose.push(line),
             }
@@ -511,11 +528,43 @@ mod tests {
         let md = format!("Before\n![[{id}]]\nAfter\n\n```\n![[{id}]]\n```");
         let t = native_blocks(&md, Kind::Thread);
         assert_eq!(t[0].plain(), "Before");
-        assert_eq!(t[1], Block::Transclusion { id: id.into() });
+        assert_eq!(
+            t[1],
+            Block::Transclusion {
+                id: id.into(),
+                excerpt: None
+            }
+        );
         assert_eq!(t[2].plain(), "After");
         assert!(matches!(&t[3], Block::Code(c) if c.contains("![[")));
         let f = native_blocks(&md, Kind::Fragment);
         assert!(!f.iter().any(|b| matches!(b, Block::Transclusion { .. })));
+    }
+
+    #[test]
+    fn an_attached_quote_is_the_excerpt_and_a_blank_line_detaches() {
+        let id = "01k2ada0tides0000000000001";
+        let md = format!("![[{id}]]\n> One *line*\n>\n> two\nMine");
+        let t = native_blocks(&md, Kind::Thread);
+        assert_eq!(
+            t[0],
+            Block::Transclusion {
+                id: id.into(),
+                excerpt: Some("One line\ntwo".into())
+            }
+        );
+        assert_eq!(t[1].plain(), "Mine");
+        assert_eq!(t.len(), 2);
+
+        let md = format!("![[{id}]]\n\n> my own quote");
+        let t = native_blocks(&md, Kind::Thread);
+        assert!(matches!(&t[0], Block::Transclusion { excerpt: None, .. }));
+        assert!(matches!(&t[1], Block::Quote(_)));
+
+        // An empty run is consumed, and shows the whole post.
+        let t = native_blocks(&format!("![[{id}]]\n> \nAfter"), Kind::Thread);
+        assert!(matches!(&t[0], Block::Transclusion { excerpt: None, .. }));
+        assert_eq!(t[1].plain(), "After");
     }
 
     #[test]

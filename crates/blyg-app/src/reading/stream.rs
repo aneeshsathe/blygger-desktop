@@ -1024,7 +1024,9 @@ impl MainView {
             ),
             Block::Embed { url } => placeholder(p, format!("▶ video · {}", vm::host(url))),
             Block::Table => placeholder(p, "▦ table · open the post to see it".into()),
-            Block::Transclusion { id } => self.render_quote_box(post, id, n, cx),
+            Block::Transclusion { id, excerpt } => {
+                self.render_quote_box(post, id, excerpt.as_deref(), n, cx)
+            }
         }
     }
 
@@ -1134,6 +1136,7 @@ impl MainView {
         &self,
         post: &ReadingItem,
         id: &str,
+        excerpt: Option<&str>,
         n: &mut usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
@@ -1144,6 +1147,11 @@ impl MainView {
         *n += 1;
         let box_id = *n;
         let quoted: Vec<AnyElement> = match held {
+            // A partial quote (§16.4): only the passage, never the whole post.
+            _ if let Some(e) = excerpt => e
+                .split('\n')
+                .map(|para| div().child(para.to_string()).into_any_element())
+                .collect(),
             Some(q) if !q.content_md.trim().is_empty() || !q.content_html.trim().is_empty() => {
                 let blocks: Vec<Block> = post_blocks(q)
                     .into_iter()
