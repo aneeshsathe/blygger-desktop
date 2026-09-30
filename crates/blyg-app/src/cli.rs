@@ -40,7 +40,7 @@ pub fn run(args: &[String]) -> Option<ExitCode> {
 const HELP: &str = "\
 Usage: blygger [+action [options]]
 
-With no action, Blygger starts. Actions:
+With no action, Burrow starts. Actions:
   +show-config            the effective config (only what you changed)
       --default           show the defaults instead
       --docs              include each option's documentation

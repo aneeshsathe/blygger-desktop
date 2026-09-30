@@ -289,7 +289,7 @@ fn store_writes_each_key_where_it_was_set() {
     s.set(&[("blyg-url", Change::Set("https://blyg.example.com".into()))])
         .unwrap();
     let text = std::fs::read_to_string(&fresh).unwrap();
-    assert!(text.starts_with("# Blygger configuration."), "{text}");
+    assert!(text.starts_with("# Burrow configuration."), "{text}");
     assert!(
         text.ends_with("\nblyg-url = https://blyg.example.com\n"),
         "{text}"
@@ -426,7 +426,7 @@ fn legacy_toml_files_become_one_config() {
         assert!(data.join(format!("{f}.migrated")).exists());
     }
     let text = std::fs::read_to_string(&target).unwrap();
-    assert!(text.starts_with("# Blygger configuration."));
+    assert!(text.starts_with("# Burrow configuration."));
     assert!(
         text.contains("# Migrated from ui.toml\n# my fonts\n"),
         "{text}"

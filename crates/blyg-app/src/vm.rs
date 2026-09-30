@@ -364,11 +364,11 @@ pub fn absolute_url(url: &str, base: Option<&str>) -> Option<String> {
     Some(format!("{base}/{}", url.trim_start_matches('/')))
 }
 
-/// The window title: `Blygger — <host>` for the connected blyg, else `Blygger`.
+/// The window title: `Burrow — <host>` for the connected blyg, else `Burrow`.
 pub fn window_title(blyg_url: Option<&str>) -> String {
     match blyg_url.and_then(url_host).filter(|h| !h.is_empty()) {
-        Some(host) => format!("Blygger — {host}"),
-        None => "Blygger".to_string(),
+        Some(host) => format!("Burrow — {host}"),
+        None => "Burrow".to_string(),
     }
 }
 
@@ -1072,14 +1072,14 @@ mod tests {
 
         assert_eq!(
             window_title(Some("https://Blyg.Example.com:8443/sub/")),
-            "Blygger — blyg.example.com"
+            "Burrow — blyg.example.com"
         );
         assert_eq!(
             window_title(Some("http://127.0.0.1:8787")),
-            "Blygger — 127.0.0.1"
+            "Burrow — 127.0.0.1"
         );
-        assert_eq!(window_title(None), "Blygger");
-        assert_eq!(window_title(Some("not a url")), "Blygger");
+        assert_eq!(window_title(None), "Burrow");
+        assert_eq!(window_title(Some("not a url")), "Burrow");
     }
 
     #[test]

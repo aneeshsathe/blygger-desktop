@@ -1,4 +1,4 @@
-//! Blygger Desktop: a Notational-Velocity-style GPUI client for a blyg.
+//! Burrow: a Notational-Velocity-style GPUI client for a blyg.
 //!
 //! With a `blyg-url` in the config and its owner token in the Keychain, the
 //! app runs on `LiveBackend` (local SQLite + sync with the blyg). With none,
@@ -217,7 +217,7 @@ fn open_main(
 pub(crate) fn guarded<T>(f: impl FnOnce() -> blyg_core::Result<T>) -> blyg_core::Result<T> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| {
         Err(blyg_core::CoreError::Other(
-            "couldn't read that page (it has something Blygger didn't expect)".into(),
+            "couldn't read that page (it has something Burrow didn't expect)".into(),
         ))
     })
 }
@@ -257,10 +257,10 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
     use gpui_kit::base::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
     vec![
         Menu {
-            name: "Blygger".into(),
+            name: "Burrow".into(),
             items: vec![
                 // --- about --- (also in Help)
-                MenuItem::action("About Blygger", about::ShowAbout),
+                MenuItem::action("About Burrow", about::ShowAbout),
                 MenuItem::separator(),
                 MenuItem::action("Settings…", app::OpenSettings),
                 MenuItem::action("Check for Updates…", update::CheckForUpdates), // --- auto-update ---
@@ -270,7 +270,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action("Disconnect…", app::Disconnect),
                 MenuItem::separator(),
-                MenuItem::action("Quit Blygger", app::Quit),
+                MenuItem::action("Quit Burrow", app::Quit),
             ],
             disabled: false,
         },
@@ -369,10 +369,10 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
         Menu {
             name: "Help".into(),
             items: vec![
-                MenuItem::action("Blygger Tutorial", app::onboarding::ShowTutorial),
-                // --- about --- (also in the Blygger menu)
+                MenuItem::action("Burrow Tutorial", app::onboarding::ShowTutorial),
+                // --- about --- (also in the Burrow menu)
                 MenuItem::separator(),
-                MenuItem::action("About Blygger", about::ShowAbout),
+                MenuItem::action("About Burrow", about::ShowAbout),
             ],
             disabled: false,
         },

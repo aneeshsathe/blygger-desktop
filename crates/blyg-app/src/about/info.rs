@@ -179,7 +179,7 @@ pub struct UpdateInfo {
     pub auto_update: AutoUpdate,
     /// Unix seconds of the last check that found nothing newer.
     pub last_check: Option<u64>,
-    /// "Blygger 0.4.0 is downloaded and ready", "up to date", "checks are
+    /// "Burrow 0.4.0 is downloaded and ready", "up to date", "checks are
     /// off (…)", and so on.
     pub status: String,
 }
@@ -223,7 +223,7 @@ impl Report {
             rows.push((c.label, if c.on { "yes" } else { "no" }.to_string()));
         }
         let width = rows.iter().map(|(k, _)| k.len()).max().unwrap_or(0) + 1;
-        let mut out = format!("Blygger {}\n", b.version);
+        let mut out = format!("Burrow {}\n", b.version);
         for (k, v) in rows {
             out.push_str(&format!("{:<width$} {v}\n", format!("{k}:")));
         }
@@ -337,7 +337,7 @@ mod tests {
     fn copy_text_lists_everything_but_paths_and_secrets() {
         let text = report().copy_text();
         let want = "\
-Blygger 0.3.0
+Burrow 0.3.0
 Version:            0.3.0
 Commit:             1a2b3c4
 Built:              2026-09-21 14:13 UTC

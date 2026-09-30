@@ -187,7 +187,7 @@ pub struct MainView {
     /// Problems in the config file, shown as a dismissible banner.
     config_problems: Vec<blyg_core::config::Diagnostic>,
     problems_dismissed: bool,
-    /// `Blygger — <host>` from the config's `blyg-url`.
+    /// `Burrow — <host>` from the config's `blyg-url`.
     title: String,
     /// The title last given to the native window (Window menu, Mission Control).
     native_title: String,
@@ -1182,7 +1182,7 @@ impl MainView {
     fn apply_hotkey(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let clash = crate::keymap::clash_with_hotkey(&text).map(|k| {
             format!(
-                "{} is already {} in Blygger",
+                "{} is already {} in Burrow",
                 crate::keymap::glyphs(k.key),
                 k.label
             )
@@ -2487,7 +2487,7 @@ impl MainView {
                         }))
                         .child(heading("Connect your blyg".into()))
                         .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            "Blygger writes to your own blyg. Enter its address and its \
+                            "Burrow writes to your own blyg. Enter its address and its \
                                      owner token. The token is kept in your macOS Keychain; the \
                                      address goes in your config file.",
                         ))

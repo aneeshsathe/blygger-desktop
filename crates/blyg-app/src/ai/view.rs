@@ -1282,7 +1282,7 @@ impl MainView {
         if let Some(Overlay::Settings(s)) = self.ai.overlay.as_mut() {
             s.chatgpt_running = Some(cancel.clone());
             s.message = Some((
-                "Approve Blygger in the browser window that opened…".into(),
+                "Approve Burrow in the browser window that opened…".into(),
                 false,
             ));
         }
@@ -1451,7 +1451,7 @@ impl MainView {
                     }))
                     .child(heading("This will publish without AI disclosure".into()))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        "This post has text generated in Blygger, but your blyg doesn't have the \
+                        "This post has text generated in Burrow, but your blyg doesn't have the \
                          provenance extension (it answered 404), so readers won't see that it \
                          was generated. See docs/SERVER.md.",
                     ))

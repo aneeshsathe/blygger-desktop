@@ -586,7 +586,7 @@ pub fn download_all(data_dir: &Path) -> usize {
     }
     let agent = ureq::AgentBuilder::new()
         .timeout(Duration::from_secs(60))
-        .user_agent(concat!("Blygger/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("Burrow/", env!("CARGO_PKG_VERSION")))
         .build();
     let mut ok = 0;
     for s in SOURCES {

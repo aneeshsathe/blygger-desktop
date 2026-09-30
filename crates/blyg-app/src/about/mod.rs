@@ -1,4 +1,4 @@
-//! Blygger › About Blygger (also Help › About Blygger): a small window with
+//! Burrow › About Burrow (also Help › About Burrow): a small window with
 //! the version and build, the updater's state, the connection (host and
 //! detected server capabilities, never the token), the data and config
 //! paths, links, and "Copy build info" for bug reports.
@@ -69,7 +69,7 @@ pub fn open(cx: &mut App) {
             cx,
         ))),
         titlebar: Some(TitlebarOptions {
-            title: Some("About Blygger".into()),
+            title: Some("About Burrow".into()),
             appears_transparent: true,
             traffic_light_position: Some(point(px(12.), px(11.))),
         }),
@@ -353,7 +353,7 @@ impl Render for AboutView {
                         div()
                             .font_family(serif.clone())
                             .text_size(px(28.))
-                            .child("Blygger"),
+                            .child("Burrow"),
                     )
                     .child(div().text_color(p.muted).child(format!(
                         "Version {} ({})",
@@ -365,7 +365,7 @@ impl Render for AboutView {
                             .font_family(serif)
                             .italic()
                             .text_color(p.muted)
-                            .child("A fast, local-first studio for your blyg."),
+                            .child("Burrow is a blygger client."),
                     ),
             );
 

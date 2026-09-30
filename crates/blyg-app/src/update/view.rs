@@ -14,7 +14,7 @@ impl MainView {
         self.show_toast(text, None, cx);
     }
 
-    /// "Blygger X is ready · Restart to update · What's new" (or available,
+    /// "Burrow X is ready · Restart to update · What's new" (or available,
     /// or can't update in place), when there's something to say.
     pub(super) fn render_update_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let notice = update::notice(cx)?;

@@ -29,7 +29,7 @@ fn the_menu_action_opens_the_about_window_once(cx: &mut TestAppContext) {
 
 #[test]
 fn both_menus_have_about_blygger() {
-    for menu in ["Blygger", "Help"] {
+    for menu in ["Burrow", "Help"] {
         let m = crate::menus(true)
             .into_iter()
             .find(|m| m.name == menu)
@@ -38,16 +38,16 @@ fn both_menus_have_about_blygger() {
             m.items.iter().any(|i| matches!(
                 i,
                 gpui_kit::MenuItem::Action { name, action, .. }
-                    if name == "About Blygger" && action.name().ends_with("ShowAbout")
+                    if name == "About Burrow" && action.name().ends_with("ShowAbout")
             )),
-            "{menu} › About Blygger"
+            "{menu} › About Burrow"
         );
     }
     // The standard place: first in the app menu.
     let app = crate::menus(true).into_iter().next().expect("app menu");
     assert!(matches!(
         &app.items[0],
-        gpui_kit::MenuItem::Action { name, .. } if name == "About Blygger"
+        gpui_kit::MenuItem::Action { name, .. } if name == "About Burrow"
     ));
 }
 
@@ -75,7 +75,7 @@ fn copy_build_info_puts_the_report_on_the_clipboard(cx: &mut TestAppContext) {
         .read_from_clipboard()
         .and_then(|c| c.text())
         .expect("copied");
-    assert!(text.starts_with("Blygger "), "{text}");
+    assert!(text.starts_with("Burrow "), "{text}");
     assert!(text.contains(&format!("Version:      {}", env!("CARGO_PKG_VERSION"))));
     assert!(text.contains("Commit:"), "{text}");
     assert!(

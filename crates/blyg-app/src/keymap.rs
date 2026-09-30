@@ -266,14 +266,14 @@ pub fn table() -> Vec<Keybind> {
             Global,
             OpenSettings,
             "Settings",
-            Some("Blygger › Settings…")
+            Some("Burrow › Settings…")
         ),
         kb!(
             "cmd-shift-,",
             Global,
             ReloadConfig,
             "Reload the config file",
-            Some("Blygger › Reload Config")
+            Some("Burrow › Reload Config")
         ),
         kb!(
             "cmd-<",
@@ -282,13 +282,7 @@ pub fn table() -> Vec<Keybind> {
             "Reload the config file",
             None
         ),
-        kb!(
-            "cmd-q",
-            Global,
-            Quit,
-            "Quit",
-            Some("Blygger › Quit Blygger")
-        ),
+        kb!("cmd-q", Global, Quit, "Quit", Some("Burrow › Quit Burrow")),
         kb!(
             "ctrl-alt-cmd-o",
             Main,
@@ -342,18 +336,18 @@ pub fn table() -> Vec<Keybind> {
         menu_only!(
             Disconnect,
             "Disconnect from this blyg",
-            "Blygger › Disconnect…"
+            "Burrow › Disconnect…"
         ),
         menu_only!(
             OpenConfigFile,
             "Open the config file",
-            "Blygger › Open Config File"
+            "Burrow › Open Config File"
         ),
         // --- auto-update ---
         menu_only!(
             CheckForUpdates,
             "Check for a new release now (whatever auto-update says)",
-            "Blygger › Check for Updates…"
+            "Burrow › Check for Updates…"
         ),
         // --- buttons --- The quick-capture hotkey is `capture-hotkey`, not a
         // binding here; its button's tooltip shows the configured one.
@@ -361,7 +355,7 @@ pub fn table() -> Vec<Keybind> {
             menu_only!(
                 ShowCapture,
                 "Quick capture (the global hotkey, capture-hotkey)",
-                "Blygger › Quick Capture"
+                "Burrow › Quick Capture"
             ),
             "zap",
             "Capture"
@@ -561,7 +555,7 @@ pub fn table() -> Vec<Keybind> {
         menu_only!(
             ShowTutorial,
             "The interactive tutorial (on sample data)",
-            "Help › Blygger Tutorial"
+            "Help › Burrow Tutorial"
         ),
         // --- end onboarding ---
         // --- about --- One action, two menus (the standard app-menu place
@@ -569,12 +563,12 @@ pub fn table() -> Vec<Keybind> {
         menu_only!(
             ShowAbout,
             "Version, build, updates and connection info",
-            "Blygger › About Blygger"
+            "Burrow › About Burrow"
         ),
         menu_only!(
             ShowAbout,
             "Version, build, updates and connection info",
-            "Help › About Blygger"
+            "Help › About Burrow"
         ),
         // --- end about ---
         // --- browser --- (esc, which closes the pane, is the pane's own key)

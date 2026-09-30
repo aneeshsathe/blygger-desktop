@@ -309,7 +309,7 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     let tokens = Arc::new(MemoryTokenStore::default());
     let (view, _, cx) = setup_with(cx, "# fresh\n", tokens.clone());
     assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. }))));
-    assert_eq!(view.read_with(cx, |v, _| v.title.clone()), "Blygger");
+    assert_eq!(view.read_with(cx, |v, _| v.title.clone()), "Burrow");
 
     // A bad address is refused with a message; nothing is saved.
     cx.simulate_input("blyg.example.com");
@@ -343,7 +343,7 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     assert!(!text.contains("secret"), "no secrets in the config");
     assert_eq!(
         view.read_with(cx, |v, _| v.title.clone()),
-        "Blygger — blyg.example.com"
+        "Burrow — blyg.example.com"
     );
 }
 
