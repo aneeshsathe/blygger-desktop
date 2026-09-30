@@ -742,7 +742,7 @@ impl MainView {
 
     /// The same drop-from-the-title-bar frame the main sheets use.
     fn sheet_frame(&self, width: f32, content: AnyElement) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let gen_ = self.reading.sheet_gen;
         div()
             .absolute()
@@ -757,22 +757,8 @@ impl MainView {
                     .occlude()
                     .w(px(width))
                     .max_w(relative(0.92))
-                    .bg(p.bg)
-                    .border_1()
-                    .border_t_0()
-                    .border_color(p.line)
-                    .rounded_b(px(12.))
-                    .shadow(vec![BoxShadow {
-                        color: p.shadow,
-                        offset: point(px(0.), px(18.)),
-                        blur_radius: px(40.),
-                        spread_radius: px(-12.),
-                        inset: false,
-                    }])
-                    .px(px(18.))
-                    .py(px(16.))
-                    .font_family("Inter")
-                    .text_size(px(13.))
+                    .map(|d| self.sheet_style(d))
+                    .text_color(p.ink)
                     .child(content)
                     .with_animation(
                         ("reading-sheet-in", gen_),
@@ -784,15 +770,60 @@ impl MainView {
             .into_any_element()
     }
 
-    fn kbd(&self, k: &'static str) -> Div {
+    /// A sheet's ground, edge, corners and shadow, as the theme draws the
+    /// main sheets (`sheet.radius`, `sheet.border`), in the interface font.
+    pub(crate) fn sheet_style<E: Styled>(&self, d: E) -> E {
         let p = self.palette;
+        crate::ornament::border(d.bg(p.bg), self.theme.sheet_border, p.line)
+            .border_t_0()
+            .rounded_b(px(self.theme.sheet_radius))
+            .shadow(vec![BoxShadow {
+                color: p.shadow,
+                offset: point(px(0.), px(18.)),
+                blur_radius: px(40.),
+                spread_radius: px(-12.),
+                inset: false,
+            }])
+            .px(px(18.))
+            .py(px(16.))
+            .font_family(self.prefs.ui().family)
+            .text_size(px(13.))
+    }
+
+    /// The small-label font: the theme's chrome font (Inter unless the
+    /// theme or the interface font says otherwise), as the posts list's
+    /// metadata uses.
+    pub(crate) fn chrome(&self) -> &'static str {
+        self.theme.chrome_font(&self.prefs)
+    }
+
+    /// The mark on something new (an unread post, a new mention): the
+    /// theme's `marker.new` (Fortress's `*`), else a small dot in `color`.
+    pub(crate) fn unread_marker(&self, color: Hsla) -> AnyElement {
+        crate::ornament::marker(
+            &self.theme,
+            blyg_core::config::theme::Slot::MarkerNew,
+            color,
+            self.chrome(),
+        )
+        .unwrap_or_else(|| {
+            div()
+                .size(px(6.))
+                .rounded_full()
+                .bg(color)
+                .into_any_element()
+        })
+    }
+
+    fn kbd(&self, k: &'static str) -> Div {
+        let p = self.palette.on_page();
         div()
             .px(px(6.))
             .py(px(1.))
             .min_w(px(20.))
             .flex()
             .justify_center()
-            .rounded(px(5.))
+            .rounded(px(self.theme.corner(5.)))
             .border_1()
             .border_b_2()
             .border_color(p.line)
@@ -830,11 +861,11 @@ impl MainView {
     }
 
     fn input_box(&self, el: AnyElement, error: bool) -> Div {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .px(px(10.))
             .py(px(7.))
-            .rounded(px(7.))
+            .rounded(px(self.theme.corner(7.)))
             .border_1()
             .border_color(if error { p.over } else { p.line })
             .text_size(px(13.5))
@@ -843,16 +874,16 @@ impl MainView {
 
     /// A small bordered action chip (`Quote`, `Reply`, …).
     fn chip(&self, id: impl Into<SharedString>, label: impl Into<SharedString>) -> Stateful<Div> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id(ElementId::Name(id.into()))
             .px(px(8.))
             .py(px(3.))
-            .rounded(px(6.))
-            .border_1()
-            .border_color(p.line)
+            // --- themes --- `chip.radius` and `chip.border`.
+            .rounded(px(self.theme.chip_radius))
+            .map(|d| crate::ornament::border(d, self.theme.chip_border, p.line))
             .cursor_pointer()
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.ink)
@@ -866,16 +897,16 @@ impl MainView {
         id: impl Into<SharedString>,
         label: impl Into<SharedString>,
     ) -> Stateful<Div> {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id(ElementId::Name(id.into()))
             .px(px(8.))
             .py(px(3.))
-            .rounded(px(6.))
+            .rounded(px(self.theme.chip_radius))
             .border_1()
             .border_dashed()
             .border_color(p.line)
-            .font_family("Inter")
+            .font_family(self.chrome())
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.muted)
@@ -884,7 +915,7 @@ impl MainView {
 
     /// The screen header: a title, a hint, and actions on the right.
     fn screen_header(&self, title: &'static str, hint: String, actions: Vec<AnyElement>) -> Div {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .h(px(super::OMNI_H))
             .flex_none()
@@ -902,7 +933,7 @@ impl MainView {
             .child(
                 div()
                     .flex_1()
-                    .font_family("Inter")
+                    .font_family(self.chrome())
                     .text_size(px(12.))
                     .text_color(p.muted)
                     .truncate()
@@ -913,7 +944,7 @@ impl MainView {
 
     /// "Not available on this server", centred.
     fn unavailable(&self) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         div()
             .id("not-available")
             .flex_1()
@@ -947,6 +978,23 @@ impl MainView {
             .text_size(px(12.5))
             .text_color(self.palette.muted)
             .child(s.into())
+            .into_any_element()
+    }
+
+    /// An empty list's message, under the theme's `empty.art` (a lit burrow
+    /// room, a compass rose…) as the empty posts list shows it.
+    fn empty_note(&self, s: impl Into<SharedString>) -> AnyElement {
+        let Some(art) = crate::ornament::empty_art(&self.theme) else {
+            return self.muted_note(s);
+        };
+        div()
+            .id("reading-empty")
+            .pt(px(16.))
+            .px(px(16.))
+            .flex()
+            .flex_col()
+            .child(art)
+            .child(div().mx(px(-16.)).child(self.muted_note(s)))
             .into_any_element()
     }
 

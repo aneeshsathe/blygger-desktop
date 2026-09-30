@@ -819,9 +819,6 @@ pub fn row_inset(t: &Theme) -> bool {
 
 /// `row.selected`: style a list row (selected or not).
 pub fn row(t: &Theme, d: Stateful<Div>, selected: bool) -> Stateful<Div> {
-    let o = t.slot(Slot::RowSelected);
-    let p = t.palette;
-    let r = t.radius;
     let d = if row_inset(t) {
         d.px(px(8.))
     } else {
@@ -830,6 +827,25 @@ pub fn row(t: &Theme, d: Stateful<Div>, selected: bool) -> Stateful<Div> {
     if !selected {
         return d;
     }
+    selected_surface(t, d, t.palette.sel)
+}
+
+/// `row.selected` for a list on the page (the Reader's posts, the stream):
+/// the theme's shape on [`Palette::page_sel`], so page text reads on it.
+/// No padding: the caller's row keeps its own.
+pub fn page_row<E: Styled>(t: &Theme, d: E, selected: bool) -> E {
+    if !selected {
+        return d;
+    }
+    selected_surface(t, d, t.palette.page_sel())
+}
+
+/// The selected row's shape and ground (`sel`), without its padding: the
+/// sidebar's rows, the Reader's sources and the lists on the page share it.
+pub fn selected_surface<E: Styled>(t: &Theme, d: E, sel: Hsla) -> E {
+    let o = t.slot(Slot::RowSelected);
+    let p = Palette { sel, ..t.palette };
+    let r = t.radius;
     match o.kind {
         Kind::LitCell => {
             let c0 = solid(o, 0, p.sel);

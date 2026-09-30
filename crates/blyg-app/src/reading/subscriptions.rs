@@ -148,7 +148,7 @@ impl MainView {
     }
 
     pub(super) fn render_subscriptions_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let add = self
             .chip("subscribe", "+ Subscribe…")
             .on_click(cx.listener(|this, _, window, cx| this.open_subscribe(window, cx)))
@@ -181,6 +181,7 @@ impl MainView {
                 .py(px(9.))
                 .rule_b(&p)
                 .when(selected, |d| d.bg(p.sel))
+                .map(|d| crate::ornament::page_row(&self.theme, d, selected))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.reading.sub_sel = i;
                     cx.notify();
@@ -207,8 +208,8 @@ impl MainView {
                                             .px(px(6.))
                                             .rounded_full()
                                             .text_size(px(10.5))
-                                            .bg(p.sel)
-                                            .text_color(p.amber)
+                                            .bg(p.notice_bg)
+                                            .text_color(p.notice)
                                             .child("paused"),
                                     )
                                 })
@@ -308,7 +309,7 @@ impl MainView {
             .min_h_0()
             .flex()
             .flex_col()
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(13.))
             .child(header)
             .child(
@@ -317,7 +318,7 @@ impl MainView {
                     .flex_1()
                     .overflow_y_scroll()
                     .when(self.reading.subs.is_empty(), |d| {
-                        d.child(self.muted_note(
+                        d.child(self.empty_note(
                             "No subscriptions yet. + Subscribe… adds a blyg or a feed.",
                         ))
                     })
@@ -332,7 +333,7 @@ impl MainView {
         sheet: &RSheet,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Subscribe {
             input,
             previewed,
@@ -347,7 +348,7 @@ impl MainView {
                 .id("sub-preview")
                 .mt(px(10.))
                 .p(px(10.))
-                .rounded(px(8.))
+                .rounded(px(self.theme.radius))
                 .border_1()
                 .border_color(p.line)
                 .bg(p.panel())

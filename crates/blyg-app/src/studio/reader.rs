@@ -27,6 +27,9 @@ use blyg_core::{Backend, LocalId, RemoteMedia, SubscriptionKind};
 use blyg_render::{RenderOpts, ShellOpts};
 use gpui_kit::*;
 
+use crate::fonts::Bundle;
+use crate::prefs::FontChoice;
+
 use super::super::reading::View;
 use super::resolver::{StoreResolver, render_kind};
 use super::sanitize::sanitize;
@@ -198,26 +201,93 @@ pub fn attachments_html(media: &[RemoteMedia]) -> String {
 fn font_faces() -> &'static str {
     static CSS: OnceLock<String> = OnceLock::new();
     CSS.get_or_init(|| {
-        let face = |style: &str, bytes: &[u8]| {
-            format!(
-                "@font-face {{ font-family: \"Literata\"; font-style: {style}; font-weight: 400; \
-                 font-display: swap; src: url(data:font/ttf;base64,{}) format(\"truetype\"); }}\n",
-                super::local_media::base64(bytes)
-            )
-        };
         let files = crate::fonts::LITERATA;
-        format!("{}{}", face("normal", files[0]), face("italic", files[1]))
+        format!(
+            "{}{}",
+            face("Literata", "normal", 400, files[0]),
+            face("Literata", "italic", 400, files[1])
+        )
     })
+}
+
+/// One inlined `@font-face`.
+fn face(family: &str, style: &str, weight: u16, bytes: &[u8]) -> String {
+    format!(
+        "@font-face {{ font-family: \"{family}\"; font-style: {style}; font-weight: {weight}; \
+         font-display: swap; src: url(data:font/ttf;base64,{}) format(\"truetype\"); }}\n",
+        super::local_media::base64(bytes)
+    )
+}
+
+/// A bundled family's faces (regular, italic, bold), inlined once each.
+fn bundle_faces(b: Bundle, family: &str) -> &'static str {
+    static CSS: [OnceLock<String>; 5] = [const { OnceLock::new() }; 5];
+    let (slot, faces): (usize, &[(&str, u16, usize)]) = match b {
+        Bundle::Literata => (
+            0,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 3)],
+        ),
+        Bundle::SourceSerif => (
+            1,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 3)],
+        ),
+        Bundle::Quattro => (
+            2,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 2)],
+        ),
+        Bundle::EtBook => (
+            3,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 2)],
+        ),
+        Bundle::Inter => (
+            4,
+            &[("normal", 400, 0), ("italic", 400, 1), ("normal", 700, 4)],
+        ),
+    };
+    CSS[slot].get_or_init(|| {
+        let files = b.files();
+        faces
+            .iter()
+            .filter_map(|&(style, weight, i)| Some(face(family, style, weight, files.get(i)?)))
+            .collect()
+    })
+}
+
+/// The post's text font in the reader: the writing font (a theme's, e.g.
+/// Portolan's ET Book, unless the config sets one), bundled fonts inlined,
+/// macOS's by name. Literata, the stylesheet's own, adds nothing.
+pub fn text_font_css(font: Option<FontChoice>) -> String {
+    let Some(f) = font.filter(|f| f.family != "Literata") else {
+        return String::new();
+    };
+    let (faces, stack) = match (f.bundled, f.family) {
+        (Some(b), fam) => (bundle_faces(b, fam), format!("\"{fam}\"")),
+        (None, ".SystemUIFont") => ("", "-apple-system, system-ui".to_string()),
+        (None, "New York") => ("", "\"New York\", ui-serif".to_string()),
+        (None, fam) => ("", format!("\"{fam}\"")),
+    };
+    format!(
+        "{faces}body {{ font-family: {stack}, Literata, \"Iowan Old Style\", Charter, Georgia, serif; }}\n"
+    )
 }
 
 /// The reader's additions on top of the app theme (`BUILTIN_CSS`, the Tufte
 /// palette in light and dark): the fonts, the text size, a left-aligned
 /// column under the native header, and generated spans left unstyled as the
-/// public page leaves them (the tint is a studio authoring aid).
+/// public page leaves them (the tint is a studio authoring aid). Quote
+/// boxes, selection, highlights and diff marks take the theme's colours
+/// (`theme::reader_vars`), with the plain look's as fallbacks.
 pub fn reader_css(font_px: f32) -> String {
     format!(
-        "{faces}
+        "{faces}{text_font}
 body {{ padding: 4px 32px 44px; font-size: {font_px}px; }}
+blockquote {{ background: var(--quote-bg, var(--wash)); border-left-color: var(--quote-rule, var(--rule));
+  border-radius: 0 var(--radius, 4px) var(--radius, 4px) 0; }}
+::selection {{ background: var(--selection, rgba(164, 39, 27, 0.2)); }}
+mark {{ background: var(--mark, rgba(224, 161, 0, 0.3)); color: inherit; border-radius: 2px; }}
+ins {{ background: var(--ins, rgba(58, 166, 85, 0.18)); text-decoration: none; }}
+del {{ background: var(--del, rgba(210, 60, 42, 0.16)); text-decoration-color: var(--over, #d23c2a); }}
+hr {{ border-top-color: var(--rule); }}
 article {{ max-width: 38em; margin: 0; }}
 .blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; }}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
@@ -231,7 +301,8 @@ blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 .blyg-attachments {{ margin-top: 1.2em; }}
 .blyg-provenance, figcaption, .stub-cite {{ font-family: Inter, -apple-system, system-ui, sans-serif; }}
 ",
-        faces = font_faces()
+        faces = font_faces(),
+        text_font = text_font_css(crate::theme::reader_font())
     )
 }
 
@@ -261,11 +332,12 @@ pub fn reader_page_named(
         None => clean,
     };
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
-    // --- themes --- the theme's colours over the fallback stylesheet.
+    // --- themes --- the theme's colours over the fallback stylesheet, and
+    // its quote-box shape last, so it wins over the reader's defaults.
     let css = format!(
         "{BUILTIN_CSS}\n{}{}",
-        crate::theme::reader_vars(),
-        reader_css(font_px)
+        reader_css(font_px),
+        crate::theme::reader_vars()
     );
     blyg_render::page_shell_with(
         &css,

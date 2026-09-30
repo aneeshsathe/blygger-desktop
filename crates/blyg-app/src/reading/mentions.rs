@@ -151,7 +151,7 @@ impl MainView {
     }
 
     pub(super) fn render_mentions_screen(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let show_hidden = self.reading.show_hidden;
         let toggle_hidden = self
             .chip(
@@ -184,7 +184,7 @@ impl MainView {
             _ => {
                 let groups = self.mention_groups();
                 if groups.is_empty() {
-                    self.muted_note("Nobody has quoted, replied to or forked your posts yet.")
+                    self.empty_note("Nobody has quoted, replied to or forked your posts yet.")
                 } else {
                     div()
                         .id("mentions-list")
@@ -259,7 +259,7 @@ impl MainView {
             .min_h_0()
             .flex()
             .flex_col()
-            .font_family("Inter")
+            .font_family(self.prefs.ui().family)
             .text_size(px(13.))
             .child(header)
             .child(body)
@@ -267,7 +267,7 @@ impl MainView {
     }
 
     fn render_mention_row(&self, r: MentionRow, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let (id, hidden, source) = (r.id.clone(), r.hidden, r.source.clone());
         let profile_of = r.source.clone(); // --- profiles ---
         div()
@@ -279,11 +279,11 @@ impl MainView {
             .when(hidden, |d| d.opacity(0.5))
             .child(
                 div()
-                    .w(px(6.))
-                    .h(px(6.))
+                    .w(px(8.))
                     .flex_none()
-                    .rounded_full()
-                    .when(r.new, |d| d.bg(p.accent)),
+                    .flex()
+                    .justify_center()
+                    .when(r.new, |d| d.child(self.unread_marker(p.accent))),
             )
             .child(div().font_weight(FontWeight::MEDIUM).child(r.who))
             .child(div().text_color(p.muted).child(r.relation))

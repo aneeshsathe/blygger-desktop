@@ -193,7 +193,7 @@ impl MainView {
     }
 
     pub(super) fn render_quote_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_page();
         let RSheet::Quote { input, sel, .. } = sheet else {
             return div().into_any_element();
         };
@@ -233,7 +233,7 @@ impl MainView {
                             .id(("quote", i))
                             .px(px(8.))
                             .py(px(5.))
-                            .rounded(px(6.))
+                            .rounded(px(self.theme.corner(6.)))
                             .cursor_pointer()
                             .when(i == sel, |d| d.bg(p.sel))
                             .hover(|s| s.bg(p.sel))
