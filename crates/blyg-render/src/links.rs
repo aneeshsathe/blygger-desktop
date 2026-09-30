@@ -508,23 +508,27 @@ fn decode_entities(s: &str) -> String {
     .fold(s.to_string(), |acc, (from, to)| acc.replace(from, to))
 }
 
-/// markdown.ts `plainTextFromHtml`.
-pub fn plain_text_from_html(html: &str) -> String {
-    static SCRIPT: OnceLock<Regex> = OnceLock::new();
-    static BOUNDARY: OnceLock<Regex> = OnceLock::new();
-    let script = SCRIPT.get_or_init(|| {
+fn script_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
         Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>").expect("script re")
-    });
-    let boundary = BOUNDARY.get_or_init(|| {
+    })
+}
+
+/// markdown.ts `BLOCK_BOUNDARY`.
+fn boundary_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
         Regex::new(&format!(
             r"(?i)</(?:p|h[1-6]|li|blockquote|pre|div|tr|section|article)>|<br[{}]*/?>",
             crate::embeds::JS_WS
         ))
         .expect("boundary re")
-    });
-    let s = script.replace_all(html, " ");
-    let s = boundary.replace_all(&s, " ");
-    let s = decode_entities(&strip_nonempty_tags(&s));
+    })
+}
+
+/// `s.replace(/\s+/g, " ").trim()`, with JavaScript's `\s`.
+fn collapse_ws(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut ws = false;
     for c in s.chars() {
@@ -539,6 +543,46 @@ pub fn plain_text_from_html(html: &str) -> String {
         }
     }
     out
+}
+
+/// markdown.ts `plainTextFromHtml`.
+pub fn plain_text_from_html(html: &str) -> String {
+    let s = script_re().replace_all(html, " ");
+    let s = boundary_re().replace_all(&s, " ");
+    collapse_ws(&decode_entities(&strip_nonempty_tags(&s)))
+}
+
+/// markdown.ts `BLOCK_SEP`: block boundaries are marked before any
+/// whitespace collapses, so only they survive as line breaks.
+const BLOCK_SEP: &str = "\u{0}";
+
+/// markdown.ts `normalizeBlocks`: whitespace inside each segment collapses,
+/// empty segments drop, and the rest join with `\n`.
+fn normalize_blocks<'a>(segments: impl Iterator<Item = &'a str>) -> String {
+    segments
+        .map(collapse_ws)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// markdown.ts `selectionText` (protocol 0.3 §16.4), the selection
+/// normalizer for partial quotes. Like [`plain_text_from_html`], except that
+/// a block boundary (`</p>`, `</li>`, `<br>`, …) becomes a line break instead
+/// of a space. Whitespace inside a block collapses to single spaces, so an
+/// author's soft wraps never matter, and empty blocks drop. A partial quote
+/// resolves when the quote's `selection_text` is a substring of the target's.
+pub fn selection_text(html: &str) -> String {
+    let s = script_re().replace_all(html, " ");
+    let s = boundary_re().replace_all(&s, BLOCK_SEP);
+    let s = decode_entities(&strip_nonempty_tags(&s));
+    normalize_blocks(s.split(BLOCK_SEP))
+}
+
+/// markdown.ts `normalizeSelection`: [`selection_text`]'s rule for text that
+/// is already text, such as a selection whose block boundaries are newlines.
+pub fn normalize_selection(text: &str) -> String {
+    normalize_blocks(text.split('\n'))
 }
 
 /// `/<[^>]+>/g` → "" (unlike [`strip_tags`], `<>` stays).
@@ -622,5 +666,91 @@ mod tests {
             edits: vec![(2, 30, 3)],
         };
         assert_eq!(l.remap(&[(0, 1), (40, 50)]), vec![(0, 1), (13, 23)]);
+    }
+
+    // Ported from studio v0.8.3 test/selection.test.ts: the selection
+    // normalizer's rule, independent of any call site.
+    mod selection {
+        use super::super::{normalize_selection, selection_text};
+        use crate::markdown;
+
+        fn md(s: &str) -> String {
+            markdown::render(s, None).0
+        }
+
+        #[test]
+        fn blocks_become_line_breaks() {
+            assert_eq!(
+                selection_text("<p>first</p>\n<p>second</p>"),
+                "first\nsecond"
+            );
+            // Soft wraps inside a paragraph collapse; they are not breaks.
+            assert_eq!(selection_text("<p>one\ntwo\nthree</p>"), "one two three");
+            assert_eq!(selection_text("<p>a   b\t\tc</p>"), "a b c");
+            assert_eq!(selection_text("<p>a</p><p></p><p>  </p><p>b</p>"), "a\nb");
+            assert_eq!(selection_text("<p>a<br>b</p>"), "a\nb");
+            assert_eq!(selection_text("<p>a<br />b</p>"), "a\nb");
+            assert_eq!(
+                selection_text("<ul><li>one</li><li>two</li></ul>"),
+                "one\ntwo"
+            );
+            assert!(!selection_text("<p>evil.</p><p>Next</p>").contains("evil.Next"));
+        }
+
+        #[test]
+        fn markup_and_entities() {
+            assert_eq!(
+                selection_text("<p>the <em>thin</em> layer</p>"),
+                "the thin layer"
+            );
+            assert_eq!(
+                selection_text("<p>a &amp; b &lt;c&gt; &quot;d&quot;</p>"),
+                "a & b <c> \"d\""
+            );
+            assert_eq!(
+                selection_text("<blockquote><p>inner</p></blockquote><p>after</p>"),
+                "inner\nafter"
+            );
+            assert_eq!(
+                selection_text("<p>a</p><script>var x = 1;</script><p>b</p>"),
+                "a\nb"
+            );
+            assert_eq!(selection_text("<p></p>"), "");
+            assert_eq!(selection_text(""), "");
+        }
+
+        #[test]
+        fn normalize_selection_agrees() {
+            assert_eq!(normalize_selection("  a  b \n\n c\t"), "a b\nc");
+            assert_eq!(
+                normalize_selection("first\nsecond"),
+                selection_text("<p>first</p><p>second</p>")
+            );
+        }
+
+        #[test]
+        fn both_sides_converge() {
+            let contains = |target: &str, quote: &str| {
+                selection_text(&md(target)).contains(&selection_text(&md(quote)))
+            };
+            let s = "Stigmergy is what a protocol looks like from inside.";
+            assert!(contains(&format!("{s}\n\nAnd the rest."), s));
+            assert!(contains(
+                s,
+                "Stigmergy is what a protocol\nlooks like from inside."
+            ));
+            assert!(contains(
+                "First paragraph here.\n\nSecond paragraph here.\n\nThird.",
+                "First paragraph here.\n\nSecond paragraph here."
+            ));
+            assert!(!contains(
+                "First paragraph here.\n\nSecond paragraph here.",
+                "First paragraph here. Second paragraph here."
+            ));
+            assert!(contains(
+                "the *thin* layer where coordination happens",
+                "the thin layer where coordination happens"
+            ));
+        }
     }
 }
