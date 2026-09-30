@@ -16,6 +16,7 @@ use gpui_kit::*;
 
 use super::vm;
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 /// One line of the list: who · what · when, and where a click goes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -168,8 +169,7 @@ impl MainView {
                 .px(px(32.))
                 .pt(px(10.))
                 .pb(px(6.))
-                .border_t_1()
-                .border_color(p.line)
+                .rule_t(&p)
                 .font_family("Inter")
                 .text_size(px(12.))
                 .child(

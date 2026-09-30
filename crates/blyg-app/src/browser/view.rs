@@ -19,6 +19,7 @@ use super::surface::{self, BrowserEvent, BrowserSurface, PageState};
 use super::{OpenMode, rules_handle};
 use crate::app::MainView;
 use crate::theme::Palette;
+use crate::theme::Rule; // --- themes --- dividers
 
 gpui_kit::actions!(
     blygger,
@@ -909,8 +910,7 @@ impl MainView {
                     .flex()
                     .flex_col()
                     .bg(p.bg)
-                    .border_l_1()
-                    .border_color(p.line)
+                    .rule_l(&p)
                     .shadow_lg()
                     .font_family("Inter")
                     .child(self.render_browser_chrome(&p, cx))
@@ -1028,8 +1028,7 @@ impl MainView {
             .items_center()
             .gap(px(2.))
             .bg(p.bg)
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(p)
             .child(
                 button("browser-back", "←", pg.can_back, "Back  ⌘[").on_click(
                     cx.listener(|this, _, window, cx| this.browser_back(&BrowserBack, window, cx)),

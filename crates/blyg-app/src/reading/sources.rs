@@ -24,6 +24,7 @@ use super::sources_vm::{self, Entry, Pane, Smart, Source};
 use super::stream_vm::ReadMode;
 use super::{RSheet, View};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 gpui_kit::actions!(blygger, [ToggleSources, NewFolder]);
 
@@ -847,8 +848,7 @@ impl MainView {
             .flex()
             .flex_col()
             .bg(p.bar)
-            .border_r_1()
-            .border_color(p.line)
+            .rule_r(&p)
             .font_family("Inter")
             .text_size(px(12.5))
             .on_mouse_down(

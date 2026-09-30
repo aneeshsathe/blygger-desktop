@@ -555,7 +555,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let (fit, buttons) = fitted?;
-        let p = self.palette;
+        let p = self.palette.on_bar(); // --- themes --- on the title bar
         let mut row = div()
             .id("toolbar")
             .debug_selector(|| "toolbar".into())

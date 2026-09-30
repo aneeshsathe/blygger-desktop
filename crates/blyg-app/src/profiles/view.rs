@@ -7,6 +7,7 @@ use gpui_kit::*;
 
 use super::vm::{self, Button, Row, Tab};
 use crate::app::{MainView, TITLEBAR_H};
+use crate::theme::Rule; // --- themes --- dividers
 
 const WIDTH: f32 = 440.;
 
@@ -103,8 +104,7 @@ impl MainView {
             .w(px(WIDTH))
             .max_w(relative(1.))
             .bg(p.bg)
-            .border_l_1()
-            .border_color(p.line)
+            .rule_l(&p)
             .shadow(vec![BoxShadow {
                 color: p.shadow,
                 offset: point(px(-18.), px(0.)),
@@ -279,8 +279,7 @@ impl MainView {
             .flex()
             .gap(px(16.))
             .mt(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .text_size(px(13.))
             .children(tabs_list.iter().map(|&t| {
                 let on = t == page.tab;
@@ -439,8 +438,7 @@ impl MainView {
             .px(px(6.))
             .mx(px(-6.))
             .rounded(px(6.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .when(selected, |d| d.bg(p.sel))
             .child(body)
             .children(tag)

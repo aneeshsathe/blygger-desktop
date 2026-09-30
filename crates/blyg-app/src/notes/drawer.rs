@@ -15,7 +15,8 @@ use super::{CONTEXT, PostRef, SLIDE_MS, TITLE, WIDTH};
 use crate::app::scratch::MakeDraft;
 use crate::app::{MainView, Publish, TITLEBAR_H};
 use crate::composer::AssistKey;
-use crate::vm;
+use crate::theme::Rule;
+use crate::vm; // --- themes --- dividers
 
 gpui_kit::actions!(
     blygger,
@@ -706,8 +707,7 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(6.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(
                 div()
                     .flex()
@@ -823,8 +823,7 @@ impl MainView {
             .flex_none()
             .px(px(14.))
             .py(px(6.))
-            .border_t_1()
-            .border_color(p.line)
+            .rule_t(&p)
             .text_size(px(11.))
             .text_color(p.muted)
             .child("→ Notes on a post or page adds it · esc or ⇧⌘N closes");
@@ -845,8 +844,7 @@ impl MainView {
                 .flex_col()
                 .bg(p.bg)
                 .text_color(p.ink)
-                .border_l_1()
-                .border_color(p.line)
+                .rule_l(&p)
                 .shadow_lg()
                 .font_family("Inter")
                 // --- composer --- the mention popup / spelling menu keys first.

@@ -9,6 +9,7 @@ use gpui_kit::*;
 use super::Load;
 use super::vm::{self, MentionRow};
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     pub(super) fn load_mentions(&mut self, cx: &mut Context<Self>) {
@@ -195,8 +196,7 @@ impl MainView {
                                     .px(px(16.))
                                     .pt(px(12.))
                                     .pb(px(6.))
-                                    .border_b_1()
-                                    .border_color(p.line)
+                                    .rule_b(&p)
                                     .child(
                                         div()
                                             .flex()

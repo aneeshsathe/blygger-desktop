@@ -53,7 +53,8 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::{MainView, TITLEBAR_H};
-use vm::Key;
+use crate::theme::Rule;
+use vm::Key; // --- themes --- dividers
 
 gpui_kit::actions!(
     blygger,
@@ -523,7 +524,7 @@ impl MainView {
 
     /// Hook: the segmented view switcher, on the right of the title bar.
     pub(super) fn render_view_switcher(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_bar(); // --- themes --- on the title bar
         let now = self.now;
         let tabs = View::ALL.iter().map(|&v| {
             let on = self.reading.view == v;
@@ -891,8 +892,7 @@ impl MainView {
             .items_center()
             .gap(px(10.))
             .px(px(14.))
-            .border_b_1()
-            .border_color(p.line)
+            .rule_b(&p)
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)

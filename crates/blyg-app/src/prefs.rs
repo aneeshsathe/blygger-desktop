@@ -2,44 +2,7 @@
 //! capture hotkey. Built from `blyg_core::Config`; changes are written back
 //! to the config file as just the keys that changed (see `crate::settings`).
 
-use blyg_core::config::{CaptureDefault, Change, Config, Layout, NewNote, Theme};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum ThemePref {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-impl ThemePref {
-    pub const ALL: [ThemePref; 3] = [ThemePref::System, ThemePref::Light, ThemePref::Dark];
-    pub fn label(self) -> &'static str {
-        match self {
-            ThemePref::System => "System",
-            ThemePref::Light => "Light",
-            ThemePref::Dark => "Dark",
-        }
-    }
-    /// The config value (`theme = …`).
-    pub fn value(self) -> &'static str {
-        match self {
-            ThemePref::System => "system",
-            ThemePref::Light => "light",
-            ThemePref::Dark => "dark",
-        }
-    }
-}
-
-impl From<Theme> for ThemePref {
-    fn from(t: Theme) -> Self {
-        match t {
-            Theme::System => ThemePref::System,
-            Theme::Light => ThemePref::Light,
-            Theme::Dark => ThemePref::Dark,
-        }
-    }
-}
+use blyg_core::config::{CaptureDefault, Change, Config, Layout, NewNote};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum LayoutPref {
@@ -213,8 +176,18 @@ pub struct Prefs {
     /// A font label from `WRITING_FONTS` (or whatever the config says).
     pub writing_font: String,
     pub ui_font: String,
+    /// Whether the config sets `font-family-writing` / `font-family-ui`:
+    /// when it doesn't, the theme's fonts are used.
+    pub writing_font_set: bool,
+    pub ui_font_set: bool,
+    /// The theme's suggested fonts (from `crate::theme`, not the config).
+    pub theme_writing: Option<FontChoice>,
+    pub theme_ui: Option<FontChoice>,
     pub font_size: f32,
-    pub theme: ThemePref,
+    /// `theme`: `system`, `light`, `dark`, or a theme's name.
+    pub theme: String,
+    /// `theme-dark`: the theme while macOS is dark.
+    pub theme_dark: Option<String>,
     pub layout: LayoutPref,
     pub hotkey: String,
     // --- scratch notes --- (read-only here: set in the config file)
@@ -239,22 +212,35 @@ impl Default for Prefs {
 }
 
 impl Prefs {
-    /// `BLYGGER_THEME=light|dark`: a dev/screenshot override, not persisted
-    /// unless a setting is changed.
+    /// `BLYGGER_THEME=<name>`: a dev/screenshot override (any theme name,
+    /// and it beats `theme-dark`), not persisted unless a setting is changed.
     pub fn apply_theme_override(&mut self) {
-        match std::env::var("BLYGGER_THEME").as_deref() {
-            Ok("light") => self.theme = ThemePref::Light,
-            Ok("dark") => self.theme = ThemePref::Dark,
-            _ => {}
+        if let Ok(t) = std::env::var("BLYGGER_THEME") {
+            let t = t.trim().to_ascii_lowercase();
+            if blyg_core::config::theme::valid_name(&t) {
+                self.theme = t;
+                self.theme_dark = None;
+            }
         }
+    }
+
+    /// Take the theme's suggested fonts (used where the config sets none).
+    pub fn adopt_theme_fonts(&mut self, theme: &crate::theme::Theme) {
+        self.theme_writing = theme.font_writing;
+        self.theme_ui = theme.font_ui;
     }
 
     pub fn from_config(c: &Config) -> Self {
         Self {
             writing_font: c.font_family_writing().to_string(),
             ui_font: c.font_family_ui().to_string(),
+            writing_font_set: c.is_set("font-family-writing"),
+            ui_font_set: c.is_set("font-family-ui"),
+            theme_writing: None,
+            theme_ui: None,
             font_size: clamp_size(c.font_size()),
-            theme: c.theme().into(),
+            theme: c.theme().to_string(),
+            theme_dark: c.theme_dark().map(str::to_string),
             layout: c.layout().into(),
             hotkey: c.capture_hotkey().to_string(),
             capture_default: c.capture_default(),
@@ -271,13 +257,14 @@ impl Prefs {
     /// The config keys to rewrite to get from `old` to `self`.
     pub fn changes_from(&self, old: &Prefs) -> Vec<(&'static str, Change)> {
         let mut out = Vec::new();
-        if self.writing_font != old.writing_font {
+        if self.writing_font != old.writing_font || (self.writing_font_set && !old.writing_font_set)
+        {
             out.push((
                 "font-family-writing",
                 Change::Set(self.writing_font.clone()),
             ));
         }
-        if self.ui_font != old.ui_font {
+        if self.ui_font != old.ui_font || (self.ui_font_set && !old.ui_font_set) {
             out.push(("font-family-ui", Change::Set(self.ui_font.clone())));
         }
         if self.font_size != old.font_size {
@@ -287,7 +274,7 @@ impl Prefs {
             ));
         }
         if self.theme != old.theme {
-            out.push(("theme", Change::Set(self.theme.value().into())));
+            out.push(("theme", Change::Set(self.theme.clone())));
         }
         if self.layout != old.layout {
             out.push(("layout", Change::Set(self.layout.value().into())));
@@ -305,12 +292,20 @@ impl Prefs {
         out
     }
 
+    /// The writing font: the config's, else the theme's, else Literata.
     pub fn writing(&self) -> FontChoice {
-        find(WRITING_FONTS, &self.writing_font).unwrap_or(WRITING_FONTS[0])
+        match self.theme_writing {
+            Some(f) if !self.writing_font_set => f,
+            _ => find(WRITING_FONTS, &self.writing_font).unwrap_or(WRITING_FONTS[0]),
+        }
     }
 
+    /// The interface font: the config's, else the theme's, else Inter.
     pub fn ui(&self) -> FontChoice {
-        find(UI_FONTS, &self.ui_font).unwrap_or(UI_FONTS[0])
+        match self.theme_ui {
+            Some(f) if !self.ui_font_set => f,
+            _ => find(UI_FONTS, &self.ui_font).unwrap_or(UI_FONTS[0]),
+        }
     }
 
     pub fn bigger(&mut self) {
@@ -382,7 +377,8 @@ mod tests {
         assert_eq!(p.writing_font, "Literata");
         assert_eq!(p.ui_font, "Inter");
         assert_eq!(p.font_size, DEFAULT_SIZE);
-        assert_eq!(p.theme, ThemePref::System);
+        assert_eq!(p.theme, "system");
+        assert_eq!(p.theme_dark, None);
         assert_eq!(p.layout, LayoutPref::Side);
         assert_eq!(p.hotkey, DEFAULT_HOTKEY);
         assert!(p.show_buttons, "buttons are on by default");
@@ -391,7 +387,8 @@ mod tests {
         );
         let p = Prefs::from_config(s.config());
         assert_eq!(p.font_size, MAX_SIZE);
-        assert_eq!(p.theme, ThemePref::Dark);
+        assert_eq!(p.theme, "dark");
+        assert!(p.ui_font_set && !p.writing_font_set);
         assert_eq!(p.layout, LayoutPref::Stacked);
         assert_eq!(p.ui().family, "Menlo", "fonts match by label, any case");
     }
@@ -449,6 +446,42 @@ mod tests {
             ..Prefs::default()
         };
         assert_eq!(p.writing().family, "ETBembo");
+    }
+
+    #[test]
+    fn theme_fonts_apply_unless_the_config_sets_fonts() {
+        let themes = crate::theme::builtins();
+        let mut p = Prefs::default();
+        p.adopt_theme_fonts(&themes.get("portolan"));
+        assert_eq!(p.writing().family, "ETBembo");
+        assert_eq!(p.ui().family, "ETBembo");
+        let s = ConfigStore::in_memory("font-family-writing = Charter\n");
+        let mut p = Prefs::from_config(s.config());
+        p.adopt_theme_fonts(&themes.get("portolan"));
+        assert_eq!(p.writing().family, "Charter", "the user's setting wins");
+        assert_eq!(p.ui().family, "ETBembo");
+        // Choosing a font in Settings writes it, even when it's the default.
+        let old = Prefs::default();
+        let mut new = old.clone();
+        new.writing_font_set = true;
+        assert_eq!(
+            new.changes_from(&old),
+            vec![("font-family-writing", Change::Set("Literata".into()))]
+        );
+    }
+
+    #[test]
+    fn theme_names_round_trip() {
+        let s = ConfigStore::in_memory("theme = Cutaway\ntheme-dark = fortress\n");
+        let p = Prefs::from_config(s.config());
+        assert_eq!(p.theme, "cutaway");
+        assert_eq!(p.theme_dark.as_deref(), Some("fortress"));
+        let mut new = p.clone();
+        new.theme = "konkan".into();
+        assert_eq!(
+            new.changes_from(&p),
+            vec![("theme", Change::Set("konkan".into()))]
+        );
     }
 
     #[test]

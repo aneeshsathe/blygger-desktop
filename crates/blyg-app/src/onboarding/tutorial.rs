@@ -29,6 +29,7 @@ use crate::app::{
 };
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::FakeBackend;
+use crate::theme::Rule; // --- themes --- dividers
 
 /// What the tutorial set aside, to put back when it ends.
 struct Parked {
@@ -1017,8 +1018,7 @@ impl MainView {
                     div()
                         .mt(px(12.))
                         .pt(px(9.))
-                        .border_t_1()
-                        .border_color(p.line)
+                        .rule_t(&p)
                         .flex()
                         .flex_col()
                         .gap(px(8.))

@@ -9,6 +9,7 @@ use gpui_kit::*;
 
 use super::RSheet;
 use crate::app::MainView;
+use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
     pub(super) fn open_subscribe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -178,8 +179,7 @@ impl MainView {
                 .gap(px(10.))
                 .px(px(16.))
                 .py(px(9.))
-                .border_b_1()
-                .border_color(p.line)
+                .rule_b(&p)
                 .when(selected, |d| d.bg(p.sel))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.reading.sub_sel = i;

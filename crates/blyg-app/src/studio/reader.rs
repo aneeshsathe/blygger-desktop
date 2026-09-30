@@ -70,6 +70,8 @@ pub struct Doc {
 struct Shown {
     doc: Doc,
     font_px: u32,
+    /// --- themes --- the theme the page was coloured with.
+    theme: String,
 }
 
 pub struct Reader {
@@ -251,7 +253,12 @@ pub fn reader_page_named(
         None => clean,
     };
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
-    let css = format!("{BUILTIN_CSS}\n{}", reader_css(font_px));
+    // --- themes --- the theme's colours over the fallback stylesheet.
+    let css = format!(
+        "{BUILTIN_CSS}\n{}{}",
+        crate::theme::reader_vars(),
+        reader_css(font_px)
+    );
     blyg_render::page_shell_with(
         &css,
         &body,
@@ -518,6 +525,7 @@ impl MainView {
             let shown = Shown {
                 font_px: self.prefs.font_size.round() as u32,
                 doc,
+                theme: self.theme.id.clone(), // --- themes ---
             };
             let has_surface = self.studio.reader.slot.borrow().surface.is_some();
             if has_surface && self.studio.reader.shown.as_ref() != Some(&shown) {
