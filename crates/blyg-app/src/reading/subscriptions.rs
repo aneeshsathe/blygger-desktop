@@ -350,7 +350,7 @@ impl MainView {
                 .rounded(px(8.))
                 .border_1()
                 .border_color(p.line)
-                .bg(p.bar)
+                .bg(p.panel())
                 .child(
                     div()
                         .flex()

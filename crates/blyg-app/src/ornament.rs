@@ -246,14 +246,7 @@ fn paint_seigaiha(
 }
 
 fn lerp(a: Hsla, b: Hsla, t: f32) -> Hsla {
-    let (a, b) = (a.to_rgb(), b.to_rgb());
-    Rgba {
-        r: a.r + (b.r - a.r) * t,
-        g: a.g + (b.g - a.g) * t,
-        b: a.b + (b.b - a.b) * t,
-        a: a.a + (b.a - a.a) * t,
-    }
-    .into()
+    crate::theme::mix(a, b, t)
 }
 
 fn paint_contours(o: &Ornament, b: Bounds<Pixels>, window: &mut Window) {

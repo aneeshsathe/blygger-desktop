@@ -27,7 +27,7 @@ sheet.radius = 4
 toast.radius = 3
 chip.radius = 3
 
-titlebar.band = lattice(#785a32, variant=asanoha, opacity=0.22)
+titlebar.band = lattice(#785a32, variant=asanoha, opacity=0.14)
 sidebar.ground = woodgrain(#967346, opacity=0.08)
 row.selected = outline(#d9ccb2)
 editor.frame = shoji-grid(#d9ccb2)

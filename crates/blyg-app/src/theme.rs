@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 use blyg_core::config::theme::{
     Border, Family, Ornament, Registry, Resolved, Rgba as CoreRgba, Slot,
 };
-use gpui_kit::{App, Global, Hsla, Styled, WindowAppearance, rgba};
+use gpui_kit::{App, Global, Hsla, Rgba, Styled, WindowAppearance, rgba};
 
 use crate::prefs::{FontChoice, Prefs};
 
@@ -76,6 +76,18 @@ pub struct Palette {
 /// A core colour as GPUI's.
 pub fn hsla(c: CoreRgba) -> Hsla {
     rgba(c.0).into()
+}
+
+/// `a` moved `t` of the way to `b` (in RGB).
+pub fn mix(a: Hsla, b: Hsla, t: f32) -> Hsla {
+    let (a, b) = (a.to_rgb(), b.to_rgb());
+    Rgba {
+        r: a.r + (b.r - a.r) * t,
+        g: a.g + (b.g - a.g) * t,
+        b: a.b + (b.b - a.b) * t,
+        a: a.a + (b.a - a.a) * t,
+    }
+    .into()
 }
 
 /// WCAG contrast between two colours (alpha ignored).
@@ -196,11 +208,33 @@ impl Palette {
     /// The palette on the title bar (the toolbar and the view switcher).
     pub fn on_bar(&self) -> Palette {
         let mut p = self.on_chrome(self.bar, self.bar_ink);
-        // The plain look keeps its muted title-bar labels.
+        // The plain look keeps its muted title-bar labels, when they read
+        // there; on a patterned or deeper bar they take the bar's own ink.
         if contrast(self.ink, self.bar) >= 4.5 {
-            p.muted = self.muted;
+            p.muted = if contrast(self.muted, self.bar) >= 4.5 {
+                self.muted
+            } else {
+                self.bar_ink
+            };
         }
         p
+    }
+
+    /// A tinted panel inside page content (cards, popovers, banners, the
+    /// address field): the title bar's colour when page text reads on it,
+    /// else a faint tint of the page, so a dark title bar never puts
+    /// dark text on dark.
+    pub fn panel(&self) -> Hsla {
+        if contrast(self.ink, self.bar) >= 4.5 && contrast(self.muted, self.bar) >= 3.0 {
+            self.bar
+        } else {
+            let toward = if self.dark {
+                gpui_kit::white()
+            } else {
+                gpui_kit::black()
+            };
+            mix(self.bg, toward, 0.05)
+        }
     }
 
     /// The palette on the status bar.
@@ -510,6 +544,39 @@ mod tests {
         p.theme_dark = None;
         assert_eq!(t.pick(&p, WindowAppearance::VibrantDark).id, "dark");
         assert_eq!(t.pick(&p, WindowAppearance::VibrantLight).id, "light");
+    }
+
+    /// Every surface that paints its own ground must carry text that reads
+    /// on it: the sidebars (Posts and the Reader's subscriptions), the
+    /// selected row, the title bar's labels, the status bar, and the tinted
+    /// panels inside pages (a dark title bar once gave dark-on-dark here).
+    #[test]
+    fn text_reads_on_every_surface_of_every_builtin() {
+        let t = builtins();
+        let mut bad = Vec::new();
+        for id in t.registry.ids() {
+            let p = t.get(&id).palette;
+            let mut need = |what: &str, fg: Hsla, bg: Hsla, min: f32| {
+                let c = contrast(fg, bg);
+                if c < min {
+                    bad.push(format!("{id}: {what} {c:.2} < {min}"));
+                }
+            };
+            need("page ink", p.ink, p.bg, 4.5);
+            let side = p.on_side();
+            need("sidebar ink", side.ink, side.bg, 4.5);
+            need("sidebar muted", side.muted, side.bg, 3.0);
+            let sel = p.on_sel();
+            need("selected-row ink", sel.ink, sel.bg, 4.5);
+            let bar = p.on_bar();
+            need("title-bar ink", bar.ink, p.bar, 4.5);
+            need("title-bar labels", bar.muted, p.bar, 3.0);
+            let st = p.on_status();
+            need("status-bar ink", st.ink, p.status, 4.5);
+            need("panel ink", p.ink, p.panel(), 4.5);
+            need("panel muted", p.muted, p.panel(), 3.0);
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
     }
 
     #[test]

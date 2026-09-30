@@ -1068,7 +1068,7 @@ impl MainView {
                     .items_center()
                     .gap(px(8.))
                     .rounded(px(6.))
-                    .bg(p.bar)
+                    .bg(p.panel())
                     .cursor_text()
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.browser_edit_address(window, cx);

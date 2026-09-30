@@ -831,7 +831,8 @@ impl MainView {
     }
 
     fn render_sources_pane(&self, cx: &mut Context<Self>) -> AnyElement {
-        let p = self.palette;
+        // --- themes --- a sidebar: its own ground and ink.
+        let p = self.palette.on_side();
         let focused = self.reading.pane == Pane::Sources;
         let rows: Vec<AnyElement> = self
             .source_entries()
@@ -847,7 +848,8 @@ impl MainView {
             .h_full()
             .flex()
             .flex_col()
-            .bg(p.bar)
+            .bg(p.bg)
+            .text_color(p.ink)
             .rule_r(&p)
             .font_family("Inter")
             .text_size(px(12.5))
@@ -876,12 +878,15 @@ impl MainView {
         focused: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let p = self.palette;
+        let p = self.palette.on_side();
         let selected = e.source().is_some_and(|s| s == self.reading.source);
+        // Focused, the row is an accent wash on the sidebar (sidebar ink);
+        // otherwise it's the selected-row surface, with that row's ink.
+        let ps = if focused { p } else { self.palette.on_sel() };
         let sel_bg = if focused {
             p.accent.opacity(0.16)
         } else {
-            p.sel
+            ps.bg
         };
         let count = |n: usize| {
             // A private, reader-local number, muted (never social).
@@ -902,7 +907,7 @@ impl MainView {
                 .gap(px(6.))
                 .rounded(px(5.))
                 .cursor_pointer()
-                .when(selected, |d| d.bg(sel_bg))
+                .when(selected, |d| d.bg(sel_bg).text_color(ps.ink))
                 .when(!selected, |d| d.hover(|s| s.bg(p.sel.opacity(0.6))))
         };
         let icon = |bytes: &'static [u8]| {
@@ -910,7 +915,7 @@ impl MainView {
                 .data(bytes)
                 .size(px(14.))
                 .flex_none()
-                .text_color(if selected { p.accent } else { p.muted })
+                .text_color(if selected { ps.accent } else { p.muted })
         };
         match e {
             Entry::Heading(h) => {

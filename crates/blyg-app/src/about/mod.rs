@@ -300,7 +300,7 @@ impl Render for AboutView {
                 .rounded(px(5.))
                 .border_1()
                 .border_color(p.line)
-                .bg(p.bar)
+                .bg(p.panel())
                 .cursor_pointer()
                 .hover(move |s| s.border_color(p.accent).text_color(p.accent))
                 .child(s)
@@ -461,7 +461,7 @@ impl Render for AboutView {
                     .flex()
                     .items_center()
                     .gap(px(12.))
-                    .bg(p.bar)
+                    .bg(p.panel())
                     .rule_t(&p)
                     .child(link("about-github", "GitHub").on_click(|_, _, cx| {
                         cx.open_url(&info::repo_url());

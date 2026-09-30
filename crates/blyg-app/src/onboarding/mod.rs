@@ -487,7 +487,7 @@ impl MainView {
                             .px(px(10.))
                             .py(px(7.))
                             .rounded(px(7.))
-                            .bg(p.bar)
+                            .bg(p.panel())
                             .text_size(px(11.5))
                             .text_color(p.muted)
                             .line_height(relative(1.45))

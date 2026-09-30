@@ -1853,7 +1853,7 @@ impl MainView {
                 .px(px(14.))
                 .py(px(7.))
                 .rule_b(&p)
-                .bg(p.bar)
+                .bg(p.panel())
                 .font_family("Inter")
                 .text_size(px(11.5))
                 .text_color(p.muted)

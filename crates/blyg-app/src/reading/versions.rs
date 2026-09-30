@@ -62,7 +62,7 @@ impl MainView {
                 .min_w(px(190.))
                 .p(px(4.))
                 .rounded(px(8.))
-                .bg(p.bar)
+                .bg(p.panel())
                 .border_1()
                 .border_color(p.line)
                 .shadow_lg()
