@@ -1,6 +1,7 @@
-# Blygger Desktop — spec
+# Burrow — spec
 
-A native macOS client for a Blygger blog ("blyg") running the Blygger reference
+Burrow is a blygger client (called Blygger Desktop up to 0.6.0; only the
+displayed name changed, see "Naming" below). A native macOS client for a Blygger blog ("blyg") running the Blygger reference
 Worker plus the owner-API extensions in `docs/SERVER.md`. Goal: **zero
 friction between a thought and a published post.** The feel target is
 Notational Velocity: one window, type to search, ⏎ to create, nothing ever
@@ -230,7 +231,7 @@ Disclosure: **always on**. Edited reading items move **to the top**. Helpers in 
 
 ## Onboarding & tutorial
 
-The first launch is an onboarding flow: connect a blyg (URL plus token, or owner password), then optionally connect AI accounts. After that comes an **interactive tutorial** that walks through the features (the ▶ demos in the mocks are the script), with a "Show this tutorial every time I open Blygger" checkbox. It can be re-enabled or replayed from Settings › Help.
+The first launch is an onboarding flow: connect a blyg (URL plus token, or owner password), then optionally connect AI accounts. After that comes an **interactive tutorial** that walks through the features (the ▶ demos in the mocks are the script), with a "Show this tutorial every time I open Burrow" checkbox. It can be re-enabled or replayed from Settings › Help.
 
 ## Protocol philosophy → UI rules (from the creator's talk, blygger.org/talks/2026-09-24-blygger/)
 
@@ -322,17 +323,17 @@ Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**def
 
 ## Updates (in-app, signed)
 
-Config `auto-update = install | notify | off` (**default install**). Blygger › Check for Updates… always checks, whatever the key says, and answers with a toast ("You're up to date (0.3.0)").
+Config `auto-update = install | notify | off` (**default install**). Burrow › Check for Updates… always checks, whatever the key says, and answers with a toast ("You're up to date (0.3.0)").
 
 - **When:** 15 s after launch, then about every 24 h while running. `state.json` remembers the last check that found nothing newer (`last_update_check`), so relaunches within a day don't call the API again; a check that found an update isn't recorded, so a relaunch looks again. A failed check retries in an hour. Never in `cfg(test)`, with `BLYGGER_FAKE=1`, or with `BLYGGER_NO_UPDATE=1`.
 - **What:** `GET https://api.github.com/repos/<repo>/releases/latest` (unauthenticated, with a User-Agent). Drafts, prereleases and pre-release tags are skipped; the tag is compared as semver against `CARGO_PKG_VERSION`.
-- **install:** download and verify in the background, then a sheet: "Blygger X is ready to install" with **Restart Now** and **Later** (asked once per release; Check for Updates… asks again), and the status-bar notice "Blygger X is ready · Restart to update · What's new". Restart installs and relaunches; quitting with an update ready installs it too (no relaunch). **notify:** a sheet "Blygger X is available" with **Download and Install** and **Later**, and the notice "Blygger X is available · Download · What's new"; Download proceeds as install. **off:** no automatic checks.
+- **install:** download and verify in the background, then a sheet: "Burrow X is ready to install" with **Restart Now** and **Later** (asked once per release; Check for Updates… asks again), and the status-bar notice "Burrow X is ready · Restart to update · What's new". Restart installs and relaunches; quitting with an update ready installs it too (no relaunch). **notify:** a sheet "Burrow X is available" with **Download and Install** and **Later**, and the notice "Burrow X is available · Download · What's new"; Download proceeds as install. **off:** no automatic checks.
 - **Security model** (all must pass, or nothing is installed):
   1. HTTPS only, from `api.github.com`, `github.com`, and GitHub's release-asset storage hosts (`objects.githubusercontent.com`, `release-assets.githubusercontent.com`). Redirects are followed by hand and every hop is checked.
   2. The release workflow signs `SHA256SUMS` with the project's Ed25519 key (secret `UPDATE_SIGNING_KEY`, `scripts/sign-sums.sh`, OpenSSL 3 `pkeyutl -sign -rawin`) and publishes `SHA256SUMS.sig`: the **raw 64-byte signature** over the exact bytes of `SHA256SUMS` (not base64). CI verifies it with the key embedded in the app before uploading, so a wrong key fails the release.
   3. The app embeds the public key (`update/verify.rs`, `RELEASE_PUBLIC_KEY_B64`, raw 32 bytes base64) and checks the signature with `ed25519-dalek`'s `verify_strict` before downloading the zip.
-  4. `Blygger-<ver>-macos-universal.zip` must match its SHA-256 line in the signed `SHA256SUMS`.
-  5. The zip is extracted with `ditto -x -k` into a staging folder on the same volume as the running bundle; the extracted `Blygger.app` must have `CFBundleIdentifier = org.blygger.desktop`, a `CFBundleShortVersionString` equal to the release's version and strictly newer than the running one, its executable, and pass `codesign --verify --strict` (the ad-hoc signature). These checks run again right before installing.
+  4. `Burrow-<ver>-macos-universal.zip` (or, when a release has only that, the pre-rename `Blygger-<ver>-macos-universal.zip`) must match its SHA-256 line in the signed `SHA256SUMS`.
+  5. The zip is extracted with `ditto -x -k` into a staging folder on the same volume as the running bundle; the extracted `Burrow.app` (or `Blygger.app`) must have `CFBundleIdentifier = org.blygger.desktop`, a `CFBundleShortVersionString` equal to the release's version and strictly newer than the running one, its executable, and pass `codesign --verify --strict` (the ad-hoc signature). These checks run again right before installing.
   6. Only the bundle the app runs from is replaced (from `current_exe()` → `…/X.app/Contents/MacOS/blygger`, and only if that bundle is `org.blygger.desktop`). The swap: old bundle → `.X.app.old`, new bundle in, old removed; if the new one can't be moved in, the old one is put back. A detached `/bin/sh` waits for the process to exit and runs `open -n <bundle>`.
   7. Not running from a bundle (`cargo run`), a translocated copy, or an unwritable folder → notify-only: "Can't update in place: …; download from the release page". A release without `SHA256SUMS.sig` (0.2.0 and earlier) is notify-only too. Quarantine is neither added nor stripped (the app's own downloads aren't quarantined).
 - `scripts/install.sh` also checks `SHA256SUMS.sig` when OpenSSL 3 is installed (and the release has one).
@@ -340,7 +341,7 @@ Config `auto-update = install | notify | off` (**default install**). Blygger ›
 
 ## About window
 
-**Blygger › About Blygger** (the standard app-menu place) and **Help › About Blygger** open one small window (`ShowAbout`; a second request brings it forward):
+**Burrow › About Burrow** (the standard app-menu place) and **Help › About Burrow** open one small window (`ShowAbout`; a second request brings it forward):
 
 - **Build:** version, commit short SHA (`-dirty` if the tree was dirty), build date (UTC), profile, architecture of the running slice (and "universal binary" when the executable is fat), macOS version.
 - **Updates:** `auto-update`, the last check (`state.json` `last_update_check`), the updater's state (ready to install, available, checking, or why checks are off), and a **Check for Updates…** button (the menu's check).
@@ -359,3 +360,21 @@ Links in posts open in a browser pane instead of the default browser (`open-link
 - **Security:** no IPC handler or host script (`window.ipc` is undefined in the page), so pages have no bridge to the app and never see the owner token or keys. Its own website data store: persistent under a fixed identifier on macOS 14+ (sign-ins survive a relaunch, apart from the reader and preview, which use the default store), in memory before macOS 14. Navigation: http(s), `about:blank` and `about:srcdoc` only; `mailto:` goes to the system; `file:`, `data:`, `javascript:`, `blob:` and custom schemes are refused. Downloads are cancelled and handed to the default browser. The bundle allows http:// in web content only (`NSAllowsArbitraryLoadsInWebContent`).
 - **Content blocking** (`content-blocking = true | false`, **default true**): WebKit content rule lists (`WKContentRuleList`) built from uBlock Origin's default lists: uBlock filters (ads, badware, privacy, quick fixes, unbreak), EasyList, EasyPrivacy and Peter Lowe's list, fetched from their canonical URLs about weekly (checked on first use and every 6 h while running; never with `BLYGGER_FAKE` or `BLYGGER_NO_BLOCKLIST_DOWNLOAD`) into `<data dir>/browser/lists/`. Until the first download a small bundled list of ad and tracker hosts is used. Conversion: Brave's `adblock` crate (content-blocking feature) in a child process (`blygger +convert-blocklists`, so its memory goes back to the system), `##` rules become `css-display-none`, `#@#` exceptions are folded into the generic rule they undo, rules WebKit can't parse are dropped. WebKit's per-list limit is 150 000 rules, so rules are split into lists of 60 000, each ending with every exception (`ignore-previous-rules` only reaches its own list). Compiled lists are cached by WebKit in `<data dir>/browser/compiled/`, keyed by the lists' content hash (`manifest.json`); a launch looks them up in ~0.1 s. The first page waits at most 0.4 s for the lists. The shield is per host (`state.json`, `browser_unblocked_hosts`), applied before each main-frame navigation. Not possible with content blockers: scriptlets (`##+js`), `$redirect`, `$removeparam` (so uBO's URL-tracking-parameter list is left out), `$csp`, procedural cosmetics (`:has-text`, `:upward`, …) and entity (`site.*`) cosmetics.
 - **Checks:** `scripts/browser-block-check.sh` serves a local page with "ads" (a third-party image and script, a `.ad-slot` box) and runs `BLYGGER_DEMO=br-block`, which probes the page with the shield on, off, and on again (`browser-probe …` lines). `br-slide`, `br-full`, `br-reader` and `br-teardown` are the other scenarios.
+
+## Naming
+
+The app is **Burrow** ("Burrow is a blygger client"): the menus, the About
+window, the window title, the bundle (`Burrow.app`) and the release assets
+(`Burrow-<ver>-macos-universal.{zip,dmg}`). Up to 0.6.0 it was Blygger. The
+rename is display-only. These keep the old name, because existing installs
+depend on them: the bundle ID `org.blygger.desktop`, the Keychain service and
+`blygger-ai.*` accounts, the data folder and `blygger.db`, the browser pane's
+data store, `~/.config/blygger/config` and the `BLYGGER_*` variables, the
+`blygger` binary (`CFBundleExecutable`) and CLI, the GPUI key contexts and
+action namespaces (user keybinding configs may name them), and the crates.
+"Blygger" and "blyg" still name the protocol and platform.
+
+Releases also publish `Blygger-<ver>-macos-universal.zip` (and the version-less
+`Blygger-macos-universal.zip`), holding the same signed bundle in a folder
+named `Blygger.app`, because 0.6.0's updater accepts only that. An install
+updated from 0.6.0 keeps its on-disk name `Blygger.app`.

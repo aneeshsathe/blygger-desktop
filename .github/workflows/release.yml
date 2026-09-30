@@ -127,13 +127,18 @@ jobs:
           ---
           This build isn't notarized by Apple. The easiest way to install it is the
           one-line Terminal installer in the README, which Gatekeeper doesn't block.
-          If you download it in a browser, macOS 15 and later say "Blygger" Not
+          If you download it in a browser, macOS 15 and later say "Burrow" Not
           Opened. Try opening it once, then click **Open Anyway** in System Settings ›
           Privacy & Security, or run
-          `xattr -dr com.apple.quarantine /Applications/Blygger.app`.
+          `xattr -dr com.apple.quarantine /Applications/Burrow.app`.
           EOF
           fi
 
+      # The Blygger-… zips are the same signed app under its old name (see
+      # "the old name" in scripts/bundle.sh): 0.6.0 and earlier only update
+      # from Blygger-<version>-macos-universal.zip holding Blygger.app, and
+      # SHA256SUMS (signed above) covers them like every other asset. Keep
+      # uploading them until 0.6.0 and earlier are rare.
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -145,13 +150,15 @@ jobs:
           flags=()
           [ "$PRERELEASE" = "true" ] && flags+=(--prerelease)
           gh release create "$TAG" \
-            --title "Blygger $VERSION" \
+            --title "Burrow $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --verify-tag \
             "${flags[@]}" \
-            dist/Blygger-"$VERSION"-macos-universal.dmg \
+            dist/Burrow-"$VERSION"-macos-universal.dmg \
+            dist/Burrow-"$VERSION"-macos-universal.zip \
+            dist/Burrow-macos-universal.dmg \
+            dist/Burrow-macos-universal.zip \
             dist/Blygger-"$VERSION"-macos-universal.zip \
-            dist/Blygger-macos-universal.dmg \
             dist/Blygger-macos-universal.zip \
             dist/SHA256SUMS \
             dist/SHA256SUMS.sig

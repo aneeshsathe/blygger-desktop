@@ -1,7 +1,10 @@
-# Blygger Desktop
+# Burrow
 
-A native macOS studio for [Blygger](https://blygger.org) blogs ("blygs"),
-built to be as fast as Notational Velocity.
+**Burrow is a blygger client:** a native macOS studio for
+[Blygger](https://blygger.org) blogs ("blygs"), built to be as fast as
+Notational Velocity.
+
+Burrow was called Blygger Desktop up to 0.6.0. See [the rename](#the-rename).
 
 ## Install (recommended: one line in Terminal)
 
@@ -10,9 +13,12 @@ curl -fsSL https://raw.githubusercontent.com/aneeshsathe/blygger-desktop/main/sc
 ```
 
 This downloads the latest release, checks it against the release's
-`SHA256SUMS`, and puts **Blygger.app** in `/Applications`, or in
+`SHA256SUMS`, and puts **Burrow.app** in `/Applications`, or in
 `~/Applications` if you can't write to `/Applications`. To launch it, run
-`open /Applications/Blygger.app` or find it in Spotlight.
+`open /Applications/Burrow.app` or find it in Spotlight. If a `Blygger.app`
+from before the rename is in the same folder, the installer replaces it with
+`Burrow.app` (your posts, settings and sign-ins aren't in the app, so they
+carry over).
 
 Why Terminal? Releases aren't notarized by Apple yet. Files downloaded with
 `curl` don't get macOS's quarantine flag, so Gatekeeper doesn't block the app.
@@ -31,10 +37,10 @@ Or install by hand, verifying the checksum yourself:
 ```sh
 cd "$(mktemp -d)"
 base=https://github.com/aneeshsathe/blygger-desktop/releases/latest/download
-curl -fLO "$base/Blygger-macos-universal.zip" -fLO "$base/SHA256SUMS"
-grep ' Blygger-macos-universal.zip$' SHA256SUMS | shasum -a 256 -c -   # must print "OK"
-ditto -x -k Blygger-macos-universal.zip /Applications
-open /Applications/Blygger.app
+curl -fLO "$base/Burrow-macos-universal.zip" -fLO "$base/SHA256SUMS"
+grep ' Burrow-macos-universal.zip$' SHA256SUMS | shasum -a 256 -c -   # must print "OK"
+ditto -x -k Burrow-macos-universal.zip /Applications
+open /Applications/Burrow.app
 ```
 
 Requires macOS 11 (Big Sur) or later, on Apple silicon or Intel.
@@ -46,53 +52,66 @@ installs somewhere else.
 The [Releases page](../../releases/latest) has a `.dmg` and a `.zip`. Files
 downloaded in a browser are quarantined, and because the app is only ad-hoc
 signed (not notarized), macOS blocks the first launch. On macOS 15 (Sequoia)
-and later, you see a dialog saying **"Blygger" Not Opened**, with the message
+and later, you see a dialog saying **"Burrow" Not Opened**, with the message
 that Apple could not verify it is free of malware, and only **Done** and
 **Move to Trash** buttons. Control-click → **Open** no longer gets around this
 on macOS 15 and later. To allow it:
 
-1. Drag Blygger to Applications and try to open it once. Click **Done**.
+1. Drag Burrow to Applications and try to open it once. Click **Done**.
 2. Open **System Settings › Privacy & Security** and scroll down to
-   **Security**. It says "Blygger" was blocked to protect your Mac. Click
+   **Security**. It says "Burrow" was blocked to protect your Mac. Click
    **Open Anyway**. The button only appears for about an hour after the
    blocked attempt.
 3. Confirm with **Open Anyway** in the next dialog and enter your password.
-   After that, Blygger opens normally.
+   After that, Burrow opens normally.
 
 Or skip all that with Terminal:
-`xattr -dr com.apple.quarantine /Applications/Blygger.app`
+`xattr -dr com.apple.quarantine /Applications/Burrow.app`
 
 On macOS 14 and earlier, Control-click → **Open** → **Open** still works.
 
 ## Updates
 
-From 0.3.0 on, Blygger updates itself. About once a day it checks the
+From 0.3.0 on, Burrow updates itself. About once a day it checks the
 [Releases page](../../releases/latest), downloads a new version in the
-background, and shows **Blygger X is ready · Restart to update** in the
-status bar (quitting installs it too). **Blygger › Check for Updates…** checks
+background, and shows **Burrow X is ready · Restart to update** in the
+status bar (quitting installs it too). **Burrow › Check for Updates…** checks
 right away.
 
 Updates are signed: the app installs a release only if its `SHA256SUMS` carries
 a valid Ed25519 signature from the project's release key (built into the app),
-the download matches that file, and the new app is Blygger, newer, and passes
+the download matches that file, and the new app is Burrow (the same bundle
+ID, `org.blygger.desktop`, as before the rename), newer, and passes
 `codesign --verify`. Downloads come only from GitHub, over HTTPS. The one-line
 installer checks the same signature when OpenSSL 3 is installed.
 
 `auto-update = notify` in the config only tells you a new version is out, and
-`auto-update = off` stops the automatic checks. If Blygger can't replace
+`auto-update = off` stops the automatic checks. If Burrow can't replace
 itself (say, the folder it's in isn't writable), it says so and links to the
 release page.
 
 **On 0.2.0 or earlier?** Those versions can't update themselves. Run the
 one-line installer above once more; after that, updates are automatic.
 
-**Blygger › About Blygger** shows the version, commit, update status and what
+### The rename
+
+The app was called Blygger (Blygger Desktop) up to 0.6.0. Only the name you
+see changed: the bundle ID, the config file (`~/.config/blygger/config`), the
+`BLYGGER_*` environment variables, the `blygger` command, the data folder and
+the Keychain items are all the same, so nothing needs migrating.
+
+An install that updates itself from 0.6.0 or earlier stays on disk as
+`Blygger.app`, but is Burrow inside. That's fine. To get the new name in
+Finder too, run the one-line installer: it replaces `Blygger.app` with
+`Burrow.app`. Or rename it yourself while it isn't running.
+
+**Burrow › About Burrow** shows the version, commit, update status and what
 your blyg's server supports. Its **Copy build info** button copies all of that
 (no paths, no token) for a bug report.
 
 ## Disclaimer
 
-> **Blygger Desktop is entirely vibecoded:** it was written with AI assistance.
+> **Burrow is entirely vibecoded:** it was written with AI assistance.
 > It's provided **as is, with no warranty or guarantee of any kind**, and you
 > use it **at your own risk**. That includes the risk of losing or corrupting
 > posts on your blyg. Keep backups.
@@ -112,7 +131,7 @@ on the network. It's local-first: everything you write is saved on your Mac
 first and synced to your blyg in the background. It's written in Rust with
 [GPUI](https://www.gpui.rs), the UI framework behind Zed.
 
-![Blygger Desktop, light theme](docs/screenshots/light.png)
+![Burrow, light theme](docs/screenshots/light.png)
 
 ## Features
 
@@ -214,8 +233,8 @@ first and synced to your blyg in the background. It's written in Rust with
 
 ### And
 
-- **Signed automatic updates** (see [Updates](#updates)), and **Blygger ›
-  About Blygger** for the version, commit, update status and what your
+- **Signed automatic updates** (see [Updates](#updates)), and **Burrow ›
+  About Burrow** for the version, commit, update status and what your
   server supports, with **Copy build info** for bug reports.
 
 | | |
@@ -230,7 +249,7 @@ first and synced to your blyg in the background. It's written in Rust with
 
 ## Requirements: a blyg the app can talk to
 
-> **Heads-up:** Blygger Desktop currently needs server features that aren't in
+> **Heads-up:** Burrow currently needs server features that aren't in
 > upstream Blygger yet.
 
 The app talks to your blyg through its owner API. Today that means a Blygger
@@ -261,7 +280,7 @@ keyboard?** (`show-buttons`). esc skips it at any step. Then comes an optional
 **interactive tour** of the real window: each step highlights a part of it and
 waits for you to press the key (⌘T, ⌘⏎, ⌘3, ⌘G, ⌘Y, ⌘R, ⌘K…). The tour runs on
 sample data, so your own blyg isn't touched, and your posts come back when it
-ends. Replay it from **Help › Blygger Tutorial** or **Settings (⌘,) › Help**,
+ends. Replay it from **Help › Burrow Tutorial** or **Settings (⌘,) › Help**,
 or set `tutorial-on-launch = true` to see it every time.
 
 | | |
@@ -275,7 +294,7 @@ Worker's `BLYG_OWNER_TOKEN` secret). It checks them with the server before
 saving anything, and says plainly what's wrong: the address can't be reached,
 the token is wrong (401), or the server lacks the owner-API extensions (404).
 The token then goes in your Keychain and the address into the config file as
-`blyg-url`, and the app loads your posts. **Blygger › Disconnect…** forgets
+`blyg-url`, and the app loads your posts. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
 
 | | |
@@ -289,7 +308,7 @@ Settings live in a plain-text file in the style of Ghostty's config:
 optional. To list every option with its default and documentation:
 
 ```sh
-/Applications/Blygger.app/Contents/MacOS/blygger +show-config --default --docs
+/Applications/Burrow.app/Contents/MacOS/blygger +show-config --default --docs
 ```
 
 Most options can also be changed in Settings (⌘,).
@@ -299,7 +318,7 @@ stored in the macOS Keychain, and the app never logs them.
 
 ## AI providers
 
-AI is optional and **off until you turn it on**: Blygger uses no provider, not
+AI is optional and **off until you turn it on**: Burrow uses no provider, not
 even an installed `claude` or `codex` CLI, until you enable one (`ai-enable` in
 the config file) or sign in to one in Settings. You use your own accounts:
 
@@ -335,10 +354,10 @@ the config file) or sign in to one in Settings. You use your own accounts:
 (also **⇧⌘G**; you see a diff and accept or reject it), continue this thought,
 outline a thread, and proofread (typos and grammar only, as suggestions).
 
-Generated text is always disclosed as generated when you publish. Blygger
+Generated text is always disclosed as generated when you publish. Burrow
 records which model wrote each gap and sends it to your blyg with the text
 (the provenance extension in `docs/SERVER.md`). If your blyg doesn't have
-that extension, Blygger warns you before publishing generated text, and
+that extension, Burrow warns you before publishing generated text, and
 Cancel is the default. Proofreading isn't generated prose and isn't disclosed.
 
 **Not offered:** signing in with a claude.ai (Pro/Max) subscription.
@@ -377,9 +396,14 @@ scripts/bundle.sh --arch arm64           # this Mac's architecture only
 the environment. With them, it signs, notarizes and staples the app and the
 dmg. `scripts/sign.sh` documents the variables. Releases are built by
 `.github/workflows/release.yml` when a `v*` tag is pushed. Each release has
-versioned assets (`Blygger-0.1.0-macos-universal.zip` and `.dmg`),
-version-less copies (`Blygger-macos-universal.zip` and `.dmg`, which the
-`releases/latest/download/…` URLs point to), and `SHA256SUMS`.
+versioned assets (`Burrow-0.1.0-macos-universal.zip` and `.dmg`),
+version-less copies (`Burrow-macos-universal.zip` and `.dmg`, which the
+`releases/latest/download/…` URLs point to), and `SHA256SUMS` (signed as
+`SHA256SUMS.sig`). For now each release also carries
+`Blygger-<version>-macos-universal.zip` and `Blygger-macos-universal.zip`: the
+same signed app, in a folder called `Blygger.app`, because that's the only
+asset 0.6.0 and earlier can update from (see "the old name" in
+`scripts/bundle.sh`).
 
 ## License
 
@@ -388,7 +412,7 @@ Different parts of the project are under different licenses:
 | What | License |
 |---|---|
 | Source code (everything not listed below) | [MIT](LICENSE) |
-| Documentation, design mockups and screenshots (`docs/`), and the icon and artwork (`packaging/icon.svg`, `packaging/Blygger.icns`) | [CC BY 4.0](LICENSE-docs). Reuse is fine with credit to "Blygger Desktop contributors". |
+| Documentation, design mockups and screenshots (`docs/`), and the icon and artwork (`packaging/icon.svg`, `packaging/Burrow.icns`) | [CC BY 4.0](LICENSE-docs). Reuse is fine with credit to "Blygger Desktop contributors". |
 | Bundled fonts (`crates/blyg-app/assets/fonts/`) | Their own licenses: Literata, Inter, Source Serif 4 and iA Writer Quattro are under the SIL Open Font License 1.1, and ET Book is under MIT |
 
 The license texts ship inside the app bundle. See

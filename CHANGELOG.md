@@ -1,6 +1,7 @@
 # Changelog
 
-All notable changes to Blygger Desktop are documented here. The format follows
+All notable changes to Burrow (called Blygger Desktop up to 0.6.0) are
+documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 break things.
@@ -8,6 +9,15 @@ break things.
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
+
+## [Unreleased]
+
+### Changed
+
+- **Blygger is now Burrow.** Burrow is a blygger client. The app, its menus (Burrow › Settings…, Burrow › Check for Updates…, Help › Burrow Tutorial), the About window, the window title and the app's messages say Burrow, and new installs are `Burrow.app`. Release assets are named `Burrow-<version>-macos-universal.{zip,dmg}`.
+- Only the name changed. The bundle ID (`org.blygger.desktop`), your data folder and database, the Keychain items, the config file (`~/.config/blygger/config`), the `BLYGGER_*` environment variables, the `blygger` command and the key-binding contexts are all the same, so nothing needs migrating.
+- **Updating from 0.6.0 or earlier:** the in-app update works as usual. The app replaces itself where it is, so it stays `Blygger.app` on disk (Finder and Spotlight show that name) while being Burrow inside. That's expected. To get `Burrow.app`, run the one-line installer, which replaces a `Blygger.app` in the same folder (posts, settings and sign-ins carry over), or rename the app while it isn't running. A Dock shortcut to the old name may need re-adding.
+- The updater accepts a release zip named `Burrow-…` or `Blygger-…`, holding `Burrow.app` or `Blygger.app`, and prefers Burrow's. For a transition period, each release also publishes `Blygger-<version>-macos-universal.zip` and `Blygger-macos-universal.zip` (the same signed app in a folder called `Blygger.app`) so 0.6.0 and earlier can still update. The signed `SHA256SUMS` covers them too.
 
 ## [0.6.0] - 2026-09-29
 
