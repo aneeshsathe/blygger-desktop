@@ -61,6 +61,7 @@ impl MainView {
     /// Hook: the drawer's actions on the root element.
     pub(crate) fn notes_actions(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
         d.on_action(cx.listener(Self::toggle_notes))
+            .on_action(cx.listener(Self::quote_to_draft))
     }
 
     /// ⇧⌘N / View › Notes.

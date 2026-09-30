@@ -307,7 +307,7 @@ impl Backend for Disconnected {
     fn fork(&self, _: &RemoteRef) -> Result<LocalId> {
         not_connected()
     }
-    fn set_show_responses(&self, _: &LocalId, _: bool) -> Result<()> {
+    fn set_responses(&self, _: &LocalId, _: ResponsesMode) -> Result<bool> {
         not_connected()
     }
     fn sync_now(&self) -> Result<()> {
@@ -446,8 +446,8 @@ impl Backend for SwitchBackend {
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         self.cur().fork(of)
     }
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
-        self.cur().set_show_responses(id, show)
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
+        self.cur().set_responses(id, mode)
     }
     fn sync_now(&self) -> Result<()> {
         self.cur().sync_now()

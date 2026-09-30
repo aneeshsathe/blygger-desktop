@@ -425,7 +425,11 @@ impl MainView {
         match action {
             // The current version's actions work on any post (the stream's
             // selected one too); "AI reply" never on a pinned view.
-            "Quote" | "Reply" | "Open on web" => self.item_action(item, action, window, cx),
+            // A passage selected in the reading pane makes a partial stub.
+            "Reply" if self.studio.reader.active() => self.reply_with_selection(item, window, cx),
+            "Quote" | "Reply" | "Link post" | "Open on web" => {
+                self.item_action(item, action, window, cx)
+            }
             "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
             "Quote this version" => {
@@ -510,27 +514,23 @@ impl MainView {
                 };
                 self.quote_into_thread(snippet, window, cx);
             }
-            "Reply" => {
-                let of = RemoteRef {
-                    origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
-                    version: item.version,
-                };
-                match self
-                    .backend
-                    .create_stub(&of, &vm::stub_body(&item.remote_id))
-                {
-                    Ok(id) => {
-                        self.open_new_draft(&id, window, cx);
-                        self.show_toast(
-                            format!("Reply to {} · a stub thread", vm::host(&item.origin)),
-                            None,
-                            cx,
-                        );
-                    }
-                    Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
+            "Reply" => self.start_stub(&item, blyg, None, window, cx),
+            // A plain `[[id]]` link in a new fragment: no stub_of, no mention.
+            "Link post" if blyg => match self.backend.create_draft(
+                blyg_core::Kind::Fragment,
+                &vm::link_post_body(&item.remote_id),
+            ) {
+                Ok(id) => {
+                    self.open_new_draft(&id, window, cx);
+                    self.show_toast(
+                        format!("New fragment linking {}", vm::host(&item.origin)),
+                        None,
+                        cx,
+                    );
                 }
-            }
+                Err(e) => self.show_toast(format!("Couldn't start a post: {e}"), None, cx),
+            },
+            "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
@@ -542,6 +542,83 @@ impl MainView {
                 None => self.show_toast("No web address for this post", None, cx),
             },
             _ => {}
+        }
+    }
+
+    /// Reply from the reading pane: ask its web view for the selected
+    /// passage (a partial stub), falling back to the no-selection prefill.
+    fn reply_with_selection(
+        &mut self,
+        item: blyg_core::ReadingItem,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let blyg = self.is_blyg_post(&item);
+        let (tx, rx) = async_channel::bounded::<String>(1);
+        if !blyg || !self.studio.reader.selection(tx.clone()) {
+            return self.start_stub(&item, blyg, None, window, cx);
+        }
+        // A page that never answers mustn't make the action look dead.
+        cx.spawn(async move |_, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_millis(500))
+                .await;
+            let _ = tx.try_send(String::new());
+        })
+        .detach();
+        cx.spawn_in(window, async move |this, cx| {
+            let text = rx.recv().await.unwrap_or_default();
+            let _ = this.update_in(cx, |v, window, cx| {
+                v.start_stub(&item, blyg, Some(&text), window, cx)
+            });
+        })
+        .detach();
+    }
+
+    /// The post comes from a blyg (transcludable), not an RSS feed.
+    fn is_blyg_post(&self, item: &blyg_core::ReadingItem) -> bool {
+        self.reading
+            .subs
+            .iter()
+            .find(|s| s.id == item.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg)
+    }
+
+    /// Make a stub of `item` (studio 0.8.1's prefill, [`vm::stub_prefill`])
+    /// and open it, the caret on an empty quote line when there is one.
+    fn start_stub(
+        &mut self,
+        item: &blyg_core::ReadingItem,
+        blyg: bool,
+        selection: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let prefill = match vm::stub_prefill(&item.remote_id, &item.content_html, selection, blyg) {
+            Ok(p) => p,
+            Err(why) => return self.show_toast(why, Some("Nothing was created".into()), cx),
+        };
+        let of = RemoteRef {
+            origin: item.origin.clone(),
+            id: item.remote_id.clone(),
+            version: item.version,
+        };
+        match self.backend.create_stub(&of, &prefill.body) {
+            Ok(id) => {
+                self.open_new_draft(&id, window, cx);
+                if let Some(c) = prefill.caret {
+                    self.editor.update(cx, |s, cx| {
+                        let c = c.min(s.text().len());
+                        s.set_selected_range(c..c, cx);
+                    });
+                }
+                self.show_toast(
+                    format!("Reply to {} · a stub thread", vm::host(&item.origin)),
+                    None,
+                    cx,
+                );
+            }
+            Err(e) => self.show_toast(format!("Couldn't start a reply: {e}"), None, cx),
         }
     }
 
@@ -591,6 +668,8 @@ impl MainView {
                 .collect(),
         };
         ids.into_iter()
+            // A feed post has no id to link.
+            .filter(|id| *id != "Link post" || ctx.blyg)
             .map(|id| vm::action_chip(id, &ctx))
             .collect()
     }
@@ -756,7 +835,7 @@ impl MainView {
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
             "(withdrawn)".to_string()
         } else {
-            vm::title(&r.content_md)
+            vm::post_title(r)
         };
         // The search's matches in the title, as the posts list shows them.
         let highlights: Vec<_> = crate::vm::highlight_ranges(&title, &self.reading.query)

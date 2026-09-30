@@ -29,7 +29,7 @@ mod transclusion;
 mod util;
 
 pub use embeds::{embed_css, preview_script, youtube_facade_html, youtube_id};
-pub use links::{excerpt_from_html, plain_text_from_html};
+pub use links::{excerpt_from_html, normalize_selection, plain_text_from_html, selection_text};
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
     Attachment, Citation, ShellOpts, article_html, csp, fork_lineage_html, media_html, page_shell,
@@ -37,7 +37,8 @@ pub use shell::{
 };
 pub use tk::{TkError, TkScope, parse_scopes};
 pub use transclusion::{
-    Found, NoResolver, Quote, Resolution, Resolver, Unresolved, UnresolvedReason,
+    Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
+    Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
 pub use util::escape_html;
 
@@ -218,7 +219,9 @@ pub fn render_preview(
                 let lines: Vec<String> = w
                     .quotes
                     .iter()
-                    .map(|(_, f)| transclusion::provenance_line(f, &opts.mount))
+                    .map(|(q, f)| {
+                        transclusion::provenance_line(f, q.selector.is_some(), &opts.mount)
+                    })
                     .collect();
                 html = transclusion::inject_provenance(&html, &lines);
             }

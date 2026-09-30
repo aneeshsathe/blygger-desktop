@@ -263,6 +263,8 @@ fn a_server_edit_forgets_tracked_provenance() {
         forked_from: None,
         permalink: None,
         show_responses: false,
+        responses_override: None,
+        showing: None,
         versions: None,
     };
     s.merge_all(&[w]).unwrap();

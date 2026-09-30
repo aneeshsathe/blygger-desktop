@@ -164,7 +164,15 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
     assert_eq!(listed, ["v5 · current", "📌 v3", "📌 v1"]);
     assert_eq!(
         pm.actions,
-        ["Quote", "Reply", "AI reply", "Fork", "Open on web", "Notes"]
+        [
+            "Quote",
+            "Reply",
+            "AI reply",
+            "Fork",
+            "Link post",
+            "Open on web",
+            "Notes"
+        ]
     );
     // Step through every version the pill allows; unpinned never render.
     for _ in 0..4 {
@@ -308,6 +316,38 @@ fn restore_loads_a_version_into_the_editor(cx: &mut TestAppContext) {
     let it = fake.item(&LocalId("01J9M2A".into())).unwrap();
     assert_eq!(it.version, 3, "restoring never publishes");
     assert!(view.read_with(cx, |v, _| v.reading.own.is_none()));
+}
+
+#[gpui_kit::test]
+fn a_post_can_hand_its_responses_back_to_the_site_setting(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-shift-m");
+    settle(cx);
+    let first = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let (_, id, r, _) = v.mention_groups().into_iter().next().unwrap();
+            (id.unwrap(), r)
+        })
+    };
+    let (id, r) = first(&view, cx);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Show));
+    assert!(r.show);
+    view.update(cx, |v, cx| {
+        v.set_responses(id.clone(), blyg_core::ResponsesMode::Default, cx)
+    });
+    settle(cx);
+    // The fake's site default is off, so following it hides them.
+    let it = fake.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(blyg_core::ResponsesMode::Default));
+    assert!(!it.show_responses);
+    let (_, r) = first(&view, cx);
+    assert!(!r.show);
+    assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Default));
+    let strings = view.read_with(cx, |v, _| v.mentions_screen_strings());
+    assert!(
+        strings.contains(&"responses hidden from the page · site setting".to_string()),
+        "{strings:?}"
+    );
 }
 
 #[gpui_kit::test]
@@ -497,13 +537,18 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
     settle(cx);
     view.update_in(cx, |v, window, cx| {
         let Some(RSheet::Site {
-            title, links, load, ..
+            title,
+            links,
+            timezone,
+            load,
+            ..
         }) = &v.reading.sheet
         else {
             panic!("sheet");
         };
         assert!(matches!(load, Load::Ready(_)));
         assert_eq!(title.read(cx).value().as_ref(), "Harbour notes");
+        assert_eq!(timezone.read(cx).value().as_ref(), "Europe/Lisbon");
         title.update(cx, |s, cx| s.set_value("Harbour notebook", window, cx));
         links.update(cx, |s, cx| {
             s.set_value(
@@ -512,11 +557,15 @@ fn site_settings_load_and_save(cx: &mut TestAppContext) {
                 cx,
             )
         });
+        timezone.update(cx, |s, cx| s.set_value("Asia/Tokyo", window, cx));
         v.toggle_accept_mentions(cx);
+        v.toggle_responses_default(cx);
         v.save_site_settings(window, cx);
     });
     settle(cx);
     let s = fake.saved_settings();
+    assert_eq!(s.timezone.as_deref(), Some("Asia/Tokyo"));
+    assert_eq!(s.show_responses_default, Some(true));
     assert_eq!(s.site_title.as_deref(), Some("Harbour notebook"));
     assert_eq!(s.accept_mentions, Some(false));
     assert_eq!(s.author_links.len(), 2);
@@ -735,10 +784,12 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Reply · new stub",
             "AI reply · new stub",
             "Fork",
+            "Link post · new fragment",
             "Open on web",
             "→ Notes" // --- notes ---
         ]
     );
+    assert!(tip(&row, "Link post").contains("no stub_of"));
     for c in &row {
         assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);
         assert_eq!(c.enabled, c.id != "Fork", "{}", c.label);
@@ -772,4 +823,67 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     // A feed post can't be transcluded: Quote says what it does instead.
     open_row(&view, OMAR_YEAR, cx);
     assert!(tip(&chips(&view, cx), "Quote").contains("feed posts"));
+    // ...and has no id to link, so no Link post.
+    assert!(!chips(&view, cx).iter().any(|c| c.id == "Link post"));
+}
+
+/// Studio 0.8.0's `link post`: a new fragment holding `[[id]]`, a plain
+/// link, never a stub.
+#[gpui_kit::test]
+fn link_post_starts_a_fragment_that_is_not_a_reply(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    open_row(&view, RUE_TRUST, cx);
+    let before = fake.items().len();
+    view.update_in(cx, |v, window, cx| {
+        v.reading_action_for_test("Link post", window, cx)
+    });
+    settle(cx);
+    let items = fake.items();
+    assert_eq!(items.len(), before + 1);
+    let post = items
+        .iter()
+        .find(|i| i.content_md == format!("[[{RUE_TRUST}]]\n\n"))
+        .expect("a link post");
+    assert_eq!(post.kind, Kind::Fragment);
+    assert!(post.stub_of.is_none() && post.forked_from.is_none());
+    assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
+}
+
+/// Studio 0.8.1's stub prefill: a long post starts with an empty quote line
+/// and the caret on it; a short one with the whole-item form.
+#[gpui_kit::test]
+fn reply_prefills_an_empty_quote_for_a_long_post(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // The seeded posts are all short: one is made long for this test.
+    let long_html = format!("<p>{}</p>", "The tide comes in. ".repeat(40));
+    for (id, want_quote) in [(LIN_BENCH, true), (ADA_FINISHED, false)] {
+        cx.simulate_keystrokes("cmd-r");
+        open_row(&view, id, cx);
+        view.update_in(cx, |v, window, cx| {
+            if want_quote {
+                v.reading.opened.as_mut().unwrap().item.content_html = long_html.clone();
+            }
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
+        let stub = fake
+            .items()
+            .into_iter()
+            .find(|i| i.stub_of.as_ref().is_some_and(|s| s.id == id))
+            .expect("a stub");
+        let (text, cursor) = view.read_with(cx, |v, cx| {
+            let e = v.editor.read(cx);
+            (e.value().to_string(), e.cursor())
+        });
+        assert_eq!(text, stub.content_md);
+        if want_quote {
+            let head = format!("![[{id}]]\n> ");
+            assert_eq!(stub.content_md, format!("{head}\n\n"));
+            assert_eq!(cursor, head.len(), "the caret is on the quote line");
+        } else {
+            assert_eq!(stub.content_md, format!("![[{id}]]\n\n"));
+            assert_eq!(cursor, text.len());
+        }
+    }
 }

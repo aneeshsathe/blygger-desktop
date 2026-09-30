@@ -1123,6 +1123,7 @@ mod tests {
             stub_of: None,
             forked_from: None,
             show_responses: false,
+            responses_mode: None,
             pending_sync: false,
             conflict: false,
         };

@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{Kind, ReadingItem, RemoteRef, Status, Version};
+use crate::model::{Kind, ReadingItem, RemoteRef, ResponsesMode, Status, Version};
 
 /// `GET /api/items` element and `GET /api/items/:id` body.
 #[derive(Debug, Clone, Deserialize)]
@@ -34,12 +34,35 @@ pub struct WireItem {
     /// Patch 3; absent on older servers.
     #[serde(default)]
     pub show_responses: bool,
+    /// Studio 0.8: the item's own choice, `1`/`0`, or `null` to follow the
+    /// global default. Outer `None` = the server didn't send the key.
+    #[serde(default, deserialize_with = "present")]
+    pub responses_override: Option<Option<i64>>,
+    /// Studio 0.8: the effective state, when the server reports it; it wins
+    /// over `show_responses`, which a 0.8 store no longer updates.
+    #[serde(default)]
+    pub showing: Option<bool>,
     /// Only on `GET /api/items/:id`.
     #[serde(default)]
     pub versions: Option<Vec<Version>>,
 }
 
+/// Tells a present `null` (`Some(None)`) from an absent key (`None`).
+fn present<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<i64>>, D::Error> {
+    Option::<i64>::deserialize(d).map(Some)
+}
+
 impl WireItem {
+    /// Whether the page shows responses now.
+    pub fn shows_responses(&self) -> bool {
+        self.showing.unwrap_or(self.show_responses)
+    }
+
+    /// The item's own choice, when the server reports one.
+    pub fn responses_mode(&self) -> Option<ResponsesMode> {
+        self.responses_override.map(ResponsesMode::from_override)
+    }
+
     pub fn local_kind(&self) -> Kind {
         let k = self.authored_kind.as_deref().unwrap_or(&self.kind);
         parse_kind(k)
@@ -153,3 +176,42 @@ pub struct ReadMark {
 
 /// At most this many entries per `POST /api/reading/read`.
 pub const READ_BATCH_MAX: usize = 500;
+
+#[cfg(test)]
+mod responses_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn item(extra: Value) -> WireItem {
+        let mut v = json!({ "id": "A", "kind": "fragment", "status": "public" });
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn override_tells_null_from_absent() {
+        assert_eq!(item(json!({})).responses_mode(), None);
+        assert_eq!(
+            item(json!({ "responses_override": null })).responses_mode(),
+            Some(ResponsesMode::Default)
+        );
+        assert_eq!(
+            item(json!({ "responses_override": 0 })).responses_mode(),
+            Some(ResponsesMode::Hide)
+        );
+        assert_eq!(
+            item(json!({ "responses_override": 1 })).responses_mode(),
+            Some(ResponsesMode::Show)
+        );
+    }
+
+    #[test]
+    fn showing_wins_over_the_legacy_column() {
+        // A 0.8 store no longer updates `show_responses`.
+        let w = item(json!({ "show_responses": false, "showing": true }));
+        assert!(w.shows_responses());
+        assert!(item(json!({ "show_responses": true })).shows_responses());
+    }
+}

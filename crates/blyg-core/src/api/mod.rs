@@ -20,8 +20,8 @@ use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
 use crate::model::{
-    Hopper, Kind, Mention, RemoteRef, ScopeProvenance, Settings, SubscribePreview, Subscription,
-    SubscriptionKind,
+    Hopper, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings, SubscribePreview,
+    Subscription, SubscriptionKind,
 };
 use wire::*;
 
@@ -245,13 +245,26 @@ impl Api {
         Ok(v.get("disclosed").and_then(Value::as_u64).unwrap_or(0) as u32)
     }
 
-    pub fn set_show_responses(&self, id: &str, show: bool) -> Result<()> {
-        self.call(
+    /// `PUT /api/items/:id/responses`. Show and hide also carry the legacy
+    /// `show`, so a pre-0.8 server understands them; `Default` needs 0.8.
+    /// Returns (showing now, the item's choice when the server reports it).
+    pub fn set_responses(
+        &self,
+        id: &str,
+        mode: ResponsesMode,
+    ) -> Result<(bool, Option<ResponsesMode>)> {
+        let mut body = json!({ "mode": mode.as_str() });
+        match mode {
+            ResponsesMode::Show => body["show"] = json!(true),
+            ResponsesMode::Hide => body["show"] = json!(false),
+            ResponsesMode::Default => {}
+        }
+        let v = self.call(
             "PUT",
             &format!("/api/items/{}/responses", enc(id)),
-            Some(json!({ "show": show })),
-        )
-        .map(|_| ())
+            Some(body),
+        )?;
+        Ok(responses_reply(&v, mode))
     }
 
     // ---------- media ----------
@@ -442,8 +455,13 @@ impl Api {
         put("site_url", &s.site_url);
         put("theme", &s.theme);
         put("avatar_media_id", &s.avatar_media_id);
+        // `Some("")` clears it (the blyg then renders in UTC).
+        put("timezone", &s.timezone);
         if let Some(on) = s.accept_mentions {
             body.insert("accept_mentions".into(), json!(on));
+        }
+        if let Some(on) = s.show_responses_default {
+            body.insert("show_responses_default".into(), json!(on));
         }
         body.insert(
             "author_links".into(),
@@ -505,7 +523,8 @@ impl Api {
     }
 
     /// The server fills unset strings with upstream defaults (`""`, or
-    /// `"blyg"`/`"auto"`); `""` becomes `None`.
+    /// `"auto"`); `""` becomes `None`. Except `timezone`, where `Some("")`
+    /// means "the server has the setting, and it is unset".
     pub fn settings(&self) -> Result<Option<Settings>> {
         let s: Option<Settings> = Self::optional(self.call_as("GET", "/api/settings", None))?;
         Ok(s.map(|mut s| {
@@ -532,6 +551,20 @@ impl Api {
         }
         Self::optional(self.call_as::<R>("GET", "/api/hoppers", None)).map(|o| o.map(|r| r.hoppers))
     }
+}
+
+/// Reads a `PUT …/responses` reply: studio 0.8's `{showing, override}`,
+/// else the pre-0.8 `{show_responses}`, else what was asked for.
+fn responses_reply(v: &Value, asked: ResponsesMode) -> (bool, Option<ResponsesMode>) {
+    let showing = v
+        .get("showing")
+        .or_else(|| v.get("show_responses"))
+        .and_then(Value::as_bool)
+        .unwrap_or(asked == ResponsesMode::Show);
+    let mode = v
+        .get("override")
+        .map(|o| ResponsesMode::from_override(o.as_i64()));
+    (showing, mode)
 }
 
 /// Why a connection check failed, worded for the "Connect your blyg" sheet.

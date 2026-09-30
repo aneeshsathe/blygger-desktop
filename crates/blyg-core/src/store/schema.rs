@@ -189,6 +189,12 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX folder_members_folder ON folder_members(folder_id);
     "#,
+    // v8: the item's own responses choice (studio 0.8): 'default' | 'show' |
+    // 'hide', NULL when the server hasn't reported one. `show_responses`
+    // stays the effective state.
+    r#"
+    ALTER TABLE items ADD COLUMN responses_mode TEXT;
+    "#,
 ];
 
 /// Returns whether any migration ran.

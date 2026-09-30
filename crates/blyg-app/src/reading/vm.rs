@@ -130,6 +130,20 @@ pub fn title(md: &str) -> String {
     blyg_core::plain_title(md).unwrap_or_else(|| "…".into())
 }
 
+/// A post's title in the reading list and stream: its own first line (never
+/// quoted text, see [`blyg_core::plain_title`]). A stub that only quotes
+/// names what it answers rather than borrowing the quoted sentence (studio
+/// 0.8.2).
+pub fn post_title(r: &ReadingItem) -> String {
+    if let Some(t) = blyg_core::plain_title(&r.content_md) {
+        return t;
+    }
+    match r.stub_of.as_ref().and_then(|s| s.target()) {
+        Some(target) => format!("In response to {}", host(target)),
+        None => "…".into(),
+    }
+}
+
 /// `rue.blyg.example.com` from an origin.
 pub fn host(origin: &str) -> String {
     crate::vm::url_host(origin).unwrap_or_else(|| origin.trim_end_matches('/').to_string())
@@ -236,11 +250,12 @@ pub struct Pill {
 
 /// Action ids under the current version. `Fork` is always shown there but
 /// disabled: it says where forking lives (a pin), rather than hiding it.
-pub const CURRENT_ACTIONS: [&str; 6] = [
+pub const CURRENT_ACTIONS: [&str; 7] = [
     "Quote",
     "Reply",
     "AI reply",
     "Fork",
+    "Link post",
     "Open on web",
     "Notes", // --- notes ---
 ];
@@ -314,6 +329,14 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             tip: fork_needs_pin(cx),
             enabled: false,
         },
+        // Named for what it makes, not for a relation: Reply is the one
+        // "I am responding" action. Blyg posts only (feed posts have no id).
+        "Link post" => on(
+            "Link post · new fragment",
+            "Starts a new fragment of yours containing [[…]], a plain link to this post: \
+             not a reply, so no stub_of and no mention."
+                .into(),
+        ),
         "Open on web" => on(
             "Open on web",
             "Opens this post's page in your browser.".into(),
@@ -764,6 +787,163 @@ pub fn stub_body(remote_id: &str) -> String {
     format!("![[{remote_id}]]\n\n")
 }
 
+/// A link post: a new fragment holding `[[id]]`, a plain link that declares
+/// nothing on the wire (no `stub_of`, no mention). Not a reply: that's a stub.
+pub fn link_post_body(remote_id: &str) -> String {
+    format!("[[{remote_id}]]\n\n")
+}
+
+/// Past this much text, a stub prefills an empty quote line instead of the
+/// whole-item form (studio 0.8.1 `LONG_TARGET_CHARS`): quoting two thousand
+/// words to say one is what partial transclusion is for. JavaScript length.
+pub const LONG_TARGET_CHARS: usize = 600;
+
+/// A stub's starting text, and where the caret goes (`None`: at the end).
+#[derive(Debug, Clone, PartialEq)]
+pub struct StubPrefill {
+    pub body: String,
+    pub caret: Option<usize>,
+}
+
+/// The stub prefill, as studio 0.8.1's `POST /api/stubs` builds it:
+///
+/// - with a `selection` from the post: the directive plus the passage as an
+///   attached blockquote (the partial grammar), checked against the post's
+///   text now rather than at publish. `Err` when it isn't in the post.
+/// - without one, a post longer than [`LONG_TARGET_CHARS`] of text gets an
+///   empty quote line, with the caret on it; delete the line for the whole form.
+/// - otherwise, and always for feed posts (nothing to check a passage
+///   against), the whole-item form, [`stub_body`].
+pub fn stub_prefill(
+    remote_id: &str,
+    content_html: &str,
+    selection: Option<&str>,
+    blyg: bool,
+) -> Result<StubPrefill, &'static str> {
+    let whole = || StubPrefill {
+        body: stub_body(remote_id),
+        caret: None,
+    };
+    if !blyg {
+        return Ok(whole());
+    }
+    let hay = selection_text(content_html);
+    if let Some(sel) = selection.filter(|s| !s.trim().is_empty()) {
+        let sel = normalize_selection(sel);
+        if sel.is_empty() || !hay.contains(&sel) {
+            return Err("That passage isn't in the version held of this post");
+        }
+        return Ok(StubPrefill {
+            body: format!("{}\n\n", partial_quote(remote_id, &sel)),
+            caret: None,
+        });
+    }
+    if hay.encode_utf16().count() > LONG_TARGET_CHARS {
+        let head = format!("![[{remote_id}]]\n> ");
+        return Ok(StubPrefill {
+            caret: Some(head.len()),
+            body: format!("{head}\n\n"),
+        });
+    }
+    Ok(whole())
+}
+
+/// A partial transclusion: the directive with the (normalized) passage
+/// attached as a blockquote, no blank line between (spec §16.4).
+pub fn partial_quote(remote_id: &str, selection: &str) -> String {
+    format!("![[{remote_id}]]\n{}", quote_lines(selection))
+}
+
+/// Where a quoted passage came from (universal quoting).
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuoteSource {
+    /// A blyg post we hold: its id, the HTML a passage is checked against,
+    /// and its page (for the plain form).
+    Blyg {
+        id: String,
+        html: String,
+        title: String,
+        url: Option<String>,
+    },
+    /// Any other page (or your notes: no `url`, maybe no title).
+    Page { title: String, url: Option<String> },
+}
+
+/// A highlighted passage as Markdown to put in a draft, without the blank
+/// line after it (the caller adds that); `None` for an empty selection.
+///
+/// - from a blyg post, into a thread, and the passage really is in the post
+///   we hold: a partial transclusion, [`partial_quote`];
+/// - otherwise (a fragment can't transclude, a web page, notes): the passage
+///   as a blockquote, one `>` block per line ([`quote_lines`]), then a
+///   source line inside the quote, `> — [title](url)`, when there's a page
+///   to link (or just the title when there's only that).
+pub fn quote_block(selection: &str, source: &QuoteSource, into_thread: bool) -> Option<String> {
+    let sel = normalize_selection(selection);
+    if sel.is_empty() {
+        return None;
+    }
+    let (title, url) = match source {
+        QuoteSource::Blyg { id, html, .. }
+            if into_thread && selection_text(html).contains(&sel) =>
+        {
+            return Some(partial_quote(id, &sel));
+        }
+        QuoteSource::Blyg { title, url, .. } | QuoteSource::Page { title, url } => (title, url),
+    };
+    let q = quote_lines(&sel);
+    Some(match url {
+        Some(u) => format!("{q}\n>\n> — {}", crate::app::notes::link(title, u)),
+        None if !title.trim().is_empty() => format!("{q}\n>\n> — {}", title.trim()),
+        None => q,
+    })
+}
+
+/// The held blyg post a web page shows, if any: same origin, and one of the
+/// URL's path segments is the post's id (`/t/{id}/`, `/items/{id}.json`, …).
+pub fn blyg_item_for_url<'a>(
+    url: &str,
+    rows: &'a [ReadingItem],
+    subs: &[Subscription],
+) -> Option<&'a ReadingItem> {
+    let path_of = |u: &str| -> Option<(String, String)> {
+        let host = crate::vm::url_host(u)?;
+        let rest = u.split_once("://")?.1;
+        let path = rest.split_once('/').map_or("", |(_, p)| p);
+        let path = path.split(['?', '#']).next().unwrap_or("");
+        Some((host, format!("/{path}")))
+    };
+    let (host, path) = path_of(url)?;
+    rows.iter().find(|r| {
+        let blyg = subs
+            .iter()
+            .find(|s| s.id == r.subscription_id)
+            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
+        let Some((rhost, base)) = path_of(&r.origin) else {
+            return false;
+        };
+        blyg && rhost == host
+            && path.starts_with(base.trim_end_matches('/'))
+            && path
+                .split('/')
+                .any(|seg| seg.trim_end_matches(".json") == r.remote_id)
+    })
+}
+
+/// A normalized selection as an attached blockquote: one `>` block per line,
+/// a bare `>` line between them (studio `quoteLines`).
+pub fn quote_lines(selection: &str) -> String {
+    selection
+        .split('\n')
+        .map(|l| format!("> {l}"))
+        .collect::<Vec<_>>()
+        .join("\n>\n")
+}
+
+/// The studio's `selectionText` / `normalizeSelection`, shared with the
+/// preview renderer so a stub is checked by the same rule publish uses.
+pub use blyg_render::{normalize_selection, selection_text};
+
 // ---------------------------------------------------------------- site settings
 
 /// `label | url` lines ⇄ author links (one per line; blank lines skipped).
@@ -1074,5 +1254,157 @@ mod tests {
         r.created = None;
         r.updated = Some("not a date".into());
         assert_eq!(when_label(&r, now), "now");
+    }
+
+    const ID: &str = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+
+    #[test]
+    fn selection_text_keeps_blocks_as_lines() {
+        let html = "<h1>On  Tides</h1>\n<p>The sea\nrises &amp; falls.<br/>Twice.</p>\
+                    <p></p><script>x()</script><ul><li>one</li><li><em>two</em></li></ul>";
+        assert_eq!(
+            selection_text(html),
+            "On Tides\nThe sea rises & falls.\nTwice.\none\ntwo"
+        );
+        assert_eq!(
+            normalize_selection("  The sea \r\n\n rises  "),
+            "The sea\nrises"
+        );
+    }
+
+    #[test]
+    fn quote_lines_puts_a_bare_marker_between_paragraphs() {
+        assert_eq!(quote_lines("one"), "> one");
+        assert_eq!(quote_lines("one\ntwo"), "> one\n>\n> two");
+    }
+
+    #[test]
+    fn stub_prefill_mirrors_the_studio() {
+        let short = "<p>A short post.</p>";
+        let long = format!(
+            "<p>{}</p><p>Second paragraph here.</p>",
+            "word ".repeat(130)
+        );
+        // Short, no selection: the whole-item form, caret at the end.
+        let p = stub_prefill(ID, short, None, true).unwrap();
+        assert_eq!(p.body, format!("![[{ID}]]\n\n"));
+        assert_eq!(p.caret, None);
+        // Long, no selection: an empty quote line, caret on it.
+        let p = stub_prefill(ID, &long, Some("  \n"), true).unwrap();
+        assert_eq!(p.body, format!("![[{ID}]]\n> \n\n"));
+        let c = p.caret.unwrap();
+        assert_eq!(&p.body[..c], format!("![[{ID}]]\n> "));
+        // A selection spanning a paragraph break: two quote blocks.
+        let sel = "word word\n\nSecond  paragraph";
+        let p = stub_prefill(ID, &long, Some(sel), true).unwrap();
+        assert_eq!(
+            p.body,
+            format!("![[{ID}]]\n> word word\n>\n> Second paragraph\n\n")
+        );
+        assert_eq!(p.caret, None);
+        // A passage that isn't there (welding two paragraphs) is refused.
+        assert!(stub_prefill(ID, &long, Some("word Second paragraph"), true).is_err());
+        // Feed posts keep the old form: there's nothing to check against.
+        let p = stub_prefill(ID, &long, Some("word"), false).unwrap();
+        assert_eq!(p.body, stub_body(ID));
+        // Exactly the limit is not long.
+        let edge = format!("<p>{}</p>", "x".repeat(LONG_TARGET_CHARS));
+        assert_eq!(stub_prefill(ID, &edge, None, true).unwrap().caret, None);
+    }
+
+    /// Studio 0.8.2: a thread is named in its author's words; one that only
+    /// quotes names what it answers.
+    #[test]
+    fn post_titles_are_the_authors_own_words() {
+        let now = chrono::Utc::now();
+        let mut r = crate::fake::reading_seed::seed(now).reading.remove(0);
+        r.content_md = format!("![[{ID}]]\n> Their sentence.\n\nMy reply.");
+        assert_eq!(post_title(&r), "My reply.");
+        r.content_md = format!("![[{ID}]]\n> Their sentence.\n");
+        r.stub_of = Some(blyg_core::StubOf {
+            origin: Some("https://rue.blyg.example.com/".into()),
+            id: Some(ID.into()),
+            version: Some(1),
+            url: None,
+        });
+        assert_eq!(post_title(&r), "In response to rue.blyg.example.com");
+        r.stub_of = None;
+        assert_eq!(post_title(&r), "…");
+    }
+
+    #[test]
+    fn quote_block_is_partial_only_where_it_can_be() {
+        let blyg = QuoteSource::Blyg {
+            id: ID.into(),
+            html: "<p>High water at 6:12.</p><p>Low at noon.</p>".into(),
+            title: "Tides".into(),
+            url: Some("https://rue.blyg.example.com/t/x/".into()),
+        };
+        let sel = "High water at 6:12.\n\nLow at noon.";
+        // Into a thread: the partial grammar, no blank line after ![[id]].
+        assert_eq!(
+            quote_block(sel, &blyg, true).unwrap(),
+            format!("![[{ID}]]\n> High water at 6:12.\n>\n> Low at noon.")
+        );
+        // A fragment can't transclude: the plain quote with a link.
+        assert_eq!(
+            quote_block("Low at noon.", &blyg, false).unwrap(),
+            "> Low at noon.\n>\n> — [Tides](https://rue.blyg.example.com/t/x/)"
+        );
+        // Not in the post we hold (edited since?): the plain form, even in a thread.
+        assert!(
+            quote_block("Something else", &blyg, true)
+                .unwrap()
+                .starts_with("> Something else\n>\n> — [Tides]")
+        );
+        // A web page: brackets escaped in the link.
+        let page = QuoteSource::Page {
+            title: "Tide tables [2026]".into(),
+            url: Some("https://example.com/t".into()),
+        };
+        assert_eq!(
+            quote_block("  a  passage ", &page, true).unwrap(),
+            "> a passage\n>\n> — [Tide tables \\[2026\\]](https://example.com/t)"
+        );
+        // Notes without a source: the quote alone.
+        let bare = QuoteSource::Page {
+            title: String::new(),
+            url: None,
+        };
+        assert_eq!(quote_block("mine", &bare, true).unwrap(), "> mine");
+        assert_eq!(quote_block(" \n ", &bare, true), None);
+    }
+
+    #[test]
+    fn a_page_is_a_held_blyg_post_by_origin_and_id() {
+        let now = chrono::Utc::now();
+        let seed = crate::fake::reading_seed::seed(now);
+        let (rows, subs) = (&seed.reading, &seed.subs);
+        let r = rows
+            .iter()
+            .find(|r| r.remote_id == crate::fake::reading_seed::LIN_GARDENS)
+            .unwrap();
+        let base = r.origin.trim_end_matches('/');
+        let id = &r.remote_id;
+        for url in [
+            format!("{base}/t/{id}/"),
+            format!("{base}/items/{id}.json"),
+            format!("{base}/f/{id}?utm=x#top"),
+        ] {
+            assert_eq!(
+                blyg_item_for_url(&url, rows, subs).map(|r| &r.remote_id),
+                Some(id),
+                "{url}"
+            );
+        }
+        assert!(blyg_item_for_url(&format!("{base}/"), rows, subs).is_none());
+        assert!(
+            blyg_item_for_url(&format!("https://other.example.com/t/{id}/"), rows, subs).is_none()
+        );
+    }
+
+    #[test]
+    fn link_post_is_a_plain_link() {
+        assert_eq!(link_post_body(ID), format!("[[{ID}]]\n\n"));
     }
 }

@@ -827,6 +827,8 @@ impl Backend for LiveBackend {
                 forked_from: serde_json::to_value(of).ok(),
                 permalink: None,
                 show_responses: false,
+                responses_override: None,
+                showing: None,
                 versions: None,
             },
         };
@@ -835,13 +837,12 @@ impl Backend for LiveBackend {
         Ok(id)
     }
 
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         let sid = self.server_id(id)?;
-        self.e()
-            .track(self.e().api.set_show_responses(&sid, show))?;
-        self.e().store.set_show_responses(id, show)?;
+        let (showing, got) = self.e().track(self.e().api.set_responses(&sid, mode))?;
+        self.e().store.set_responses(id, showing, got)?;
         self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        Ok(showing)
     }
 
     fn sync_now(&self) -> Result<()> {

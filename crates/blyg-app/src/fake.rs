@@ -244,6 +244,7 @@ impl FakeBackend {
                 stub_of: None,
                 forked_from: None,
                 show_responses: true,
+                responses_mode: Some(ResponsesMode::Show),
                 pending_sync: false,
                 conflict: false,
             });
@@ -547,6 +548,7 @@ impl FakeBackend {
             stub_of: None,
             forked_from: None,
             show_responses: true,
+            responses_mode: Some(ResponsesMode::Show),
             pending_sync: status != Status::Scratch,
             conflict: false,
         });
@@ -690,7 +692,7 @@ fn fake_preview(url: &str) -> Result<SubscribePreview> {
             site_mismatch: None,
         });
     }
-    let mut title = host.split('.').next().unwrap_or("blyg").to_string();
+    let mut title = host.split('.').next().unwrap_or(&host).to_string();
     if let Some(f) = title.get_mut(0..1) {
         f.make_ascii_uppercase();
     }
@@ -1196,15 +1198,17 @@ impl Backend for FakeBackend {
         Ok(id)
     }
 
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()> {
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         let mut st = self.lock();
+        let default = st.rd.settings.show_responses_default.unwrap_or(false);
         let it = st
             .items
             .iter_mut()
             .find(|i| &i.local_id == id)
             .ok_or(CoreError::NotFound)?;
-        it.show_responses = show;
-        Ok(())
+        it.responses_mode = Some(mode);
+        it.show_responses = shows_responses(mode, default);
+        Ok(it.show_responses)
     }
 
     fn sync_now(&self) -> Result<()> {
@@ -1342,7 +1346,15 @@ impl Backend for FakeBackend {
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         thread::sleep(self.timing.network);
         self.remote_guard()?;
-        self.lock().rd.settings = settings.clone();
+        let mut st = self.lock();
+        st.rd.settings = settings.clone();
+        // Items without a choice of their own follow the new default.
+        let default = settings.show_responses_default.unwrap_or(false);
+        for it in &mut st.items {
+            if let Some(m) = it.responses_mode {
+                it.show_responses = shows_responses(m, default);
+            }
+        }
         Ok(())
     }
 
@@ -1653,6 +1665,15 @@ fn fake_folder_unique(folders: &[Folder], name: &str, except: Option<&str>) -> R
         });
     }
     Ok(())
+}
+
+/// The studio's `itemShowsResponses`: the item's choice, else the default.
+fn shows_responses(mode: ResponsesMode, default: bool) -> bool {
+    match mode {
+        ResponsesMode::Default => default,
+        ResponsesMode::Show => true,
+        ResponsesMode::Hide => false,
+    }
 }
 
 #[cfg(test)]

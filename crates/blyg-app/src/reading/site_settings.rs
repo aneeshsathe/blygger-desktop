@@ -23,8 +23,9 @@ impl MainView {
         let title = input("Site title", window, cx);
         let name = input("Your name (optional)", window, cx);
         let bio = input("A line about you (optional)", window, cx);
+        let timezone = input("UTC (e.g. Europe/Lisbon)", window, cx);
         let links = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
-        for i in [&title, &name, &bio] {
+        for i in [&title, &name, &bio, &timezone] {
             let sub = cx.subscribe_in(i, window, |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     this.save_site_settings(window, cx);
@@ -40,6 +41,7 @@ impl MainView {
                 name,
                 bio,
                 links,
+                timezone,
                 load: Load::Loading,
                 error: None,
                 busy: false,
@@ -57,6 +59,7 @@ impl MainView {
                     name,
                     bio,
                     links,
+                    timezone,
                     load,
                     ..
                 }) = v.reading.sheet.as_mut()
@@ -75,6 +78,7 @@ impl MainView {
                     set(title, &s.site_title, window, cx);
                     set(name, &s.author_name, window, cx);
                     set(bio, &s.author_bio, window, cx);
+                    set(timezone, &s.timezone, window, cx);
                     links.update(cx, |st, cx| {
                         st.set_value(vm::format_links(&s.author_links), window, cx)
                     });
@@ -93,6 +97,7 @@ impl MainView {
             name,
             bio,
             links,
+            timezone,
             load,
             error,
             busy,
@@ -124,6 +129,11 @@ impl MainView {
             author_name: text(name, cx),
             author_bio: text(bio, cx),
             author_links,
+            // Sent only if the server reported it; empty clears it (UTC).
+            timezone: base
+                .timezone
+                .as_ref()
+                .map(|_| timezone.read(cx).value().trim().to_string()),
             ..base.clone()
         };
         *busy = true;
@@ -168,6 +178,20 @@ impl MainView {
         }
     }
 
+    /// Flip "Show responses by default" (saved with the rest on Save).
+    pub(crate) fn toggle_responses_default(&mut self, cx: &mut Context<Self>) {
+        if let Some(RSheet::Site {
+            load: Load::Ready(s),
+            busy: false,
+            ..
+        }) = self.reading.sheet.as_mut()
+            && let Some(on) = s.show_responses_default.as_mut()
+        {
+            *on = !*on;
+            cx.notify();
+        }
+    }
+
     pub(super) fn render_site_sheet(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let RSheet::Site {
@@ -175,6 +199,7 @@ impl MainView {
             name,
             bio,
             links,
+            timezone,
             load,
             error,
             busy,
@@ -246,9 +271,13 @@ impl MainView {
             }
             Load::Ready(_) => {}
         }
-        let accept = match load {
-            Load::Ready(s) => s.accept_mentions,
-            _ => None,
+        let (accept, tz, responses) = match load {
+            Load::Ready(s) => (
+                s.accept_mentions,
+                s.timezone.is_some(),
+                s.show_responses_default,
+            ),
+            _ => (None, false, None),
         };
         frame
             .child(label("SITE TITLE"))
@@ -297,6 +326,34 @@ impl MainView {
                                 )),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_accept_mentions(cx))),
+                )
+            })
+            .when(tz, |d| {
+                d.child(label("TIME ZONE · dates on your pages"))
+                    .child(self.input_box(
+                        gpui_kit::base::input::Input::new(timezone).into_any_element(),
+                        false,
+                    ))
+            })
+            .when_some(responses, |d, on| {
+                d.child(
+                    div()
+                        .id("site-responses-default")
+                        .mt(px(12.))
+                        .flex()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .child(if on { "☑" } else { "☐" })
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .child("Show responses by default")
+                                .child(div().text_color(p.muted).child(
+                                    "Posts list their verified responses unless you chose otherwise for that post.",
+                                )),
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.toggle_responses_default(cx))),
                 )
             })
             .when_some(error.clone(), |d, e| {

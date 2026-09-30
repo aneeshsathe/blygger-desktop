@@ -93,7 +93,12 @@ pub struct Item {
     pub permalink: Option<String>,
     pub stub_of: Option<RemoteRef>,
     pub forked_from: Option<RemoteRef>,
+    /// Whether the item's page shows its verified responses right now (the
+    /// effective state, after any global default).
     pub show_responses: bool,
+    /// The item's own choice about responses (studio 0.8). `None` when the
+    /// server doesn't report one (pre-0.8), which offers only show and hide.
+    pub responses_mode: Option<ResponsesMode>,
     /// Local edits not yet acknowledged by the server.
     pub pending_sync: bool,
     /// Server changed this item underneath a local edit; see `Backend::resolve_conflict`.
@@ -115,6 +120,45 @@ impl Item {
 
     pub fn over_limit(&self) -> bool {
         self.kind == Kind::Fragment && self.char_count() > FRAGMENT_LIMIT
+    }
+}
+
+/// What one item does about showing its verified responses
+/// (`PUT /api/items/:id/responses {mode}`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ResponsesMode {
+    /// No choice of its own: follows the blyg's `show_responses_default`.
+    Default,
+    Show,
+    Hide,
+}
+
+impl ResponsesMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ResponsesMode::Default => "default",
+            ResponsesMode::Show => "show",
+            ResponsesMode::Hide => "hide",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "default" => Some(ResponsesMode::Default),
+            "show" => Some(ResponsesMode::Show),
+            "hide" => Some(ResponsesMode::Hide),
+            _ => None,
+        }
+    }
+
+    /// The server's `responses_override` (`1`, `0`, or `null` for none).
+    pub fn from_override(o: Option<i64>) -> Self {
+        match o {
+            None => ResponsesMode::Default,
+            Some(0) => ResponsesMode::Hide,
+            Some(_) => ResponsesMode::Show,
+        }
     }
 }
 
@@ -727,6 +771,14 @@ pub struct Settings {
     /// `None` when the server doesn't report it, and then never sent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accept_mentions: Option<bool>,
+    /// IANA zone the blyg renders dates in (studio 0.8); rendering only.
+    /// `None` when unset or unreported, and then never sent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timezone: Option<String>,
+    /// Whether items without a choice of their own show their responses
+    /// (studio 0.8). `None` when the server doesn't report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_responses_default: Option<bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -867,17 +919,25 @@ mod len_tests {
 }
 
 /// A list-row title from Markdown: the first line with readable text, TK
-/// markup reduced to its output, and Markdown syntax removed. Transclusion
-/// lines (`![[id]]`) and image-only lines are skipped; links keep their text,
-/// and an internal link (`[[id]]`) shows as "↗"; emphasis and code marks go. `None` when no line has any text.
+/// markup reduced to its output, and Markdown syntax removed. A leading
+/// heading is the title (studio 0.8: items stay titleless on the wire; this
+/// is derivation). The title is the author's own words, never quoted text,
+/// so transclusion lines (`![[id]]`), the `>` quote run attached to one (a
+/// partial transclusion) and blockquote lines generally are skipped, as are
+/// image-only lines; links keep their text, and an internal link (`[[id]]`)
+/// shows as "↗"; emphasis and code marks go. `None` when no line has any
+/// text of the author's own.
 pub fn plain_title(md: &str) -> Option<String> {
-    strip_tk(md).lines().map(plain_line).find(|l| !l.is_empty())
+    strip_tk(md)
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('>'))
+        .map(plain_line)
+        .find(|l| !l.is_empty())
 }
 
 fn plain_line(line: &str) -> String {
     let t = line.trim();
     let t = t.trim_start_matches('#').trim_start();
-    let t = t.trim_start_matches('>').trim_start();
     let t = t
         .strip_prefix("- ")
         .or_else(|| t.strip_prefix("* "))
@@ -969,9 +1029,39 @@ mod title_tests {
             t("snake_case stays, `code` loses ticks"),
             "snake_case stays, code loses ticks"
         );
-        assert_eq!(t("> quoted line"), "quoted line");
         assert_eq!(plain_title("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n\n"), None);
         assert_eq!(t("See [[0a1b2c3d4e5f6g7h8j9k0m1n2p]] too"), "See ↗ too");
         assert_eq!(t("[[not an id]]"), "[[not an id]]");
+    }
+
+    /// Studio 0.8.2: a thread is named in its author's own words, never in
+    /// the words it quotes.
+    #[test]
+    fn titles_are_never_quoted_text() {
+        let t = |s: &str| plain_title(s).unwrap_or_default();
+        // A partial transclusion: the directive and its attached quote run,
+        // a paragraph break inside the selection included.
+        assert_eq!(
+            t(
+                "![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n> Their sentence.\n>\n> More of theirs.\n\nMy reply."
+            ),
+            "My reply."
+        );
+        // The empty quote line a long-target stub starts with.
+        assert_eq!(t("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n> \n\nMine"), "Mine");
+        // A detached blockquote is still someone's quote.
+        assert_eq!(
+            t("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n\n> a quote\n\n# My heading\nbody"),
+            "My heading"
+        );
+        assert_eq!(t("  > indented quote\nOwn words"), "Own words");
+        // Quotes and nothing of one's own: no title (the caller names it).
+        assert_eq!(plain_title("> quoted line"), None);
+        assert_eq!(
+            plain_title("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n> theirs\n"),
+            None
+        );
+        // A leading heading is the title, whatever follows.
+        assert_eq!(t("## On Protocols\n\nProtocols are thin."), "On Protocols");
     }
 }

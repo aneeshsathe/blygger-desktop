@@ -49,7 +49,7 @@ use crate::about::ShowAbout;
 // --- composer ---
 use crate::composer::ToggleSpellcheck;
 // --- notes ---
-use crate::app::notes::ToggleNotes;
+use crate::app::notes::{QuoteToDraft, ToggleNotes};
 // --- browser ---
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
@@ -615,6 +615,15 @@ pub fn table() -> Vec<Keybind> {
             ToggleNotes,
             "Notes drawer: open or close it (quotes a selected passage)",
             Some("View › Notes")
+        ),
+        // Universal quoting: from the browser pane, the reading pane or the
+        // drawer, into the draft.
+        kb!(
+            "cmd-shift-d",
+            Main,
+            QuoteToDraft,
+            "Quote the highlighted passage (a page, a post or your notes) in the draft",
+            Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
     ]

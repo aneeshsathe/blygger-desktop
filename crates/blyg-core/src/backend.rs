@@ -201,7 +201,9 @@ pub trait Backend: Send + Sync {
         ))
     }
     fn fork(&self, of: &RemoteRef) -> Result<LocalId>;
-    fn set_show_responses(&self, id: &LocalId, show: bool) -> Result<()>;
+    /// Set whether the item's page shows its verified responses. Returns
+    /// whether it shows them now (with `Default`, the blyg's setting decides).
+    fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool>;
 
     /// Pull everything (items, reading, subscriptions) now.
     fn sync_now(&self) -> Result<()>;

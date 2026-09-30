@@ -290,5 +290,42 @@ fn mentions_and_settings_when_available() {
     assert!(put.get("site_url").is_none(), "unset fields aren't sent");
     assert_eq!(put["author_links"][0]["label"], "gh");
 
+    assert!(
+        put.get("timezone").is_none(),
+        "an old server's settings lack it"
+    );
+    assert!(put.get("show_responses_default").is_none());
+
     assert_eq!(b.hoppers().unwrap()[0].count, 3);
+}
+
+#[test]
+fn studio_0_8_settings_round_trip() {
+    let env = Env::new();
+    env.mock.state().settings = Some(json!({
+        "site_title": "example.com", "author_name": "", "author_bio": "", "site_url": "",
+        "theme": "auto", "avatar_media_id": "", "author_links": [],
+        "timezone": "", "show_responses_default": false
+    }));
+    let b = env.manual();
+    let s = b.settings().unwrap();
+    assert_eq!(
+        s.timezone.as_deref(),
+        Some(""),
+        "unset, but the server has it"
+    );
+    assert_eq!(s.show_responses_default, Some(false));
+
+    let mut edited = s.clone();
+    edited.timezone = Some("Europe/Lisbon".into());
+    edited.show_responses_default = Some(true);
+    b.save_settings(&edited).unwrap();
+    let put = env.mock.state().settings_puts[0].clone();
+    assert_eq!(put["timezone"], "Europe/Lisbon");
+    assert_eq!(put["show_responses_default"], true);
+
+    // Emptying it is sent, so the blyg goes back to UTC.
+    edited.timezone = Some(String::new());
+    b.save_settings(&edited).unwrap();
+    assert_eq!(env.mock.state().settings_puts[1]["timezone"], "");
 }
