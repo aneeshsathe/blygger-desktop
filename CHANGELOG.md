@@ -10,10 +10,12 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
-## [Unreleased]
+## [0.6.1] - 2026-09-29
 
 ### Added
 
+- **Themes.** Eight new themes join Paper and Ink, and they go beyond colour with ornament. The woody ones are **Cutaway** (a lit burrow room in a soil cross-section), **Kumiko** (Kyoto lattice and kintsugi), **Shola** (a mossy Western Ghats thicket) and **Fortress** (Dwarf Fortress stone and glyphs). The oceanic ones are **Portolan** (a chart with rhumb lines and soundings), **Aizome** (indigo, seigaiha waves, sashiko), **Saltspace** (weathered greys and tide lines) and **Konkan harbour** (a lit harbour in a night sea, with a tide sparkline of your writing). Pick one in Settings or with `theme = <name>`, and use `theme-dark` for another when macOS is dark. Themes are plain files: `blygger +copy-theme <name>` copies one into `~/.config/blygger/themes/` to edit, and it reloads when you save. Ornament slots can use your own SVG. `blygger +list-themes` lists them. The studio preview still shows your blyg's own style.
+- The config file now reloads when it's edited outside the app (it used to reload only on ⌘⇧,).
 - A documentation site at https://aneeshsathe.github.io/blygger-desktop/, and a shorter README.
 
 ### Changed
