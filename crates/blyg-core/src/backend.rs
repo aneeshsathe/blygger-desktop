@@ -25,6 +25,11 @@ pub enum CoreError {
         message: String,
         details: Vec<String>,
     },
+    /// The server is older than blygger-studio 0.9 (its owner API predates
+    /// the OpenAPI contract). Nothing is pushed to it: an old server's 404 on
+    /// a new route would read as "deleted" and duplicate posts.
+    #[error("your blyg's server needs updating to blygger-studio 0.9 or later")]
+    ServerOutdated,
     /// Item has never reached the server (still local-only) and the op needs a server id.
     #[error("not on the server yet — still syncing")]
     NotSynced,
@@ -293,7 +298,7 @@ pub trait Backend: Send + Sync {
     // --- reading ---
 
     /// False once the server has shown it lacks the owner-API read
-    /// extensions (`GET /api/reading` answered 404): the reading, mentions and
+    /// extensions (`GET /api/reading/imported` answered 404): the reading, mentions and
     /// site-settings screens then say "not available on this server" instead
     /// of showing an empty list. Additive; the default says "available".
     fn read_extensions_available(&self) -> bool {
@@ -357,7 +362,21 @@ pub trait Backend: Send + Sync {
 
     // --- about ---
 
-    /// Whether read state syncs with the server (the last `GET /api/reading`
+    /// Whether the server carries the extensions in docs/SERVER.md: `Some(false)`
+    /// for a stock blygger-studio (reading comes from upstream's own routes;
+    /// AI disclosure for app-generated text, read-state sync and upload
+    /// removal are off), `None` until a reading pull has found out.
+    fn server_extensions(&self) -> Option<bool> {
+        None
+    }
+
+    /// The connected server is older than blygger-studio 0.9: nothing syncs
+    /// until it's updated (`CoreEvent::ServerOutdated` says when first seen).
+    fn server_outdated(&self) -> bool {
+        false
+    }
+
+    /// Whether read state syncs with the server (the last `GET /api/reading/imported`
     /// advertised `read_state: true`, extension 5; meta key `read_sync`).
     /// For the About window. Additive; the default says no.
     fn read_state_sync(&self) -> bool {

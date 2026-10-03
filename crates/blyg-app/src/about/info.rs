@@ -153,21 +153,32 @@ impl ConnectionInfo {
             ConnectionInfo::Disconnected => &[],
         }
     }
+
+    /// Connected to a server without Burrow's extensions (a stock
+    /// blygger-studio): the About window says what that limits.
+    pub fn limited(&self) -> bool {
+        matches!(self, ConnectionInfo::Live { caps, .. }
+            if caps.iter().any(|c| c.label == EXTENSIONS && !c.on))
+    }
 }
 
-/// The capabilities, in display order, from what the backend recorded.
-pub fn capabilities(read_ext: bool, read_sync: bool, provenance: bool) -> Vec<Capability> {
+const EXTENSIONS: &str = "Server extensions";
+
+/// The capabilities, in display order, from what the backend recorded:
+/// the docs/SERVER.md extensions at all, read state across Macs, and AI
+/// disclosure for text generated in the app.
+pub fn capabilities(extensions: bool, read_sync: bool, provenance: bool) -> Vec<Capability> {
     vec![
         Capability {
-            label: "Reading extensions",
-            on: read_ext,
+            label: EXTENSIONS,
+            on: extensions,
         },
         Capability {
             label: "Read-state sync",
             on: read_sync,
         },
         Capability {
-            label: "Provenance",
+            label: "AI disclosure",
             on: provenance,
         },
     ]
@@ -338,19 +349,19 @@ mod tests {
         let text = report().copy_text();
         let want = "\
 Burrow 0.3.0
-Version:            0.3.0
-Commit:             1a2b3c4
-Built:              2026-09-21 14:13 UTC
-Profile:            release
-Architecture:       arm64 (universal binary)
-macOS:              15.6.1
-Auto-update:        notify
-Last check:         2026-09-21 15:13 UTC
-Update:             up to date
-Blyg:               blyg.example.com
-Reading extensions: yes
-Read-state sync:    no
-Provenance:         yes
+Version:           0.3.0
+Commit:            1a2b3c4
+Built:             2026-09-21 14:13 UTC
+Profile:           release
+Architecture:      arm64 (universal binary)
+macOS:             15.6.1
+Auto-update:       notify
+Last check:        2026-09-21 15:13 UTC
+Update:            up to date
+Blyg:              blyg.example.com
+Server extensions: yes
+Read-state sync:   no
+AI disclosure:     yes
 ";
         assert_eq!(text, want);
         assert!(!text.contains('/'), "no paths or URLs: {text}");
@@ -364,7 +375,7 @@ Provenance:         yes
         let text = r.copy_text();
         assert!(text.contains("Blyg:         not connected\n"), "{text}");
         assert!(text.contains("Last check:   never\n"), "{text}");
-        assert!(!text.contains("Provenance"), "{text}");
+        assert!(!text.contains("AI disclosure"), "{text}");
         r.connection = ConnectionInfo::Sample {
             caps: capabilities(true, true, true),
         };

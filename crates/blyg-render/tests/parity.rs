@@ -127,8 +127,9 @@ fn parity_with_worker() {
     );
 }
 
-/// Attachments (the Worker's patch 8): `mediaHtml`, which public pages put
-/// after the content, and `previewMedia`, the studio preview's strip.
+/// Attachments: `mediaHtml`, which public pages put after the content. The
+/// desktop preview's strip wraps exactly that (the Worker's own strip,
+/// `previewMedia`, went with its server-rendered studio in 0.10).
 #[test]
 fn media_parity_with_worker() {
     let text = std::fs::read_to_string(fixtures_dir().join("parity/_media.json")).unwrap();
@@ -148,6 +149,10 @@ fn media_parity_with_worker() {
             .collect();
         let name = &c["name"];
         assert_eq!(media_html(&media, mount), c["media_html"], "{name}");
-        assert_eq!(preview_media(&media, mount), c["preview_media"], "{name}");
+        let strip = format!(
+            "<div id=\"preview-media\">{}</div>",
+            c["media_html"].as_str().unwrap()
+        );
+        assert_eq!(preview_media(&media, mount), strip, "{name}");
     }
 }

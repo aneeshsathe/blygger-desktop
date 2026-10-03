@@ -246,6 +246,49 @@ fn conflict_sheet_keys_resolve(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    assert!(view.read_with(cx, |v, _| v.render_server_notice().is_none()));
+    fake.trigger_server_outdated();
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if view.read_with(cx, |v, _| v.toast.is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    view.read_with(cx, |v, _| {
+        let t = v.toast.as_ref().expect("a toast");
+        assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
+        assert!(t.sub.as_ref().is_some_and(|s| s.contains("0.9")));
+        assert!(
+            v.render_server_notice().is_some(),
+            "the status bar keeps saying it"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn a_stock_server_explains_whats_limited(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    fake.trigger_server_limited();
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if view.read_with(cx, |v, _| v.sheet.is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.sheet,
+        Some(Sheet::ServerLimits { .. })
+    )));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+}
+
+#[gpui_kit::test]
 fn preview_toggles(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     cx.simulate_keystrokes("cmd-e");
@@ -323,7 +366,8 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     });
     assert_eq!(tokens.get("https://blyg.example.com").unwrap(), None);
 
-    // Fix the address: the token goes to the token store, the URL to the config.
+    // Fix the address: the password (the default way in) goes to the
+    // Keychain under its own account, the URL to the config.
     view.update_in(cx, |v, window, cx| {
         if let Some(Sheet::Connect { url, .. }) = &v.sheet {
             url.update(cx, |s, cx| {
@@ -335,8 +379,15 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
     assert_eq!(
-        tokens.get("https://blyg.example.com").unwrap().as_deref(),
-        Some("secret-token")
+        blyg_core::config::load_credential(tokens.as_ref(), "https://blyg.example.com").unwrap(),
+        Some(blyg_core::api::auth::Credential::Password(
+            "secret-token".into()
+        ))
+    );
+    assert_eq!(
+        tokens.get("https://blyg.example.com").unwrap(),
+        None,
+        "no token"
     );
     let text = config_text(cx);
     assert_eq!(text, "# fresh\n\nblyg-url = https://blyg.example.com\n");
@@ -561,6 +612,10 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
             })
         });
     };
+    // The owner-token way in (the password way is first_run_asks_to_connect_a_blyg).
+    view.update_in(cx, |v, window, cx| {
+        v.set_connect_by_password(false, window, cx)
+    });
     let attempt = |cx: &mut VisualTestContext| {
         view.update_in(cx, |v, window, cx| {
             if let Some(Sheet::Connect { url, token, .. }) = &v.sheet {

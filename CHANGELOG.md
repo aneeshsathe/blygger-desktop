@@ -10,6 +10,25 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [0.7.0] - 2026-10-02
+
+### Changed
+
+- **Burrow follows blygger-studio's documented owner API (studio 0.9 to 0.11).** Upstream redesigned `/api` as an OpenAPI contract and dropped the old routes, so saves, forks, pins, response settings, subscription pause and resume, mention hiding and site settings now use the new routes (`PATCH`, `POST /api/items {mode}`, `PUT …/versions/:v/pin`), and lists are read page by page. Burrow now needs studio 0.9 or later; 0.11 is current.
+- The reading list loads from `/api/reading/imported`; upstream's `/api/reading` is now a different resource. Permalinks follow your blyg's site URL when it has one.
+- **Sign in with your studio password, so any blygger-studio works.** The Connect sheet takes the password you use in your blyg's studio (or, as before, the owner token). The password is kept in your Keychain; Burrow signs in again by itself when the 30-day session ends.
+- **A stock server is fully usable.** Without Burrow's server extensions, the reading list is built from upstream's own routes. The first time Burrow meets such a server it explains what's limited (AI disclosure for text generated in Burrow, read state across Macs, removing deleted images), and the About window lists it too.
+- **Who a post replies to, or forks, shows in the reader** for posts from other blygs: Burrow fetches it from the post's own blyg, a few posts per sync.
+- **An outdated server gets a clear message, not damage.** If your blyg's server is older than studio 0.9, Burrow says so when it starts, keeps a status-bar notice with a **How to update** link, and pushes nothing until the server is updated. Your edits wait and go up afterwards. The connect sheet names the problem too.
+- Changing a draft between fragment and thread keeps the same draft on the server instead of making a new one.
+- The tests check every request Burrow sends, and every reply they fake, against upstream's `openapi.json`, and the routes upstream lacks against a contract of their own.
+
+### Fixed
+
+- A blyg that lives under a path (`https://example.com/blyg`) now connects: its API is at the host root, which Burrow used to miss.
+- A quoted post from another blyg shows its images in your draft's preview. Posts published before studio 0.11 use relative image paths, which used to resolve against your own blyg.
+- `docs/SERVER.md` now lists only what upstream still lacks: bearer-token sign-in, the reader's reading rows, client-recorded AI provenance, read-state sync and attachment removal.
+
 ## [0.6.2] - 2026-09-30
 
 ### Fixed

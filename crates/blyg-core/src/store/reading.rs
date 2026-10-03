@@ -49,8 +49,36 @@ fn to_json(it: &ReadingItem) -> Result<String> {
 /// pin backs it: then only the pinned version's content, marked with
 /// `pinned_version_retained` for attribution. "Local hoarding past withdrawal
 /// is nonconforming" (spec §13.4).
+/// The lineage of an item's current version, from its cached public
+/// document (`remote_changelog`), when that has any.
+fn cached_lineage(
+    tx: &rusqlite::Connection,
+    origin: &str,
+    remote_id: &str,
+) -> Result<Option<crate::model::Lineage>> {
+    let json: Option<String> = tx
+        .query_row(
+            "SELECT json FROM remote_changelog WHERE origin = ?1 AND remote_id = ?2",
+            [origin, remote_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let log: Vec<crate::model::RemoteVersion> = json
+        .and_then(|j| serde_json::from_str(&j).ok())
+        .unwrap_or_default();
+    Ok(crate::model::Lineage::of_changelog(&log).cloned())
+}
+
 fn retainable(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<ReadingItem> {
     let mut it = it.clone();
+    // Server rows don't carry lineage (upstream issue #12): fill it from the
+    // post's own public document, once fetched (`Engine::fill_lineage`).
+    if it.stub_of.is_none()
+        && it.forked_from.is_none()
+        && let Some(l) = cached_lineage(tx, &it.origin, &it.remote_id)?
+    {
+        it.fill_lineage(&l);
+    }
     if it.state != "tombstone" {
         it.pinned_version_retained = None;
         return Ok(it);

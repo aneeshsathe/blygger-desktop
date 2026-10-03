@@ -92,16 +92,29 @@ span. Core therefore:
 `api::verify_connection(url, token)` is the Connect sheet's check:
 `GET /api/items` with the token. It maps a transport failure to
 `ConnectError::Unreachable`, 401 to `WrongToken`, 404 to `MissingExtensions`
-(a blyg without docs/SERVER.md's extensions) and anything else to `Other`.
+(a server older than blygger-studio 0.9) and anything else to `Other`.
 
 ## End-to-end tests
 
 `crates/blyg-core/tests/e2e.rs` runs against a real Worker under
 `wrangler dev --local` (all `#[ignore]`d, so CI doesn't need one):
-`BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh`. The script derives a
-local-only wrangler config (no routes, no Workers AI binding), random dev
-secrets and scratch D1/R2 state, starts two instances (the second is a blyg to
-subscribe to), and stops only what it started.
+
+```sh
+cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
+BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
+```
+
+The Worker must be blygger-studio 0.9 or later with docs/SERVER.md's
+extensions. The script derives a local-only wrangler config (no routes, no
+Workers AI binding, so nothing billed), random dev secrets including a
+throwaway `BLYG_OWNER_TOKEN`, and scratch D1/R2 state. It starts two instances
+(the second is a blyg to subscribe to) and stops only what it started. The
+suite never calls `POST /api/items/:id/generate`. It covers bearer-token
+connect, reads, autosave, publish, withdraw, pin and restore, kind changes,
+uploads and their dedupe and removal, a 409 conflict from a direct API edit,
+offline queueing, subscriptions and reading, read-state sync between two
+clients, and AI provenance disclosure. Raw replies are checked against
+`openapi.json`. Last green: 22/22 against the fork on studio 0.10 (2026-10-02).
 
 ## Reading list
 

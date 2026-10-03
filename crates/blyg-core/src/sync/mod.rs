@@ -25,7 +25,7 @@ pub(crate) use worker::{Msg, spawn};
 pub const PROVENANCE_UNAVAILABLE: &str = "tk_provenance_unavailable";
 
 /// `meta` key: "1" while the server advertises read-state sync (the last
-/// `GET /api/reading` said `read_state: true`, extension 5), "0" or absent
+/// `GET /api/reading/imported` said `read_state: true`, extension 5), "0" or absent
 /// otherwise. Persisted so a read marked offline after a restart still queues.
 pub const READ_SYNC: &str = "read_sync";
 
@@ -47,6 +47,8 @@ pub struct SyncOptions {
     pub start_worker: bool,
     /// Reading list pages to fetch per pull (500 items each).
     pub reading_pages: u32,
+    /// Public item documents fetched per pull to fill in lineage (0 = none).
+    pub lineage_fetches: usize,
 }
 
 impl Default for SyncOptions {
@@ -58,6 +60,7 @@ impl Default for SyncOptions {
             backoff_max: Duration::from_secs(120),
             start_worker: true,
             reading_pages: 4,
+            lineage_fetches: 20,
         }
     }
 }
@@ -81,15 +84,42 @@ struct NetState {
     backoff: Duration,
     retry_at: Option<Instant>,
     last_emitted: Option<SyncStatus>,
-    /// Server lacks `GET /api/reading` (patch 3 not deployed).
+    /// Server lacks `GET /api/reading/imported` (patch 3 not deployed).
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
+    /// The server proved to speak studio 0.9+'s API this session.
+    compatible: bool,
+    /// The server proved older than studio 0.9; cleared once it isn't.
+    outdated: bool,
+    /// Reading comes from upstream's own routes (no `/reading/imported`):
+    /// `Some(true)`; `Some(false)` from the fork's; `None` not yet known.
+    stock_reading: Option<bool>,
+    /// When the stock reading list was last read end to end.
+    stock_swept: Option<Instant>,
+    /// Each stock entry's signature as last taken in (this session): a
+    /// change shows even when the timestamps (whole seconds) don't move.
+    stock_seen: std::collections::HashMap<(String, String), u64>,
 }
+
+/// The time allowed per pull for fetching item documents (lineage).
+const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
+
+/// Meta key: the "this server is stock" notice was sent for this database.
+const STOCK_TOLD: &str = "stock_told";
+
+/// On a stock server, at most this many items are fetched one by one per
+/// pull (new or changed ones); the rest follow on the next pulls.
+const STOCK_FETCHES: usize = 100;
+/// A stock pull normally stops at the first page with nothing new; the
+/// whole list is read this often, to catch older edits and removals.
+const STOCK_SWEEP: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) struct Engine {
     pub store: Store,
     pub api: Api,
+    /// Other blygs' public files (lineage fills), with short timeouts.
+    public: crate::api::public::PublicClient,
     pub opts: SyncOptions,
     net: Mutex<()>,
     sink: RwLock<Option<Sink>>,
@@ -104,6 +134,10 @@ impl Engine {
         Engine {
             store,
             api,
+            public: crate::api::public::PublicClient::with_timeouts(
+                Duration::from_secs(4),
+                Duration::from_secs(6),
+            ),
             net: Mutex::new(()),
             sink: RwLock::new(None),
             state: Mutex::new(NetState {
@@ -113,6 +147,11 @@ impl Engine {
                 last_emitted: None,
                 reading_unavailable: false,
                 pushing: false,
+                compatible: false,
+                outdated: false,
+                stock_reading: None,
+                stock_swept: None,
+                stock_seen: Default::default(),
             }),
             opts,
             scratch_dir: None,
@@ -237,7 +276,7 @@ impl Engine {
         let mut st = self.state();
         let health = match e {
             CoreError::Offline => Health::Offline,
-            CoreError::Unauthorized => Health::Error,
+            CoreError::Unauthorized | CoreError::ServerOutdated => Health::Error,
             e if is_transient(e) => Health::Error,
             _ => return,
         };
@@ -273,6 +312,11 @@ impl Engine {
                 Ok(None) => break Ok(()),
                 Err(e) => break Err(e),
             };
+            if let Err(e) = self.check_server() {
+                // Nothing is pushed; the op stays queued for a server that can take it.
+                self.note_err(&e);
+                break Err(e);
+            }
             self.set_pushing(true);
             let ran = self.run_op(&op);
             self.set_pushing(false);
@@ -299,6 +343,37 @@ impl Engine {
         }
         self.emit_status();
         result
+    }
+
+    /// Whether the server proved older than studio 0.9 (as of the last check).
+    pub fn server_outdated(&self) -> bool {
+        self.state().outdated
+    }
+
+    /// Make sure the server speaks studio 0.9+'s API before anything is
+    /// pushed or pulled: on an older one a new route's 404 reads as "item
+    /// deleted", and the push would re-create it. Checked once per session
+    /// (one small read), and again while the answer is "outdated".
+    fn check_server(&self) -> Result<()> {
+        if self.state().compatible {
+            return Ok(());
+        }
+        match self.api.count_items() {
+            Ok(_) => {
+                let mut st = self.state();
+                st.compatible = true;
+                st.outdated = false;
+                Ok(())
+            }
+            Err(CoreError::ServerOutdated) => {
+                let first = !std::mem::replace(&mut self.state().outdated, true);
+                if first {
+                    self.emit(CoreEvent::ServerOutdated);
+                }
+                Err(CoreError::ServerOutdated)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Mark an op as on the wire; the status bar shows "syncing…" meanwhile.
@@ -417,9 +492,10 @@ impl Engine {
                     Precheck::Proceed => {}
                     Precheck::Stop => return Ok(()),
                 }
-                // PUT can't change kind (api.ts only reads `kind` on POST), so
-                // make a new draft of the new kind and retire the old one.
-                // Provenance the old draft holds must move with the text.
+                // A draft's kind can change until it is first published:
+                // one `PATCH {content_md, kind}` keeps its id. Provenance the
+                // server holds is keyed to `base`; adopt it so the push that
+                // follows remaps it onto the new text.
                 if self.store.provenance(&item.local_id).scopes.is_none()
                     && let Some(base) = &row.base_content
                     && let Ok(Some(server)) = self.api.get_tk_provenance(&old.0)
@@ -427,18 +503,15 @@ impl Engine {
                 {
                     self.store.adopt_prov(&item.local_id, base, &server)?;
                 }
-                let sid = self
-                    .api
-                    .create_item(&content, item.kind, item.stub_of.as_ref())?;
-                self.store.op_recreated(
-                    op.seq,
-                    &item.local_id,
-                    &sid,
-                    &old.0,
-                    &content,
-                    item.kind,
-                )?;
-                self.store.queue_prov_push(&item.local_id)
+                match self.api.save_item_kind(&old.0, &content, item.kind) {
+                    Ok(()) => {
+                        self.store
+                            .op_kind_saved(op.seq, &item.local_id, &content, item.kind)?;
+                        self.store.queue_prov_push(&item.local_id)
+                    }
+                    Err(CoreError::NotFound) => self.store.op_lost_server(op.seq, &item.local_id),
+                    Err(e) => Err(e),
+                }
             }
             OpKind::DeleteRemote | OpKind::Read => unreachable!(),
         }
@@ -562,6 +635,7 @@ impl Engine {
     }
 
     fn pull_locked(&self) -> Result<()> {
+        self.check_server()?;
         let wires = self.api.list_items()?;
         let out = self.store.merge_all(&wires)?;
         for (local_id, mine, theirs) in out.conflicts {
@@ -590,6 +664,7 @@ impl Engine {
                 .map(|s| (s.id, s.kind))
                 .collect();
             reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
+            reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
             if self.read_sync_on() {
                 reading_err = self.reconcile_reads(&items).err();
             }
@@ -679,13 +754,19 @@ impl Engine {
         let mut cursor: Option<String> = None;
         for i in 0..self.opts.reading_pages.max(1) {
             match self.api.reading(500, cursor.as_deref())? {
+                // No fork extension: upstream's own reading routes.
+                None if i == 0 => return self.fetch_reading_stock(),
                 None => {
                     self.state().reading_unavailable = true;
                     self.set_read_sync(false)?;
                     return Ok(None);
                 }
                 Some(page) => {
-                    self.state().reading_unavailable = false;
+                    {
+                        let mut st = self.state();
+                        st.reading_unavailable = false;
+                        st.stock_reading = Some(false);
+                    }
                     if i == 0 {
                         self.set_read_sync(page.read_sync())?;
                     }
@@ -699,6 +780,179 @@ impl Engine {
             }
         }
         Ok(Some((all, false)))
+    }
+
+    /// The reading list from a stock server: upstream's `GET /api/reading`
+    /// says which posts there are, and each new or changed one is read whole
+    /// from `GET /api/imports/{sub}/{id}`. Thumbs and hopper memberships come
+    /// from their own routes; read state stays on this Mac. Unchanged rows
+    /// are the stored ones, with fresh thumbs and hoppers.
+    fn fetch_reading_stock(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
+        self.set_read_sync(false)?;
+        let subs: std::collections::HashMap<String, (String, String)> = self
+            .store
+            .subscriptions()
+            .into_iter()
+            .map(|s| (s.id, (s.title, s.origin)))
+            .collect();
+        let thumbs = Api::optional_of(self.api.signals())?.unwrap_or_default();
+        let hoppers = Api::optional_of(self.api.hopper_members())?.unwrap_or_default();
+        let sweep = self
+            .state()
+            .stock_swept
+            .is_none_or(|t| t.elapsed() >= STOCK_SWEEP);
+        let max_pages = u64::from(self.opts.reading_pages.max(1)) * 10;
+        let mut out = Vec::new();
+        let mut fetched = 0;
+        let mut deferred = false;
+        let mut offset = 0u64;
+        let mut reached_end = false;
+        for _ in 0..max_pages {
+            let Some(page) = self.api.stock_reading(offset)? else {
+                self.state().reading_unavailable = true;
+                return Ok(None);
+            };
+            let first = {
+                let mut st = self.state();
+                st.reading_unavailable = false;
+                st.stock_reading.replace(true) != Some(true)
+            };
+            if first && self.store.meta(STOCK_TOLD).is_none() {
+                self.store.set_meta(STOCK_TOLD, "1")?;
+                self.emit(CoreEvent::ServerLimited);
+            }
+            let n = page.items.len() as u64;
+            let mut any_new = false;
+            for imp in page.items.into_iter().filter_map(|e| e.imported) {
+                let key = (imp.subscription_id.clone(), imp.remote_id.clone());
+                let thumb = thumbs.get(&key).copied();
+                let hop = hoppers.get(&key).cloned().unwrap_or_default();
+                let stored = self.store.reading_row(&key.0, &key.1).map(|(r, _)| r);
+                // The importer bumps `observed_at` (and `updated`) with each
+                // version, to the second; the signature catches a change
+                // within the same second.
+                let sig = imp.signature();
+                let seen = self.state().stock_seen.get(&key).copied();
+                let changed = seen.is_some_and(|s| s != sig)
+                    || stored.as_ref().is_none_or(|r| {
+                        r.observed_at != imp.observed_at
+                            || r.updated != imp.updated
+                            || (r.state == "tombstone") != imp.withdrawn
+                            || (imp.withdrawn
+                                && r.pinned_version_retained != imp.pinned_version_retained)
+                    });
+                if !changed {
+                    self.state().stock_seen.insert(key.clone(), sig);
+                    let mut r = stored.unwrap();
+                    r.thumb = thumb;
+                    r.hoppers = hop;
+                    out.push(r);
+                    continue;
+                }
+                any_new = true;
+                if fetched >= STOCK_FETCHES {
+                    deferred = true;
+                    out.extend(stored); // keep what's held until its turn
+                    continue;
+                }
+                fetched += 1;
+                let (title, origin) = subs
+                    .get(&key.0)
+                    .cloned()
+                    .unwrap_or_else(|| (imp.subscription_title.clone(), String::new()));
+                let raw = match self.api.imported(&key.0, &key.1) {
+                    Ok(v) => v,
+                    // Gone between the list and now.
+                    Err(CoreError::NotFound) => continue,
+                    Err(e) => return Err(e),
+                };
+                self.state().stock_seen.insert(key.clone(), sig);
+                match crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop) {
+                    Some(mut r) => {
+                        r.page = r
+                            .page
+                            .take()
+                            .and_then(|p| crate::api::absolute_page(&r.origin, &p));
+                        out.push(r);
+                    }
+                    // Doesn't read: keep what's held rather than lose it.
+                    None => out.extend(stored),
+                }
+            }
+            offset += n;
+            if n == 0 || offset >= page.total {
+                reached_end = true;
+                break;
+            }
+            if !sweep && !any_new {
+                break; // nothing new this far down: the rest is as held
+            }
+        }
+        let complete = reached_end && !deferred;
+        if complete {
+            self.state().stock_swept = Some(Instant::now());
+        }
+        Ok(Some((out, complete)))
+    }
+
+    /// Reading rows carry no lineage (who a post replies to or forks;
+    /// upstream issue #12), so fetch the public item document of blyg posts
+    /// that haven't been looked up yet: a few per pull, newest first, within
+    /// a time budget, skipping a blyg for the rest of the pass once it fails.
+    /// A fetched document is cached (the changelog cache), and the merge
+    /// fills lineage from it from then on. True if any row changed.
+    fn fill_lineage(
+        &self,
+        items: &[ReadingItem],
+        complete: bool,
+        kinds: &std::collections::HashMap<String, SubscriptionKind>,
+    ) -> Result<bool> {
+        let start = Instant::now();
+        let mut failed: HashSet<String> = HashSet::new();
+        let mut filled = false;
+        let mut fetched = 0;
+        for it in items {
+            if fetched >= self.opts.lineage_fetches || start.elapsed() >= LINEAGE_BUDGET {
+                break;
+            }
+            let blyg = kinds.get(&it.subscription_id) == Some(&SubscriptionKind::Blyg);
+            if !blyg
+                || it.state == "tombstone"
+                || it.stub_of.is_some()
+                || it.forked_from.is_some()
+                || failed.contains(&it.origin)
+                || self
+                    .store
+                    .cached_changelog(&it.origin, &it.remote_id)
+                    .is_some()
+            {
+                continue;
+            }
+            fetched += 1;
+            match self.public.item_doc(&it.origin, &it.remote_id) {
+                Ok(doc) => {
+                    let log = doc.versions_at(&it.origin);
+                    self.store.put_changelog(&it.origin, &it.remote_id, &log)?;
+                    filled |= Lineage::of_changelog(&log).is_some();
+                }
+                Err(_) => {
+                    failed.insert(it.origin.clone());
+                }
+            }
+        }
+        if !filled {
+            return Ok(false);
+        }
+        // Merge the whole pull again, as pulled: the merge fills lineage from
+        // the cache it was just given. (A subset would read as "the server
+        // dropped the rest" and prune them.)
+        self.store.merge_reading(items, complete, kinds)
+    }
+
+    /// Whether the server has the fork's extensions, as of the last reading
+    /// pull (`None` before one).
+    pub fn server_extensions(&self) -> Option<bool> {
+        self.state().stock_reading.map(|stock| !stock)
     }
 
     pub fn reading_unavailable(&self) -> bool {

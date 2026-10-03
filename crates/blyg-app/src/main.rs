@@ -115,7 +115,7 @@ fn main() -> ExitCode {
         verify: if fake_mode {
             connection::fake_verifier
         } else {
-            blyg_core::api::verify_connection
+            connection::live_verifier
         },
     };
 

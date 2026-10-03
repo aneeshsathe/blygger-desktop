@@ -5,6 +5,10 @@
 //!
 //! - `BLYG_E2E_URL`   the Worker under test (e.g. `http://127.0.0.1:18787`)
 //! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`
+//! - `BLYG_E2E_PASSWORD` its studio password; when set, everything signs in
+//!   with it instead of the token
+//! - `BLYG_E2E_STOCK` set for a stock blygger-studio (no docs/SERVER.md
+//!   extensions): the tests of fork-only features say so and skip
 //! - `BLYG_E2E_URL_B` a second, independent Worker (the subscription source)
 //! - `BLYG_E2E_CTL`   `scripts/e2e-wrangler.sh`, to stop/start instance `a`
 //!   mid-test (the offline case)
@@ -16,6 +20,11 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[allow(dead_code)]
+#[path = "common/contract.rs"]
+mod contract;
+
+use blyg_core::api::auth::{self, Credential};
 use blyg_core::api::{Api, ConnectError, verify_connection};
 use blyg_core::*;
 use serde_json::{Value, json};
@@ -24,7 +33,12 @@ use serde_json::{Value, json};
 
 struct E2e {
     url: String,
-    token: String,
+    /// How everything signs in: the token, or the password when given.
+    cred: Credential,
+    /// That credential's secret (to check it never leaks).
+    secret: String,
+    /// A stock blygger-studio: no fork extensions.
+    stock: bool,
 }
 
 fn e2e() -> E2e {
@@ -36,8 +50,29 @@ fn e2e() -> E2e {
         url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost"),
         "e2e tests only ever run against a local Worker, not {url}"
     );
-    let token = std::env::var("BLYG_E2E_TOKEN").expect("BLYG_E2E_TOKEN not set");
-    E2e { url, token }
+    let (cred, secret) = match std::env::var("BLYG_E2E_PASSWORD") {
+        Ok(p) => (Credential::Password(p.clone()), p),
+        Err(_) => {
+            let t = std::env::var("BLYG_E2E_TOKEN").expect("BLYG_E2E_TOKEN not set");
+            (Credential::Token(t.clone()), t)
+        }
+    };
+    let stock = std::env::var_os("BLYG_E2E_STOCK").is_some();
+    E2e {
+        url,
+        cred,
+        secret,
+        stock,
+    }
+}
+
+/// On a stock server, a test of a fork-only feature says so and skips.
+fn needs_extensions(what: &str) -> bool {
+    if e2e().stock {
+        eprintln!("skipped on a stock server: {what} needs the docs/SERVER.md extensions");
+        return false;
+    }
+    true
 }
 
 fn url_b() -> String {
@@ -57,16 +92,17 @@ fn opts(worker: bool) -> SyncOptions {
         backoff_max: Duration::from_millis(800),
         start_worker: worker,
         reading_pages: 4,
+        lineage_fetches: 20,
     }
 }
 
-fn backend_at(dir: &Path, url: &str, token: &str, worker: bool) -> LiveBackend {
-    LiveBackend::open_with(dir, url, token, opts(worker)).expect("open LiveBackend")
+fn backend_at(dir: &Path, url: &str, cred: Credential, worker: bool) -> LiveBackend {
+    LiveBackend::open_with(dir, url, cred, opts(worker)).expect("open LiveBackend")
 }
 
 fn manual(dir: &Path) -> LiveBackend {
     let e = e2e();
-    backend_at(dir, &e.url, &e.token, false)
+    backend_at(dir, &e.url, e.cred.clone(), false)
 }
 
 fn agent() -> ureq::Agent {
@@ -90,12 +126,18 @@ fn public_json(url: &str) -> Value {
     serde_json::from_str(&body).unwrap_or_else(|e| panic!("{url}: {e}: {body}"))
 }
 
-/// Owner call made directly (as the web studio or another device would).
+/// Owner call made directly (as the web studio or another device would),
+/// with the token or a studio session. `/api` is host-rooted.
 fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Value) {
     let e = e2e();
-    let req = agent()
-        .request(method, &format!("{base}{path}"))
-        .set("authorization", &format!("Bearer {}", e.token));
+    let req = agent().request(method, &format!("{base}{path}"));
+    let req = match &e.cred {
+        Credential::Token(t) => req.set("authorization", &format!("Bearer {t}")),
+        Credential::Password(p) => {
+            let s = auth::login(base, p).expect("studio sign-in");
+            req.set("cookie", &format!("{}={s}", auth::SESSION_COOKIE))
+        }
+    };
     let res = match body {
         Some(b) => req.send_json(b),
         None => req.call(),
@@ -108,11 +150,22 @@ fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Val
     (status, serde_json::from_str(&text).unwrap_or(Value::Null))
 }
 
+/// `GET path` as the owner must answer 200 with a body that matches
+/// upstream's OpenAPI contract.
+fn conforms(method: &str, base: &str, path: &str) -> Value {
+    let (st, v) = owner(method, base, path, None);
+    let (p, _) = path.split_once('?').unwrap_or((path, ""));
+    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
+    if let Err(e) = contract::contract().check_response(method, &segs, st, &v) {
+        panic!("{method} {path} broke the contract: {e}\n{v}");
+    }
+    assert_eq!(st, 200, "{method} {path}: {v}");
+    v
+}
+
 fn server_item(sid: &str) -> Value {
     let e = e2e();
-    let (s, v) = owner("GET", &e.url, &format!("/api/items/{sid}"), None);
-    assert_eq!(s, 200, "{v}");
-    v
+    conforms("GET", &e.url, &format!("/api/items/{sid}"))
 }
 
 fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
@@ -163,23 +216,34 @@ fn ctl(args: &[&str]) {
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn connect_and_verify() {
     let e = e2e();
-    assert!(verify_connection(&e.url, &e.token).is_ok());
-    assert_eq!(
-        verify_connection(&e.url, "definitely-not-the-token"),
-        Err(ConnectError::WrongToken)
-    );
-    // Same Worker, but a path where /api/items doesn't exist: 404 → the
-    // "lacks the owner-API extensions" message.
-    assert_eq!(
-        verify_connection(&format!("{}/not-a-blyg", e.url), &e.token),
-        Err(ConnectError::MissingExtensions)
-    );
+    assert!(verify_connection(&e.url, e.cred.clone()).is_ok());
+    match &e.cred {
+        Credential::Token(_) => {
+            assert_eq!(
+                verify_connection(&e.url, "definitely-not-the-token"),
+                Err(ConnectError::WrongToken)
+            );
+            // /api is host-rooted: under a path, the same Worker's API answers.
+            assert!(verify_connection(&format!("{}/not-a-blyg", e.url), e.cred.clone()).is_ok());
+        }
+        Credential::Password(_) => {
+            assert_eq!(
+                verify_connection(&e.url, Credential::Password("definitely not it".into())),
+                Err(ConnectError::WrongPassword)
+            );
+            // No studio under that path (this Worker is mounted at the root).
+            assert_eq!(
+                verify_connection(&format!("{}/not-a-blyg", e.url), e.cred.clone()),
+                Err(ConnectError::NoStudio)
+            );
+        }
+    }
     // Nothing listening.
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = closed.local_addr().unwrap().port();
     drop(closed);
     assert_eq!(
-        verify_connection(&format!("http://127.0.0.1:{port}"), &e.token),
+        verify_connection(&format!("http://127.0.0.1:{port}"), e.cred.clone()),
         Err(ConnectError::Unreachable)
     );
     assert!(
@@ -194,7 +258,7 @@ fn connect_and_verify() {
 fn draft_autosaves_to_the_server() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let t = tag("autosave");
     let id = b.create_draft(Kind::Fragment, &t).unwrap();
     let text = format!("{t}\n\nsecond paragraph, typed later");
@@ -301,7 +365,7 @@ fn set_kind_before_first_publish() {
     let sa = sid_of(&b, &a);
     assert_eq!(server_item(&sa)["authored_kind"], "thread");
 
-    // Server-side draft: recreated as the new kind, old draft retired.
+    // Server-side draft: PATCHed to the new kind under the same id.
     let t2 = tag("kind-remote");
     let c = b.create_draft(Kind::Fragment, &t2).unwrap();
     b.sync_now().unwrap();
@@ -309,14 +373,9 @@ fn set_kind_before_first_publish() {
     b.set_kind(&c, Kind::Thread).unwrap();
     b.sync_now().unwrap();
     let new = sid_of(&b, &c);
-    assert_ne!(old, new, "recreated under a new id");
+    assert_eq!(old, new, "the kind changes in place");
     assert_eq!(server_item(&new)["authored_kind"], "thread");
     assert_eq!(server_item(&new)["content_md"], t2);
-    assert_eq!(
-        owner("GET", &e.url, &format!("/api/items/{old}"), None).0,
-        404,
-        "the old draft is gone"
-    );
     // Publishing it gives a thread permalink.
     let out = b.publish(&c, None).unwrap();
     assert_eq!(out.permalink, format!("{}/t/{new}", e.url));
@@ -556,13 +615,16 @@ fn count_imgs(html: &str, media_url: &str) -> usize {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn attachments_are_deduplicated_and_removable() {
+    if !needs_extensions("removing uploads and the duplicate guard") {
+        return;
+    }
     // Worker patch 8: POST /api/media returns the existing row (duplicate:
     // true) for identical bytes on the same item; DELETE /api/media/:id
     // removes it; the avatar can't be removed.
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let b = manual(dir.path());
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     let (id, sid) = published(&b, Kind::Fragment, &tag("attach"), None);
 
     let first = api
@@ -672,8 +734,9 @@ fn pasted_images_render_once_inline() {
         "inline image {src} resolves from {page_url}"
     );
 
-    // For the record, what the app avoids: a relative `media/…` breaks on
-    // the page, and attached *and* inline shows the image twice.
+    // For the record: before studio 0.11 a relative `media/…` broke on the
+    // page (it resolved against /f/<id>/); 0.11 publishes it absolute against
+    // the blyg's origin. Attached *and* inline still shows the image twice.
     let rel = b
         .create_draft(Kind::Fragment, &format!("{t} relative"))
         .unwrap();
@@ -689,11 +752,13 @@ fn pasted_images_render_once_inline() {
         .find(|s| s.contains(&m.url))
         .unwrap()
         .to_string();
-    let rel_base =
-        url::Url::parse(&format!("{}/", rel_out.permalink.trim_end_matches('/'))).unwrap();
-    assert_eq!(public_get(rel_base.join(&rel_src).unwrap().as_str()).0, 404);
+    assert!(
+        rel_src.starts_with("http://") || rel_src.starts_with("https://"),
+        "studio 0.11 publishes absolute image URLs: {rel_src}"
+    );
+    assert_eq!(public_get(&rel_src).0, 200, "{rel_src}");
     let sid = sid_of(&b, &id);
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     let att = api
         .upload_media(PNG, "image/png", Some(&sid), None)
         .unwrap();
@@ -730,7 +795,10 @@ fn tk_output_with_dollar_patterns_publishes_verbatim() {
             || html.contains("It costs $&amp; and $1, or $$ and $` $' in total."),
         "{html}"
     );
-    assert_eq!(html.matches("blyg-tk-gen").count(), 1, "{html}");
+    // Disclosure of app-generated text needs the provenance extension; a
+    // stock server publishes it undisclosed (the app warns first).
+    let wrapped = if e.stock { 0 } else { 1 };
+    assert_eq!(html.matches("blyg-tk-gen").count(), wrapped, "{html}");
     assert!(
         !html.contains("[TK]") && !html.contains("\u{e000}"),
         "{html}"
@@ -756,7 +824,7 @@ fn conflict_from_a_direct_api_edit() {
     b.save(&id, &format!("{t} edited on this Mac")).unwrap();
     // …while the web studio edits the same draft.
     let (s, _) = owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} edited in the studio")})),
@@ -798,7 +866,7 @@ fn conflict_from_a_direct_api_edit() {
     // Keep mine on a second round.
     b.save(&id, &format!("{t} mine again")).unwrap();
     owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} studio again")})),
@@ -818,7 +886,7 @@ fn read_extension_shapes() {
     let e = e2e();
     let b = manual(dir.path());
     b.sync_now().unwrap();
-    assert!(b.reading_available(), "GET /api/reading exists");
+    assert!(b.reading_available(), "GET /api/reading/imported exists");
     let _ = b.reading();
     assert!(b.mentions().is_ok());
     let s = b.settings().unwrap();
@@ -838,28 +906,48 @@ fn read_extension_shapes() {
     .unwrap();
     assert!(b.hoppers().is_ok());
 
-    // Raw shapes, so a server change shows up here first.
-    let (st, v) = owner("GET", &e.url, "/api/reading?limit=2", None);
+    // Raw shapes against upstream's contract, so a server change shows up
+    // here first.
+    for path in [
+        "/api/items?offset=0&limit=5",
+        "/api/subscriptions?offset=0&limit=5",
+        "/api/mentions?direction=inbound&offset=0&limit=5",
+        "/api/settings",
+        "/api/hoppers?offset=0&limit=5",
+    ] {
+        conforms("GET", &e.url, path);
+    }
+    if e.stock {
+        // No fork rows: upstream's own reading resource instead.
+        conforms("GET", &e.url, "/api/reading?offset=0&limit=5");
+        return;
+    }
+    // Extension 3: the app's reading rows, keyset-paged.
+    let (st, v) = owner("GET", &e.url, "/api/reading/imported?limit=2", None);
     assert_eq!(st, 200);
     assert!(v["items"].is_array() && v.get("next").is_some(), "{v}");
-    let (_, v) = owner("GET", &e.url, "/api/mentions", None);
-    assert!(v["mentions"].is_array());
-    let (_, v) = owner("GET", &e.url, "/api/settings", None);
-    for k in [
-        "site_title",
-        "author_name",
-        "author_bio",
-        "site_url",
-        "theme",
-        "avatar_media_id",
-        "author_links",
-    ] {
-        assert!(v.get(k).is_some(), "settings.{k} missing: {v}");
+    assert_eq!(v["read_state"], true, "{v}");
+    if let Some(row) = v["items"].get(0) {
+        for k in [
+            "subscription_id",
+            "remote_id",
+            "subscription_title",
+            "origin",
+            "kind",
+            "state",
+            "version",
+            "observed_at",
+            "content_md",
+            "content_html",
+            "thumb",
+            "hoppers",
+            "read_version",
+            "pinned_version_retained",
+        ] {
+            assert!(row.get(k).is_some(), "reading row lacks {k}: {row}");
+        }
     }
-    assert!(v.get("ai_style_prompt").is_none(), "no private settings");
-    let (_, v) = owner("GET", &e.url, "/api/hoppers", None);
-    assert!(v["hoppers"].is_array());
-    let (st, _) = owner("GET", &e.url, "/api/reading?before=%%%", None);
+    let (st, _) = owner("GET", &e.url, "/api/reading/imported?before=%%%", None);
     assert_eq!(st, 400, "a bad cursor is refused");
 }
 
@@ -872,11 +960,11 @@ fn show_responses_round_trips() {
     assert!(!b.item(&id).unwrap().show_responses);
     b.set_responses(&id, ResponsesMode::Show).unwrap();
     assert!(b.item(&id).unwrap().show_responses);
-    assert_eq!(server_item(&sid)["show_responses"], true);
+    assert_eq!(server_item(&sid)["responses"], "show");
     b.sync_now().unwrap();
     assert!(b.item(&id).unwrap().show_responses, "a pull keeps it");
     b.set_responses(&id, ResponsesMode::Hide).unwrap();
-    assert_eq!(server_item(&sid)["show_responses"], false);
+    assert_eq!(server_item(&sid)["responses"], "hide");
 }
 
 #[test]
@@ -884,7 +972,7 @@ fn show_responses_round_trips() {
 fn offline_queues_then_flushes_after_restart() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let t = tag("offline");
     let id = b.create_draft(Kind::Fragment, &t).unwrap();
     wait_until("the first push", Duration::from_secs(10), || {
@@ -936,10 +1024,10 @@ fn owner_token_is_never_sent_to_the_public_surface() {
     // The public client used for other origins holds no token; make sure the
     // owner Api and the public surface agree about the permalink host.
     let e = e2e();
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     assert_eq!(api.base_url(), e.url);
     assert!(format!("{api:?}").contains("<redacted>"));
-    assert!(!format!("{api:?}").contains(&e.token));
+    assert!(!format!("{api:?}").contains(&e.secret));
 }
 
 #[test]
@@ -947,7 +1035,7 @@ fn owner_token_is_never_sent_to_the_public_surface() {
 fn publish_right_after_typing_and_republish_after_withdraw() {
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
-    let b = backend_at(dir.path(), &e.url, &e.token, true);
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
     let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     {
         let ev = events.clone();
@@ -1020,6 +1108,9 @@ fn server_provenance(sid: &str) -> Value {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn client_recorded_provenance_is_disclosed() {
+    if !needs_extensions("client-recorded AI provenance") {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let b = manual(dir.path());
@@ -1088,6 +1179,9 @@ fn client_recorded_provenance_is_disclosed() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn server_held_provenance_follows_its_scope() {
+    if !needs_extensions("client-recorded AI provenance") {
+        return;
+    }
     // Provenance the app never saw (recorded by another client or the
     // Worker's own generate) still follows its scope when the app edits.
     let dir = tempfile::tempdir().unwrap();
@@ -1139,7 +1233,7 @@ fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) ->
     if reading_item(subscriber, rid).is_some_and(|r| r.version >= want_version) {
         return true;
     }
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     api.resync_subscription(sub_id).unwrap();
     subscriber.sync_now().unwrap();
     assert!(
@@ -1156,7 +1250,7 @@ fn subscriptions_reading_and_pinned_versions() {
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, &e.token, false);
+    let source = backend_at(d2.path(), &src_url, e.cred.clone(), false);
     let t = tag("sub");
 
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), Some("first"));
@@ -1266,7 +1360,7 @@ fn reading_items_carry_the_published_html() {
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, &e.token, false);
+    let source = backend_at(d2.path(), &src_url, e.cred.clone(), false);
     let t = tag("html");
 
     let (_, quoted) = published(&source, Kind::Fragment, &format!("{t} quoted words"), None);
@@ -1300,9 +1394,13 @@ fn reading_items_carry_the_published_html() {
     );
     assert!(html.contains("quoted words"), "{html}");
     assert!(!html.contains("![["), "{html}");
-    assert!(html.contains(&format!("src=\"{}\"", m.url)), "{html}");
-    assert!(
-        html.contains(&format!("src=\"{src_url}/{}\"", m.url)),
+    // Studio 0.11 publishes image URLs absolute against the source blyg,
+    // the relative `media/…` included.
+    assert!(!html.contains(&format!("src=\"{}\"", m.url)), "{html}");
+    assert_eq!(
+        html.matches(&format!("src=\"{src_url}/{}\"", m.url))
+            .count(),
+        2,
         "{html}"
     );
 
@@ -1326,10 +1424,13 @@ fn reading_items_carry_the_published_html() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn read_state_syncs_between_two_macs() {
+    if !needs_extensions("read-state sync") {
+        return;
+    }
     // Extension 5: a post read on one Mac reads as read on another Mac
     // signed in to the same blyg, and the server never lowers it.
     let e = e2e();
-    let api = Api::new(&e.url, &e.token);
+    let api = Api::new(&e.url, e.cred.clone());
     if !api.reading(1, None).unwrap().is_some_and(|p| p.read_sync()) {
         eprintln!("SKIP: this Worker doesn't advertise read_state (extension 5)");
         return;
@@ -1342,7 +1443,7 @@ fn read_state_syncs_between_two_macs() {
     );
     let mac1 = manual(d1.path());
     let mac2 = manual(d2.path());
-    let source = backend_at(d3.path(), &src_url, &e.token, false);
+    let source = backend_at(d3.path(), &src_url, e.cred.clone(), false);
     let t = tag("read");
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
     let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();

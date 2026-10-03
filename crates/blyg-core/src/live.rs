@@ -30,21 +30,25 @@ pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
     /// blyg at `base_url`.
-    pub fn open(data_dir: &Path, base_url: &str, token: &str) -> Result<LiveBackend> {
-        Self::open_with(data_dir, base_url, token, SyncOptions::default())
+    pub fn open(
+        data_dir: &Path,
+        base_url: &str,
+        cred: impl Into<crate::api::auth::Credential>,
+    ) -> Result<LiveBackend> {
+        Self::open_with(data_dir, base_url, cred, SyncOptions::default())
     }
 
     pub fn open_with(
         data_dir: &Path,
         base_url: &str,
-        token: &str,
+        cred: impl Into<crate::api::auth::Credential>,
         opts: SyncOptions,
     ) -> Result<LiveBackend> {
         let store = Store::open(&data_dir.join(DB_FILE))?;
         let scratch = crate::scratch_media::dir(data_dir);
         Ok(Self::from_parts(
             store,
-            Api::new(base_url, token),
+            Api::new(base_url, cred),
             opts,
             Some(scratch),
         ))
@@ -70,12 +74,21 @@ impl LiveBackend {
         }
     }
 
+    /// One stored reading row as pulled, tombstones included (`reading()`
+    /// hides and collapses some).
+    pub fn reading_row(&self, sub: &str, remote_id: &str) -> Option<ReadingItem> {
+        self.engine
+            .store
+            .reading_row(sub, remote_id)
+            .map(|(r, _)| r)
+    }
+
     /// Pull from the server without pushing first (`sync_now` pushes, then pulls).
     pub fn pull_now(&self) -> Result<()> {
         self.engine.pull()
     }
 
-    /// Whether the server has `GET /api/reading` (false until the first pull proves otherwise).
+    /// Whether the server has `GET /api/reading/imported` (false until the first pull proves otherwise).
     pub fn reading_available(&self) -> bool {
         !self.engine.reading_unavailable()
     }
@@ -94,7 +107,7 @@ impl LiveBackend {
         self.engine.store.provenance(id)
     }
 
-    /// `GET /api/hoppers` (patch 3); empty when the server doesn't have it yet.
+    /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
     pub fn hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
             .engine
@@ -266,7 +279,7 @@ impl LiveBackend {
 
     fn permalink_for(&self, kind: Kind, sid: &str) -> String {
         let p = if kind == Kind::Thread { "t" } else { "f" };
-        format!("{}/{p}/{sid}", self.e().api.base_url())
+        format!("{}/{p}/{sid}", self.e().api.public_base())
     }
 }
 
@@ -809,29 +822,8 @@ impl Backend for LiveBackend {
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         let _net = self.e().net_lock();
-        let sid = self.e().track(self.e().api.fork(of))?;
-        let w = match self.e().api.get_item(&sid) {
-            Ok(w) => w,
-            // The fork exists server-side; the next pull fills in the content.
-            Err(_) => WireItem {
-                id: sid.clone(),
-                kind: "fragment".into(),
-                authored_kind: None,
-                status: "draft".into(),
-                version: 0,
-                dirty: true,
-                created: crate::util::now_iso(),
-                updated: crate::util::now_iso(),
-                content_md: String::new(),
-                stub_of: None,
-                forked_from: serde_json::to_value(of).ok(),
-                permalink: None,
-                show_responses: false,
-                responses_override: None,
-                showing: None,
-                versions: None,
-            },
-        };
+        // `POST /api/items {mode: "fork"}` answers with the new draft.
+        let w = self.e().track(self.e().api.fork(of))?;
         let id = self.e().store.insert_from_server(&w)?;
         self.e().emit(CoreEvent::ItemsChanged);
         Ok(id)
@@ -1059,6 +1051,14 @@ impl Backend for LiveBackend {
 
     fn read_state_sync(&self) -> bool {
         self.e().read_sync_on()
+    }
+
+    fn server_outdated(&self) -> bool {
+        self.e().server_outdated()
+    }
+
+    fn server_extensions(&self) -> Option<bool> {
+        self.e().server_extensions()
     }
 
     fn cached_profiles(&self) -> Vec<crate::profile::Profile> {

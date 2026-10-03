@@ -864,6 +864,13 @@ pub enum CoreEvent {
     ReadingChanged,
     /// A background operation failed; human-readable.
     Error(String),
+    /// The server turned out to be older than blygger-studio 0.9 (sent once
+    /// per session, when first noticed). See `Backend::server_outdated`.
+    ServerOutdated,
+    /// The server turned out to be a stock blygger-studio, without the
+    /// extensions in docs/SERVER.md (sent once per local database). See
+    /// `Backend::server_extensions`.
+    ServerLimited,
 }
 
 #[cfg(test)]

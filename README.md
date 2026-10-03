@@ -25,9 +25,10 @@ signed checksums. Requires macOS 11 or later. Burrow then updates itself.
 Other ways to install, and what to do when macOS blocks a browser download,
 are in [the docs](https://aneeshsathe.github.io/blygger-desktop/install.html).
 
-Burrow needs a blyg with a few owner-API extensions that aren't in upstream
-Blygger yet ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
-Without one, try it on the built-in sample data.
+Burrow works with any blyg on blygger-studio 0.9 or later: sign in with your
+studio password. A server with a few extra owner-API extensions gets a little
+more ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
+No blyg? Try it on the built-in sample data.
 
 ## Links
 

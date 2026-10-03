@@ -135,7 +135,7 @@ impl<T> Load<T> {
 
 pub const NOT_AVAILABLE: &str = "Not available on this server";
 pub const NOT_AVAILABLE_SUB: &str = "This blyg doesn't have the owner-API read extensions \
-     (GET /api/reading, /api/mentions, /api/settings). See docs/SERVER.md.";
+     (GET /api/reading/imported, /api/mentions, /api/settings). See docs/SERVER.md.";
 
 /// A reading item open in the detail pane.
 pub struct Opened {
