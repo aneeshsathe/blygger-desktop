@@ -61,6 +61,7 @@ fn opts(worker: bool) -> SyncOptions {
         backoff_max: Duration::from_millis(800),
         start_worker: worker,
         reading_pages: 4,
+        lineage_fetches: 20,
     }
 }
 

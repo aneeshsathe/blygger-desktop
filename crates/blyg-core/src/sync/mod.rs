@@ -47,6 +47,8 @@ pub struct SyncOptions {
     pub start_worker: bool,
     /// Reading list pages to fetch per pull (500 items each).
     pub reading_pages: u32,
+    /// Public item documents fetched per pull to fill in lineage (0 = none).
+    pub lineage_fetches: usize,
 }
 
 impl Default for SyncOptions {
@@ -58,6 +60,7 @@ impl Default for SyncOptions {
             backoff_max: Duration::from_secs(120),
             start_worker: true,
             reading_pages: 4,
+            lineage_fetches: 20,
         }
     }
 }
@@ -96,6 +99,9 @@ struct NetState {
     stock_swept: Option<Instant>,
 }
 
+/// The time allowed per pull for fetching item documents (lineage).
+const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
+
 /// Meta key: the "this server is stock" notice was sent for this database.
 const STOCK_TOLD: &str = "stock_told";
 
@@ -109,6 +115,8 @@ const STOCK_SWEEP: Duration = Duration::from_secs(10 * 60);
 pub(crate) struct Engine {
     pub store: Store,
     pub api: Api,
+    /// Other blygs' public files (lineage fills), with short timeouts.
+    public: crate::api::public::PublicClient,
     pub opts: SyncOptions,
     net: Mutex<()>,
     sink: RwLock<Option<Sink>>,
@@ -123,6 +131,10 @@ impl Engine {
         Engine {
             store,
             api,
+            public: crate::api::public::PublicClient::with_timeouts(
+                Duration::from_secs(4),
+                Duration::from_secs(6),
+            ),
             net: Mutex::new(()),
             sink: RwLock::new(None),
             state: Mutex::new(NetState {
@@ -648,6 +660,7 @@ impl Engine {
                 .map(|s| (s.id, s.kind))
                 .collect();
             reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
+            reading_changed |= self.fill_lineage(&items, &kinds)?;
             if self.read_sync_on() {
                 reading_err = self.reconcile_reads(&items).err();
             }
@@ -861,6 +874,59 @@ impl Engine {
             self.state().stock_swept = Some(Instant::now());
         }
         Ok(Some((out, complete)))
+    }
+
+    /// Reading rows carry no lineage (who a post replies to or forks;
+    /// upstream issue #12), so fetch the public item document of blyg posts
+    /// that haven't been looked up yet: a few per pull, newest first, within
+    /// a time budget, skipping a blyg for the rest of the pass once it fails.
+    /// A fetched document is cached (the changelog cache), and the merge
+    /// fills lineage from it from then on. True if any row changed.
+    fn fill_lineage(
+        &self,
+        items: &[ReadingItem],
+        kinds: &std::collections::HashMap<String, SubscriptionKind>,
+    ) -> Result<bool> {
+        let start = Instant::now();
+        let mut failed: HashSet<String> = HashSet::new();
+        let mut filled = Vec::new();
+        let mut fetched = 0;
+        for it in items {
+            if fetched >= self.opts.lineage_fetches || start.elapsed() >= LINEAGE_BUDGET {
+                break;
+            }
+            let blyg = kinds.get(&it.subscription_id) == Some(&SubscriptionKind::Blyg);
+            if !blyg
+                || it.state == "tombstone"
+                || it.stub_of.is_some()
+                || it.forked_from.is_some()
+                || failed.contains(&it.origin)
+                || self
+                    .store
+                    .cached_changelog(&it.origin, &it.remote_id)
+                    .is_some()
+            {
+                continue;
+            }
+            fetched += 1;
+            match self.public.item_doc(&it.origin, &it.remote_id) {
+                Ok(doc) => {
+                    let log = doc.versions_at(&it.origin);
+                    self.store.put_changelog(&it.origin, &it.remote_id, &log)?;
+                    if Lineage::of_changelog(&log).is_some() {
+                        filled.push(it.clone());
+                    }
+                }
+                Err(_) => {
+                    failed.insert(it.origin.clone());
+                }
+            }
+        }
+        if filled.is_empty() {
+            return Ok(false);
+        }
+        // The merge fills each from the cache it was just given.
+        self.store.merge_reading(&filled, false, kinds)
     }
 
     /// Whether the server has the fork's extensions, as of the last reading

@@ -1164,6 +1164,8 @@ pub fn fast() -> SyncOptions {
         backoff_max: Duration::from_millis(200),
         start_worker: true,
         reading_pages: 4,
+        // Seeded rows name made-up origins: never fetch from them.
+        lineage_fetches: 0,
     }
 }
 

@@ -245,9 +245,14 @@ struct PinDoc {
 
 impl PublicClient {
     pub fn new() -> Self {
+        Self::with_timeouts(Duration::from_secs(10), Duration::from_secs(20))
+    }
+
+    /// For background work that mustn't hold things up (lineage fills).
+    pub fn with_timeouts(connect: Duration, read: Duration) -> Self {
         let agent = ureq::AgentBuilder::new()
-            .timeout_connect(Duration::from_secs(10))
-            .timeout_read(Duration::from_secs(20))
+            .timeout_connect(connect)
+            .timeout_read(read)
             .redirects(5)
             .build();
         PublicClient { agent }
