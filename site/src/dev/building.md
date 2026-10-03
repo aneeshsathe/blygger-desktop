@@ -48,10 +48,11 @@ view models, keymap, menus and toolbar.
 
 End-to-end tests run blyg-core against a real Worker under `wrangler dev
 --local` (never a deployed blyg). Point them at a Worker checkout that carries
-the extensions in [Server requirements](../server.md) (run `npm install` there
-first):
+the extensions in [Server requirements](../server.md) (blygger-studio 0.9 or
+later; build it first):
 
 ```sh
+(cd /path/to/worker && npm install && npm run build)
 BLYG_WORKER_DIR=/path/to/worker scripts/e2e-local.sh
 ```
 

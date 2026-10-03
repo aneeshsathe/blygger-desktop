@@ -20,8 +20,8 @@ see it every time.
 
 ## Connecting your blyg
 
-Burrow needs a blyg whose server has the owner-API extensions in
-[Server requirements](server.md). Without them, use the sample data to try
+Burrow needs a blyg running blygger-studio 0.9 or later (0.11 is current) with
+the owner-API extensions in [Server requirements](server.md). Without them, use the sample data to try
 the app.
 
 The Connect step asks for your blyg's address (such as
@@ -31,7 +31,7 @@ anything, and says plainly what's wrong:
 
 - the address can't be reached;
 - the token is wrong (401);
-- the server lacks the owner-API extensions (404).
+- the server has no owner JSON API: it's older than blygger-studio 0.9 (404).
 
 The token then goes in your Keychain and the address into the config file as
 `blyg-url`, and the app loads your posts. **Burrow › Disconnect…** forgets

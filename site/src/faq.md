@@ -19,10 +19,11 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Not yet. Burrow needs four small owner-API extensions (bearer-token auth, JSON
-reads, read endpoints and client-recorded AI provenance) that aren't in
-upstream Blygger. The plan is to propose them there. A missing extension turns
-the feature that needs it off rather than breaking the app; see
+Not yet. Since blygger-studio 0.9, upstream has most of the owner API Burrow
+uses, but Burrow still needs a few extensions upstream lacks: bearer-token
+sign-in (upstream's is browser-cookie only, with OAuth planned), the reader's
+reading rows, and client-recorded AI provenance. A missing extension turns the
+feature that needs it off rather than breaking the app; see
 [Server requirements](server.md). Until then, try the app on sample data:
 choose *Skip, just try it with sample data* on the first launch.
 
