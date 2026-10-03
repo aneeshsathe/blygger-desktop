@@ -132,8 +132,11 @@ media) lives in `~/Library/Application Support/org.blygger.desktop/`.
 
 ## API (owner, bearer auth)
 
-Base: the configured `blyg-url`. Every `/api` call sends
-`Authorization: Bearer <token>`, and JSON bodies are sent with `content-type: application/json`.
+Base: the configured `blyg-url` for public pages and the studio; `/api` is host-rooted (a
+blyg at `https://host/blyg` has its API at `https://host/api`). Every `/api` call carries
+either `Authorization: Bearer <token>` (the fork's extension 1) or the studio session
+cookie `blyg_session`, from `POST {blyg-url}/studio/login` (form field `password`; a 302
+with `Set-Cookie`; 30 days). JSON bodies are sent with `content-type: application/json`.
 Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issues?}`
 (`issues: [{path, message}]` on validation failures). A wrong method is `405`.
 

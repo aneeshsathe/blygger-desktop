@@ -2,19 +2,38 @@
 
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
-(`openapi.json`; route guide in its `docs/api.md`). The app follows that contract, studio
-0.10, and needs **0.9 or later**. Every route the app shares with upstream is checked
-against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
+(`openapi.json`; route guide in its `docs/api.md`). The app follows that contract (studio
+0.11 is current) and needs **0.9 or later**. Every route the app shares with upstream is
+checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
-Upstream now covers what used to be extensions 2 and 3: JSON reads of items,
-subscriptions, mentions, settings and hoppers, and the per-item response policy. A few
-things the app needs are still not upstream. Until they are, you need a Worker that
-carries them:
+**A stock blygger-studio works.** Sign in with the studio password: Burrow signs in at
+`{blyg-url}/studio/login` like the browser does, keeps the session cookie in memory
+only (the password is in your Keychain), and signs in again when the 30-day session
+ends. Writing, publishing, versions, pins, subscriptions, mentions, settings and the
+reading list all work. The reading list is built from upstream's own routes:
+`GET /api/reading` lists the posts, `GET /api/imports/{sub}/{id}` reads each new or
+changed one, and thumbs and hoppers come from `/api/signals` and each hopper.
+
+### What a stock server limits
+
+| Feature | On a stock server |
+|---|---|
+| AI disclosure for text generated **in Burrow** | Not recorded. Before publishing such text, Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
+| Read state across Macs | Stays on each Mac. |
+| Removing an image you pasted, then deleted | It stays on the server. |
+| Who a post replies to, or forks | Fetched from the author's blyg, a few posts per sync. (No server's reading rows carry it yet; upstream issue #12.) |
+
+Burrow says this once, the first time it meets a stock server, and lists it in the
+About window.
+
+### Extensions for everything
+
+A Worker that carries these extensions gets all of the above:
 
 | # | Extension | Why the app needs it |
 |---|---|---|
-| 1 | **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | A native app can't hold a studio cookie cleanly. Upstream is cookie-only; its OAuth plan replaces this. |
-| 3 | **Reading rows for the app**: `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained` and `transclusions[]` with `cited`. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
+| 1 | *Optional.* **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | Sign in with a token instead of the password. Upstream is cookie-only; its OAuth plan replaces both. |
+| 3 | **Reading rows for the app** (without it, Burrow builds the same rows from upstream's routes, more slowly): `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained` and `transclusions[]` with `cited`. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
 | 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. Upstream's item has a read-only `provenance`; nothing can write it. |
 | 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading/imported`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
 
@@ -104,7 +123,7 @@ mattered here:
 
 ## Degrading gracefully
 
-- **No extension 1:** the app can't sign in with a token. (Password sign-in is planned.)
+- **No extension 1:** sign in with the studio password instead.
 - **A server older than studio 0.9:** the connect sheet says it needs updating. A
   blyg already connected gets a notice when Burrow starts (and a status-bar
   notice with a **How to update** link), and Burrow pushes nothing to it: on an
@@ -112,7 +131,7 @@ mattered here:
   Your edits wait in the outbox and go up once the server is updated. Burrow
   recognises an old server by `GET /api/items` answering without `total` (or
   404).
-- **No extension 3:** the reading screens say "not available on this server".
+- **No extension 3:** the reading list comes from upstream's own routes (see above).
 - **No extension 4:** before publishing text that was generated in the app, the app warns that
   it will go out **without** AI disclosure, and lets you cancel.
 - **No extension 5:** read state stays on each Mac, as before.

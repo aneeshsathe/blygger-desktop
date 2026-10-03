@@ -19,13 +19,12 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Not yet. Since blygger-studio 0.9, upstream has most of the owner API Burrow
-uses, but Burrow still needs a few extensions upstream lacks: bearer-token
-sign-in (upstream's is browser-cookie only, with OAuth planned), the reader's
-reading rows, and client-recorded AI provenance. A missing extension turns the
-feature that needs it off rather than breaking the app; see
-[Server requirements](server.md). Until then, try the app on sample data:
-choose *Skip, just try it with sample data* on the first launch.
+Yes, if it runs blygger-studio 0.9 or later: sign in with your studio password.
+A few things need extensions upstream doesn't have yet, and Burrow tells you
+which the first time it connects: AI disclosure for text generated in Burrow
+(it warns before publishing such text), read state across your Macs, and
+removing images you pasted and then deleted. See
+[Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 

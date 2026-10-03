@@ -20,21 +20,27 @@ see it every time.
 
 ## Connecting your blyg
 
-Burrow needs a blyg running blygger-studio 0.9 or later (0.11 is current) with
-the owner-API extensions in [Server requirements](server.md). Without them, use the sample data to try
-the app.
+Burrow works with any blyg running blygger-studio 0.9 or later (0.11 is current).
+A server with the extensions in [Server requirements](server.md) gets a few
+more features; without them, Burrow tells you what's limited. No blyg yet? Try
+the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
-`https://blyg.example.com`) and its owner token (the Worker's
-`BLYG_OWNER_TOKEN` secret). It checks them with the server before saving
-anything, and says plainly what's wrong:
+`https://blyg.example.com`, including any path it lives under) and the password
+you sign in to its studio with. If its server has Burrow's extensions, you can
+choose **Owner token** and paste the Worker's `BLYG_OWNER_TOKEN` instead. It
+checks them with the server before saving anything, and says plainly what's
+wrong:
 
 - the address can't be reached;
-- the token is wrong (401);
-- the server has no owner JSON API: it's older than blygger-studio 0.9 (404).
+- the password or the token is wrong;
+- there's no studio sign-in at that address;
+- the server is older than blygger-studio 0.9.
 
-The token then goes in your Keychain and the address into the config file as
-`blyg-url`, and the app loads your posts. **Burrow › Disconnect…** forgets
+The password (or token) then goes in your Keychain and the address into the
+config file as `blyg-url`, and the app loads your posts. If the server is
+older than 0.9, Burrow says so when it starts and pushes nothing until it's
+updated. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
 
 | | |
