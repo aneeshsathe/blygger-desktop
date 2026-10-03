@@ -149,8 +149,9 @@ impl StoreResolver {
             version,
             kind: item_kind(r.kind),
             // Stored verbatim (spec §14: sanitize at render); the page CSP
-            // is the backstop.
-            content_html: super::sanitize::sanitize(&r.content_html),
+            // is the backstop. Relative URLs belong to the quoted post's
+            // blyg, not the page it's quoted into.
+            content_html: super::sanitize::sanitize_at(&r.content_html, &r.origin),
             author: r
                 .author
                 .as_ref()

@@ -14,9 +14,14 @@ release workflow publishes that section as the release notes.
 
 ### Changed
 
-- **Burrow follows blygger-studio's documented owner API (studio 0.9 and 0.10).** Upstream redesigned `/api` as an OpenAPI contract and dropped the old routes, so saves, forks, pins, response settings, subscription pause and resume, mention hiding and site settings now use the new routes (`PATCH`, `POST /api/items {mode}`, `PUT …/versions/:v/pin`), and lists are read page by page. Burrow now needs studio 0.9 or later.
+- **Burrow follows blygger-studio's documented owner API (studio 0.9 to 0.11).** Upstream redesigned `/api` as an OpenAPI contract and dropped the old routes, so saves, forks, pins, response settings, subscription pause and resume, mention hiding and site settings now use the new routes (`PATCH`, `POST /api/items {mode}`, `PUT …/versions/:v/pin`), and lists are read page by page. Burrow now needs studio 0.9 or later; 0.11 is current.
+- The reading list loads from `/api/reading/imported`; upstream's `/api/reading` is now a different resource. Permalinks follow your blyg's site URL when it has one.
 - Changing a draft between fragment and thread keeps the same draft on the server instead of making a new one.
-- The tests check every request Burrow sends, and every reply they fake, against upstream's `openapi.json`.
+- The tests check every request Burrow sends, and every reply they fake, against upstream's `openapi.json`, and the routes upstream lacks against a contract of their own.
+
+### Fixed
+
+- A quoted post from another blyg shows its images in your draft's preview. Posts published before studio 0.11 use relative image paths, which used to resolve against your own blyg.
 - `docs/SERVER.md` now lists only what upstream still lacks: bearer-token sign-in, the reader's reading rows, client-recorded AI provenance, read-state sync and attachment removal.
 
 ## [0.6.2] - 2026-09-30
