@@ -16,6 +16,7 @@ release workflow publishes that section as the release notes.
 
 - **Burrow follows blygger-studio's documented owner API (studio 0.9 to 0.11).** Upstream redesigned `/api` as an OpenAPI contract and dropped the old routes, so saves, forks, pins, response settings, subscription pause and resume, mention hiding and site settings now use the new routes (`PATCH`, `POST /api/items {mode}`, `PUT …/versions/:v/pin`), and lists are read page by page. Burrow now needs studio 0.9 or later; 0.11 is current.
 - The reading list loads from `/api/reading/imported`; upstream's `/api/reading` is now a different resource. Permalinks follow your blyg's site URL when it has one.
+- **An outdated server gets a clear message, not damage.** If your blyg's server is older than studio 0.9, Burrow says so when it starts, keeps a status-bar notice with a **How to update** link, and pushes nothing until the server is updated. Your edits wait and go up afterwards. The connect sheet names the problem too.
 - Changing a draft between fragment and thread keeps the same draft on the server instead of making a new one.
 - The tests check every request Burrow sends, and every reply they fake, against upstream's `openapi.json`, and the routes upstream lacks against a contract of their own.
 

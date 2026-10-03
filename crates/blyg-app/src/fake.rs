@@ -126,6 +126,8 @@ struct State {
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
     read_ext: bool,
+    /// The "server" is older than blygger-studio 0.9 (test hook).
+    outdated: bool,
     // --- follow-ups --- (scratch media)
     /// `upload_media` calls that reached the "server" (tests).
     uploads: usize,
@@ -272,6 +274,7 @@ impl FakeBackend {
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                outdated: false,
                 uploads: 0,
                 fail_uploads: false,
                 profiles: HashMap::new(),    // --- profiles ---
@@ -339,6 +342,17 @@ impl FakeBackend {
             }
         }
         Ok(())
+    }
+
+    /// Tests: sync finds the server older than blygger-studio 0.9.
+    #[cfg(test)]
+    pub fn trigger_server_outdated(&self) {
+        let sink = {
+            let mut st = self.lock();
+            st.outdated = true;
+            st.sink.clone()
+        };
+        Self::emit(&sink, CoreEvent::ServerOutdated);
     }
 
     /// Tests / fake mode: behave like a Worker that answers 404 to the
@@ -1482,6 +1496,10 @@ impl Backend for FakeBackend {
     // read extensions.
     fn read_state_sync(&self) -> bool {
         self.lock().read_ext
+    }
+
+    fn server_outdated(&self) -> bool {
+        self.lock().outdated
     }
 
     fn cached_profiles(&self) -> Vec<Profile> {

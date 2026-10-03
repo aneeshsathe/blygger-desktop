@@ -743,3 +743,46 @@ fn permalinks_use_the_site_url_when_one_is_set() {
     b.sync_now().unwrap();
     assert_eq!(b.item(&id).unwrap().permalink, Some(out.permalink));
 }
+
+#[test]
+fn an_outdated_server_gets_nothing_pushed_until_it_is_updated() {
+    let env = Env::new();
+    env.mock.state().legacy_api = true;
+    let b = env.manual();
+    let id = b
+        .create_draft(Kind::Fragment, "written for a newer server")
+        .unwrap();
+    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
+    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
+    assert!(b.server_outdated());
+    {
+        let st = env.mock.state();
+        let writes: Vec<&String> = st.log.iter().filter(|l| !l.starts_with("GET ")).collect();
+        assert!(writes.is_empty(), "nothing pushed: {writes:?}");
+    }
+    let told = env
+        .events()
+        .iter()
+        .filter(|e| matches!(e, CoreEvent::ServerOutdated))
+        .count();
+    assert_eq!(told, 1, "said once, not on every retry");
+    assert!(b.item(&id).unwrap().pending_sync, "the draft waits");
+
+    // The server is updated: the draft goes up, and the notice clears.
+    env.mock.state().legacy_api = false;
+    b.sync_now().unwrap();
+    assert!(!b.server_outdated());
+    let it = b.item(&id).unwrap();
+    assert!(it.server_id.is_some() && !it.pending_sync);
+    assert_eq!(env.mock.state().items.len(), 1);
+}
+
+#[test]
+fn the_connect_check_names_an_outdated_server() {
+    let env = Env::new();
+    env.mock.state().legacy_api = true;
+    assert_eq!(
+        blyg_core::api::verify_connection(&env.mock.url, TOKEN),
+        Err(blyg_core::api::ConnectError::Outdated)
+    );
+}

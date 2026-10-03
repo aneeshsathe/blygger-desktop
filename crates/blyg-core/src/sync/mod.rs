@@ -85,6 +85,10 @@ struct NetState {
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
+    /// The server proved to speak studio 0.9+'s API this session.
+    compatible: bool,
+    /// The server proved older than studio 0.9; cleared once it isn't.
+    outdated: bool,
 }
 
 pub(crate) struct Engine {
@@ -113,6 +117,8 @@ impl Engine {
                 last_emitted: None,
                 reading_unavailable: false,
                 pushing: false,
+                compatible: false,
+                outdated: false,
             }),
             opts,
             scratch_dir: None,
@@ -237,7 +243,7 @@ impl Engine {
         let mut st = self.state();
         let health = match e {
             CoreError::Offline => Health::Offline,
-            CoreError::Unauthorized => Health::Error,
+            CoreError::Unauthorized | CoreError::ServerOutdated => Health::Error,
             e if is_transient(e) => Health::Error,
             _ => return,
         };
@@ -273,6 +279,11 @@ impl Engine {
                 Ok(None) => break Ok(()),
                 Err(e) => break Err(e),
             };
+            if let Err(e) = self.check_server() {
+                // Nothing is pushed; the op stays queued for a server that can take it.
+                self.note_err(&e);
+                break Err(e);
+            }
             self.set_pushing(true);
             let ran = self.run_op(&op);
             self.set_pushing(false);
@@ -299,6 +310,37 @@ impl Engine {
         }
         self.emit_status();
         result
+    }
+
+    /// Whether the server proved older than studio 0.9 (as of the last check).
+    pub fn server_outdated(&self) -> bool {
+        self.state().outdated
+    }
+
+    /// Make sure the server speaks studio 0.9+'s API before anything is
+    /// pushed or pulled: on an older one a new route's 404 reads as "item
+    /// deleted", and the push would re-create it. Checked once per session
+    /// (one small read), and again while the answer is "outdated".
+    fn check_server(&self) -> Result<()> {
+        if self.state().compatible {
+            return Ok(());
+        }
+        match self.api.count_items() {
+            Ok(_) => {
+                let mut st = self.state();
+                st.compatible = true;
+                st.outdated = false;
+                Ok(())
+            }
+            Err(CoreError::ServerOutdated) => {
+                let first = !std::mem::replace(&mut self.state().outdated, true);
+                if first {
+                    self.emit(CoreEvent::ServerOutdated);
+                }
+                Err(CoreError::ServerOutdated)
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// Mark an op as on the wire; the status bar shows "syncing…" meanwhile.
@@ -560,6 +602,7 @@ impl Engine {
     }
 
     fn pull_locked(&self) -> Result<()> {
+        self.check_server()?;
         let wires = self.api.list_items()?;
         let out = self.store.merge_all(&wires)?;
         for (local_id, mine, theirs) in out.conflicts {

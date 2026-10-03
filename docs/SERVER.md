@@ -105,12 +105,27 @@ mattered here:
 ## Degrading gracefully
 
 - **No extension 1:** the app can't sign in with a token. (Password sign-in is planned.)
-- **A server older than studio 0.9:** `GET /api/items` is 404, and the connect sheet
-  says the server needs 0.9 or later.
+- **A server older than studio 0.9:** the connect sheet says it needs updating. A
+  blyg already connected gets a notice when Burrow starts (and a status-bar
+  notice with a **How to update** link), and Burrow pushes nothing to it: on an
+  old server a new route's 404 would read as "deleted" and duplicate your posts.
+  Your edits wait in the outbox and go up once the server is updated. Burrow
+  recognises an old server by `GET /api/items` answering without `total` (or
+  404).
 - **No extension 3:** the reading screens say "not available on this server".
 - **No extension 4:** before publishing text that was generated in the app, the app warns that
   it will go out **without** AI disclosure, and lets you cancel.
 - **No extension 5:** read state stays on each Mac, as before.
+
+## Updating an older server
+
+Follow upstream's guide,
+[Upgrading to Blygger Studio 0.11](https://github.com/blygger/blygger-studio/blob/main/docs/upgrading-to-0.11.md).
+It covers source and Worker-archive installs, the one database migration, and
+path-mounted blygs. A server that carries the extensions above needs them
+re-applied on top of the new version, so update it from wherever its extensions
+come from. Once it's updated, Burrow picks it up on its next sync; there's
+nothing to do in the app.
 
 ## Optional: server-side generation with Gemma 4
 

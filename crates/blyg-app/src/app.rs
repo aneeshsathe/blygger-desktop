@@ -82,6 +82,8 @@ pub(crate) mod profiles;
 #[path = "discard.rs"]
 pub(crate) mod discard;
 // --- auto-update --- (the status-bar notice; logic in crate::update)
+#[path = "server_notice.rs"]
+pub(crate) mod server_notice;
 #[path = "update/view.rs"]
 mod update_view;
 // --- browser --- (the in-app browser pane; hooks marked the same way)
@@ -1030,6 +1032,7 @@ impl MainView {
                 cx.notify();
             }
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
+            CoreEvent::ServerOutdated => self.server_outdated(cx),
         }
     }
 
@@ -2348,6 +2351,7 @@ impl MainView {
                     .children(banner),
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
+            .children(self.render_server_notice())
             .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(

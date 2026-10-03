@@ -126,9 +126,10 @@ impl Api {
             let sep = if query.is_empty() { "" } else { "&" };
             let url = format!("{path}?{query}{sep}offset={}&limit={PAGE}", all.len());
             let page: Page<T> = self.call_as("GET", &url, None)?;
+            let total = page.total.ok_or(CoreError::ServerOutdated)?;
             let n = page.items.len();
             all.extend(page.items);
-            if n == 0 || all.len() as u64 >= page.total {
+            if n == 0 || all.len() as u64 >= total {
                 return Ok(all);
             }
         }
@@ -176,11 +177,12 @@ impl Api {
         Ok(items.into_iter().map(|w| self.resolve(w)).collect())
     }
 
-    /// How many items the server holds (one small read).
+    /// How many items the server holds (one small read). Also the version
+    /// probe: `ServerOutdated` from a server older than studio 0.9.
     pub fn count_items(&self) -> Result<u64> {
-        Ok(self
-            .call_as::<Page<Value>>("GET", "/api/items?offset=0&limit=1", None)?
-            .total)
+        self.call_as::<Page<Value>>("GET", "/api/items?offset=0&limit=1", None)?
+            .total
+            .ok_or(CoreError::ServerOutdated)
     }
 
     pub fn get_item(&self, id: &str) -> Result<WireItem> {
@@ -705,6 +707,8 @@ pub enum ConnectError {
     /// `GET /api/items` is 404: a blyg older than studio 0.9 without the
     /// owner-read extensions.
     MissingExtensions,
+    /// The server answers, but it's older than blygger-studio 0.9.
+    Outdated,
     /// Anything else (a 5xx, or a page that isn't a blyg's JSON).
     Other(String),
 }
@@ -721,6 +725,9 @@ impl std::fmt::Display for ConnectError {
             ConnectError::MissingExtensions => f.write_str(
                 "This server has no owner JSON API (GET /api/items is 404). It needs blygger-studio 0.9 or later. See docs/SERVER.md.",
             ),
+            ConnectError::Outdated => f.write_str(
+                "This blyg's server is older than blygger-studio 0.9. Update it, then connect again.",
+            ),
             ConnectError::Other(m) => f.write_str(m),
         }
     }
@@ -735,6 +742,7 @@ pub fn verify_connection(base_url: &str, token: &str) -> std::result::Result<usi
         Err(CoreError::Offline) => Err(ConnectError::Unreachable),
         Err(CoreError::Unauthorized) => Err(ConnectError::WrongToken),
         Err(CoreError::NotFound) => Err(ConnectError::MissingExtensions),
+        Err(CoreError::ServerOutdated) => Err(ConnectError::Outdated),
         Err(CoreError::Rejected {
             status, message, ..
         }) => Err(ConnectError::Other(format!(

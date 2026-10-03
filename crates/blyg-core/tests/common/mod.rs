@@ -98,6 +98,10 @@ pub struct State {
     /// Path prefixes not checked: for tests that serve deliberately
     /// malformed data to prove the app tolerates it.
     pub unchecked: Vec<String>,
+    /// Act like a server older than studio 0.9 (with the old owner-read
+    /// extension): `GET /api/items` is `{items}` with no `total`, and the
+    /// routes 0.9 added are unknown (404). Not checked against the contract.
+    pub legacy_api: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -336,7 +340,7 @@ fn handle(mut conn: TcpStream, state: Arc<Mutex<State>>) {
 /// a reply status upstream doesn't declare (`POST /api/media` → 200
 /// `duplicate`). Record what's wrong.
 fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
-    if !req.path.starts_with("/api/") || status == 401 {
+    if !req.path.starts_with("/api/") || status == 401 || s.legacy_api {
         return;
     }
     let segs: Vec<String> = req
@@ -532,6 +536,22 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
     }
     let segs: Vec<&str> = req.path.trim_start_matches('/').split('/').collect();
     let body = req.json();
+    if s.legacy_api {
+        return match (req.method.as_str(), segs.as_slice()) {
+            ("GET", ["api", "items"]) => {
+                let all: Vec<Value> = s.items.values().map(item_json).collect();
+                (200, json!({ "items": all }))
+            }
+            ("POST", ["api", "items"]) => {
+                let id = s.add_item("fragment", body["content_md"].as_str().unwrap_or(""));
+                (
+                    201,
+                    json!({ "id": id, "kind": "fragment", "status": "draft" }),
+                )
+            }
+            _ => not_found(),
+        };
+    }
     match (req.method.as_str(), segs.as_slice()) {
         ("GET", ["api", "items"]) => {
             let mut v: Vec<&SItem> = s.items.values().collect();

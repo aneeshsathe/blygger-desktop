@@ -246,6 +246,29 @@ fn conflict_sheet_keys_resolve(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    assert!(view.read_with(cx, |v, _| v.render_server_notice().is_none()));
+    fake.trigger_server_outdated();
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if view.read_with(cx, |v, _| v.toast.is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    view.read_with(cx, |v, _| {
+        let t = v.toast.as_ref().expect("a toast");
+        assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
+        assert!(t.sub.as_ref().is_some_and(|s| s.contains("0.9")));
+        assert!(
+            v.render_server_notice().is_some(),
+            "the status bar keeps saying it"
+        );
+    });
+}
+
+#[gpui_kit::test]
 fn preview_toggles(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     cx.simulate_keystrokes("cmd-e");

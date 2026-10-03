@@ -1040,6 +1040,10 @@ impl Backend for LiveBackend {
         self.e().read_sync_on()
     }
 
+    fn server_outdated(&self) -> bool {
+        self.e().server_outdated()
+    }
+
     fn cached_profiles(&self) -> Vec<crate::profile::Profile> {
         self.e().store.cached_profiles()
     }

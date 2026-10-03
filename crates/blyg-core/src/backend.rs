@@ -25,6 +25,11 @@ pub enum CoreError {
         message: String,
         details: Vec<String>,
     },
+    /// The server is older than blygger-studio 0.9 (its owner API predates
+    /// the OpenAPI contract). Nothing is pushed to it: an old server's 404 on
+    /// a new route would read as "deleted" and duplicate posts.
+    #[error("your blyg's server needs updating to blygger-studio 0.9 or later")]
+    ServerOutdated,
     /// Item has never reached the server (still local-only) and the op needs a server id.
     #[error("not on the server yet — still syncing")]
     NotSynced,
@@ -356,6 +361,12 @@ pub trait Backend: Send + Sync {
     }
 
     // --- about ---
+
+    /// The connected server is older than blygger-studio 0.9: nothing syncs
+    /// until it's updated (`CoreEvent::ServerOutdated` says when first seen).
+    fn server_outdated(&self) -> bool {
+        false
+    }
 
     /// Whether read state syncs with the server (the last `GET /api/reading/imported`
     /// advertised `read_state: true`, extension 5; meta key `read_sync`).

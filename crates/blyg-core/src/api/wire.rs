@@ -182,12 +182,13 @@ impl From<WireMention> for Mention {
     }
 }
 
-/// Collection reads: `{items, total, offset, limit}`.
+/// Collection reads: `{items, total, offset, limit}`. A server older than
+/// studio 0.9 answers `{items}` alone, so a missing `total` marks it.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Page<T> {
     pub items: Vec<T>,
     #[serde(default)]
-    pub total: u64,
+    pub total: Option<u64>,
 }
 
 pub fn parse_kind(s: &str) -> Kind {
