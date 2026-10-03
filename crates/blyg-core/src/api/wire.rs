@@ -251,7 +251,7 @@ pub struct Media {
     pub duplicate: bool,
 }
 
-/// `GET /api/reading` (patch 3) → `{items, next}`, plus `read_state: true`
+/// `GET /api/reading/imported` (patch 3) → `{items, next}`, plus `read_state: true`
 /// from a server that stores read state (extension 5; each item then carries
 /// its `read_version`).
 #[derive(Debug, Clone, Deserialize)]

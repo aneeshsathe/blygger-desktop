@@ -293,7 +293,7 @@ pub trait Backend: Send + Sync {
     // --- reading ---
 
     /// False once the server has shown it lacks the owner-API read
-    /// extensions (`GET /api/reading` answered 404): the reading, mentions and
+    /// extensions (`GET /api/reading/imported` answered 404): the reading, mentions and
     /// site-settings screens then say "not available on this server" instead
     /// of showing an empty list. Additive; the default says "available".
     fn read_extensions_available(&self) -> bool {
@@ -357,7 +357,7 @@ pub trait Backend: Send + Sync {
 
     // --- about ---
 
-    /// Whether read state syncs with the server (the last `GET /api/reading`
+    /// Whether read state syncs with the server (the last `GET /api/reading/imported`
     /// advertised `read_state: true`, extension 5; meta key `read_sync`).
     /// For the About window. Additive; the default says no.
     fn read_state_sync(&self) -> bool {

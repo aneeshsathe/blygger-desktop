@@ -337,9 +337,7 @@ fn is_extension(method: &str, segs: &[&str]) -> bool {
             | ("PUT", ["api", "reading", _, _, "read"])
             | ("POST", ["api", "reading", "read"])
             | ("DELETE", ["api", "media", _])
-            // TODO(blyg-e1): the fork's reading rows aren't upstream's
-            // `ReadingEntry`; check them once its final shape is agreed.
-            | ("GET", ["api", "reading"])
+            | ("GET", ["api", "reading", "imported"])
     )
 }
 
@@ -796,7 +794,9 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             (200, next)
         }
         // ---- reads (404 until "deployed")
-        ("GET", ["api", "reading"]) => {
+        // Extension 3: the app's reading rows (upstream's `/api/reading`
+        // is a different, rendered resource the app doesn't use).
+        ("GET", ["api", "reading", "imported"]) => {
             let Some(all) = s.reading.clone() else {
                 return not_found();
             };

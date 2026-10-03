@@ -25,7 +25,7 @@ pub(crate) use worker::{Msg, spawn};
 pub const PROVENANCE_UNAVAILABLE: &str = "tk_provenance_unavailable";
 
 /// `meta` key: "1" while the server advertises read-state sync (the last
-/// `GET /api/reading` said `read_state: true`, extension 5), "0" or absent
+/// `GET /api/reading/imported` said `read_state: true`, extension 5), "0" or absent
 /// otherwise. Persisted so a read marked offline after a restart still queues.
 pub const READ_SYNC: &str = "read_sync";
 
@@ -81,7 +81,7 @@ struct NetState {
     backoff: Duration,
     retry_at: Option<Instant>,
     last_emitted: Option<SyncStatus>,
-    /// Server lacks `GET /api/reading` (patch 3 not deployed).
+    /// Server lacks `GET /api/reading/imported` (patch 3 not deployed).
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,

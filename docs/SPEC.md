@@ -166,19 +166,20 @@ uses are in `docs/SERVER.md`. The key points:
 - `GET /api/mentions?direction=inbound` (`source_author_json` is a JSON string)
 - `GET /api/hoppers/:id?preview=true` → `{hopper, memberships, items, total, source_count}`
 
-**Reading** (pending: the Worker fork's reading rows are being re-synced onto
-studio 0.10, see `docs/SERVER.md`). The app still reads the fork's current shape:
+**Reading** (extension 3, see `docs/SERVER.md`; not upstream):
 
-- `GET /api/reading?limit=N&before=<cursor>` → `{items: ReadingItem[], next: string|null}`,
-  newest `observed_at` first. `next` is an **opaque cursor**:
+- `GET /api/reading/imported?limit=N&before=<cursor>` → `{items: ReadingItem[], next: string|null, read_state}`,
+  imported items newest `observed_at` first; the default limit is 100 and the max is 500. `next` is an **opaque cursor**:
   pass it back as `before` verbatim. Pages are ≤ limit. `page` is origin-relative (resolve it against `origin`).
   ReadingItem =
   `{subscription_id, remote_id, subscription_title, origin, kind, state, version,
   created, updated, observed_at, content_md, content_html, author: {name,url}|null,
-  page, thumb: 1|-1|null, hoppers: string[]}`. Upstream's own `/api/reading` returns
-  rendered `ReadingEntry` rows with `offset`/`limit` paging (at most 50) instead.
+  page, thumb: 1|-1|null, hoppers: string[], read_version, pinned_version_retained,
+  transclusions}`. `content_html` is raw: sanitize before display. Upstream's own
+  `/api/reading` returns rendered `ReadingEntry` rows with `offset`/`limit` paging
+  (at most 50) instead.
 
-**Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading` adds
+**Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading/imported` adds
 `read_state: true` and a per-item `read_version: number|null`;
 `PUT /api/reading/:sub/:remoteId/read {version}` and
 `POST /api/reading/read {items: [{sub, remote_id, version}]}` (≤ 500) store

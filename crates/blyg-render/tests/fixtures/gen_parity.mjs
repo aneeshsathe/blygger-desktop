@@ -39,10 +39,10 @@ await esbuild.build({
   stdin: {
     contents: `
       export { renderMarkdown } from "./markdown.ts";
-      export { parseScopes, previewStrip, annotateGenerated, applyGeneratedWrappers } from "./tk.ts";
-      export { previewTransclusions, previewInternalLinks, applyInternalLinks, remapRanges } from "./transclusion.ts";
+      export { parseScopes } from "./tk.ts";
+      export { annotateTkPreview, previewLinkDocs, spliceLinkDocs } from "./authoring.ts";
+      export { previewTransclusions, remapRanges } from "./transclusion.ts";
       export { injectProvenance, transclusionProvenance, mediaHtml } from "./pages.ts";
-      export { previewMedia } from "./attachments.ts";
     `,
     resolveDir: join(workerDir, "src"),
     loader: "ts",
@@ -53,6 +53,20 @@ await esbuild.build({
   platform: "node",
   outfile,
   logLevel: "warning",
+  plugins: [
+    {
+      // pages.ts keeps mediaHtml private since studio 0.10; expose it to
+      // this bundle only (the Worker's source is read, never changed).
+      name: "expose-media-html",
+      setup(b) {
+        b.onLoad({ filter: /[\\/]src[\\/]pages\.ts$/ }, (a) => {
+          const src = readFileSync(a.path, "utf8");
+          const exported = /export\s+(async\s+)?function\s+mediaHtml\b/.test(src);
+          return { contents: exported ? src : src + "\nexport { mediaHtml };\n", loader: "ts" };
+        });
+      },
+    },
+  ],
 });
 const W = await import(pathToFileURL(outfile).href);
 rmSync(tmp, { recursive: true, force: true });
@@ -101,57 +115,34 @@ function fakeDb() {
   };
 }
 
-// --- 3. The studio preview pipeline -------------------------------------------------
-// annotateTkPreview is a private helper in studio.ts; this is its body verbatim
-// (parseScopes -> previewStrip -> annotateGenerated with every span highlighted).
-function annotateTkPreview(contentMd) {
-  const { scopes, errors } = W.parseScopes(contentMd);
-  const { text, spans } = W.previewStrip(contentMd, scopes);
-  const annotated = W.annotateGenerated(text, spans, spans.map(() => true));
-  return {
-    scopes,
-    errors,
-    text: annotated.text,
-    inert: annotated.inertRanges, // generated spans: `![[id]]` inside them never transcludes
-    blocks: annotated.blockReplacements,
-    finish: (html) => W.applyGeneratedWrappers(html, annotated),
-  };
-}
-
+// --- 3. The preview pipeline -------------------------------------------------------
+// POST /api/preview (read-api.ts), with the Worker's own helpers from
+// authoring.ts: annotateTkPreview, previewLinkDocs, spliceLinkDocs.
 async function render(c) {
-  const tk = annotateTkPreview(c.md);
+  const tk = W.annotateTkPreview(c.md);
   const tkOut = {
     scopes: tk.scopes.map((s) => ({ instruction: s.instruction, generated: s.output !== null, block: s.block, source_ids: s.sourceIds })),
-    errors: tk.errors,
+    errors: W.parseScopes(c.md).errors,
   };
   const db = fakeDb();
   // `[[id]]` plain links resolve in both previews, against siteOrigin (here
-  // the mount plus "/", which is what the Rust side derives from `mount`):
-  // studio.ts previewLinkDocs / spliceLinkDocs (patch 12), verbatim.
+  // the mount plus "/", which is what the Rust side derives from `mount`).
   const origin = store.mount + "/";
-  const linkDocs = [await W.previewInternalLinks(db, tk.text, origin)];
-  for (const [token, blockHtml] of tk.blocks) {
-    const doc = await W.previewInternalLinks(db, blockHtml, origin, { html: true });
-    if (doc.replacements.size || doc.errors.length) {
-      tk.blocks.set(token, doc.text);
-      linkDocs.push(doc);
-    }
-  }
-  const splice = (html) => linkDocs.reduce((acc, doc) => W.applyInternalLinks(acc, doc), html);
+  const linkDocs = await W.previewLinkDocs(db, tk, origin);
   const links = linkDocs[0];
   const linkErrors = linkDocs.flatMap((d) => d.errors);
   if (c.kind === "fragment") {
-    // studio.post("/preview"): fragments never resolve transclusions.
-    const html = splice(tk.finish(W.renderMarkdown(links.text)));
+    // Fragments never resolve transclusions.
+    const html = W.spliceLinkDocs(tk.finish(W.renderMarkdown(links.text)), linkDocs);
     return { html, tk: tkOut, transclusions: [], errors: linkErrors };
   }
-  // studio.post("/preview-thread") + the public page's injectProvenance().
+  // threadPreview() + the public page's injectProvenance().
   // The Worker never makes this combination: its previews show no provenance,
   // and injectProvenance only ever sees published HTML, which can't hold an
   // unresolved marker. The desktop preview makes it on purpose, so the marker
   // is hidden from injectProvenance here, as it would be absent on the page.
   const resolved = await W.previewTransclusions(db, links.text, store.self_id, W.remapRanges(tk.inert, links));
-  const preview = splice(tk.finish(resolved.html));
+  const preview = W.spliceLinkDocs(tk.finish(resolved.html), linkDocs);
   const provenance = await W.transclusionProvenance(db, resolved.transclusions, store.mount);
   const MARKER = 'class="blyg-transclusion unresolved"';
   const HIDDEN = 'class="\u0000unresolved-marker"';
@@ -185,12 +176,12 @@ const vectors = JSON.parse(readFileSync(join(here, "linkify_vectors_input.json")
 const vecOut = vectors.inputs.map((md) => ({ md, html: W.renderMarkdown(md) }));
 writeFileSync(join(outDir, "_linkify_vectors.json"), JSON.stringify({ source: vectors.source, cases: vecOut }, null, 1) + "\n");
 
-// Attachments: the public pages' mediaHtml and the studio preview's strip.
+// Attachments: the public pages' mediaHtml. (The old server-rendered
+// studio's preview strip, previewMedia, went with it in studio 0.10.)
 const media = JSON.parse(readFileSync(join(here, "media_input.json"), "utf8"));
 const mediaOut = media.cases.map((c) => ({
   ...c,
   media_html: W.mediaHtml(c.media, media.mount),
-  preview_media: W.previewMedia(c.media, media.mount),
 }));
 writeFileSync(join(outDir, "_media.json"), JSON.stringify({ mount: media.mount, cases: mediaOut }, null, 2) + "\n");
 

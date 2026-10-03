@@ -75,7 +75,7 @@ impl LiveBackend {
         self.engine.pull()
     }
 
-    /// Whether the server has `GET /api/reading` (false until the first pull proves otherwise).
+    /// Whether the server has `GET /api/reading/imported` (false until the first pull proves otherwise).
     pub fn reading_available(&self) -> bool {
         !self.engine.reading_unavailable()
     }
@@ -266,7 +266,7 @@ impl LiveBackend {
 
     fn permalink_for(&self, kind: Kind, sid: &str) -> String {
         let p = if kind == Kind::Thread { "t" } else { "f" };
-        format!("{}/{p}/{sid}", self.e().api.base_url())
+        format!("{}/{p}/{sid}", self.e().api.public_base())
     }
 }
 

@@ -14,9 +14,9 @@ carries them:
 | # | Extension | Why the app needs it |
 |---|---|---|
 | 1 | **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | A native app can't hold a studio cookie cleanly. Upstream is cookie-only; its OAuth plan replaces this. |
-| 3 | **Reading rows for the app**: `GET /api/reading?limit&before=<cursor>` with the app's row shape (raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, lineage, `transclusions[]` with `cited`), an opaque keyset cursor. | Upstream's `/api/reading` returns rendered `ReadingEntry` rows with offset paging, which the reader can't use as-is. **Being re-synced onto studio 0.10; the final shape is pending.** |
+| 3 | **Reading rows for the app**: `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained` and `transclusions[]` with `cited`. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
 | 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. Upstream's item has a read-only `provenance`; nothing can write it. |
-| 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
+| 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading/imported`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
 
 Extension 2 (owner JSON reads) is upstream now, so its number is retired.
 Field-level contracts: `docs/SPEC.md` § API and § Client-recorded provenance.
@@ -41,7 +41,7 @@ CREATE TABLE read_state (
 It also adds two triggers, so a row goes away when its imported item or its subscription
 is deleted.
 
-**Capability.** `GET /api/reading` answers `{items, next, read_state: true}`, and each item
+**Capability.** `GET /api/reading/imported` answers `{items, next, read_state: true}`, and each item
 carries `read_version` (an integer, or `null` when unread). The app reads `read_version`
 only when `read_state` is `true`. It checks the flag on every pull and remembers the
 last answer.

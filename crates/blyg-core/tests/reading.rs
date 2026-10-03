@@ -107,7 +107,7 @@ fn reading_pages_with_opaque_cursor_and_absolute_pages() {
     assert!(
         st.log
             .iter()
-            .any(|l| l == "GET /api/reading?limit=500&before=c%3A2"),
+            .any(|l| l == "GET /api/reading/imported?limit=500&before=c%3A2"),
         "{:?}",
         st.log
     );

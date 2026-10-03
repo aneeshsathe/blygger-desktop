@@ -8,7 +8,7 @@
 //! (`details` from the contract's `errors` and `issues`). The read endpoints
 //! (`reading`, `mentions`, `settings`, `hoppers`) return `Ok(None)` on 404: a
 //! server older than studio 0.9 without the owner-read extensions. The
-//! read-state writes (extension 5) are only called once `GET /api/reading`
+//! read-state writes (extension 5) are only called once `GET /api/reading/imported`
 //! advertised `read_state: true`.
 
 pub mod public;
@@ -32,9 +32,17 @@ pub struct Api {
     agent: ureq::Agent,
     base: String,
     token: String,
-    /// The blyg's `show_responses_default`, as last read or written; an
-    /// item's `responses: "default"` resolves against it.
-    responses_default: Mutex<Option<bool>>,
+    /// What items resolve against, from settings as last read or written.
+    site: Mutex<Option<Site>>,
+}
+
+/// The settings an item's derived fields depend on.
+#[derive(Debug, Clone, Default)]
+struct Site {
+    /// `show_responses_default`: what `responses: "default"` means.
+    responses_default: bool,
+    /// `site_url` without its trailing `/`; `""` = unset.
+    site_url: String,
 }
 
 /// Collection page size (the contract's maximum outside `/api/reading`).
@@ -66,7 +74,7 @@ impl Api {
             agent,
             base: base_url.trim_end_matches('/').to_string(),
             token: token.to_string(),
-            responses_default: Mutex::new(None),
+            site: Mutex::new(None),
         }
     }
 
@@ -126,22 +134,35 @@ impl Api {
         }
     }
 
-    /// The cached `show_responses_default`, reading settings when unknown.
-    fn responses_default(&self) -> bool {
-        let cached = *self.responses_default.lock().unwrap();
-        match cached {
-            Some(d) => d,
-            None => self
-                .settings()
-                .ok()
-                .flatten()
-                .and_then(|s| s.show_responses_default)
-                .unwrap_or(false),
+    /// The cached site settings, reading them when unknown.
+    fn site(&self) -> Site {
+        if let Some(s) = self.site.lock().unwrap().clone() {
+            return s;
+        }
+        let _ = self.settings();
+        self.site.lock().unwrap().clone().unwrap_or_default()
+    }
+
+    /// Where the blyg's public pages live, without a trailing `/`: its
+    /// `site_url` when set, else the API base (which carries the mount).
+    /// The Worker builds its own origin the same way.
+    pub fn public_base(&self) -> String {
+        let s = self.site();
+        if s.site_url.is_empty() {
+            self.base.clone()
+        } else {
+            s.site_url
         }
     }
 
     fn resolve(&self, mut w: WireItem) -> WireItem {
-        w.resolve(self.responses_default(), &self.base);
+        let site = self.site();
+        let base = if site.site_url.is_empty() {
+            &self.base
+        } else {
+            &site.site_url
+        };
+        w.resolve(site.responses_default, base);
         w
     }
 
@@ -536,17 +557,35 @@ impl Api {
             "author_links".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
         );
-        self.call("PATCH", "/api/settings", Some(Value::Object(body)))?;
-        if let Some(on) = s.show_responses_default {
-            *self.responses_default.lock().unwrap() = Some(on);
+        let v = self.call("PATCH", "/api/settings", Some(Value::Object(body)))?;
+        // The reply is the stored settings.
+        match serde_json::from_value::<Settings>(v) {
+            Ok(saved) => self.remember(Some(&saved)),
+            Err(_) => *self.site.lock().unwrap() = None,
         }
         Ok(())
     }
 
+    /// Cache what items resolve against. No settings (or no such field)
+    /// means no site default (hidden) and no `site_url`.
+    fn remember(&self, s: Option<&Settings>) {
+        *self.site.lock().unwrap() = Some(Site {
+            responses_default: s.and_then(|s| s.show_responses_default).unwrap_or(false),
+            site_url: s
+                .and_then(|s| s.site_url.as_deref())
+                .map(|u| u.trim().trim_end_matches('/').to_string())
+                .unwrap_or_default(),
+        });
+    }
+
     // ---------- reads (404 → None) ----------
 
+    /// `GET /api/reading/imported` (extension 3): imported rows in the app's
+    /// shape, keyset-paged. Upstream's own `/api/reading` is a different,
+    /// rendered resource. `content_html` comes back raw, as stored: the UI
+    /// sanitizes it before display.
     pub fn reading(&self, limit: u32, before: Option<&str>) -> Result<Option<ReadingPage>> {
-        let mut path = format!("/api/reading?limit={limit}");
+        let mut path = format!("/api/reading/imported?limit={limit}");
         if let Some(b) = before {
             path.push_str("&before=");
             path.push_str(&enc(b));
@@ -597,12 +636,7 @@ impl Api {
     /// means "the server has the setting, and it is unset".
     pub fn settings(&self) -> Result<Option<Settings>> {
         let s: Option<Settings> = Self::optional(self.call_as("GET", "/api/settings", None))?;
-        // No settings (or no such field) means no site default: hidden.
-        *self.responses_default.lock().unwrap() = Some(
-            s.as_ref()
-                .and_then(|s| s.show_responses_default)
-                .unwrap_or(false),
-        );
+        self.remember(s.as_ref());
         Ok(s.map(|mut s| {
             for f in [
                 &mut s.site_title,

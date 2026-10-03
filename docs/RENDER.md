@@ -133,7 +133,7 @@ pub fn studio_css() -> String;                         // tint, unresolved marke
 pub fn article_html(kind, content_html, stub, fork) -> String;  // pages.ts <article> + citations
 pub struct Attachment { key: String /* media r2_key */, alt: Option<String> }
 pub fn media_html(&[Attachment], mount) -> String;     // pages.ts mediaHtml (public pages, after the content)
-pub fn preview_media(&[Attachment], mount) -> String;  // attachments.ts previewMedia: div#preview-media
+pub fn preview_media(&[Attachment], mount) -> String;  // media_html in div#preview-media (the pre-0.10 studio strip)
 pub fn page_shell(theme_css: &str, body: &str) -> String;       // complete document with CSP
 pub fn page_shell_with(theme_css, body, &ShellOpts { title, base_href }) -> String;
 pub fn preview_script() -> String;  pub fn embed_css() -> &'static str;  pub fn csp(nonce) -> String;
@@ -198,8 +198,15 @@ and `images_edge`, plus 19 new cases around them (`tk_*dollar*`,
 `tk_sentinel_*`, `tk_block_in_fence*`, `tr_in_*_fence`, `tr_*tk_directive*`,
 `images_alt_escapes*`). Four more (`code_*fence_eof*`) pin a fence left open
 at the end of the document, an engine gap one of those cases exposed. Patch 8 (studio attachments) shows attached images in
-the studio preview through the public pages' `mediaHtml`; the `_media.json`
-suite pins `media_html` and `preview_media` against it.
+the preview through the public pages' `mediaHtml`; the `_media.json` suite pins
+`media_html` against it, and `preview_media` is that inside `div#preview-media`.
+
+Studio 0.10 (Worker commit 59f7bcbd0) moved the preview to `POST /api/preview`
+and its helpers (`annotateTkPreview`, `previewLinkDocs`, `spliceLinkDocs`) to
+`authoring.ts`. `gen_parity.mjs` now calls those instead of copies, and
+reaches the now-private `mediaHtml` through a bundling shim. Re-generated on
+2026-10-02, every fixture came out byte-identical; only the retired
+`previewMedia` output was dropped.
 
 Results. Tests compare after collapsing whitespace between tags, but every
 case is also byte-identical:
@@ -209,7 +216,7 @@ case is also byte-identical:
 | corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, transclusion, partial quotes, `[[id]]` links) | 191 | 191 | 191 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
-| attachments (`mediaHtml`, `previewMedia`) | 3 | 3 | 3 |
+| attachments (`mediaHtml`) | 3 | 3 | 3 |
 
 **Partial quotes** match the v0.8.3 Worker byte for byte in all 11
 `tr_partial_*` cases: found, emphasis in the quote, paragraph breaks, text
@@ -220,7 +227,7 @@ studio's `selection.test.ts` and `partial-transclusion.test.ts` cover the
 normalizer and selector context as well.
 
 **Provenance on the preview is the desktop's own combination.** The Worker's
-previews (`/studio/preview-thread`, the thread edit page) show no provenance.
+previews (`POST /api/preview`, the thread editor) show no provenance.
 `injectProvenance` only ever runs on published HTML, which can't hold an
 unresolved marker. `gen_parity.mjs` composes the preview with the page's
 `injectProvenance`, as this crate does, and hides unresolved markers from it,

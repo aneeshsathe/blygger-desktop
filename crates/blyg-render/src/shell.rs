@@ -233,8 +233,8 @@ pub struct Attachment {
 }
 
 /// pages.ts `mediaHtml`: every attachment as a lazy image paragraph. Public
-/// pages put this after `.item-content`; since the Worker's patch 8 the
-/// studio preview shows it too (see [`preview_media`]). `src` is
+/// pages put this after `.item-content`; the desktop preview shows it too
+/// (see [`preview_media`]). `src` is
 /// HTML-escaped, where the Worker interpolates it raw.
 pub fn media_html(media: &[Attachment], mount: &str) -> String {
     media
@@ -250,8 +250,9 @@ pub fn media_html(media: &[Attachment], mount: &str) -> String {
         .join("\n")
 }
 
-/// attachments.ts `previewMedia`: the studio preview's attachment strip,
-/// placed right after the preview body.
+/// The preview's attachment strip, placed right after the preview body:
+/// [`media_html`] in `div#preview-media`, as the Worker's server-rendered
+/// studio drew it until studio 0.10 (attachments.ts `previewMedia`).
 pub fn preview_media(media: &[Attachment], mount: &str) -> String {
     format!(
         "<div id=\"preview-media\">{}</div>",

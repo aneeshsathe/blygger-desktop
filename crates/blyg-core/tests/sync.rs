@@ -726,3 +726,20 @@ fn token_is_redacted_in_debug() {
     let api = blyg_core::api::Api::new("http://127.0.0.1:1", "super-secret-token");
     assert!(!format!("{api:?}").contains("super-secret"));
 }
+
+#[test]
+fn permalinks_use_the_site_url_when_one_is_set() {
+    let env = Env::new();
+    env.mock.state().settings = Some(json!({ "site_url": "https://blyg.example.com/notes/" }));
+    let b = env.manual();
+    let id = b.create_draft(Kind::Fragment, "out there").unwrap();
+    let out = b.publish(&id, None).unwrap();
+    let sid = b.item(&id).unwrap().server_id.unwrap().0;
+    assert_eq!(
+        out.permalink,
+        format!("https://blyg.example.com/notes/f/{sid}")
+    );
+    // A pull derives the same one.
+    b.sync_now().unwrap();
+    assert_eq!(b.item(&id).unwrap().permalink, Some(out.permalink));
+}

@@ -828,7 +828,7 @@ fn read_extension_shapes() {
     let e = e2e();
     let b = manual(dir.path());
     b.sync_now().unwrap();
-    assert!(b.reading_available(), "GET /api/reading exists");
+    assert!(b.reading_available(), "GET /api/reading/imported exists");
     let _ = b.reading();
     assert!(b.mentions().is_ok());
     let s = b.settings().unwrap();
@@ -859,11 +859,33 @@ fn read_extension_shapes() {
     ] {
         conforms("GET", &e.url, path);
     }
-    // TODO(blyg-e1): the fork's reading rows extend upstream's; check them
-    // against the agreed shape once it lands.
-    let (st, v) = owner("GET", &e.url, "/api/reading?limit=2", None);
+    // Extension 3: the app's reading rows, keyset-paged.
+    let (st, v) = owner("GET", &e.url, "/api/reading/imported?limit=2", None);
     assert_eq!(st, 200);
-    assert!(v["items"].is_array(), "{v}");
+    assert!(v["items"].is_array() && v.get("next").is_some(), "{v}");
+    assert_eq!(v["read_state"], true, "{v}");
+    if let Some(row) = v["items"].get(0) {
+        for k in [
+            "subscription_id",
+            "remote_id",
+            "subscription_title",
+            "origin",
+            "kind",
+            "state",
+            "version",
+            "observed_at",
+            "content_md",
+            "content_html",
+            "thumb",
+            "hoppers",
+            "read_version",
+            "pinned_version_retained",
+        ] {
+            assert!(row.get(k).is_some(), "reading row lacks {k}: {row}");
+        }
+    }
+    let (st, _) = owner("GET", &e.url, "/api/reading/imported?before=%%%", None);
+    assert_eq!(st, 400, "a bad cursor is refused");
 }
 
 #[test]
