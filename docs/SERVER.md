@@ -1,20 +1,24 @@
 # Server requirements
 
-Burrow talks to a blyg's **owner API**. The upstream reference Worker
-(https://github.com/blygger/blygger-studio, formerly `blygger-spec`'s `worker/`) has a write-only owner API behind a
-studio password cookie. This app needs four small, additive extensions to it. They're
-read-only or bookkeeping endpoints, with no schema changes. Until they're upstream, you
-need a Worker that carries them. A fifth, optional extension syncs reading-list read state
-between your Macs; it adds one table.
+Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
+(https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
+(`openapi.json`; route guide in its `docs/api.md`). The app follows that contract, studio
+0.10, and needs **0.9 or later**. Every route the app shares with upstream is checked
+against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
+
+Upstream now covers what used to be extensions 2 and 3: JSON reads of items,
+subscriptions, mentions, settings and hoppers, and the per-item response policy. A few
+things the app needs are still not upstream. Until they are, you need a Worker that
+carries them:
 
 | # | Extension | Why the app needs it |
 |---|---|---|
-| 1 | **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | A native app can't hold a studio cookie cleanly. |
-| 2 | **Owner JSON reads**: `GET /api/items`, `GET /api/items/:id` (with `versions`), `GET /api/subscriptions`. | Upstream renders these lists as HTML only. |
-| 3 | **Read extensions**: `GET /api/reading?limit&before=<cursor>` (opaque keyset cursor, pages ≤ limit), `GET /api/mentions`, `GET /api/settings` (public-safe fields only), `GET /api/hoppers`; `show_responses` added to the item JSON. | The reading list, mentions and settings screens. |
-| 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. |
+| 1 | **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | A native app can't hold a studio cookie cleanly. Upstream is cookie-only; its OAuth plan replaces this. |
+| 3 | **Reading rows for the app**: `GET /api/reading?limit&before=<cursor>` with the app's row shape (raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, lineage, `transclusions[]` with `cited`), an opaque keyset cursor. | Upstream's `/api/reading` returns rendered `ReadingEntry` rows with offset paging, which the reader can't use as-is. **Being re-synced onto studio 0.10; the final shape is pending.** |
+| 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. Upstream's item has a read-only `provenance`; nothing can write it. |
 | 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
 
+Extension 2 (owner JSON reads) is upstream now, so its number is retired.
 Field-level contracts: `docs/SPEC.md` § API and § Client-recorded provenance.
 
 ## Extension 5: read-state sync
@@ -73,31 +77,37 @@ export reads it. It holds only numbers keyed by subscription and item, never tex
 
 - `DELETE /api/media/:id` (removes an upload; 404 unknown, 409 for the avatar)
   and `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes
-  on the same item. Without them, an abandoned paste leaves its file on the
-  server.
+  on the same item. Neither is upstream (upstream issue #7). Without them, an
+  abandoned paste leaves its file on the server.
 
-- `accept_mentions` (boolean) in `GET /api/settings`: Site settings shows an
-  **Accept mentions** toggle and saves it with `PUT /api/settings`. Without
-  the field the toggle is hidden and never sent.
-- Studio 0.8 responses: `PUT /api/items/:id/responses {mode: "default" | "show" | "hide"}`
-  answering `{ok, override, showing}`. The app sends `show` alongside
-  `show`/`hide`, so a pre-0.8 server still takes those two. On the item JSON,
-  `responses_override` (`1`, `0` or `null`) enables the per-post **follow site
-  setting** control, and `show_responses` (or `showing`, which wins) must be the
-  *effective* state (studio's `itemShowsResponses`), not the legacy column that
-  0.8 no longer updates.
-- `timezone` (string, `""` = unset) and `show_responses_default` (boolean) in
-  `GET /api/settings`: Site settings shows a time zone field and a **Show
-  responses by default** toggle. Without them both are hidden and never sent.
-- `transclusions[]` on `GET /api/reading` rows, with each entry's `cited`
-  (protocol 0.3): a quote box whose post isn't held here shows the cited
-  excerpt and names the cited author or source.
+## What the app uses from upstream
+
+These follow `openapi.json` exactly. The differences from the pre-0.9 API that
+mattered here:
+
+- Collections answer `{items, total, offset, limit}`; the app pages with
+  `offset`/`limit` (100 a page).
+- Items are created with `POST /api/items {mode: "blank" | "fork", …}`, which
+  answers `201` with the item. `POST /api/fork` is gone.
+- Edits are `PATCH /api/items/:id {content_md?, kind?, responses?}`. A draft's kind
+  changes in place until its first publish, so changing it no longer makes a new
+  draft. Unknown fields are a 400.
+- Pins are `PUT /api/items/:id/versions/:version/pin`, with no body.
+- An item's `responses` is `"default" | "show" | "hide"`. The app works out whether a
+  page shows responses from that and settings' `show_responses_default`.
+- Items carry no permalink. The app uses `{blyg-url}/f/{id}` (`t/` for threads);
+  `blyg-url` includes any mount path.
+- Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention
+  hiding and subscription edits are `PATCH` too.
+- Errors are `{error, errors?, issues?}`. The app shows `issues` (validation
+  failures) as details.
 
 ## Degrading gracefully
 
 - **No extension 1:** the app can't sign in with a token. (Password sign-in is planned.)
-- **No extensions 2/3:** drafts still work locally and publish. Drafts written in the web studio
-  won't appear, and the reading, mentions and settings screens say "not available on this server".
+- **A server older than studio 0.9:** `GET /api/items` is 404, and the connect sheet
+  says the server needs 0.9 or later.
+- **No extension 3:** the reading screens say "not available on this server".
 - **No extension 4:** before publishing text that was generated in the app, the app warns that
   it will go out **without** AI disclosure, and lets you cancel.
 - **No extension 5:** read state stays on each Mac, as before.
@@ -110,4 +120,7 @@ uses whatever the Worker is configured to use.
 
 ## Status
 
-The plan is to propose these extensions upstream. See the repo's issues for progress.
+Upstream's plan (its `docs/migration.md` §3) is for this app to run on the documented
+API alone, with OAuth in place of extension 1. The remaining extensions are proposed in
+upstream issues #11 (provenance, read state, reading rows), #12 (lineage in reading
+rows) and #7 (attachments).

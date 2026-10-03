@@ -94,7 +94,7 @@ impl LiveBackend {
         self.engine.store.provenance(id)
     }
 
-    /// `GET /api/hoppers` (patch 3); empty when the server doesn't have it yet.
+    /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
     pub fn hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
             .engine
@@ -809,29 +809,8 @@ impl Backend for LiveBackend {
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         let _net = self.e().net_lock();
-        let sid = self.e().track(self.e().api.fork(of))?;
-        let w = match self.e().api.get_item(&sid) {
-            Ok(w) => w,
-            // The fork exists server-side; the next pull fills in the content.
-            Err(_) => WireItem {
-                id: sid.clone(),
-                kind: "fragment".into(),
-                authored_kind: None,
-                status: "draft".into(),
-                version: 0,
-                dirty: true,
-                created: crate::util::now_iso(),
-                updated: crate::util::now_iso(),
-                content_md: String::new(),
-                stub_of: None,
-                forked_from: serde_json::to_value(of).ok(),
-                permalink: None,
-                show_responses: false,
-                responses_override: None,
-                showing: None,
-                versions: None,
-            },
-        };
+        // `POST /api/items {mode: "fork"}` answers with the new draft.
+        let w = self.e().track(self.e().api.fork(of))?;
         let id = self.e().store.insert_from_server(&w)?;
         self.e().emit(CoreEvent::ItemsChanged);
         Ok(id)

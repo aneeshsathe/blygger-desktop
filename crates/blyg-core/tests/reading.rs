@@ -256,7 +256,7 @@ fn mentions_and_settings_when_available() {
         st.mentions = Some(vec![json!({
             "id": "m1", "target_item_id": "T", "status": "verified", "relation": "stub",
             "source": "https://else.example/t/X", "source_origin": "https://else.example/", "source_id": "X",
-            "source_kind": "thread", "source_version": 1, "source_author": { "name": null, "url": null },
+            "source_kind": "thread", "source_version": 1, "source_author_json": "{\"name\":\"Them\",\"url\":null}",
             "first_seen": "2030-01-01T00:00:00Z", "verified_at": null, "hidden": false
         })]);
         st.settings = Some(json!({
@@ -271,6 +271,10 @@ fn mentions_and_settings_when_available() {
     let m = b.mentions().unwrap();
     assert_eq!(m.len(), 1);
     assert_eq!(m[0].relation.as_deref(), Some("stub"));
+    assert_eq!(
+        m[0].source_author.as_ref().unwrap().name.as_deref(),
+        Some("Them")
+    );
     b.set_mention_hidden("m1", true).unwrap();
     assert!(env.mock.state().hidden["m1"]);
 
@@ -290,11 +294,9 @@ fn mentions_and_settings_when_available() {
     assert!(put.get("site_url").is_none(), "unset fields aren't sent");
     assert_eq!(put["author_links"][0]["label"], "gh");
 
-    assert!(
-        put.get("timezone").is_none(),
-        "an old server's settings lack it"
-    );
-    assert!(put.get("show_responses_default").is_none());
+    // Upstream always reports these, so they round-trip unchanged.
+    assert_eq!(put["timezone"], "");
+    assert_eq!(put["show_responses_default"], false);
 
     assert_eq!(b.hoppers().unwrap()[0].count, 3);
 }

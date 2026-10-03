@@ -10,6 +10,15 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Changed
+
+- **Burrow follows blygger-studio's documented owner API (studio 0.9 and 0.10).** Upstream redesigned `/api` as an OpenAPI contract and dropped the old routes, so saves, forks, pins, response settings, subscription pause and resume, mention hiding and site settings now use the new routes (`PATCH`, `POST /api/items {mode}`, `PUT …/versions/:v/pin`), and lists are read page by page. Burrow now needs studio 0.9 or later.
+- Changing a draft between fragment and thread keeps the same draft on the server instead of making a new one.
+- The tests check every request Burrow sends, and every reply they fake, against upstream's `openapi.json`.
+- `docs/SERVER.md` now lists only what upstream still lacks: bearer-token sign-in, the reader's reading rows, client-recorded AI provenance, read-state sync and attachment removal.
+
 ## [0.6.2] - 2026-09-30
 
 ### Fixed

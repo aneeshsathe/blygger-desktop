@@ -6,6 +6,7 @@ use std::time::Duration;
 
 use blyg_core::*;
 use common::*;
+use serde_json::json;
 
 const T: Duration = Duration::from_secs(5);
 
@@ -46,7 +47,7 @@ fn create_offline_then_sync_maps_ids() {
     assert_eq!(server_content(&env, &sid), "third");
     let st = env.mock.state();
     assert_eq!(st.count("POST /api/items"), 1);
-    assert_eq!(st.count(&format!("PUT /api/items/{}", sid.0)), 1);
+    assert_eq!(st.count(&format!("PATCH /api/items/{}", sid.0)), 1);
 }
 
 #[test]
@@ -93,7 +94,7 @@ fn save_coalescing_with_the_worker() {
         let st = env.mock.state();
         assert_eq!(st.count("POST /api/items"), 1, "{:?}", st.log);
         assert_eq!(
-            st.count("PUT /api/items/"),
+            st.count("PATCH /api/items/"),
             0,
             "saves before the create landed were absorbed"
         );
@@ -104,9 +105,9 @@ fn save_coalescing_with_the_worker() {
     assert!(wait_until(T, || !b.item(&id).unwrap().pending_sync));
     assert_eq!(server_content(&env, &sid), format!("{text} 49"));
     assert_eq!(
-        env.mock.state().count("PUT /api/items/"),
+        env.mock.state().count("PATCH /api/items/"),
         1,
-        "50 saves = one PUT"
+        "50 saves = one PATCH"
     );
     assert!(wait_until(T, || b.sync_status() == SyncStatus::Synced));
 }
@@ -223,7 +224,7 @@ fn publish_flushes_first() {
     assert_eq!(out.version, 1);
     let it = b.item(&id).unwrap();
     let sid = it.server_id.clone().unwrap();
-    assert_eq!(out.permalink, format!("http://mock.test/f/{}", sid.0));
+    assert_eq!(out.permalink, format!("{}/f/{}", env.mock.url, sid.0));
     assert_eq!(it.status, Status::Public);
     assert_eq!(it.version, 1);
     assert!(!it.dirty);
@@ -467,7 +468,7 @@ fn set_kind_before_first_sync_is_just_local() {
 }
 
 #[test]
-fn set_kind_of_a_synced_draft_recreates_it() {
+fn set_kind_of_a_synced_draft_patches_it_in_place() {
     let env = Env::new();
     let b = env.manual();
     let id = b.create_draft(Kind::Fragment, "grows up").unwrap();
@@ -477,16 +478,16 @@ fn set_kind_of_a_synced_draft_recreates_it() {
     b.set_kind(&id, Kind::Thread).unwrap();
     b.sync_now().unwrap();
     let it = b.item(&id).unwrap();
-    let new = it.server_id.clone().unwrap();
-    assert_ne!(new, old);
+    assert_eq!(it.server_id.clone().unwrap(), old, "same draft, same id");
     assert_eq!(it.kind, Kind::Thread);
     assert!(!it.pending_sync);
     assert_eq!(b.items().len(), 1);
     let st = env.mock.state();
-    assert_eq!(st.items.len(), 1, "old draft deleted");
-    assert_eq!(st.items[&new.0].kind, "thread");
-    assert_eq!(st.items[&new.0].content_md, "grows up into a thread");
-    assert_eq!(st.count(&format!("DELETE /api/items/{}", old.0)), 1);
+    assert_eq!(st.items.len(), 1);
+    assert_eq!(st.items[&old.0].kind, "thread");
+    assert_eq!(st.items[&old.0].content_md, "grows up into a thread");
+    assert_eq!(st.count("POST /api/items"), 1, "no second draft");
+    assert_eq!(st.count("DELETE"), 0);
 }
 
 #[test]
@@ -621,7 +622,7 @@ fn fork_and_show_responses() {
     let it = b.item(&id).unwrap();
     assert!(it.show_responses);
     assert_eq!(it.responses_mode, Some(ResponsesMode::Show));
-    assert!(env.mock.state().items[&sid].show_responses);
+    assert_eq!(env.mock.state().items[&sid].responses, "show");
     b.sync_now().unwrap();
     assert_eq!(b.items().len(), 1, "pull didn't duplicate the fork");
 }
@@ -629,8 +630,12 @@ fn fork_and_show_responses() {
 #[test]
 fn responses_follow_the_site_default() {
     let env = Env::new();
+    {
+        let mut st = env.mock.state();
+        st.settings = Some(json!({}));
+        st.responses_default = true;
+    }
     let b = env.manual();
-    env.mock.state().responses_default = true;
     let id = b
         .fork(&RemoteRef {
             origin: "https://else.example/".into(),
@@ -643,14 +648,14 @@ fn responses_follow_the_site_default() {
     assert!(!b.set_responses(&id, ResponsesMode::Hide).unwrap());
     assert!(
         b.set_responses(&id, ResponsesMode::Default).unwrap(),
-        "the reply's `showing` is the effective state"
+        "`default` resolves against the site's `show_responses_default`"
     );
     let it = b.item(&id).unwrap();
     assert!(it.show_responses);
     assert_eq!(it.responses_mode, Some(ResponsesMode::Default));
-    assert_eq!(env.mock.state().items[&sid].responses_override, Some(None));
+    assert_eq!(env.mock.state().items[&sid].responses, "default");
 
-    // A pull carries the choice (`responses_override: null`) and keeps it.
+    // A pull carries the choice (`responses: "default"`) and keeps it.
     b.sync_now().unwrap();
     let it = b.item(&id).unwrap();
     assert_eq!(it.responses_mode, Some(ResponsesMode::Default));
@@ -659,9 +664,7 @@ fn responses_follow_the_site_default() {
     // Another client hides it: the pull follows.
     {
         let mut st = env.mock.state();
-        let si = st.items.get_mut(&sid).unwrap();
-        si.responses_override = Some(Some(0));
-        si.show_responses = false;
+        st.items.get_mut(&sid).unwrap().responses = "hide".into();
     }
     b.sync_now().unwrap();
     let it = b.item(&id).unwrap();
@@ -670,10 +673,10 @@ fn responses_follow_the_site_default() {
 }
 
 #[test]
-fn responses_on_a_pre_0_8_server() {
+fn a_site_default_change_reaches_items_on_the_next_pull() {
     let env = Env::new();
+    env.mock.state().settings = Some(json!({}));
     let b = env.manual();
-    env.mock.state().legacy_responses = true;
     let id = b
         .fork(&RemoteRef {
             origin: "https://else.example/".into(),
@@ -681,15 +684,12 @@ fn responses_on_a_pre_0_8_server() {
             version: 1,
         })
         .unwrap();
-    // Show and hide carry the legacy `show`, so an old server takes them.
-    assert!(b.set_responses(&id, ResponsesMode::Show).unwrap());
-    let it = b.item(&id).unwrap();
-    assert!(it.show_responses);
-    assert_eq!(it.responses_mode, None, "an old server reports no choice");
-    assert!(!b.set_responses(&id, ResponsesMode::Hide).unwrap());
-    // `Default` needs 0.8: refused, and nothing changes locally.
-    assert!(b.set_responses(&id, ResponsesMode::Default).is_err());
     assert!(!b.item(&id).unwrap().show_responses);
+    env.mock.state().responses_default = true;
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.responses_mode, Some(ResponsesMode::Default));
+    assert!(it.show_responses, "a pull re-reads the site default");
 }
 
 #[test]

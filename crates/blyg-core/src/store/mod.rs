@@ -46,9 +46,12 @@ pub struct Store {
 pub enum OpKind {
     Create,
     Save,
-    /// Pre-publish kind change of a draft that already exists server-side.
+    /// Pre-publish kind change of a draft that already exists server-side
+    /// (`PATCH {content_md, kind}`; the name predates studio 0.9, when it
+    /// meant a new draft plus retiring the old one).
     Recreate,
-    /// Delete a retired server draft (left behind by `Recreate`); payload = server id.
+    /// Delete a server draft; payload = server id. Ops queued by older
+    /// builds for retired drafts still run.
     DeleteRemote,
     /// Send a reading row's read state (extension 5); payload = a `ReadMark`,
     /// `local_id` = `read_sync::read_key`, not an item.
@@ -616,27 +619,15 @@ impl Store {
         Ok(())
     }
 
-    /// `recreate` succeeded: the item now lives at `sid`; queue deletion of `old`.
-    pub fn op_recreated(
-        &self,
-        seq: i64,
-        id: &LocalId,
-        sid: &str,
-        old: &str,
-        sent: &str,
-        kind: Kind,
-    ) -> Result<()> {
+    /// A `Recreate` landed: the server holds `sent` as `kind`.
+    pub fn op_kind_saved(&self, seq: i64, id: &LocalId, sent: &str, kind: Kind) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE items SET server_id = ?2, base_content = ?3, server_kind = ?4 WHERE local_id = ?1",
-            params![id.0, sid, sent, kind_str(kind)],
+            "UPDATE items SET base_content = ?2, server_kind = ?3 WHERE local_id = ?1",
+            params![id.0, sent, kind_str(kind)],
         )?;
         tx.execute("DELETE FROM outbox WHERE seq = ?1", [seq])?;
-        tx.execute(
-            "INSERT INTO outbox (local_id, op, payload, not_before) VALUES (?1, 'delete_remote', ?2, 0)",
-            params![id.0, old],
-        )?;
         tx.commit()?;
         Ok(())
     }
@@ -1107,7 +1098,7 @@ fn merge_one(
 
     // Metadata the server owns, applied in every case.
     tx.execute(
-        "UPDATE items SET status = ?2, version = ?3, permalink = ?4, stub_of = ?5, forked_from = ?6, \
+        "UPDATE items SET status = ?2, version = ?3, permalink = COALESCE(?4, permalink), stub_of = ?5, forked_from = ?6, \
          show_responses = ?7, server_kind = ?8, base_updated = ?9, updated = ?10, \
          responses_mode = COALESCE(?11, responses_mode) WHERE local_id = ?1",
         params![
@@ -1126,7 +1117,7 @@ fn merge_one(
     )?;
     let meta_changed = status_str(it.status) != w.status
         || it.version != w.version
-        || it.permalink != w.permalink
+        || (w.permalink.is_some() && it.permalink != w.permalink)
         || it.show_responses != w.shows_responses()
         || w.responses_mode()
             .is_some_and(|m| it.responses_mode != Some(m))

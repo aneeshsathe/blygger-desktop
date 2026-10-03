@@ -672,9 +672,8 @@ fn pin_refuses_an_endcap_the_local_cache_did_not_know_about() {
         let it = st.items.get_mut(&sid).unwrap();
         it.version = 2;
         it.status = "withdrawn".into();
-        it.versions
-            .push(json!({ "version": 2, "published_at": now, "note": null,
-            "pinned": false, "endcap": true }));
+        let endcap = version_json(it, 2, &now, Value::Null, true);
+        it.versions.push(endcap);
     }
     assert!(matches!(
         b.pin(&id, 2),
@@ -683,7 +682,7 @@ fn pin_refuses_an_endcap_the_local_cache_did_not_know_about() {
     assert_eq!(
         env.mock
             .state()
-            .count(&format!("POST /api/items/{sid}/pin")),
+            .count(&format!("PUT /api/items/{sid}/versions/")),
         0
     );
 }

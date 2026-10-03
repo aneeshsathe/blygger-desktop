@@ -134,42 +134,49 @@ media) lives in `~/Library/Application Support/org.blygger.desktop/`.
 
 Base: the configured `blyg-url`. Every `/api` call sends
 `Authorization: Bearer <token>`, and JSON bodies are sent with `content-type: application/json`.
-Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?}`.
+Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issues?}`
+(`issues: [{path, message}]` on validation failures). A wrong method is `405`.
 
-The authoritative contract for existing endpoints is
-`docs/SERVER.md`. Upstream source: `src/{api.ts,importer/api.ts,mentions/api.ts}` in
-https://github.com/blygger/blygger-studio (the reference client, protocol 0.3; it moved
-there from `blygger-spec`'s `worker/` at v0.7.0).
-Read it before guessing a body shape. The key points:
+The authoritative contract is upstream blygger-studio's OpenAPI document
+(`openapi.json`, studio 0.10; vendored as `crates/blyg-core/tests/fixtures/openapi.json`,
+and the test mock checks all traffic against it). Its route guide is `docs/api.md` in
+https://github.com/blygger/blygger-studio. Bearer auth and the other extensions this app
+uses are in `docs/SERVER.md`. The key points:
 
-- `GET /api/items` → `{items: Item[]}` newest-updated first (drafts, public and withdrawn).
-  Item = `{id, kind, authored_kind, status, version, dirty, created, updated,
-  content_md, stub_of, forked_from, permalink, show_responses*}`.
-- `GET /api/items/:id` → Item + `versions: [{version, published_at, note, pinned, endcap}]`
-- `POST /api/items {content_md?, kind?, stub_of?}` → `201 {id, kind, status}`
-- `PUT /api/items/:id {content_md}` → saves the working copy (doesn't publish)
+- Collections (`GET /api/items`, `/subscriptions`, `/hoppers`, `/mentions`) →
+  `{items, total, offset, limit}`; page with `offset`/`limit` (at most 100).
+- Item = `{id, kind, status, version, dirty, created, updated, content_md, responses,
+  provenance, stub_of, forked_from, fork_cite}`. No permalink: the app derives
+  `{blyg-url}/f|t/{id}`. `responses` is `"default" | "show" | "hide"`; `default`
+  follows settings' `show_responses_default`.
+- `GET /api/items/:id` → Item + `authored_kind`, `media`, `published` and
+  `versions: Version[]` (a withdraw marker is `kind: "withdrawn"`).
+- `POST /api/items {mode: "blank", kind, content_md, stub_of?}` → `201 Item`.
+  `{mode: "fork", source: {origin, id, version}}` forks a pinned version.
+- `PATCH /api/items/:id {content_md?, kind?, stub_of?, responses?}` → Item. Unknown
+  fields are a 400. Kind changes until the first publish (409 after).
 - `POST /api/items/:id/publish {note?}` → `{ok, version, warning?}`; 400 on over-limit / bad transclusion
-- `POST /api/items/:id/withdraw {note?}`, `/pin {version}`, `/restore {version}`, `DELETE /api/items/:id` (drafts only)
+- `POST /api/items/:id/withdraw {note?}`, `POST …/restore {version}`, `DELETE /api/items/:id` (drafts only)
+- `PUT /api/items/:id/versions/:version/pin` (no body) → `{ok, version, already}`
 - `POST /api/media` multipart `file` (+`item_id`, `alt`) → `201 {id, url, mime}`
-- `POST /api/fork {origin,id,version}`
-- `PUT /api/items/:id/responses`, `PUT /api/mentions/:id/hidden`, `PUT/DELETE /api/signals/:sub/:remoteId` (read the source for the bodies)
-- Subscriptions: `GET/POST /api/subscriptions`, `PUT/DELETE /api/subscriptions/:id`, `POST …/pause|resume|resync`
-- `PUT /api/settings {...}`
+- `PATCH /api/mentions/:id {hidden}`, `PUT/DELETE /api/signals/:sub/:remoteId {thumb}`
+- Subscriptions: `GET/POST /api/subscriptions`, `PATCH /api/subscriptions/:id
+  {in_blogroll?, title?, paused?}`, `DELETE …`, `POST …/resync` → `{ok, changed: n}`
+- `GET /api/settings`, `PATCH /api/settings {...}` (booleans are booleans)
+- `GET /api/mentions?direction=inbound` (`source_author_json` is a JSON string)
+- `GET /api/hoppers/:id?preview=true` → `{hopper, memberships, items, total, source_count}`
 
-**Read extensions** (an owner-API extension, see `docs/SERVER.md`. Where it's missing, core must degrade gracefully: a 404 means "feature unavailable", not a crash):
+**Reading** (pending: the Worker fork's reading rows are being re-synced onto
+studio 0.10, see `docs/SERVER.md`). The app still reads the fork's current shape:
 
 - `GET /api/reading?limit=N&before=<cursor>` → `{items: ReadingItem[], next: string|null}`,
-  newest `observed_at` first; the default limit is 100 and the max is 500. `next` is an **opaque cursor**:
+  newest `observed_at` first. `next` is an **opaque cursor**:
   pass it back as `before` verbatim. Pages are ≤ limit. `page` is origin-relative (resolve it against `origin`).
-  Settings come back with upstream defaults as strings ("" = unset). ReadingItem =
+  ReadingItem =
   `{subscription_id, remote_id, subscription_title, origin, kind, state, version,
   created, updated, observed_at, content_md, content_html, author: {name,url}|null,
-  page, thumb: 1|-1|null, hoppers: string[]}`
-- `GET /api/mentions` → `{mentions: Mention[]}` (fields as in `model.rs::Mention`)
-- `GET /api/settings` → `{site_title, author_name, author_bio, site_url, theme,
-  avatar_media_id, author_links: [{label,url}]}` (never secrets)
-- `GET /api/hoppers` → `{hoppers: [{id, name, slug, public, count}]}`
-- `show_responses: bool` added to the Item JSON.
+  page, thumb: 1|-1|null, hoppers: string[]}`. Upstream's own `/api/reading` returns
+  rendered `ReadingEntry` rows with `offset`/`limit` paging (at most 50) instead.
 
 **Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading` adds
 `read_state: true` and a per-item `read_version: number|null`;

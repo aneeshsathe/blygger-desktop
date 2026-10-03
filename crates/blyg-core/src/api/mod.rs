@@ -1,18 +1,21 @@
-//! Blocking owner-API client (ureq + rustls). One method per endpoint in
-//! docs/SPEC.md §API. Every call sends the bearer token; the token is never
-//! logged, printed or included in errors (`Debug` redacts it).
+//! Blocking owner-API client (ureq + rustls). Follows upstream
+//! blygger-studio's OpenAPI contract (studio 0.10, `openapi.json`), plus the
+//! extensions in docs/SERVER.md. Every call sends the bearer token; the token
+//! is never logged, printed or included in errors (`Debug` redacts it).
 //!
 //! Error mapping: transport failures → `Offline`, 401 → `Unauthorized`,
-//! 404 → `NotFound`, any other non-2xx → `Rejected{status, error, errors}`.
-//! Patch-3 read endpoints (`reading`, `mentions`, `settings`, `hoppers`) return
-//! `Ok(None)` on 404: the server simply doesn't have them yet. The read-state
-//! writes (extension 5) are only called once `GET /api/reading` advertised
-//! `read_state: true`.
+//! 404 → `NotFound`, any other non-2xx → `Rejected{status, error, details}`
+//! (`details` from the contract's `errors` and `issues`). The read endpoints
+//! (`reading`, `mentions`, `settings`, `hoppers`) return `Ok(None)` on 404: a
+//! server older than studio 0.9 without the owner-read extensions. The
+//! read-state writes (extension 5) are only called once `GET /api/reading`
+//! advertised `read_state: true`.
 
 pub mod public;
 pub mod wire;
 
 use std::io::Read;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -29,7 +32,13 @@ pub struct Api {
     agent: ureq::Agent,
     base: String,
     token: String,
+    /// The blyg's `show_responses_default`, as last read or written; an
+    /// item's `responses: "default"` resolves against it.
+    responses_default: Mutex<Option<bool>>,
 }
+
+/// Collection page size (the contract's maximum outside `/api/reading`).
+const PAGE: u32 = 100;
 
 impl std::fmt::Debug for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -40,7 +49,7 @@ impl std::fmt::Debug for Api {
     }
 }
 
-/// Result of `POST /api/items/:id/pin`.
+/// Result of `PUT /api/items/:id/versions/:version/pin`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pinned {
     pub already: bool,
@@ -57,6 +66,7 @@ impl Api {
             agent,
             base: base_url.trim_end_matches('/').to_string(),
             token: token.to_string(),
+            responses_default: Mutex::new(None),
         }
     }
 
@@ -100,27 +110,72 @@ impl Api {
         }
     }
 
+    /// Every element of a `{items, total, offset, limit}` collection, read
+    /// `PAGE` at a time. `query` is extra query parameters (`k=v&…`).
+    fn collect<T: DeserializeOwned>(&self, path: &str, query: &str) -> Result<Vec<T>> {
+        let mut all = Vec::new();
+        loop {
+            let sep = if query.is_empty() { "" } else { "&" };
+            let url = format!("{path}?{query}{sep}offset={}&limit={PAGE}", all.len());
+            let page: Page<T> = self.call_as("GET", &url, None)?;
+            let n = page.items.len();
+            all.extend(page.items);
+            if n == 0 || all.len() as u64 >= page.total {
+                return Ok(all);
+            }
+        }
+    }
+
+    /// The cached `show_responses_default`, reading settings when unknown.
+    fn responses_default(&self) -> bool {
+        let cached = *self.responses_default.lock().unwrap();
+        match cached {
+            Some(d) => d,
+            None => self
+                .settings()
+                .ok()
+                .flatten()
+                .and_then(|s| s.show_responses_default)
+                .unwrap_or(false),
+        }
+    }
+
+    fn resolve(&self, mut w: WireItem) -> WireItem {
+        w.resolve(self.responses_default(), &self.base);
+        w
+    }
+
     // ---------- items ----------
 
+    /// Every item. Re-reads settings first, so `responses: "default"`
+    /// resolves against the current site default.
     pub fn list_items(&self) -> Result<Vec<WireItem>> {
-        #[derive(serde::Deserialize)]
-        struct R {
-            items: Vec<WireItem>,
-        }
-        Ok(self.call_as::<R>("GET", "/api/items", None)?.items)
+        let items: Vec<WireItem> = self.collect("/api/items", "")?;
+        let _ = self.settings();
+        Ok(items.into_iter().map(|w| self.resolve(w)).collect())
+    }
+
+    /// How many items the server holds (one small read).
+    pub fn count_items(&self) -> Result<u64> {
+        Ok(self
+            .call_as::<Page<Value>>("GET", "/api/items?offset=0&limit=1", None)?
+            .total)
     }
 
     pub fn get_item(&self, id: &str) -> Result<WireItem> {
-        self.call_as("GET", &format!("/api/items/{}", enc(id)), None)
+        let w = self.call_as("GET", &format!("/api/items/{}", enc(id)), None)?;
+        Ok(self.resolve(w))
     }
 
+    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?}` → the
+    /// new item's id.
     pub fn create_item(
         &self,
         content_md: &str,
         kind: Kind,
         stub_of: Option<&RemoteRef>,
     ) -> Result<String> {
-        let mut body = json!({ "content_md": content_md, "kind": kind_str(kind) });
+        let mut body = json!({ "mode": "blank", "content_md": content_md, "kind": kind_str(kind) });
         if let Some(s) = stub_of {
             body["stub_of"] = serde_json::to_value(s).unwrap_or(Value::Null);
         }
@@ -129,11 +184,23 @@ impl Api {
             .id)
     }
 
+    /// `PATCH /api/items/:id {content_md}`.
     pub fn save_item(&self, id: &str, content_md: &str) -> Result<()> {
         self.call(
-            "PUT",
+            "PATCH",
             &format!("/api/items/{}", enc(id)),
             Some(json!({ "content_md": content_md })),
+        )
+        .map(|_| ())
+    }
+
+    /// `PATCH /api/items/:id {content_md, kind}`: a draft's kind can change
+    /// until it is first published (409 after).
+    pub fn save_item_kind(&self, id: &str, content_md: &str, kind: Kind) -> Result<()> {
+        self.call(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "content_md": content_md, "kind": kind_str(kind) })),
         )
         .map(|_| ())
     }
@@ -160,6 +227,7 @@ impl Api {
             .version)
     }
 
+    /// `PUT /api/items/:id/versions/:version/pin` (idempotent, no body).
     pub fn pin(&self, id: &str, version: u32) -> Result<Pinned> {
         #[derive(serde::Deserialize)]
         struct R {
@@ -167,9 +235,9 @@ impl Api {
             already: bool,
         }
         let r: R = self.call_as(
-            "POST",
-            &format!("/api/items/{}/pin", enc(id)),
-            Some(json!({ "version": version })),
+            "PUT",
+            &format!("/api/items/{}/versions/{version}/pin", enc(id)),
+            None,
         )?;
         Ok(Pinned { already: r.already })
     }
@@ -188,9 +256,14 @@ impl Api {
             .map(|_| ())
     }
 
-    pub fn fork(&self, of: &RemoteRef) -> Result<String> {
-        let body = json!({ "origin": of.origin, "id": of.id, "version": of.version });
-        Ok(self.call_as::<Created>("POST", "/api/fork", Some(body))?.id)
+    /// `POST /api/items {mode: "fork", source}` → the new draft.
+    pub fn fork(&self, of: &RemoteRef) -> Result<WireItem> {
+        let body = json!({
+            "mode": "fork",
+            "source": { "origin": of.origin, "id": of.id, "version": of.version },
+        });
+        let w = self.call_as("POST", "/api/items", Some(body))?;
+        Ok(self.resolve(w))
     }
 
     /// `GET /api/items/:id/tk-provenance` → the server's per-scope cache.
@@ -245,26 +318,20 @@ impl Api {
         Ok(v.get("disclosed").and_then(Value::as_u64).unwrap_or(0) as u32)
     }
 
-    /// `PUT /api/items/:id/responses`. Show and hide also carry the legacy
-    /// `show`, so a pre-0.8 server understands them; `Default` needs 0.8.
-    /// Returns (showing now, the item's choice when the server reports it).
+    /// `PATCH /api/items/:id {responses}`. Returns (showing now, the
+    /// item's policy as the server stored it).
     pub fn set_responses(
         &self,
         id: &str,
         mode: ResponsesMode,
     ) -> Result<(bool, Option<ResponsesMode>)> {
-        let mut body = json!({ "mode": mode.as_str() });
-        match mode {
-            ResponsesMode::Show => body["show"] = json!(true),
-            ResponsesMode::Hide => body["show"] = json!(false),
-            ResponsesMode::Default => {}
-        }
-        let v = self.call(
-            "PUT",
-            &format!("/api/items/{}/responses", enc(id)),
-            Some(body),
+        let w: WireItem = self.call_as(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "responses": mode.as_str() })),
         )?;
-        Ok(responses_reply(&v, mode))
+        let w = self.resolve(w);
+        Ok((w.shows_responses(), w.responses_mode()))
     }
 
     // ---------- media ----------
@@ -317,7 +384,7 @@ impl Api {
             .map_err(|e| CoreError::Other(format!("unexpected media response: {e}")))
     }
 
-    /// `DELETE /api/media/:id` (patch 8): removes the row and the stored
+    /// `DELETE /api/media/:id` (extension): removes the row and the stored
     /// file. 404 unknown; 409 when it's the site avatar.
     pub fn delete_media(&self, id: &str) -> Result<()> {
         self.call("DELETE", &format!("/api/media/{}", enc(id)), None)
@@ -327,13 +394,7 @@ impl Api {
     // ---------- subscriptions ----------
 
     pub fn list_subscriptions(&self) -> Result<Vec<Subscription>> {
-        #[derive(serde::Deserialize)]
-        struct R {
-            subscriptions: Vec<Subscription>,
-        }
-        Ok(self
-            .call_as::<R>("GET", "/api/subscriptions", None)?
-            .subscriptions)
+        self.collect("/api/subscriptions", "")
     }
 
     pub fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
@@ -349,7 +410,12 @@ impl Api {
             title: s("title").unwrap_or_default(),
             origin: s("origin"),
             feed_url: s("feedUrl"),
-            site_mismatch: v.get("siteMismatch").and_then(Value::as_bool),
+            // A blyg that claims another site answers `{asserted, actual}`;
+            // no key means it matched. Feeds aren't checked.
+            site_mismatch: (kind == SubscriptionKind::Blyg).then(|| {
+                v.get("siteMismatch")
+                    .is_some_and(|m| m.as_bool().unwrap_or(m.is_object()))
+            }),
         })
     }
 
@@ -378,7 +444,7 @@ impl Api {
             body["title"] = json!(t);
         }
         self.call(
-            "PUT",
+            "PATCH",
             &format!("/api/subscriptions/{}", enc(id)),
             Some(body),
         )
@@ -390,24 +456,27 @@ impl Api {
             .map(|_| ())
     }
 
+    /// `PATCH /api/subscriptions/:id {paused}`.
     pub fn pause_subscription(&self, id: &str, paused: bool) -> Result<()> {
-        let action = if paused { "pause" } else { "resume" };
         self.call(
-            "POST",
-            &format!("/api/subscriptions/{}/{action}", enc(id)),
-            None,
+            "PATCH",
+            &format!("/api/subscriptions/{}", enc(id)),
+            Some(json!({ "paused": paused })),
         )
         .map(|_| ())
     }
 
-    /// `{ok, changed}`; blyg subscriptions only (409 otherwise).
+    /// `{ok, changed}` (`changed` counts items); blyg subscriptions only
+    /// (409 otherwise). True when anything changed.
     pub fn resync_subscription(&self, id: &str) -> Result<bool> {
         let v = self.call(
             "POST",
             &format!("/api/subscriptions/{}/resync", enc(id)),
             None,
         )?;
-        Ok(v.get("changed").and_then(Value::as_bool).unwrap_or(false))
+        let changed = v.get("changed");
+        Ok(changed.and_then(Value::as_u64).is_some_and(|n| n > 0)
+            || changed.and_then(Value::as_bool).unwrap_or(false))
     }
 
     // ---------- signals / mentions ----------
@@ -432,8 +501,8 @@ impl Api {
 
     pub fn set_mention_hidden(&self, id: &str, hidden: bool) -> Result<()> {
         self.call(
-            "PUT",
-            &format!("/api/mentions/{}/hidden", enc(id)),
+            "PATCH",
+            &format!("/api/mentions/{}", enc(id)),
             Some(json!({ "hidden": hidden })),
         )
         .map(|_| ())
@@ -441,7 +510,7 @@ impl Api {
 
     // ---------- settings ----------
 
-    /// Sends only the fields that are set.
+    /// `PATCH /api/settings`: sends only the fields that are set.
     pub fn put_settings(&self, s: &Settings) -> Result<()> {
         let mut body = serde_json::Map::new();
         let mut put = |k: &str, v: &Option<String>| {
@@ -467,11 +536,14 @@ impl Api {
             "author_links".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
         );
-        self.call("PUT", "/api/settings", Some(Value::Object(body)))
-            .map(|_| ())
+        self.call("PATCH", "/api/settings", Some(Value::Object(body)))?;
+        if let Some(on) = s.show_responses_default {
+            *self.responses_default.lock().unwrap() = Some(on);
+        }
+        Ok(())
     }
 
-    // ---------- patch 3 (404 → None) ----------
+    // ---------- reads (404 → None) ----------
 
     pub fn reading(&self, limit: u32, before: Option<&str>) -> Result<Option<ReadingPage>> {
         let mut path = format!("/api/reading?limit={limit}");
@@ -513,13 +585,11 @@ impl Api {
             .map(|_| ())
     }
 
+    /// Inbound mentions (responses to this blyg's posts).
     pub fn mentions(&self) -> Result<Option<Vec<Mention>>> {
-        #[derive(serde::Deserialize)]
-        struct R {
-            mentions: Vec<Mention>,
-        }
-        Self::optional(self.call_as::<R>("GET", "/api/mentions", None))
-            .map(|o| o.map(|r| r.mentions))
+        let m: Option<Vec<WireMention>> =
+            Self::optional(self.collect("/api/mentions", "direction=inbound"))?;
+        Ok(m.map(|m| m.into_iter().map(Mention::from).collect()))
     }
 
     /// The server fills unset strings with upstream defaults (`""`, or
@@ -527,6 +597,12 @@ impl Api {
     /// means "the server has the setting, and it is unset".
     pub fn settings(&self) -> Result<Option<Settings>> {
         let s: Option<Settings> = Self::optional(self.call_as("GET", "/api/settings", None))?;
+        // No settings (or no such field) means no site default: hidden.
+        *self.responses_default.lock().unwrap() = Some(
+            s.as_ref()
+                .and_then(|s| s.show_responses_default)
+                .unwrap_or(false),
+        );
         Ok(s.map(|mut s| {
             for f in [
                 &mut s.site_title,
@@ -544,27 +620,45 @@ impl Api {
         }))
     }
 
+    /// Every hopper, with its item count from the hopper's own preview read
+    /// (`GET /api/hoppers/:id?preview=true` → `total`).
     pub fn hoppers(&self) -> Result<Option<Vec<Hopper>>> {
         #[derive(serde::Deserialize)]
-        struct R {
-            hoppers: Vec<Hopper>,
+        struct H {
+            id: String,
+            name: String,
+            #[serde(default)]
+            slug: Option<String>,
+            #[serde(default)]
+            public: bool,
         }
-        Self::optional(self.call_as::<R>("GET", "/api/hoppers", None)).map(|o| o.map(|r| r.hoppers))
+        #[derive(serde::Deserialize)]
+        struct Detail {
+            #[serde(default)]
+            total: u32,
+        }
+        let Some(list) = Self::optional(self.collect::<H>("/api/hoppers", ""))? else {
+            return Ok(None);
+        };
+        let mut out = Vec::with_capacity(list.len());
+        for h in list {
+            let count = self
+                .call_as::<Detail>(
+                    "GET",
+                    &format!("/api/hoppers/{}?preview=true", enc(&h.id)),
+                    None,
+                )?
+                .total;
+            out.push(Hopper {
+                id: h.id,
+                name: h.name,
+                slug: h.slug,
+                public: h.public,
+                count,
+            });
+        }
+        Ok(Some(out))
     }
-}
-
-/// Reads a `PUT …/responses` reply: studio 0.8's `{showing, override}`,
-/// else the pre-0.8 `{show_responses}`, else what was asked for.
-fn responses_reply(v: &Value, asked: ResponsesMode) -> (bool, Option<ResponsesMode>) {
-    let showing = v
-        .get("showing")
-        .or_else(|| v.get("show_responses"))
-        .and_then(Value::as_bool)
-        .unwrap_or(asked == ResponsesMode::Show);
-    let mode = v
-        .get("override")
-        .map(|o| ResponsesMode::from_override(o.as_i64()));
-    (showing, mode)
 }
 
 /// Why a connection check failed, worded for the "Connect your blyg" sheet.
@@ -574,7 +668,8 @@ pub enum ConnectError {
     Unreachable,
     /// The server said 401: the token is wrong.
     WrongToken,
-    /// `GET /api/items` is 404: a blyg without the owner-API extensions.
+    /// `GET /api/items` is 404: a blyg older than studio 0.9 without the
+    /// owner-read extensions.
     MissingExtensions,
     /// Anything else (a 5xx, or a page that isn't a blyg's JSON).
     Other(String),
@@ -590,7 +685,7 @@ impl std::fmt::Display for ConnectError {
                 "The blyg said the token is wrong (401). Paste the owner token again.",
             ),
             ConnectError::MissingExtensions => f.write_str(
-                "This server lacks the owner-API extensions (GET /api/items is 404). See docs/SERVER.md.",
+                "This server has no owner JSON API (GET /api/items is 404). It needs blygger-studio 0.9 or later. See docs/SERVER.md.",
             ),
             ConnectError::Other(m) => f.write_str(m),
         }
@@ -601,8 +696,8 @@ impl std::fmt::Display for ConnectError {
 /// the token. Returns how many items the server holds.
 pub fn verify_connection(base_url: &str, token: &str) -> std::result::Result<usize, ConnectError> {
     let api = Api::new(base_url, token);
-    match api.list_items() {
-        Ok(items) => Ok(items.len()),
+    match api.count_items() {
+        Ok(n) => Ok(n as usize),
         Err(CoreError::Offline) => Err(ConnectError::Unreachable),
         Err(CoreError::Unauthorized) => Err(ConnectError::WrongToken),
         Err(CoreError::NotFound) => Err(ConnectError::MissingExtensions),
@@ -681,11 +776,15 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
                 .and_then(Value::as_str)
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("server returned {code}"));
-            let details = body
+            let mut details: Vec<String> = body
                 .get("errors")
                 .and_then(Value::as_array)
                 .map(|a| a.iter().map(detail).collect())
                 .unwrap_or_default();
+            // Validation failures: `issues: [{path, message}]`.
+            if let Some(issues) = body.get("issues").and_then(Value::as_array) {
+                details.extend(issues.iter().map(issue));
+            }
             Err(CoreError::Rejected {
                 status: code,
                 message,
@@ -712,6 +811,28 @@ fn detail(v: &Value) -> String {
             }
         }
         other => other.to_string(),
+    }
+}
+
+/// One validation issue: `path.to.field: message`.
+fn issue(v: &Value) -> String {
+    let msg = v
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("invalid");
+    let path: Vec<String> = v
+        .get("path")
+        .and_then(Value::as_array)
+        .map(|p| {
+            p.iter()
+                .map(|s| s.as_str().map_or_else(|| s.to_string(), str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    if path.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{}: {msg}", path.join("."))
     }
 }
 

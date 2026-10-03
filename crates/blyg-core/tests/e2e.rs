@@ -16,6 +16,10 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+#[allow(dead_code)]
+#[path = "common/contract.rs"]
+mod contract;
+
 use blyg_core::api::{Api, ConnectError, verify_connection};
 use blyg_core::*;
 use serde_json::{Value, json};
@@ -108,11 +112,22 @@ fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Val
     (status, serde_json::from_str(&text).unwrap_or(Value::Null))
 }
 
+/// `GET path` as the owner must answer 200 with a body that matches
+/// upstream's OpenAPI contract.
+fn conforms(method: &str, base: &str, path: &str) -> Value {
+    let (st, v) = owner(method, base, path, None);
+    let (p, _) = path.split_once('?').unwrap_or((path, ""));
+    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
+    if let Err(e) = contract::contract().check_response(method, &segs, st, &v) {
+        panic!("{method} {path} broke the contract: {e}\n{v}");
+    }
+    assert_eq!(st, 200, "{method} {path}: {v}");
+    v
+}
+
 fn server_item(sid: &str) -> Value {
     let e = e2e();
-    let (s, v) = owner("GET", &e.url, &format!("/api/items/{sid}"), None);
-    assert_eq!(s, 200, "{v}");
-    v
+    conforms("GET", &e.url, &format!("/api/items/{sid}"))
 }
 
 fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
@@ -301,7 +316,7 @@ fn set_kind_before_first_publish() {
     let sa = sid_of(&b, &a);
     assert_eq!(server_item(&sa)["authored_kind"], "thread");
 
-    // Server-side draft: recreated as the new kind, old draft retired.
+    // Server-side draft: PATCHed to the new kind under the same id.
     let t2 = tag("kind-remote");
     let c = b.create_draft(Kind::Fragment, &t2).unwrap();
     b.sync_now().unwrap();
@@ -309,14 +324,9 @@ fn set_kind_before_first_publish() {
     b.set_kind(&c, Kind::Thread).unwrap();
     b.sync_now().unwrap();
     let new = sid_of(&b, &c);
-    assert_ne!(old, new, "recreated under a new id");
+    assert_eq!(old, new, "the kind changes in place");
     assert_eq!(server_item(&new)["authored_kind"], "thread");
     assert_eq!(server_item(&new)["content_md"], t2);
-    assert_eq!(
-        owner("GET", &e.url, &format!("/api/items/{old}"), None).0,
-        404,
-        "the old draft is gone"
-    );
     // Publishing it gives a thread permalink.
     let out = b.publish(&c, None).unwrap();
     assert_eq!(out.permalink, format!("{}/t/{new}", e.url));
@@ -756,7 +766,7 @@ fn conflict_from_a_direct_api_edit() {
     b.save(&id, &format!("{t} edited on this Mac")).unwrap();
     // …while the web studio edits the same draft.
     let (s, _) = owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} edited in the studio")})),
@@ -798,7 +808,7 @@ fn conflict_from_a_direct_api_edit() {
     // Keep mine on a second round.
     b.save(&id, &format!("{t} mine again")).unwrap();
     owner(
-        "PUT",
+        "PATCH",
         &e.url,
         &format!("/api/items/{sid}"),
         Some(json!({"content_md": format!("{t} studio again")})),
@@ -838,29 +848,22 @@ fn read_extension_shapes() {
     .unwrap();
     assert!(b.hoppers().is_ok());
 
-    // Raw shapes, so a server change shows up here first.
+    // Raw shapes against upstream's contract, so a server change shows up
+    // here first.
+    for path in [
+        "/api/items?offset=0&limit=5",
+        "/api/subscriptions?offset=0&limit=5",
+        "/api/mentions?direction=inbound&offset=0&limit=5",
+        "/api/settings",
+        "/api/hoppers?offset=0&limit=5",
+    ] {
+        conforms("GET", &e.url, path);
+    }
+    // TODO(blyg-e1): the fork's reading rows extend upstream's; check them
+    // against the agreed shape once it lands.
     let (st, v) = owner("GET", &e.url, "/api/reading?limit=2", None);
     assert_eq!(st, 200);
-    assert!(v["items"].is_array() && v.get("next").is_some(), "{v}");
-    let (_, v) = owner("GET", &e.url, "/api/mentions", None);
-    assert!(v["mentions"].is_array());
-    let (_, v) = owner("GET", &e.url, "/api/settings", None);
-    for k in [
-        "site_title",
-        "author_name",
-        "author_bio",
-        "site_url",
-        "theme",
-        "avatar_media_id",
-        "author_links",
-    ] {
-        assert!(v.get(k).is_some(), "settings.{k} missing: {v}");
-    }
-    assert!(v.get("ai_style_prompt").is_none(), "no private settings");
-    let (_, v) = owner("GET", &e.url, "/api/hoppers", None);
-    assert!(v["hoppers"].is_array());
-    let (st, _) = owner("GET", &e.url, "/api/reading?before=%%%", None);
-    assert_eq!(st, 400, "a bad cursor is refused");
+    assert!(v["items"].is_array(), "{v}");
 }
 
 #[test]
@@ -872,11 +875,11 @@ fn show_responses_round_trips() {
     assert!(!b.item(&id).unwrap().show_responses);
     b.set_responses(&id, ResponsesMode::Show).unwrap();
     assert!(b.item(&id).unwrap().show_responses);
-    assert_eq!(server_item(&sid)["show_responses"], true);
+    assert_eq!(server_item(&sid)["responses"], "show");
     b.sync_now().unwrap();
     assert!(b.item(&id).unwrap().show_responses, "a pull keeps it");
     b.set_responses(&id, ResponsesMode::Hide).unwrap();
-    assert_eq!(server_item(&sid)["show_responses"], false);
+    assert_eq!(server_item(&sid)["responses"], "hide");
 }
 
 #[test]

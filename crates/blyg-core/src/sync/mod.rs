@@ -417,9 +417,10 @@ impl Engine {
                     Precheck::Proceed => {}
                     Precheck::Stop => return Ok(()),
                 }
-                // PUT can't change kind (api.ts only reads `kind` on POST), so
-                // make a new draft of the new kind and retire the old one.
-                // Provenance the old draft holds must move with the text.
+                // A draft's kind can change until it is first published:
+                // one `PATCH {content_md, kind}` keeps its id. Provenance the
+                // server holds is keyed to `base`; adopt it so the push that
+                // follows remaps it onto the new text.
                 if self.store.provenance(&item.local_id).scopes.is_none()
                     && let Some(base) = &row.base_content
                     && let Ok(Some(server)) = self.api.get_tk_provenance(&old.0)
@@ -427,18 +428,15 @@ impl Engine {
                 {
                     self.store.adopt_prov(&item.local_id, base, &server)?;
                 }
-                let sid = self
-                    .api
-                    .create_item(&content, item.kind, item.stub_of.as_ref())?;
-                self.store.op_recreated(
-                    op.seq,
-                    &item.local_id,
-                    &sid,
-                    &old.0,
-                    &content,
-                    item.kind,
-                )?;
-                self.store.queue_prov_push(&item.local_id)
+                match self.api.save_item_kind(&old.0, &content, item.kind) {
+                    Ok(()) => {
+                        self.store
+                            .op_kind_saved(op.seq, &item.local_id, &content, item.kind)?;
+                        self.store.queue_prov_push(&item.local_id)
+                    }
+                    Err(CoreError::NotFound) => self.store.op_lost_server(op.seq, &item.local_id),
+                    Err(e) => Err(e),
+                }
             }
             OpKind::DeleteRemote | OpKind::Read => unreachable!(),
         }
