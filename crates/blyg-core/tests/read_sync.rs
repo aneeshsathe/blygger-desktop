@@ -99,6 +99,8 @@ fn junk_read_version_is_ignored_leniently() {
         r[0]["read_version"] = json!("two");
         r[1]["read_version"] = json!(-3);
         st.reading = Some(r);
+        // Deliberately off-contract.
+        st.unchecked.push("/api/reading/imported".into());
     }
     let b = env.manual();
     b.sync_now().unwrap();

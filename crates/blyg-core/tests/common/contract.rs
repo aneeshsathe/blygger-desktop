@@ -1,8 +1,9 @@
 //! Checks owner-API traffic against upstream's OpenAPI contract
-//! (`tests/fixtures/openapi.json`). Covers the JSON Schema keywords that
-//! file uses: `type` (incl. type lists), `$ref`, `properties`, `required`,
-//! `additionalProperties`, `enum`, `anyOf`, `items`, `minLength`, `minimum`,
-//! `maximum` and `exclusiveMinimum`. `format` is not checked.
+//! (`tests/fixtures/openapi.json`) and the Worker fork's extensions
+//! (`tests/fixtures/extensions.json`). Covers the JSON Schema keywords those
+//! files use: `type` (incl. type lists), `$ref`, `properties`, `required`,
+//! `additionalProperties`, `enum`, `anyOf`, `items`, `maxItems`, `minLength`,
+//! `minimum`, `maximum` and `exclusiveMinimum`. `format` is not checked.
 
 use std::sync::OnceLock;
 
@@ -14,11 +15,21 @@ pub struct Contract {
     ops: Vec<(String, Vec<String>, Value)>,
 }
 
+/// Upstream's contract.
 pub fn contract() -> &'static Contract {
     static C: OnceLock<Contract> = OnceLock::new();
-    C.get_or_init(|| {
-        let text = include_str!("../fixtures/openapi.json");
-        let doc: Value = serde_json::from_str(text).expect("openapi.json");
+    C.get_or_init(|| Contract::load(include_str!("../fixtures/openapi.json")))
+}
+
+/// The Worker fork's extensions (docs/SERVER.md).
+pub fn extensions() -> &'static Contract {
+    static C: OnceLock<Contract> = OnceLock::new();
+    C.get_or_init(|| Contract::load(include_str!("../fixtures/extensions.json")))
+}
+
+impl Contract {
+    fn load(text: &str) -> Contract {
+        let doc: Value = serde_json::from_str(text).expect("contract JSON");
         let mut ops = vec![];
         for (path, item) in doc["paths"].as_object().unwrap() {
             let segs = path
@@ -31,7 +42,7 @@ pub fn contract() -> &'static Contract {
             }
         }
         Contract { doc, ops }
-    })
+    }
 }
 
 fn is_param(seg: &str) -> bool {
@@ -51,6 +62,17 @@ impl Contract {
             })
             .max_by_key(|(_, t, _)| t.iter().filter(|s| !is_param(s)).count())
             .map(|(_, _, op)| op)
+    }
+
+    /// Whether `METHOD /path` is an operation here.
+    pub fn knows(&self, method: &str, segs: &[&str]) -> bool {
+        self.op(method, segs).is_some()
+    }
+
+    /// Whether this operation declares a reply with `status`.
+    pub fn declares(&self, method: &str, segs: &[&str], status: u16) -> bool {
+        self.op(method, segs)
+            .is_some_and(|op| op["responses"].get(status.to_string()).is_some())
     }
 
     /// The request: the route exists, its query parameters are declared
@@ -189,6 +211,11 @@ impl Contract {
             && (t.chars().count() as u64) < m
         {
             return Err(format!("{at}: shorter than {m}"));
+        }
+        if let (Some(a), Some(m)) = (v.as_array(), s["maxItems"].as_u64())
+            && a.len() as u64 > m
+        {
+            return Err(format!("{at}: more than {m} items"));
         }
         if let (Some(a), Some(items)) = (v.as_array(), s.get("items")) {
             for (i, x) in a.iter().enumerate() {

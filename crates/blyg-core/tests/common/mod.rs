@@ -95,6 +95,9 @@ pub struct State {
     pub responses_default: bool,
     /// Contract violations seen so far ("METHOD /path: what").
     pub violations: Vec<String>,
+    /// Path prefixes not checked: for tests that serve deliberately
+    /// malformed data to prove the app tolerates it.
+    pub unchecked: Vec<String>,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -328,20 +331,10 @@ fn handle(mut conn: TcpStream, state: Arc<Mutex<State>>) {
     let _ = conn.flush();
 }
 
-/// Routes the maintainer's Worker fork adds on top of upstream
-/// (docs/SERVER.md). They're not in openapi.json, so they're not checked.
-fn is_extension(method: &str, segs: &[&str]) -> bool {
-    matches!(
-        (method, segs),
-        (_, ["api", "items", _, "tk-provenance"])
-            | ("PUT", ["api", "reading", _, _, "read"])
-            | ("POST", ["api", "reading", "read"])
-            | ("DELETE", ["api", "media", _])
-            | ("GET", ["api", "reading", "imported"])
-    )
-}
-
-/// Check one exchange against the contract; record what's wrong.
+/// Check one exchange against the contract: upstream's for its own
+/// operations, the fork's extensions (docs/SERVER.md) for the rest, and for
+/// a reply status upstream doesn't declare (`POST /api/media` → 200
+/// `duplicate`). Record what's wrong.
 fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
     if !req.path.starts_with("/api/") || status == 401 {
         return;
@@ -353,25 +346,27 @@ fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
         .map(decode)
         .collect();
     let segs: Vec<&str> = segs.iter().map(String::as_str).collect();
-    if is_extension(&req.method, &segs) {
+    let (up, ext) = (contract::contract(), contract::extensions());
+    let m = req.method.as_str();
+    let what = format!("{m} {}", req.path);
+    if s.unchecked.iter().any(|p| req.path.starts_with(p.as_str())) {
         return;
     }
-    let c = contract::contract();
+    let req_side = if up.knows(m, &segs) { up } else { ext };
     let query: Vec<(String, String)> = url::form_urlencoded::parse(req.query.as_bytes())
         .into_owned()
         .collect();
-    let what = format!("{} {}", req.method, req.path);
-    if let Err(e) = c.check_request(
-        &req.method,
-        &segs,
-        &query,
-        req.header("content-type"),
-        &req.body,
-    ) {
+    if let Err(e) = req_side.check_request(m, &segs, &query, req.header("content-type"), &req.body)
+    {
         s.violations.push(format!("{what}: request: {e}"));
         return;
     }
-    if let Err(e) = c.check_response(&req.method, &segs, status, body) {
+    let reply_side = if up.declares(m, &segs, status) || !ext.declares(m, &segs, status) {
+        req_side
+    } else {
+        ext
+    };
+    if let Err(e) = reply_side.check_response(m, &segs, status, body) {
         s.violations.push(format!("{what}: mock response: {e}"));
     }
 }
@@ -451,6 +446,18 @@ fn mention_json(v: &Value) -> Value {
             "source_version": null, "source_author_json": null, "source_page": null,
             "first_seen": "2030-01-01T00:00:00Z", "last_seen": "2030-01-01T00:00:00Z",
             "verified_at": null, "attempts": 0, "error": null, "hidden": false }),
+        v,
+    )
+}
+
+/// An extension reading row from whatever a test seeded.
+fn reading_row_json(v: &Value) -> Value {
+    overlay(
+        json!({ "subscription_id": "", "remote_id": "", "subscription_title": "", "origin": "",
+            "kind": "fragment", "state": "current", "version": 1, "created": null, "updated": null,
+            "observed_at": "2030-01-01T00:00:00Z", "content_md": "", "content_html": "",
+            "author": null, "page": null, "thumb": null, "hoppers": [], "read_version": null,
+            "transclusions": null, "pinned_version_retained": null }),
         v,
     )
 }
@@ -692,7 +699,7 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 json!({ "id": id, "url": format!("media/{id}.png"), "mime": "image/png" }),
             )
         }
-        ("DELETE", ["api", "media", _]) => (200, json!({ "ok": true })),
+        ("DELETE", ["api", "media", id]) => (200, json!({ "ok": true, "id": id, "item_id": null })),
         // ---- subscriptions
         ("GET", ["api", "subscriptions"]) => {
             let all = s.subs.iter().map(sub_json).collect();
@@ -818,6 +825,7 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 Value::Null
             };
             if !s.read_sync {
+                let page: Vec<Value> = page.iter().map(reading_row_json).collect();
                 return (200, json!({ "items": page, "next": next }));
             }
             for it in &mut page {
@@ -830,6 +838,7 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 );
                 it["read_version"] = s.reads.get(&key).map_or(Value::Null, |v| json!(v));
             }
+            let page: Vec<Value> = page.iter().map(reading_row_json).collect();
             (
                 200,
                 json!({ "items": page, "next": next, "read_state": true }),
