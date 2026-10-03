@@ -4,6 +4,7 @@
 # themselves (through BLYG_E2E_CTL) to take the Worker down mid-session.
 #
 #   e2e-wrangler.sh setup                 derive the scratch config + secrets
+#   e2e-wrangler.sh token | password      print a scratch dev secret
 #   e2e-wrangler.sh start <name> <port>   start instance <name> (own D1/R2 state)
 #   e2e-wrangler.sh stop <name>           stop only the processes this script started
 #   e2e-wrangler.sh stop-all
@@ -84,6 +85,7 @@ JS
 }
 
 token() { sed -n 's/^BLYG_OWNER_TOKEN=//p' "$BLYG_E2E_SCRATCH/.dev.vars"; }
+password() { sed -n 's/^OWNER_PASSWORD=//p' "$BLYG_E2E_SCRATCH/.dev.vars"; }
 
 free_port() { node -e 'const s=require("net").createServer().listen(0,"127.0.0.1",()=>{console.log(s.address().port);s.close()})'; }
 
@@ -140,6 +142,7 @@ stop() {
 case "$cmd" in
   setup) setup ;;
   token) token ;;
+  password) password ;;
   free-port) free_port ;;
   start) start "$@" ;;
   stop) stop "$@" ;;

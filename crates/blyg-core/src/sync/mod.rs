@@ -97,6 +97,9 @@ struct NetState {
     stock_reading: Option<bool>,
     /// When the stock reading list was last read end to end.
     stock_swept: Option<Instant>,
+    /// Each stock entry's signature as last taken in (this session): a
+    /// change shows even when the timestamps (whole seconds) don't move.
+    stock_seen: std::collections::HashMap<(String, String), u64>,
 }
 
 /// The time allowed per pull for fetching item documents (lineage).
@@ -148,6 +151,7 @@ impl Engine {
                 outdated: false,
                 stock_reading: None,
                 stock_swept: None,
+                stock_seen: Default::default(),
             }),
             opts,
             scratch_dir: None,
@@ -660,7 +664,7 @@ impl Engine {
                 .map(|s| (s.id, s.kind))
                 .collect();
             reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
-            reading_changed |= self.fill_lineage(&items, &kinds)?;
+            reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
             if self.read_sync_on() {
                 reading_err = self.reconcile_reads(&items).err();
             }
@@ -824,10 +828,21 @@ impl Engine {
                 let thumb = thumbs.get(&key).copied();
                 let hop = hoppers.get(&key).cloned().unwrap_or_default();
                 let stored = self.store.reading_row(&key.0, &key.1).map(|(r, _)| r);
-                let changed = stored.as_ref().is_none_or(|r| {
-                    r.observed_at != imp.observed_at || (r.state == "tombstone") != imp.withdrawn
-                });
+                // The importer bumps `observed_at` (and `updated`) with each
+                // version, to the second; the signature catches a change
+                // within the same second.
+                let sig = imp.signature();
+                let seen = self.state().stock_seen.get(&key).copied();
+                let changed = seen.is_some_and(|s| s != sig)
+                    || stored.as_ref().is_none_or(|r| {
+                        r.observed_at != imp.observed_at
+                            || r.updated != imp.updated
+                            || (r.state == "tombstone") != imp.withdrawn
+                            || (imp.withdrawn
+                                && r.pinned_version_retained != imp.pinned_version_retained)
+                    });
                 if !changed {
+                    self.state().stock_seen.insert(key.clone(), sig);
                     let mut r = stored.unwrap();
                     r.thumb = thumb;
                     r.hoppers = hop;
@@ -851,13 +866,17 @@ impl Engine {
                     Err(CoreError::NotFound) => continue,
                     Err(e) => return Err(e),
                 };
-                if let Some(mut r) = crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop)
-                {
-                    r.page = r
-                        .page
-                        .take()
-                        .and_then(|p| crate::api::absolute_page(&r.origin, &p));
-                    out.push(r);
+                self.state().stock_seen.insert(key.clone(), sig);
+                match crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop) {
+                    Some(mut r) => {
+                        r.page = r
+                            .page
+                            .take()
+                            .and_then(|p| crate::api::absolute_page(&r.origin, &p));
+                        out.push(r);
+                    }
+                    // Doesn't read: keep what's held rather than lose it.
+                    None => out.extend(stored),
                 }
             }
             offset += n;
@@ -885,11 +904,12 @@ impl Engine {
     fn fill_lineage(
         &self,
         items: &[ReadingItem],
+        complete: bool,
         kinds: &std::collections::HashMap<String, SubscriptionKind>,
     ) -> Result<bool> {
         let start = Instant::now();
         let mut failed: HashSet<String> = HashSet::new();
-        let mut filled = Vec::new();
+        let mut filled = false;
         let mut fetched = 0;
         for it in items {
             if fetched >= self.opts.lineage_fetches || start.elapsed() >= LINEAGE_BUDGET {
@@ -913,20 +933,20 @@ impl Engine {
                 Ok(doc) => {
                     let log = doc.versions_at(&it.origin);
                     self.store.put_changelog(&it.origin, &it.remote_id, &log)?;
-                    if Lineage::of_changelog(&log).is_some() {
-                        filled.push(it.clone());
-                    }
+                    filled |= Lineage::of_changelog(&log).is_some();
                 }
                 Err(_) => {
                     failed.insert(it.origin.clone());
                 }
             }
         }
-        if filled.is_empty() {
+        if !filled {
             return Ok(false);
         }
-        // The merge fills each from the cache it was just given.
-        self.store.merge_reading(&filled, false, kinds)
+        // Merge the whole pull again, as pulled: the merge fills lineage from
+        // the cache it was just given. (A subset would read as "the server
+        // dropped the rest" and prune them.)
+        self.store.merge_reading(items, complete, kinds)
     }
 
     /// Whether the server has the fork's extensions, as of the last reading

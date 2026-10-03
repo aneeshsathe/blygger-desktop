@@ -304,8 +304,34 @@ pub struct StockImported {
     pub subscription_title: String,
     pub remote_id: String,
     pub observed_at: String,
+    /// Bumped when the post changes (`observedAt` stays the first sighting).
+    #[serde(default)]
+    pub updated: Option<String>,
     #[serde(default)]
     pub withdrawn: bool,
+    #[serde(default)]
+    pub pinned_version_retained: Option<u32>,
+    /// The entry's (sanitized) HTML: it changes with every new version, even
+    /// within the second the timestamps resolve to.
+    #[serde(default)]
+    pub content_html: String,
+}
+
+impl StockImported {
+    /// Everything about the entry that changes when the post does.
+    pub fn signature(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        (
+            &self.observed_at,
+            &self.updated,
+            self.withdrawn,
+            self.pinned_version_retained,
+            &self.content_html,
+        )
+            .hash(&mut h);
+        h.finish()
+    }
 }
 
 /// Upstream's reading entries hold at most this many per request.
@@ -422,5 +448,21 @@ mod responses_tests {
         .unwrap();
         let m: Mention = w.into();
         assert_eq!(m.source_author.unwrap().name.as_deref(), Some("Ana"));
+    }
+}
+
+#[cfg(test)]
+mod stock_row_tests {
+    use super::*;
+
+    #[test]
+    fn a_live_imported_item_becomes_a_row() {
+        let raw: Value = serde_json::from_str(r#"{"subscription_id":"S","remote_id":"R","kind":"fragment","state":"current","version":1,"created":"2026-10-03T03:56:29Z","updated":"2026-10-03T03:56:29Z","observed_at":"2026-10-03T03:56:29Z","content_md":"probe post","content_html":"<p>probe post</p>\n","content_hash":"sha256:a7","author_json":"{\"name\":\"\",\"url\":\"http://127.0.0.1:58955/\"}","media_json":"[]","transclusions_json":null,"l0":false,"pinned_version_retained":null,"page":"f/R/"}"#).unwrap();
+        let r = stock_row(&raw, "N", "http://127.0.0.1:58955/", None, &[]);
+        assert!(
+            r.is_some(),
+            "{:?}",
+            serde_json::from_value::<ReadingItem>(raw.clone()).err()
+        );
     }
 }

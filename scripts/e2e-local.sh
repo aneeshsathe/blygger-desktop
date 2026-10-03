@@ -4,8 +4,13 @@
 #   BLYG_WORKER_DIR=/path/to/worker scripts/e2e-local.sh [extra test args]
 #
 # BLYG_WORKER_DIR is the Worker's directory (the one with wrangler.jsonc and
-# node_modules; run `npm install` there first). The Worker must carry the
-# owner-API extensions in docs/SERVER.md.
+# node_modules; run `npm install && npm run build` there first): a
+# blygger-studio 0.9 or later.
+#
+#   BLYG_E2E_AUTH=password   sign in with the studio password, not the token
+#   BLYG_E2E_STOCK=1         a stock blygger-studio, without the extensions in
+#                            docs/SERVER.md: signs in with the password, and
+#                            the tests of fork-only features skip
 #
 # What it does:
 #   1. derives a local-only wrangler config and random dev secrets in a
@@ -53,6 +58,10 @@ export BLYG_E2E_URL="http://127.0.0.1:$PORT_A"
 export BLYG_E2E_URL_B="http://127.0.0.1:$PORT_B"
 BLYG_E2E_TOKEN="$("$CTL" token)"
 export BLYG_E2E_TOKEN
+if [ -n "${BLYG_E2E_STOCK:-}" ] || [ "${BLYG_E2E_AUTH:-}" = password ]; then
+  BLYG_E2E_PASSWORD="$("$CTL" password)"
+  export BLYG_E2E_PASSWORD
+fi
 export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"

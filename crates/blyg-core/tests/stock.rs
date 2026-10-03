@@ -115,7 +115,8 @@ fn only_new_or_changed_posts_are_fetched_one_by_one() {
     {
         let mut st = env.mock.state();
         let r = &mut st.reading.as_mut().unwrap()[1];
-        r["observed_at"] = json!("2030-02-01T00:00:00Z");
+        // An edit: `updated` moves, `observed_at` (first sighting) doesn't.
+        r["updated"] = json!("2030-02-01T00:00:00Z");
         r["content_md"] = json!("A thread, edited");
     }
     b.sync_now().unwrap();
@@ -135,10 +136,17 @@ fn lineage_arrives_from_the_posts_own_document() {
         let mut st = env.mock.state();
         st.stock = true;
         st.subs = vec![json!({ "id": "S1", "kind": "blyg", "origin": origin, "title": "Them" })];
-        st.reading = Some(vec![json!({ "subscription_id": "S1", "remote_id": "R",
-            "subscription_title": "Them", "origin": origin, "kind": "thread", "state": "current",
-            "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "A reply",
-            "content_html": "<p>A reply</p>" })]);
+        st.reading = Some(vec![
+            json!({ "subscription_id": "S1", "remote_id": "R",
+                "subscription_title": "Them", "origin": origin, "kind": "thread", "state": "current",
+                "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "A reply",
+                "content_html": "<p>A reply</p>" }),
+            // A newer post with no lineage: filling R mustn't drop it.
+            json!({ "subscription_id": "S1", "remote_id": "N",
+                "subscription_title": "Them", "origin": origin, "kind": "fragment", "state": "current",
+                "version": 1, "observed_at": "2030-01-02T00:00:00Z", "content_md": "Newer",
+                "content_html": "<p>Newer</p>" }),
+        ]);
         st.public.insert(
             "/them/items/R.json".into(),
             json!({ "id": "R", "kind": "thread", "version": 1, "content_md": "A reply",
@@ -152,6 +160,7 @@ fn lineage_arrives_from_the_posts_own_document() {
         ..fast()
     });
     b.sync_now().unwrap();
+    assert!(b.reading_row("S1", "N").is_some(), "the other rows stay");
     let r = b.reading_row("S1", "R").unwrap();
     assert_eq!(
         r.stub_of.as_ref().and_then(|s| s.origin.as_deref()),
@@ -168,4 +177,23 @@ fn lineage_arrives_from_the_posts_own_document() {
         .filter(|l| l.starts_with("GET /them/items/R.json"))
         .count();
     assert_eq!(docs, 1);
+}
+
+#[test]
+fn an_edit_within_the_same_second_is_still_noticed() {
+    let env = Env::new();
+    seed(&env, true);
+    let b = env.manual();
+    b.sync_now().unwrap();
+    {
+        // Same timestamps (they resolve to whole seconds), new version.
+        let mut st = env.mock.state();
+        let r = &mut st.reading.as_mut().unwrap()[0];
+        r["version"] = json!(3);
+        r["content_md"] = json!("First post, v3");
+        r["content_html"] = json!("<p>First post, v3</p>");
+    }
+    b.sync_now().unwrap();
+    let r = b.reading_row("S1", "A").unwrap();
+    assert_eq!((r.version, r.content_md.as_str()), (3, "First post, v3"));
 }
