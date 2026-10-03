@@ -140,6 +140,8 @@ enum Sheet {
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
     Disconnect { host: String, focus: FocusHandle },
+    /// What's limited on a stock blygger-studio (`server_notice`).
+    ServerLimits { focus: FocusHandle },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -1082,6 +1084,7 @@ impl MainView {
             }
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
+            CoreEvent::ServerLimited => self.server_limited(window, cx),
         }
     }
 
@@ -2697,14 +2700,61 @@ impl MainView {
                     }))
                     .child(heading(format!("Disconnect from {host}?")))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        "The owner token is removed from your Keychain and the address from \
-                         your config file. Nothing changes on the blyg itself.",
+                        "The password or owner token is removed from your Keychain and the \
+                         address from your config file. Nothing changes on the blyg itself.",
                     ))
                     .child(keys_row(vec![
                         key_hint("1", "disconnect, keep the posts on this Mac"),
                         key_hint("2", "also delete the local copy"),
                     ]))
                     .child(keys_row(vec![key_hint("esc", "cancel")]))
+                    .into_any_element(),
+            ),
+            Sheet::ServerLimits { focus } => (
+                500.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" | "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading(server_notice::LIMITS_TITLE.into()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(server_notice::LIMITS_INTRO),
+                    )
+                    .children(server_notice::LIMITS.iter().map(|l| {
+                        div()
+                            .mt(px(6.))
+                            .flex()
+                            .gap(px(6.))
+                            .line_height(relative(1.45))
+                            .child(div().text_color(p.muted).child("•"))
+                            .child(div().flex_1().child(*l))
+                    }))
+                    .child(
+                        div()
+                            .mt(px(8.))
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(server_notice::LIMITS_OUTRO),
+                    )
+                    .child(
+                        div()
+                            .id("limits-help")
+                            .mt(px(8.))
+                            .cursor_pointer()
+                            .text_color(p.accent)
+                            .hover(|s| s.underline())
+                            .child("What a server needs for everything")
+                            .on_click(|_, _, cx| cx.open_url(server_notice::SERVER_HELP_URL)),
+                    )
+                    .child(keys_row(vec![key_hint("⏎", "OK")]))
                     .into_any_element(),
             ),
             Sheet::Connect {

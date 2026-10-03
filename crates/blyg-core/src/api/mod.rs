@@ -166,6 +166,11 @@ impl Api {
     }
 
     /// 404 → `None` (endpoint not deployed yet).
+    pub fn optional_of<T>(r: Result<T>) -> Result<Option<T>> {
+        Self::optional(r)
+    }
+
+    /// 404 → `None` (endpoint not deployed yet).
     fn optional<T>(r: Result<T>) -> Result<Option<T>> {
         match r {
             Ok(v) => Ok(Some(v)),
@@ -677,6 +682,72 @@ impl Api {
             }
             p
         }))
+    }
+
+    // ---------- reading on a stock server (no `/reading/imported`) ----------
+
+    /// Upstream's `GET /api/reading`, one page (at most 50). `None` on 404.
+    pub fn stock_reading(&self, offset: u64) -> Result<Option<StockReadingPage>> {
+        Self::optional(self.call_as(
+            "GET",
+            &format!("/api/reading?offset={offset}&limit={STOCK_READING_PAGE}"),
+            None,
+        ))
+    }
+
+    /// `GET /api/imports/{sub}/{id}`: one imported item, raw.
+    pub fn imported(&self, sub: &str, remote_id: &str) -> Result<Value> {
+        self.call(
+            "GET",
+            &format!("/api/imports/{}/{}", enc(sub), enc(remote_id)),
+            None,
+        )
+    }
+
+    /// Every thumb: `GET /api/signals` → (sub, remote id) → 1 or -1.
+    pub fn signals(&self) -> Result<std::collections::HashMap<(String, String), i8>> {
+        #[derive(serde::Deserialize)]
+        struct S {
+            subscription_id: String,
+            remote_id: String,
+            thumb: i8,
+        }
+        let rows: Vec<S> = self.collect("/api/signals", "")?;
+        Ok(rows
+            .into_iter()
+            .map(|s| ((s.subscription_id, s.remote_id), s.thumb))
+            .collect())
+    }
+
+    /// Which hoppers hold each imported item: (sub, remote id) → hopper ids,
+    /// from every hopper's memberships.
+    pub fn hopper_members(
+        &self,
+    ) -> Result<std::collections::HashMap<(String, String), Vec<String>>> {
+        #[derive(serde::Deserialize)]
+        struct H {
+            id: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct M {
+            subscription_id: String,
+            remote_id: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Detail {
+            #[serde(default)]
+            memberships: Vec<M>,
+        }
+        let mut out: std::collections::HashMap<(String, String), Vec<String>> = Default::default();
+        for h in self.collect::<H>("/api/hoppers", "")? {
+            let d: Detail = self.call_as("GET", &format!("/api/hoppers/{}", enc(&h.id)), None)?;
+            for m in d.memberships {
+                out.entry((m.subscription_id, m.remote_id))
+                    .or_default()
+                    .push(h.id.clone());
+            }
+        }
+        Ok(out)
     }
 
     // ---------- extension 5: read state (404 = not deployed) ----------

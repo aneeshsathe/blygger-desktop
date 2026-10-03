@@ -129,9 +129,9 @@ fn a_live_connection_shows_the_host_and_capabilities(cx: &mut TestAppContext) {
     );
     let text = r.copy_text();
     assert!(
-        text.contains("Blyg:               blyg.example.com\n"),
+        text.contains("Blyg:              blyg.example.com\n"),
         "{text}"
     );
-    assert!(text.contains("Provenance:         no\n"), "{text}");
+    assert!(text.contains("AI disclosure:     no\n"), "{text}");
     assert!(!text.contains("sekrit"), "{text}");
 }

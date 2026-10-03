@@ -536,6 +536,10 @@ impl Backend for SwitchBackend {
         self.cur().server_outdated()
     }
 
+    fn server_extensions(&self) -> Option<bool> {
+        self.cur().server_extensions()
+    }
+
     fn cached_profiles(&self) -> Vec<blyg_core::Profile> {
         self.cur().cached_profiles()
     }

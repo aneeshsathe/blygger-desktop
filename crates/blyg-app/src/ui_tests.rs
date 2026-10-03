@@ -269,6 +269,26 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_stock_server_explains_whats_limited(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    fake.trigger_server_limited();
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if view.read_with(cx, |v, _| v.sheet.is_some()) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.sheet,
+        Some(Sheet::ServerLimits { .. })
+    )));
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+}
+
+#[gpui_kit::test]
 fn preview_toggles(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     cx.simulate_keystrokes("cmd-e");

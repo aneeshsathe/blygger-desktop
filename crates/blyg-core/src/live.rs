@@ -74,6 +74,15 @@ impl LiveBackend {
         }
     }
 
+    /// One stored reading row as pulled, tombstones included (`reading()`
+    /// hides and collapses some).
+    pub fn reading_row(&self, sub: &str, remote_id: &str) -> Option<ReadingItem> {
+        self.engine
+            .store
+            .reading_row(sub, remote_id)
+            .map(|(r, _)| r)
+    }
+
     /// Pull from the server without pushing first (`sync_now` pushes, then pulls).
     pub fn pull_now(&self) -> Result<()> {
         self.engine.pull()
@@ -1046,6 +1055,10 @@ impl Backend for LiveBackend {
 
     fn server_outdated(&self) -> bool {
         self.e().server_outdated()
+    }
+
+    fn server_extensions(&self) -> Option<bool> {
+        self.e().server_extensions()
     }
 
     fn cached_profiles(&self) -> Vec<crate::profile::Profile> {

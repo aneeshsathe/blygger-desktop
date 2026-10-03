@@ -344,6 +344,13 @@ impl FakeBackend {
         Ok(())
     }
 
+    /// Tests: a reading pull finds a stock server (no extensions).
+    #[cfg(test)]
+    pub fn trigger_server_limited(&self) {
+        let sink = self.lock().sink.clone();
+        Self::emit(&sink, CoreEvent::ServerLimited);
+    }
+
     /// Tests: sync finds the server older than blygger-studio 0.9.
     #[cfg(test)]
     pub fn trigger_server_outdated(&self) {

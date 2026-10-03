@@ -280,6 +280,82 @@ pub struct ReadMark {
     pub version: u32,
 }
 
+/// Upstream's `GET /api/reading` (a server without the fork's
+/// `/reading/imported`): the entries, own and imported, newest first.
+#[derive(Debug, Clone, Deserialize)]
+pub struct StockReadingPage {
+    pub items: Vec<StockEntry>,
+    #[serde(default)]
+    pub total: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StockEntry {
+    /// Absent on your own posts.
+    #[serde(default)]
+    pub imported: Option<StockImported>,
+}
+
+/// An imported entry's identity and what tells it changed.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StockImported {
+    pub subscription_id: String,
+    pub subscription_title: String,
+    pub remote_id: String,
+    pub observed_at: String,
+    #[serde(default)]
+    pub withdrawn: bool,
+}
+
+/// Upstream's reading entries hold at most this many per request.
+pub const STOCK_READING_PAGE: u32 = 50;
+
+/// One reading row in the app's shape from upstream's `ImportedItem`
+/// (`GET /api/imports/{sub}/{id}`) plus what the fork's row adds: the
+/// subscription's title and origin, the thumb and the hopper ids. Read
+/// state stays local on such a server. `None` if it doesn't read.
+pub fn stock_row(
+    imported: &Value,
+    title: &str,
+    origin: &str,
+    thumb: Option<i8>,
+    hoppers: &[String],
+) -> Option<ReadingItem> {
+    let mut v = imported.as_object()?.clone();
+    let parse = |k: &str| -> Value {
+        v.get(k)
+            .and_then(Value::as_str)
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or(Value::Null)
+    };
+    let author = match parse("author_json") {
+        a @ Value::Object(_) => serde_json::json!({ "name": a.get("name"), "url": a.get("url") }),
+        _ => Value::Null,
+    };
+    let transclusions = match parse("transclusions_json") {
+        t @ Value::Array(_) => t,
+        _ => Value::Null,
+    };
+    for k in [
+        "author_json",
+        "transclusions_json",
+        "media_json",
+        "content_hash",
+        "l0",
+    ] {
+        v.remove(k);
+    }
+    v.insert("author".into(), author);
+    v.insert("transclusions".into(), transclusions);
+    v.insert("subscription_title".into(), title.into());
+    v.insert("origin".into(), origin.into());
+    v.insert("thumb".into(), thumb.map_or(Value::Null, Value::from));
+    v.insert("hoppers".into(), hoppers.into());
+    v.insert("read_version".into(), Value::Null);
+    serde_json::from_value(Value::Object(v)).ok()
+}
+
 /// At most this many entries per `POST /api/reading/read`.
 pub const READ_BATCH_MAX: usize = 500;
 

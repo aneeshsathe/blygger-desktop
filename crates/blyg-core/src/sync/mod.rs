@@ -89,7 +89,22 @@ struct NetState {
     compatible: bool,
     /// The server proved older than studio 0.9; cleared once it isn't.
     outdated: bool,
+    /// Reading comes from upstream's own routes (no `/reading/imported`):
+    /// `Some(true)`; `Some(false)` from the fork's; `None` not yet known.
+    stock_reading: Option<bool>,
+    /// When the stock reading list was last read end to end.
+    stock_swept: Option<Instant>,
 }
+
+/// Meta key: the "this server is stock" notice was sent for this database.
+const STOCK_TOLD: &str = "stock_told";
+
+/// On a stock server, at most this many items are fetched one by one per
+/// pull (new or changed ones); the rest follow on the next pulls.
+const STOCK_FETCHES: usize = 100;
+/// A stock pull normally stops at the first page with nothing new; the
+/// whole list is read this often, to catch older edits and removals.
+const STOCK_SWEEP: Duration = Duration::from_secs(10 * 60);
 
 pub(crate) struct Engine {
     pub store: Store,
@@ -119,6 +134,8 @@ impl Engine {
                 pushing: false,
                 compatible: false,
                 outdated: false,
+                stock_reading: None,
+                stock_swept: None,
             }),
             opts,
             scratch_dir: None,
@@ -720,13 +737,19 @@ impl Engine {
         let mut cursor: Option<String> = None;
         for i in 0..self.opts.reading_pages.max(1) {
             match self.api.reading(500, cursor.as_deref())? {
+                // No fork extension: upstream's own reading routes.
+                None if i == 0 => return self.fetch_reading_stock(),
                 None => {
                     self.state().reading_unavailable = true;
                     self.set_read_sync(false)?;
                     return Ok(None);
                 }
                 Some(page) => {
-                    self.state().reading_unavailable = false;
+                    {
+                        let mut st = self.state();
+                        st.reading_unavailable = false;
+                        st.stock_reading = Some(false);
+                    }
                     if i == 0 {
                         self.set_read_sync(page.read_sync())?;
                     }
@@ -740,6 +763,110 @@ impl Engine {
             }
         }
         Ok(Some((all, false)))
+    }
+
+    /// The reading list from a stock server: upstream's `GET /api/reading`
+    /// says which posts there are, and each new or changed one is read whole
+    /// from `GET /api/imports/{sub}/{id}`. Thumbs and hopper memberships come
+    /// from their own routes; read state stays on this Mac. Unchanged rows
+    /// are the stored ones, with fresh thumbs and hoppers.
+    fn fetch_reading_stock(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
+        self.set_read_sync(false)?;
+        let subs: std::collections::HashMap<String, (String, String)> = self
+            .store
+            .subscriptions()
+            .into_iter()
+            .map(|s| (s.id, (s.title, s.origin)))
+            .collect();
+        let thumbs = Api::optional_of(self.api.signals())?.unwrap_or_default();
+        let hoppers = Api::optional_of(self.api.hopper_members())?.unwrap_or_default();
+        let sweep = self
+            .state()
+            .stock_swept
+            .is_none_or(|t| t.elapsed() >= STOCK_SWEEP);
+        let max_pages = u64::from(self.opts.reading_pages.max(1)) * 10;
+        let mut out = Vec::new();
+        let mut fetched = 0;
+        let mut deferred = false;
+        let mut offset = 0u64;
+        let mut reached_end = false;
+        for _ in 0..max_pages {
+            let Some(page) = self.api.stock_reading(offset)? else {
+                self.state().reading_unavailable = true;
+                return Ok(None);
+            };
+            let first = {
+                let mut st = self.state();
+                st.reading_unavailable = false;
+                st.stock_reading.replace(true) != Some(true)
+            };
+            if first && self.store.meta(STOCK_TOLD).is_none() {
+                self.store.set_meta(STOCK_TOLD, "1")?;
+                self.emit(CoreEvent::ServerLimited);
+            }
+            let n = page.items.len() as u64;
+            let mut any_new = false;
+            for imp in page.items.into_iter().filter_map(|e| e.imported) {
+                let key = (imp.subscription_id.clone(), imp.remote_id.clone());
+                let thumb = thumbs.get(&key).copied();
+                let hop = hoppers.get(&key).cloned().unwrap_or_default();
+                let stored = self.store.reading_row(&key.0, &key.1).map(|(r, _)| r);
+                let changed = stored.as_ref().is_none_or(|r| {
+                    r.observed_at != imp.observed_at || (r.state == "tombstone") != imp.withdrawn
+                });
+                if !changed {
+                    let mut r = stored.unwrap();
+                    r.thumb = thumb;
+                    r.hoppers = hop;
+                    out.push(r);
+                    continue;
+                }
+                any_new = true;
+                if fetched >= STOCK_FETCHES {
+                    deferred = true;
+                    out.extend(stored); // keep what's held until its turn
+                    continue;
+                }
+                fetched += 1;
+                let (title, origin) = subs
+                    .get(&key.0)
+                    .cloned()
+                    .unwrap_or_else(|| (imp.subscription_title.clone(), String::new()));
+                let raw = match self.api.imported(&key.0, &key.1) {
+                    Ok(v) => v,
+                    // Gone between the list and now.
+                    Err(CoreError::NotFound) => continue,
+                    Err(e) => return Err(e),
+                };
+                if let Some(mut r) = crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop)
+                {
+                    r.page = r
+                        .page
+                        .take()
+                        .and_then(|p| crate::api::absolute_page(&r.origin, &p));
+                    out.push(r);
+                }
+            }
+            offset += n;
+            if n == 0 || offset >= page.total {
+                reached_end = true;
+                break;
+            }
+            if !sweep && !any_new {
+                break; // nothing new this far down: the rest is as held
+            }
+        }
+        let complete = reached_end && !deferred;
+        if complete {
+            self.state().stock_swept = Some(Instant::now());
+        }
+        Ok(Some((out, complete)))
+    }
+
+    /// Whether the server has the fork's extensions, as of the last reading
+    /// pull (`None` before one).
+    pub fn server_extensions(&self) -> Option<bool> {
+        self.state().stock_reading.map(|stock| !stock)
     }
 
     pub fn reading_unavailable(&self) -> bool {

@@ -362,6 +362,14 @@ pub trait Backend: Send + Sync {
 
     // --- about ---
 
+    /// Whether the server carries the extensions in docs/SERVER.md: `Some(false)`
+    /// for a stock blygger-studio (reading comes from upstream's own routes;
+    /// AI disclosure for app-generated text, read-state sync and upload
+    /// removal are off), `None` until a reading pull has found out.
+    fn server_extensions(&self) -> Option<bool> {
+        None
+    }
+
     /// The connected server is older than blygger-studio 0.9: nothing syncs
     /// until it's updated (`CoreEvent::ServerOutdated` says when first seen).
     fn server_outdated(&self) -> bool {

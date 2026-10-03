@@ -110,6 +110,10 @@ pub struct State {
     pub logins: usize,
     /// The bearer token is refused, as on a stock server (cookie only).
     pub no_bearer: bool,
+    /// A stock blygger-studio: none of the fork's extension routes (they
+    /// 404). Reading is then upstream's `/api/reading` + `/api/imports`,
+    /// served from the same `reading` rows.
+    pub stock: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -485,6 +489,54 @@ fn mention_json(v: &Value) -> Value {
     )
 }
 
+/// The fork's extension routes, which a stock server doesn't have.
+fn is_fork_only(method: &str, segs: &[&str]) -> bool {
+    matches!(
+        (method, segs),
+        (_, ["api", "items", _, "tk-provenance"])
+            | (_, ["api", "reading", "imported"])
+            | ("PUT", ["api", "reading", _, _, "read"])
+            | ("POST", ["api", "reading", "read"])
+            | ("DELETE", ["api", "media", _])
+    )
+}
+
+/// Upstream's `ReadingEntry` for one (full) extension row.
+fn stock_entry(r: &Value) -> Value {
+    let withdrawn = r["state"] == "tombstone";
+    json!({
+        "key": format!("{}:{}", r["subscription_id"].as_str().unwrap_or(""), r["remote_id"].as_str().unwrap_or("")),
+        "source": "imported", "kind": r["kind"], "withdrawn": withdrawn, "l0": false,
+        "contentHtml": r["content_html"], "displayAt": r["observed_at"],
+        "imported": {
+            "subscriptionId": r["subscription_id"], "subscriptionTitle": r["subscription_title"],
+            "remoteId": r["remote_id"], "kind": r["kind"], "withdrawn": withdrawn, "l0": false,
+            "updated": r["updated"], "observedAt": r["observed_at"], "contentHtml": r["content_html"],
+            "pinnedVersionRetained": r["pinned_version_retained"], "sourceUrl": r["page"],
+        },
+    })
+}
+
+/// Upstream's `ImportedItem` for one (full) extension row: the JSON columns
+/// as strings, as the importer stores them.
+fn imported_item(r: &Value) -> Value {
+    let as_json = |v: &Value| {
+        if v.is_null() {
+            Value::Null
+        } else {
+            Value::String(v.to_string())
+        }
+    };
+    json!({
+        "subscription_id": r["subscription_id"], "remote_id": r["remote_id"], "kind": r["kind"],
+        "state": r["state"], "version": r["version"], "created": r["created"], "updated": r["updated"],
+        "observed_at": r["observed_at"], "content_md": r["content_md"], "content_html": r["content_html"],
+        "content_hash": null, "author_json": as_json(&r["author"]), "media_json": null,
+        "transclusions_json": as_json(&r["transclusions"]), "l0": false,
+        "pinned_version_retained": r["pinned_version_retained"], "page": r["page"],
+    })
+}
+
 /// An extension reading row from whatever a test seeded.
 fn reading_row_json(v: &Value) -> Value {
     overlay(
@@ -591,7 +643,59 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             _ => not_found(),
         };
     }
+    if s.stock && is_fork_only(&req.method, &segs) {
+        return not_found();
+    }
     match (req.method.as_str(), segs.as_slice()) {
+        // ---- upstream reading (a stock server's only reading routes)
+        ("GET", ["api", "reading"]) => {
+            let Some(rows) = s.reading.clone() else {
+                return not_found();
+            };
+            let all: Vec<Value> = rows
+                .iter()
+                .map(|r| stock_entry(&reading_row_json(r)))
+                .collect();
+            let mut p = page(req, all, 50);
+            p["counts"] = json!({ "all": rows.len(), "own": 0, "subscriptions": {} });
+            p["selected"] = json!("all");
+            (200, p)
+        }
+        ("GET", ["api", "imports", sub, rid]) => {
+            let (sub, rid) = (decode(sub), decode(rid));
+            match s.reading.as_ref().and_then(|rows| {
+                rows.iter()
+                    .find(|r| {
+                        r["subscription_id"] == sub.as_str() && r["remote_id"] == rid.as_str()
+                    })
+                    .cloned()
+            }) {
+                Some(r) => (200, imported_item(&reading_row_json(&r))),
+                None => not_found(),
+            }
+        }
+        ("GET", ["api", "signals"]) => {
+            let mut rows: Vec<Value> = s
+                .reading
+                .iter()
+                .flatten()
+                .filter(|r| r["thumb"].is_i64())
+                .map(|r| {
+                    json!({ "subscription_id": r["subscription_id"], "remote_id": r["remote_id"],
+                    "thumb": r["thumb"], "at": "2030-01-01T00:00:00Z" })
+                })
+                .collect();
+            for ((sub, rid), t) in &s.signals {
+                rows.retain(|r| {
+                    !(r["subscription_id"] == sub.as_str() && r["remote_id"] == rid.as_str())
+                });
+                rows.push(
+                    json!({ "subscription_id": sub, "remote_id": rid, "thumb": t,
+                    "at": "2030-01-01T00:00:00Z" }),
+                );
+            }
+            (200, page(req, rows, 100))
+        }
         ("GET", ["api", "items"]) => {
             let mut v: Vec<&SItem> = s.items.values().collect();
             v.sort_by(|a, b| b.updated.cmp(&a.updated));
@@ -973,10 +1077,25 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             else {
                 return not_found();
             };
+            let members: Vec<Value> = s
+                .reading
+                .iter()
+                .flatten()
+                .filter(|r| {
+                    r["hoppers"]
+                        .as_array()
+                        .is_some_and(|a| a.iter().any(|x| x == *id))
+                })
+                .map(|r| {
+                    json!({ "hopper_id": id, "subscription_id": r["subscription_id"],
+                    "remote_id": r["remote_id"], "added_at": "2030-01-01T00:00:00Z" })
+                })
+                .collect();
+            let total = h["count"].as_u64().unwrap_or(members.len() as u64);
             (
                 200,
-                json!({ "hopper": hopper_json(h), "memberships": [], "items": [],
-                    "total": h["count"].as_u64().unwrap_or(0), "source_count": 0 }),
+                json!({ "hopper": hopper_json(h), "memberships": members, "items": [],
+                    "total": total, "source_count": 0 }),
             )
         }
         _ => not_found(),

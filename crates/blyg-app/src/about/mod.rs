@@ -125,7 +125,8 @@ fn connection_info(cx: &App) -> ConnectionInfo {
     let caps = || {
         use blyg_core::Backend as _;
         info::capabilities(
-            b.read_extensions_available(),
+            b.server_extensions()
+                .unwrap_or_else(|| b.read_extensions_available()),
             b.read_state_sync(),
             b.provenance_available(),
         )
@@ -463,6 +464,22 @@ impl Render for AboutView {
                     .child(section("CONNECTION"))
                     .child(row("Blyg", text(r.connection.summary())))
                     .children(caps)
+                    // A stock server: what that limits (as the sheet said).
+                    .when(r.connection.limited(), |d| {
+                        d.child(
+                            div()
+                                .pl(px(114.))
+                                .pt(px(4.))
+                                .text_color(p.muted)
+                                .line_height(relative(1.4))
+                                .child("Stock blygger-studio. Limited here:")
+                                .children(
+                                    crate::app::server_notice::LIMITS
+                                        .iter()
+                                        .map(|l| div().mt(px(3.)).child(format!("• {l}"))),
+                                ),
+                        )
+                    })
                     .child(section("FILES"))
                     .child(path_row("Data", "about-reveal-data", Some(data_dir(cx))))
                     .child(path_row("Config", "about-reveal-config", config_path(cx))),

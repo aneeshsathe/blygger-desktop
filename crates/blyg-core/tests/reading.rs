@@ -58,8 +58,9 @@ fn patch3_404_with_the_worker_is_not_an_error_loop() {
         ..fast()
     });
     std::thread::sleep(Duration::from_millis(550));
-    let reads = env.mock.state().count("GET /api/reading");
-    // one attempt per pull interval (~5), not a tight retry loop
+    // One attempt per pull interval (~5), not a tight retry loop. (Each
+    // pull also tries upstream's /api/reading once, the stock fallback.)
+    let reads = env.mock.state().count("GET /api/reading/imported");
     assert!((1..=8).contains(&reads), "{reads} reading requests");
     assert_eq!(b.sync_status(), SyncStatus::Synced);
     drop(b);
