@@ -23,7 +23,10 @@ pub use parse::{
 pub use paths::{APP_ID, ConfigFiles, data_dir};
 #[cfg(feature = "keychain")]
 pub use tokens::KeychainTokenStore;
-pub use tokens::{KEYCHAIN_SERVICE, MemoryTokenStore, TokenStore, token_account};
+pub use tokens::{
+    KEYCHAIN_SERVICE, MemoryTokenStore, TokenStore, delete_credential, load_credential,
+    password_key, save_credential, token_account,
+};
 
 enum Backing {
     Files(ConfigFiles),

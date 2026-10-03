@@ -30,21 +30,25 @@ pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
     /// blyg at `base_url`.
-    pub fn open(data_dir: &Path, base_url: &str, token: &str) -> Result<LiveBackend> {
-        Self::open_with(data_dir, base_url, token, SyncOptions::default())
+    pub fn open(
+        data_dir: &Path,
+        base_url: &str,
+        cred: impl Into<crate::api::auth::Credential>,
+    ) -> Result<LiveBackend> {
+        Self::open_with(data_dir, base_url, cred, SyncOptions::default())
     }
 
     pub fn open_with(
         data_dir: &Path,
         base_url: &str,
-        token: &str,
+        cred: impl Into<crate::api::auth::Credential>,
         opts: SyncOptions,
     ) -> Result<LiveBackend> {
         let store = Store::open(&data_dir.join(DB_FILE))?;
         let scratch = crate::scratch_media::dir(data_dir);
         Ok(Self::from_parts(
             store,
-            Api::new(base_url, token),
+            Api::new(base_url, cred),
             opts,
             Some(scratch),
         ))

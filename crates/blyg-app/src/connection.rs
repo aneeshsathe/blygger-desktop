@@ -84,7 +84,8 @@ impl SwitchBackend {
 /// Which blyg the local database in the data dir belongs to.
 const DB_OWNER_FILE: &str = "blygger.db.blyg-url";
 
-/// Open the live backend for `url` if the token store has a token for it.
+/// Open the live backend for `url` if the Keychain holds a credential (its
+/// studio password, or its owner token) for it.
 /// A local database that belongs to a *different* blyg is moved aside first
 /// (`blygger.<host>.db`), so one blyg's unpushed drafts can never be pushed
 /// to another.
@@ -93,7 +94,7 @@ pub fn open_live(
     url: &str,
     tokens: &dyn TokenStore,
 ) -> Result<Option<Arc<dyn Backend>>> {
-    let Some(token) = tokens.get(url)? else {
+    let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
     };
     std::fs::create_dir_all(data_dir).map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -112,7 +113,7 @@ pub fn open_live(
             }
         }
     }
-    let live = LiveBackend::open(data_dir, url, &token)?;
+    let live = LiveBackend::open(data_dir, url, cred)?;
     std::fs::write(&owner, url).map_err(|e| CoreError::Storage(e.to_string()))?;
     Ok(Some(Arc::new(live)))
 }
@@ -131,8 +132,20 @@ pub fn delete_local_data(data_dir: &Path) {
 
 // ------------------------------------------------------------ app global
 
-/// Checks a URL + token before anything is saved (`GET /api/items`).
-pub type Verifier = fn(&str, &str) -> std::result::Result<usize, blyg_core::api::ConnectError>;
+/// Checks a URL and credential before anything is saved (sign in, then
+/// `GET /api/items`).
+pub type Verifier = fn(
+    &str,
+    &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError>;
+
+/// The real check.
+pub fn live_verifier(
+    url: &str,
+    cred: &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError> {
+    blyg_core::api::verify_connection(url, cred.clone())
+}
 
 /// The app's connection state (absent in headless tests, which run on a
 /// `FakeBackend` directly).
@@ -157,7 +170,10 @@ pub fn verifier(cx: &gpui_kit::App) -> Verifier {
 }
 
 /// Verifier for fake mode: never touches the network.
-pub fn fake_verifier(_: &str, _: &str) -> std::result::Result<usize, blyg_core::api::ConnectError> {
+pub fn fake_verifier(
+    _: &str,
+    _: &blyg_core::api::auth::Credential,
+) -> std::result::Result<usize, blyg_core::api::ConnectError> {
     Ok(6)
 }
 
@@ -211,7 +227,7 @@ pub fn use_sample_data(fake: Arc<dyn Backend>, cx: &mut gpui_kit::App) -> bool {
 }
 // --- end onboarding ---
 
-/// Forget the token (Keychain) and `blyg-url` (config); keep or delete the
+/// Forget the password and token (Keychain) and `blyg-url` (config); keep or delete the
 /// local copy. Returns the host that was disconnected.
 pub fn disconnect(
     delete_local: bool,
@@ -219,10 +235,8 @@ pub fn disconnect(
 ) -> std::result::Result<String, String> {
     let url = crate::settings::blyg_url(cx).ok_or("Not connected to a blyg")?;
     let host = crate::vm::url_host(&url).unwrap_or(url.clone());
-    crate::settings::get(cx)
-        .tokens
-        .delete(&url)
-        .map_err(|e| format!("Couldn't remove the token: {e}"))?;
+    blyg_core::config::delete_credential(crate::settings::get(cx).tokens.as_ref(), &url)
+        .map_err(|e| format!("Couldn't remove it from the Keychain: {e}"))?;
     crate::settings::write(&[("blyg-url", blyg_core::config::Change::Remove)], cx)?;
     if let Some(conn) = cx.try_global::<Connection>()
         && conn.switch.mode() != Mode::Fake

@@ -346,7 +346,8 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     });
     assert_eq!(tokens.get("https://blyg.example.com").unwrap(), None);
 
-    // Fix the address: the token goes to the token store, the URL to the config.
+    // Fix the address: the password (the default way in) goes to the
+    // Keychain under its own account, the URL to the config.
     view.update_in(cx, |v, window, cx| {
         if let Some(Sheet::Connect { url, .. }) = &v.sheet {
             url.update(cx, |s, cx| {
@@ -358,8 +359,15 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
     assert_eq!(
-        tokens.get("https://blyg.example.com").unwrap().as_deref(),
-        Some("secret-token")
+        blyg_core::config::load_credential(tokens.as_ref(), "https://blyg.example.com").unwrap(),
+        Some(blyg_core::api::auth::Credential::Password(
+            "secret-token".into()
+        ))
+    );
+    assert_eq!(
+        tokens.get("https://blyg.example.com").unwrap(),
+        None,
+        "no token"
     );
     let text = config_text(cx);
     assert_eq!(text, "# fresh\n\nblyg-url = https://blyg.example.com\n");
@@ -584,6 +592,10 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
             })
         });
     };
+    // The owner-token way in (the password way is first_run_asks_to_connect_a_blyg).
+    view.update_in(cx, |v, window, cx| {
+        v.set_connect_by_password(false, window, cx)
+    });
     let attempt = |cx: &mut VisualTestContext| {
         view.update_in(cx, |v, window, cx| {
             if let Some(Sheet::Connect { url, token, .. }) = &v.sheet {

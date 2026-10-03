@@ -1,7 +1,10 @@
 //! Blocking owner-API client (ureq + rustls). Follows upstream
 //! blygger-studio's OpenAPI contract (studio 0.10, `openapi.json`), plus the
-//! extensions in docs/SERVER.md. Every call sends the bearer token; the token
-//! is never logged, printed or included in errors (`Debug` redacts it).
+//! extensions in docs/SERVER.md. Every call carries the owner credential (a
+//! bearer token, or the studio session from a password sign-in; see
+//! `auth`), which is never logged, printed or included in errors (`Debug`
+//! redacts it). `/api` is host-rooted: a blyg mounted at `https://host/blyg`
+//! has its API at `https://host/api`.
 //!
 //! Error mapping: transport failures → `Offline`, 401 → `Unauthorized`,
 //! 404 → `NotFound`, any other non-2xx → `Rejected{status, error, details}`
@@ -11,6 +14,7 @@
 //! read-state writes (extension 5) are only called once `GET /api/reading/imported`
 //! advertised `read_state: true`.
 
+pub mod auth;
 pub mod public;
 pub mod wire;
 
@@ -26,12 +30,18 @@ use crate::model::{
     Hopper, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings, SubscribePreview,
     Subscription, SubscriptionKind,
 };
+use auth::Credential;
 use wire::*;
 
 pub struct Api {
     agent: ureq::Agent,
+    /// The blyg URL, with its mount (public pages, the studio).
     base: String,
-    token: String,
+    /// Where `/api` lives: the blyg URL's origin.
+    api_root: String,
+    cred: Credential,
+    /// With a password: the studio session cookie's value, once signed in.
+    session: Mutex<Option<String>>,
     /// What items resolve against, from settings as last read or written.
     site: Mutex<Option<Site>>,
 }
@@ -52,7 +62,7 @@ impl std::fmt::Debug for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Api")
             .field("base", &self.base)
-            .field("token", &"<redacted>")
+            .field("cred", &self.cred)
             .finish()
     }
 }
@@ -63,17 +73,27 @@ pub struct Pinned {
     pub already: bool,
 }
 
+/// A request body.
+enum Body {
+    None,
+    Json(Value),
+    Bytes { content_type: String, data: Vec<u8> },
+}
+
 impl Api {
-    pub fn new(base_url: &str, token: &str) -> Self {
+    pub fn new(base_url: &str, cred: impl Into<Credential>) -> Self {
         let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(10))
             .timeout_read(Duration::from_secs(30))
             .timeout_write(Duration::from_secs(60))
             .build();
+        let base = base_url.trim_end_matches('/').to_string();
         Api {
             agent,
-            base: base_url.trim_end_matches('/').to_string(),
-            token: token.to_string(),
+            api_root: api_root(&base),
+            base,
+            cred: cred.into(),
+            session: Mutex::new(None),
             site: Mutex::new(None),
         }
     }
@@ -82,20 +102,56 @@ impl Api {
         &self.base
     }
 
-    fn request(&self, method: &str, path: &str) -> ureq::Request {
-        self.agent
-            .request(method, &format!("{}{}", self.base, path))
-            .set("authorization", &format!("Bearer {}", self.token))
-            .set("accept", "application/json")
+    /// The studio session, signing in when there's none yet.
+    fn session(&self, password: &str) -> Result<String> {
+        if let Some(s) = self.session.lock().unwrap().clone() {
+            return Ok(s);
+        }
+        let s = auth::login(&self.base, password)?;
+        *self.session.lock().unwrap() = Some(s.clone());
+        Ok(s)
+    }
+
+    fn request(&self, method: &str, path: &str) -> Result<ureq::Request> {
+        let r = self
+            .agent
+            .request(method, &format!("{}{}", self.api_root, path))
+            .set("accept", "application/json");
+        Ok(match &self.cred {
+            Credential::Token(t) => r.set("authorization", &format!("Bearer {t}")),
+            Credential::Password(p) => r.set(
+                "cookie",
+                &format!("{}={}", auth::SESSION_COOKIE, self.session(p)?),
+            ),
+        })
+    }
+
+    fn send(&self, method: &str, path: &str, body: &Body) -> Result<Value> {
+        let req = self.request(method, path)?;
+        read_json(match body {
+            Body::None => req.call(),
+            Body::Json(v) => req.send_json(v.clone()),
+            Body::Bytes { content_type, data } => {
+                req.set("content-type", content_type).send_bytes(data)
+            }
+        })
+    }
+
+    /// One call. With a password, a 401 means the session ended (30 days,
+    /// or the server's secret changed): sign in again and retry once.
+    fn exec(&self, method: &str, path: &str, body: Body) -> Result<Value> {
+        let r = self.send(method, path, &body);
+        match (&self.cred, r) {
+            (Credential::Password(_), Err(CoreError::Unauthorized)) => {
+                *self.session.lock().unwrap() = None;
+                self.send(method, path, &body)
+            }
+            (_, r) => r,
+        }
     }
 
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
-        let req = self.request(method, path);
-        let res = match body {
-            Some(b) => req.send_json(b),
-            None => req.call(),
-        };
-        read_json(res)
+        self.exec(method, path, body.map_or(Body::None, Body::Json))
     }
 
     fn call_as<T: DeserializeOwned>(
@@ -279,6 +335,23 @@ impl Api {
             .map(|_| ())
     }
 
+    /// `POST /api/items/:id/generate {scope}` → (text, model). The server
+    /// fills that TK scope with its own model and records the provenance.
+    pub fn generate(&self, id: &str, scope: u32) -> Result<(String, String)> {
+        #[derive(serde::Deserialize)]
+        struct R {
+            text: String,
+            #[serde(default)]
+            model: Option<String>,
+        }
+        let r: R = self.call_as(
+            "POST",
+            &format!("/api/items/{}/generate", enc(id)),
+            Some(json!({ "scope": scope })),
+        )?;
+        Ok((r.text, r.model.unwrap_or_else(|| "unknown".into())))
+    }
+
     /// `POST /api/items {mode: "fork", source}` → the new draft.
     pub fn fork(&self, of: &RemoteRef) -> Result<WireItem> {
         let body = json!({
@@ -395,14 +468,14 @@ impl Api {
         );
         body.extend_from_slice(bytes);
         body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
-        let res = self
-            .request("POST", "/api/media")
-            .set(
-                "content-type",
-                &format!("multipart/form-data; boundary={boundary}"),
-            )
-            .send_bytes(&body);
-        let v = read_json(res)?;
+        let v = self.exec(
+            "POST",
+            "/api/media",
+            Body::Bytes {
+                content_type: format!("multipart/form-data; boundary={boundary}"),
+                data: body,
+            },
+        )?;
         serde_json::from_value(v)
             .map_err(|e| CoreError::Other(format!("unexpected media response: {e}")))
     }
@@ -704,6 +777,10 @@ pub enum ConnectError {
     Unreachable,
     /// The server said 401: the token is wrong.
     WrongToken,
+    /// The studio's sign-in refused the password.
+    WrongPassword,
+    /// No studio sign-in at `{blyg-url}/studio/login` (404).
+    NoStudio,
     /// `GET /api/items` is 404: a blyg older than studio 0.9 without the
     /// owner-read extensions.
     MissingExtensions,
@@ -722,6 +799,12 @@ impl std::fmt::Display for ConnectError {
             ConnectError::WrongToken => f.write_str(
                 "The blyg said the token is wrong (401). Paste the owner token again.",
             ),
+            ConnectError::WrongPassword => f.write_str(
+                "The blyg said the password is wrong. Type the studio password again.",
+            ),
+            ConnectError::NoStudio => f.write_str(
+                "There's no blyg studio sign-in at that address (…/studio/login is 404). Check the URL, including any path the blyg lives under.",
+            ),
             ConnectError::MissingExtensions => f.write_str(
                 "This server has no owner JSON API (GET /api/items is 404). It needs blygger-studio 0.9 or later. See docs/SERVER.md.",
             ),
@@ -733,13 +816,28 @@ impl std::fmt::Display for ConnectError {
     }
 }
 
-/// Check a blyg URL + owner token before saving them: `GET /api/items` with
-/// the token. Returns how many items the server holds.
-pub fn verify_connection(base_url: &str, token: &str) -> std::result::Result<usize, ConnectError> {
-    let api = Api::new(base_url, token);
+/// Check a blyg URL and credential before saving them: sign in (with a
+/// password), then `GET /api/items`. Returns how many items the server holds.
+pub fn verify_connection(
+    base_url: &str,
+    cred: impl Into<Credential>,
+) -> std::result::Result<usize, ConnectError> {
+    let cred = cred.into();
+    let password = matches!(cred, Credential::Password(_));
+    if let Credential::Password(p) = &cred {
+        match auth::login(base_url, p) {
+            Ok(_) => {}
+            Err(CoreError::Offline) => return Err(ConnectError::Unreachable),
+            Err(CoreError::Unauthorized) => return Err(ConnectError::WrongPassword),
+            Err(CoreError::NotFound) => return Err(ConnectError::NoStudio),
+            Err(e) => return Err(ConnectError::Other(e.to_string())),
+        }
+    }
+    let api = Api::new(base_url, cred);
     match api.count_items() {
         Ok(n) => Ok(n as usize),
         Err(CoreError::Offline) => Err(ConnectError::Unreachable),
+        Err(CoreError::Unauthorized) if password => Err(ConnectError::WrongPassword),
         Err(CoreError::Unauthorized) => Err(ConnectError::WrongToken),
         Err(CoreError::NotFound) => Err(ConnectError::MissingExtensions),
         Err(CoreError::ServerOutdated) => Err(ConnectError::Outdated),
@@ -753,6 +851,15 @@ pub fn verify_connection(base_url: &str, token: &str) -> std::result::Result<usi
                 .into(),
         )),
         Err(e) => Err(ConnectError::Other(e.to_string())),
+    }
+}
+
+/// `/api` is host-rooted (upstream `app.route("/api", …)`): the origin of
+/// the blyg URL, whatever its mount.
+fn api_root(base: &str) -> String {
+    match url::Url::parse(base) {
+        Ok(u) if u.has_host() => u.origin().ascii_serialization(),
+        _ => base.to_string(),
     }
 }
 

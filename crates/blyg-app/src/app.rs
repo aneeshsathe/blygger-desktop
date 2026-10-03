@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use blyg_core::api::auth::Credential;
 use blyg_core::{Backend, CoreError, CoreEvent, Item, Kind, LocalId, Resolution, SyncStatus};
 use gpui_kit::base::input::{
     Enter, Escape, InputEvent, InputState, MoveDown, MoveUp, Paste, TextareaState,
@@ -128,7 +129,11 @@ enum Sheet {
     /// `GET /api/items`, then → Keychain → config.
     Connect {
         url: Entity<InputState>,
+        /// The studio password, or the owner token (`by_password`).
         token: Entity<InputState>,
+        /// Sign in with the studio password (any blyg) rather than the
+        /// Worker's owner token.
+        by_password: bool,
         error: Option<String>,
         /// The check is running.
         busy: bool,
@@ -569,7 +574,7 @@ impl MainView {
         let token = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("Owner token")
+                .placeholder("Studio password")
         });
         let t2 = token.clone();
         self._subs
@@ -596,15 +601,46 @@ impl MainView {
         self.sheet = Some(Sheet::Connect {
             url,
             token,
+            by_password: true,
             error: None,
             busy: false,
         });
         cx.notify();
     }
 
+    /// The Connect sheet: sign in with the studio password, or the owner token.
+    pub(crate) fn set_connect_by_password(
+        &mut self,
+        on: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(Sheet::Connect {
+            token,
+            by_password,
+            error,
+            ..
+        }) = self.sheet.as_mut()
+        {
+            *by_password = on;
+            *error = None;
+            let hint = if on { "Studio password" } else { "Owner token" };
+            token.update(cx, |s, cx| {
+                s.set_value("", window, cx);
+                s.set_placeholder(hint, window, cx);
+                s.focus(window, cx);
+            });
+        }
+        cx.notify();
+    }
+
     fn submit_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(Sheet::Connect {
-            url, token, busy, ..
+            url,
+            token,
+            by_password,
+            busy,
+            ..
         }) = &self.sheet
         else {
             return;
@@ -612,16 +648,23 @@ impl MainView {
         if *busy {
             return;
         }
+        let by_password = *by_password;
         let (u, t) = (
             url.read(cx).value().to_string(),
             token.read(cx).value().to_string(),
         );
         let checked = crate::settings::validate_blyg_url(&u).and_then(|u| {
-            let t = t.trim().to_string();
-            if t.is_empty() {
-                Err("Paste the owner token from your blyg's settings".to_string())
+            // A password is taken as typed; a pasted token is trimmed.
+            let secret = if by_password {
+                t.clone()
             } else {
-                Ok((u, t))
+                t.trim().to_string()
+            };
+            match (secret.is_empty(), by_password) {
+                (true, true) => Err("Type your blyg's studio password".to_string()),
+                (true, false) => Err("Paste the owner token from your blyg's settings".to_string()),
+                (false, true) => Ok((u, Credential::Password(secret))),
+                (false, false) => Ok((u, Credential::Token(secret))),
             }
         });
         let (u, t) = match checked {
@@ -631,7 +674,7 @@ impl MainView {
                 return;
             }
         };
-        // Verify before saving anything: GET /api/items with the token.
+        // Verify before saving anything: sign in, then GET /api/items.
         self.set_connect_state(None, true, cx);
         let verify = crate::connection::verifier(cx);
         let task = cx.background_spawn({
@@ -656,16 +699,16 @@ impl MainView {
         cx.notify();
     }
 
-    /// The check passed: save the token and URL, switch to the live
+    /// The check passed: save the credential and URL, switch to the live
     /// backend, and load everything once.
     fn finish_connect(
         &mut self,
         url: &str,
-        token: &str,
+        cred: &Credential,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let url = match crate::settings::connect(url, token, cx) {
+        let url = match crate::settings::connect(url, cred, cx) {
             Ok(u) => u,
             Err(e) => return self.set_connect_state(Some(e), false, cx),
         };
@@ -685,7 +728,13 @@ impl MainView {
                 self.focus_after_sheet(window, cx);
                 self.show_toast(
                     format!("Connected to {host}"),
-                    Some("The token is in your Keychain".into()),
+                    Some(
+                        match cred {
+                            Credential::Password(_) => "The password is in your Keychain",
+                            Credential::Token(_) => "The token is in your Keychain",
+                        }
+                        .into(),
+                    ),
                     cx,
                 );
             }
@@ -2661,9 +2710,25 @@ impl MainView {
             Sheet::Connect {
                 url,
                 token,
+                by_password,
                 error,
                 busy,
             } => {
+                let by_password = *by_password;
+                // "Studio password · Owner token": the chosen one in ink.
+                let choice = |id: &'static str, text: &'static str, on: bool, pick: bool| {
+                    div()
+                        .id(id)
+                        .debug_selector(move || id.into())
+                        .cursor_pointer()
+                        .text_color(if on { p.ink } else { p.muted })
+                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
+                        .hover(|s| s.underline())
+                        .child(text)
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.set_connect_by_password(pick, window, cx)
+                        }))
+                };
                 let label = |s: &'static str| {
                     div()
                         .mt(px(10.))
@@ -2682,15 +2747,41 @@ impl MainView {
                         }))
                         .child(heading("Connect your blyg".into()))
                         .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            "Burrow writes to your own blyg. Enter its address and its \
-                                     owner token. The token is kept in your macOS Keychain; the \
-                                     address goes in your config file.",
+                            "Burrow writes to your own blyg. Enter its address and the \
+                                     password you sign in to its studio with (or, if its server \
+                                     has Burrow's extensions, its owner token). Either is kept \
+                                     in your macOS Keychain; the address goes in your config \
+                                     file.",
                         ))
                         .child(label("BLYG ADDRESS"))
                         .child(input_box(
                             gpui_kit::base::input::Input::new(url).into_any_element(),
                         ))
-                        .child(label("OWNER TOKEN"))
+                        .child(
+                            div()
+                                .mt(px(10.))
+                                .flex()
+                                .gap(px(6.))
+                                .text_size(px(12.))
+                                .child(choice(
+                                    "connect-by-password",
+                                    "Studio password",
+                                    by_password,
+                                    true,
+                                ))
+                                .child(div().text_color(p.muted).child("·"))
+                                .child(choice(
+                                    "connect-by-token",
+                                    "Owner token",
+                                    !by_password,
+                                    false,
+                                )),
+                        )
+                        .child(label(if by_password {
+                            "STUDIO PASSWORD"
+                        } else {
+                            "OWNER TOKEN"
+                        }))
                         .child(input_box(
                             gpui_kit::base::input::Input::new(token).into_any_element(),
                         ))
@@ -2698,12 +2789,11 @@ impl MainView {
                             d.child(div().mt(px(8.)).text_color(p.over_text()).child(e))
                         })
                         .when(*busy, |d| {
-                            d.child(
-                                div()
-                                    .mt(px(8.))
-                                    .text_color(p.muted)
-                                    .child("Checking the address and token…"),
-                            )
+                            d.child(div().mt(px(8.)).text_color(p.muted).child(if by_password {
+                                "Signing in…"
+                            } else {
+                                "Checking the address and token…"
+                            }))
                         })
                         .child(keys_row(vec![
                             key_hint("⏎", "next · connect"),

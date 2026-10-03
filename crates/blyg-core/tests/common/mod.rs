@@ -27,6 +27,8 @@ use blyg_core::{Backend, CoreEvent, LiveBackend, SyncOptions};
 use serde_json::{Value, json};
 
 pub const TOKEN: &str = "test-token-not-real";
+/// The studio password (`OWNER_PASSWORD`) the mock's sign-in takes.
+pub const PASSWORD: &str = "test password, not real";
 
 #[derive(Debug, Clone)]
 pub struct SItem {
@@ -102,6 +104,12 @@ pub struct State {
     /// extension): `GET /api/items` is `{items}` with no `total`, and the
     /// routes 0.9 added are unknown (404). Not checked against the contract.
     pub legacy_api: bool,
+    /// Live studio sessions (`blyg_session` values). Clear it to end them.
+    pub sessions: Vec<String>,
+    /// Successful `POST …/studio/login`s.
+    pub logins: usize,
+    /// The bearer token is refused, as on a stock server (cookie only).
+    pub no_bearer: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -306,6 +314,29 @@ fn read_req(conn: &TcpStream) -> Option<Req> {
 
 fn handle(mut conn: TcpStream, state: Arc<Mutex<State>>) {
     let Some(req) = read_req(&conn) else { return };
+    // The studio's sign-in (any mount): a form POST, answered with a 302
+    // and the session cookie, like upstream's spa.ts.
+    if req.method == "POST" && req.path.ends_with("/studio/login") {
+        let mut st = state.lock().unwrap();
+        st.log.push(format!("POST {}", req.path));
+        let password = url::form_urlencoded::parse(&req.body)
+            .find(|(k, _)| k == "password")
+            .map(|(_, v)| v.into_owned())
+            .unwrap_or_default();
+        let head = if password == PASSWORD {
+            st.logins += 1;
+            let s = format!("{}.sig{}", 2_000_000_000 + st.logins, st.logins);
+            st.sessions.push(s.clone());
+            format!(
+                "HTTP/1.1 302 Found\r\nlocation: /studio\r\nset-cookie: blyg_session={s}; Path=/; Max-Age=2592000; HttpOnly; Secure; SameSite=Lax\r\n"
+            )
+        } else {
+            "HTTP/1.1 403 Forbidden\r\ncontent-type: text/html\r\n".to_string()
+        };
+        let _ = write!(conn, "{head}content-length: 0\r\nconnection: close\r\n\r\n");
+        let _ = conn.flush();
+        return;
+    }
     let (status, body) = {
         let mut st = state.lock().unwrap();
         let (status, body) = route(&req, &mut st);
@@ -531,7 +562,15 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             _ => not_found(),
         };
     }
-    if req.header("authorization") != Some(&format!("Bearer {TOKEN}")) {
+    let bearer = !s.no_bearer && req.header("authorization") == Some(&format!("Bearer {TOKEN}"));
+    let session = req
+        .header("cookie")
+        .and_then(|c| {
+            c.split(';')
+                .find_map(|p| p.trim().strip_prefix("blyg_session="))
+        })
+        .is_some_and(|v| s.sessions.iter().any(|x| x == v));
+    if !bearer && !session {
         return (401, json!({ "error": "unauthorized" }));
     }
     let segs: Vec<&str> = req.path.trim_start_matches('/').split('/').collect();
@@ -979,7 +1018,15 @@ impl Env {
     }
 
     pub fn open_token(&self, opts: SyncOptions, token: &str) -> LiveBackend {
-        let b = LiveBackend::open_with(&self.data_dir(), &self.mock.url, token, opts).unwrap();
+        self.open_cred(opts, token)
+    }
+
+    pub fn open_cred(
+        &self,
+        opts: SyncOptions,
+        cred: impl Into<blyg_core::api::auth::Credential>,
+    ) -> LiveBackend {
+        let b = LiveBackend::open_with(&self.data_dir(), &self.mock.url, cred, opts).unwrap();
         let ev = self.events.clone();
         b.set_event_sink(Box::new(move |e| ev.lock().unwrap().push(e)));
         b

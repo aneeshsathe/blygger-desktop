@@ -197,17 +197,24 @@ pub fn validate_blyg_url(url: &str) -> Result<String, String> {
     }
 }
 
-/// Store the token in the Keychain, then point the config at the blyg.
-pub fn connect(url: &str, token: &str, cx: &mut App) -> Result<String, String> {
+/// Store the credential (password or token) in the Keychain, then point the
+/// config at the blyg.
+pub fn connect(
+    url: &str,
+    cred: &blyg_core::api::auth::Credential,
+    cx: &mut App,
+) -> Result<String, String> {
+    use blyg_core::api::auth::Credential;
     let url = validate_blyg_url(url)?;
-    let token = token.trim();
-    if token.is_empty() {
-        return Err("Paste the owner token from your blyg's settings".into());
+    let empty = match cred {
+        Credential::Token(t) => t.trim().is_empty(),
+        Credential::Password(p) => p.is_empty(),
+    };
+    if empty {
+        return Err("Enter the studio password or the owner token".into());
     }
-    get(cx)
-        .tokens
-        .set(&url, token)
-        .map_err(|e| format!("Couldn't save the token: {e}"))?;
+    blyg_core::config::save_credential(get(cx).tokens.as_ref(), &url, cred)
+        .map_err(|e| format!("Couldn't save it in the Keychain: {e}"))?;
     write(&[("blyg-url", Change::Set(url.clone()))], cx)?;
     Ok(url)
 }
