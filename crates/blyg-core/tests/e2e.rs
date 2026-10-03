@@ -682,8 +682,9 @@ fn pasted_images_render_once_inline() {
         "inline image {src} resolves from {page_url}"
     );
 
-    // For the record, what the app avoids: a relative `media/…` breaks on
-    // the page, and attached *and* inline shows the image twice.
+    // For the record: before studio 0.11 a relative `media/…` broke on the
+    // page (it resolved against /f/<id>/); 0.11 publishes it absolute against
+    // the blyg's origin. Attached *and* inline still shows the image twice.
     let rel = b
         .create_draft(Kind::Fragment, &format!("{t} relative"))
         .unwrap();
@@ -699,9 +700,11 @@ fn pasted_images_render_once_inline() {
         .find(|s| s.contains(&m.url))
         .unwrap()
         .to_string();
-    let rel_base =
-        url::Url::parse(&format!("{}/", rel_out.permalink.trim_end_matches('/'))).unwrap();
-    assert_eq!(public_get(rel_base.join(&rel_src).unwrap().as_str()).0, 404);
+    assert!(
+        rel_src.starts_with("http://") || rel_src.starts_with("https://"),
+        "studio 0.11 publishes absolute image URLs: {rel_src}"
+    );
+    assert_eq!(public_get(&rel_src).0, 200, "{rel_src}");
     let sid = sid_of(&b, &id);
     let api = Api::new(&e.url, &e.token);
     let att = api
@@ -1325,9 +1328,13 @@ fn reading_items_carry_the_published_html() {
     );
     assert!(html.contains("quoted words"), "{html}");
     assert!(!html.contains("![["), "{html}");
-    assert!(html.contains(&format!("src=\"{}\"", m.url)), "{html}");
-    assert!(
-        html.contains(&format!("src=\"{src_url}/{}\"", m.url)),
+    // Studio 0.11 publishes image URLs absolute against the source blyg,
+    // the relative `media/…` included.
+    assert!(!html.contains(&format!("src=\"{}\"", m.url)), "{html}");
+    assert_eq!(
+        html.matches(&format!("src=\"{src_url}/{}\"", m.url))
+            .count(),
+        2,
         "{html}"
     );
 

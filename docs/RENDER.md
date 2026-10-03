@@ -206,7 +206,11 @@ and its helpers (`annotateTkPreview`, `previewLinkDocs`, `spliceLinkDocs`) to
 `authoring.ts`. `gen_parity.mjs` now calls those instead of copies, and
 reaches the now-private `mediaHtml` through a bundling shim. Re-generated on
 2026-10-02, every fixture came out byte-identical; only the retired
-`previewMedia` output was dropped.
+`previewMedia` output was dropped. Re-generated again against studio 0.11
+(Worker 04a6ab7b9): byte-identical. 0.11's rendering changes (publish makes
+`content_html` URLs absolute, quoted snapshots are absolutized against their
+source, feed thread cards) are outside the preview this crate mirrors; the
+e2e suite covers the published side.
 
 Results. Tests compare after collapsing whitespace between tags, but every
 case is also byte-identical:
