@@ -99,7 +99,6 @@ span. Core therefore:
 `crates/blyg-core/tests/e2e.rs` runs against a real Worker under
 `wrangler dev --local` (all `#[ignore]`d, so CI doesn't need one):
 
-
 ```sh
 cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
 BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
