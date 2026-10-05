@@ -12,7 +12,7 @@ release workflow publishes that section as the release notes. If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
-## [Unreleased]
+## [0.8.1] - 2026-10-04
 
 ### Fixed
 
