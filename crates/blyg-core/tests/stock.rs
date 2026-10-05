@@ -251,3 +251,43 @@ fn a_studio_since_0_18_sends_lineage_with_the_row() {
         .count();
     assert_eq!(docs, 0);
 }
+
+#[test]
+fn the_forks_rows_carry_lineage_when_the_page_says_so() {
+    let env = Env::new();
+    let origin = format!("{}/them/", env.mock.url);
+    {
+        let mut st = env.mock.state();
+        st.reading_lineage = true;
+        st.subs = vec![json!({ "id": "S1", "kind": "blyg", "origin": origin, "title": "Them" })];
+        st.reading = Some(vec![
+            json!({ "subscription_id": "S1", "remote_id": "R",
+                "subscription_title": "Them", "origin": origin, "kind": "thread", "state": "current",
+                "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "A reply",
+                "content_html": "<p>A reply</p>",
+                "forked_from": { "origin": "https://ada.example.net/", "id": "X", "version": 2 } }),
+            json!({ "subscription_id": "S1", "remote_id": "P",
+                "subscription_title": "Them", "origin": origin, "kind": "fragment", "state": "current",
+                "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "Plain",
+                "content_html": "<p>Plain</p>" }),
+        ]);
+    }
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        lineage_fetches: 20,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    assert_eq!(b.server_extensions(), Some(true));
+    let r = b.reading_row("S1", "R").unwrap();
+    assert_eq!(r.forked_from.map(|f| f.id).as_deref(), Some("X"));
+    // Both rows said everything: no public document fetched.
+    let docs = env
+        .mock
+        .state()
+        .log
+        .iter()
+        .filter(|l| l.contains("/them/items/"))
+        .count();
+    assert_eq!(docs, 0);
+}

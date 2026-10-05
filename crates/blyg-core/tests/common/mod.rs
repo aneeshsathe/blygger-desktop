@@ -118,6 +118,9 @@ pub struct State {
     /// `stub_of_json`/`forked_from_json`, so lineage comes from each post's
     /// public document.
     pub pre_lineage_imports: bool,
+    /// The Worker fork's reading rows carry `stub_of`/`forked_from`, and the
+    /// page says so (`lineage: true`).
+    pub reading_lineage: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -1005,7 +1008,11 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             };
             if !s.read_sync {
                 let page: Vec<Value> = page.iter().map(reading_row_json).collect();
-                return (200, json!({ "items": page, "next": next }));
+                let mut body = json!({ "items": page, "next": next });
+                if s.reading_lineage {
+                    body["lineage"] = json!(true);
+                }
+                return (200, body);
             }
             for it in &mut page {
                 if it.get("read_version").is_some() {
@@ -1018,10 +1025,11 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 it["read_version"] = s.reads.get(&key).map_or(Value::Null, |v| json!(v));
             }
             let page: Vec<Value> = page.iter().map(reading_row_json).collect();
-            (
-                200,
-                json!({ "items": page, "next": next, "read_state": true }),
-            )
+            let mut body = json!({ "items": page, "next": next, "read_state": true });
+            if s.reading_lineage {
+                body["lineage"] = json!(true);
+            }
+            (200, body)
         }
         // ---- extension 5 (404 until "deployed")
         ("PUT", ["api", "reading", sub, rid, "read"]) if s.read_sync => {

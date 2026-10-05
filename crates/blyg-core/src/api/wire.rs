@@ -254,7 +254,8 @@ pub struct Media {
 
 /// `GET /api/reading/imported` (patch 3) → `{items, next}`, plus `read_state: true`
 /// from a server that stores read state (extension 5; each item then carries
-/// its `read_version`).
+/// its `read_version`), and `lineage: true` from one whose rows carry their
+/// `stub_of` and `forked_from` (null when none).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReadingPage {
     pub items: Vec<ReadingItem>,
@@ -262,6 +263,8 @@ pub struct ReadingPage {
     pub next: Option<String>,
     #[serde(default, deserialize_with = "crate::model::lenient")]
     pub read_state: Option<bool>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub lineage: Option<bool>,
 }
 
 impl ReadingPage {

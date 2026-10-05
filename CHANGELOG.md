@@ -15,7 +15,7 @@ release workflow publishes that section as the release notes.
 ### Changed
 
 - **Burrow follows blygger-studio 0.26's owner API.** Nothing it used changed; the tests now check against 0.26's `openapi.json`.
-- **Who a post replies to, or forks, comes with the post** from studio 0.18 or later, so Burrow no longer fetches each post's own document for it. Older servers work as before.
+- **Who a post replies to, or forks, comes with the post** from studio 0.18 or later (and from the reading rows of a server with Burrow's extensions that say `lineage: true`), so Burrow no longer fetches each post's own document for it. Older servers work as before.
 - **One response per post.** A reply that also quotes the post it replies to is listed once, as a reply; a fork outranks both. A reply or quote of a passage says so ("stubbed a passage of this").
 - **Your own posts count as responses** to the posts they quote, reply to or fork.
 

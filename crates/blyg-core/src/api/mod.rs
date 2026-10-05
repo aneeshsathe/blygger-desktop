@@ -673,8 +673,10 @@ impl Api {
         let page: Option<ReadingPage> = Self::optional(self.call_as("GET", &path, None))?;
         Ok(page.map(|mut p| {
             let read_sync = p.read_sync();
+            let lineage = p.lineage == Some(true);
             for it in &mut p.items {
                 it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
+                it.lineage_known = lineage;
                 if !read_sync {
                     // Only a server that advertises read state means it.
                     it.read_version = None;

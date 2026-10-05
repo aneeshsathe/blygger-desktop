@@ -48,6 +48,10 @@
                     },
                     "read_state": {
                       "type": "boolean"
+                    },
+                    "lineage": {
+                      "type": "boolean",
+                      "description": "Rows carry stub_of and forked_from (null when none)."
                     }
                   },
                   "required": [
@@ -622,6 +626,28 @@
               "integer",
               "null"
             ]
+          },
+          "stub_of": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The item's stub_of as imported (studio 0.18+), verbatim: {origin,id,version,cited?} or {url,cited?}. Present when the page says lineage: true."
+          },
+          "forked_from": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The item's forked_from as imported, verbatim. Present when the page says lineage: true."
           }
         },
         "required": [
