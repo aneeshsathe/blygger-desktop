@@ -1214,8 +1214,8 @@ impl MainView {
                         div()
                             .flex()
                             .gap(px(8.))
-                            .child(div().text_color(p.accent).child("•"))
-                            .child(div().flex_1().child(*line))
+                            .child(div().flex_none().text_color(p.accent).child("•"))
+                            .child(div().flex_1().min_w_0().child(*line))
                     })),
             )
             .child(

@@ -1001,7 +1001,7 @@ impl MainView {
 
     // ------------------------------------------------------------ demos
 
-    /// `BLYGGER_DEMO=ob-…` / `tut-…` (screenshots): the same calls a click
+    /// `BLYGGER_DEMO=ob-…` (`ob-news`: what's new) / `tut-…` (screenshots): the same calls a click
     /// or a key makes.
     pub(super) fn onboarding_demo(
         &mut self,
@@ -1016,6 +1016,10 @@ impl MainView {
             ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
             ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
             ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
+            // The first launch after an update.
+            ("ob-news", 0) => {
+                self.start_whats_new(whats_new::RELEASES.iter().collect(), window, cx)
+            }
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
             (s, 0) if s.starts_with("tut-") => {
                 self.start_tutorial(window, cx);

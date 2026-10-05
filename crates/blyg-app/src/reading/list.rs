@@ -919,6 +919,8 @@ impl MainView {
                                 .child(b),
                         )
                     })
+                    // --- lineage --- which kinds, never how many.
+                    .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
                     .child(when),
             )
@@ -1013,6 +1015,7 @@ impl MainView {
             .child(format!("· {kind}"))
             // --- end profiles ---
             .children(self.render_pill(o, cx))
+            .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
             .child(div().flex_1())
             .when(!super::original::is_external(&o.key), |d| {
                 d.child(self.render_thumbs(item.thumb, cx))
