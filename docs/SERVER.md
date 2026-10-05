@@ -3,7 +3,7 @@
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). The app follows that contract (studio
-0.11 is current) and needs **0.9 or later**. Every route the app shares with upstream is
+0.26 is current) and needs **0.9 or later**. Every route the app shares with upstream is
 checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
 **A stock blygger-studio works.** Sign in with the studio password: Burrow signs in at
@@ -21,7 +21,7 @@ changed one, and thumbs and hoppers come from `/api/signals` and each hopper.
 | AI disclosure for text generated **in Burrow** | Not recorded. Before publishing such text, Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
 | Read state across Macs | Stays on each Mac. |
 | Removing an image you pasted, then deleted | It stays on the server. |
-| Who a post replies to, or forks | Fetched from the author's blyg, a few posts per sync. (No server's reading rows carry it yet; upstream issue #12.) |
+| Who a post replies to, or forks | Studio 0.18 or later sends it with each post. An older one doesn't, so Burrow fetches it from the author's blyg, a few posts per sync. |
 
 Burrow says this once, the first time it meets a stock server, and lists it in the
 About window.
@@ -94,10 +94,11 @@ export reads it. It holds only numbers keyed by subscription and item, never tex
 
 ## Also used when present
 
-- `DELETE /api/media/:id` (removes an upload; 404 unknown, 409 for the avatar)
-  and `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes
-  on the same item. Neither is upstream (upstream issue #7). Without them, an
-  abandoned paste leaves its file on the server.
+- `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes on
+  the same item. Not upstream (upstream issue #7).
+- `DELETE /api/media/:id` (removes an upload) is upstream since studio 0.16,
+  answering `{ok, outcome: "deleted" | "detached"}`. On an older server it 404s, and
+  an abandoned paste leaves its file there.
 
 ## What the app uses from upstream
 

@@ -895,9 +895,9 @@ impl Engine {
         Ok(Some((out, complete)))
     }
 
-    /// Reading rows carry no lineage (who a post replies to or forks;
-    /// upstream issue #12), so fetch the public item document of blyg posts
-    /// that haven't been looked up yet: a few per pull, newest first, within
+    /// Reading rows from extension 3 or a studio before 0.18 carry no
+    /// lineage (who a post replies to or forks; upstream issue #12), so fetch
+    /// the public item document of blyg posts that haven't been looked up yet: a few per pull, newest first, within
     /// a time budget, skipping a blyg for the rest of the pass once it fails.
     /// A fetched document is cached (the changelog cache), and the merge
     /// fills lineage from it from then on. True if any row changed.
@@ -918,6 +918,7 @@ impl Engine {
             let blyg = kinds.get(&it.subscription_id) == Some(&SubscriptionKind::Blyg);
             if !blyg
                 || it.state == "tombstone"
+                || it.lineage_known
                 || it.stub_of.is_some()
                 || it.forked_from.is_some()
                 || failed.contains(&it.origin)

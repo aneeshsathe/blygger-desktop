@@ -38,6 +38,7 @@ fn ri(
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -654,6 +655,7 @@ fn responses_are_found_by_origin_and_id() {
         version: Some(2),
         origin: Some("https://ADA.example".into()),
         cited: None,
+        selector: None,
     }];
     let mut stub = responder("sc", "S1", "https://cy.example/", "2030-01-04T00:00:00Z");
     stub.stub_of = Some(StubOf {
@@ -683,6 +685,7 @@ fn responses_are_found_by_origin_and_id() {
         version: None,
         origin: None,
         cited: None,
+        selector: None,
     }];
     s.merge_reading(
         &[target, quote, stub.clone(), fork, other, own],

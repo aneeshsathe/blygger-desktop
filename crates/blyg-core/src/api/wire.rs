@@ -363,9 +363,16 @@ pub fn stock_row(
         t @ Value::Array(_) => t,
         _ => Value::Null,
     };
+    // Studio 0.18+ keeps the post's `stub_of` and `forked_from` (studio#12):
+    // the keys are there, null or not, and then the row's lineage is whole.
+    let lineage_known = v.contains_key("stub_of_json") || v.contains_key("forked_from_json");
+    let stub_of = parse("stub_of_json");
+    let forked_from = parse("forked_from_json");
     for k in [
         "author_json",
         "transclusions_json",
+        "stub_of_json",
+        "forked_from_json",
         "media_json",
         "content_hash",
         "l0",
@@ -374,6 +381,9 @@ pub fn stock_row(
     }
     v.insert("author".into(), author);
     v.insert("transclusions".into(), transclusions);
+    v.insert("stub_of".into(), stub_of);
+    v.insert("forked_from".into(), forked_from);
+    v.insert("lineage_known".into(), lineage_known.into());
     v.insert("subscription_title".into(), title.into());
     v.insert("origin".into(), origin.into());
     v.insert("thumb".into(), thumb.map_or(Value::Null, Value::from));
@@ -454,6 +464,30 @@ mod responses_tests {
 #[cfg(test)]
 mod stock_row_tests {
     use super::*;
+
+    #[test]
+    fn a_studio_0_18_row_carries_its_lineage() {
+        let raw = serde_json::json!({
+            "subscription_id": "S", "remote_id": "R", "kind": "thread", "state": "current",
+            "version": 1, "created": null, "updated": null, "observed_at": "2030-01-01T00:00:00Z",
+            "content_md": "Re", "content_html": "<p>Re</p>", "content_hash": null,
+            "author_json": null, "media_json": null, "transclusions_json": null, "l0": false,
+            "pinned_version_retained": null, "page": null,
+            "stub_of_json": r#"{"origin":"https://ada.example/","id":"X","version":2}"#,
+            "forked_from_json": null,
+        });
+        let r = stock_row(&raw, "N", "https://them.example/", None, &[]).unwrap();
+        assert!(r.lineage_known);
+        assert_eq!(r.stub_of.and_then(|s| s.id).as_deref(), Some("X"));
+        assert!(r.forked_from.is_none());
+        // Before 0.18 the keys are absent, and the row says so.
+        let mut old = raw.clone();
+        let o = old.as_object_mut().unwrap();
+        o.remove("stub_of_json");
+        o.remove("forked_from_json");
+        let r = stock_row(&old, "N", "https://them.example/", None, &[]).unwrap();
+        assert!(!r.lineage_known && r.stub_of.is_none());
+    }
 
     #[test]
     fn a_live_imported_item_becomes_a_row() {

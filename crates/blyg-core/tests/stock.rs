@@ -36,7 +36,8 @@ fn seed(env: &Env, stock: bool) {
     ]);
 }
 
-/// Every reading row the store holds, raw (tombstones included), in key order.
+/// Every reading row the store holds, raw (tombstones included), in key
+/// order. `lineage_known` says where a row came from, so it's left out.
 fn rows(b: &LiveBackend) -> Vec<Value> {
     let mut v: Vec<Value> = ["A", "B", "C"]
         .iter()
@@ -44,6 +45,7 @@ fn rows(b: &LiveBackend) -> Vec<Value> {
         .map(|r| {
             let mut v = serde_json::to_value(r).unwrap();
             v.as_object_mut().unwrap().remove("read_version");
+            v.as_object_mut().unwrap().remove("lineage_known");
             v
         })
         .collect();
@@ -135,6 +137,7 @@ fn lineage_arrives_from_the_posts_own_document() {
     {
         let mut st = env.mock.state();
         st.stock = true;
+        st.pre_lineage_imports = true;
         st.subs = vec![json!({ "id": "S1", "kind": "blyg", "origin": origin, "title": "Them" })];
         st.reading = Some(vec![
             json!({ "subscription_id": "S1", "remote_id": "R",
@@ -177,6 +180,11 @@ fn lineage_arrives_from_the_posts_own_document() {
         .filter(|l| l.starts_with("GET /them/items/R.json"))
         .count();
     assert_eq!(docs, 1);
+    // A studio before 0.18 is older than the vendored contract on this.
+    env.mock
+        .state()
+        .violations
+        .retain(|v| !v.contains("missing required `stub_of_json`"));
 }
 
 #[test]
@@ -196,4 +204,50 @@ fn an_edit_within_the_same_second_is_still_noticed() {
     b.sync_now().unwrap();
     let r = b.reading_row("S1", "A").unwrap();
     assert_eq!((r.version, r.content_md.as_str()), (3, "First post, v3"));
+}
+
+#[test]
+fn a_studio_since_0_18_sends_lineage_with_the_row() {
+    let env = Env::new();
+    let origin = format!("{}/them/", env.mock.url);
+    {
+        let mut st = env.mock.state();
+        st.stock = true;
+        st.subs = vec![json!({ "id": "S1", "kind": "blyg", "origin": origin, "title": "Them" })];
+        st.reading = Some(vec![
+            json!({ "subscription_id": "S1", "remote_id": "R",
+                "subscription_title": "Them", "origin": origin, "kind": "thread", "state": "current",
+                "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "A reply",
+                "content_html": "<p>A reply</p>",
+                "stub_of": { "origin": "https://ada.example.net/", "id": "X", "version": 2 },
+                "transclusions": [{ "id": "X", "version": 2, "origin": "https://ada.example.net/",
+                    "selector": { "type": "TextQuoteSelector", "exact": "a line" } }] }),
+            json!({ "subscription_id": "S1", "remote_id": "P",
+                "subscription_title": "Them", "origin": origin, "kind": "fragment", "state": "current",
+                "version": 1, "observed_at": "2030-01-01T00:00:00Z", "content_md": "Plain",
+                "content_html": "<p>Plain</p>" }),
+        ]);
+    }
+    let b = env.open(SyncOptions {
+        start_worker: false,
+        lineage_fetches: 20,
+        ..fast()
+    });
+    b.sync_now().unwrap();
+    let r = b.reading_row("S1", "R").unwrap();
+    assert_eq!(r.stub_of.as_ref().and_then(|s| s.id.as_deref()), Some("X"));
+    // A stub that quotes a passage of its target: one response, partial.
+    let responses = b.responses("https://ada.example.net/", "X");
+    assert_eq!(responses.len(), 1, "{responses:?}");
+    assert_eq!(responses[0].relation, profile::Relation::Stubs);
+    assert!(responses[0].partial);
+    // The row said everything, the plain post included: no document fetched.
+    let docs = env
+        .mock
+        .state()
+        .log
+        .iter()
+        .filter(|l| l.contains("/them/items/"))
+        .count();
+    assert_eq!(docs, 0);
 }

@@ -391,13 +391,14 @@ impl Store {
     }
 
     /// Posts held here that quote, stub or fork `(origin, id)`, newest
-    /// first, one per post (duplicates collapse as in [`Self::reading`]);
+    /// first, one per post (duplicates collapse as in [`Self::reading`], to the
+    /// strongest relation);
     /// withdrawn ones only when kept. An index lookup (`reading_refs`).
     pub fn responses_to(&self, origin: &str, id: &str) -> Vec<crate::model::Response> {
         let (origin, id) = crate::model::post_key(origin, id);
         let c = self.conn();
         let Ok(mut st) = c.prepare_cached(
-            "SELECT r.json, r.read_version, r.sub_kind, f.relation, f.version \
+            "SELECT r.json, r.read_version, r.sub_kind, f.relation, f.version, f.partial \
              FROM reading_refs f JOIN reading r \
                ON r.subscription_id = f.subscription_id AND r.remote_id = f.remote_id \
              WHERE f.target_id = ?1 AND f.target_origin = ?2 \
@@ -413,13 +414,14 @@ impl Store {
                     r.get::<_, Option<String>>(2)?,
                     r.get::<_, String>(3)?,
                     r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, bool>(5)?,
                 ))
             })
             .map(|it| it.filter_map(|r| r.ok()).collect::<Vec<_>>())
             .unwrap_or_default();
-        let mut seen = HashSet::new();
-        let mut out = Vec::new();
-        for (json, rv, _kind, rel, version) in rows {
+        let mut seen = std::collections::HashMap::new();
+        let mut out: Vec<crate::model::Response> = Vec::new();
+        for (json, rv, _kind, rel, version, partial) in rows {
             let Ok(mut item) = serde_json::from_str::<ReadingItem>(&json) else {
                 continue;
             };
@@ -430,14 +432,28 @@ impl Store {
             let Some(relation) = relation_of(&rel) else {
                 continue;
             };
-            if !seen.insert((group_key(&item), rel)) {
-                continue;
-            }
-            out.push(crate::model::Response {
+            let r = crate::model::Response {
                 item,
                 relation,
                 version: version.map(|v| v as u32),
-            });
+                partial,
+            };
+            // Two copies of one post (say a blyg and its RSS feed) are one
+            // response, with the stronger relation either copy has.
+            match seen.entry(group_key(&r.item)) {
+                std::collections::hash_map::Entry::Vacant(e) => {
+                    e.insert(out.len());
+                    out.push(r);
+                }
+                std::collections::hash_map::Entry::Occupied(e) => {
+                    let held = &mut out[*e.get()];
+                    if r.relation > held.relation {
+                        held.relation = r.relation;
+                        held.version = r.version;
+                    }
+                    held.partial |= r.partial;
+                }
+            }
         }
         out
     }
@@ -512,14 +528,15 @@ fn put_refs(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<()> {
     for r in it.references() {
         tx.execute(
             "INSERT OR IGNORE INTO reading_refs (subscription_id, remote_id, target_origin, target_id, \
-             relation, version) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             relation, version, partial) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 it.subscription_id,
                 it.remote_id,
                 r.origin,
                 r.id,
                 relation_str(r.relation),
-                r.version
+                r.version,
+                r.partial
             ],
         )?;
     }

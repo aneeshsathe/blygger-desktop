@@ -10,6 +10,15 @@ To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
 release workflow publishes that section as the release notes.
 
+## [Unreleased]
+
+### Changed
+
+- **Burrow follows blygger-studio 0.26's owner API.** Nothing it used changed; the tests now check against 0.26's `openapi.json`.
+- **Who a post replies to, or forks, comes with the post** from studio 0.18 or later, so Burrow no longer fetches each post's own document for it. Older servers work as before.
+- **One response per post.** A reply that also quotes the post it replies to is listed once, as a reply; a fork outranks both. A reply or quote of a passage says so ("stubbed a passage of this").
+- **Your own posts count as responses** to the posts they quote, reply to or fork.
+
 ## [0.7.0] - 2026-10-02
 
 ### Changed

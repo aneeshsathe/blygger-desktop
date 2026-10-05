@@ -184,6 +184,8 @@ impl ItemDoc {
             stub_of: self.stub_of.clone(),
             forked_from: self.forked_from.clone(),
             transclusions: self.transclusions.clone(),
+            // The post's own document: what it lacks, it doesn't have.
+            lineage_known: true,
         }
     }
 

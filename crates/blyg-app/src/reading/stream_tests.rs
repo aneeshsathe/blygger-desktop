@@ -419,13 +419,8 @@ fn responses_seen_in_the_network_are_listed_in_the_pane(cx: &mut TestAppContext)
             .collect()
     });
     use blyg_core::profile::Relation;
-    assert_eq!(
-        responses,
-        [
-            (ADA_REPLY.to_string(), Relation::Stubs),
-            (ADA_REPLY.to_string(), Relation::Quotes)
-        ]
-    );
+    // The reply stubs and quotes the bench post: one act, so one response.
+    assert_eq!(responses, [(ADA_REPLY.to_string(), Relation::Stubs)]);
     assert!(cx.debug_bounds("responses").is_some(), "the list");
     // A post nobody responded to has no list at all.
     let key = view.read_with(cx, |v, _| {
