@@ -547,7 +547,7 @@ impl MainView {
 
     /// Reply from the reading pane: ask its web view for the selected
     /// passage (a partial stub), falling back to the no-selection prefill.
-    fn reply_with_selection(
+    pub(super) fn reply_with_selection(
         &mut self,
         item: blyg_core::ReadingItem,
         window: &mut Window,

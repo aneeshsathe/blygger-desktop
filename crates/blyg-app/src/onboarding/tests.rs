@@ -235,7 +235,12 @@ fn setup_mode<'a>(
 ) -> Env<'a> {
     let dir = tempfile::tempdir().unwrap();
     if onboarded {
-        state::AppState::update(dir.path(), |s| s.onboarded = true).unwrap();
+        state::AppState::update(dir.path(), |s| {
+            s.onboarded = true;
+            // This version already seen: no what's-new card.
+            s.seen_version = Some(env!("CARGO_PKG_VERSION").into());
+        })
+        .unwrap();
     }
     let real = Recording::new();
     let switch = SwitchBackend::new(real.clone(), mode);
@@ -545,6 +550,8 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the quoted post is held");
             v.open_original(origin, steps::QUOTED.into(), Some(1), window, cx)
         }),
+        "lineage" => e.cx.simulate_keystrokes("cmd-j"),
+        "ring" => e.cx.simulate_keystrokes("space"),
         "reader" => e.cx.simulate_keystrokes("alt-cmd-2"),
         "notes" => e.cx.simulate_keystrokes("cmd-shift-n"),
         "browser" => e.cx.simulate_keystrokes("escape"),
@@ -881,4 +888,70 @@ fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
         .view
         .read_with(e.cx, |v, cx| v.editor.read(cx).value().to_string());
     assert!(text.contains("]("), "a mention link was inserted: {text}");
+}
+
+// --- what's new --- the first launch after an update.
+
+static NEWS: super::whats_new::Release = super::whats_new::Release {
+    version: "9.9.9",
+    items: &["Something new"],
+    first_step: Some("lineage"),
+};
+
+fn news_up(e: &Env) -> bool {
+    e.view.read_with(e.cx, |v, _| {
+        v.onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| !t.news.is_empty())
+    })
+}
+
+#[gpui_kit::test]
+fn whats_new_opens_the_tour_with_a_way_out(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| v.onboarding.tutorial.is_none()),
+        "seen: no card"
+    );
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.start_whats_new(vec![&NEWS], window, cx)
+    });
+    e.cx.run_until_parked();
+    assert!(news_up(&e));
+    // The step's own key does nothing while the card is up.
+    e.cx.simulate_keystrokes("down");
+    e.cx.run_until_parked();
+    assert!(news_up(&e) && !tour_done(&mut e));
+    // ⌥⌘→: what's new, straight to its first step.
+    e.cx.simulate_keystrokes("alt-cmd-right");
+    e.cx.run_until_parked();
+    assert!(!news_up(&e));
+    let step = e.view.read_with(e.cx, |v, _| {
+        v.onboarding.tutorial.as_ref().map(|t| STEPS[t.step].id)
+    });
+    assert_eq!(step, Some("lineage"));
+    // Skip: the card's other way out ends the tour.
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.finish_tutorial(window, cx);
+        v.start_whats_new(vec![&NEWS], window, cx);
+    });
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| v.onboarding.tutorial.is_none()),
+        "esc skips"
+    );
+}
+
+#[gpui_kit::test]
+fn an_update_remembers_the_version_once_seen(cx: &mut TestAppContext) {
+    let e = setup(cx, CONNECTED, true);
+    assert_eq!(
+        state::AppState::load(e.dir.path()).seen_version.as_deref(),
+        Some(env!("CARGO_PKG_VERSION"))
+    );
 }

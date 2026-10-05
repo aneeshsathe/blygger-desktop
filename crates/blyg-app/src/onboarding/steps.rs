@@ -43,6 +43,10 @@ pub enum Key {
     Mention,
     /// The spelling menu is open (a right-click on an underlined word).
     SpellMenu,
+    /// The lineage sheet is open (⌘J or a click on the glyph).
+    Lineage,
+    /// Its ring of actions is open (Space on the centre).
+    LineageRing,
 }
 
 /// The part of the window a step highlights.
@@ -107,6 +111,8 @@ pub enum Setup {
     Stream,
     /// Reading, in the Stream, the post with a quote selected.
     StreamQuote,
+    /// Reading, in the Stream, the quoting post's lineage open (⌘J).
+    Lineage,
     /// Reading, in Reader mode, a post open.
     Reader,
     /// The browser pane on a blank sample page (nothing is loaded).
@@ -375,14 +381,46 @@ pub const STEPS: &[Step] = &[
         id: "original",
         title: "Quotes lead to the original",
         caption: "The grey box quotes another post: click its text to open the original beside \
-                  it, or the name for the author's profile. ↩ marks a post with responses; its \
-                  pane lists who quoted, stubbed or forked it.",
+                  it, or the name for the author's profile. Its pane lists who quoted, stubbed \
+                  or forked it.",
         keys: &[Key::OpenOriginal, Key::OpenProfile],
         key_label: "click",
         region: Region::StreamPost,
         button: None,
         setup: Setup::StreamQuote,
         pause_ms: 2600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "lineage",
+        title: "Lineage: where a post comes from",
+        caption: "The glyph beside a post's name shows which kinds of post it draws on (left) \
+                  and which draw on it (right): fork, reply, quote, never how many. ⌘J, or a \
+                  click on it, opens the map: arrows move, ⏎ makes a neighbour the centre, \
+                  ⌫ walks back.",
+        keys: &[Key::Lineage],
+        key_label: "⌘J",
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 2400,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "ring",
+        title: "Actions on a ring",
+        caption: "With the post in the middle selected, Space opens its actions in fixed \
+                  places: F fork, R reply, Q quote, L link post, V versions, O open. A letter \
+                  previews what it would make; ⏎ does it, esc backs out. (Sample data: \
+                  nothing is sent.)",
+        keys: &[Key::LineageRing],
+        key_label: "Space",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Lineage,
+        pause_ms: 2400,
         settle: false,
         stay: true,
     },
@@ -486,6 +524,8 @@ mod tests {
             Key::Mention,
             Key::ReadMore,
             Key::OpenOriginal,
+            Key::Lineage,
+            Key::LineageRing,
             Key::ReaderMode,
             Key::Notes,
             Key::CloseBrowser,

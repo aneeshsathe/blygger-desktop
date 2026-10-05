@@ -22,6 +22,7 @@ impl MainView {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.reading.mentions = Load::from_result(r);
+                v.reading.refilter(); // mentions of your posts mark them
                 cx.notify();
             });
         })

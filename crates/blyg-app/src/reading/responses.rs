@@ -152,11 +152,12 @@ impl MainView {
             .is_some_and(|b| blyg_core::profile::same_origin(&b, origin))
     }
 
-    /// The stream's marker: this post has responses in your network.
+    /// This post has responses in your network (the glyph's right side).
+    #[cfg(test)]
     pub(crate) fn has_responses(&self, origin: &str, id: &str) -> bool {
         self.reading
-            .responded
-            .contains(&blyg_core::post_key(origin, id))
+            .down
+            .contains_key(&blyg_core::post_key(origin, id))
     }
 
     /// The responses list for `(origin, id)`; `None` when there are none.
@@ -231,22 +232,6 @@ impl MainView {
                 }))
                 .into_any_element(),
         )
-    }
-
-    /// The stream's small "↩" marker (no number).
-    pub(crate) fn responses_marker(&self) -> AnyElement {
-        let p = self.palette.on_page();
-        div()
-            .id("stream-responses")
-            .text_color(p.accent)
-            .child("↩")
-            .tooltip(|_, cx| {
-                cx.new(|_| {
-                    super::Tip("Responses in your network · open the post to see who".into())
-                })
-                .into()
-            })
-            .into_any_element()
     }
 }
 

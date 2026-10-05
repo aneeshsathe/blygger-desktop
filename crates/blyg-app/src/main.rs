@@ -320,6 +320,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- reading & versions ---
                 MenuItem::separator(),
                 MenuItem::action("Versions…", app::reading::ShowVersions),
+                MenuItem::action("Lineage…", app::reading::ShowLineage),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 // --- delete & withdraw ---

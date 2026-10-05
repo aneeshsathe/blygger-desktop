@@ -66,6 +66,9 @@ pub struct Tutorial {
     retries: u8,
     /// Stay on the step after its key (`BLYGGER_DEMO=tut-<id>+` snapshots).
     hold: bool,
+    /// After an update: what changed, shown before the first step until
+    /// Take the tour, Start at what's new, or Skip.
+    pub news: Vec<&'static super::whats_new::Release>,
     parked: Parked,
 }
 
@@ -154,9 +157,41 @@ impl MainView {
             seen: Vec::new(),
             retries: 0,
             hold: false,
+            news: Vec::new(),
             parked,
         });
         self.tutorial_enter(0, window, cx);
+    }
+
+    /// After an update: the tutorial, opening on what changed.
+    pub(in crate::app) fn start_whats_new(
+        &mut self,
+        news: Vec<&'static super::whats_new::Release>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_tutorial(window, cx);
+        if let Some(t) = self.onboarding.tutorial.as_mut() {
+            t.news = news;
+        }
+        // The card has the keyboard: ⏎ what's new, esc skips.
+        window.focus(&self.onboarding.focus, cx);
+        cx.notify();
+    }
+
+    /// Leave the what's-new card for the tour, at its start or at the
+    /// first new step.
+    fn whats_new_go(&mut self, at_new: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
+        let first = t.news.iter().rev().find_map(|r| r.first_step);
+        t.news.clear();
+        let i = first
+            .filter(|_| at_new)
+            .and_then(|id| STEPS.iter().position(|s| s.id == id))
+            .unwrap_or(0);
+        self.tutorial_enter(i, window, cx);
     }
 
     /// Back to the real backend, as the user left it.
@@ -250,6 +285,15 @@ impl MainView {
     }
 
     pub(super) fn tutorial_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| !t.news.is_empty())
+        {
+            // ⌥⌘→: the primary choice, what's new (else the whole tour).
+            return self.whats_new_go(true, window, cx);
+        }
         let Some(step) = self.onboarding.tutorial.as_ref().map(|t| t.step) else {
             return;
         };
@@ -276,7 +320,7 @@ impl MainView {
             return;
         };
         let step = &STEPS[t.step];
-        if t.done || !step.accepts(key) {
+        if t.done || !step.accepts(key) || !t.news.is_empty() {
             return;
         }
         t.done = true;
@@ -366,6 +410,8 @@ impl MainView {
             (Key::CloseBrowser, !self.browser.open),
             (Key::Mention, assist.mention_open()),
             (Key::SpellMenu, assist.menu_open()),
+            (Key::Lineage, self.lineage_open()),
+            (Key::LineageRing, self.lineage_ring_open()),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -618,6 +664,18 @@ impl MainView {
                     None => self.stream_move(1, window, cx),
                 }
             }
+            Setup::Lineage => {
+                self.tutorial_setup(Setup::StreamQuote, window, cx);
+                let at = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == steps::QUOTING)
+                    .map(|r| r.origin.clone());
+                if let Some(origin) = at {
+                    self.open_lineage(origin, steps::QUOTING.into(), window, cx);
+                }
+            }
             Setup::Reader => {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 if let Some(key) = self.tutorial_reading_key(steps::QUOTED) {
@@ -660,6 +718,8 @@ impl MainView {
             "browser" => self.close_browser(window, cx),
             "mentions" => self.demo_type("@", window, cx),
             "quotes" => self.open_quote_picker(window, cx),
+            "lineage" => self.toggle_lineage(window, cx),
+            "ring" => self.lineage_open_ring(cx),
             _ => {}
         }
     }
@@ -850,6 +910,9 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
         let t = self.onboarding.tutorial.as_ref()?;
+        if !t.news.is_empty() {
+            return Some(self.render_whats_new(cx));
+        }
         let p = self.palette;
         let step = t.current();
         let (index, done) = (t.step, t.done);
@@ -947,7 +1010,14 @@ impl MainView {
                 .id("tutorial-card")
                 .occlude()
                 .absolute()
-                .left(px(14.))
+                // Clear of the lineage sheet's responses row.
+                .map(|d| {
+                    if self.lineage_open() {
+                        d.right(px(14.))
+                    } else {
+                        d.left(px(14.))
+                    }
+                })
                 .bottom(px(STATUS_H + 14.))
                 .w(px(380.))
                 .max_w(relative(0.9))
@@ -1074,6 +1144,120 @@ impl MainView {
                 .child(card)
                 .into_any_element(),
         )
+    }
+}
+
+impl MainView {
+    /// The what's-new card, centred: what changed, then the choices.
+    fn render_whats_new(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let Some(t) = self.onboarding.tutorial.as_ref() else {
+            return div().into_any_element();
+        };
+        let version = t.news.first().map_or("", |r| r.version);
+        let has_new_step = t.news.iter().any(|r| r.first_step.is_some());
+        let button = |id: &'static str, label: &'static str, strong: bool| {
+            div()
+                .id(id)
+                .px(px(11.))
+                .py(px(5.))
+                .rounded_full()
+                .border_1()
+                .border_color(if strong { p.accent } else { p.edge() })
+                .text_color(if strong { p.accent_text() } else { p.ink })
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.accent))
+                .child(label)
+        };
+        let card = div()
+            .id("whats-new")
+            .track_focus(&self.onboarding.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                match ev.keystroke.key.as_str() {
+                    "escape" => this.finish_tutorial(window, cx),
+                    "enter" => this.whats_new_go(true, window, cx),
+                    _ => return,
+                }
+                cx.stop_propagation();
+            }))
+            .occlude()
+            .w(px(480.))
+            .max_w(relative(0.92))
+            .map(|d| crate::theme_ext::card(d, &self.theme))
+            .px(px(20.))
+            .py(px(16.))
+            .font_family(SharedString::from(self.prefs.ui().family))
+            .text_size(px(13.))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.muted)
+                    .child("UPDATED"),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(17.))
+                    .child(format!("What's new in Burrow {version}")),
+            )
+            .child(
+                div()
+                    .mt(px(8.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .line_height(relative(1.45))
+                    .text_color(p.ink.opacity(0.85))
+                    .children(t.news.iter().flat_map(|r| r.items.iter()).map(|line| {
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .child(div().text_color(p.accent).child("•"))
+                            .child(div().flex_1().child(*line))
+                    })),
+            )
+            .child(
+                div()
+                    .mt(px(14.))
+                    .pt(px(10.))
+                    .rule_t(&p)
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(8.))
+                    .text_size(px(12.))
+                    .child(
+                        button("whats-new-skip", "Skip tutorial  esc", false).on_click(
+                            cx.listener(|this, _, window, cx| this.finish_tutorial(window, cx)),
+                        ),
+                    )
+                    .child(div().flex_1())
+                    .child(
+                        button("whats-new-tour", "Take the whole tour", false).on_click(
+                            cx.listener(|this, _, window, cx| this.whats_new_go(false, window, cx)),
+                        ),
+                    )
+                    .when(has_new_step, |d| {
+                        d.child(
+                            button("whats-new-start", "Show me what's new  ⏎", true).on_click(
+                                cx.listener(|this, _, window, cx| {
+                                    this.whats_new_go(true, window, cx)
+                                }),
+                            ),
+                        )
+                    }),
+            );
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(p.shadow.opacity(0.25))
+            .child(card)
+            .into_any_element()
     }
 }
 

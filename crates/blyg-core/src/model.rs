@@ -626,6 +626,47 @@ impl ReadingItem {
     }
 }
 
+impl Item {
+    /// The posts this one of yours points at, one reference per target (see
+    /// [`add_ref`]): its `stub_of`, `forked_from` and `![[id]]` quotes. A
+    /// quote names no origin: it's the held post with that id, else one of
+    /// yours (`own_origin`). Partial quotes aren't told apart here.
+    pub fn references(&self, own_origin: &str, held: &[ReadingItem]) -> Vec<PostRef> {
+        use crate::profile::Relation;
+        let mut out = Vec::new();
+        let mut push = |origin: &str, id: &str, relation, version| {
+            if id.trim().is_empty() || origin.trim().is_empty() {
+                return;
+            }
+            let (origin, id) = post_key(origin, id);
+            add_ref(
+                &mut out,
+                PostRef {
+                    origin,
+                    id,
+                    relation,
+                    version,
+                    partial: false,
+                },
+            );
+        };
+        if let Some(s) = &self.stub_of {
+            push(&s.origin, &s.id, Relation::Stubs, Some(s.version));
+        }
+        if let Some(f) = &self.forked_from {
+            push(&f.origin, &f.id, Relation::Forks, Some(f.version));
+        }
+        for q in crate::profile::transclusion_ids(&self.content_md) {
+            let origin = held
+                .iter()
+                .find(|r| r.remote_id.eq_ignore_ascii_case(&q))
+                .map_or(own_origin, |r| r.origin.as_str());
+            push(origin, &q, Relation::Quotes, None);
+        }
+        out
+    }
+}
+
 /// Your published posts that quote, stub or fork `(origin, id)`, one per
 /// post with the stronger relation (as [`add_ref`]), newest first. A quote
 /// (`![[id]]`) names no origin, so it matches by id. Partial quotes aren't

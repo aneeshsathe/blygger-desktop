@@ -453,3 +453,104 @@ fn your_own_posts_list_their_verified_mentions(cx: &mut TestAppContext) {
         "listed under the post"
     );
 }
+
+// --- lineage --- (⌘J)
+
+/// (centre id, ups, downs, ring open, previewed action)
+type LineageNow = (
+    String,
+    Vec<String>,
+    Vec<String>,
+    bool,
+    Option<super::lineage_vm::Act>,
+);
+
+fn lineage(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<LineageNow> {
+    view.read_with(cx, |v, _| match &v.reading.sheet {
+        Some(super::RSheet::Lineage(s)) => Some((
+            s.model.centre.id.clone(),
+            s.model.ups.iter().map(|n| n.id.to_uppercase()).collect(),
+            s.model.downs.iter().map(|n| n.id.to_uppercase()).collect(),
+            s.ring,
+            s.act,
+        )),
+        _ => None,
+    })
+}
+
+#[gpui_kit::test]
+fn lineage_walks_one_step_at_a_time_and_rings_the_actions(cx: &mut TestAppContext) {
+    use super::lineage_vm::Act;
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes("cmd-r");
+    settle(cx);
+    let ix = view.read_with(cx, |v, _| {
+        v.reading
+            .shown_rows()
+            .position(|r| r.remote_id == ADA_REPLY)
+            .unwrap()
+    });
+    view.update_in(cx, |v, window, cx| v.stream_select(ix, window, cx));
+    settle(cx);
+    // The reply's glyph is drawn: it draws on the bench post.
+    assert!(cx.debug_bounds("lineage-glyph").is_some());
+
+    cx.simulate_keystrokes("cmd-j");
+    settle(cx);
+    let (centre, ups, _, ring, _) = lineage(&view, cx).expect("⌘J opens it");
+    assert_eq!(centre, ADA_REPLY);
+    assert!(!ring);
+    // The reply stubs and quotes the bench post: one neighbour, not two.
+    assert_eq!(
+        ups.iter()
+            .filter(|u| *u == &LIN_BENCH.to_uppercase())
+            .count(),
+        1
+    );
+
+    // Up to it, ⏎ makes it the centre; the reply is below it now.
+    let at = ups
+        .iter()
+        .position(|u| u == &LIN_BENCH.to_uppercase())
+        .unwrap();
+    cx.simulate_keystrokes("up");
+    for _ in 0..ups.len() {
+        cx.simulate_keystrokes("left");
+    }
+    for _ in 0..at {
+        cx.simulate_keystrokes("right");
+    }
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    let (centre, _, downs, _, _) = lineage(&view, cx).unwrap();
+    assert_eq!(centre.to_uppercase(), LIN_BENCH.to_uppercase());
+    assert!(downs.contains(&ADA_REPLY.to_uppercase()));
+    // ⌫ walks back.
+    cx.simulate_keystrokes("backspace");
+    settle(cx);
+    assert_eq!(lineage(&view, cx).unwrap().0, ADA_REPLY);
+
+    // Space on the centre opens the ring; a letter previews; esc backs out
+    // one layer at a time.
+    cx.simulate_keystrokes("space");
+    settle(cx);
+    assert!(lineage(&view, cx).unwrap().3, "the ring is open");
+    cx.simulate_keystrokes("q");
+    assert_eq!(lineage(&view, cx).unwrap().4, Some(Act::Quote));
+    cx.simulate_keystrokes("escape");
+    assert_eq!(lineage(&view, cx).unwrap().4, None);
+    cx.simulate_keystrokes("escape");
+    assert!(!lineage(&view, cx).unwrap().3, "the ring closed");
+    cx.simulate_keystrokes("escape");
+    settle(cx);
+    assert!(lineage(&view, cx).is_none(), "esc closes the sheet");
+
+    // Link post from the ring makes a draft that links the reply.
+    cx.simulate_keystrokes("cmd-j");
+    settle(cx);
+    cx.simulate_keystrokes("space l enter");
+    settle(cx);
+    assert!(lineage(&view, cx).is_none());
+    let draft = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert!(draft.contains(&format!("[[{ADA_REPLY}]]")), "{draft}");
+}
