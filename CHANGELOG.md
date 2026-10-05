@@ -12,6 +12,13 @@ release workflow publishes that section as the release notes. If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
+## [Unreleased]
+
+### Fixed
+
+- The "What's new" card and the lineage view's side panel wrap their text instead of running past the edge.
+- The lineage glyph shows in Reader mode too: on each list row and in the open post's header line.
+
 ## [0.8.0] - 2026-10-04
 
 ### Changed

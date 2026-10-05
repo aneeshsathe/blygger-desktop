@@ -986,7 +986,7 @@ impl MainView {
                         .flex()
                         .gap(px(8.))
                         .child(div().w(px(56.)).flex_none().text_color(p.ink).child(k))
-                        .child(what)
+                        .child(div().flex_1().min_w_0().child(what))
                 }))
         };
         let side = div()
@@ -1079,6 +1079,8 @@ impl MainView {
                                 .child(div().w(px(150.)).flex_none().text_color(p.muted).child(*q))
                                 .child(
                                     div()
+                                        .flex_1()
+                                        .min_w_0()
                                         .when(yes, |d| d.font_weight(FontWeight::SEMIBOLD))
                                         .when(!yes, |d| d.text_color(p.muted))
                                         .child(ans),
@@ -1302,7 +1304,7 @@ impl MainView {
         .size_full();
         Some(
             div()
-                .id("stream-lineage")
+                .id("lineage-glyph")
                 .debug_selector(|| "lineage-glyph".into())
                 .w(px(46.))
                 .h(px(16.))
