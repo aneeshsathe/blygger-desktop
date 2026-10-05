@@ -14,14 +14,20 @@ break things.
 1. Rename `[Unreleased]` in `CHANGELOG.md` to `[x.y.z] - YYYY-MM-DD`, and add
    a fresh, empty `[Unreleased]` above it.
 2. Bump `version` in the root `Cargo.toml`.
-3. Commit, and push a `vx.y.z` tag.
+3. Commit, and merge it to `main` (through a PR, as usual). Don't push a tag.
 
-`.github/workflows/release.yml` then checks that the tag, the Cargo version
-and the changelog agree, builds a universal app, signs `SHA256SUMS` for the
-in-app updater, and creates the GitHub release with that changelog section as
-its notes (`scripts/changelog-notes.sh x.y.z` prints it). A version with a
+On every push to `main`, `.github/workflows/release.yml` checks whether the
+Cargo version has a `vx.y.z` tag yet. If it does, nothing runs. If not, it
+checks that the version and the changelog agree, builds a universal app, signs `SHA256SUMS` for the
+in-app updater, and creates the GitHub release, tagging the merged commit, with
+that changelog section as its notes (`scripts/changelog-notes.sh x.y.z` prints it). A version with a
 `-` in it (`0.7.0-rc.1`) is published as a prerelease, which the updater
 skips.
+
+It runs on `main` rather than on the tag so the build cache is saved where
+the next release can read it: GitHub's cache from one tag can't be read by
+another, so tag builds started cold every time. A failed release can be run
+again from the Actions tab (**Run workflow** on Release).
 
 The release needs the repository secret `UPDATE_SIGNING_KEY` (the Ed25519
 key the app's updater trusts). Developer ID signing and notarization are

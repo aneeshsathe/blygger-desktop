@@ -7,8 +7,9 @@ documented here. The format follows
 break things.
 
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
-`version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
-release workflow publishes that section as the release notes. If the release
+`version` in the root `Cargo.toml`, commit, and merge to `main`: the release
+workflow sees the untagged version, tags the commit, and publishes that
+section as the release notes. If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
