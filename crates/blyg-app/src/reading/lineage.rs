@@ -91,6 +91,36 @@ fn hex_points(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
         .collect()
 }
 
+/// The centre's title in the hexagon: at most two lines of about `width`
+/// characters, broken between words, the second ending in "…" when the
+/// title goes on.
+fn hex_lines(title: &str, width: usize) -> Vec<String> {
+    let mut lines: Vec<String> = vec![String::new()];
+    for w in title.split_whitespace() {
+        let cur = lines.last_mut().expect("one line");
+        let fits = cur.is_empty() || cur.chars().count() + 1 + w.chars().count() <= width;
+        if fits {
+            if !cur.is_empty() {
+                cur.push(' ');
+            }
+            cur.push_str(w);
+        } else if lines.len() < 2 {
+            lines.push(w.to_string());
+        } else {
+            let cur = lines.last_mut().expect("two lines");
+            cur.push('…');
+            break;
+        }
+    }
+    for l in &mut lines {
+        if l.chars().count() > width + 1 {
+            *l = l.chars().take(width).collect::<String>() + "…";
+        }
+    }
+    lines.retain(|l| !l.is_empty());
+    lines
+}
+
 impl MainView {
     // ------------------------------------------------------------ open / close
 
@@ -206,6 +236,14 @@ impl MainView {
             s.act = None;
         }
         self.lineage_look_for_pin(cx);
+        cx.notify();
+    }
+
+    /// Preview `act` on the open ring (screenshots).
+    pub(crate) fn lineage_preview(&mut self, act: Act, cx: &mut Context<Self>) {
+        if let Some(s) = self.lineage_mut().filter(|s| s.ring) {
+            s.act = Some(act);
+        }
         cx.notify();
     }
 
@@ -857,16 +895,15 @@ impl MainView {
             .on_click(
                 cx.listener(|this, _, window, cx| this.lineage_click(Sel::Centre, window, cx)),
             )
-            .child(
+            .children(hex_lines(&c.title, 13).into_iter().map(|line| {
                 div()
                     .text_size(px(11.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.ink)
                     .line_height(relative(1.2))
-                    .text_center()
-                    .line_clamp(2)
-                    .child(c.title.clone()),
-            )
+                    .whitespace_nowrap()
+                    .child(line)
+            }))
             .child(
                 div()
                     .mt(px(2.))
@@ -1319,5 +1356,24 @@ impl MainView {
                 }))
                 .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod hex_tests {
+    use super::hex_lines;
+
+    #[test]
+    fn the_hexagon_title_fits_two_lines() {
+        assert_eq!(
+            hex_lines("On turning beds over", 13),
+            ["On turning", "beds over"]
+        );
+        assert_eq!(
+            hex_lines("Three things on the bench this week", 13),
+            ["Three things", "on the bench…"]
+        );
+        assert_eq!(hex_lines("Supercalifragilistic", 13), ["Supercalifrag…"]);
+        assert!(hex_lines("", 13).is_empty());
     }
 }
