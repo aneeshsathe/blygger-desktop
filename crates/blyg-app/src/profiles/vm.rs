@@ -547,6 +547,7 @@ mod tests {
                 version: 3,
             }),
             transclusions: vec![],
+            lineage_known: false,
         };
         let mut held = item.clone();
         held.origin = "https://ada.example.net/".into();

@@ -558,6 +558,7 @@ mod tests {
             stub_of: None,
             forked_from: None,
             transclusions: vec![],
+            lineage_known: false,
         }
     }
 

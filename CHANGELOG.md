@@ -8,7 +8,24 @@ break things.
 
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and push a `vx.y.z` tag. The
-release workflow publishes that section as the release notes.
+release workflow publishes that section as the release notes. If the release
+teaches something new in the tour, set the newest entry's `version` in
+`crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
+
+## [0.8.0] - 2026-10-04
+
+### Changed
+
+- **Burrow follows blygger-studio 0.26's owner API.** Nothing it used changed; the tests now check against 0.26's `openapi.json`.
+- **Who a post replies to, or forks, comes with the post** from studio 0.18 or later (and from the reading rows of a server with Burrow's extensions that say `lineage: true`), so Burrow no longer fetches each post's own document for it. Older servers work as before.
+- **One response per post.** A reply that also quotes the post it replies to is listed once, as a reply; a fork outranks both. A reply or quote of a passage says so ("stubbed a passage of this").
+- **Your own posts count as responses** to the posts they quote, reply to or fork.
+
+### Added
+
+- **Lineage.** A glyph beside each post's name in the stream shows which kinds of post it draws on and which draw on it (fork, reply, quote), never how many; it replaces the "↩" marker. **⌘J** (Post › Lineage…) opens the post's lineage: what it draws on above, its responses below, walkable one step at a time with ⏎ and ⌫.
+- **Actions on a ring.** Space on the post in the middle of the lineage view opens fork, reply, quote, link post, versions and open in fixed places (the web Studio's layout). A letter previews what the action would make and what it means for the author; ⏎ does it.
+- **What's new.** The first launch after an update opens the tutorial on what changed, with the choice to start at the new parts, take the whole tour, or skip it. The tour teaches lineage and the ring.
 
 ## [0.7.0] - 2026-10-02
 

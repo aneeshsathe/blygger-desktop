@@ -195,6 +195,12 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE items ADD COLUMN responses_mode TEXT;
     "#,
+    // v9: one reference per (post, target), the strongest relation winning
+    // (fork > stub > quote), and whether the quote is of a passage. The
+    // backfill after any migration rebuilds the rows under the new rule.
+    r#"
+    ALTER TABLE reading_refs ADD COLUMN partial INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 /// Returns whether any migration ran.

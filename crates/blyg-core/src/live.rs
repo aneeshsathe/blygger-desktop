@@ -1068,7 +1068,16 @@ impl Backend for LiveBackend {
     // --- responses ---
 
     fn responses(&self, origin: &str, id: &str) -> Vec<Response> {
-        self.e().store.responses_to(origin, id)
+        let mut out = self.e().store.responses_to(origin, id);
+        if let Some(base) = self.base_url() {
+            out.extend(crate::model::own_responses(
+                &self.items(),
+                &base,
+                origin,
+                id,
+            ));
+        }
+        out
     }
 
     // --- reader folders --- local only: the store, nothing queued.

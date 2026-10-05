@@ -134,6 +134,7 @@ fn post(
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -283,6 +284,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         version: Some(1),
         origin: Some(LIN.into()),
         cited: None,
+        selector: None,
     }];
     reading.push(reply);
     // A quote of a post not held here (the stream shows the citation Lin's
@@ -308,6 +310,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             url: None,
             retrieved: None,
         }),
+        selector: None,
     }];
     reading.push(reread);
     let mut fork = post(
@@ -332,6 +335,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         version: Some(1),
         origin: Some(KIT.into()),
         cited: None,
+        selector: None,
     }];
     reading.push(fork);
     reading.push(post(
@@ -418,6 +422,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
                         version: Some(2),
                         origin: Some(ADA.into()),
                         cited: None,
+                        selector: None,
                     }],
                 },
                 ..rv(4, now - d(1), Some("linked the reply"), false, true)
@@ -587,6 +592,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     };
     let public = vec![PublicItem {
         item: kit_item,

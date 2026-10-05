@@ -663,10 +663,8 @@ impl MainView {
             .child(vm::when_label(r, self.now))
             .child("·")
             .child(stream_vm::kind_word(r.kind))
-            // --- responses --- a marker only, never a count.
-            .when(self.has_responses(&r.origin, &r.remote_id), |d| {
-                d.child(self.responses_marker())
-            })
+            // --- lineage --- which kinds of relation, never how many.
+            .children(self.render_lineage_glyph(r, cx))
             .when(edited, |d| {
                 d.child(badge(p, format!("edited · v{}", r.version)))
             })

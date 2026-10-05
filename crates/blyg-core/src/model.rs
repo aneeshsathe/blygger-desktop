@@ -271,6 +271,11 @@ pub struct ReadingItem {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub transclusions: Vec<TransclusionRef>,
+    /// The server sent `stub_of` and `forked_from` with the row (studio
+    /// 0.18+), so empty ones mean none and the public document isn't fetched
+    /// for them (`Engine::fill_lineage`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub lineage_known: bool,
 }
 
 // --- profiles ---
@@ -300,7 +305,7 @@ impl StubOf {
     }
 }
 
-/// One `transclusions[]` entry: `{id, version, origin?, cited?}`.
+/// One `transclusions[]` entry: `{id, version, origin?, cited?, selector?}`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TransclusionRef {
     pub id: String,
@@ -308,6 +313,10 @@ pub struct TransclusionRef {
     pub version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// §16.4's text-quote `selector`: present when the quote is a passage,
+    /// not the whole post. Kept as served; only its presence is read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selector: Option<serde_json::Value>,
     /// The citation frozen when the quote was made (protocol 0.3 §16.1;
     /// remote entries only). Remote data: shown as plain text, never markup.
     #[serde(
@@ -527,17 +536,24 @@ pub struct PostRef {
     pub id: String,
     pub relation: crate::profile::Relation,
     pub version: Option<u32>,
+    /// A quote of a passage (a transclusion with a `selector`), not the
+    /// whole post. "Quote selection" is a stub whose quote is partial.
+    pub partial: bool,
 }
 
 /// A post in your reading list that quotes, stubs or forks another post
-/// ("seen in your network"). A list entry, never a count.
+/// ("seen in your network"), or one of your own published posts that does.
+/// A list entry, never a count.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Response {
-    /// The responding post.
+    /// The responding post. One of yours has an empty `subscription_id`
+    /// and your blyg's origin.
     pub item: ReadingItem,
     pub relation: crate::profile::Relation,
     /// The version of the target it responds to, when it says.
     pub version: Option<u32>,
+    /// It quotes a passage of the target, not all of it.
+    pub partial: bool,
 }
 
 /// `(origin, id)` as [`PostRef`] keys them.
@@ -549,10 +565,73 @@ pub fn post_key(origin: &str, id: &str) -> (String, String) {
     )
 }
 
+/// Add `r` to `out`, one reference per target: a stub thread both stubs
+/// and quotes its target, which is one act, not two. The stronger relation
+/// wins (fork > stub > quote, [`crate::profile::Relation`]'s order), and a
+/// partial quote marks the reference partial.
+fn add_ref(out: &mut Vec<PostRef>, r: PostRef) {
+    match out
+        .iter_mut()
+        .find(|p| p.origin == r.origin && p.id == r.id)
+    {
+        None => out.push(r),
+        Some(p) => {
+            p.partial |= r.partial;
+            if r.relation > p.relation {
+                p.version = r.version.or(p.version);
+                p.relation = r.relation;
+            } else {
+                p.version = p.version.or(r.version);
+            }
+        }
+    }
+}
+
 impl ReadingItem {
-    /// The posts this one points at. A quote without an origin is from the
-    /// quoting post's own blyg; a `stub_of` that's only a URL is left out.
+    /// The posts this one points at, one reference per target (see
+    /// [`add_ref`]). A quote without an origin is from the quoting post's
+    /// own blyg; a `stub_of` that's only a URL is left out.
     pub fn references(&self) -> Vec<PostRef> {
+        use crate::profile::Relation;
+        let mut out = Vec::new();
+        let mut push = |origin: &str, id: &str, relation, version, partial| {
+            if id.trim().is_empty() || origin.trim().is_empty() {
+                return;
+            }
+            let (origin, id) = post_key(origin, id);
+            add_ref(
+                &mut out,
+                PostRef {
+                    origin,
+                    id,
+                    relation,
+                    version,
+                    partial,
+                },
+            );
+        };
+        if let Some(s) = &self.stub_of
+            && let (Some(o), Some(id)) = (&s.origin, &s.id)
+        {
+            push(o, id, Relation::Stubs, s.version, false);
+        }
+        if let Some(f) = &self.forked_from {
+            push(&f.origin, &f.id, Relation::Forks, Some(f.version), false);
+        }
+        for t in &self.transclusions {
+            let o = t.origin.as_deref().unwrap_or(&self.origin);
+            push(o, &t.id, Relation::Quotes, t.version, t.selector.is_some());
+        }
+        out
+    }
+}
+
+impl Item {
+    /// The posts this one of yours points at, one reference per target (see
+    /// [`add_ref`]): its `stub_of`, `forked_from` and `![[id]]` quotes. A
+    /// quote names no origin: it's the held post with that id, else one of
+    /// yours (`own_origin`). Partial quotes aren't told apart here.
+    pub fn references(&self, own_origin: &str, held: &[ReadingItem]) -> Vec<PostRef> {
         use crate::profile::Relation;
         let mut out = Vec::new();
         let mut push = |origin: &str, id: &str, relation, version| {
@@ -560,30 +639,116 @@ impl ReadingItem {
                 return;
             }
             let (origin, id) = post_key(origin, id);
-            let r = PostRef {
-                origin,
-                id,
-                relation,
-                version,
-            };
-            if !out.contains(&r) {
-                out.push(r);
-            }
+            add_ref(
+                &mut out,
+                PostRef {
+                    origin,
+                    id,
+                    relation,
+                    version,
+                    partial: false,
+                },
+            );
         };
-        if let Some(s) = &self.stub_of
-            && let (Some(o), Some(id)) = (&s.origin, &s.id)
-        {
-            push(o, id, Relation::Stubs, s.version);
+        if let Some(s) = &self.stub_of {
+            push(&s.origin, &s.id, Relation::Stubs, Some(s.version));
         }
         if let Some(f) = &self.forked_from {
             push(&f.origin, &f.id, Relation::Forks, Some(f.version));
         }
-        for t in &self.transclusions {
-            let o = t.origin.as_deref().unwrap_or(&self.origin);
-            push(o, &t.id, Relation::Quotes, t.version);
+        for q in crate::profile::transclusion_ids(&self.content_md) {
+            let origin = held
+                .iter()
+                .find(|r| r.remote_id.eq_ignore_ascii_case(&q))
+                .map_or(own_origin, |r| r.origin.as_str());
+            push(origin, &q, Relation::Quotes, None);
         }
         out
     }
+}
+
+/// Your published posts that quote, stub or fork `(origin, id)`, one per
+/// post with the stronger relation (as [`add_ref`]), newest first. A quote
+/// (`![[id]]`) names no origin, so it matches by id. Partial quotes aren't
+/// told apart here.
+pub fn own_responses(items: &[Item], own_origin: &str, origin: &str, id: &str) -> Vec<Response> {
+    use crate::profile::Relation;
+    let target = post_key(origin, id);
+    let is_target = |o: &str, i: &str| post_key(o, i) == target;
+    let mut out: Vec<(String, Response)> = Vec::new();
+    for it in items {
+        let Some(sid) = it.server_id.as_ref() else {
+            continue;
+        };
+        if it.version == 0 || it.status != Status::Public {
+            continue;
+        }
+        let mut refs = Vec::new();
+        let mut push = |relation, version| {
+            add_ref(
+                &mut refs,
+                PostRef {
+                    origin: target.0.clone(),
+                    id: target.1.clone(),
+                    relation,
+                    version,
+                    partial: false,
+                },
+            )
+        };
+        if let Some(s) = it.stub_of.as_ref().filter(|s| is_target(&s.origin, &s.id)) {
+            push(Relation::Stubs, Some(s.version));
+        }
+        if let Some(f) = it
+            .forked_from
+            .as_ref()
+            .filter(|f| is_target(&f.origin, &f.id))
+        {
+            push(Relation::Forks, Some(f.version));
+        }
+        if crate::profile::transclusion_ids(&it.content_md)
+            .iter()
+            .any(|q| q.eq_ignore_ascii_case(&target.1))
+        {
+            push(Relation::Quotes, None);
+        }
+        let Some(r) = refs.pop() else { continue };
+        let item = ReadingItem {
+            subscription_id: String::new(),
+            remote_id: sid.0.clone(),
+            subscription_title: "you".into(),
+            origin: own_origin.to_string(),
+            kind: it.kind,
+            state: "current".into(),
+            version: it.version,
+            created: Some(it.created.clone()),
+            updated: Some(it.updated.clone()),
+            observed_at: it.updated.clone(),
+            content_md: it.content_md.clone(),
+            content_html: String::new(),
+            author: None,
+            page: it.permalink.clone(),
+            thumb: None,
+            hoppers: vec![],
+            pinned_version_retained: None,
+            read_version: None,
+            stub_of: None,
+            forked_from: it.forked_from.clone(),
+            transclusions: vec![],
+            lineage_known: false,
+        };
+        out.push((
+            it.updated.clone(),
+            Response {
+                item,
+                relation: r.relation,
+                version: r.version,
+                partial: false,
+            },
+        ));
+    }
+    out.sort_by(|a, b| b.0.cmp(&a.0));
+    out.into_iter().map(|(_, r)| r).collect()
 }
 
 /// How much later than `created` an `updated` must be to count as an edit
@@ -1070,5 +1235,106 @@ mod title_tests {
         );
         // A leading heading is the title, whatever follows.
         assert_eq!(t("## On Protocols\n\nProtocols are thin."), "On Protocols");
+    }
+}
+
+#[cfg(test)]
+mod lineage_tests {
+    use super::*;
+    use crate::profile::Relation;
+
+    fn row(extra: serde_json::Value) -> ReadingItem {
+        let mut v = serde_json::json!({
+            "subscription_id": "S", "remote_id": "R", "subscription_title": "Them",
+            "origin": "https://them.example/", "kind": "thread", "state": "current",
+            "version": 1, "created": null, "updated": null,
+            "observed_at": "2030-01-01T00:00:00Z", "content_md": "", "content_html": "",
+            "author": null, "page": null, "thumb": null, "hoppers": [],
+        });
+        v.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(v).unwrap()
+    }
+
+    #[test]
+    fn one_reference_per_target_the_strongest_relation_winning() {
+        let r = row(serde_json::json!({
+            "stub_of": { "origin": "https://ada.example/", "id": "X", "version": 2 },
+            "forked_from": { "origin": "https://bo.example/", "id": "Y", "version": 1 },
+            "transclusions": [
+                { "id": "X", "version": 2, "origin": "https://ada.example/",
+                  "selector": { "type": "TextQuoteSelector", "exact": "a line" } },
+                { "id": "Y", "version": 1, "origin": "https://bo.example/" },
+                { "id": "Z", "version": 3 },
+            ],
+        }));
+        let refs = r.references();
+        let got: Vec<(&str, Relation, Option<u32>, bool)> = refs
+            .iter()
+            .map(|p| (p.id.as_str(), p.relation, p.version, p.partial))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                // A stub whose quote is of a passage: "quote selection".
+                ("x", Relation::Stubs, Some(2), true),
+                ("y", Relation::Forks, Some(1), false),
+                // No origin: the quoting post's own blyg.
+                ("z", Relation::Quotes, Some(3), false),
+            ]
+        );
+        assert_eq!(refs[2].origin, "https://them.example/");
+    }
+
+    #[test]
+    fn your_published_posts_respond_too() {
+        let item = |id: &str, md: &str, status: Status, version: u32| Item {
+            local_id: LocalId(format!("L{id}")),
+            server_id: Some(ServerId(id.into())),
+            kind: Kind::Thread,
+            status,
+            version,
+            dirty: false,
+            content_md: md.into(),
+            created: "2030-01-01T00:00:00Z".into(),
+            updated: format!("2030-01-0{version}T00:00:00Z"),
+            permalink: None,
+            stub_of: None,
+            forked_from: None,
+            show_responses: true,
+            responses_mode: None,
+            pending_sync: false,
+            conflict: false,
+        };
+        let target = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        let quote = item("Q", &format!("Mine\n![[{target}]]"), Status::Public, 1);
+        let mut stub = item("S", &format!("Re\n![[{target}]]"), Status::Public, 2);
+        stub.stub_of = Some(RemoteRef {
+            origin: "https://ada.example/".into(),
+            id: target.into(),
+            version: 4,
+        });
+        let draft = item("D", &format!("![[{target}]]"), Status::Draft, 0);
+        let other = item("O", "nothing here", Status::Public, 3);
+        let r = own_responses(
+            &[quote, stub, draft, other],
+            "https://me.example/",
+            "https://ADA.example",
+            &target.to_lowercase(),
+        );
+        let got: Vec<(&str, Relation, Option<u32>)> = r
+            .iter()
+            .map(|x| (x.item.remote_id.as_str(), x.relation, x.version))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                ("S", Relation::Stubs, Some(4)),
+                ("Q", Relation::Quotes, None)
+            ]
+        );
+        assert_eq!(r[0].item.subscription_title, "you");
+        assert_eq!(r[0].item.origin, "https://me.example/");
     }
 }

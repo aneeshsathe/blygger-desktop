@@ -233,6 +233,7 @@ fn continue_outline_and_reply_are_tk_scopes() {
         forked_from: None,
         transclusions: vec![],
         pinned_version_retained: None,
+        lineage_known: false,
     };
     let p = Scripted::new(&["Agreed, and…"]);
     let out = reply_draft(&p, &item, None, &CancelFlag::new(), &mut |_| {}).unwrap();

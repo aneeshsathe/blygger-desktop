@@ -17,6 +17,10 @@ pub struct AppState {
     /// The first-run onboarding was finished or skipped (Settings › Help
     /// can show it again).
     pub onboarded: bool,
+    /// The app version last launched, once onboarded: a newer one opens the
+    /// tutorial on what changed (`onboarding::whats_new`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seen_version: Option<String>,
     /// The main window's last view mode (`write`, `split`, `studio`,
     /// `focus`): the full editor's ⌘1/⌘2/⌘3/⌘E, remembered per viewer.
     #[serde(skip_serializing_if = "Option::is_none")]

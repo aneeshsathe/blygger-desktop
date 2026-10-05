@@ -35,6 +35,7 @@
 | ⇧⌘M | Mentions & responses | Blyg › Mentions |
 | ⇧⌘S | Subscriptions | Blyg › Subscriptions |
 | ⌘Y | Versions of this post | Post › Versions… |
+| ⌘J | Lineage: what this post draws on and what draws on it | Post › Lineage… |
 | ⌘K | Quote a post in this thread | Post › Quote… |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |

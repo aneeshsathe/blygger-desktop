@@ -59,6 +59,7 @@ fn sample_reading() -> ReadingItem {
         stub_of: None,
         forked_from: None,
         transclusions: vec![],
+        lineage_known: false,
     }
 }
 
@@ -1621,6 +1622,7 @@ impl Backend for FakeBackend {
                         item: r.clone(),
                         relation: f.relation,
                         version: f.version,
+                        partial: f.partial,
                     })
                     .collect::<Vec<_>>()
             })

@@ -498,6 +498,7 @@ mod tests {
             version: Some(3),
             origin: Some("https://b.example".into()),
             cited: None,
+            selector: None,
         }];
         let held = quoted(&rows, &post, "01AAAAAAAAAAAAAAAAAAAAAAAA");
         assert_eq!(held.map(|r| r.subscription_id.as_str()), Some("sb"));

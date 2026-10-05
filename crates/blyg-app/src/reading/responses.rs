@@ -22,7 +22,8 @@ use crate::theme::Rule; // --- themes --- dividers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseRow {
     pub who: String,
-    /// "quoted this" / "stubbed this" / "forked this".
+    /// "quoted this" / "stubbed this" / "forked this" (and "… a passage of
+    /// this" when the quote is partial).
     pub what: &'static str,
     pub when: String,
     /// The responding post: its origin, id and version.
@@ -34,11 +35,24 @@ pub struct ResponseRow {
     at: i64,
 }
 
-fn what_of(r: Relation) -> &'static str {
-    match r {
-        Relation::Quotes => "quoted this",
-        Relation::Stubs => "stubbed this",
-        Relation::Forks => "forked this",
+fn what_of(r: Relation, partial: bool) -> &'static str {
+    match (r, partial) {
+        (Relation::Quotes, false) => "quoted this",
+        (Relation::Quotes, true) => "quoted a passage of this",
+        (Relation::Stubs, false) => "stubbed this",
+        (Relation::Stubs, true) => "stubbed a passage of this",
+        (Relation::Forks, _) => "forked this",
+    }
+}
+
+/// How strong a row's relation is, for keeping one row per post:
+/// fork > stub > quote > a bare mention.
+fn strength(what: &str) -> u8 {
+    match what.split(' ').next() {
+        Some("forked") => 3,
+        Some("stubbed") => 2,
+        Some("quoted") => 1,
+        _ => 0,
     }
 }
 
@@ -59,7 +73,7 @@ fn ts(s: &str) -> i64 {
 
 /// The list for the post `target_id`: verified, unhidden mentions of it
 /// (your own posts) and the network's responses, one row per responding
-/// post and relation, newest first.
+/// post (its strongest relation, wherever it was seen), newest first.
 pub fn response_rows(
     network: &[Response],
     mentions: &[Mention],
@@ -101,7 +115,7 @@ pub fn response_rows(
                 .and_then(|a| a.name.clone())
                 .filter(|n| !n.trim().is_empty())
                 .unwrap_or_else(|| it.subscription_title.clone()),
-            what: what_of(r.relation),
+            what: what_of(r.relation, r.partial),
             when: crate::vm::relative_time(&at, now),
             origin: it.origin.clone(),
             id: Some(it.remote_id.clone()),
@@ -111,15 +125,23 @@ pub fn response_rows(
         });
     }
     rows.sort_by_key(|r| std::cmp::Reverse(r.at));
-    let mut seen = std::collections::HashSet::new();
-    rows.retain(|r| {
+    let mut seen: std::collections::HashMap<(String, String), usize> = Default::default();
+    let mut out: Vec<ResponseRow> = Vec::new();
+    for r in rows {
         let key = match &r.id {
             Some(id) => blyg_core::post_key(&r.origin, id),
             None => (r.url.clone().unwrap_or_default(), String::new()),
         };
-        seen.insert((key, r.what))
-    });
-    rows
+        match seen.get(&key) {
+            Some(&i) if strength(r.what) > strength(out[i].what) => out[i].what = r.what,
+            Some(_) => {}
+            None => {
+                seen.insert(key, out.len());
+                out.push(r);
+            }
+        }
+    }
+    out
 }
 
 impl MainView {
@@ -130,11 +152,12 @@ impl MainView {
             .is_some_and(|b| blyg_core::profile::same_origin(&b, origin))
     }
 
-    /// The stream's marker: this post has responses in your network.
+    /// This post has responses in your network (the glyph's right side).
+    #[cfg(test)]
     pub(crate) fn has_responses(&self, origin: &str, id: &str) -> bool {
         self.reading
-            .responded
-            .contains(&blyg_core::post_key(origin, id))
+            .down
+            .contains_key(&blyg_core::post_key(origin, id))
     }
 
     /// The responses list for `(origin, id)`; `None` when there are none.
@@ -210,22 +233,6 @@ impl MainView {
                 .into_any_element(),
         )
     }
-
-    /// The stream's small "↩" marker (no number).
-    pub(crate) fn responses_marker(&self) -> AnyElement {
-        let p = self.palette.on_page();
-        div()
-            .id("stream-responses")
-            .text_color(p.accent)
-            .child("↩")
-            .tooltip(|_, cx| {
-                cx.new(|_| {
-                    super::Tip("Responses in your network · open the post to see who".into())
-                })
-                .into()
-            })
-            .into_any_element()
-    }
 }
 
 #[cfg(test)]
@@ -275,6 +282,7 @@ mod tests {
             item: lin,
             relation: Relation::Forks,
             version: Some(1),
+            partial: false,
         }];
         let mentions = vec![
             mention("m1", "01OWN", "stub", "verified", false, 1),
@@ -291,5 +299,33 @@ mod tests {
             assert!(!words.chars().any(|c| c.is_ascii_digit()), "{words}");
         }
         assert!(response_rows(&[], &[], "x", now).is_empty());
+    }
+
+    #[test]
+    fn one_row_per_post_with_its_strongest_relation() {
+        let now = chrono::Utc::now();
+        let seed = crate::fake::reading_seed::seed(now);
+        let mut lin = seed
+            .reading
+            .iter()
+            .find(|r| r.remote_id == crate::fake::reading_seed::LIN_FORK)
+            .unwrap()
+            .clone();
+        // The same post seen as a verified quote and, in the network, a stub
+        // of a passage ("quote selection"): one row, the stub.
+        let mut m = mention("m1", "01OWN", "transclusion", "verified", false, 1);
+        m.source_origin = Some(lin.origin.clone());
+        m.source_id = Some(lin.remote_id.clone());
+        lin.author = None;
+        lin.subscription_title = "Lin".into();
+        let network = vec![Response {
+            item: lin,
+            relation: Relation::Stubs,
+            version: Some(1),
+            partial: true,
+        }];
+        let rows = response_rows(&network, &[m], "01own", now);
+        let got: Vec<&str> = rows.iter().map(|r| r.what).collect();
+        assert_eq!(got, ["stubbed a passage of this"]);
     }
 }

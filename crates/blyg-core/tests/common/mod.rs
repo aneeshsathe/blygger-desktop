@@ -67,7 +67,7 @@ pub fn version_json(item: &SItem, version: u32, at: &str, note: Value, withdrawn
         "content_html": "", "content_hash": format!("h{version}"),
         "published_at": at, "note": note, "pinned_at": null,
         "kind": if withdrawn { "withdrawn" } else { item.kind.as_str() },
-        "pinned": false, "transclusions": [], "generated": [],
+        "pinned": false, "note_generated": false, "transclusions": [], "generated": [],
         "stub_of": item.stub_of, "stub_cite": null,
     })
 }
@@ -114,6 +114,13 @@ pub struct State {
     /// 404). Reading is then upstream's `/api/reading` + `/api/imports`,
     /// served from the same `reading` rows.
     pub stock: bool,
+    /// A stock studio before 0.18: `/api/imports` rows without
+    /// `stub_of_json`/`forked_from_json`, so lineage comes from each post's
+    /// public document.
+    pub pre_lineage_imports: bool,
+    /// The Worker fork's reading rows carry `stub_of`/`forked_from`, and the
+    /// page says so (`lineage: true`).
+    pub reading_lineage: bool,
     /// The public static surface (anything outside `/api/`), path → JSON
     /// body. Unlisted paths 404, which for `v{n}.json` means "not pinned".
     /// Serve at e.g. `/blyg/items/X.json` to test a subdirectory mount.
@@ -470,7 +477,8 @@ fn settings_json(v: &Value, responses_default: bool) -> Value {
     overlay(
         json!({ "site_title": "", "theme": "auto", "author_name": "", "author_bio": "",
             "author_links": [], "site_url": "", "timezone": "", "avatar_media_id": "",
-            "ai_model": "", "ai_style_prompt": "", "accept_mentions": true, "update_check": false,
+            "ai_model": "", "ai_model_tk": "", "ai_model_changelog": "", "ai_model_feed": "",
+            "feed_prompt": "", "auto_change_notes": false, "ai_style_prompt": "", "accept_mentions": true, "update_check": false,
             "show_responses_default": responses_default, "update_feed_url": "",
             "update_notice_ack": false }),
         v,
@@ -497,7 +505,6 @@ fn is_fork_only(method: &str, segs: &[&str]) -> bool {
             | (_, ["api", "reading", "imported"])
             | ("PUT", ["api", "reading", _, _, "read"])
             | ("POST", ["api", "reading", "read"])
-            | ("DELETE", ["api", "media", _])
     )
 }
 
@@ -518,8 +525,9 @@ fn stock_entry(r: &Value) -> Value {
 }
 
 /// Upstream's `ImportedItem` for one (full) extension row: the JSON columns
-/// as strings, as the importer stores them.
-fn imported_item(r: &Value) -> Value {
+/// as strings, as the importer stores them. `pre_lineage`: as a studio
+/// before 0.18 has it, without `stub_of_json`/`forked_from_json`.
+fn imported_item(r: &Value, pre_lineage: bool) -> Value {
     let as_json = |v: &Value| {
         if v.is_null() {
             Value::Null
@@ -527,14 +535,21 @@ fn imported_item(r: &Value) -> Value {
             Value::String(v.to_string())
         }
     };
-    json!({
+    let mut v = json!({
         "subscription_id": r["subscription_id"], "remote_id": r["remote_id"], "kind": r["kind"],
         "state": r["state"], "version": r["version"], "created": r["created"], "updated": r["updated"],
         "observed_at": r["observed_at"], "content_md": r["content_md"], "content_html": r["content_html"],
         "content_hash": null, "author_json": as_json(&r["author"]), "media_json": null,
         "transclusions_json": as_json(&r["transclusions"]), "l0": false,
         "pinned_version_retained": r["pinned_version_retained"], "page": r["page"],
-    })
+        "stub_of_json": as_json(&r["stub_of"]), "forked_from_json": as_json(&r["forked_from"]),
+    });
+    if pre_lineage {
+        let o = v.as_object_mut().unwrap();
+        o.remove("stub_of_json");
+        o.remove("forked_from_json");
+    }
+    v
 }
 
 /// An extension reading row from whatever a test seeded.
@@ -544,7 +559,8 @@ fn reading_row_json(v: &Value) -> Value {
             "kind": "fragment", "state": "current", "version": 1, "created": null, "updated": null,
             "observed_at": "2030-01-01T00:00:00Z", "content_md": "", "content_html": "",
             "author": null, "page": null, "thumb": null, "hoppers": [], "read_version": null,
-            "transclusions": null, "pinned_version_retained": null }),
+            "transclusions": null, "pinned_version_retained": null, "stub_of": null,
+            "forked_from": null }),
         v,
     )
 }
@@ -553,7 +569,7 @@ fn reading_row_json(v: &Value) -> Value {
 fn hopper_json(v: &Value) -> Value {
     let mut h = overlay(
         json!({ "id": "", "name": "", "slug": null, "public": false,
-            "created": "2030-01-01T00:00:00Z", "slug_frozen": false }),
+            "created": "2030-01-01T00:00:00Z", "slug_frozen": false, "description": null }),
         v,
     );
     h.as_object_mut().unwrap().remove("count");
@@ -670,7 +686,10 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                     })
                     .cloned()
             }) {
-                Some(r) => (200, imported_item(&reading_row_json(&r))),
+                Some(r) => (
+                    200,
+                    imported_item(&reading_row_json(&r), s.pre_lineage_imports),
+                ),
                 None => not_found(),
             }
         }
@@ -862,7 +881,7 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 json!({ "id": id, "url": format!("media/{id}.png"), "mime": "image/png" }),
             )
         }
-        ("DELETE", ["api", "media", id]) => (200, json!({ "ok": true, "id": id, "item_id": null })),
+        ("DELETE", ["api", "media", _]) => (200, json!({ "ok": true, "outcome": "deleted" })),
         // ---- subscriptions
         ("GET", ["api", "subscriptions"]) => {
             let all = s.subs.iter().map(sub_json).collect();
@@ -989,7 +1008,11 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
             };
             if !s.read_sync {
                 let page: Vec<Value> = page.iter().map(reading_row_json).collect();
-                return (200, json!({ "items": page, "next": next }));
+                let mut body = json!({ "items": page, "next": next });
+                if s.reading_lineage {
+                    body["lineage"] = json!(true);
+                }
+                return (200, body);
             }
             for it in &mut page {
                 if it.get("read_version").is_some() {
@@ -1002,10 +1025,11 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
                 it["read_version"] = s.reads.get(&key).map_or(Value::Null, |v| json!(v));
             }
             let page: Vec<Value> = page.iter().map(reading_row_json).collect();
-            (
-                200,
-                json!({ "items": page, "next": next, "read_state": true }),
-            )
+            let mut body = json!({ "items": page, "next": next, "read_state": true });
+            if s.reading_lineage {
+                body["lineage"] = json!(true);
+            }
+            (200, body)
         }
         // ---- extension 5 (404 until "deployed")
         ("PUT", ["api", "reading", sub, rid, "read"]) if s.read_sync => {

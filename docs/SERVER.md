@@ -3,7 +3,7 @@
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). The app follows that contract (studio
-0.11 is current) and needs **0.9 or later**. Every route the app shares with upstream is
+0.26 is current) and needs **0.9 or later**. Every route the app shares with upstream is
 checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
 **A stock blygger-studio works.** Sign in with the studio password: Burrow signs in at
@@ -21,7 +21,7 @@ changed one, and thumbs and hoppers come from `/api/signals` and each hopper.
 | AI disclosure for text generated **in Burrow** | Not recorded. Before publishing such text, Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
 | Read state across Macs | Stays on each Mac. |
 | Removing an image you pasted, then deleted | It stays on the server. |
-| Who a post replies to, or forks | Fetched from the author's blyg, a few posts per sync. (No server's reading rows carry it yet; upstream issue #12.) |
+| Who a post replies to, or forks | Studio 0.18 or later sends it with each post. An older one doesn't, so Burrow fetches it from the author's blyg, a few posts per sync. |
 
 Burrow says this once, the first time it meets a stock server, and lists it in the
 About window.
@@ -33,7 +33,7 @@ A Worker that carries these extensions gets all of the above:
 | # | Extension | Why the app needs it |
 |---|---|---|
 | 1 | *Optional.* **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | Sign in with a token instead of the password. Upstream is cookie-only; its OAuth plan replaces both. |
-| 3 | **Reading rows for the app** (without it, Burrow builds the same rows from upstream's routes, more slowly): `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained` and `transclusions[]` with `cited`. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
+| 3 | **Reading rows for the app** (without it, Burrow builds the same rows from upstream's routes, more slowly): `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state, lineage}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained`, `transclusions[]` with `cited`, and `stub_of`/`forked_from` as imported (null when none). `lineage: true` says the rows carry those two; without it the app fetches them from each post's public document. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
 | 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. Upstream's item has a read-only `provenance`; nothing can write it. |
 | 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading/imported`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
 
@@ -94,10 +94,11 @@ export reads it. It holds only numbers keyed by subscription and item, never tex
 
 ## Also used when present
 
-- `DELETE /api/media/:id` (removes an upload; 404 unknown, 409 for the avatar)
-  and `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes
-  on the same item. Neither is upstream (upstream issue #7). Without them, an
-  abandoned paste leaves its file on the server.
+- `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes on
+  the same item. Not upstream (upstream issue #7).
+- `DELETE /api/media/:id` (removes an upload) is upstream since studio 0.16,
+  answering `{ok, outcome: "deleted" | "detached"}`. On an older server it 404s, and
+  an abandoned paste leaves its file there.
 
 ## What the app uses from upstream
 

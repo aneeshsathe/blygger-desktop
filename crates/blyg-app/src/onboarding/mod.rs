@@ -16,6 +16,7 @@
 
 mod steps;
 mod tutorial;
+pub(crate) mod whats_new;
 
 #[cfg(test)]
 mod tests;
@@ -164,13 +165,29 @@ impl MainView {
         // Without a data dir (headless tests) there's no first-run memory:
         // those keep the plain Connect sheet.
         if let Some(dir) = data_dir(cx) {
-            let onboarded = blyg_core::state::AppState::load(&dir).onboarded;
+            let state = blyg_core::state::AppState::load(&dir);
+            let onboarded = state.onboarded;
+            // The first launch of a newer version: what changed, then the
+            // tour (or not). A first run learns it all from the tour.
+            let current = env!("CARGO_PKG_VERSION");
+            let news = if state.seen_version.as_deref() == Some(current) {
+                vec![]
+            } else {
+                let _ = blyg_core::state::AppState::update(&dir, |s| {
+                    s.seen_version = Some(current.into())
+                });
+                whats_new::since(state.seen_version.as_deref(), current)
+            };
             // Already connected (e.g. set up before onboarding existed):
             // don't walk them through it; Settings › Help can replay it.
             if !onboarded && has_blyg {
                 let _ = blyg_core::state::AppState::update(&dir, |s| s.onboarded = true);
             } else if !has_blyg {
                 self.open_onboarding(FlowStep::Welcome, window, cx);
+                return true;
+            }
+            if onboarded && !news.is_empty() {
+                self.start_whats_new(news, window, cx);
                 return true;
             }
         }

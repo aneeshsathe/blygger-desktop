@@ -30,8 +30,8 @@ use crate::app::studio::{ViewSplit, ViewStudio, ViewWrite};
 use crate::app::onboarding::{ShowTutorial, TutorialBack, TutorialNext};
 // --- reading & versions ---
 use crate::app::reading::{
-    QuotePicker, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions, SiteSettings,
-    SubscribeTo,
+    QuotePicker, ShowLineage, ShowMentions, ShowReading, ShowSubscriptions, ShowVersions,
+    SiteSettings, SubscribeTo,
 };
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
@@ -439,6 +439,13 @@ pub fn table() -> Vec<Keybind> {
             ),
             "rotate-ccw-clock",
             "Versions"
+        ),
+        kb!(
+            "cmd-j",
+            Main,
+            ShowLineage,
+            "Lineage: what this post draws on and what draws on it",
+            Some("Post › Lineage…")
         ),
         kb!(
             "cmd-k",

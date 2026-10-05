@@ -15,8 +15,12 @@
 //!   (type-to-confirm).
 //! - **Site settings** (Blyg › Site Settings…): the blyg's title, bio, links.
 //! - **Quote picker** (⌘K, threads only): inserts `![[id]]` from held items.
+//! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
+//!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
+mod lineage;
+pub(crate) mod lineage_vm;
 mod list;
 mod mentions;
 mod quote_picker;
@@ -63,6 +67,7 @@ gpui_kit::actions!(
         ShowMentions,
         ShowSubscriptions,
         ShowVersions,
+        ShowLineage,
         QuotePicker,
         SiteSettings,
         SubscribeTo,
@@ -221,6 +226,8 @@ pub enum RSheet {
         /// The name the error is about.
         tried: String,
     },
+    /// Lineage (⌘J).
+    Lineage(Box<lineage::Sheet>),
     Quote {
         target: LocalId,
         input: Entity<InputState>,
@@ -265,10 +272,14 @@ pub struct State {
     /// The version to show once the post being opened has its versions
     /// (a quote's version), when it's current or pinned.
     pub want_version: Option<u32>,
-    // --- responses ---
-    /// Posts that someone in the reading list quotes, stubs or forks
-    /// (`post_key`s): the stream's "responses" marker, never a count.
-    pub responded: HashSet<(String, String)>,
+    // --- responses --- (and lineage)
+    /// What draws on each post (`post_key`s), as kinds: the glyph's right
+    /// side, never a count. From the rows, `own_refs` and the mentions.
+    pub down: HashMap<(String, String), lineage_vm::Kinds>,
+    /// What your own published posts point at, and your blyg's origin
+    /// (`MainView::refresh_own_lineage`).
+    pub own_refs: Vec<blyg_core::PostRef>,
+    pub own_origin: Option<String>,
     // --- reader folders --- the Reader's three panes.
     /// Local folders, in order, and subscription id → folder id.
     pub folders: Vec<blyg_core::Folder>,
@@ -322,7 +333,9 @@ impl State {
             ),
             stream: stream::Stream::new(),
             want_version: None,
-            responded: HashSet::new(),
+            down: HashMap::new(),
+            own_refs: Vec::new(),
+            own_origin: None,
             folders: backend.folders(),
             filed: backend.subscription_folders(),
             source: sources_vm::Source::default(),
@@ -359,12 +372,12 @@ impl State {
             searched
         };
         self.stream.sync(&self.rows, &self.shown);
-        self.responded = self
-            .rows
-            .iter()
-            .flat_map(|r| r.references())
-            .map(|f| (f.origin, f.id))
-            .collect();
+        self.down = lineage_vm::down_index(
+            &self.rows,
+            &self.own_refs,
+            self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
+            self.own_origin.as_deref(),
+        );
     }
 
     /// The rows the list shows (all of them without a search).
@@ -409,6 +422,7 @@ impl MainView {
         .on_action(
             cx.listener(|this, _: &QuotePicker, window, cx| this.open_quote_picker(window, cx)),
         )
+        .on_action(cx.listener(|this, _: &ShowLineage, window, cx| this.toggle_lineage(window, cx)))
         .on_action(
             cx.listener(|this, _: &SiteSettings, window, cx| this.open_site_settings(window, cx)),
         )
@@ -445,6 +459,10 @@ impl MainView {
         } else {
             r.rows = vm::order(fresh);
         }
+        let (own_refs, own_origin) = self.own_lineage();
+        let r = &mut self.reading;
+        r.own_refs = own_refs;
+        r.own_origin = own_origin;
         r.refilter();
         if let Some(o) = &mut r.opened {
             // Fresh metadata (thumb, state), but keep the read version seen
@@ -488,6 +506,7 @@ impl MainView {
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
                 self.reading.filed = self.backend.subscription_folders();
+                (self.reading.own_refs, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.ensure_reading_search(window, cx);
                 if self.reading.mode == stream_vm::ReadMode::Stream {
@@ -717,6 +736,7 @@ impl MainView {
             RSheet::Subscribe { .. } => (500., self.render_subscribe_sheet(sheet, cx)),
             RSheet::Site { .. } => (540., self.render_site_sheet(sheet, cx)),
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
+            RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
         };
         Some(self.sheet_frame(width, content))
