@@ -14,13 +14,19 @@ and your posts come back when it ends. Replay it from **Help › Burrow
 Tutorial** or **Settings (⌘,) › Help**, or set `tutorial-on-launch = true` to
 see it every time.
 
+**After an update**, the first launch opens the tour on a **What's new**
+card: ⏎ starts at the steps that teach the new things, **Take the whole tour**
+starts at the beginning, and esc skips it.
+
+![What's new after an update](screenshots/whats-new.png)
+
 | | |
 |---|---|
 | ![Onboarding](screenshots/onboarding.png) | ![The tour](screenshots/tutorial.png) |
 
 ## Connecting your blyg
 
-Burrow works with any blyg running blygger-studio 0.9 or later (0.11 is current).
+Burrow works with any blyg running blygger-studio 0.9 or later (0.26 is current).
 A server with the extensions in [Server requirements](server.md) gets a few
 more features; without them, Burrow tells you what's limited. No blyg yet? Try
 the app on the sample data.

@@ -95,6 +95,26 @@ impl MainView {
             ("rd-stream-responses", 1) => {
                 open(self, crate::fake::reading_seed::LIN_BENCH, window, cx)
             }
+            // --- lineage --- ⌘J on the bench post; `-ring`: Space, then R.
+            ("rd-stream-lineage" | "rd-stream-lineage-ring", 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-stream-lineage" | "rd-stream-lineage-ring", 1) => {
+                let bench = crate::fake::reading_seed::LIN_BENCH;
+                let origin = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == bench)
+                    .map(|r| r.origin.clone());
+                if let Some(origin) = origin {
+                    self.open_lineage(origin, bench.into(), window, cx);
+                }
+            }
+            ("rd-stream-lineage-ring", 2) => {
+                self.lineage_open_ring(cx);
+                self.lineage_preview(super::lineage_vm::Act::Reply, cx);
+            }
             // --- reader folders --- the three panes: a folder picked, a post open.
             ("rd-three-pane", 0) => self.show_view(View::Reading, window, cx),
             ("rd-three-pane", 1) => {
