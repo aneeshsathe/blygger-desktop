@@ -45,9 +45,38 @@ pub struct WireItem {
     /// `responses` and the blyg's `show_responses_default`.
     #[serde(skip)]
     pub showing: Option<bool>,
+    /// The working copy's TK provenance, one entry per scope (studio 0.28+;
+    /// `None` from an older server). Raw: upstream's `model` is optional.
+    #[serde(default)]
+    pub provenance: Option<Vec<Option<Value>>>,
+    /// The item's generated-text highlight choice (studio 0.27).
+    #[serde(default)]
+    pub highlight: Option<ResponsesMode>,
+    /// Not on the wire: whether the public page highlights generated text
+    /// now, resolved from `highlight` and `highlight_generated_default`.
+    #[serde(skip)]
+    pub highlighting: Option<bool>,
 }
 
 impl WireItem {
+    /// `provenance` as the app's shape (`None` from a server without the
+    /// field). An entry without a model reads as `"unknown"`; one that
+    /// doesn't parse as `null`.
+    pub fn server_provenance(&self) -> Option<Vec<Option<crate::model::ScopeProvenance>>> {
+        self.provenance.as_ref().map(|all| {
+            all.iter()
+                .map(|p| {
+                    let mut p = p.clone()?;
+                    let o = p.as_object_mut()?;
+                    if !o.get("model").is_some_and(Value::is_string) {
+                        o.insert("model".into(), Value::String("unknown".into()));
+                    }
+                    serde_json::from_value(p).ok()
+                })
+                .collect()
+        })
+    }
+
     /// Whether the page shows responses now.
     pub fn shows_responses(&self) -> bool {
         self.showing
@@ -75,6 +104,21 @@ impl WireItem {
             };
             self.permalink = Some(format!("{base}/{p}/{}", self.id));
         }
+    }
+
+    /// Whether the public page highlights generated text now.
+    pub fn highlights(&self) -> bool {
+        self.highlighting
+            .unwrap_or(self.highlight == Some(ResponsesMode::Show))
+    }
+
+    /// Fill `highlighting`: `default` is `highlight_generated_default`.
+    pub fn resolve_highlight(&mut self, default: bool) {
+        self.highlighting = Some(match self.highlight {
+            Some(ResponsesMode::Show) => true,
+            Some(ResponsesMode::Hide) => false,
+            Some(ResponsesMode::Default) | None => default,
+        });
     }
 
     pub fn local_kind(&self) -> Kind {
@@ -225,6 +269,27 @@ pub fn status_str(s: Status) -> &'static str {
     }
 }
 
+/// `POST /api/items/:id/generate` → `{text, model, content_md}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generated {
+    /// The scope's new output.
+    pub text: String,
+    pub model: String,
+    /// The working copy with `text` spliced into its scope, as the server
+    /// stored it (studio 0.27+; `None` from an older server).
+    pub content_md: Option<String>,
+}
+
+/// `GET /api/changes` (studio 0.32+): `{epoch, domains: {items, reading,
+/// subscriptions, hoppers, signals, settings, feed}}`. A domain's counter
+/// moves whenever its data changes; a new epoch means the database was
+/// restored or replaced and no stored revision holds.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ChangeState {
+    pub epoch: String,
+    pub domains: std::collections::BTreeMap<String, u64>,
+}
+
 /// The id of a created resource (`POST /api/items` → `201 Item`,
 /// `POST /api/subscriptions {confirm}` → `201 Subscription`).
 #[derive(Debug, Clone, Deserialize)]
@@ -265,6 +330,9 @@ pub struct ReadingPage {
     pub read_state: Option<bool>,
     #[serde(default, deserialize_with = "crate::model::lenient")]
     pub lineage: Option<bool>,
+    /// Read state can be cleared (mark unread, `read_at` on reads).
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state_clear: Option<bool>,
 }
 
 impl ReadingPage {
@@ -272,15 +340,47 @@ impl ReadingPage {
     pub fn read_sync(&self) -> bool {
         self.read_state == Some(true)
     }
+
+    /// The server can clear read state (`read_state_clear: true`).
+    pub fn read_clear(&self) -> bool {
+        self.read_sync() && self.read_state_clear == Some(true)
+    }
 }
 
 /// One row's read state as sent to the server: `(sub, remote_id)` is a
-/// reading row, `version` the highest version read.
+/// reading row, `version` the highest version read. `read_at` is when it
+/// was read on this Mac (ISO-8601, UTC). It is sent only to a server that
+/// advertises `read_state_clear`: elsewhere a strict body would refuse it.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
 pub struct ReadMark {
     pub sub: String,
     pub remote_id: String,
     pub version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_at: Option<String>,
+}
+
+/// One row to mark unread (`POST /api/reading/unread`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, Deserialize)]
+pub struct UnreadMark {
+    pub sub: String,
+    pub remote_id: String,
+}
+
+/// `PUT /api/reading/{sub}/{remoteId}/read` → whether the read was stored
+/// (false: the server holds no such row, or the read predates a later
+/// "mark unread"), and the version it holds now (null: unread).
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ReadAck {
+    #[serde(default = "stored_default")]
+    pub stored: bool,
+    #[serde(default)]
+    pub read_version: Option<u32>,
+}
+
+/// An older extension-5 Worker answers `{ok}` only: the read was taken.
+fn stored_default() -> bool {
+    true
 }
 
 /// Upstream's `GET /api/reading` (a server without the fork's
@@ -290,6 +390,25 @@ pub struct StockReadingPage {
     pub items: Vec<StockEntry>,
     #[serde(default)]
     pub total: u64,
+    /// The server stores read state (upstream's read-state routes): each
+    /// imported entry's `readVersion` is meaningful.
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state: Option<bool>,
+    /// …and can clear it (mark unread, `read_at` on reads).
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state_clear: Option<bool>,
+}
+
+impl StockReadingPage {
+    /// The server advertises read-state sync.
+    pub fn read_sync(&self) -> bool {
+        self.read_state == Some(true)
+    }
+
+    /// The server can clear read state.
+    pub fn read_clear(&self) -> bool {
+        self.read_sync() && self.read_state_clear == Some(true)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -318,6 +437,10 @@ pub struct StockImported {
     /// within the second the timestamps resolve to.
     #[serde(default)]
     pub content_html: String,
+    /// The highest version the owner marked read (null = unread), from a
+    /// server that advertises `read_state`.
+    #[serde(default)]
+    pub read_version: Option<u32>,
 }
 
 impl StockImported {
@@ -342,14 +465,16 @@ pub const STOCK_READING_PAGE: u32 = 50;
 
 /// One reading row in the app's shape from upstream's `ImportedItem`
 /// (`GET /api/imports/{sub}/{id}`) plus what the fork's row adds: the
-/// subscription's title and origin, the thumb and the hopper ids. Read
-/// state stays local on such a server. `None` if it doesn't read.
+/// subscription's title and origin, the thumb and the hopper ids, and the
+/// server's read state (`readVersion` from `GET /api/reading`; `None` when
+/// unread or the server keeps none). `None` if it doesn't read.
 pub fn stock_row(
     imported: &Value,
     title: &str,
     origin: &str,
     thumb: Option<i8>,
     hoppers: &[String],
+    read_version: Option<u32>,
 ) -> Option<ReadingItem> {
     let mut v = imported.as_object()?.clone();
     let parse = |k: &str| -> Value {
@@ -391,7 +516,10 @@ pub fn stock_row(
     v.insert("origin".into(), origin.into());
     v.insert("thumb".into(), thumb.map_or(Value::Null, Value::from));
     v.insert("hoppers".into(), hoppers.into());
-    v.insert("read_version".into(), Value::Null);
+    v.insert(
+        "read_version".into(),
+        read_version.map_or(Value::Null, Value::from),
+    );
     serde_json::from_value(Value::Object(v)).ok()
 }
 
@@ -479,7 +607,7 @@ mod stock_row_tests {
             "stub_of_json": r#"{"origin":"https://ada.example/","id":"X","version":2}"#,
             "forked_from_json": null,
         });
-        let r = stock_row(&raw, "N", "https://them.example/", None, &[]).unwrap();
+        let r = stock_row(&raw, "N", "https://them.example/", None, &[], None).unwrap();
         assert!(r.lineage_known);
         assert_eq!(r.stub_of.and_then(|s| s.id).as_deref(), Some("X"));
         assert!(r.forked_from.is_none());
@@ -488,14 +616,14 @@ mod stock_row_tests {
         let o = old.as_object_mut().unwrap();
         o.remove("stub_of_json");
         o.remove("forked_from_json");
-        let r = stock_row(&old, "N", "https://them.example/", None, &[]).unwrap();
+        let r = stock_row(&old, "N", "https://them.example/", None, &[], None).unwrap();
         assert!(!r.lineage_known && r.stub_of.is_none());
     }
 
     #[test]
     fn a_live_imported_item_becomes_a_row() {
         let raw: Value = serde_json::from_str(r#"{"subscription_id":"S","remote_id":"R","kind":"fragment","state":"current","version":1,"created":"2026-10-03T03:56:29Z","updated":"2026-10-03T03:56:29Z","observed_at":"2026-10-03T03:56:29Z","content_md":"probe post","content_html":"<p>probe post</p>\n","content_hash":"sha256:a7","author_json":"{\"name\":\"\",\"url\":\"http://127.0.0.1:58955/\"}","media_json":"[]","transclusions_json":null,"l0":false,"pinned_version_retained":null,"page":"f/R/"}"#).unwrap();
-        let r = stock_row(&raw, "N", "http://127.0.0.1:58955/", None, &[]);
+        let r = stock_row(&raw, "N", "http://127.0.0.1:58955/", None, &[], None);
         assert!(
             r.is_some(),
             "{:?}",

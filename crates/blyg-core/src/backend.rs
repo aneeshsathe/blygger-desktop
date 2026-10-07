@@ -14,7 +14,7 @@ use crate::model::*;
 pub enum CoreError {
     #[error("offline")]
     Offline,
-    #[error("not authorised — check the token")]
+    #[error("not authorised: sign in to your blyg again")]
     Unauthorized,
     #[error("not found")]
     NotFound,
@@ -35,6 +35,11 @@ pub enum CoreError {
     NotSynced,
     #[error("storage: {0}")]
     Storage(String),
+    /// 429: the blyg's API work budget is spent (studio 0.28+). Transient:
+    /// nothing is dropped, and the next attempt waits `retry_after` seconds
+    /// (the server's `Retry-After`).
+    #[error("the blyg asked Burrow to slow down; retrying in {retry_after}s")]
+    RateLimited { retry_after: u64 },
     #[error("{0}")]
     Other(String),
 }
@@ -56,6 +61,9 @@ pub struct PublicItem {
     /// Its public changelog, oldest first (current row with media and lineage).
     pub versions: Vec<RemoteVersion>,
 }
+
+/// The largest media file the app reads (the Worker's upload cap is 5 MB).
+pub const MEDIA_MAX_BYTES: u64 = 20 * 1024 * 1024;
 
 pub struct MediaRef {
     /// Relative, e.g. "media/abc123.webp" — what goes in the markdown.
@@ -144,6 +152,25 @@ pub trait Backend: Send + Sync {
         Ok(())
     }
 
+    /// Mark many reading items (`(sub_id, remote_id)`, each with its
+    /// duplicates) read at their current versions, or unread: a selection
+    /// in the reading list, or all of it. Local and instant; on a server
+    /// that syncs read state the change is queued for it (unread only when
+    /// the server can clear read state; otherwise unread stays on this Mac).
+    /// Returns how many rows changed. Additive; the default marks read one
+    /// by one and refuses unread, so other implementors compile.
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        if !read {
+            return Err(CoreError::Other(
+                "marking unread isn't supported here".into(),
+            ));
+        }
+        for (s, r) in rows {
+            self.mark_read(s, r)?;
+        }
+        Ok(rows.len())
+    }
+
     // --- scratch notes ---
     // docs/SPEC.md § Scratch notes. Scratch items have `Status::Scratch`:
     // `save`, `set_kind`, `search` and `delete_draft` work on them locally,
@@ -209,6 +236,31 @@ pub trait Backend: Send + Sync {
     /// Set whether the item's page shows its verified responses. Returns
     /// whether it shows them now (with `Default`, the blyg's setting decides).
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool>;
+    /// Set whether the item's public page highlights its generated text
+    /// (studio 0.27; remote, needs `owner:publish`). Returns whether it
+    /// highlights now (with `Default`, `highlight_generated_default` decides).
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool>;
+
+    /// The `[[` / `![[` picker's search over what's held here (local): own
+    /// published posts and posts imported from blyg subscriptions, every
+    /// word matching. The default searches `items()` and `reading()` in
+    /// memory; the live backend uses its full-text indexes.
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        crate::pick::search_in(&self.items(), &self.reading(), &self.subscriptions(), q)
+    }
+
+    /// Where the picker's query is typed (`picker_typing`), as the blyg's
+    /// settings last said. Local; `Auto` until they've been read.
+    fn picker_typing(&self) -> PickerTyping {
+        PickerTyping::Auto
+    }
+
+    /// One of the blyg's own media files (`{base}/media/…`), fetched with
+    /// the owner credential, since an upload no public version uses yet is
+    /// private (studio 0.28). Remote. The default fetches anonymously.
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        crate::api::public::PublicClient::new().get_bytes(url, MEDIA_MAX_BYTES)
+    }
 
     /// Pull everything (items, reading, subscriptions) now.
     fn sync_now(&self) -> Result<()>;
@@ -222,6 +274,35 @@ pub trait Backend: Send + Sync {
         title: Option<&str>,
     ) -> Result<()>;
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()>;
+    /// Name a subscription: `Some(name)` is a name of your own (the source
+    /// stops renaming it); `None` hands the name back to the source, which
+    /// refreshes it while polling (studio 0.30, `title_follows_source`).
+    /// Additive; the default sets a name and refuses `None`.
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        match title {
+            Some(t) => self.set_subscription(sub_id, None, Some(t)),
+            None => Err(CoreError::Other(
+                "following the source's name isn't supported here".into(),
+            )),
+        }
+    }
+    /// "Check all feeds now": the server polls every subscription that
+    /// isn't paused, in the background (studio 0.30), and answers with how
+    /// many; a pull follows. Additive; the default refuses.
+    fn poll_subscriptions(&self) -> Result<u32> {
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
+    /// "Check now" for one subscription: a blyg's index is reconciled at
+    /// once (true when anything changed); a feed is polled with the rest.
+    /// A pull follows. Additive; the default refuses.
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        let _ = sub_id;
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
     /// thumb: Some(1) / Some(-1) / None (clear).
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()>;
     fn mentions(&self) -> Result<Vec<Mention>>;

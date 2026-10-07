@@ -420,12 +420,6 @@ impl MainView {
         let c = s.model.centre.clone();
         let pin = s.pin;
         self.close_reading_sheet(window, cx);
-        // The reading pane's own post, so a selected passage counts.
-        let opened = self
-            .reading
-            .opened
-            .as_ref()
-            .is_some_and(|o| o.item.remote_id == c.id && o.item.origin == c.origin);
         let own_item = || {
             self.backend.items().into_iter().find(|i| {
                 i.server_id
@@ -454,9 +448,6 @@ impl MainView {
                     });
                 })
                 .detach();
-            }
-            (Act::Reply, Some(item)) if opened && self.studio.reader.active() => {
-                self.reply_with_selection(item.clone(), window, cx)
             }
             (Act::Reply, Some(item)) => self.item_action(item.clone(), "Reply", window, cx),
             (Act::Quote, Some(item)) => self.item_action(item.clone(), "Quote", window, cx),
@@ -1004,8 +995,10 @@ impl MainView {
     }
 
     /// The reading pane has a passage selected (Reply quotes just that).
+    /// Whether Reply would quote a passage: never since studio 0.31 (Reply
+    /// quotes the whole post; a passage is chosen in the stub editor).
     fn reading_has_selection(&self) -> bool {
-        self.studio.reader.active() && self.studio.reader.has_selection()
+        false
     }
 
     fn render_lineage_side(&self, s: &Sheet) -> AnyElement {

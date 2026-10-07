@@ -33,6 +33,26 @@
         }
       ],
       "media_html": "<p><img src=\"/blyg/media/01j9zq3k4m5n6p7q8r9s0t1m02.png\" alt=\"\" loading=\"lazy\"></p>\n<p><img src=\"/blyg/media/01j9zq3k4m5n6p7q8r9s0t1m03.jpg\" alt=\"\" loading=\"lazy\"></p>\n<p><img src=\"/blyg/media/01j9zq3k4m5n6p7q8r9s0t1m04.gif\" alt=\"Fish &amp; chips, &quot;quoted&quot; &lt;b&gt;not bold&lt;/b&gt; it&#39;s\" loading=\"lazy\"></p>"
+    },
+    {
+      "name": "placed_and_inline",
+      "content_html": "<p><img src=\"/blyg/media/01j9zq3k4m5n6p7q8r9s0t1m05.png\" alt=\"in the text\"></p>\n",
+      "media": [
+        {
+          "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m05.png",
+          "alt": "in the text"
+        },
+        {
+          "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m06.png",
+          "alt": "placed inline, line deleted",
+          "inline": 1
+        },
+        {
+          "r2_key": "media/01j9zq3k4m5n6p7q8r9s0t1m07.png",
+          "alt": "uploaded by another tool"
+        }
+      ],
+      "media_html": "<p><img src=\"/blyg/media/01j9zq3k4m5n6p7q8r9s0t1m07.png\" alt=\"uploaded by another tool\" loading=\"lazy\"></p>"
     }
   ]
 }

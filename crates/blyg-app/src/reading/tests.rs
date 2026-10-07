@@ -439,7 +439,10 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
         !ids.contains(&OMAR_YEAR.to_string()),
         "RSS items aren't transcludable"
     );
-    assert!(!ids.contains(&RUE_KEPT.to_string()) && !ids.contains(&ADA_GONE.to_string()));
+    // A withdrawn post only through its retained pin (studio 0.29's search
+    // offers what publish accepts: current, or a pinned version kept).
+    assert!(!ids.contains(&ADA_GONE.to_string()));
+    assert!(ids.contains(&RUE_KEPT.to_string()));
     // Filter, then ⏎ inserts ![[id]] on its own line.
     cx.simulate_input("hyperlink");
     cx.run_until_parked();
@@ -850,10 +853,10 @@ fn link_post_starts_a_fragment_that_is_not_a_reply(cx: &mut TestAppContext) {
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
 }
 
-/// Studio 0.8.1's stub prefill: a long post starts with an empty quote line
-/// and the caret on it; a short one with the whole-item form.
+/// Studio 0.31: a reply quotes the whole post however long it is, the
+/// caret below the quote (0.8.1 prefilled an empty quote line for a long one).
 #[gpui_kit::test]
-fn reply_prefills_an_empty_quote_for_a_long_post(cx: &mut TestAppContext) {
+fn reply_quotes_the_whole_post_however_long(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     // The seeded posts are all short: one is made long for this test.
     let long_html = format!("<p>{}</p>", "The tide comes in. ".repeat(40));
@@ -877,13 +880,10 @@ fn reply_prefills_an_empty_quote_for_a_long_post(cx: &mut TestAppContext) {
             (e.value().to_string(), e.cursor())
         });
         assert_eq!(text, stub.content_md);
-        if want_quote {
-            let head = format!("![[{id}]]\n> ");
-            assert_eq!(stub.content_md, format!("{head}\n\n"));
-            assert_eq!(cursor, head.len(), "the caret is on the quote line");
-        } else {
-            assert_eq!(stub.content_md, format!("![[{id}]]\n\n"));
-            assert_eq!(cursor, text.len());
-        }
+        // Studio 0.31: long or short, the stub quotes the whole post, the
+        // caret below it (a passage is chosen in the stub editor).
+        let _ = want_quote;
+        assert_eq!(stub.content_md, format!("![[{id}]]\n\n"));
+        assert_eq!(cursor, text.len());
     }
 }

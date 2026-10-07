@@ -92,7 +92,7 @@ const DB_OWNER_FILE: &str = "blygger.db.blyg-url";
 pub fn open_live(
     data_dir: &Path,
     url: &str,
-    tokens: &dyn TokenStore,
+    tokens: &Arc<dyn TokenStore>,
 ) -> Result<Option<Arc<dyn Backend>>> {
     let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
@@ -189,7 +189,7 @@ pub fn go_live(url: &str, cx: &mut gpui_kit::App) -> Result<bool> {
     }
     let (switch, dir) = (conn.switch.clone(), conn.data_dir.clone());
     let tokens = crate::settings::get(cx).tokens.clone();
-    match open_live(&dir, url, &*tokens)? {
+    match open_live(&dir, url, &tokens)? {
         Some(live) => {
             switch.switch(live, Mode::Live, || {});
             Ok(true)
@@ -235,7 +235,19 @@ pub fn disconnect(
 ) -> std::result::Result<String, String> {
     let url = crate::settings::blyg_url(cx).ok_or("Not connected to a blyg")?;
     let host = crate::vm::url_host(&url).unwrap_or(url.clone());
-    blyg_core::config::delete_credential(crate::settings::get(cx).tokens.as_ref(), &url)
+    let tokens = crate::settings::get(cx).tokens.clone();
+    // A browser sign-in is revoked at the blyg too (best effort, off the
+    // UI thread; offline, it just lapses within 30 days).
+    if let Ok(Some(grant)) = blyg_core::config::load_grant(tokens.as_ref(), &url)
+        && !grant.ended()
+    {
+        std::thread::spawn(move || {
+            if let Err(e) = blyg_core::api::oauth::revoke(&grant) {
+                eprintln!("blygger: couldn't revoke the browser sign-in: {e}");
+            }
+        });
+    }
+    blyg_core::config::delete_credential(tokens.as_ref(), &url)
         .map_err(|e| format!("Couldn't remove it from the Keychain: {e}"))?;
     crate::settings::write(&[("blyg-url", blyg_core::config::Change::Remove)], cx)?;
     if let Some(conn) = cx.try_global::<Connection>()
@@ -322,6 +334,12 @@ impl Backend for Disconnected {
         not_connected()
     }
     fn set_responses(&self, _: &LocalId, _: ResponsesMode) -> Result<bool> {
+        not_connected()
+    }
+    fn set_highlight(&self, _: &LocalId, _: HighlightMode) -> Result<bool> {
+        not_connected()
+    }
+    fn fetch_own_media(&self, _: &str) -> Result<(Vec<u8>, Option<String>)> {
         not_connected()
     }
     fn sync_now(&self) -> Result<()> {
@@ -427,6 +445,9 @@ impl Backend for SwitchBackend {
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
         self.cur().mark_read(sub_id, remote_id)
     }
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        self.cur().set_read(rows, read)
+    }
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
         self.cur().publish(id, note)
     }
@@ -463,6 +484,18 @@ impl Backend for SwitchBackend {
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         self.cur().set_responses(id, mode)
     }
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        self.cur().set_highlight(id, mode)
+    }
+    fn pick_search(&self, q: &blyg_core::PickQuery) -> Vec<blyg_core::Pickable> {
+        self.cur().pick_search(q)
+    }
+    fn picker_typing(&self) -> PickerTyping {
+        self.cur().picker_typing()
+    }
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        self.cur().fetch_own_media(url)
+    }
     fn sync_now(&self) -> Result<()> {
         self.cur().sync_now()
     }
@@ -485,6 +518,15 @@ impl Backend for SwitchBackend {
     }
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
         self.cur().pause_subscription(sub_id, paused)
+    }
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.cur().rename_subscription(sub_id, title)
+    }
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.cur().poll_subscriptions()
+    }
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.cur().check_subscription(sub_id)
     }
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
         self.cur().signal(sub_id, remote_id, thumb)

@@ -879,6 +879,8 @@ mod tests {
             responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         }
     }
 

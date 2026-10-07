@@ -1,5 +1,7 @@
 //! The composer's GPUI part, embedded by a host view over its textarea:
-//! the @-mention popup, the spellcheck underlines, and the spelling menu.
+//! the @-mention popup, the `[[` / `![[` picker typed in the editor (the
+//! host opens it, see `picker`), the spellcheck underlines, and the
+//! spelling menu.
 //!
 //! The host renders the `Assist` entity as an overlay covering the
 //! textarea, calls [`Assist::reset`] after replacing the text itself
@@ -21,6 +23,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::mention::{self, Candidate};
+use super::picker::{self, Filters, PickKind};
 use super::spell::{self, SpellEngine};
 use super::{SpellService, spellcheck_enabled};
 use crate::theme::Palette;
@@ -52,6 +55,23 @@ struct MentionPopup {
     sel: usize,
 }
 
+/// The `[[` / `![[` picker, its query typed in the editor.
+struct PickerPopup {
+    kind: PickKind,
+    /// Byte offset of the typed `[[` / `![[`.
+    at: usize,
+    /// The post being written (it can't name itself).
+    exclude: Option<String>,
+    query: String,
+    rows: Vec<blyg_core::Pickable>,
+    /// A search has answered (until then "no matches" isn't true yet).
+    searched: bool,
+    sel: usize,
+    /// Blyg subscriptions for the "from" chip: (id, title).
+    subs: Vec<(String, String)>,
+    scroll: ScrollHandle,
+}
+
 enum MenuItem {
     Replace(String),
     Learn,
@@ -77,6 +97,9 @@ pub struct Assist {
     /// The next edit is a paste: it never opens the mention popup.
     pasting: bool,
     mention: Option<MentionPopup>,
+    picker: Option<PickerPopup>,
+    /// Bumped per picker search; a stale answer is dropped.
+    pick_gen: usize,
     menu: Option<SpellMenu>,
     /// Misspelled byte ranges in `last`.
     misspelled: Vec<Range<usize>>,
@@ -131,6 +154,8 @@ impl Assist {
             last,
             pasting: false,
             mention: None,
+            picker: None,
+            pick_gen: 0,
             menu: None,
             misspelled: Vec::new(),
             debounce: None,
@@ -155,6 +180,7 @@ impl Assist {
     pub fn reset(&mut self, cx: &mut Context<Self>) {
         self.last = self.editor.read(cx).value().to_string();
         self.mention = None;
+        self.picker = None;
         self.menu = None;
         self.misspelled.clear();
         self.schedule_check(Duration::ZERO, cx);
@@ -175,8 +201,11 @@ impl Assist {
     ) {
         match ev {
             InputEvent::Change => self.edited(window, cx),
-            InputEvent::Blur if self.mention.is_some() || self.menu.is_some() => {
+            InputEvent::Blur
+                if self.mention.is_some() || self.menu.is_some() || self.picker.is_some() =>
+            {
                 self.mention = None;
+                self.picker = None;
                 self.menu = None;
                 cx.notify();
             }
@@ -197,6 +226,18 @@ impl Assist {
         let old = std::mem::replace(&mut self.last, text);
         let text = &self.last;
 
+        let mut search = false;
+        if let Some(pk) = self.picker.as_mut() {
+            match picker::query(text, pk.at, pk.kind, cursor) {
+                Some(q) if q != pk.query => {
+                    pk.query = q.to_string();
+                    pk.sel = 0;
+                    search = true;
+                }
+                Some(_) => {}
+                None => self.picker = None,
+            }
+        }
         if let Some(m) = self.mention.as_mut() {
             match mention::query(text, m.at, cursor) {
                 Some(q) => {
@@ -214,6 +255,9 @@ impl Assist {
         } else if !pasting && let Some(at) = mention::trigger(&old, text, cursor) {
             self.open_mentions(at, cx);
         }
+        if search {
+            self.search_picker(cx);
+        }
         self.schedule_check(SPELL_DEBOUNCE, cx);
         cx.notify();
     }
@@ -222,7 +266,7 @@ impl Assist {
 
     /// Whether a popup is up and wants ↑/↓/⏎/⇥/esc.
     pub fn wants_keys(&self) -> bool {
-        self.mention.is_some() || self.menu.is_some()
+        self.mention.is_some() || self.menu.is_some() || self.picker.is_some()
     }
 
     /// Handle a key while a popup is up. `false` lets it through to the editor.
@@ -242,6 +286,31 @@ impl Assist {
                     self.pick_menu(sel, window, cx);
                 }
                 AssistKey::Escape => self.menu = None,
+            }
+            cx.notify();
+            return true;
+        }
+        if let Some(pk) = self.picker.as_mut() {
+            let n = pk.rows.len();
+            match key {
+                // The typed brackets and query stay as plain text.
+                AssistKey::Escape => self.picker = None,
+                _ if n == 0 => {
+                    if key != AssistKey::Tab {
+                        self.picker = None;
+                        cx.notify();
+                        return false;
+                    }
+                }
+                AssistKey::Up => pk.sel = pk.sel.saturating_sub(1),
+                AssistKey::Down => pk.sel = (pk.sel + 1).min(n - 1),
+                AssistKey::Enter | AssistKey::Tab => {
+                    let sel = pk.sel;
+                    self.pick_row(sel, window, cx);
+                }
+            }
+            if let Some(pk) = self.picker.as_ref() {
+                pk.scroll.scroll_to_item(pk.sel);
             }
             cx.notify();
             return true;
@@ -272,6 +341,77 @@ impl Assist {
         }
         cx.notify();
         true
+    }
+
+    // ------------------------------------------------------------ picker
+
+    /// Open the picker for brackets typed at `at` (the host decided that
+    /// the query is typed in the editor, see `picker_typing`).
+    pub fn open_picker(
+        &mut self,
+        kind: PickKind,
+        at: usize,
+        exclude: Option<String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.mention = None;
+        self.menu = None;
+        let subs = picker::blyg_subs(&self.backend.subscriptions());
+        self.picker = Some(PickerPopup {
+            kind,
+            at,
+            exclude,
+            query: String::new(),
+            rows: Vec::new(),
+            searched: false,
+            sel: 0,
+            subs,
+            scroll: ScrollHandle::new(),
+        });
+        self.search_picker(cx);
+        cx.notify();
+    }
+
+    /// Search again for the query and the current filters, off the typing
+    /// path (it's a local index lookup, but typing must never wait).
+    fn search_picker(&mut self, cx: &mut Context<Self>) {
+        let Some(pk) = self.picker.as_ref() else {
+            return;
+        };
+        self.pick_gen += 1;
+        let gen_ = self.pick_gen;
+        let q = Filters::get(cx).query(&pk.query, pk.exclude.clone());
+        let backend = self.backend.clone();
+        let found = cx.background_spawn(async move { backend.pick_search(&q) });
+        cx.spawn(async move |this, cx| {
+            let rows = found.await;
+            let _ = this.update(cx, |a, cx| {
+                if a.pick_gen != gen_ {
+                    return;
+                }
+                if let Some(pk) = a.picker.as_mut() {
+                    pk.rows = rows;
+                    pk.searched = true;
+                    pk.sel = pk.sel.min(pk.rows.len().saturating_sub(1));
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn pick_row(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(pk) = self.picker.take() else { return };
+        let Some(row) = pk.rows.get(i) else { return };
+        let (text, cursor) = {
+            let s = self.editor.read(cx);
+            (s.value().to_string(), s.cursor())
+        };
+        if picker::query(&text, pk.at, pk.kind, cursor).is_none() {
+            return;
+        }
+        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id);
+        self.splice(&text, &new, caret, window, cx);
     }
 
     // ------------------------------------------------------------ mentions
@@ -719,6 +859,102 @@ impl Assist {
         )
     }
 
+    fn render_picker(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let pk = self.picker.as_ref()?;
+        let pos = self.anchor_below(pk.at, cx)?;
+        let p = self.palette;
+        let weak = cx.entity().downgrade();
+        let set: picker::OnFilters = std::rc::Rc::new(move |f: Filters, _, cx: &mut App| {
+            f.set(cx);
+            let _ = weak.update(cx, |a, cx| {
+                if let Some(pk) = a.picker.as_mut() {
+                    pk.sel = 0;
+                }
+                a.search_picker(cx);
+                cx.notify();
+            });
+        });
+        let weak = cx.entity().downgrade();
+        let pick: picker::OnPick = std::rc::Rc::new(move |i, window, cx: &mut App| {
+            let _ = weak.update(cx, |a, cx| {
+                a.pick_row(i, window, cx);
+                cx.notify();
+            });
+        });
+        let filters = Filters::get(cx);
+        let empty = pk.searched && pk.rows.is_empty();
+        let card = self
+            .popup_card()
+            .id("picker-popup")
+            .w(px(440.))
+            .on_mouse_down(MouseButton::Left, |_, window, cx| {
+                // Keep the editor focused (and the picker open) on a click.
+                window.prevent_default();
+                cx.stop_propagation();
+            })
+            .child(
+                div()
+                    .px(px(8.))
+                    .pt(px(3.))
+                    .pb(px(5.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(5.))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(p.muted)
+                            .child(pk.kind.heading()),
+                    )
+                    .child(picker::filter_row(p, &filters, &pk.subs, set)),
+            )
+            .child(
+                div()
+                    .id("picker-rows")
+                    .max_h(px(300.))
+                    .overflow_y_scroll()
+                    .track_scroll(&pk.scroll)
+                    .children(picker::rows(p, &pk.rows, pk.sel, pick)),
+            )
+            .when(empty, |d| {
+                d.child(
+                    div()
+                        .px(px(8.))
+                        .py(px(4.))
+                        .italic()
+                        .text_color(p.muted)
+                        .child(if pk.query.trim().is_empty() {
+                            "Nothing to offer here. Links and quotes come from your published posts and your blyg subscriptions.".to_string()
+                        } else {
+                            format!("Nothing held matches “{}”", pk.query.trim())
+                        }),
+                )
+            })
+            .child(
+                div()
+                    .px(px(8.))
+                    .pt(px(4.))
+                    .pb(px(2.))
+                    .text_size(px(11.))
+                    .text_color(p.muted)
+                    .child(format!(
+                        "type to search · ↑↓ choose · ⏎ {} · esc keeps your text",
+                        pk.kind.enter_hint()
+                    )),
+            );
+        Some(
+            deferred(
+                anchored()
+                    .position(pos)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(card),
+            )
+            .with_priority(1)
+            .into_any_element(),
+        )
+    }
+
     fn render_menu(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let menu = self.menu.as_ref()?;
         let p = self.palette;
@@ -817,6 +1053,7 @@ impl Render for Assist {
             )
             .when(focused, |d| {
                 d.children(self.render_mentions(cx))
+                    .children(self.render_picker(cx))
                     .children(self.render_menu(cx))
             })
     }

@@ -11,6 +11,7 @@
 //! `not_before` keeps moving).
 
 mod folders; // --- reader folders ---
+mod pick;
 mod provenance;
 pub use provenance::Tracked;
 mod read_sync;
@@ -56,6 +57,11 @@ pub enum OpKind {
     /// Send a reading row's read state (extension 5); payload = a `ReadMark`,
     /// `local_id` = `read_sync::read_key`, not an item.
     Read,
+    /// Clear a reading row's read state (mark unread, upstream's
+    /// `read_state_clear`); same key as `Read`, payload an `UnreadMark`.
+    /// A row has at most one waiting `Read` or `Unread` op: the last action
+    /// replaces the other (`read_sync::queue_read` / `queue_unread`).
+    Unread,
 }
 
 impl OpKind {
@@ -66,6 +72,7 @@ impl OpKind {
             OpKind::Recreate => "recreate",
             OpKind::DeleteRemote => "delete_remote",
             OpKind::Read => "read",
+            OpKind::Unread => "unread",
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -74,6 +81,7 @@ impl OpKind {
             "recreate" => OpKind::Recreate,
             "delete_remote" => OpKind::DeleteRemote,
             "read" => OpKind::Read,
+            "unread" => OpKind::Unread,
             _ => OpKind::Save,
         }
     }
@@ -111,7 +119,7 @@ pub struct MergeOutcome {
 const ITEM_COLS: &str = "local_id, server_id, kind, status, version, dirty, content_md, created, updated, \
      permalink, stub_of, forked_from, show_responses, conflict, \
      EXISTS(SELECT 1 FROM outbox o WHERE o.local_id = items.local_id AND o.op <> 'delete_remote'), \
-     server_kind, base_content, theirs_content, responses_mode";
+     server_kind, base_content, theirs_content, responses_mode, highlight, highlight_mode";
 
 fn row_to_sync(r: &Row) -> rusqlite::Result<SyncRow> {
     let json_ref = |s: Option<String>| s.and_then(|s| serde_json::from_str::<RemoteRef>(&s).ok());
@@ -134,6 +142,10 @@ fn row_to_sync(r: &Row) -> rusqlite::Result<SyncRow> {
             .and_then(|m| ResponsesMode::parse(&m)),
         conflict: r.get(13)?,
         pending_sync: r.get(14)?,
+        highlight: r.get(19)?,
+        highlight_mode: r
+            .get::<_, Option<String>>(20)?
+            .and_then(|m| ResponsesMode::parse(&m)),
     };
     Ok(SyncRow {
         item,
@@ -827,6 +839,21 @@ impl Store {
         Ok(())
     }
 
+    /// `mode` = `None` keeps the stored choice (a server before 0.27).
+    pub fn set_highlight(
+        &self,
+        id: &LocalId,
+        on: bool,
+        mode: Option<crate::model::HighlightMode>,
+    ) -> Result<()> {
+        self.conn().execute(
+            "UPDATE items SET highlight = ?2, highlight_mode = COALESCE(?3, highlight_mode) \
+             WHERE local_id = ?1",
+            params![id.0, on, mode.map(ResponsesMode::as_str)],
+        )?;
+        Ok(())
+    }
+
     // -------------------------------------------------------------- conflicts
 
     /// Returns the new draft's id for `KeepBoth`.
@@ -993,6 +1020,12 @@ impl Store {
             .flatten()
     }
 
+    pub fn delete_meta(&self, key: &str) -> Result<()> {
+        self.conn()
+            .execute("DELETE FROM meta WHERE key = ?1", [key])?;
+        Ok(())
+    }
+
     pub fn set_meta(&self, key: &str, value: &str) -> Result<()> {
         self.conn().execute(
             "INSERT INTO meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -1033,8 +1066,8 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
     tx.execute(
         "INSERT INTO items (local_id, server_id, kind, server_kind, status, version, dirty, content_md, created, \
          updated, permalink, stub_of, forked_from, show_responses, base_updated, base_content, \
-         responses_mode) \
-         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7, ?14)",
+         responses_mode, highlight, highlight_mode) \
+         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7, ?14, ?15, ?16)",
         params![
             id.0,
             w.id,
@@ -1050,6 +1083,8 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
             raw_json(&w.forked_from),
             w.shows_responses(),
             w.responses_mode().map(ResponsesMode::as_str),
+            w.highlights(),
+            w.highlight.map(ResponsesMode::as_str),
         ],
     )?;
     if let Some(v) = &w.versions {
@@ -1100,7 +1135,8 @@ fn merge_one(
     tx.execute(
         "UPDATE items SET status = ?2, version = ?3, permalink = COALESCE(?4, permalink), stub_of = ?5, forked_from = ?6, \
          show_responses = ?7, server_kind = ?8, base_updated = ?9, updated = ?10, \
-         responses_mode = COALESCE(?11, responses_mode) WHERE local_id = ?1",
+         responses_mode = COALESCE(?11, responses_mode), highlight = ?12, \
+         highlight_mode = COALESCE(?13, highlight_mode) WHERE local_id = ?1",
         params![
             id.0,
             w.status,
@@ -1113,6 +1149,8 @@ fn merge_one(
             w.updated,
             updated,
             w.responses_mode().map(ResponsesMode::as_str),
+            w.highlights(),
+            w.highlight.map(ResponsesMode::as_str),
         ],
     )?;
     let meta_changed = status_str(it.status) != w.status
@@ -1121,6 +1159,8 @@ fn merge_one(
         || it.show_responses != w.shows_responses()
         || w.responses_mode()
             .is_some_and(|m| it.responses_mode != Some(m))
+        || it.highlight != w.highlights()
+        || w.highlight.is_some_and(|m| it.highlight_mode != Some(m))
         || it.updated != updated;
 
     if it.conflict {
@@ -1176,4 +1216,10 @@ mod tests;
 mod reading_tests;
 
 #[cfg(test)]
+mod pick_tests;
+
+#[cfg(test)]
 mod folders_tests; // --- reader folders ---
+
+#[cfg(test)]
+mod read_state_tests; // --- read/unread ---

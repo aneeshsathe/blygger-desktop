@@ -529,6 +529,7 @@ mod tests {
             title: title.into(),
             status: "active".into(),
             in_blogroll: blogroll,
+            title_follows_source: true,
         }
     }
 
@@ -580,6 +581,8 @@ mod tests {
             responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         }
     }
 

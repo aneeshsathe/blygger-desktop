@@ -13,6 +13,34 @@ section as the release notes. If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
+## [Unreleased]
+
+## [0.9.0] - 2026-10-06
+
+### Changed
+
+- **Burrow follows blygger-studio 0.32's owner API.** The tests check against 0.32.1's `openapi.json`, and the end-to-end tests run against a real local studio 0.32.1.
+- **Sign in with browser.** On studio 0.28 or later, connecting opens your studio's sign-in in the browser and asks you to allow Burrow (OAuth). Burrow keeps the grant in your Keychain and renews it; after 30 days, or if you revoke it under Client access, it asks you to sign in again. An **API token** from the studio's Client access page works too, as does a server's own owner token; the password stays for older studios. Studio 0.28 signed every session out, so a password sign-in has to happen once more.
+- **Reply is the one response action.** A stub starts quoting the whole post; in the stub, **quote a passage instead** shows the post and the passage you select becomes the quote, and further passages go in as their own quotes. "Reply with this" is gone from the selection pill; "Quote in draft" (⇧⌘D) stays, and into a stub of the same post it sets or adds a passage.
+- **Cheaper, quicker sync.** On studio 0.32, Burrow asks the blyg what changed before reading anything, so a pull with nothing new is one small request, and it checks every 15 seconds.
+- **AI disclosure works on any studio 0.28 or later.** Text generated in Burrow is recorded with the post through the studio's own API; the Worker extension for it is only a fallback now.
+- **Generated text from your blyg's own AI** goes straight into the editor.
+- **The preview matches studio 0.32.2** byte for byte again, including its sanitizer for threads. A TK scope's sources are the posts its instruction names, not ones its output adds, as studio 0.32.2 records them.
+- **The stock-server notice is shorter.** On a current studio, only read state across Macs needs an extension; AI disclosure (0.28), removing deleted images (0.26) and replies and forks (0.18) are upstream now.
+
+### Added
+
+- **Mark read and unread, several at once.** In the Reader, ⌘-click, ⇧-click and ⌘A pick posts; **r** and **u** (or the right-click menu) mark them read or unread. Marks sync in batches; unread syncs on a server that supports clearing read state, and otherwise stays on this Mac.
+- **Subscription names follow their source** (studio 0.30). **Rename…** gives one your own name, and **Use the Blyg's Own Name** hands it back. **Check Now** checks one; **⇧⌘R** (Blyg › Check All Feeds Now) has your blyg check them all.
+- **Highlight generated text** (studio 0.27): set your blyg's default in its site settings and override it per post from the ⌘G palette (**H** cycles default, on, off). The preview shows it as the page will.
+- **A full-text picker for `[[` and `![[`.** Every word of your published posts and the blyg posts you read, searched on your Mac, filtered by source and blyg, newest or oldest first. Typing `[[` now opens it for links too. The blyg's *picker typing* setting chooses whether you type in the editor or in the picker.
+
+### Fixed
+
+- **A change the server rate-limits is no longer dropped.** Studio 0.28's work budgets answer 429; Burrow waits as asked and sends it then. Typing saves at most every three seconds per post.
+- **A change your token lacks the access for waits** instead of being dropped, and Burrow says which permission it needs.
+- **Images in drafts show again** on studio 0.28 or later, which keeps unpublished uploads private: Burrow reads them as you, from your blyg only.
+
 ## [0.8.2] - 2026-10-04
 
 ### Fixed

@@ -1,8 +1,8 @@
 # Test fixtures
 
 `openapi.json` is the owner-API contract from upstream
-[blygger-studio](https://github.com/blygger/blygger-studio) v0.26.0
-(commit 0f6108f; MIT License, Copyright (c) 2026 Venkatesh Rao).
+[blygger-studio](https://github.com/blygger/blygger-studio) v0.32.1
+(commit a3d2cd6; MIT License, Copyright (c) 2026 Venkatesh Rao).
 
 `extensions.json` describes, in the same form, the routes and replies the
 app uses that upstream lacks (the Worker fork's extensions, docs/SERVER.md).

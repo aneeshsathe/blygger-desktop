@@ -105,17 +105,37 @@ fn retainable(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<ReadingItem
 }
 
 /// Merge the server's read state into a stored row: `max(local, server)`.
-/// Never lowers the local value. True if it rose.
+/// Never lowers the local value, and never raises it to a version at or
+/// below the row's unread floor (marked unread here; `read_sync.rs`). A
+/// read version the server holds is confirmed (`read_at` NULL), and a newer
+/// one than the floor lifts the floor. True if it rose.
 fn raise_read(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<bool> {
     let Some(v) = it.read_version else {
         return Ok(false);
     };
     let n = tx.execute(
-        "UPDATE reading SET read_version = ?3 WHERE subscription_id = ?1 AND remote_id = ?2 \
-         AND (read_version IS NULL OR read_version < ?3)",
+        "UPDATE reading SET read_version = ?3, read_at = NULL, read_floor = NULL \
+         WHERE subscription_id = ?1 AND remote_id = ?2 \
+         AND (read_version IS NULL OR read_version < ?3) \
+         AND (read_floor IS NULL OR read_floor < ?3)",
         params![it.subscription_id, it.remote_id, v],
     )?;
     Ok(n > 0)
+}
+
+/// The duplicate groups of the held rows named in `targets`; `None` when
+/// none of them is held.
+fn target_groups(rows: &[Row], targets: &[(String, String)]) -> Option<HashSet<String>> {
+    let want: HashSet<(&str, &str)> = targets
+        .iter()
+        .map(|(s, r)| (s.as_str(), r.as_str()))
+        .collect();
+    let groups: HashSet<String> = rows
+        .iter()
+        .filter(|r| want.contains(&(r.item.subscription_id.as_str(), r.item.remote_id.as_str())))
+        .map(|r| group_key(&r.item))
+        .collect();
+    (!groups.is_empty()).then_some(groups)
 }
 
 fn kind_str(k: SubscriptionKind) -> &'static str {
@@ -332,38 +352,54 @@ impl Store {
 
     /// `mark_read`, returning each row whose read state rose. With `queue`,
     /// the same transaction puts a `read` op per such row in the outbox
-    /// (extension 5: the server keeps read state per subscription row).
+    /// (the server keeps read state per subscription row).
     pub fn mark_read_rows(
         &self,
         sub: &str,
         remote_id: &str,
         queue: bool,
     ) -> Result<Vec<crate::api::wire::ReadMark>> {
-        let rows = self.reading_rows();
-        let Some(target) = rows
-            .iter()
-            .find(|r| r.item.subscription_id == sub && r.item.remote_id == remote_id)
-        else {
+        let marks = self.mark_many_read(&[(sub.to_string(), remote_id.to_string())], queue)?;
+        if marks.is_none() {
             return Err(CoreError::NotFound);
+        }
+        Ok(marks.unwrap_or_default())
+    }
+
+    /// Mark many reading items read (each with every duplicate of the same
+    /// post) in one transaction, at their current versions: a selection, or
+    /// a whole list. Returns each row whose read state rose (`read_at` = now,
+    /// ISO), or `None` when none of `targets` is held. With `queue`, a `read`
+    /// op per such row, replacing any waiting `unread` op (last action wins).
+    pub fn mark_many_read(
+        &self,
+        targets: &[(String, String)],
+        queue: bool,
+    ) -> Result<Option<Vec<crate::api::wire::ReadMark>>> {
+        let rows = self.reading_rows();
+        let Some(groups) = target_groups(&rows, targets) else {
+            return Ok(None);
         };
-        let key = group_key(&target.item);
+        let now = crate::util::now_ms();
         let mut c = self.conn();
         let tx = c.transaction()?;
         let mut marked = Vec::new();
-        for r in rows.iter().filter(|r| group_key(&r.item) == key) {
+        for r in rows.iter().filter(|r| groups.contains(&group_key(&r.item))) {
             let it = &r.item;
             // Never lower: a version read elsewhere may be ahead of this row.
             if it.read_version >= Some(it.version) {
                 continue;
             }
             tx.execute(
-                "UPDATE reading SET read_version = ?3 WHERE subscription_id = ?1 AND remote_id = ?2",
-                params![it.subscription_id, it.remote_id, it.version],
+                "UPDATE reading SET read_version = ?3, read_at = ?4, read_floor = NULL \
+                 WHERE subscription_id = ?1 AND remote_id = ?2",
+                params![it.subscription_id, it.remote_id, it.version, now],
             )?;
             let m = crate::api::wire::ReadMark {
                 sub: it.subscription_id.clone(),
                 remote_id: it.remote_id.clone(),
                 version: it.version,
+                read_at: Some(crate::util::iso_from_ms(now)),
             };
             if queue {
                 super::read_sync::queue_read(&tx, &m)?;
@@ -371,7 +407,52 @@ impl Store {
             marked.push(m);
         }
         tx.commit()?;
-        Ok(marked)
+        Ok(Some(marked))
+    }
+
+    /// Mark many reading items unread (each with every duplicate of the
+    /// same post) in one transaction: their read version goes, and the
+    /// version they were read at becomes their floor, so the server's old
+    /// read state doesn't re-mark them read (`read_sync.rs`). Any waiting
+    /// `read` op for them goes (last action wins). With `queue` (a server
+    /// that can clear read state), an `unread` op per row. Returns the rows
+    /// that were read, or `None` when none of `targets` is held.
+    pub fn mark_many_unread(
+        &self,
+        targets: &[(String, String)],
+        queue: bool,
+    ) -> Result<Option<Vec<crate::api::wire::UnreadMark>>> {
+        let rows = self.reading_rows();
+        let Some(groups) = target_groups(&rows, targets) else {
+            return Ok(None);
+        };
+        let mut c = self.conn();
+        let tx = c.transaction()?;
+        let mut cleared = Vec::new();
+        for r in rows.iter().filter(|r| groups.contains(&group_key(&r.item))) {
+            let it = &r.item;
+            let Some(v) = it.read_version else {
+                continue;
+            };
+            tx.execute(
+                "UPDATE reading SET read_version = NULL, read_at = NULL, \
+                 read_floor = MAX(COALESCE(read_floor, 0), ?3) \
+                 WHERE subscription_id = ?1 AND remote_id = ?2",
+                params![it.subscription_id, it.remote_id, v],
+            )?;
+            let m = crate::api::wire::UnreadMark {
+                sub: it.subscription_id.clone(),
+                remote_id: it.remote_id.clone(),
+            };
+            let key = super::read_sync::read_key(&m.sub, &m.remote_id);
+            super::read_sync::drop_waiting_read(&tx, &key)?;
+            if queue {
+                super::read_sync::queue_unread(&tx, &m)?;
+            }
+            cleared.push(m);
+        }
+        tx.commit()?;
+        Ok(Some(cleared))
     }
 
     /// One cached row (not de-duplicated, tombstones included) and its

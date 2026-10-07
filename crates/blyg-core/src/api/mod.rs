@@ -15,6 +15,8 @@
 //! advertised `read_state: true`.
 
 pub mod auth;
+pub mod media;
+pub mod oauth;
 pub mod public;
 pub mod wire;
 
@@ -53,6 +55,10 @@ struct Site {
     responses_default: bool,
     /// `site_url` without its trailing `/`; `""` = unset.
     site_url: String,
+    /// `highlight_generated_default`: what `highlight: "default"` means.
+    highlight_default: bool,
+    /// `picker_typing`, when the server reports it (studio 0.29).
+    picker_typing: Option<crate::model::PickerTyping>,
 }
 
 /// Collection page size (the contract's maximum outside `/api/reading`).
@@ -112,39 +118,79 @@ impl Api {
         Ok(s)
     }
 
-    fn request(&self, method: &str, path: &str) -> Result<ureq::Request> {
+    /// A request with the credential on it, and the browser sign-in's
+    /// access token it carries (for the 401 retry).
+    fn request(&self, method: &str, path: &str) -> Result<(ureq::Request, Option<String>)> {
         let r = self
             .agent
             .request(method, &format!("{}{}", self.api_root, path))
             .set("accept", "application/json");
         Ok(match &self.cred {
-            Credential::Token(t) => r.set("authorization", &format!("Bearer {t}")),
-            Credential::Password(p) => r.set(
-                "cookie",
-                &format!("{}={}", auth::SESSION_COOKIE, self.session(p)?),
+            Credential::Token(t) => (r.set("authorization", &format!("Bearer {t}")), None),
+            Credential::Password(p) => (
+                r.set(
+                    "cookie",
+                    &format!("{}={}", auth::SESSION_COOKIE, self.session(p)?),
+                ),
+                None,
             ),
+            Credential::OAuth(s) => {
+                let t = s.access_token()?;
+                (r.set("authorization", &format!("Bearer {t}")), Some(t))
+            }
         })
     }
 
-    fn send(&self, method: &str, path: &str, body: &Body) -> Result<Value> {
-        let req = self.request(method, path)?;
-        read_json(match body {
+    fn send(&self, method: &str, path: &str, body: &Body) -> (Result<Value>, Option<String>) {
+        let (req, bearer) = match self.request(method, path) {
+            Ok(r) => r,
+            Err(e) => return (Err(e), None),
+        };
+        let res = match body {
             Body::None => req.call(),
             Body::Json(v) => req.send_json(v.clone()),
             Body::Bytes { content_type, data } => {
                 req.set("content-type", content_type).send_bytes(data)
             }
-        })
+        };
+        // A bearer without the scope this call needs (studio 0.28+): say
+        // which permission is missing (it's in the challenge).
+        if let Err(ureq::Error::Status(403, r)) = &res
+            && let Some(needed) = r
+                .header("www-authenticate")
+                .and_then(oauth::insufficient_scope)
+        {
+            let granted = match &self.cred {
+                Credential::OAuth(s) => Some(s.grant().scope),
+                _ => None,
+            };
+            let message = oauth::missing_scope_message(&needed, granted.as_deref());
+            return (
+                Err(CoreError::Rejected {
+                    status: 403,
+                    message,
+                    details: vec![],
+                }),
+                bearer,
+            );
+        }
+        (read_json(res), bearer)
     }
 
     /// One call. With a password, a 401 means the session ended (30 days,
-    /// or the server's secret changed): sign in again and retry once.
+    /// or the server's secret changed): sign in again and retry once. With
+    /// a browser sign-in, renew the access token and retry once; when the
+    /// renewal is refused the grant is marked ended (sign in again).
     fn exec(&self, method: &str, path: &str, body: Body) -> Result<Value> {
-        let r = self.send(method, path, &body);
+        let (r, bearer) = self.send(method, path, &body);
         match (&self.cred, r) {
             (Credential::Password(_), Err(CoreError::Unauthorized)) => {
                 *self.session.lock().unwrap() = None;
-                self.send(method, path, &body)
+                self.send(method, path, &body).0
+            }
+            (Credential::OAuth(s), Err(CoreError::Unauthorized)) if bearer.is_some() => {
+                s.after_unauthorized(bearer.as_deref())?;
+                self.send(method, path, &body).0
             }
             (_, r) => r,
         }
@@ -225,6 +271,7 @@ impl Api {
             &site.site_url
         };
         w.resolve(site.responses_default, base);
+        w.resolve_highlight(site.highlight_default);
         w
     }
 
@@ -233,8 +280,16 @@ impl Api {
     /// Every item. Re-reads settings first, so `responses: "default"`
     /// resolves against the current site default.
     pub fn list_items(&self) -> Result<Vec<WireItem>> {
+        self.list_items_with(true)
+    }
+
+    /// Every item; `refresh_settings: false` resolves against the settings
+    /// as last read (when the blyg says they haven't changed).
+    pub fn list_items_with(&self, refresh_settings: bool) -> Result<Vec<WireItem>> {
         let items: Vec<WireItem> = self.collect("/api/items", "")?;
-        let _ = self.settings();
+        if refresh_settings || self.site.lock().unwrap().is_none() {
+            let _ = self.settings();
+        }
         Ok(items.into_iter().map(|w| self.resolve(w)).collect())
     }
 
@@ -251,17 +306,22 @@ impl Api {
         Ok(self.resolve(w))
     }
 
-    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?}` → the
-    /// new item's id.
+    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?,
+    /// provenance?}` → the new item's id. `provenance` (studio 0.28+) has one
+    /// entry per TK scope; an older server refuses the key with a 400.
     pub fn create_item(
         &self,
         content_md: &str,
         kind: Kind,
         stub_of: Option<&RemoteRef>,
+        provenance: Option<&[Option<ScopeProvenance>]>,
     ) -> Result<String> {
         let mut body = json!({ "mode": "blank", "content_md": content_md, "kind": kind_str(kind) });
         if let Some(s) = stub_of {
             body["stub_of"] = serde_json::to_value(s).unwrap_or(Value::Null);
+        }
+        if let Some(p) = provenance {
+            body["provenance"] = provenance_body(p);
         }
         Ok(self
             .call_as::<Created>("POST", "/api/items", Some(body))?
@@ -274,6 +334,23 @@ impl Api {
             "PATCH",
             &format!("/api/items/{}", enc(id)),
             Some(json!({ "content_md": content_md })),
+        )
+        .map(|_| ())
+    }
+
+    /// `PATCH /api/items/:id {content_md, provenance}` (studio 0.28+): the
+    /// text and its whole per-scope provenance in one atomic write. An older
+    /// server refuses the unknown key with a 400 ([`refused_provenance_key`]).
+    pub fn save_item_provenance(
+        &self,
+        id: &str,
+        content_md: &str,
+        provenance: &[Option<ScopeProvenance>],
+    ) -> Result<()> {
+        self.call(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "content_md": content_md, "provenance": provenance_body(provenance) })),
         )
         .map(|_| ())
     }
@@ -340,21 +417,33 @@ impl Api {
             .map(|_| ())
     }
 
-    /// `POST /api/items/:id/generate {scope}` → (text, model). The server
-    /// fills that TK scope with its own model and records the provenance.
-    pub fn generate(&self, id: &str, scope: u32) -> Result<(String, String)> {
+    /// `POST /api/items/:id/generate {scope}`. The server fills that TK
+    /// scope with its own model and records the provenance.
+    pub fn generate(&self, id: &str, scope: u32) -> Result<Generated> {
         #[derive(serde::Deserialize)]
         struct R {
             text: String,
             #[serde(default)]
             model: Option<String>,
+            #[serde(default)]
+            content_md: Option<String>,
         }
         let r: R = self.call_as(
             "POST",
             &format!("/api/items/{}/generate", enc(id)),
             Some(json!({ "scope": scope })),
         )?;
-        Ok((r.text, r.model.unwrap_or_else(|| "unknown".into())))
+        Ok(Generated {
+            text: r.text,
+            model: r.model.unwrap_or_else(|| "unknown".into()),
+            content_md: r.content_md,
+        })
+    }
+
+    /// `GET /api/changes` (studio 0.32+): the blyg's change epoch and one
+    /// revision counter per data domain. `None` on an older server (404).
+    pub fn changes(&self) -> Result<Option<ChangeState>> {
+        Self::optional(self.call_as("GET", "/api/changes", None))
     }
 
     /// `POST /api/items {mode: "fork", source}` → the new draft.
@@ -433,6 +522,23 @@ impl Api {
         )?;
         let w = self.resolve(w);
         Ok((w.shows_responses(), w.responses_mode()))
+    }
+
+    /// `PATCH /api/items/:id {highlight}` (studio 0.27; needs
+    /// `owner:publish`, as it changes the public page at once). Returns
+    /// (highlighting now, the item's choice as the server stored it).
+    pub fn set_highlight(
+        &self,
+        id: &str,
+        mode: crate::model::HighlightMode,
+    ) -> Result<(bool, Option<crate::model::HighlightMode>)> {
+        let w: WireItem = self.call_as(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "highlight": mode.as_str() })),
+        )?;
+        let w = self.resolve(w);
+        Ok((w.highlights(), w.highlight))
     }
 
     // ---------- media ----------
@@ -531,18 +637,22 @@ impl Api {
             .id)
     }
 
+    /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
+    /// `Some(Some(t))` sets a name of your own, `Some(None)` sends
+    /// `title: null`, handing the name back to the source (studio 0.30),
+    /// which refreshes it while polling.
     pub fn update_subscription(
         &self,
         id: &str,
         in_blogroll: Option<bool>,
-        title: Option<&str>,
+        title: Option<Option<&str>>,
     ) -> Result<()> {
         let mut body = json!({});
         if let Some(b) = in_blogroll {
             body["in_blogroll"] = json!(b);
         }
         if let Some(t) = title {
-            body["title"] = json!(t);
+            body["title"] = t.map_or(Value::Null, |t| json!(t));
         }
         self.call(
             "PATCH",
@@ -565,6 +675,14 @@ impl Api {
             Some(json!({ "paused": paused })),
         )
         .map(|_| ())
+    }
+
+    /// `POST /api/subscriptions/poll` (studio 0.30): the server polls every
+    /// subscription that isn't paused, in the background, and answers at
+    /// once with how many.
+    pub fn poll_subscriptions(&self) -> Result<u32> {
+        let v = self.call("POST", "/api/subscriptions/poll", None)?;
+        Ok(v.get("polling").and_then(Value::as_u64).unwrap_or(0) as u32)
     }
 
     /// `{ok, changed}` (`changed` counts items); blyg subscriptions only
@@ -633,6 +751,12 @@ impl Api {
         if let Some(on) = s.show_responses_default {
             body.insert("show_responses_default".into(), json!(on));
         }
+        if let Some(on) = s.highlight_generated_default {
+            body.insert("highlight_generated_default".into(), json!(on));
+        }
+        if let Some(t) = s.picker_typing {
+            body.insert("picker_typing".into(), json!(t.as_str()));
+        }
         body.insert(
             "author_links".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
@@ -655,7 +779,21 @@ impl Api {
                 .and_then(|s| s.site_url.as_deref())
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_default(),
+            highlight_default: s
+                .and_then(|s| s.highlight_generated_default)
+                .unwrap_or(false),
+            picker_typing: s.and_then(|s| s.picker_typing),
         });
+    }
+
+    /// `picker_typing` as last read or written (`None` until settings were
+    /// read, or on a server before 0.29).
+    pub fn picker_typing(&self) -> Option<crate::model::PickerTyping> {
+        self.site
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|s| s.picker_typing)
     }
 
     // ---------- reads (404 → None) ----------
@@ -754,13 +892,50 @@ impl Api {
 
     // ---------- extension 5: read state (404 = not deployed) ----------
 
-    /// `PUT /api/reading/:sub/:remoteId/read {version}`. The server keeps
-    /// `max(stored, version)`, so a replay is harmless.
-    pub fn put_read(&self, sub: &str, remote_id: &str, version: u32) -> Result<()> {
-        self.call(
+    /// `PUT /api/reading/:sub/:remoteId/read {version, read_at?}`. The server
+    /// keeps `max(stored, version)`, so a replay is harmless. `read_at` only
+    /// for a server that advertises `read_state_clear`: a read older than
+    /// its latest "mark unread" is then ignored (`stored: false`).
+    pub fn put_read(
+        &self,
+        sub: &str,
+        remote_id: &str,
+        version: u32,
+        read_at: Option<&str>,
+    ) -> Result<ReadAck> {
+        let mut body = json!({ "version": version });
+        if let Some(at) = read_at {
+            body["read_at"] = json!(at);
+        }
+        let v = self.call(
             "PUT",
             &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
-            Some(json!({ "version": version })),
+            Some(body),
+        )?;
+        Ok(serde_json::from_value(v).unwrap_or(ReadAck {
+            stored: true,
+            read_version: None,
+        }))
+    }
+
+    /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread
+    /// (`read_state_clear`). Idempotent; 200 for a row the server doesn't hold.
+    pub fn delete_read(&self, sub: &str, remote_id: &str) -> Result<()> {
+        self.call(
+            "DELETE",
+            &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
+            None,
+        )
+        .map(|_| ())
+    }
+
+    /// `POST /api/reading/unread {items: [{sub, remote_id}]}`, at most
+    /// `READ_BATCH_MAX` entries, all or nothing.
+    pub fn post_unreads(&self, items: &[UnreadMark]) -> Result<()> {
+        self.call(
+            "POST",
+            "/api/reading/unread",
+            Some(json!({ "items": items })),
         )
         .map(|_| ())
     }
@@ -870,7 +1045,7 @@ impl std::fmt::Display for ConnectError {
                 f.write_str("Couldn't reach that address. Check the URL and your connection.")
             }
             ConnectError::WrongToken => f.write_str(
-                "The blyg said the token is wrong (401). Paste the owner token again.",
+                "The blyg said the token is wrong or has expired (401). Make a new one in Studio → More → Client access and paste it.",
             ),
             ConnectError::WrongPassword => f.write_str(
                 "The blyg said the password is wrong. Type the studio password again.",
@@ -987,6 +1162,9 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
         Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
         Err(ureq::Error::Status(401, _)) => Err(CoreError::Unauthorized),
         Err(ureq::Error::Status(404, _)) => Err(CoreError::NotFound),
+        Err(ureq::Error::Status(429, r)) => Err(CoreError::RateLimited {
+            retry_after: retry_after(r.header("retry-after")),
+        }),
         Err(ureq::Error::Status(code, r)) => {
             let body: Value = r
                 .into_string()
@@ -1058,8 +1236,89 @@ fn issue(v: &Value) -> String {
     }
 }
 
-/// True for failures worth retrying later (network down, server 5xx).
+/// When to try again after a 429, in seconds: `Retry-After` as a number of
+/// seconds (studio sends `60`); a minute when it's missing or unreadable (an
+/// HTTP date included). Clamped to 1 s – 1 h.
+pub(crate) fn retry_after(h: Option<&str>) -> u64 {
+    h.and_then(|h| h.trim().parse::<u64>().ok())
+        .unwrap_or(60)
+        .clamp(1, 3600)
+}
+
+/// True for failures worth retrying later (network down, server 5xx, or the
+/// blyg's work budget spent: a 429 never drops a queued change).
 pub fn is_transient(e: &CoreError) -> bool {
-    matches!(e, CoreError::Offline)
+    matches!(e, CoreError::Offline | CoreError::RateLimited { .. })
         || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
+}
+
+/// Upstream's `GenerationProvenance` array: `{sources: [{id, version}],
+/// model?, at?}` or `null` per scope.
+fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
+    Value::Array(
+        scopes
+            .iter()
+            .map(|p| match p {
+                None => Value::Null,
+                Some(p) => {
+                    let mut e = json!({ "model": p.model, "sources": p.sources });
+                    if let Some(at) = &p.at {
+                        e["at"] = json!(at);
+                    }
+                    e
+                }
+            })
+            .collect(),
+    )
+}
+
+/// A 400 that refuses the `provenance` key itself: a server older than
+/// studio 0.28, whose strict item schema doesn't know it.
+pub fn refused_provenance_key(e: &CoreError) -> bool {
+    match e {
+        CoreError::Rejected {
+            status: 400,
+            message,
+            details,
+        } => std::iter::once(message)
+            .chain(details)
+            .any(|m| m.contains("nrecognized") && m.contains("provenance")),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_after_reads_seconds_and_defaults_to_a_minute() {
+        assert_eq!(retry_after(Some("60")), 60);
+        assert_eq!(retry_after(Some(" 5 ")), 5);
+        assert_eq!(retry_after(Some("0")), 1);
+        assert_eq!(retry_after(Some("999999")), 3600);
+        assert_eq!(retry_after(None), 60);
+        assert_eq!(retry_after(Some("Wed, 21 Oct 2015 07:28:00 GMT")), 60);
+    }
+
+    #[test]
+    fn a_rate_limit_is_transient() {
+        assert!(is_transient(&CoreError::RateLimited { retry_after: 60 }));
+    }
+
+    #[test]
+    fn an_unknown_provenance_key_reads_as_an_older_server() {
+        let strict = CoreError::Rejected {
+            status: 400,
+            message: "request: Unrecognized key(s) in object: 'provenance'".into(),
+            details: vec![],
+        };
+        assert!(refused_provenance_key(&strict));
+        let invalid = CoreError::Rejected {
+            status: 400,
+            message: "provenance must have one entry per TK scope".into(),
+            details: vec![],
+        };
+        assert!(!refused_provenance_key(&invalid));
+    }
 }

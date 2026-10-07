@@ -48,10 +48,10 @@ pub enum SurfaceEvent {
     /// (`false`). A selection the page keeps through a focus change (see
     /// [`HOST_SCRIPT`]) doesn't count as going away.
     Selected(bool),
-    /// The pill by the selection: "Quote in draft".
+    /// The pill by the selection: "Quote in draft". (Its "Reply with this"
+    /// went with studio 0.31: Reply quotes the whole post, and a passage is
+    /// chosen in the stub editor.)
     QuoteSelection,
-    /// The pill by the selection: "Reply with this".
-    ReplySelection,
 }
 
 /// A place to show the preview page. `wry` implements it for real; tests use
@@ -136,7 +136,6 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
         "sel:1" => return Some(SurfaceEvent::Selected(true)),
         "sel:0" => return Some(SurfaceEvent::Selected(false)),
         "act:quote" => return Some(SurfaceEvent::QuoteSelection),
-        "act:reply" => return Some(SurfaceEvent::ReplySelection),
         _ => {}
     }
     if let Some(o) = msg.strip_prefix("origin:") {
@@ -230,11 +229,8 @@ pub fn scroll_js(index: usize) -> String {
 pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
 
 /// --- selection --- Turn on the pill that follows a text selection
-/// ("Quote in draft ⇧⌘D", and "Reply with this" when `reply`). Off by
-/// default: the studio preview never shows it.
-pub fn selection_ui_js(reply: bool) -> String {
-    format!("window.__blyg && window.__blyg.selectionUi({{reply: {reply}}});")
-}
+/// ("Quote in draft ⇧⌘D"). Off by default: the studio preview never shows it.
+pub const SELECTION_UI_JS: &str = "window.__blyg && window.__blyg.selectionUi({});";
 
 /// ↑/↓ with the post pane focused: scroll a little.
 pub fn nudge_js(down: bool) -> String {
@@ -356,14 +352,9 @@ pub const HOST_SCRIPT: &str = r#"
       });
     }
     // The labels are CSS content, so they never join a selection's text.
-    var want = ui.reply ? "quote reply" : "quote";
-    if (pill.getAttribute("data-acts") !== want) {
-      pill.setAttribute("data-acts", want);
-      pill.textContent = "";
+    if (!pill.firstChild) {
       pill.appendChild(button("quote", "Quote in draft", "⇧⌘D",
         "Quote this passage in your draft, with a link to the post"));
-      if (ui.reply) pill.appendChild(button("reply", "Reply with this", "",
-        "Start a reply that quotes this passage"));
     }
     var range = s.getRangeAt(0), rects = range.getClientRects();
     var last = rects.length ? rects[rects.length - 1] : range.getBoundingClientRect();
@@ -679,7 +670,7 @@ mod tests {
         assert_eq!(parse_ipc("sel:1"), Some(SurfaceEvent::Selected(true)));
         assert_eq!(parse_ipc("sel:0"), Some(SurfaceEvent::Selected(false)));
         assert_eq!(parse_ipc("act:quote"), Some(SurfaceEvent::QuoteSelection));
-        assert_eq!(parse_ipc("act:reply"), Some(SurfaceEvent::ReplySelection));
+        assert_eq!(parse_ipc("act:reply"), None, "the pill has no reply (0.31)");
         assert_eq!(parse_ipc("act:publish"), None);
     }
 
@@ -699,14 +690,7 @@ mod tests {
         ] {
             assert!(HOST_SCRIPT.contains(part), "{part}");
         }
-        assert_eq!(
-            selection_ui_js(true),
-            "window.__blyg && window.__blyg.selectionUi({reply: true});"
-        );
-        assert_eq!(
-            selection_ui_js(false),
-            "window.__blyg && window.__blyg.selectionUi({reply: false});"
-        );
+        assert!(!HOST_SCRIPT.contains("Reply with this"));
     }
 
     #[test]

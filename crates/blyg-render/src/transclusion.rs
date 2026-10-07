@@ -197,7 +197,7 @@ pub struct TextQuoteSelector {
 pub const SELECTOR_CONTEXT: usize = 32;
 
 /// transclusion.ts `QUOTE_LINE` (`/^\s*>/`).
-fn is_quote_line(line: &str) -> bool {
+pub(crate) fn is_quote_line(line: &str) -> bool {
     line.trim_start_matches(is_js_ws).starts_with('>')
 }
 
@@ -206,7 +206,7 @@ fn is_quote_line(line: &str) -> bool {
 /// at most one following whitespace character, and the index to resume at.
 /// The run ends at the first line that is not a quote line; a line empty
 /// after its marker is a paragraph break inside the selection.
-fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
+pub(crate) fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
     let mut j = i + 1;
     let mut run: Vec<&str> = Vec::new();
     while j < lines.len() && is_quote_line(lines[j]) {
@@ -278,6 +278,14 @@ fn directive_re() -> &'static Regex {
     })
 }
 
+/// The id of an own-line `![[id]]` directive (`DIRECTIVE_LINE`), if `line` is one.
+pub(crate) fn directive_id(line: &str) -> Option<&str> {
+    directive_re()
+        .captures(line)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
+}
+
 fn reserved_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -305,29 +313,31 @@ fn data_line(on: bool, line: usize) -> String {
     }
 }
 
-/// transclusion.ts `literalLines`: per line, whether it can never be a
-/// directive. A line is literal when Markdown renders it as code, or when it
-/// overlaps a generated span (`inert`, `[start, end)` offsets into `text`).
-fn literal_lines(text: &str, lines: &[&str], inert: &[(usize, usize)]) -> Vec<bool> {
+/// Per line, whether it can never be a directive: the Worker's walk skips a
+/// line whose start lies in `codeRanges` (a code block, or a code span
+/// running across lines). A directive on its own line in TK output is,
+/// provisionally upstream, a real quote (v0.4-plan §9.2).
+pub(crate) fn literal_lines(text: &str, lines: &[&str]) -> Vec<bool> {
     // Only a line holding `![[` could be a directive; skip the extra parse.
     if !text.contains("![[") {
         return vec![false; lines.len()];
     }
-    let mut flags = markdown::code_lines(text);
+    let code = markdown::code_ranges(text);
     let mut start = 0;
-    for (flag, line) in flags.iter_mut().zip(lines) {
-        let end = start + line.len();
-        *flag = *flag || inert.iter().any(|&(a, b)| start < b && end > a);
-        start = end + 1;
-    }
-    flags
+    lines
+        .iter()
+        .map(|line| {
+            let literal = markdown::in_ranges(&code, start);
+            start += line.len() + 1;
+            literal
+        })
+        .collect()
 }
 
 /// transclusion.ts `walk` with the preview's unresolved placeholder. Lines
-/// in code or inside a generated span (`inert`) stay prose.
+/// in code stay prose.
 pub(crate) fn walk(
     doc: &Mapped,
-    inert: &[(usize, usize)],
     resolver: &dyn Resolver,
     self_id: Option<&str>,
     lines_on: bool,
@@ -339,7 +349,7 @@ pub(crate) fn walk(
     let mut block_lines = Vec::new();
     let mut prose_start: Option<usize> = None; // first line index of pending prose
     let lines: Vec<&str> = doc.text.split('\n').collect();
-    let literal = literal_lines(&doc.text, &lines, inert);
+    let literal = literal_lines(&doc.text, &lines);
 
     let flush = |from: Option<usize>,
                  to: usize,
@@ -542,7 +552,7 @@ pub(crate) fn provenance_line(f: &Found, partial: bool, mount: &str) -> String {
     };
     format!(
         "<p class=\"provenance\"><a href=\"{}\">{label}</a> · {} v{}</p>",
-        escape_html(&href),
+        crate::util::escape_href(&href),
         if partial { "excerpt of" } else { "snapshot of" },
         f.version
     )

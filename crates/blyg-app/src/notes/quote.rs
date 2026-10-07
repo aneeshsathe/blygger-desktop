@@ -197,7 +197,12 @@ impl MainView {
                 self.open(&item.local_id, window, cx);
                 let now = self.editor.read(cx).value().to_string();
                 let cursor = if now == text { cursor } else { now.len() };
-                let (new_text, caret) = crate::app::reading::insert_block(&now, cursor, &block);
+                let (new_text, caret) = match stub_target(&item, &source, partial) {
+                    // --- stub quotes --- a stub of this same post: the passage
+                    // becomes the stub's own quote, never a second directive.
+                    Some(id) => stub_passage(&now, id, &selection, cursor),
+                    None => crate::app::reading::insert_block(&now, cursor, &block),
+                };
                 self.splice_editor(&now, &new_text, Some(caret), window, cx);
                 self.show_toast(
                     format!("Quoted in “{}”", crate::vm::item_title(&item)),
@@ -223,5 +228,86 @@ impl MainView {
     }
 }
 
+/// --- stub quotes --- The id of the post `item` is a stub of, when the
+/// passage being quoted (`partial`: from a blyg post, checked against it)
+/// comes from that same post.
+fn stub_target<'a>(
+    item: &blyg_core::Item,
+    source: &'a QuoteSource,
+    partial: bool,
+) -> Option<&'a str> {
+    match source {
+        QuoteSource::Blyg { id, .. }
+            if partial && item.stub_of.as_ref().is_some_and(|s| s.id == *id) =>
+        {
+            Some(id)
+        }
+        _ => None,
+    }
+}
+
+/// --- stub quotes --- A passage into a stub of the post it's from, as the
+/// studio's stub editor does it (studio 0.31, `stub-quote.ts`): a stub
+/// still quoting the whole post now quotes the passage (`withStubQuote`);
+/// one that quotes passages gains another after the caret, as its own
+/// quote (`addStubQuote`). Returns the text and the caret (after the new
+/// quote).
+pub(crate) fn stub_passage(text: &str, id: &str, passage: &str, cursor: usize) -> (String, usize) {
+    use blyg_render::stub_quote::{
+        StubQuoteForm, add_stub_quote, passage_count, stub_quote_form, with_stub_quote,
+    };
+    let whole =
+        stub_quote_form(text, id) == Some(StubQuoteForm::Whole) && passage_count(text, id) == 0;
+    let out = if whole {
+        with_stub_quote(text, id, Some(passage))
+    } else {
+        add_stub_quote(text, id, passage, cursor)
+    };
+    // The caret goes after the quote that changed: the first line the two
+    // texts differ on, then the end of that quote's `>` run.
+    let diff = text
+        .bytes()
+        .zip(out.bytes())
+        .position(|(a, b)| a != b)
+        .unwrap_or(text.len().min(out.len()));
+    let mut caret = out[..diff].rfind('\n').map_or(0, |i| i + 1);
+    for line in out[caret..].split('\n') {
+        let quoted = line.trim_start().starts_with('>') || line.trim_start().starts_with("![[");
+        if !quoted {
+            break;
+        }
+        caret += line.len() + 1;
+    }
+    (out.clone(), caret.min(out.len()))
+}
+
 const NOTHING: &str = "Nothing selected to quote";
 const WHERE: &str = "Highlight a passage in a page, a post or your notes";
+
+#[cfg(test)]
+mod stub_quote_tests {
+    use super::stub_passage;
+
+    const ID: &str = "7c9wk2mhq0v3xj8tn5rzfd41bg";
+
+    #[test]
+    fn a_whole_post_stub_takes_the_passage_as_its_quote() {
+        let text = format!("![[{ID}]]\n\nMy reply.");
+        let (out, caret) = stub_passage(&text, ID, "a passage", text.len());
+        assert_eq!(out, format!("![[{ID}]]\n> a passage\n\nMy reply."));
+        assert_eq!(out.matches("![[").count(), 1, "no second directive");
+        assert_eq!(&out[..caret], format!("![[{ID}]]\n> a passage\n"));
+    }
+
+    #[test]
+    fn a_stub_with_a_passage_gains_another_after_the_caret() {
+        let text = format!("![[{ID}]]\n> first\n\nMy point.\n\nMore.");
+        let cursor = text.find("My point").unwrap() + 2;
+        let (out, caret) = stub_passage(&text, ID, "second", cursor);
+        assert_eq!(
+            out,
+            format!("![[{ID}]]\n> first\n\nMy point.\n\n![[{ID}]]\n> second\n\nMore.")
+        );
+        assert!(out[..caret].ends_with("> second\n"), "{:?}", &out[..caret]);
+    }
+}

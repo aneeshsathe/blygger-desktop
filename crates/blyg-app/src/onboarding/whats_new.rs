@@ -13,20 +13,35 @@ pub struct Release {
     pub first_step: Option<&'static str>,
 }
 
-pub const RELEASES: &[Release] = &[Release {
-    version: "0.8.0",
-    items: &[
-        "Lineage: a glyph beside each post's name shows which kinds of post it draws on and \
+pub const RELEASES: &[Release] = &[
+    Release {
+        version: "0.9.0",
+        items: &[
+            "Sign in with your browser: Burrow asks your studio for access and renews it.",
+            "In the Reader, ⌘-click, ⇧-click and ⌘A pick posts; r and u mark them read or \
+             unread.",
+            "Reply starts a stub quoting the whole post; choose a passage in the stub with \
+             quote a passage instead.",
+            "[[ and ![[ open a full-text picker over your posts and the ones you read.",
+            "Rename a subscription, or hand it back to its own name; ⇧⌘R checks every feed.",
+        ],
+        first_step: Some("reader"),
+    },
+    Release {
+        version: "0.8.0",
+        items: &[
+            "Lineage: a glyph beside each post's name shows which kinds of post it draws on and \
          which draw on it (fork, reply, quote), never how many.",
-        "⌘J opens a post's lineage: what it draws on above, its responses below. Walk it one \
+            "⌘J opens a post's lineage: what it draws on above, its responses below. Walk it one \
          step at a time with ⏎ and ⌫.",
-        "Space on the post in the middle opens its actions on a ring: fork, reply, quote, link \
+            "Space on the post in the middle opens its actions on a ring: fork, reply, quote, link \
          post, versions, open.",
-        "One response per post: a reply that also quotes is listed once, as a reply, and a \
+            "One response per post: a reply that also quotes is listed once, as a reply, and a \
          reply to a passage says so.",
-    ],
-    first_step: Some("lineage"),
-}];
+        ],
+        first_step: Some("lineage"),
+    },
+];
 
 fn parse(v: &str) -> Option<(u32, u32, u32)> {
     let mut it = v.trim().trim_start_matches('v').split('.');
@@ -62,7 +77,13 @@ mod tests {
         );
         assert_eq!(since(Some("0.7.0"), "0.8.0")[0].version, "0.8.0");
         assert_eq!(since(None, "0.8.1").len(), 1);
-        assert!(since(Some("0.8.0"), "0.9.0").is_empty());
+        assert!(since(Some("0.8.0"), "0.8.2").is_empty());
+        assert_eq!(since(Some("0.8.0"), "0.9.0")[0].version, "0.9.0");
+        let both: Vec<_> = since(Some("0.7.0"), "0.9.0")
+            .iter()
+            .map(|r| r.version)
+            .collect();
+        assert_eq!(both, ["0.9.0", "0.8.0"], "newest first");
         assert!(since(Some("junk"), "junk").is_empty());
     }
 

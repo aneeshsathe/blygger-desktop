@@ -853,44 +853,6 @@ mod ui {
         assert!(made.stub_of.is_none(), "a quote, not a reply");
     }
 
-    /// Reply with a passage selected in the reading pane: a partial stub
-    /// (studio 0.8.1). A passage that isn't in the post makes nothing.
-    #[gpui_kit::test]
-    fn reply_with_a_selection_makes_a_partial_stub(cx: &mut TestAppContext) {
-        let (view, fake, log, cx) = setup(cx);
-        reading(&view, ReadMode::Reader, cx);
-        let key = key_of(&view, LIN_GARDENS, cx);
-        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
-        settle(cx);
-        let stubs = |fake: &FakeBackend| {
-            fake.items()
-                .into_iter()
-                .filter(|i| i.stub_of.is_some())
-                .collect::<Vec<_>>()
-        };
-        let before = stubs(&fake).len();
-        log.borrow_mut().selection = "Not in the post".into();
-        view.update_in(cx, |v, window, cx| {
-            v.reading_action_for_test("Reply", window, cx)
-        });
-        settle(cx);
-        assert_eq!(stubs(&fake).len(), before, "refused");
-        log.borrow_mut().selection = "Gardens, not streams".into();
-        view.update_in(cx, |v, window, cx| {
-            v.reading_action_for_test("Reply", window, cx)
-        });
-        settle(cx);
-        let stub = stubs(&fake)
-            .into_iter()
-            .find(|i| i.stub_of.as_ref().unwrap().id == LIN_GARDENS)
-            .expect("a stub");
-        assert_eq!(
-            stub.content_md,
-            format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n")
-        );
-        assert_eq!(stub.kind, Kind::Thread);
-    }
-
     /// Your notes: a passage from a quote there keeps that quote's link;
     /// your own words go without one.
     #[gpui_kit::test]
@@ -957,8 +919,9 @@ mod ui {
         settle(cx);
     }
 
-    /// The reader's page gets the pill by a selection once it's loaded:
-    /// with "Reply with this" for a blyg post, without it for a feed post.
+    /// The reader's page gets the pill by a selection once it's loaded
+    /// ("Quote in draft"; no "Reply with this" since studio 0.31), for a
+    /// blyg post and a feed post alike.
     #[gpui_kit::test]
     fn the_reader_turns_on_the_selection_pill(cx: &mut TestAppContext) {
         let (view, _, log, cx) = setup(cx);
@@ -967,7 +930,7 @@ mod ui {
         assert!(
             log.borrow()
                 .reader_evals
-                .contains(&webview::selection_ui_js(true)),
+                .contains(&webview::SELECTION_UI_JS.to_string()),
             "{:?}",
             log.borrow().reader_evals
         );
@@ -984,12 +947,12 @@ mod ui {
         reader_event(&view, webview::SurfaceEvent::Ready, cx);
         assert_eq!(
             log.borrow().reader_evals,
-            vec![webview::selection_ui_js(false)]
+            vec![webview::SELECTION_UI_JS.to_string()]
         );
         // Not on your own post (Posts shows it here too).
         view.update_in(cx, |v, window, cx| v.show_view(View::Posts, window, cx));
         settle(cx);
-        assert_eq!(view.read_with(cx, |v, _| v.reader_selection_ui()), None);
+        assert!(!view.read_with(cx, |v, _| v.reader_selection_ui()));
     }
 
     /// The pill's "Quote in draft": the passage, partial, into a new
@@ -1034,22 +997,23 @@ mod ui {
         assert!(!text.contains("thought"), "{text}");
     }
 
-    /// The pill's "Reply with this": a partial stub, as the Reply action.
+    /// Reply quotes the whole post, a selection in the page or not (studio
+    /// 0.31: the passage is chosen in the stub editor).
     #[gpui_kit::test]
-    fn the_pill_replies_with_the_selection(cx: &mut TestAppContext) {
+    fn reply_quotes_the_whole_post(cx: &mut TestAppContext) {
         let (view, fake, log, cx) = setup(cx);
         open_in_reader(&view, LIN_GARDENS, cx);
         log.borrow_mut().selection = "Gardens, not streams".into();
-        reader_event(&view, webview::SurfaceEvent::ReplySelection, cx);
+        view.update_in(cx, |v, window, cx| {
+            v.reading_action_for_test("Reply", window, cx)
+        });
+        settle(cx);
         let stub = fake
             .items()
             .into_iter()
             .find(|i| i.stub_of.as_ref().is_some_and(|s| s.id == LIN_GARDENS))
             .expect("a stub");
-        assert_eq!(
-            stub.content_md,
-            format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n")
-        );
+        assert_eq!(stub.content_md, format!("![[{LIN_GARDENS}]]\n\n"));
     }
 
     /// ⌘C with the keyboard on the list copies the post's selection (the

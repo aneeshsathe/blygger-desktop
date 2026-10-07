@@ -154,7 +154,7 @@ fn untoken_block(b: Block, ids: &[String]) -> Block {
 }
 
 fn untoken_span(s: Span, ids: &[String]) -> Vec<Span> {
-    if !s.text.contains('\u{4}') {
+    if !s.text.contains(crate::links::NATIVE_SENTINEL) {
         return vec![s];
     }
     crate::links::split_tokens(&s.text, ids)

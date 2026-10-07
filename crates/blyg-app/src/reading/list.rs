@@ -424,9 +424,9 @@ impl MainView {
         let pinned = o.pinned_on_screen().cloned();
         match action {
             // The current version's actions work on any post (the stream's
-            // selected one too); "AI reply" never on a pinned view.
-            // A passage selected in the reading pane makes a partial stub.
-            "Reply" if self.studio.reader.active() => self.reply_with_selection(item, window, cx),
+            // selected one too); "AI reply" never on a pinned view. Reply
+            // quotes the whole post; a passage is chosen in the stub editor
+            // (studio 0.31).
             "Quote" | "Reply" | "Link post" | "Open on web" => {
                 self.item_action(item, action, window, cx)
             }
@@ -514,7 +514,7 @@ impl MainView {
                 };
                 self.quote_into_thread(snippet, window, cx);
             }
-            "Reply" => self.start_stub(&item, blyg, None, window, cx),
+            "Reply" => self.start_stub(&item, window, cx),
             // A plain `[[id]]` link in a new fragment: no stub_of, no mention.
             "Link post" if blyg => match self.backend.create_draft(
                 blyg_core::Kind::Fragment,
@@ -545,76 +545,28 @@ impl MainView {
         }
     }
 
-    /// Reply from the reading pane: ask its web view for the selected
-    /// passage (a partial stub), falling back to the no-selection prefill.
-    pub(super) fn reply_with_selection(
-        &mut self,
-        item: blyg_core::ReadingItem,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let blyg = self.is_blyg_post(&item);
-        let (tx, rx) = async_channel::bounded::<String>(1);
-        if !blyg || !self.studio.reader.selection(tx.clone()) {
-            return self.start_stub(&item, blyg, None, window, cx);
-        }
-        // A page that never answers mustn't make the action look dead.
-        cx.spawn(async move |_, cx| {
-            cx.background_executor()
-                .timer(std::time::Duration::from_millis(500))
-                .await;
-            let _ = tx.try_send(String::new());
-        })
-        .detach();
-        cx.spawn_in(window, async move |this, cx| {
-            let text = rx.recv().await.unwrap_or_default();
-            let _ = this.update_in(cx, |v, window, cx| {
-                v.start_stub(&item, blyg, Some(&text), window, cx)
-            });
-        })
-        .detach();
-    }
-
-    /// The post comes from a blyg (transcludable), not an RSS feed.
-    fn is_blyg_post(&self, item: &blyg_core::ReadingItem) -> bool {
-        self.reading
-            .subs
-            .iter()
-            .find(|s| s.id == item.subscription_id)
-            .is_none_or(|s| s.kind == SubscriptionKind::Blyg)
-    }
-
-    /// Make a stub of `item` (studio 0.8.1's prefill, [`vm::stub_prefill`])
-    /// and open it, the caret on an empty quote line when there is one.
+    /// Reply: a stub of `item` quoting the whole post (studio 0.31, the
+    /// server's own `![[id]]\n\n` prefill), the caret below the quote. The
+    /// stub editor's hint line then offers a passage instead
+    /// (`MainView::render_stub_bar`).
     fn start_stub(
         &mut self,
         item: &blyg_core::ReadingItem,
-        blyg: bool,
-        selection: Option<&str>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let prefill = match vm::stub_prefill(&item.remote_id, &item.content_html, selection, blyg) {
-            Ok(p) => p,
-            Err(why) => return self.show_toast(why, Some("Nothing was created".into()), cx),
-        };
+        let body = vm::stub_body(&item.remote_id);
         let of = RemoteRef {
             origin: item.origin.clone(),
             id: item.remote_id.clone(),
             version: item.version,
         };
-        match self.backend.create_stub(&of, &prefill.body) {
+        match self.backend.create_stub(&of, &body) {
             Ok(id) => {
                 self.open_new_draft(&id, window, cx);
-                if let Some(c) = prefill.caret {
-                    self.editor.update(cx, |s, cx| {
-                        let c = c.min(s.text().len());
-                        s.set_selected_range(c..c, cx);
-                    });
-                }
                 self.show_toast(
                     format!("Reply to {} · a stub thread", vm::host(&item.origin)),
-                    None,
+                    Some("Quoting the whole post · choose a passage above the editor".into()),
                     cx,
                 );
             }
@@ -688,10 +640,14 @@ impl MainView {
             "j/k move · ⏎ read more · / search · esc back"
         } else {
             // --- reader folders ---
-            "←→ panes · j/k posts · space next unread · [ ] versions · / search"
+            "←→ panes · j/k posts · space next unread · r/u read/unread · / search"
         };
+        let picked = self.reading.picked.set.len();
         let hint = if !self.reading.available {
             String::new()
+        } else if picked > 0 {
+            // --- read/unread ---
+            format!("{picked} picked · r marks read · u unread · esc lets go")
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
             format!("{unread} to read · {keys}")
@@ -854,6 +810,9 @@ impl MainView {
             })
             .collect();
         let when = vm::when_label(r, self.now);
+        // --- read/unread --- picked rows (⌘-click, ⇧-click, ⌘A).
+        let picked = self.reading.picked.contains(&key);
+        let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
             .px(px(14.))
@@ -862,6 +821,14 @@ impl MainView {
             .rule_b(&p)
             .cursor_pointer()
             .when(selected, |d| d.bg(sel_bg))
+            .when(picked, |d| d.bg(p.accent.opacity(0.22)))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_post_menu(menu_key.clone(), e.position, cx)
+                }),
+            )
             // --- themes --- the theme's selected-row shape (lit cell,
             // outline, lantern…) on the page's selected ground.
             .map(|d| crate::ornament::page_row(&self.theme, d, selected && focused && shaped))
@@ -877,9 +844,13 @@ impl MainView {
                         .bg(p.accent),
                 )
             })
-            .on_click(cx.listener(move |this, _, window, cx| {
+            .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                 window.focus(&this.reading.focus, cx);
                 this.set_pane(super::sources_vm::Pane::List, cx);
+                // --- read/unread --- ⌘ / ⇧ pick instead of opening.
+                if this.pick_click(&key, e.modifiers(), cx) {
+                    return;
+                }
                 this.open_reading(key.clone(), window, cx)
             }))
             .child(

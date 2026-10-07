@@ -103,6 +103,13 @@ pub struct Item {
     pub pending_sync: bool,
     /// Server changed this item underneath a local edit; see `Backend::resolve_conflict`.
     pub conflict: bool,
+    /// Whether the item's public page highlights its generated (`[TK]`)
+    /// text right now: the effective state, after the blyg's
+    /// `highlight_generated_default` (studio 0.27).
+    pub highlight: bool,
+    /// The item's own highlight choice (studio 0.27, `PATCH {highlight}`).
+    /// `None` when the server doesn't report one (before 0.27).
+    pub highlight_mode: Option<HighlightMode>,
 }
 
 impl Item {
@@ -124,7 +131,8 @@ impl Item {
 }
 
 /// What one item does about showing its verified responses
-/// (`PUT /api/items/:id/responses {mode}`).
+/// (`PUT /api/items/:id/responses {mode}`). The same three-way choice is the
+/// item's generated-text highlight ([`HighlightMode`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ResponsesMode {
@@ -162,6 +170,42 @@ impl ResponsesMode {
     }
 }
 
+/// What one item does about highlighting its generated text on the public
+/// page (studio 0.27, `PATCH /api/items/:id {highlight}`): `default`
+/// follows the blyg's `highlight_generated_default`, `show`/`hide` are the
+/// post's own choice (a `gen-on`/`gen-off` class on its `<article>`).
+pub type HighlightMode = ResponsesMode;
+
+/// Where the `[[` / `![[` picker takes its query (studio 0.29's
+/// `picker_typing`): typed in the editor after the brackets, or in the
+/// picker's own box. `Auto` is the editor on a Mac (upstream gives the
+/// picker its own box only on a touch screen).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PickerTyping {
+    Editor,
+    Panel,
+    /// Also what an unknown value reads as.
+    #[default]
+    #[serde(other)]
+    Auto,
+}
+
+impl PickerTyping {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PickerTyping::Auto => "auto",
+            PickerTyping::Editor => "editor",
+            PickerTyping::Panel => "panel",
+        }
+    }
+
+    /// Whether the query is typed in the editor (desktop: `auto` is).
+    pub fn in_editor(self) -> bool {
+        self != PickerTyping::Panel
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Version {
     pub version: u32,
@@ -189,6 +233,11 @@ pub struct Subscription {
     /// "active" | "paused" | "degraded"
     pub status: String,
     pub in_blogroll: bool,
+    /// The name is the source's own, refreshed while polling (studio 0.30).
+    /// False once the owner renamed it (`PATCH {title}`); `PATCH {title:
+    /// null}` hands it back. Absent from servers before 0.30 (false).
+    #[serde(default)]
+    pub title_follows_source: bool,
 }
 
 /// Result of `POST /api/subscriptions` without `confirm` — what the URL resolved to.
@@ -944,6 +993,14 @@ pub struct Settings {
     /// (studio 0.8). `None` when the server doesn't report it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_responses_default: Option<bool>,
+    /// Whether public pages highlight generated (`[TK]`) text unless a post
+    /// chose otherwise (studio 0.27). `None` when the server doesn't report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub highlight_generated_default: Option<bool>,
+    /// Where the `[[` / `![[` picker's query is typed (studio 0.29).
+    /// `None` when the server doesn't report it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub picker_typing: Option<PickerTyping>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1105,6 +1162,18 @@ pub fn plain_title(md: &str) -> Option<String> {
         .filter(|l| !l.trim_start().starts_with('>'))
         .map(plain_line)
         .find(|l| !l.is_empty())
+}
+
+/// All of a post's readable text on one line (TK markup reduced to its
+/// output, Markdown syntax removed, transclusions dropped), for excerpts
+/// and search.
+pub fn plain_text(md: &str) -> String {
+    strip_tk(md)
+        .lines()
+        .map(|l| plain_line(l.trim_start().trim_start_matches('>')))
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn plain_line(line: &str) -> String {
@@ -1306,6 +1375,8 @@ mod lineage_tests {
             responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         };
         let target = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
         let quote = item("Q", &format!("Mine\n![[{target}]]"), Status::Public, 1);

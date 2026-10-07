@@ -250,6 +250,8 @@ impl FakeBackend {
                 responses_mode: Some(ResponsesMode::Show),
                 pending_sync: false,
                 conflict: false,
+                highlight: false,
+                highlight_mode: Some(HighlightMode::Default),
             });
         }
         for (id, vs) in &rd.own_versions {
@@ -573,6 +575,8 @@ impl FakeBackend {
             responses_mode: Some(ResponsesMode::Show),
             pending_sync: status != Status::Scratch,
             conflict: false,
+            highlight: false,
+            highlight_mode: Some(HighlightMode::Default),
         });
         id
     }
@@ -991,6 +995,7 @@ impl Backend for FakeBackend {
             title: "Shoreline Notes".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         });
         v
     }
@@ -1233,6 +1238,25 @@ impl Backend for FakeBackend {
         Ok(it.show_responses)
     }
 
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let default = st.rd.settings.highlight_generated_default.unwrap_or(false);
+        let it = st
+            .items
+            .iter_mut()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        it.highlight_mode = Some(mode);
+        it.highlight = shows_responses(mode, default);
+        Ok(it.highlight)
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.lock().rd.settings.picker_typing.unwrap_or_default()
+    }
+
     fn sync_now(&self) -> Result<()> {
         self.remote_guard()
     }
@@ -1262,12 +1286,85 @@ impl Backend for FakeBackend {
                     .to_string(),
                 status: "active".into(),
                 in_blogroll: false,
+                title_follows_source: true,
             };
             st.rd.subs.push(sub.clone());
             sub
         };
         self.reading_changed();
         Ok(sub)
+    }
+
+    // --- subscription names & checks --- (studio 0.30)
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.remote_guard()?;
+        {
+            let mut st = self.lock();
+            let s = st
+                .rd
+                .subs
+                .iter_mut()
+                .find(|s| s.id == sub_id)
+                .ok_or(CoreError::NotFound)?;
+            match title.map(str::trim) {
+                Some("") => {
+                    return Err(CoreError::Rejected {
+                        status: 400,
+                        message: "a name can't be empty".into(),
+                        details: vec![],
+                    });
+                }
+                Some(t) => {
+                    s.title = t.to_string();
+                    s.title_follows_source = false;
+                }
+                None => {
+                    // The source's own name: its host, here.
+                    s.title = crate::app::reading::vm::host(&s.origin);
+                    s.title_follows_source = true;
+                }
+            }
+        }
+        self.reading_changed();
+        Ok(())
+    }
+
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.remote_guard()?;
+        let st = self.lock();
+        Ok(st.rd.subs.iter().filter(|s| s.status != "paused").count() as u32 + 1)
+    }
+
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.remote_guard()?;
+        let _ = sub_id;
+        Ok(false)
+    }
+
+    // --- read/unread ---
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        let n = {
+            let mut st = self.lock();
+            let mut n = 0;
+            for r in st.rd.reading.iter_mut() {
+                if !rows
+                    .iter()
+                    .any(|(s, id)| *s == r.subscription_id && *id == r.remote_id)
+                {
+                    continue;
+                }
+                let want = read.then_some(r.version);
+                if r.read_version != want {
+                    r.read_version = want;
+                    n += 1;
+                }
+            }
+            n
+        };
+        if n > 0 {
+            self.reading_changed();
+        }
+        Ok(n)
     }
 
     fn unsubscribe(&self, sub_id: &str) -> Result<()> {
@@ -1372,9 +1469,13 @@ impl Backend for FakeBackend {
         st.rd.settings = settings.clone();
         // Items without a choice of their own follow the new default.
         let default = settings.show_responses_default.unwrap_or(false);
+        let highlight = settings.highlight_generated_default.unwrap_or(false);
         for it in &mut st.items {
             if let Some(m) = it.responses_mode {
                 it.show_responses = shows_responses(m, default);
+            }
+            if let Some(m) = it.highlight_mode {
+                it.highlight = shows_responses(m, highlight);
             }
         }
         Ok(())

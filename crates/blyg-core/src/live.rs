@@ -636,6 +636,27 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        // Local and instant. Reads queue for a server that syncs read state;
+        // unreads only for one that can clear it (else they stay here).
+        let sync = self.e().read_sync_on();
+        let n = if read {
+            let marked = self.e().store.mark_many_read(rows, sync)?;
+            marked.map_or(0, |m| m.len())
+        } else {
+            let queue = self.e().read_clear_on();
+            let cleared = self.e().store.mark_many_unread(rows, queue)?;
+            cleared.map_or(0, |m| m.len())
+        };
+        if n > 0 {
+            self.e().emit(CoreEvent::ReadingChanged);
+            if sync {
+                self.wake();
+            }
+        }
+        Ok(n)
+    }
+
     // --- scratch notes ---
 
     fn create_scratch(&self, kind: Kind, content_md: &str) -> Result<LocalId> {
@@ -837,6 +858,31 @@ impl Backend for LiveBackend {
         Ok(showing)
     }
 
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        let sid = self.server_id(id)?;
+        let (on, got) = self.e().track(self.e().api.set_highlight(&sid, mode))?;
+        self.e().store.set_highlight(id, on, got)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(on)
+    }
+
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        self.e().store.pick_search(q).unwrap_or_default()
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.e().api.picker_typing().unwrap_or_default()
+    }
+
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        let api = &self.e().api;
+        if api.is_own_media(url) {
+            api.fetch_own_media(url, crate::backend::MEDIA_MAX_BYTES)
+        } else {
+            PublicClient::new().get_bytes(url, crate::backend::MEDIA_MAX_BYTES)
+        }
+    }
+
     fn sync_now(&self) -> Result<()> {
         self.e().sync_now()
     }
@@ -863,6 +909,7 @@ impl Backend for LiveBackend {
                     title: title.unwrap_or(url).to_string(),
                     status: "active".into(),
                     in_blogroll: false,
+                    title_follows_source: title.is_none(),
                 };
                 let mut all = self.e().store.subscriptions();
                 all.push(s.clone());
@@ -889,8 +936,11 @@ impl Backend for LiveBackend {
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()> {
-        self.e()
-            .track(self.e().api.update_subscription(sub_id, in_blogroll, title))?;
+        self.e().track(
+            self.e()
+                .api
+                .update_subscription(sub_id, in_blogroll, title.map(Some)),
+        )?;
         self.e().store.edit_subscription(sub_id, |s| {
             if let Some(b) = in_blogroll {
                 s.in_blogroll = b;
@@ -902,6 +952,60 @@ impl Backend for LiveBackend {
         })?;
         self.e().emit(CoreEvent::ReadingChanged);
         Ok(())
+    }
+
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        let title = title.map(str::trim);
+        if title == Some("") {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "a name can't be empty".into(),
+                details: vec![],
+            });
+        }
+        self.e()
+            .track(self.e().api.update_subscription(sub_id, None, Some(title)))?;
+        // The server's copy names it now (the source's own name comes back
+        // with `title: null`); a failed refresh keeps the local edit.
+        match self.e().api.list_subscriptions() {
+            Ok(subs) => {
+                self.e().store.replace_subscriptions(&subs)?;
+            }
+            Err(_) => self.e().store.edit_subscription(sub_id, |s| {
+                if let Some(t) = title {
+                    s.title = t.to_string();
+                }
+                s.title_follows_source = title.is_none();
+                true
+            })?,
+        }
+        self.e().emit(CoreEvent::ReadingChanged);
+        Ok(())
+    }
+
+    fn poll_subscriptions(&self) -> Result<u32> {
+        let n = self.e().track(self.e().api.poll_subscriptions())?;
+        self.send(Msg::Pull);
+        Ok(n)
+    }
+
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        let kind = self
+            .e()
+            .store
+            .subscriptions()
+            .into_iter()
+            .find(|s| s.id == sub_id)
+            .map(|s| s.kind);
+        // Resync is for blyg subscriptions (409 on a feed): a feed is polled
+        // with the rest.
+        let changed = if kind == Some(SubscriptionKind::Rss) {
+            self.e().track(self.e().api.poll_subscriptions())? > 0
+        } else {
+            self.e().track(self.e().api.resync_subscription(sub_id))?
+        };
+        self.send(Msg::Pull);
+        Ok(changed)
     }
 
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {

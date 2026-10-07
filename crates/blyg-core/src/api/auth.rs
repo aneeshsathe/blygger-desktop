@@ -1,17 +1,24 @@
-//! How the app proves it's the owner. Two ways:
+//! How the app proves it's the owner. Three ways, in order of preference:
 //!
-//! - **Owner token** (the Worker fork's extension 1): `Authorization: Bearer`.
+//! - **Browser sign-in** (studio 0.28+): an OAuth grant with a one-hour
+//!   access token and a rotating refresh token, sent as
+//!   `Authorization: Bearer` and renewed as it goes (see `oauth`).
+//! - **API token**: a manual token the owner makes in Studio → More →
+//!   Client access (studio 0.28+; 30 days, not renewable), or an older
+//!   Worker fork's `BLYG_OWNER_TOKEN`. Sent as `Authorization: Bearer`.
 //! - **Password**, which works on any blygger-studio: the studio's own
 //!   sign-in, `POST {blyg-url}/studio/login` with the form field `password`,
 //!   answers with a `blyg_session` cookie (valid 30 days, not renewed). The
 //!   app signs in once per launch, keeps the cookie in memory only, and signs
-//!   in again when the API answers 401.
+//!   in again when the API answers 401. Studio 0.28+ budgets password
+//!   sign-ins and means its cookie for browsers, so this is the fallback.
 //!
-//! Neither secret is ever logged, printed or put in an error: `Debug`
-//! redacts them.
+//! No secret is ever logged, printed or put in an error: `Debug` redacts
+//! them.
 
 use std::time::Duration;
 
+use super::oauth::OAuthSession;
 use crate::backend::{CoreError, Result};
 
 /// The studio's session cookie (upstream `src/auth.ts` `COOKIE_NAME`).
@@ -19,10 +26,13 @@ pub const SESSION_COOKIE: &str = "blyg_session";
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Credential {
-    /// The Worker's `BLYG_OWNER_TOKEN`.
+    /// A manual API token (studio 0.28+), or an older Worker fork's
+    /// `BLYG_OWNER_TOKEN`.
     Token(String),
     /// The studio password (the Worker's `OWNER_PASSWORD`).
     Password(String),
+    /// A browser sign-in's grant (studio 0.28+).
+    OAuth(OAuthSession),
 }
 
 impl std::fmt::Debug for Credential {
@@ -30,6 +40,7 @@ impl std::fmt::Debug for Credential {
         f.write_str(match self {
             Credential::Token(_) => "Token(<redacted>)",
             Credential::Password(_) => "Password(<redacted>)",
+            Credential::OAuth(_) => "OAuth(<redacted>)",
         })
     }
 }
@@ -111,10 +122,23 @@ mod tests {
 
     #[test]
     fn debug_never_shows_a_secret() {
+        let grant = crate::api::oauth::OAuthGrant {
+            access: "acc-secret".into(),
+            refresh: Some("ref-secret".into()),
+            expires: 0,
+            deadline: 0,
+            scope: String::new(),
+            client_id: "cid".into(),
+            token_endpoint: "https://blyg.example.com/t".into(),
+            revocation_endpoint: None,
+            resource: "https://blyg.example.com/api".into(),
+            invalid: false,
+        };
         let s = format!(
-            "{:?} {:?}",
+            "{:?} {:?} {:?}",
             Credential::Token("tok-secret".into()),
-            Credential::Password("pw-secret".into())
+            Credential::Password("pw-secret".into()),
+            Credential::OAuth(OAuthSession::new(grant)),
         );
         assert!(!s.contains("secret"), "{s}");
     }

@@ -107,6 +107,26 @@ enum Mode {
     Edit,
 }
 
+/// How the Connect sheet signs in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConnectWay {
+    /// OAuth in the system browser (studio 0.28+; the default).
+    Browser,
+    /// A Studio API token, or a server's owner token.
+    Token,
+    /// The studio password (any studio; the fallback).
+    Password,
+}
+
+/// Sets its flag when dropped: cancels a waiting browser sign-in.
+pub(crate) struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 enum Sheet {
     Publish {
         id: LocalId,
@@ -125,18 +145,20 @@ enum Sheet {
         hotkey_error: Option<String>,
         focus: FocusHandle,
     },
-    /// First run (no `blyg-url`): URL + owner token, verified with
-    /// `GET /api/items`, then → Keychain → config.
+    /// First run (no `blyg-url`): URL + a way in (browser sign-in, API
+    /// token or studio password), verified with `GET /api/items`, then →
+    /// Keychain → config.
     Connect {
         url: Entity<InputState>,
-        /// The studio password, or the owner token (`by_password`).
+        /// The studio password, or the API token (`way`).
         token: Entity<InputState>,
-        /// Sign in with the studio password (any blyg) rather than the
-        /// Worker's owner token.
-        by_password: bool,
+        way: ConnectWay,
         error: Option<String>,
-        /// The check is running.
+        /// The check (or the browser sign-in) is running.
         busy: bool,
+        /// A browser sign-in waiting for the owner: dropping it (closing or
+        /// replacing the sheet, choosing another way) cancels the wait.
+        waiting: Option<CancelOnDrop>,
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
     Disconnect { host: String, focus: FocusHandle },
@@ -437,6 +459,16 @@ impl MainView {
                         Some("Changes sync when the blyg is reachable".into()),
                         cx,
                     ),
+                    // An ended browser sign-in: ask for a new one (the
+                    // sheet says why) rather than retrying.
+                    (Err(CoreError::Unauthorized), _) if v.sheet.is_none() => {
+                        v.show_toast(
+                            "Your blyg signed Burrow out",
+                            Some("Sign in again to sync".into()),
+                            cx,
+                        );
+                        v.open_connect(window, cx);
+                    }
                     (Err(e), _) => {
                         v.show_toast(format!("Couldn't load from the blyg: {e}"), None, cx)
                     }
@@ -576,62 +608,98 @@ impl MainView {
         let token = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("Studio password")
+                .placeholder("API token")
         });
         let t2 = token.clone();
-        self._subs
-            .push(cx.subscribe_in(&url, window, move |_, _, ev, window, cx| {
+        self._subs.push(
+            cx.subscribe_in(&url, window, move |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
-                    t2.update(cx, |s, cx| s.focus(window, cx));
+                    // Signing in with the browser needs only the address.
+                    if matches!(
+                        this.sheet,
+                        Some(Sheet::Connect {
+                            way: ConnectWay::Browser,
+                            ..
+                        })
+                    ) {
+                        this.submit_connect(window, cx);
+                    } else {
+                        t2.update(cx, |s, cx| s.focus(window, cx));
+                    }
                 }
-            }));
+            }),
+        );
         self._subs
             .push(cx.subscribe_in(&token, window, |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     this.submit_connect(window, cx);
                 }
             }));
-        // A configured blyg without a token (e.g. after the Keychain entry
-        // went away): offer its address.
+        // A configured blyg without a usable credential (the Keychain entry
+        // went away, or its browser sign-in ended): offer its address.
+        let mut error = None;
         if let Some(u) = crate::settings::blyg_url(cx) {
+            let tokens = crate::settings::get(cx).tokens.clone();
+            if let Ok(Some(g)) = blyg_core::config::load_grant(tokens.as_ref(), &u)
+                && g.ended()
+            {
+                error = Some(format!(
+                    "Your browser sign-in to {} has ended. Sign in again.",
+                    vm::url_host(&u).unwrap_or(u.clone())
+                ));
+            }
             url.update(cx, |s, cx| s.set_value(u, window, cx));
-            token.update(cx, |s, cx| s.focus(window, cx));
-        } else {
-            url.update(cx, |s, cx| s.focus(window, cx));
         }
+        url.update(cx, |s, cx| s.focus(window, cx));
         self.sheet_gen += 1;
         self.sheet = Some(Sheet::Connect {
             url,
             token,
-            by_password: true,
-            error: None,
+            way: ConnectWay::Browser,
+            error,
             busy: false,
+            waiting: None,
         });
         cx.notify();
     }
 
-    /// The Connect sheet: sign in with the studio password, or the owner token.
-    pub(crate) fn set_connect_by_password(
+    /// The Connect sheet's way in: browser sign-in, API token or password.
+    pub(crate) fn set_connect_way(
         &mut self,
-        on: bool,
+        pick: ConnectWay,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if let Some(Sheet::Connect {
+            url,
             token,
-            by_password,
+            way,
             error,
-            ..
+            busy,
+            waiting,
         }) = self.sheet.as_mut()
         {
-            *by_password = on;
+            *way = pick;
             *error = None;
-            let hint = if on { "Studio password" } else { "Owner token" };
-            token.update(cx, |s, cx| {
-                s.set_value("", window, cx);
-                s.set_placeholder(hint, window, cx);
-                s.focus(window, cx);
-            });
+            // Choosing another way cancels a browser sign-in in progress.
+            if waiting.take().is_some() {
+                *busy = false;
+            }
+            match pick {
+                ConnectWay::Browser => url.update(cx, |s, cx| s.focus(window, cx)),
+                ConnectWay::Token | ConnectWay::Password => {
+                    let hint = if pick == ConnectWay::Password {
+                        "Studio password"
+                    } else {
+                        "API token"
+                    };
+                    token.update(cx, |s, cx| {
+                        s.set_value("", window, cx);
+                        s.set_placeholder(hint, window, cx);
+                        s.focus(window, cx);
+                    });
+                }
+            }
         }
         cx.notify();
     }
@@ -640,7 +708,7 @@ impl MainView {
         let Some(Sheet::Connect {
             url,
             token,
-            by_password,
+            way,
             busy,
             ..
         }) = &self.sheet
@@ -650,11 +718,19 @@ impl MainView {
         if *busy {
             return;
         }
-        let by_password = *by_password;
+        let way = *way;
         let (u, t) = (
             url.read(cx).value().to_string(),
             token.read(cx).value().to_string(),
         );
+        if way == ConnectWay::Browser {
+            match crate::settings::validate_blyg_url(&u) {
+                Ok(u) => self.start_browser_sign_in(u, window, cx),
+                Err(e) => self.set_connect_state(Some(e), false, cx),
+            }
+            return;
+        }
+        let by_password = way == ConnectWay::Password;
         let checked = crate::settings::validate_blyg_url(&u).and_then(|u| {
             // A password is taken as typed; a pasted token is trimmed.
             let secret = if by_password {
@@ -664,7 +740,10 @@ impl MainView {
             };
             match (secret.is_empty(), by_password) {
                 (true, true) => Err("Type your blyg's studio password".to_string()),
-                (true, false) => Err("Paste the owner token from your blyg's settings".to_string()),
+                (true, false) => Err(
+                    "Paste an API token: make one in Studio → More → Client access, or use your server's owner token"
+                        .to_string(),
+                ),
                 (false, true) => Ok((u, Credential::Password(secret))),
                 (false, false) => Ok((u, Credential::Token(secret))),
             }
@@ -691,6 +770,111 @@ impl MainView {
             });
         })
         .detach();
+    }
+
+    /// Sign in with the browser: discover and register (in the
+    /// background), open the authorize page, wait for the loopback
+    /// callback, exchange the code, verify, then save like any credential.
+    fn start_browser_sign_in(&mut self, url: String, window: &mut Window, cx: &mut Context<Self>) {
+        // Only against a real blyg: never from tests or BLYGGER_FAKE's
+        // sample data (registering a client writes to the server).
+        let real = cx
+            .try_global::<crate::connection::Connection>()
+            .is_some_and(|c| {
+                c.switch.mode() != crate::connection::Mode::Fake
+                    || cx.has_global::<crate::connection::SampleSession>()
+            });
+        if !real {
+            return self.set_connect_state(
+                Some("Browser sign-in needs a real blyg; use a token or password here.".into()),
+                false,
+                cx,
+            );
+        }
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        if let Some(Sheet::Connect {
+            error,
+            busy,
+            waiting,
+            ..
+        }) = self.sheet.as_mut()
+        {
+            *error = None;
+            *busy = true;
+            *waiting = Some(CancelOnDrop(cancel.clone()));
+        }
+        cx.notify();
+        let tokens = crate::settings::get(cx).tokens.clone();
+        let verify = crate::connection::verifier(cx);
+        let start = cx.background_spawn({
+            let url = url.clone();
+            async move { blyg_core::api::oauth::BrowserSignIn::start(&url, tokens.as_ref()) }
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let started = start.await;
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return; // the sheet closed, or another way was chosen
+            }
+            let sign_in = match started {
+                Ok(Some(s)) => s,
+                other => {
+                    let _ = this.update_in(cx, |v, window, cx| {
+                        let msg = match other {
+                            Ok(_) => {
+                                // A studio older than 0.28: the password works.
+                                v.set_connect_way(ConnectWay::Password, window, cx);
+                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password, or an owner token.".to_string()
+                            }
+                            Err(CoreError::Offline) => {
+                                "Couldn't reach that address. Check the URL and your connection."
+                                    .into()
+                            }
+                            Err(e) => e.to_string(),
+                        };
+                        v.set_connect_state(Some(msg), false, cx);
+                        v.clear_connect_wait();
+                    });
+                    return;
+                }
+            };
+            let _ = this.update(cx, |_, cx| cx.open_url(&sign_in.authorize_url));
+            let task = cx.background_spawn({
+                let (url, cancel) = (url.clone(), cancel.clone());
+                async move {
+                    let grant =
+                        sign_in.finish(&cancel, blyg_core::api::oauth::SIGN_IN_TIMEOUT)?;
+                    let cred = Credential::OAuth(blyg_core::api::oauth::OAuthSession::new(grant));
+                    verify(&url, &cred)
+                        .map(|_| cred)
+                        .map_err(|e| CoreError::Other(e.to_string()))
+                }
+            });
+            let verdict = task.await;
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return; // the sheet closed, or another way was chosen
+            }
+            let _ = this.update_in(cx, |v, window, cx| {
+                v.clear_connect_wait();
+                match verdict {
+                    Ok(cred) => v.finish_connect(&url, &cred, window, cx),
+                    Err(CoreError::Offline) => v.set_connect_state(
+                        Some("Couldn't reach that address. Check the URL and your connection.".into()),
+                        false,
+                        cx,
+                    ),
+                    Err(e) => v.set_connect_state(Some(e.to_string()), false, cx),
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// The browser sign-in is over: drop its cancel flag (nothing waits on
+    /// it any more).
+    fn clear_connect_wait(&mut self) {
+        if let Some(Sheet::Connect { waiting, .. }) = self.sheet.as_mut() {
+            waiting.take();
+        }
     }
 
     fn set_connect_state(&mut self, err: Option<String>, is_busy: bool, cx: &mut Context<Self>) {
@@ -734,6 +918,7 @@ impl MainView {
                         match cred {
                             Credential::Password(_) => "The password is in your Keychain",
                             Credential::Token(_) => "The token is in your Keychain",
+                            Credential::OAuth(_) => "Your sign-in is in your Keychain",
                         }
                         .into(),
                     ),
@@ -1030,11 +1215,12 @@ impl MainView {
                 }
             }
             InputEvent::Change if !self.loading_editor => {
-                // Typing `![[` at the start of a line opens the quote picker.
-                let typed = self.typed_transclusion(cx);
+                // Typing `![[` at the start of a line opens the quote picker,
+                // and `[[` the link picker.
+                let typed = self.typed_picker(cx);
                 self.after_edit(cx);
-                if let Some(typed) = typed {
-                    self.open_quote_picker_from_typing(typed, window, cx);
+                if let Some((kind, typed)) = typed {
+                    self.open_picker_from_typing(kind, typed, window, cx);
                 }
             }
             _ => {}
@@ -2209,6 +2395,8 @@ impl MainView {
                     },
                 ])
             })
+            // --- stub quotes --- a stub's hint line and passage chooser.
+            .children(self.render_stub_bar(cx))
             .child(
                 div()
                     .flex_1()
@@ -2760,13 +2948,17 @@ impl MainView {
             Sheet::Connect {
                 url,
                 token,
-                by_password,
+                way,
                 error,
                 busy,
+                waiting,
             } => {
-                let by_password = *by_password;
-                // "Studio password · Owner token": the chosen one in ink.
-                let choice = |id: &'static str, text: &'static str, on: bool, pick: bool| {
+                let way = *way;
+                let waiting = waiting.is_some();
+                // "Sign in with browser · API token · Studio password": the
+                // chosen one in ink.
+                let choice = |id: &'static str, text: &'static str, pick: ConnectWay| {
+                    let on = way == pick;
                     div()
                         .id(id)
                         .debug_selector(move || id.into())
@@ -2776,7 +2968,7 @@ impl MainView {
                         .hover(|s| s.underline())
                         .child(text)
                         .on_click(cx.listener(move |this, _, window, cx| {
-                            this.set_connect_by_password(pick, window, cx)
+                            this.set_connect_way(pick, window, cx)
                         }))
                 };
                 let label = |s: &'static str| {
@@ -2788,6 +2980,32 @@ impl MainView {
                         .text_color(p.muted)
                         .child(s)
                 };
+                let note = |s: &'static str| {
+                    div()
+                        .mt(px(8.))
+                        .text_size(px(12.))
+                        .text_color(p.muted)
+                        .line_height(relative(1.45))
+                        .child(s)
+                };
+                let explain = match way {
+                    ConnectWay::Browser => {
+                        "Burrow opens your blyg's studio in your browser. Sign in there and \
+                         allow Burrow; it gets renewable access with all four permissions, \
+                         kept in your macOS Keychain. Needs blygger-studio 0.28 or later."
+                    }
+                    ConnectWay::Token => {
+                        "Make a token in your blyg's Studio → More → Client access: choose REST \
+                         API and all four permissions (read, draft, publish, manage). It lasts \
+                         30 days. A server with Burrow's extensions can use its owner token \
+                         here instead. Either is kept in your macOS Keychain."
+                    }
+                    ConnectWay::Password => {
+                        "The password you sign in to the studio with. It works with any \
+                         studio, including ones older than 0.28, and is kept in your macOS \
+                         Keychain."
+                    }
+                };
                 (
                     480.,
                     div()
@@ -2797,11 +3015,8 @@ impl MainView {
                         }))
                         .child(heading("Connect your blyg".into()))
                         .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            "Burrow writes to your own blyg. Enter its address and the \
-                                     password you sign in to its studio with (or, if its server \
-                                     has Burrow's extensions, its owner token). Either is kept \
-                                     in your macOS Keychain; the address goes in your config \
-                                     file.",
+                            "Burrow writes to your own blyg. Enter its address and choose how to \
+                             sign in. The address goes in your config file.",
                         ))
                         .child(label("BLYG ADDRESS"))
                         .child(input_box(
@@ -2814,39 +3029,52 @@ impl MainView {
                                 .gap(px(6.))
                                 .text_size(px(12.))
                                 .child(choice(
-                                    "connect-by-password",
-                                    "Studio password",
-                                    by_password,
-                                    true,
+                                    "connect-by-browser",
+                                    "Sign in with browser",
+                                    ConnectWay::Browser,
                                 ))
                                 .child(div().text_color(p.muted).child("·"))
+                                .child(choice("connect-by-token", "API token", ConnectWay::Token))
+                                .child(div().text_color(p.muted).child("·"))
                                 .child(choice(
-                                    "connect-by-token",
-                                    "Owner token",
-                                    !by_password,
-                                    false,
+                                    "connect-by-password",
+                                    "Studio password",
+                                    ConnectWay::Password,
                                 )),
                         )
-                        .child(label(if by_password {
-                            "STUDIO PASSWORD"
-                        } else {
-                            "OWNER TOKEN"
-                        }))
-                        .child(input_box(
-                            gpui_kit::base::input::Input::new(token).into_any_element(),
-                        ))
+                        .child(note(explain))
+                        .when(way != ConnectWay::Browser, |d| {
+                            d.child(label(if way == ConnectWay::Password {
+                                "STUDIO PASSWORD"
+                            } else {
+                                "API TOKEN"
+                            }))
+                            .child(input_box(
+                                gpui_kit::base::input::Input::new(token).into_any_element(),
+                            ))
+                        })
                         .when_some(error.clone(), |d, e| {
                             d.child(div().mt(px(8.)).text_color(p.over_text()).child(e))
                         })
                         .when(*busy, |d| {
-                            d.child(div().mt(px(8.)).text_color(p.muted).child(if by_password {
-                                "Signing in…"
-                            } else {
-                                "Checking the address and token…"
+                            d.child(div().mt(px(8.)).text_color(p.muted).child(match way {
+                                ConnectWay::Browser if waiting => {
+                                    "Waiting for you to allow Burrow in your browser… (esc cancels)"
+                                }
+                                ConnectWay::Browser => "Checking the address…",
+                                ConnectWay::Password => "Signing in…",
+                                ConnectWay::Token => "Checking the address and token…",
                             }))
                         })
                         .child(keys_row(vec![
-                            key_hint("⏎", "next · connect"),
+                            key_hint(
+                                "⏎",
+                                if way == ConnectWay::Browser {
+                                    "next · open the browser"
+                                } else {
+                                    "next · connect"
+                                },
+                            ),
                             key_hint("esc", "not now"),
                         ]))
                         .into_any_element(),

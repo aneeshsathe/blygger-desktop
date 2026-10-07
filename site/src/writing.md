@@ -82,7 +82,9 @@ note stay on your Mac until it's promoted, when they're uploaded.
   blogroll, authors you read). It inserts a plain link to that blyg, since
   Blygger has no handles.
 - **Images.** Paste or drop an image to upload it; it goes into the text
-  where you pasted it, and the preview shows it.
+  where you pasted it, and the preview shows it. Until a published post shows
+  it, an upload is private on studio 0.28 or later: only you (and Burrow,
+  signed in as you) can see it.
 - **Spellcheck** with the macOS spell checker, your languages and learned
   words: a red wavy underline, and right-click for suggestions, Learn Spelling
   and Ignore. Code, links, quotes and TK markers are skipped, and checking
@@ -111,7 +113,12 @@ and video. Click a paragraph in the preview to jump to it.
 In a thread, `![[id]]` alone on a line **quotes** a post: yours, or one from a
 blyg you follow. The quote is a snapshot taken when you publish; later edits
 to the original never rewrite it. ⌘K (or typing `![[` at the start of a line)
-opens a picker of the posts you hold, and ⏎ inserts the line. Quotes only go
+opens a picker of the posts you hold, and ⏎ inserts the line. The picker
+searches every word of your published posts and the blyg posts you read, on
+your Mac, and filters by source (all, mine, imported) and blyg, newest or
+oldest first. Where you type the search is the blyg's **picker typing**
+setting: after the brackets in the editor (the default on a Mac), or in the
+picker's own box. Quotes only go
 in threads: in a fragment, Burrow says so and leaves the text alone.
 
 ### Partial quotes
@@ -132,7 +139,7 @@ isn't in the quoted post, and publishing refuses it. In the stream, a partial
 quote shows only its passage.
 
 The easy way to write one is to select the passage while reading and press
-⇧⌘D, or reply with it selected; see
+⇧⌘D, or to reply and choose **quote a passage instead** in the stub; see
 [Reading, quoting and responses](reading.md#universal-quoting).
 
 ### `[[id]]` links
@@ -148,6 +155,12 @@ The preview shows it as the published page will: the target's first words in
 quotes, linked. Links inside code stay as text. A link that can't be resolved
 is flagged in the preview, the status bar and the publish sheet, as quotes
 are; publishing refuses it ("one or more references do not resolve").
+
+Typing `[[` opens the same picker, and ⏎ inserts the link.
+
+| | |
+|---|---|
+| ![The [[ link picker](screenshots/picker-link.png) | ![The ![[ quote picker](screenshots/picker-quote.png) |
 
 **Link post** (next to Fork on a post you're reading) starts a new fragment
 holding `[[id]]`: a plain link, not a response. Reply is the one way to
@@ -166,3 +179,9 @@ on), written in place as `[TK]instruction[=]output[/TK]`. ⌘G inside it again
 regenerates. The preview tints generated text, and it's always disclosed as
 generated when you publish; an unfilled gap shows as `⚠ ungenerated` in the
 preview. See [AI helpers](ai.md).
+
+**Highlighting generated text** (studio 0.27 or later): the blyg's public
+pages can tint generated passages and mark them with a small robot that says
+what you disclosed. Your blyg's settings (in the Reader's site settings) set
+the default; the ⌘G palette sets it per post (default, on or off; **H** cycles
+it), and the preview shows the post as its page will.
