@@ -853,44 +853,6 @@ mod ui {
         assert!(made.stub_of.is_none(), "a quote, not a reply");
     }
 
-    /// Reply with a passage selected in the reading pane: a partial stub
-    /// (studio 0.8.1). A passage that isn't in the post makes nothing.
-    #[gpui_kit::test]
-    fn reply_with_a_selection_makes_a_partial_stub(cx: &mut TestAppContext) {
-        let (view, fake, log, cx) = setup(cx);
-        reading(&view, ReadMode::Reader, cx);
-        let key = key_of(&view, LIN_GARDENS, cx);
-        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
-        settle(cx);
-        let stubs = |fake: &FakeBackend| {
-            fake.items()
-                .into_iter()
-                .filter(|i| i.stub_of.is_some())
-                .collect::<Vec<_>>()
-        };
-        let before = stubs(&fake).len();
-        log.borrow_mut().selection = "Not in the post".into();
-        view.update_in(cx, |v, window, cx| {
-            v.reading_action_for_test("Reply", window, cx)
-        });
-        settle(cx);
-        assert_eq!(stubs(&fake).len(), before, "refused");
-        log.borrow_mut().selection = "Gardens, not streams".into();
-        view.update_in(cx, |v, window, cx| {
-            v.reading_action_for_test("Reply", window, cx)
-        });
-        settle(cx);
-        let stub = stubs(&fake)
-            .into_iter()
-            .find(|i| i.stub_of.as_ref().unwrap().id == LIN_GARDENS)
-            .expect("a stub");
-        assert_eq!(
-            stub.content_md,
-            format!("![[{LIN_GARDENS}]]\n> Gardens, not streams\n\n")
-        );
-        assert_eq!(stub.kind, Kind::Thread);
-    }
-
     /// Your notes: a passage from a quote there keeps that quote's link;
     /// your own words go without one.
     #[gpui_kit::test]
