@@ -49,6 +49,13 @@ pub struct WireItem {
     /// `None` from an older server). Raw: upstream's `model` is optional.
     #[serde(default)]
     pub provenance: Option<Vec<Option<Value>>>,
+    /// The item's generated-text highlight choice (studio 0.27).
+    #[serde(default)]
+    pub highlight: Option<ResponsesMode>,
+    /// Not on the wire: whether the public page highlights generated text
+    /// now, resolved from `highlight` and `highlight_generated_default`.
+    #[serde(skip)]
+    pub highlighting: Option<bool>,
 }
 
 impl WireItem {
@@ -97,6 +104,21 @@ impl WireItem {
             };
             self.permalink = Some(format!("{base}/{p}/{}", self.id));
         }
+    }
+
+    /// Whether the public page highlights generated text now.
+    pub fn highlights(&self) -> bool {
+        self.highlighting
+            .unwrap_or(self.highlight == Some(ResponsesMode::Show))
+    }
+
+    /// Fill `highlighting`: `default` is `highlight_generated_default`.
+    pub fn resolve_highlight(&mut self, default: bool) {
+        self.highlighting = Some(match self.highlight {
+            Some(ResponsesMode::Show) => true,
+            Some(ResponsesMode::Hide) => false,
+            Some(ResponsesMode::Default) | None => default,
+        });
     }
 
     pub fn local_kind(&self) -> Kind {

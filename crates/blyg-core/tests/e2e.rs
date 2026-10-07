@@ -553,7 +553,17 @@ fn image_upload_is_served() {
     assert_eq!(m.mime, "image/png");
     assert!(b.item(&id).unwrap().server_id.is_some());
     let base = b.base_url().unwrap();
-    let res = agent().get(&format!("{base}/{}", m.url)).call().unwrap();
+    let url = format!("{base}/{}", m.url);
+    // Studio 0.28: media no public version uses yet is private. Anonymous
+    // readers get a 404; the owner's credential reads it.
+    assert_eq!(public_get(&url).0, 404, "a draft's upload is private");
+    let (bytes, mime) = b.fetch_own_media(&url).unwrap();
+    assert_eq!(bytes, PNG);
+    assert_eq!(mime.as_deref(), Some("image/png"));
+    // Published (the attachment shows on the page): anyone can read it.
+    b.sync_now().unwrap();
+    b.publish(&id, None).unwrap();
+    let res = agent().get(&url).call().unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(res.header("content-type"), Some("image/png"));
     let mut bytes = Vec::new();
@@ -753,7 +763,8 @@ fn pasted_images_render_once_inline() {
 
     // For the record: before studio 0.11 a relative `media/…` broke on the
     // page (it resolved against /f/<id>/); 0.11 publishes it absolute against
-    // the blyg's origin. Attached *and* inline still shows the image twice.
+    // the blyg's origin. Since 0.20 an attachment the text already shows is
+    // not appended again ("images belong to the text they are in").
     let rel = b
         .create_draft(Kind::Fragment, &format!("{t} relative"))
         .unwrap();
@@ -783,7 +794,7 @@ fn pasted_images_render_once_inline() {
     b.sync_now().unwrap();
     b.publish(&id, None).unwrap();
     let (_, page) = public_get(&out.permalink);
-    assert_eq!(count_imgs(&page, &att.url), 2);
+    assert_eq!(count_imgs(&page, &att.url), 1, "attached and inline: once");
 }
 
 #[test]
@@ -984,6 +995,151 @@ fn show_responses_round_trips() {
     assert!(b.item(&id).unwrap().show_responses, "a pull keeps it");
     b.set_responses(&id, ResponsesMode::Hide).unwrap();
     assert_eq!(server_item(&sid)["responses"], "hide");
+}
+
+/// The blyg's settings, restored when the test ends (tests share a Worker).
+struct RestoreSettings<'a>(&'a LiveBackend, Settings);
+
+impl Drop for RestoreSettings<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.save_settings(&self.1);
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn highlight_and_picker_settings_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let before = b.settings().unwrap();
+    assert_eq!(
+        before.highlight_generated_default,
+        Some(false),
+        "off by default"
+    );
+    assert_eq!(before.picker_typing, Some(PickerTyping::Auto));
+    assert_eq!(b.picker_typing(), PickerTyping::Auto);
+    let _restore = RestoreSettings(&b, before.clone());
+
+    b.save_settings(&Settings {
+        highlight_generated_default: Some(true),
+        picker_typing: Some(PickerTyping::Panel),
+        ..before.clone()
+    })
+    .unwrap();
+    let s = b.settings().unwrap();
+    assert_eq!(s.highlight_generated_default, Some(true));
+    assert_eq!(s.picker_typing, Some(PickerTyping::Panel));
+    assert_eq!(b.picker_typing(), PickerTyping::Panel, "remembered locally");
+    let (_, raw) = owner("GET", &e2e().url, "/api/settings", None);
+    assert_eq!(raw["highlight_generated_default"], true);
+    assert_eq!(raw["picker_typing"], "panel");
+    // The other fields came through untouched.
+    assert_eq!(s.site_title, before.site_title);
+    assert_eq!(s.show_responses_default, before.show_responses_default);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn highlight_round_trips_and_marks_the_public_page() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let before = b.settings().unwrap();
+    let _restore = RestoreSettings(&b, before.clone());
+    let (id, sid) = published(&b, Kind::Fragment, &tag("highlight"), None);
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.highlight_mode, Some(HighlightMode::Default));
+    assert!(!it.highlight, "the blyg's default is off");
+    let page = || public_get(&b.item(&id).unwrap().permalink.unwrap()).1;
+    let article = |html: &str| {
+        html.split("<article class=\"")
+            .nth(1)
+            .and_then(|r| r.split('"').next())
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert_eq!(article(&page()), "fragment", "no class of its own");
+
+    assert!(b.set_highlight(&id, HighlightMode::Show).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "show");
+    assert_eq!(article(&page()), "fragment gen-on");
+    let it = b.item(&id).unwrap();
+    assert!(it.highlight);
+    assert_eq!(it.highlight_mode, Some(HighlightMode::Show));
+    b.sync_now().unwrap();
+    assert!(b.item(&id).unwrap().highlight, "a pull keeps it");
+
+    assert!(!b.set_highlight(&id, HighlightMode::Hide).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "hide");
+    assert_eq!(article(&page()), "fragment gen-off");
+
+    // Back to default, with the blyg's default on: it highlights, through
+    // style.css (`article:not(.gen-off)`), not a class of its own.
+    b.save_settings(&Settings {
+        highlight_generated_default: Some(true),
+        ..before.clone()
+    })
+    .unwrap();
+    assert!(b.set_highlight(&id, HighlightMode::Default).unwrap());
+    assert_eq!(server_item(&sid)["highlight"], "default");
+    assert_eq!(article(&page()), "fragment");
+    let (st, css) = public_get(&format!("{}/style.css", e.url));
+    assert_eq!(st, 200);
+    assert!(
+        css.contains("article:not(.gen-off) .blyg-tk-gen"),
+        "default rule"
+    );
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert!(it.highlight && it.highlight_mode == Some(HighlightMode::Default));
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn draft_media_is_read_with_the_owners_credential_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("private-media");
+    // A pasted image: uploaded loose, then placed in the text.
+    let m = b
+        .upload_media(other_png(), "image/png", None, None)
+        .unwrap();
+    let url = format!("{}/{}", b.base_url().unwrap(), m.url);
+    assert_eq!(public_get(&url).0, 404, "unused upload: private");
+    let (bytes, _) = b.fetch_own_media(&url).unwrap();
+    assert_eq!(bytes, other_png());
+    // Without a credential the same read fails: the bytes really came
+    // through the owner's credential.
+    let anon = blyg_core::api::public::PublicClient::new().get_bytes(&url, 1 << 20);
+    assert!(
+        matches!(anon, Err(CoreError::NotFound)),
+        "{:?}",
+        anon.map(|_| ())
+    );
+
+    // The credential never leaves the blyg's own origin: blyg `b`'s private
+    // upload, asked for through `a`, is read anonymously, so it 404s.
+    let api_b = Api::new(&url_b(), cred_b());
+    let mb = api_b.upload_media(PNG, "image/png", None, None).unwrap();
+    let url_on_b = format!("{}/{}", url_b(), mb.url);
+    assert!(!Api::new(&e.url, e.cred.clone()).is_own_media(&url_on_b));
+    assert!(matches!(
+        b.fetch_own_media(&url_on_b),
+        Err(CoreError::NotFound)
+    ));
+    assert!(
+        api_b.fetch_own_media(&url_on_b, 1 << 20).is_ok(),
+        "b's owner can"
+    );
+
+    // Published inline: public, and served the same bytes.
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.save(&id, &format!("{t}\n\n![]({url})")).unwrap();
+    b.sync_now().unwrap();
+    b.publish(&id, None).unwrap();
+    assert_eq!(public_get(&url).0, 200, "used by a public version");
 }
 
 #[test]

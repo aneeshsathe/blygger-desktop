@@ -4,8 +4,7 @@
 //! here and in `tests.rs` without pixels.
 
 use blyg_core::{
-    Item, Kind, Mention, ReadingItem, RemoteVersion, Status, Subscription, SubscriptionKind,
-    Version,
+    Item, Kind, Mention, ReadingItem, RemoteVersion, Subscription, SubscriptionKind, Version,
 };
 
 /// (subscription id, remote id): one reading row.
@@ -694,63 +693,6 @@ pub fn group_mentions<'a>(
 
 // ---------------------------------------------------------------- quote picker
 
-/// Something already held that a thread can quote with `![[id]]`.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Quotable {
-    pub id: String,
-    pub title: String,
-    /// `yours` or the source (`Rue · rue.blyg.example.com`).
-    pub source: String,
-}
-
-/// Held items only: your own published posts and imported posts from blyg
-/// subscriptions (still current). Never anything fetched by URL. `exclude`
-/// is the server id of the thread being written (it can't quote itself).
-pub fn quotables(
-    items: &[Item],
-    reading: &[ReadingItem],
-    subs: &[Subscription],
-    exclude: Option<&str>,
-    query: &str,
-) -> Vec<Quotable> {
-    let q = query.trim().to_lowercase();
-    let mut out = Vec::new();
-    for it in items {
-        let Some(sid) = &it.server_id else { continue };
-        if it.status != Status::Public || Some(sid.0.as_str()) == exclude {
-            continue;
-        }
-        out.push(Quotable {
-            id: sid.0.clone(),
-            title: it.title().to_string(),
-            source: "yours".into(),
-        });
-    }
-    for r in reading {
-        let blyg = subs
-            .iter()
-            .find(|s| s.id == r.subscription_id)
-            .is_some_and(|s| s.kind == SubscriptionKind::Blyg);
-        if !blyg || r.state != "current" || Some(r.remote_id.as_str()) == exclude {
-            continue;
-        }
-        if out.iter().any(|q: &Quotable| q.id == r.remote_id) {
-            continue;
-        }
-        out.push(Quotable {
-            id: r.remote_id.clone(),
-            title: title(&r.content_md),
-            source: format!("{} · {}", r.subscription_title, host(&r.origin)),
-        });
-    }
-    if q.is_empty() {
-        return out;
-    }
-    out.into_iter()
-        .filter(|x| x.title.to_lowercase().contains(&q) || x.source.to_lowercase().contains(&q))
-        .collect()
-}
-
 /// Can `item` take a quote? Transclusion is valid only in threads.
 pub fn can_quote_into(item: Option<&Item>) -> bool {
     item.is_some_and(|i| i.kind == Kind::Thread)
@@ -1199,18 +1141,18 @@ mod tests {
             transclusions: vec![],
             lineage_known: false,
         };
-        let q = quotables(
+        let all = blyg_core::PickQuery::default();
+        let q = blyg_core::pick::search_in(
             &[],
             std::slice::from_ref(&r),
             std::slice::from_ref(&sub),
-            None,
-            "",
+            &all,
         );
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].title, "Current words.");
         assert!(!q[0].id.contains('@') && !q[0].id.contains("/v"));
         r.state = "tombstone".into();
-        assert!(quotables(&[], &[r], &[sub], None, "").is_empty());
+        assert!(blyg_core::pick::search_in(&[], &[r], &[sub], &all).is_empty());
     }
 
     #[test]

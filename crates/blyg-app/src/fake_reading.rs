@@ -524,6 +524,8 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         accept_mentions: Some(true),
         timezone: Some("Europe/Lisbon".into()),
         show_responses_default: Some(false),
+        highlight_generated_default: Some(false),
+        picker_typing: Some(PickerTyping::Auto),
     };
 
     // "On friction": v1 first, v2 pinned, v3 current.

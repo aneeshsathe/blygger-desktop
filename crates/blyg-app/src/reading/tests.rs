@@ -439,7 +439,10 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
         !ids.contains(&OMAR_YEAR.to_string()),
         "RSS items aren't transcludable"
     );
-    assert!(!ids.contains(&RUE_KEPT.to_string()) && !ids.contains(&ADA_GONE.to_string()));
+    // A withdrawn post only through its retained pin (studio 0.29's search
+    // offers what publish accepts: current, or a pinned version kept).
+    assert!(!ids.contains(&ADA_GONE.to_string()));
+    assert!(ids.contains(&RUE_KEPT.to_string()));
     // Filter, then ⏎ inserts ![[id]] on its own line.
     cx.simulate_input("hyperlink");
     cx.run_until_parked();

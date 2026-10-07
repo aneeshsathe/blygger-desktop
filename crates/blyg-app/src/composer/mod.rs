@@ -4,6 +4,7 @@
 
 pub mod assist;
 pub mod mention;
+pub mod picker;
 pub mod spell;
 #[cfg(target_os = "macos")]
 pub mod spell_mac;

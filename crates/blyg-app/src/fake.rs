@@ -250,6 +250,8 @@ impl FakeBackend {
                 responses_mode: Some(ResponsesMode::Show),
                 pending_sync: false,
                 conflict: false,
+                highlight: false,
+                highlight_mode: Some(HighlightMode::Default),
             });
         }
         for (id, vs) in &rd.own_versions {
@@ -573,6 +575,8 @@ impl FakeBackend {
             responses_mode: Some(ResponsesMode::Show),
             pending_sync: status != Status::Scratch,
             conflict: false,
+            highlight: false,
+            highlight_mode: Some(HighlightMode::Default),
         });
         id
     }
@@ -1233,6 +1237,25 @@ impl Backend for FakeBackend {
         Ok(it.show_responses)
     }
 
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let default = st.rd.settings.highlight_generated_default.unwrap_or(false);
+        let it = st
+            .items
+            .iter_mut()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        it.highlight_mode = Some(mode);
+        it.highlight = shows_responses(mode, default);
+        Ok(it.highlight)
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.lock().rd.settings.picker_typing.unwrap_or_default()
+    }
+
     fn sync_now(&self) -> Result<()> {
         self.remote_guard()
     }
@@ -1372,9 +1395,13 @@ impl Backend for FakeBackend {
         st.rd.settings = settings.clone();
         // Items without a choice of their own follow the new default.
         let default = settings.show_responses_default.unwrap_or(false);
+        let highlight = settings.highlight_generated_default.unwrap_or(false);
         for it in &mut st.items {
             if let Some(m) = it.responses_mode {
                 it.show_responses = shows_responses(m, default);
+            }
+            if let Some(m) = it.highlight_mode {
+                it.highlight = shows_responses(m, highlight);
             }
         }
         Ok(())

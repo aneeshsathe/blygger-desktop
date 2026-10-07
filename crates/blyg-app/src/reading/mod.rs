@@ -228,13 +228,19 @@ pub enum RSheet {
     },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
+    /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
+    /// brackets with `picker_typing = panel`).
     Quote {
         target: LocalId,
         input: Entity<InputState>,
         sel: usize,
-        /// Opened by typing `![[`: where that text was taken from, and the
-        /// text itself, so esc can put it back.
+        /// Opened by typing `![[` / `[[`: where that text was taken from,
+        /// and the text itself, so esc can put it back.
         typed: Option<(usize, String)>,
+        /// Link (`[[id]]`) or quote (`![[id]]`).
+        kind: crate::composer::picker::PickKind,
+        /// What the search found for the box and the filters.
+        rows: Vec<blyg_core::Pickable>,
     },
 }
 

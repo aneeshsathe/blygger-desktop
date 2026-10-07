@@ -837,6 +837,31 @@ impl Backend for LiveBackend {
         Ok(showing)
     }
 
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        let sid = self.server_id(id)?;
+        let (on, got) = self.e().track(self.e().api.set_highlight(&sid, mode))?;
+        self.e().store.set_highlight(id, on, got)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(on)
+    }
+
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        self.e().store.pick_search(q).unwrap_or_default()
+    }
+
+    fn picker_typing(&self) -> PickerTyping {
+        self.e().api.picker_typing().unwrap_or_default()
+    }
+
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        let api = &self.e().api;
+        if api.is_own_media(url) {
+            api.fetch_own_media(url, crate::backend::MEDIA_MAX_BYTES)
+        } else {
+            PublicClient::new().get_bytes(url, crate::backend::MEDIA_MAX_BYTES)
+        }
+    }
+
     fn sync_now(&self) -> Result<()> {
         self.e().sync_now()
     }

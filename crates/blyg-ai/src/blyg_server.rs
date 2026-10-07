@@ -49,10 +49,11 @@ impl Provider for BlygServer {
                 "the blyg server can only fill TK scopes in items that have synced".into(),
             ));
         };
-        let (text, model) = match self.api.generate(&scope.item_id, scope.scope as u32) {
-            // `content_md` (studio 0.27+) is the whole body as stored; the
-            // caller splices `text` itself.
-            Ok(r) => (r.text, r.model),
+        let (text, model, content_md) = match self.api.generate(&scope.item_id, scope.scope as u32)
+        {
+            // `content_md` (studio 0.27.2+) is the whole body as stored: the
+            // caller puts it in the editor instead of pulling.
+            Ok(r) => (r.text, r.model, r.content_md),
             Err(CoreError::NotFound) => {
                 return Err(AiError::Provider(
                     "item not found on the server (or the server has no /generate)".into(),
@@ -79,6 +80,10 @@ impl Provider for BlygServer {
         };
         req.cancel.check()?;
         on_delta(&text);
-        Ok(GenResult { text, model })
+        Ok(GenResult {
+            text,
+            model,
+            content_md,
+        })
     }
 }

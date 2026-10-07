@@ -1305,6 +1305,7 @@ impl Provider for CannedAi {
         };
         on_delta(text);
         Ok(GenResult {
+            content_md: None,
             text: text.to_string(),
             model: "tutorial-demo".into(),
         })

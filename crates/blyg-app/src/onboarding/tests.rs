@@ -152,6 +152,10 @@ impl Backend for Recording {
         self.rec("set_responses");
         self.inner.set_responses(id, mode)
     }
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        self.rec("set_highlight");
+        self.inner.set_highlight(id, mode)
+    }
     fn sync_now(&self) -> Result<()> {
         self.rec("sync_now");
         self.inner.sync_now()
