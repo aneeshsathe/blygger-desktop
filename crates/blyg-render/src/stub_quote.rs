@@ -50,13 +50,20 @@ fn line_offsets(lines: &[&str]) -> Vec<usize> {
         .collect()
 }
 
+/// `line` is an own-line `![[id]]` of `id` (`DIRECTIVE_LINE`). An id outside
+/// the blyg alphabet (the sample data's) matches its own line too: no real
+/// target has one, so publish's rule is unchanged for every real stub.
+fn directive_of(line: &str, id: &str) -> bool {
+    directive_id(line) == Some(id) || crate::util::js_trim(line) == format!("![[{id}]]")
+}
+
 /// Every own-line directive of `id` outside code: (line, attached quote?, next line).
 fn quotes_of(md: &str, id: &str) -> Vec<(usize, bool, usize)> {
     let lines: Vec<&str> = md.split('\n').collect();
     let literal = literal_lines(md, &lines);
     let mut out = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        if literal[i] || directive_id(line) != Some(id) {
+        if literal[i] || !directive_of(line, id) {
             continue;
         }
         let (quote, next) = attached_quote(&lines, i);

@@ -1295,6 +1295,78 @@ impl Backend for FakeBackend {
         Ok(sub)
     }
 
+    // --- subscription names & checks --- (studio 0.30)
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.remote_guard()?;
+        {
+            let mut st = self.lock();
+            let s = st
+                .rd
+                .subs
+                .iter_mut()
+                .find(|s| s.id == sub_id)
+                .ok_or(CoreError::NotFound)?;
+            match title.map(str::trim) {
+                Some("") => {
+                    return Err(CoreError::Rejected {
+                        status: 400,
+                        message: "a name can't be empty".into(),
+                        details: vec![],
+                    });
+                }
+                Some(t) => {
+                    s.title = t.to_string();
+                    s.title_follows_source = false;
+                }
+                None => {
+                    // The source's own name: its host, here.
+                    s.title = crate::app::reading::vm::host(&s.origin);
+                    s.title_follows_source = true;
+                }
+            }
+        }
+        self.reading_changed();
+        Ok(())
+    }
+
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.remote_guard()?;
+        let st = self.lock();
+        Ok(st.rd.subs.iter().filter(|s| s.status != "paused").count() as u32 + 1)
+    }
+
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.remote_guard()?;
+        let _ = sub_id;
+        Ok(false)
+    }
+
+    // --- read/unread ---
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        let n = {
+            let mut st = self.lock();
+            let mut n = 0;
+            for r in st.rd.reading.iter_mut() {
+                if !rows
+                    .iter()
+                    .any(|(s, id)| *s == r.subscription_id && *id == r.remote_id)
+                {
+                    continue;
+                }
+                let want = read.then_some(r.version);
+                if r.read_version != want {
+                    r.read_version = want;
+                    n += 1;
+                }
+            }
+            n
+        };
+        if n > 0 {
+            self.reading_changed();
+        }
+        Ok(n)
+    }
+
     fn unsubscribe(&self, sub_id: &str) -> Result<()> {
         self.remote_guard()?;
         {
