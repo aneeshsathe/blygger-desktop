@@ -429,6 +429,7 @@ fn item_json(it: &SItem) -> Value {
         "content_md": it.content_md,
         "dirty": it.dirty,
         "responses": it.responses,
+        "highlight": "default",
         "provenance": [],
         "stub_of": it.stub_of,
         "forked_from": it.forked_from,
@@ -467,7 +468,8 @@ pub fn sub_json(v: &Value) -> Value {
     overlay(
         json!({ "id": "", "kind": "blyg", "origin": "", "feed_url": "", "title": "",
             "status": "active", "last_poll_at": null, "fail_count": 0, "last_index_sync_at": null,
-            "created": "2030-01-01T00:00:00Z", "in_blogroll": false, "flags": [] }),
+            "created": "2030-01-01T00:00:00Z", "title_follows_source": true, "in_blogroll": false,
+            "flags": [] }),
         v,
     )
 }
@@ -479,7 +481,8 @@ fn settings_json(v: &Value, responses_default: bool) -> Value {
             "author_links": [], "site_url": "", "timezone": "", "avatar_media_id": "",
             "ai_model": "", "ai_model_tk": "", "ai_model_changelog": "", "ai_model_feed": "",
             "feed_prompt": "", "auto_change_notes": false, "ai_style_prompt": "", "accept_mentions": true, "update_check": false,
-            "show_responses_default": responses_default, "update_feed_url": "",
+            "show_responses_default": responses_default, "highlight_generated_default": false,
+            "picker_typing": "auto", "update_feed_url": "",
             "update_notice_ack": false }),
         v,
     )
