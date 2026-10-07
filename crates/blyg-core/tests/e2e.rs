@@ -4,7 +4,10 @@
 //! with `scripts/e2e-local.sh`, which starts the Worker(s) and sets:
 //!
 //! - `BLYG_E2E_URL`   the Worker under test (e.g. `http://127.0.0.1:18787`)
-//! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`
+//! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`, or on studio 0.28+ a manual
+//!   token minted with all four owner scopes
+//! - `BLYG_E2E_TOKEN_B` the same for `BLYG_E2E_URL_B` (studio 0.28+ only;
+//!   without it, `b` takes `a`'s credential)
 //! - `BLYG_E2E_PASSWORD` its studio password; when set, everything signs in
 //!   with it instead of the token
 //! - `BLYG_E2E_STOCK` set for a stock blygger-studio (no docs/SERVER.md
@@ -82,6 +85,13 @@ fn url_b() -> String {
         .to_string();
     assert!(url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost"));
     url
+}
+
+/// The credential for `url_b()`: its own minted token, else `a`'s.
+fn cred_b() -> Credential {
+    std::env::var("BLYG_E2E_TOKEN_B")
+        .map(Credential::Token)
+        .unwrap_or_else(|_| e2e().cred)
 }
 
 fn opts(worker: bool) -> SyncOptions {
@@ -1246,11 +1256,11 @@ fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) ->
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn subscriptions_reading_and_pinned_versions() {
-    let e = e2e();
+    e2e();
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, e.cred.clone(), false);
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("sub");
 
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), Some("first"));
@@ -1356,11 +1366,11 @@ fn reading_items_carry_the_published_html() {
     // What the Reading screen shows is the HTML the author's blyg published:
     // the transclusion snapshot is baked in, and image URLs are as the author
     // wrote them (so a relative `media/…` needs the author's origin as base).
-    let e = e2e();
+    e2e();
     let src_url = url_b();
     let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
     let me = manual(d1.path());
-    let source = backend_at(d2.path(), &src_url, e.cred.clone(), false);
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
     let t = tag("html");
 
     let (_, quoted) = published(&source, Kind::Fragment, &format!("{t} quoted words"), None);
@@ -1443,7 +1453,7 @@ fn read_state_syncs_between_two_macs() {
     );
     let mac1 = manual(d1.path());
     let mac2 = manual(d2.path());
-    let source = backend_at(d3.path(), &src_url, e.cred.clone(), false);
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
     let t = tag("read");
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
     let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();
