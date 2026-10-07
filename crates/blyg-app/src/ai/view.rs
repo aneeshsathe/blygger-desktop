@@ -106,8 +106,14 @@ enum Done {
         text: String,
         model: String,
     },
-    /// The blyg generated and recorded provenance itself: pull.
-    Server,
+    /// The blyg generated and recorded provenance itself. `content_md` is
+    /// the working copy it saved (studio 0.27.2), applied to the editor
+    /// when it still holds `sent`; without it the item was re-pulled.
+    Server {
+        item: LocalId,
+        sent: String,
+        content_md: Option<String>,
+    },
     Shorten {
         item: LocalId,
         before: String,
@@ -556,6 +562,8 @@ impl MainView {
             return;
         };
         let backend = self.backend.clone();
+        let sent = item.content_md.clone();
+        let local = item.local_id.clone();
         self.ai_spawn(
             picked,
             "generating on the blyg",
@@ -565,11 +573,19 @@ impl MainView {
                     item_id: sid.0,
                     scope: index,
                 });
-                p.generate(req, &mut |_| {})?;
-                backend
-                    .sync_now()
-                    .map_err(|e| blyg_ai::AiError::Provider(e.to_string()))?;
-                Ok(Done::Server)
+                let r = p.generate(req, &mut |_| {})?;
+                let content_md = generate::server_content_md(&r);
+                // Without the server's copy, pull it (the fallback).
+                if content_md.is_none() {
+                    backend
+                        .sync_now()
+                        .map_err(|e| blyg_ai::AiError::Provider(e.to_string()))?;
+                }
+                Ok(Done::Server {
+                    item: local,
+                    sent,
+                    content_md,
+                })
             },
             window,
             cx,
@@ -764,11 +780,26 @@ impl MainView {
                     cx,
                 );
             }
-            Done::Server => {
-                self.requery(window, cx);
-                if let Some(cur) = self.current.clone() {
-                    self.current = self.backend.item(&cur.local_id);
-                    self.load_current_into_editor(window, cx);
+            Done::Server {
+                item,
+                sent,
+                content_md,
+            } => {
+                let now = self.ai_text_of(&item, cx).unwrap_or_default();
+                let open = self.current.as_ref().is_some_and(|c| c.local_id == item);
+                match generate::server_fill(&sent, &now, content_md) {
+                    // The server's copy, straight into the editor as one
+                    // undoable edit (its provenance is the server's own).
+                    Some(new) if open => self.splice_editor(&now, &new, None, window, cx),
+                    // Otherwise the pulled copy (pulled in the background
+                    // when the reply had no content_md).
+                    _ => {
+                        self.requery(window, cx);
+                        if let Some(cur) = self.current.clone() {
+                            self.current = self.backend.item(&cur.local_id);
+                            self.load_current_into_editor(window, cx);
+                        }
+                    }
                 }
                 self.show_toast(
                     "Generated on your blyg",
@@ -947,6 +978,11 @@ impl MainView {
                 }
             }
             "escape" => self.ai_close(window, cx),
+            "h" => {
+                if let Some(next) = self.highlight_state().map(|(m, _)| next_highlight(m)) {
+                    self.ai_set_highlight(next, cx);
+                }
+            }
             k => {
                 let Some(n) = k
                     .parse::<usize>()
@@ -964,6 +1000,106 @@ impl MainView {
         }
         cx.notify();
         true
+    }
+
+    /// The open post's generated-text highlight (studio 0.27): (its own
+    /// choice, whether the page highlights now). `None` for a post the
+    /// blyg doesn't have yet, or a server that doesn't report it.
+    fn highlight_state(&self) -> Option<(blyg_core::HighlightMode, bool)> {
+        let it = self.current.as_ref()?;
+        it.server_id.as_ref()?;
+        Some((it.highlight_mode?, it.highlight))
+    }
+
+    /// Set the open post's highlight. It changes the public page at once
+    /// (the blyg wants `owner:publish` for it), so it goes straight to the
+    /// server, off the UI thread.
+    pub(super) fn ai_set_highlight(
+        &mut self,
+        mode: blyg_core::HighlightMode,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
+            return;
+        };
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move { backend.set_highlight(&id, mode) });
+        cx.spawn(async move |this, cx| {
+            let r = task.await;
+            let _ = this.update(cx, |v, cx| {
+                match r {
+                    Ok(on) => {
+                        if let Some(cur) = v.current.as_mut() {
+                            cur.highlight = on;
+                            cur.highlight_mode = Some(mode);
+                        }
+                        let what = if on { "highlighted" } else { "not highlighted" };
+                        v.show_toast(
+                            format!("Generated text {what} on this post"),
+                            Some(
+                                match mode {
+                                    blyg_core::HighlightMode::Default => {
+                                        "Following your blyg's default"
+                                    }
+                                    _ => "Its page shows it now",
+                                }
+                                .into(),
+                            ),
+                            cx,
+                        );
+                        v.studio_refresh(true, cx);
+                    }
+                    Err(e) => v.show_toast(format!("Couldn't change the highlight: {e}"), None, cx),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn render_highlight_row(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        use blyg_core::HighlightMode as M;
+        let (mode, on) = self.highlight_state()?;
+        let p = self.palette;
+        // What `default` means now: with the post on default, the effective
+        // state is the blyg's default.
+        let default_label = match (mode, on) {
+            (M::Default, true) => "default (on)",
+            (M::Default, false) => "default (off)",
+            _ => "default",
+        };
+        let opt = |m: M, label: &'static str| {
+            div()
+                .id(SharedString::from(format!("ai-hl-{}", m.as_str())))
+                .px(px(9.))
+                .py(px(2.))
+                .map(|d| crate::theme_ext::chip(d, &self.theme, m == mode))
+                .cursor_pointer()
+                .text_size(px(12.))
+                .child(label)
+                .on_click(cx.listener(move |this, _, _, cx| this.ai_set_highlight(m, cx)))
+        };
+        Some(
+            div()
+                .mt(px(10.))
+                .pt(px(8.))
+                .border_t_1()
+                .border_color(p.edge())
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex_1()
+                        .text_size(px(12.))
+                        .text_color(p.muted)
+                        .child("Highlight generated text on its page"),
+                )
+                .child(opt(M::Default, default_label))
+                .child(opt(M::Show, "on"))
+                .child(opt(M::Hide, "off"))
+                .into_any_element(),
+        )
     }
 
     fn ai_accept_shorten(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -1576,7 +1712,15 @@ impl MainView {
             .child(div().mt(px(8.)).text_size(px(11.5)).text_color(p.muted).child(
                 "Inside [TK]instruction[/TK], ⌘G fills it. Generated text is disclosed when published.",
             ))
-            .child(keys(p, &[("↑↓", "choose"), ("⏎", "run"), ("esc", "close")]))
+            .children(self.render_highlight_row(cx))
+            .child(keys(
+                p,
+                if self.highlight_state().is_some() {
+                    &[("↑↓", "choose"), ("⏎", "run"), ("H", "highlight"), ("esc", "close")]
+                } else {
+                    &[("↑↓", "choose"), ("⏎", "run"), ("esc", "close")]
+                },
+            ))
             .into_any_element()
     }
 
@@ -1833,6 +1977,16 @@ impl MainView {
 /// `BLYGGER_TIMING`: print what AI did (automation; never any secret).
 fn timing() -> bool {
     std::env::var_os("BLYGGER_TIMING").is_some()
+}
+
+/// `H` in the palette: default → on → off → default.
+fn next_highlight(m: blyg_core::HighlightMode) -> blyg_core::HighlightMode {
+    use blyg_core::HighlightMode as M;
+    match m {
+        M::Default => M::Show,
+        M::Show => M::Hide,
+        M::Hide => M::Default,
+    }
 }
 
 fn heading(s: String) -> Div {

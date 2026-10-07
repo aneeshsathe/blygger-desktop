@@ -62,6 +62,9 @@ pub struct PublicItem {
     pub versions: Vec<RemoteVersion>,
 }
 
+/// The largest media file the app reads (the Worker's upload cap is 5 MB).
+pub const MEDIA_MAX_BYTES: u64 = 20 * 1024 * 1024;
+
 pub struct MediaRef {
     /// Relative, e.g. "media/abc123.webp" — what goes in the markdown.
     pub url: String,
@@ -214,6 +217,31 @@ pub trait Backend: Send + Sync {
     /// Set whether the item's page shows its verified responses. Returns
     /// whether it shows them now (with `Default`, the blyg's setting decides).
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool>;
+    /// Set whether the item's public page highlights its generated text
+    /// (studio 0.27; remote, needs `owner:publish`). Returns whether it
+    /// highlights now (with `Default`, `highlight_generated_default` decides).
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool>;
+
+    /// The `[[` / `![[` picker's search over what's held here (local): own
+    /// published posts and posts imported from blyg subscriptions, every
+    /// word matching. The default searches `items()` and `reading()` in
+    /// memory; the live backend uses its full-text indexes.
+    fn pick_search(&self, q: &crate::pick::PickQuery) -> Vec<crate::pick::Pickable> {
+        crate::pick::search_in(&self.items(), &self.reading(), &self.subscriptions(), q)
+    }
+
+    /// Where the picker's query is typed (`picker_typing`), as the blyg's
+    /// settings last said. Local; `Auto` until they've been read.
+    fn picker_typing(&self) -> PickerTyping {
+        PickerTyping::Auto
+    }
+
+    /// One of the blyg's own media files (`{base}/media/…`), fetched with
+    /// the owner credential, since an upload no public version uses yet is
+    /// private (studio 0.28). Remote. The default fetches anonymously.
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        crate::api::public::PublicClient::new().get_bytes(url, MEDIA_MAX_BYTES)
+    }
 
     /// Pull everything (items, reading, subscriptions) now.
     fn sync_now(&self) -> Result<()>;

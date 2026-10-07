@@ -23,6 +23,9 @@ pub fn studio_css() -> String {
 .blyg-tk-gen { background: rgba(90,140,255,0.12); border-radius: 3px; box-shadow: 0 0 0 2px rgba(90,140,255,0.12); }
 div.blyg-tk-gen { padding: 0.1rem 0.4rem; }
 span.blyg-tk-gen { padding: 0.03rem 0.15rem; }
+/* Highlighting on (studio 0.27, `article.gen-on`): the public look, in the
+   theme's own tokens; the fallbacks are for a theme from before them. */
+.gen-on .blyg-tk-gen { background: var(--gen-bg, rgba(127,127,127,0.12)); box-shadow: inset 0 0 0 1px var(--gen-rule, rgba(127,127,127,0.45)); border-radius: 4px; }
 blockquote.blyg-transclusion.unresolved {
   border-left: 3px solid var(--alert, #b3261e); background: var(--alert-wash, rgba(179,38,30,0.08));
   color: var(--alert, #b3261e); font-style: italic;

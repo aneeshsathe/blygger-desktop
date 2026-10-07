@@ -1126,6 +1126,8 @@ mod tests {
             responses_mode: None,
             pending_sync: false,
             conflict: false,
+            highlight: false,
+            highlight_mode: None,
         };
         let q = "01j9t4r7c8m2q5v6w3x8y9z0ab";
         let mut a = item("a", Status::Public, &format!("Quote\n\n![[{q}]]\n"));

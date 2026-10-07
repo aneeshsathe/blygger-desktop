@@ -6,6 +6,7 @@ pub mod backend;
 pub mod config;
 pub mod live;
 pub mod model;
+pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
 pub mod state;
@@ -21,5 +22,6 @@ pub use backend::{
 pub use config::{Config, ConfigStore};
 pub use live::LiveBackend;
 pub use model::*;
+pub use pick::{PickQuery, PickSort, PickSource, Pickable};
 pub use profile::{BlogrollEntry, Profile, ProfileKind, ProfilePost, Relation}; // --- profiles ---
 pub use sync::SyncOptions;

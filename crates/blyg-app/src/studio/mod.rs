@@ -126,6 +126,9 @@ struct PageKey {
     item: Option<LocalId>,
     kind: blyg_render::Kind,
     theme_gen: u64,
+    /// The post's `<article>` class for highlighting generated text (studio
+    /// 0.27): `Some(true)` = `gen-on`, `Some(false)` = `gen-off`.
+    highlight: Option<bool>,
 }
 
 /// The native view and where it was last put, shared with the pane's canvas.
@@ -228,6 +231,9 @@ pub struct Studio {
     /// The Reading screen's body (its own WebView, never on screen with
     /// this one).
     pub reader: reader::Reader,
+    /// `images::own_media_gen` as of the last render: a private image
+    /// landing since means rendering again.
+    own_media_gen: u64,
     /// Loads and patches sent (tests).
     #[cfg(test)]
     pub(crate) loads: usize,
@@ -272,6 +278,7 @@ impl Studio {
             caret_line: 0,
             dark: None,
             reader: reader::Reader::new(),
+            own_media_gen: 0,
             #[cfg(test)]
             loads: 0,
         }
@@ -296,7 +303,10 @@ impl Studio {
         }
         if self.page.as_ref() != Some(&key) {
             let base = self.base_href();
-            let body = blyg_render::article_html(key.kind, &out.html, None, None);
+            let body = with_highlight(
+                &blyg_render::article_html(key.kind, &out.html, None, None),
+                key.highlight,
+            );
             let page = blyg_render::page_shell_with(
                 &self.theme.css,
                 &body,
@@ -427,6 +437,63 @@ pub fn render_doc(backend: &dyn Backend, item: Option<&Item>, md: &str) -> Rende
     let kind = render_kind(item.map_or(blyg_core::Kind::Fragment, |i| i.kind));
     let mut out = blyg_render::render_preview(md, kind, &resolver, &opts);
     with_local_images(backend, md, &mut out);
+    out
+}
+
+/// The blyg's own draft media is private (studio 0.28) and the WebView
+/// reads images anonymously: inline the ones only the owner can read.
+fn with_own_media(backend: &std::sync::Arc<dyn Backend>, out: &mut Rendered) {
+    let Some(base) = backend.base_url() else {
+        return;
+    };
+    if !out.html.contains("/media/") {
+        return;
+    }
+    let origin = |u: &str| url::Url::parse(u).ok().map(|u| u.origin());
+    let Some(own_origin) = origin(&base) else {
+        return;
+    };
+    let b = backend.clone();
+    let fetch: crate::images::OwnFetch =
+        std::sync::Arc::new(move |u: &str| b.fetch_own_media(u).map_err(|e| e.to_string()));
+    out.html = local_media::inline_srcs(&out.html, |u| {
+        if !u.contains("/media/") || origin(u).as_ref() != Some(&own_origin) {
+            return None;
+        }
+        match crate::images::own_media(u, &fetch) {
+            crate::images::OwnMedia::Private(p) => Some(p),
+            _ => None,
+        }
+    });
+}
+
+/// The post's own highlight class, as pages.ts `highlightClass` gives it:
+/// `gen-on` for show, `gen-off` for hide. On `default` the blyg's
+/// style.css decides; when that default is on, `gen-on` says the same, so
+/// a cached theme from before the default rule still shows it.
+fn highlight_class(it: &Item) -> Option<bool> {
+    use blyg_core::HighlightMode as M;
+    match it.highlight_mode {
+        Some(M::Show) => Some(true),
+        Some(M::Hide) => Some(false),
+        _ => it.highlight.then_some(true),
+    }
+}
+
+/// The `<article>` with the post's highlight class (see [`highlight_class`]).
+fn with_highlight(article: &str, on: Option<bool>) -> String {
+    let Some(on) = on else {
+        return article.to_string();
+    };
+    let class = if on { "gen-on" } else { "gen-off" };
+    let mut out = article.to_string();
+    for kind in ["fragment", "thread"] {
+        let from = format!("<article class=\"{kind}\"");
+        if out.starts_with(&from) {
+            out.replace_range(..from.len(), &format!("<article class=\"{kind} {class}\""));
+            break;
+        }
+    }
     out
 }
 
@@ -574,6 +641,8 @@ impl MainView {
         self.studio.requested = Some(key.clone());
         let (resolver, opts) = prepare(&*self.backend, item.as_ref(), &md);
         let backend = self.backend.clone();
+        let live = crate::connection::mode(cx) == Some(crate::connection::Mode::Live);
+        self.studio.own_media_gen = crate::images::own_media_gen();
         self.studio.render_gen += 1;
         let gen_ = self.studio.render_gen;
         let delay = if now { None } else { Some(DEBOUNCE) };
@@ -585,6 +654,9 @@ impl MainView {
                 .background_spawn(async move {
                     let mut out = blyg_render::render_preview(&md, key.kind, &resolver, &opts);
                     with_local_images(&*backend, &md, &mut out);
+                    if live {
+                        with_own_media(&backend, &mut out);
+                    }
                     out
                 })
                 .await;
@@ -645,6 +717,7 @@ impl MainView {
                     .map_or(blyg_core::Kind::Fragment, |i| i.kind),
             ),
             theme_gen: self.studio.theme_gen,
+            highlight: self.current.as_ref().and_then(highlight_class),
         }
     }
 
@@ -662,8 +735,12 @@ impl MainView {
         // The Reading screen's body first: where it shows, this one doesn't.
         self.reader_frame(window, cx);
         let wanted = self.studio.view.preview_visible();
-        // Another item or kind (⌘T, a sync) without an edit: render it now.
-        if wanted && self.studio.requested.as_ref() != Some(&self.studio_key()) {
+        // Another item or kind (⌘T, a sync) without an edit, or a private
+        // image just arrived: render it now.
+        if wanted
+            && (self.studio.requested.as_ref() != Some(&self.studio_key())
+                || self.studio.own_media_gen != crate::images::own_media_gen())
+        {
             self.studio_refresh(true, cx);
         }
         if wanted && self.studio.failed.is_none() && self.studio.slot.borrow().surface.is_none() {

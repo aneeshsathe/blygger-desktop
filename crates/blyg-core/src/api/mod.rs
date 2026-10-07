@@ -15,6 +15,7 @@
 //! advertised `read_state: true`.
 
 pub mod auth;
+pub mod media;
 pub mod public;
 pub mod wire;
 
@@ -53,6 +54,10 @@ struct Site {
     responses_default: bool,
     /// `site_url` without its trailing `/`; `""` = unset.
     site_url: String,
+    /// `highlight_generated_default`: what `highlight: "default"` means.
+    highlight_default: bool,
+    /// `picker_typing`, when the server reports it (studio 0.29).
+    picker_typing: Option<crate::model::PickerTyping>,
 }
 
 /// Collection page size (the contract's maximum outside `/api/reading`).
@@ -225,6 +230,7 @@ impl Api {
             &site.site_url
         };
         w.resolve(site.responses_default, base);
+        w.resolve_highlight(site.highlight_default);
         w
     }
 
@@ -477,6 +483,23 @@ impl Api {
         Ok((w.shows_responses(), w.responses_mode()))
     }
 
+    /// `PATCH /api/items/:id {highlight}` (studio 0.27; needs
+    /// `owner:publish`, as it changes the public page at once). Returns
+    /// (highlighting now, the item's choice as the server stored it).
+    pub fn set_highlight(
+        &self,
+        id: &str,
+        mode: crate::model::HighlightMode,
+    ) -> Result<(bool, Option<crate::model::HighlightMode>)> {
+        let w: WireItem = self.call_as(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "highlight": mode.as_str() })),
+        )?;
+        let w = self.resolve(w);
+        Ok((w.highlights(), w.highlight))
+    }
+
     // ---------- media ----------
 
     pub fn upload_media(
@@ -675,6 +698,12 @@ impl Api {
         if let Some(on) = s.show_responses_default {
             body.insert("show_responses_default".into(), json!(on));
         }
+        if let Some(on) = s.highlight_generated_default {
+            body.insert("highlight_generated_default".into(), json!(on));
+        }
+        if let Some(t) = s.picker_typing {
+            body.insert("picker_typing".into(), json!(t.as_str()));
+        }
         body.insert(
             "author_links".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
@@ -697,7 +726,21 @@ impl Api {
                 .and_then(|s| s.site_url.as_deref())
                 .map(|u| u.trim().trim_end_matches('/').to_string())
                 .unwrap_or_default(),
+            highlight_default: s
+                .and_then(|s| s.highlight_generated_default)
+                .unwrap_or(false),
+            picker_typing: s.and_then(|s| s.picker_typing),
         });
+    }
+
+    /// `picker_typing` as last read or written (`None` until settings were
+    /// read, or on a server before 0.29).
+    pub fn picker_typing(&self) -> Option<crate::model::PickerTyping> {
+        self.site
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|s| s.picker_typing)
     }
 
     // ---------- reads (404 → None) ----------

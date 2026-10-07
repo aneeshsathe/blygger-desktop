@@ -324,6 +324,12 @@ impl Backend for Disconnected {
     fn set_responses(&self, _: &LocalId, _: ResponsesMode) -> Result<bool> {
         not_connected()
     }
+    fn set_highlight(&self, _: &LocalId, _: HighlightMode) -> Result<bool> {
+        not_connected()
+    }
+    fn fetch_own_media(&self, _: &str) -> Result<(Vec<u8>, Option<String>)> {
+        not_connected()
+    }
     fn sync_now(&self) -> Result<()> {
         Ok(())
     }
@@ -462,6 +468,18 @@ impl Backend for SwitchBackend {
     }
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         self.cur().set_responses(id, mode)
+    }
+    fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        self.cur().set_highlight(id, mode)
+    }
+    fn pick_search(&self, q: &blyg_core::PickQuery) -> Vec<blyg_core::Pickable> {
+        self.cur().pick_search(q)
+    }
+    fn picker_typing(&self) -> PickerTyping {
+        self.cur().picker_typing()
+    }
+    fn fetch_own_media(&self, url: &str) -> Result<(Vec<u8>, Option<String>)> {
+        self.cur().fetch_own_media(url)
     }
     fn sync_now(&self) -> Result<()> {
         self.cur().sync_now()

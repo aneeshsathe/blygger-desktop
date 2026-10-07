@@ -201,6 +201,40 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE reading_refs ADD COLUMN partial INTEGER NOT NULL DEFAULT 0;
     "#,
+    // v10: the item's generated-text highlight (studio 0.27), like v8's
+    // responses: `highlight_mode` is its own choice ('default' | 'show' |
+    // 'hide', NULL = unreported), `highlight` the effective state.
+    r#"
+    ALTER TABLE items ADD COLUMN highlight_mode TEXT;
+    ALTER TABLE items ADD COLUMN highlight INTEGER NOT NULL DEFAULT 0;
+    "#,
+    // v11: full-text search over imported posts for the `[[` / `![[`
+    // picker (studio 0.29), a trigram index like `items_fts`. Keyed by the
+    // reading row's rowid and kept current by triggers, so the reading
+    // code never has to think about it. The text is the post's Markdown
+    // (an RSS row without any: its HTML).
+    r#"
+    CREATE VIRTUAL TABLE reading_fts USING fts5(body, tokenize='trigram');
+    INSERT INTO reading_fts(rowid, body)
+        SELECT rowid, COALESCE(NULLIF(json_extract(json, '$.content_md'), ''),
+                               json_extract(json, '$.content_html'), '')
+          FROM reading;
+    CREATE TRIGGER reading_fts_ai AFTER INSERT ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = new.rowid;
+        INSERT INTO reading_fts(rowid, body) VALUES (new.rowid,
+            COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                     json_extract(new.json, '$.content_html'), ''));
+    END;
+    CREATE TRIGGER reading_fts_ad AFTER DELETE ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = old.rowid;
+    END;
+    CREATE TRIGGER reading_fts_au AFTER UPDATE OF json ON reading BEGIN
+        DELETE FROM reading_fts WHERE rowid = old.rowid;
+        INSERT INTO reading_fts(rowid, body) VALUES (new.rowid,
+            COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                     json_extract(new.json, '$.content_html'), ''));
+    END;
+    "#,
 ];
 
 /// Returns whether any migration ran.

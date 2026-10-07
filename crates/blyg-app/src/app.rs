@@ -1030,11 +1030,12 @@ impl MainView {
                 }
             }
             InputEvent::Change if !self.loading_editor => {
-                // Typing `![[` at the start of a line opens the quote picker.
-                let typed = self.typed_transclusion(cx);
+                // Typing `![[` at the start of a line opens the quote picker,
+                // and `[[` the link picker.
+                let typed = self.typed_picker(cx);
                 self.after_edit(cx);
-                if let Some(typed) = typed {
-                    self.open_quote_picker_from_typing(typed, window, cx);
+                if let Some((kind, typed)) = typed {
+                    self.open_picker_from_typing(kind, typed, window, cx);
                 }
             }
             _ => {}
