@@ -1,8 +1,8 @@
 //! `[[id]]` plain internal links (protocol 0.3 §16.2): the Worker's
 //! `transclusion.ts` `resolveInternalLinks` with the preview's unresolved
-//! placeholder (`previewInternalLinks`), `applyInternalLinks` and
-//! `remapRanges`, including its patch 9 (a link Markdown renders inside
-//! `<code>` is literal text: never resolved, never an error).
+//! placeholder (`previewInternalLinks`) and `applyInternalLinks` (a link
+//! inside code is literal text: never resolved, never an error; studio#4,
+//! #13, #14).
 //!
 //! A link is inline and bakes nothing: no `transclusions[]` entry, no
 //! mention, no self or cycle check. It resolves in the same order as a
@@ -10,7 +10,7 @@
 //! anchor whose text is a short excerpt of the target in quotes.
 
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 use crate::linemap::Mapped;
@@ -19,8 +19,12 @@ use crate::transclusion::{Found, Resolution, Resolver, Unresolved, UnresolvedRea
 use crate::util::{escape_html, is_js_ws};
 use crate::{ID_ALPHABET, ItemKind};
 
-/// The token a link becomes before rendering (the Worker's patched U+0004).
-const SENTINEL: char = '\u{4}';
+/// The token a link becomes before rendering (the Worker's U+E003).
+const SENTINEL: char = '\u{E003}';
+/// `encodeURIComponent(SENTINEL)`.
+const ENCODED_SENTINEL: &str = "%EE%80%83";
+/// The token [`tokenize`] makes for the native block model.
+pub(crate) const NATIVE_SENTINEL: char = '\u{4}';
 /// Marks each candidate in the "is this code?" probe; never leaves it.
 const PROBE: char = '\u{5}';
 
@@ -111,9 +115,9 @@ pub(crate) fn tokenize(text: &str) -> (String, Vec<String>) {
             continue;
         }
         out.push_str(&text[last..a]);
-        out.push(SENTINEL);
+        out.push(NATIVE_SENTINEL);
         out.push_str(&ids.len().to_string());
-        out.push(SENTINEL);
+        out.push(NATIVE_SENTINEL);
         ids.push(text[a + 2..b - 2].to_string());
         last = b;
     }
@@ -125,7 +129,7 @@ pub(crate) fn tokenize(text: &str) -> (String, Vec<String>) {
 /// `Ok(text)` for the text between.
 pub(crate) fn split_tokens<'a>(s: &'a str, ids: &'a [String]) -> Vec<Result<&'a str, &'a str>> {
     let mut out = Vec::new();
-    let mut parts = s.split(SENTINEL);
+    let mut parts = s.split(NATIVE_SENTINEL);
     if let Some(first) = parts.next()
         && !first.is_empty()
     {
@@ -196,16 +200,6 @@ fn url_matches(text: &str, ms: &[(usize, usize)], html: bool) -> HashSet<usize> 
     in_url
 }
 
-/// A text's links swapped for tokens: what replaces them, and what failed.
-pub(crate) struct Links {
-    /// Token → the anchor (or unresolved marker) HTML.
-    replacements: Vec<(String, String)>,
-    pub resolved: usize,
-    pub unresolved: Vec<Unresolved>,
-    /// `(offset in the input, input length, output length)` per substitution.
-    edits: Vec<(usize, usize, usize)>,
-}
-
 /// `normalizedOrigin(siteOrigin)`: the base for links to your own items.
 fn our_origin(mount: &str) -> String {
     if mount.is_empty() || mount.ends_with('/') {
@@ -272,9 +266,9 @@ pub(crate) fn resolve(
     (doc, links)
 }
 
-/// `previewInternalLinks(…, {html: true})`: over a generated block's rendered
-/// HTML (patch 12: the preview resolves these as publish does). Every
-/// unresolved link reports the block's source `line`.
+/// `previewInternalLinks(…, html = true)`: over a generated block's rendered
+/// HTML (`resolveBlockLinks`, studio#14: the preview resolves these as
+/// publish does). Every unresolved link reports the block's source `line`.
 pub(crate) fn resolve_html(
     html: &str,
     line: usize,
@@ -285,7 +279,9 @@ pub(crate) fn resolve_html(
     substitute(html, true, &|_| line, resolver, mount, seq)
 }
 
-/// `resolveInternalLinks`: the new text (`None` when nothing matched).
+/// `resolveInternalLinks`: the new text (`None` when nothing matched). A
+/// link inside code is inert (`codeRanges`, or `htmlCodeRanges` for
+/// rendered HTML); every other one becomes a token, resolved or not.
 fn substitute(
     text: &str,
     html: bool,
@@ -294,12 +290,7 @@ fn substitute(
     mount: &str,
     seq: &mut usize,
 ) -> (Option<String>, Links) {
-    let mut links = Links {
-        replacements: Vec::new(),
-        resolved: 0,
-        unresolved: Vec::new(),
-        edits: Vec::new(),
-    };
+    let mut links = Links::default();
     let ms = if text.contains("[[") {
         matches(text)
     } else {
@@ -308,31 +299,35 @@ fn substitute(
     if ms.is_empty() {
         return (None, links);
     }
-    let in_code = code_matches(text, &ms, html);
-    let in_url = url_matches(text, &ms, html);
+    let code = if html {
+        markdown::html_code_ranges(text)
+    } else {
+        markdown::code_ranges(text)
+    };
     let origin = our_origin(mount);
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
-    for (i, &(a, b)) in ms.iter().enumerate() {
-        if in_code.contains(&i) || in_url.contains(&i) {
+    for &(a, b) in &ms {
+        if markdown::in_ranges(&code, a) {
             continue;
         }
         out.push_str(&text[last..a]);
         last = b;
-        let token = format!("{SENTINEL}{seq}{SENTINEL}");
+        let n = *seq;
         *seq += 1;
+        let literal = &text[a..b];
         let id = &text[a + 2..b - 2];
-        let html = match reason(resolver.resolve_link(id)) {
+        let (html, label) = match reason(resolver.resolve_link(id)) {
             Ok(f) => {
                 let href = match &f.origin {
                     Some(o) => item_url(o, f.kind, &f.id, f.page.as_deref()),
                     None => item_url(&origin, f.kind, &f.id, None),
                 };
                 links.resolved += 1;
-                format!(
-                    "<a href=\"{}\">{}</a>",
-                    escape_html(&href),
-                    escape_html(&anchor_text(&f))
+                let label = escape_html(&anchor_text(&f));
+                (
+                    format!("<a href=\"{}\">{label}</a>", escape_html(&href)),
+                    label,
                 )
             }
             Err(r) => {
@@ -342,148 +337,162 @@ fn substitute(
                 );
                 links.unresolved.push(Unresolved {
                     line: line_of(a),
-                    directive: text[a..b].to_string(),
+                    directive: literal.to_string(),
                     reason: r,
                 });
-                html
+                (html, escape_html(literal))
             }
         };
-        links.edits.push((a, b - a, token.len()));
-        out.push_str(&token);
-        links.replacements.push((token, html));
+        out.push(SENTINEL);
+        out.push_str(&n.to_string());
+        out.push(SENTINEL);
+        links.tokens.insert(
+            n,
+            Token {
+                html,
+                label,
+                literal: literal.to_string(),
+            },
+        );
     }
     out.push_str(&text[last..]);
     (Some(out), links)
 }
 
+/// What one token becomes: `html` where an anchor can go, `label` (the
+/// anchor's text, escaped) inside another link's text, `literal` (the
+/// author's `[[id]]`) inside a tag, a URL or code.
+struct Token {
+    html: String,
+    label: String,
+    literal: String,
+}
+
+/// A text's links swapped for tokens: what replaces them, and what failed.
+#[derive(Default)]
+pub(crate) struct Links {
+    tokens: HashMap<usize, Token>,
+    pub resolved: usize,
+    pub unresolved: Vec<Unresolved>,
+}
+
+/// `encodeURI` of a `[[id]]` literal (the id is ASCII letters and digits).
+fn encode_literal(literal: &str) -> String {
+    literal.replace('[', "%5B").replace(']', "%5D")
+}
+
 impl Links {
-    /// `remapRanges`: carry `[start, end)` offsets in the input over to `doc`.
-    pub fn remap(&self, ranges: &[(usize, usize)]) -> Vec<(usize, usize)> {
-        if self.edits.is_empty() {
-            return ranges.to_vec();
-        }
-        let map = |pos: usize| -> usize {
-            let mut delta: isize = 0;
-            for &(at, from, to) in &self.edits {
-                if at >= pos {
-                    break;
-                }
-                let (from, to) = (from as isize, to as isize);
-                let into = (pos - at) as isize;
-                delta += if at as isize + from <= pos as isize {
-                    to - from
-                } else {
-                    into.min(to) - into
-                };
-            }
-            (pos as isize + delta) as usize
-        };
-        ranges.iter().map(|&(a, b)| (map(a), map(b))).collect()
+    fn token(&self, seq: &str) -> Option<&Token> {
+        seq.parse().ok().and_then(|n: usize| self.tokens.get(&n))
     }
 
-    /// `applyInternalLinks`: splice the anchors into rendered HTML. A token
-    /// inside a tag (an image's alt) becomes the anchor's text, not markup.
+    /// Replace each `SENTINEL n SENTINEL` (or, with `encoded`, its
+    /// percent-encoded form) in `s` with `f(token)`; unknown ones stay.
+    fn replace_tokens(&self, s: &str, open: &str, f: &dyn Fn(&Token) -> String) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(at) = rest.find(open) {
+            let after = &rest[at + open.len()..];
+            let digits = after.len() - after.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+            let (seq, tail) = after.split_at(digits);
+            if digits > 0 && tail.starts_with(open) {
+                let end = rest.len() - tail.len() + open.len();
+                match self.token(seq) {
+                    Some(t) => {
+                        out.push_str(&rest[..at]);
+                        out.push_str(&f(t));
+                    }
+                    None => out.push_str(&rest[..end]),
+                }
+                rest = &rest[end..];
+            } else {
+                out.push_str(&rest[..at + open.len()]);
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// `applyInternalLinks`: splice the anchors into rendered HTML, but only
+    /// where an anchor is valid (studio#13). A token percent-encoded into an
+    /// attribute becomes the author's literal, encoded; in a tag or in
+    /// `<code>` it is the literal; in another link's text it is the anchor's
+    /// label (or, in an autolink whose URL carries it, the literal).
     pub fn apply(&self, html: String) -> String {
-        if self.replacements.is_empty() || !html.contains(SENTINEL) {
+        if self.tokens.is_empty() {
             return html;
         }
-        let mut out = String::with_capacity(html.len());
-        let mut rest = html.as_str();
+        let out = self.replace_tokens(&html, ENCODED_SENTINEL, &|t| encode_literal(&t.literal));
+        if !out.contains(SENTINEL) {
+            return out;
+        }
+        let sentinel = SENTINEL.to_string();
+        let mut result = String::with_capacity(out.len() + 64);
+        let (mut in_anchor, mut in_code) = (0usize, 0usize);
+        let mut anchor_tag = String::new();
+        let lower_starts =
+            |part: &str, p: &str| part.len() >= p.len() && part[..p.len()].eq_ignore_ascii_case(p);
+        let opens = |part: &str, name: &str| {
+            lower_starts(part, name)
+                && part[name.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c == '>' || is_js_ws(c))
+        };
+        let mut handle = |part: &str, is_tag: bool, result: &mut String| {
+            if !part.contains(SENTINEL) {
+                if is_tag {
+                    if opens(part, "<a") {
+                        in_anchor += 1;
+                        anchor_tag = part.to_string();
+                    } else if lower_starts(part, "</a>") {
+                        in_anchor = in_anchor.saturating_sub(1);
+                    } else if opens(part, "<code") {
+                        in_code += 1;
+                    } else if lower_starts(part, "</code>") {
+                        in_code = in_code.saturating_sub(1);
+                    }
+                }
+                result.push_str(part);
+                return;
+            }
+            let replaced = self.replace_tokens(part, &sentinel, &|t| {
+                if is_tag || in_code > 0 {
+                    escape_html(&t.literal)
+                } else if in_anchor > 0 {
+                    if anchor_tag.contains(&encode_literal(&t.literal)) {
+                        escape_html(&t.literal)
+                    } else {
+                        t.label.clone()
+                    }
+                } else {
+                    t.html.clone()
+                }
+            });
+            if is_tag && opens(part, "<a") {
+                in_anchor += 1;
+                anchor_tag = replaced.clone();
+            }
+            result.push_str(&replaced);
+        };
+        // `/(<[^>]*>)/`: tags and the text between them.
+        let mut rest = out.as_str();
         while let Some(lt) = rest.find('<') {
             let Some(gt) = rest[lt..].find('>').map(|g| g + lt) else {
                 break;
             };
-            out.push_str(&rest[..lt]);
-            let tag = &rest[lt..=gt];
-            if tag.contains(SENTINEL) {
-                let mut t = tag.to_string();
-                for (token, anchor) in &self.replacements {
-                    let text = strip_tags(anchor).replace('"', "&quot;");
-                    t = t.replace(token.as_str(), &text);
-                }
-                t.retain(|c| c != SENTINEL);
-                out.push_str(&t);
-            } else {
-                out.push_str(tag);
+            if lt > 0 {
+                handle(&rest[..lt], false, &mut result);
             }
+            handle(&rest[lt..=gt], true, &mut result);
             rest = &rest[gt + 1..];
         }
-        out.push_str(rest);
-        // Patch 12: a token inside an `<a>`'s content (`[see [[id]]](url)`)
-        // must not become a second `<a>`: it keeps the replacement minus its
-        // own `<a>`/`</a>` (the unresolved `<span>` stays as it is).
-        if out.contains(SENTINEL) {
-            out = self.unnest(&out);
+        if !rest.is_empty() {
+            handle(rest, rest.starts_with('<'), &mut result);
         }
-        for (token, anchor) in &self.replacements {
-            out = out.replace(token.as_str(), anchor);
-        }
-        out
+        result
     }
-
-    /// `/<[^>]*>|[^<]+/g` with `<a>` depth: tokens in link text become the
-    /// anchor's content only.
-    fn unnest(&self, html: &str) -> String {
-        static OPEN: OnceLock<Regex> = OnceLock::new();
-        static CLOSE: OnceLock<Regex> = OnceLock::new();
-        static A_TAG: OnceLock<Regex> = OnceLock::new();
-        let open = OPEN.get_or_init(|| Regex::new(r"(?i)^<a\b").expect("open re"));
-        let close = CLOSE.get_or_init(|| Regex::new(r"(?i)^</a\s*>").expect("close re"));
-        let a_tag = A_TAG.get_or_init(|| Regex::new(r"(?i)</?a\b[^>]*>").expect("a re"));
-        let mut out = String::with_capacity(html.len());
-        let mut depth = 0usize;
-        let mut rest = html;
-        while !rest.is_empty() {
-            if rest.starts_with('<') {
-                match rest.find('>') {
-                    Some(gt) => {
-                        let tag = &rest[..=gt];
-                        if open.is_match(tag) {
-                            depth += 1;
-                        } else if close.is_match(tag) {
-                            depth = depth.saturating_sub(1);
-                        }
-                        out.push_str(tag);
-                        rest = &rest[gt + 1..];
-                    }
-                    // A `<` that opens no tag matches neither alternative.
-                    None => {
-                        out.push('<');
-                        rest = &rest[1..];
-                    }
-                }
-                continue;
-            }
-            let end = rest.find('<').unwrap_or(rest.len());
-            let part = &rest[..end];
-            if depth > 0 && part.contains(SENTINEL) {
-                let mut t = part.to_string();
-                for (token, anchor) in &self.replacements {
-                    t = t.replace(token.as_str(), &a_tag.replace_all(anchor, ""));
-                }
-                out.push_str(&t);
-            } else {
-                out.push_str(part);
-            }
-            rest = &rest[end..];
-        }
-        out
-    }
-}
-
-/// `/<[^>]*>/g` → "".
-fn strip_tags(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut rest = s;
-    while let Some(lt) = rest.find('<') {
-        let Some(gt) = rest[lt..].find('>').map(|g| g + lt) else {
-            break;
-        };
-        out.push_str(&rest[..lt]);
-        rest = &rest[gt + 1..];
-    }
-    out.push_str(rest);
-    out
 }
 
 /// markdown.ts `decodeEntities`, in its order (`&amp;` last).
@@ -658,14 +667,12 @@ mod tests {
     }
 
     #[test]
-    fn remap_shifts_offsets_past_tokens() {
-        let l = Links {
-            replacements: Vec::new(),
-            resolved: 0,
-            unresolved: Vec::new(),
-            edits: vec![(2, 30, 3)],
-        };
-        assert_eq!(l.remap(&[(0, 1), (40, 50)]), vec![(0, 1), (13, 23)]);
+    fn code_ranges_make_links_inert() {
+        let t = format!("`[[{A}]]` and [[{A}]]");
+        let code = markdown::code_ranges(&t);
+        let m = matches(&t);
+        assert!(markdown::in_ranges(&code, m[0].0));
+        assert!(!markdown::in_ranges(&code, m[1].0));
     }
 
     // Ported from studio v0.8.3 test/selection.test.ts: the selection

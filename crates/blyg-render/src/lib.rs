@@ -23,6 +23,7 @@ mod links;
 mod markdown;
 mod native;
 mod punycode;
+mod sanitize;
 mod shell;
 mod tk;
 mod transclusion;
@@ -188,7 +189,6 @@ pub fn render_preview(
     stats.links = link_docs.iter().map(|l| l.resolved).sum();
     let link_errors = link_docs.iter().flat_map(|l| l.unresolved.iter().cloned());
     let splice = |html: String| link_docs.iter().fold(html, |h, l| l.apply(h));
-    let links = &link_docs[0];
     let doc = &link_doc;
     let (html, block_lines) = match kind {
         Kind::Fragment => {
@@ -200,20 +200,16 @@ pub fn render_preview(
             (html, md_stats.block_lines)
         }
         Kind::Thread => {
-            let w = transclusion::walk(
-                doc,
-                &links.remap(&annotated.inert),
-                resolver,
-                opts.self_id.as_deref(),
-                opts.data_line,
-            );
+            let w = transclusion::walk(doc, resolver, opts.self_id.as_deref(), opts.data_line);
             stats.images += w.md.images;
             stats.videos += w.md.videos;
             stats.quotes = w.quotes.len();
             stats.unresolved = w.unresolved;
             stats.unresolved.extend(link_errors);
             stats.transclusions = w.quotes.iter().map(|(q, _)| q.clone()).collect();
-            let html = tk::apply_wrappers(w.html, &blocks, annotated.has_inline);
+            // previewTransclusions sanitizes the walked HTML, markers and all.
+            let html = sanitize::sanitize_html(&w.html);
+            let html = tk::apply_wrappers(html, &blocks, annotated.has_inline);
             let mut html = splice(html);
             if opts.provenance {
                 let lines: Vec<String> = w

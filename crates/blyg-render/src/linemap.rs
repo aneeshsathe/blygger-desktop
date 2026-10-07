@@ -84,11 +84,6 @@ impl<'a> MapBuilder<'a> {
         self.out.push_str(piece);
     }
 
-    /// Length in bytes of the text built so far.
-    pub fn len(&self) -> usize {
-        self.out.len()
-    }
-
     pub fn finish(mut self) -> Mapped {
         if self.lines.is_empty() {
             self.lines
