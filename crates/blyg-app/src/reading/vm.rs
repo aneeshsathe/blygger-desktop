@@ -1116,6 +1116,7 @@ mod tests {
             title: "Rue".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         };
         let mut r = ReadingItem {
             subscription_id: "s".into(),

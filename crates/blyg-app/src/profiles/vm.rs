@@ -407,6 +407,7 @@ mod tests {
             title: id.into(),
             status: "active".into(),
             in_blogroll: blogroll,
+            title_follows_source: true,
         }
     }
 

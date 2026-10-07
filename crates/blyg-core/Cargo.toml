@@ -24,3 +24,5 @@ keyring = { version = "3.6", features = ["apple-native"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
+# The stub e2e builds its quotes with the stub editor's own functions.
+blyg-render = { path = "../blyg-render" }

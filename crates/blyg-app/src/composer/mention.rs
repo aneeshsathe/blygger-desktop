@@ -529,6 +529,7 @@ mod tests {
             title: title.into(),
             status: "active".into(),
             in_blogroll: blogroll,
+            title_follows_source: true,
         }
     }
 

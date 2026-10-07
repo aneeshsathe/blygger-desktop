@@ -995,6 +995,7 @@ impl Backend for FakeBackend {
             title: "Shoreline Notes".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         });
         v
     }
@@ -1285,6 +1286,7 @@ impl Backend for FakeBackend {
                     .to_string(),
                 status: "active".into(),
                 in_blogroll: false,
+                title_follows_source: true,
             };
             st.rd.subs.push(sub.clone());
             sub

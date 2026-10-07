@@ -1427,6 +1427,15 @@ fn reading_item(b: &LiveBackend, rid: &str) -> Option<ReadingItem> {
     b.reading().into_iter().find(|r| r.remote_id == rid)
 }
 
+/// Pull until these posts are held: a new subscription's backfill runs
+/// after the server answers, so the first pull can race it.
+fn sync_until_held(b: &LiveBackend, rids: &[&str]) {
+    wait_until("the backfill", Duration::from_secs(20), || {
+        b.sync_now().unwrap();
+        rids.iter().all(|r| reading_item(b, r).is_some())
+    });
+}
+
 /// Poll the subscription the way the server does on its own: the cron
 /// handler first. A subscription polled less than ~30 min ago isn't due, so
 /// fall back to the explicit resync the web studio offers. Returns whether
@@ -1471,7 +1480,7 @@ fn subscriptions_reading_and_pinned_versions() {
     let sub = me.subscribe(&src_url, Some("A neighbour")).unwrap();
     assert_eq!(sub.kind, SubscriptionKind::Blyg);
     assert!(me.subscriptions().iter().any(|s| s.id == sub.id));
-    me.sync_now().unwrap();
+    sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("the post is in the reading list");
     assert_eq!(r.subscription_title, "A neighbour");
     assert_eq!(r.version, 1);
@@ -1588,7 +1597,7 @@ fn reading_items_carry_the_published_html() {
     source.pin(&tid, 1).unwrap();
 
     let sub = me.subscribe(&src_url, Some("html")).unwrap();
-    me.sync_now().unwrap();
+    sync_until_held(&me, &[&rid]);
     let r = reading_item(&me, &rid).expect("the thread is in the reading list");
     eprintln!("reading content_html = {}", r.content_html);
     let html = &r.content_html;
@@ -1671,7 +1680,7 @@ fn read_state_syncs_between_two_macs() {
     poll(&mac2, &sub.id, &rid, 2);
     mac2.mark_read(&sub.id, &rid).unwrap();
     mac2.sync_now().unwrap();
-    api.put_read(&sub.id, &rid, 1).unwrap();
+    api.put_read(&sub.id, &rid, 1, None).unwrap();
     mac1.sync_now().unwrap();
     assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
     let page = api.reading(500, None).unwrap().unwrap();
@@ -2382,4 +2391,393 @@ fn a_token_without_a_scope_says_which() {
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
     assert_eq!(server_item(&sid)["content_md"], text);
+}
+
+// ------------------------------------------------- studio 0.30–0.33 reading
+
+/// The source blyg's own name for itself, as a subscribe preview gives it.
+fn source_name(me: &LiveBackend, src_url: &str) -> String {
+    me.preview_subscription(src_url).unwrap().title
+}
+
+/// Unsubscribes when dropped, so a failing test doesn't leave the next
+/// one "already subscribed".
+struct Unsub<'a>(&'a LiveBackend, String);
+
+impl Drop for Unsub<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.unsubscribe(&self.1);
+    }
+}
+
+/// The baked quotes in a published page (`blockquote.blyg-transclusion`).
+fn baked_quotes(page: &str) -> Vec<String> {
+    page.split("<blockquote class=\"blyg-transclusion")
+        .skip(1)
+        .map(|q| q.split("</blockquote>").next().unwrap_or("").to_string())
+        .collect()
+}
+
+fn sub_of(b: &LiveBackend, id: &str) -> Subscription {
+    b.subscriptions()
+        .into_iter()
+        .find(|s| s.id == id)
+        .expect("the subscription is held")
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn subscription_rename_and_revert_to_source() {
+    // Studio 0.30: a name of your own stops the source renaming it;
+    // `title: null` hands the name back, refreshed while polling.
+    e2e();
+    let src_url = url_b();
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+    let own = source_name(&me, &src_url);
+    let sub = me.subscribe(&src_url, None).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    me.sync_now().unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert!(
+        s.title_follows_source,
+        "subscribed under its own name: {s:?}"
+    );
+    assert_eq!(s.title, own);
+
+    me.rename_subscription(&sub.id, Some("  My neighbour "))
+        .unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert_eq!(s.title, "My neighbour");
+    assert!(!s.title_follows_source);
+    // The server holds it: a fresh pull says the same.
+    me.sync_now().unwrap();
+    let s = sub_of(&me, &sub.id);
+    assert_eq!(
+        (s.title.as_str(), s.title_follows_source),
+        ("My neighbour", false)
+    );
+    let (st, v) = owner(
+        "GET",
+        &e2e().url,
+        "/api/subscriptions?offset=0&limit=100",
+        None,
+    );
+    assert_eq!(st, 200);
+    let row = v["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == sub.id.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(row["title"], "My neighbour");
+    assert_eq!(row["title_follows_source"], false);
+    assert!(matches!(
+        me.rename_subscription(&sub.id, Some("   ")),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+
+    // Back to the source's name: it follows the source again, and a poll
+    // brings the name back.
+    me.rename_subscription(&sub.id, None).unwrap();
+    assert!(sub_of(&me, &sub.id).title_follows_source);
+    // The next poll re-reads the source's manifest (Check all feeds now).
+    me.poll_subscriptions().unwrap();
+    wait_until("the source's name", Duration::from_secs(20), || {
+        me.sync_now().unwrap();
+        sub_of(&me, &sub.id).title == own
+    });
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn check_all_feeds_and_check_one_now() {
+    // Studio 0.30: POST /subscriptions/poll polls every feed in the
+    // background ("Check all feeds now"); /resync reconciles one blyg at once.
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("poll");
+    let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
+    let sub = me.subscribe(&src_url, Some("Polled")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    assert_eq!(reading_item(&me, &rid).unwrap().version, 1);
+
+    // Check all feeds now: the server polls every feed in the background
+    // and says how many. (What a poll finds is the source's business: a
+    // source answering 304 brings nothing new until its index is synced.)
+    let polled_at = || -> Value {
+        let (st, v) = owner(
+            "GET",
+            &e2e().url,
+            "/api/subscriptions?offset=0&limit=100",
+            None,
+        );
+        assert_eq!(st, 200);
+        v["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["id"] == sub.id.as_str())
+            .map(|r| r["last_poll_at"].clone())
+            .unwrap_or(Value::Null)
+    };
+    let before = polled_at();
+    std::thread::sleep(Duration::from_millis(1100));
+    let n = me.poll_subscriptions().unwrap();
+    assert!(n >= 1, "polling {n} subscriptions");
+    wait_until("the background poll", Duration::from_secs(20), || {
+        polled_at() != before
+    });
+
+    // Check now: the blyg's index is reconciled at once, so a new post and
+    // an edit both arrive with the pull that follows.
+    let (_, rid2) = published(&source, Kind::Fragment, &format!("{t} another"), None);
+    source.save(&sid, &format!("{t} v2")).unwrap();
+    source.publish(&sid, None).unwrap();
+    me.check_subscription(&sub.id).unwrap();
+    me.sync_now().unwrap();
+    let r = reading_item(&me, &rid).unwrap();
+    assert_eq!(r.version, 2);
+    assert_eq!(r.content_md, format!("{t} v2"));
+    assert!(reading_item(&me, &rid2).is_some(), "the new post too");
+
+    // A paused subscription isn't polled.
+    me.pause_subscription(&sub.id, true).unwrap();
+    let (st, v) = owner("POST", &e2e().url, "/api/subscriptions/poll", None);
+    assert_eq!(st, 200);
+    assert!(v["polling"].as_u64().unwrap() < u64::from(n), "{v}");
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_stub_made_in_the_app_publishes_with_the_right_quote() {
+    // Studio 0.31: Reply opens a stub quoting the whole post; a passage
+    // chosen in the stub editor goes under the directive as > lines, and
+    // publish bakes exactly that passage.
+    use blyg_render::stub_quote::{
+        StubQuoteForm, add_stub_quote, stub_body, stub_quote_form, with_stub_quote,
+    };
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("stub");
+    let first = format!("{t} opening words here.");
+    let second = "The passage worth answering, in the middle.";
+    let third = "A closing paragraph nobody quotes.";
+    let (_, rid) = published(
+        &source,
+        Kind::Thread,
+        &format!("{first}\n\n{second}\n\n{third}"),
+        None,
+    );
+    let sub = me.subscribe(&src_url, Some("Stubbed")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let it = reading_item(&me, &rid).expect("the post is held");
+    let of = RemoteRef {
+        origin: it.origin.clone(),
+        id: rid.clone(),
+        version: it.version,
+    };
+
+    // Whole post, as Reply opens it (the server's own prefill since 0.31).
+    let body = stub_body(&rid);
+    assert_eq!(body, format!("![[{rid}]]\n\n"));
+    let whole = me
+        .create_stub(&of, &format!("{body}A reply below the quote."))
+        .unwrap();
+    me.sync_now().unwrap();
+    let out = me
+        .publish(&whole, None)
+        .expect("publish the whole-post stub");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    let q = baked_quotes(&page);
+    assert_eq!(q.len(), 1, "{page}");
+    assert!(
+        q[0].contains("opening words here.") && q[0].contains(third),
+        "the whole post quoted: {}",
+        q[0]
+    );
+    let wire = server_item(&sid_of(&me, &whole));
+    assert_eq!(wire["stub_of"]["id"], rid.as_str(), "{wire}");
+
+    // A passage, chosen the way the stub editor does it (a selection of
+    // the post's text), then a second passage after the reply.
+    let text = with_stub_quote(
+        &format!("{body}My answer."),
+        &rid,
+        Some(&format!("  {second}\n")),
+    );
+    assert_eq!(stub_quote_form(&text, &rid), Some(StubQuoteForm::Passage));
+    assert_eq!(text, format!("![[{rid}]]\n> {second}\n\nMy answer."));
+    let text = add_stub_quote(&text, &rid, third, text.len());
+    let partial = me.create_stub(&of, &text).unwrap();
+    me.sync_now().unwrap();
+    let out = me
+        .publish(&partial, None)
+        .expect("publish the passage stub");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    let q = baked_quotes(&page);
+    assert_eq!(q.len(), 2, "two passages: {page}");
+    assert!(
+        q[0].contains("blyg-partial") && q[0].contains(second),
+        "{}",
+        q[0]
+    );
+    assert!(q[1].contains(third) && !q[1].contains(second), "{}", q[1]);
+    assert!(
+        q.iter().all(|x| !x.contains("opening words here.")),
+        "only the passages"
+    );
+    let wire = server_item(&sid_of(&me, &partial));
+    assert_eq!(wire["stub_of"]["id"], rid.as_str());
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+/// Upstream's reading page, raw: the server's read state of one row.
+fn server_read_version(rid: &str) -> Option<Value> {
+    let (st, v) = owner("GET", &e2e().url, "/api/reading?offset=0&limit=50", None);
+    assert_eq!(st, 200, "{v}");
+    v["items"].as_array().unwrap().iter().find_map(|e| {
+        (e["imported"]["remoteId"] == rid).then(|| e["imported"]["readVersion"].clone())
+    })
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn read_and_unread_sync_through_upstreams_read_state() {
+    // Upstream's read state (studio PR 1: read; PR 2: unread, with a
+    // tombstone against stale reads). Without it, unread stays on this Mac.
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let Some(page) = api.stock_reading(0).unwrap() else {
+        eprintln!("SKIP: no GET /api/reading");
+        return;
+    };
+    if !e.stock {
+        eprintln!("SKIP: the fork's reading rows are tested by read_state_syncs_between_two_macs");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let mac1 = manual(d1.path());
+    let mac2 = manual(d2.path());
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
+    let t = tag("unread");
+    let (_, a) = published(&source, Kind::Fragment, &format!("{t} A"), None);
+    let (_, b) = published(&source, Kind::Fragment, &format!("{t} B"), None);
+    let sub = mac1.subscribe(&src_url, Some("Unread sync")).unwrap();
+    let _unsub = Unsub(&mac1, sub.id.clone());
+    sync_until_held(&mac1, &[&a, &b]);
+    sync_until_held(&mac2, &[&a, &b]);
+    let both = vec![(sub.id.clone(), a.clone()), (sub.id.clone(), b.clone())];
+
+    if !page.read_sync() {
+        // No read state on the server (studio 0.32.1): all of it is local,
+        // and a pull never brings a read back.
+        eprintln!("this server keeps no read state: checking the local-only path");
+        assert_eq!(mac1.set_read(&both, true).unwrap(), 2);
+        assert_eq!(mac1.set_read(&both[..1], false).unwrap(), 1);
+        mac1.sync_now().unwrap();
+        mac1.sync_now().unwrap();
+        assert!(reading_item(&mac1, &a).unwrap().is_unread());
+        assert!(!reading_item(&mac1, &b).unwrap().is_unread());
+        assert!(
+            reading_item(&mac2, &b).unwrap().is_unread(),
+            "nothing synced"
+        );
+        mac1.unsubscribe(&sub.id).unwrap();
+        return;
+    }
+    assert!(mac1.read_state_sync(), "read_state advertised");
+    // A selection marked read on one Mac: one batch, read on the other.
+    assert_eq!(mac1.set_read(&both, true).unwrap(), 2);
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    assert_eq!(server_read_version(&b), Some(json!(1)));
+    mac2.sync_now().unwrap();
+    assert!(!reading_item(&mac2, &a).unwrap().is_unread());
+    assert!(!reading_item(&mac2, &b).unwrap().is_unread());
+
+    if !page.read_clear() {
+        // PR 1 only: unread is this Mac's; the server's read doesn't come back.
+        eprintln!("read_state_clear not advertised: unread stays local");
+        mac2.set_read(&both[..1], false).unwrap();
+        mac2.sync_now().unwrap();
+        mac2.sync_now().unwrap();
+        assert!(reading_item(&mac2, &a).unwrap().is_unread());
+        assert_eq!(server_read_version(&a), Some(json!(1)));
+        mac1.sync_now().unwrap();
+        assert!(!reading_item(&mac1, &a).unwrap().is_unread());
+        mac1.unsubscribe(&sub.id).unwrap();
+        return;
+    }
+    // PR 2: unread on the second Mac clears it on the server, and the
+    // first Mac takes the clear (no read pushed back over it).
+    mac2.set_read(&both[..1], false).unwrap();
+    mac2.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(Value::Null));
+    mac1.sync_now().unwrap();
+    assert!(
+        reading_item(&mac1, &a).unwrap().is_unread(),
+        "cleared on the other Mac"
+    );
+    mac1.sync_now().unwrap();
+    assert_eq!(
+        server_read_version(&a),
+        Some(Value::Null),
+        "and it stays cleared"
+    );
+    assert!(!reading_item(&mac1, &b).unwrap().is_unread());
+
+    // A read made before a later unread elsewhere loses (read_at), even
+    // though it reaches the server after it.
+    mac1.set_read(&both[1..], false).unwrap();
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&b), Some(Value::Null));
+    mac1.set_read(&both[1..], true).unwrap(); // queued, not sent yet
+    std::thread::sleep(Duration::from_millis(30));
+    // Another device clears it after that read happened.
+    let (st, v) = owner(
+        "DELETE",
+        &e.url,
+        &format!("/api/reading/{}/{b}/read", sub.id),
+        None,
+    );
+    assert_eq!((st, v["read_version"].clone()), (200, Value::Null), "{v}");
+    mac1.sync_now().unwrap(); // flushes the older read: refused
+    assert_eq!(
+        server_read_version(&b),
+        Some(Value::Null),
+        "the stale read was ignored"
+    );
+    assert!(
+        reading_item(&mac1, &b).unwrap().is_unread(),
+        "and taken back here"
+    );
+
+    // Read again after the clear: it counts, on both Macs.
+    mac1.set_read(&both, true).unwrap();
+    mac1.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    assert_eq!(server_read_version(&b), Some(json!(1)));
+    mac2.sync_now().unwrap();
+    assert!(!reading_item(&mac2, &a).unwrap().is_unread());
+    assert!(!reading_item(&mac2, &b).unwrap().is_unread());
+    mac1.unsubscribe(&sub.id).unwrap();
 }

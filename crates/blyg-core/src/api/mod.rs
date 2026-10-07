@@ -637,18 +637,22 @@ impl Api {
             .id)
     }
 
+    /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
+    /// `Some(Some(t))` sets a name of your own, `Some(None)` sends
+    /// `title: null`, handing the name back to the source (studio 0.30),
+    /// which refreshes it while polling.
     pub fn update_subscription(
         &self,
         id: &str,
         in_blogroll: Option<bool>,
-        title: Option<&str>,
+        title: Option<Option<&str>>,
     ) -> Result<()> {
         let mut body = json!({});
         if let Some(b) = in_blogroll {
             body["in_blogroll"] = json!(b);
         }
         if let Some(t) = title {
-            body["title"] = json!(t);
+            body["title"] = t.map_or(Value::Null, |t| json!(t));
         }
         self.call(
             "PATCH",
@@ -671,6 +675,14 @@ impl Api {
             Some(json!({ "paused": paused })),
         )
         .map(|_| ())
+    }
+
+    /// `POST /api/subscriptions/poll` (studio 0.30): the server polls every
+    /// subscription that isn't paused, in the background, and answers at
+    /// once with how many.
+    pub fn poll_subscriptions(&self) -> Result<u32> {
+        let v = self.call("POST", "/api/subscriptions/poll", None)?;
+        Ok(v.get("polling").and_then(Value::as_u64).unwrap_or(0) as u32)
     }
 
     /// `{ok, changed}` (`changed` counts items); blyg subscriptions only
@@ -880,13 +892,50 @@ impl Api {
 
     // ---------- extension 5: read state (404 = not deployed) ----------
 
-    /// `PUT /api/reading/:sub/:remoteId/read {version}`. The server keeps
-    /// `max(stored, version)`, so a replay is harmless.
-    pub fn put_read(&self, sub: &str, remote_id: &str, version: u32) -> Result<()> {
-        self.call(
+    /// `PUT /api/reading/:sub/:remoteId/read {version, read_at?}`. The server
+    /// keeps `max(stored, version)`, so a replay is harmless. `read_at` only
+    /// for a server that advertises `read_state_clear`: a read older than
+    /// its latest "mark unread" is then ignored (`stored: false`).
+    pub fn put_read(
+        &self,
+        sub: &str,
+        remote_id: &str,
+        version: u32,
+        read_at: Option<&str>,
+    ) -> Result<ReadAck> {
+        let mut body = json!({ "version": version });
+        if let Some(at) = read_at {
+            body["read_at"] = json!(at);
+        }
+        let v = self.call(
             "PUT",
             &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
-            Some(json!({ "version": version })),
+            Some(body),
+        )?;
+        Ok(serde_json::from_value(v).unwrap_or(ReadAck {
+            stored: true,
+            read_version: None,
+        }))
+    }
+
+    /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread
+    /// (`read_state_clear`). Idempotent; 200 for a row the server doesn't hold.
+    pub fn delete_read(&self, sub: &str, remote_id: &str) -> Result<()> {
+        self.call(
+            "DELETE",
+            &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
+            None,
+        )
+        .map(|_| ())
+    }
+
+    /// `POST /api/reading/unread {items: [{sub, remote_id}]}`, at most
+    /// `READ_BATCH_MAX` entries, all or nothing.
+    pub fn post_unreads(&self, items: &[UnreadMark]) -> Result<()> {
+        self.call(
+            "POST",
+            "/api/reading/unread",
+            Some(json!({ "items": items })),
         )
         .map(|_| ())
     }

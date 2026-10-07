@@ -235,6 +235,21 @@ const MIGRATIONS: &[&str] = &[
                      json_extract(new.json, '$.content_html'), ''));
     END;
     "#,
+    // v12 --- read/unread --- (store/read_sync.rs)
+    // `read_at`: when the row was marked read here (unix ms), until the
+    //   server confirms it (then NULL). Sent as `read_at` to a server that
+    //   can clear read state, so an old read can't undo a newer "unread".
+    //   Reads from before this migration have no known time: 0.
+    // `read_floor`: the row was marked unread here; server read versions at
+    //   or below it are stale and don't re-mark it read.
+    // Subscriptions gain `title_follows_source` (studio 0.30): unknown
+    //   until the next pull, so false (the name stays as it is).
+    r#"
+    ALTER TABLE reading ADD COLUMN read_at INTEGER;
+    ALTER TABLE reading ADD COLUMN read_floor INTEGER;
+    UPDATE reading SET read_at = 0 WHERE read_version IS NOT NULL;
+    UPDATE subscriptions SET json = json_insert(json, '$.title_follows_source', json('false'));
+    "#,
 ];
 
 /// Returns whether any migration ran.

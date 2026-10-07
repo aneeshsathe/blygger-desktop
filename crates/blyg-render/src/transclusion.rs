@@ -197,7 +197,7 @@ pub struct TextQuoteSelector {
 pub const SELECTOR_CONTEXT: usize = 32;
 
 /// transclusion.ts `QUOTE_LINE` (`/^\s*>/`).
-fn is_quote_line(line: &str) -> bool {
+pub(crate) fn is_quote_line(line: &str) -> bool {
     line.trim_start_matches(is_js_ws).starts_with('>')
 }
 
@@ -206,7 +206,7 @@ fn is_quote_line(line: &str) -> bool {
 /// at most one following whitespace character, and the index to resume at.
 /// The run ends at the first line that is not a quote line; a line empty
 /// after its marker is a paragraph break inside the selection.
-fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
+pub(crate) fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
     let mut j = i + 1;
     let mut run: Vec<&str> = Vec::new();
     while j < lines.len() && is_quote_line(lines[j]) {
@@ -278,6 +278,14 @@ fn directive_re() -> &'static Regex {
     })
 }
 
+/// The id of an own-line `![[id]]` directive (`DIRECTIVE_LINE`), if `line` is one.
+pub(crate) fn directive_id(line: &str) -> Option<&str> {
+    directive_re()
+        .captures(line)
+        .and_then(|c| c.get(1))
+        .map(|m| m.as_str())
+}
+
 fn reserved_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -309,7 +317,7 @@ fn data_line(on: bool, line: usize) -> String {
 /// line whose start lies in `codeRanges` (a code block, or a code span
 /// running across lines). A directive on its own line in TK output is,
 /// provisionally upstream, a real quote (v0.4-plan §9.2).
-fn literal_lines(text: &str, lines: &[&str]) -> Vec<bool> {
+pub(crate) fn literal_lines(text: &str, lines: &[&str]) -> Vec<bool> {
     // Only a line holding `![[` could be a directive; skip the extra parse.
     if !text.contains("![[") {
         return vec![false; lines.len()];
