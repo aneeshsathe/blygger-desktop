@@ -189,5 +189,16 @@
   {"name": "tr_partial_remote", "kind": "thread", "md": "![[02abcdefghjkmnpqrstvwxyz01]]\n> thinking with a pencil"},
   {"name": "tr_partial_unknown_consumes", "kind": "thread", "md": "![[03zzzzzzzzzzzzzzzzzzzzzzzz]]\n> anything at all\nAfter."},
   {"name": "tr_partial_then_whole", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> Small tools\n\n![[02abcdefghjkmnpqrstvwxyz01]]"},
-  {"name": "tr_partial_lazy_marker", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n>used daily\n  > beat big tools"}
+  {"name": "tr_partial_lazy_marker", "kind": "thread", "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n>used daily\n  > beat big tools"},
+  {"name": "tk_impyrt_inline", "kind": "fragment", "md": "Pasted: [TK]impyrt=some *pasted* text, a = b[/TK] end."},
+  {"name": "tk_impyrt_model_block", "kind": "fragment", "md": "Before.\n\n[TK]impyrt model-x=A block of pasted text.\n\nTwo paragraphs.[/TK]\n\nAfter."},
+  {"name": "tk_impyrt_bracket_form", "kind": "fragment", "md": "A [TK]IMPYRT model-y[=]x = y[/TK] and [TK] impyrt = spaced[/TK] and [TK]impyrtx=not it[/TK]."},
+  {"name": "tk_impyrt_with_source", "kind": "thread", "md": "[TK]impyrt=see ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] here[/TK] and [TK]use ![[01j9zq3k4m5n6p7q8r9s0t1v2w]][=]made[/TK]"},
+  {"name": "tk_in_fence_after_scope", "kind": "fragment", "md": "[TK]x[=]out[/TK]\n\n```\n[TK]example[=]literal[/TK]\n```\n\nand `[TK]y[/TK]` inline."},
+  {"name": "tk_inline_link_text", "kind": "fragment", "md": "Go to [the [TK]x[=]docs[/TK] page](https://docs.example.org/) or [TK]x[=]**bold**[/TK]."},
+  {"name": "tk_inline_thread_link", "kind": "thread", "md": "Para with [TK]x[=]a [[01j9zq3k4m5n6p7q8r9s0t1v2w]] link[/TK].\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
+  {"name": "tr_sanitize_markdown", "kind": "thread", "md": "| a | b |\n|--:|:-:|\n| 1 | 2 |\n\n3. three\n4. four\n\n![pic](https://images.example.org/p.png) and ![local](/blyg/media/x.png)\n\nhttps://www.youtube.com/watch?v=Zx9_abc-123\n\n[mail](mailto:a@example.org) [tel](tel:+15550100) [rel](/blyg/f/x/)\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
+  {"name": "tr_sanitize_target", "kind": "thread", "md": "Quoting a stranger:\n\n![[01j9zq3k4m5n6p7q8r9s0t1vss]]\n\nAnd [[01j9zq3k4m5n6p7q8r9s0t1vss]] as a link."},
+  {"name": "tr_sanitize_tk_block", "kind": "thread", "md": "[TK]x[=]| h |\n|:-|\n| c |[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
+  {"name": "link_in_tk_code", "kind": "fragment", "md": "[TK]x[=]`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` and [[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nAnd `[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]`."}
 ]

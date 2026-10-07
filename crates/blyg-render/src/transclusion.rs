@@ -305,29 +305,31 @@ fn data_line(on: bool, line: usize) -> String {
     }
 }
 
-/// transclusion.ts `literalLines`: per line, whether it can never be a
-/// directive. A line is literal when Markdown renders it as code, or when it
-/// overlaps a generated span (`inert`, `[start, end)` offsets into `text`).
-fn literal_lines(text: &str, lines: &[&str], inert: &[(usize, usize)]) -> Vec<bool> {
+/// Per line, whether it can never be a directive: the Worker's walk skips a
+/// line whose start lies in `codeRanges` (a code block, or a code span
+/// running across lines). A directive on its own line in TK output is,
+/// provisionally upstream, a real quote (v0.4-plan §9.2).
+fn literal_lines(text: &str, lines: &[&str]) -> Vec<bool> {
     // Only a line holding `![[` could be a directive; skip the extra parse.
     if !text.contains("![[") {
         return vec![false; lines.len()];
     }
-    let mut flags = markdown::code_lines(text);
+    let code = markdown::code_ranges(text);
     let mut start = 0;
-    for (flag, line) in flags.iter_mut().zip(lines) {
-        let end = start + line.len();
-        *flag = *flag || inert.iter().any(|&(a, b)| start < b && end > a);
-        start = end + 1;
-    }
-    flags
+    lines
+        .iter()
+        .map(|line| {
+            let literal = markdown::in_ranges(&code, start);
+            start += line.len() + 1;
+            literal
+        })
+        .collect()
 }
 
 /// transclusion.ts `walk` with the preview's unresolved placeholder. Lines
-/// in code or inside a generated span (`inert`) stay prose.
+/// in code stay prose.
 pub(crate) fn walk(
     doc: &Mapped,
-    inert: &[(usize, usize)],
     resolver: &dyn Resolver,
     self_id: Option<&str>,
     lines_on: bool,
@@ -339,7 +341,7 @@ pub(crate) fn walk(
     let mut block_lines = Vec::new();
     let mut prose_start: Option<usize> = None; // first line index of pending prose
     let lines: Vec<&str> = doc.text.split('\n').collect();
-    let literal = literal_lines(&doc.text, &lines, inert);
+    let literal = literal_lines(&doc.text, &lines);
 
     let flush = |from: Option<usize>,
                  to: usize,
@@ -542,7 +544,7 @@ pub(crate) fn provenance_line(f: &Found, partial: bool, mount: &str) -> String {
     };
     format!(
         "<p class=\"provenance\"><a href=\"{}\">{label}</a> · {} v{}</p>",
-        escape_html(&href),
+        crate::util::escape_href(&href),
         if partial { "excerpt of" } else { "snapshot of" },
         f.version
     )

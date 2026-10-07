@@ -230,15 +230,25 @@ pub struct Attachment {
     pub key: String,
     /// The stored alt text.
     pub alt: Option<String>,
+    /// The row's `inline` flag: the studio placed it in the text, so it
+    /// shows only where its line is.
+    pub inline: bool,
 }
 
-/// pages.ts `mediaHtml`: every attachment as a lazy image paragraph. Public
-/// pages put this after `.item-content`; the desktop preview shows it too
-/// (see [`preview_media`]). `src` is
+/// util.ts `placedIn`: the content already shows `key`.
+fn placed_in(html: &str, key: &str) -> bool {
+    html.contains(&format!("/{key}")) || html.contains(&format!("\"{key}"))
+}
+
+/// pages.ts `mediaHtml`: each attachment the content does not already show
+/// (util.ts `unplacedMedia`: not `inline`, not placed in `content_html`) as
+/// a lazy image paragraph. Public pages put this after `.item-content`; the
+/// desktop preview shows it too (see [`preview_media`]). `src` is
 /// HTML-escaped, where the Worker interpolates it raw.
-pub fn media_html(media: &[Attachment], mount: &str) -> String {
+pub fn media_html(media: &[Attachment], mount: &str, content_html: &str) -> String {
     media
         .iter()
+        .filter(|m| !m.inline && !placed_in(content_html, &m.key))
         .map(|m| {
             format!(
                 "<p><img src=\"{}\" alt=\"{}\" loading=\"lazy\"></p>",
@@ -253,10 +263,10 @@ pub fn media_html(media: &[Attachment], mount: &str) -> String {
 /// The preview's attachment strip, placed right after the preview body:
 /// [`media_html`] in `div#preview-media`, as the Worker's server-rendered
 /// studio drew it until studio 0.10 (attachments.ts `previewMedia`).
-pub fn preview_media(media: &[Attachment], mount: &str) -> String {
+pub fn preview_media(media: &[Attachment], mount: &str, content_html: &str) -> String {
     format!(
         "<div id=\"preview-media\">{}</div>",
-        media_html(media, mount)
+        media_html(media, mount, content_html)
     )
 }
 

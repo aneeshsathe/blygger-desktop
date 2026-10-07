@@ -91,7 +91,11 @@ fn parity_with_worker() {
             .iter()
             .map(|u| (u.directive.clone(), u.reason.to_string()))
             .collect();
-        assert_eq!(got_errors, errors, "{name}: unresolved");
+        if got_errors != errors {
+            failures.push(format!(
+                "--- {name}: unresolved\n  expected: {errors:?}\n  got:      {got_errors:?}"
+            ));
+        }
         if kind == Kind::Thread {
             let ids: Vec<String> = f["transclusions"]
                 .as_array()
@@ -105,10 +109,19 @@ fn parity_with_worker() {
                 .iter()
                 .map(|t| t.id.clone())
                 .collect();
-            assert_eq!(got_ids, ids, "{name}: transclusions");
+            if got_ids != ids {
+                failures.push(format!(
+                    "--- {name}: transclusions\n  expected: {ids:?}\n  got:      {got_ids:?}"
+                ));
+            }
         }
         let tk_errors = f["tk"]["errors"].as_array().unwrap().len();
-        assert_eq!(got.stats.tk_errors.len(), tk_errors, "{name}: TK errors");
+        if got.stats.tk_errors.len() != tk_errors {
+            failures.push(format!(
+                "--- {name}: TK errors\n  expected: {tk_errors}\n  got:      {}",
+                got.stats.tk_errors.len()
+            ));
+        }
     }
     eprintln!(
         "parity: {normalized}/{} match after whitespace normalisation ({exact} byte-identical); {} known divergences",
@@ -145,14 +158,20 @@ fn media_parity_with_worker() {
             .map(|m| Attachment {
                 key: m["r2_key"].as_str().unwrap().to_string(),
                 alt: m["alt"].as_str().map(str::to_string),
+                inline: m["inline"] == 1,
             })
             .collect();
         let name = &c["name"];
-        assert_eq!(media_html(&media, mount), c["media_html"], "{name}");
+        let content = c["content_html"].as_str().unwrap_or("");
+        assert_eq!(
+            media_html(&media, mount, content),
+            c["media_html"],
+            "{name}"
+        );
         let strip = format!(
             "<div id=\"preview-media\">{}</div>",
             c["media_html"].as_str().unwrap()
         );
-        assert_eq!(preview_media(&media, mount), strip, "{name}");
+        assert_eq!(preview_media(&media, mount, content), strip, "{name}");
     }
 }
