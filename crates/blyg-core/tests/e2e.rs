@@ -8,6 +8,8 @@
 //!   token minted with all four owner scopes
 //! - `BLYG_E2E_TOKEN_B` the same for `BLYG_E2E_URL_B` (studio 0.28+ only;
 //!   without it, `b` takes `a`'s credential)
+//! - `BLYG_E2E_OWNER_PASSWORD` its studio password, always: the browser
+//!   sign-in tests act as the owner in a browser with it
 //! - `BLYG_E2E_PASSWORD` its studio password; when set, everything signs in
 //!   with it instead of the token
 //! - `BLYG_E2E_STOCK` set for a stock blygger-studio (no docs/SERVER.md
@@ -143,6 +145,10 @@ fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Val
     let req = agent().request(method, &format!("{base}{path}"));
     let req = match &e.cred {
         Credential::Token(t) => req.set("authorization", &format!("Bearer {t}")),
+        Credential::OAuth(s) => req.set(
+            "authorization",
+            &format!("Bearer {}", s.access_token().expect("access token")),
+        ),
         Credential::Password(p) => {
             let s = auth::login(base, p).expect("studio sign-in");
             req.set("cookie", &format!("{}={s}", auth::SESSION_COOKIE))
@@ -247,6 +253,7 @@ fn connect_and_verify() {
                 Err(ConnectError::NoStudio)
             );
         }
+        Credential::OAuth(_) => unreachable!("the suite signs in with a token or password"),
     }
     // Nothing listening.
     let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1868,4 +1875,333 @@ fn a_429_keeps_the_change_and_lands_after_retry_after() {
     );
     eprintln!("landed {:?} after the 429", t0.elapsed());
     assert_eq!(get(&sid)["content_md"], text.as_str());
+}
+
+// ------------------------------------------- browser sign-in (studio 0.28+)
+
+/// The scratch studio's owner password (always exported by
+/// scripts/e2e-local.sh, whatever the suite signs in with).
+fn owner_password() -> Option<String> {
+    std::env::var("BLYG_E2E_OWNER_PASSWORD").ok()
+}
+
+/// A cookie jar of `name=value` pairs, as a browser keeps them.
+#[derive(Default)]
+struct Jar(Vec<(String, String)>);
+
+impl Jar {
+    fn take(&mut self, r: &ureq::Response) {
+        for c in r.all("set-cookie") {
+            let Some((n, v)) = c.split(';').next().and_then(|p| p.split_once('=')) else {
+                continue;
+            };
+            self.0.retain(|(k, _)| k != n.trim());
+            self.0.push((n.trim().to_string(), v.trim().to_string()));
+        }
+    }
+    fn header(&self) -> String {
+        self.0
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    }
+}
+
+fn no_redirects() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout(Duration::from_secs(20))
+        .redirects(0)
+        .build()
+}
+
+/// What the owner does in the browser: sign in to the studio, open the
+/// authorize page, and allow every permission it offers. Returns where the
+/// studio sends the browser next (the loopback callback).
+fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
+    let session = auth::login(base, password).expect("studio sign-in");
+    let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
+    let page = no_redirects()
+        .get(authorize_url)
+        .set("cookie", &jar.header())
+        .call()
+        .expect("the consent page");
+    jar.take(&page);
+    let html = page.into_string().unwrap();
+    assert!(html.contains("Allow Burrow?"), "{html}");
+    let field = |name: &str| -> Vec<String> {
+        html.split(&format!("name=\"{name}\" value=\""))
+            .skip(1)
+            .filter_map(|s| s.split_once('"').map(|(v, _)| v.to_string()))
+            .collect()
+    };
+    let handle = field("handle").pop().expect("a consent handle");
+    let scopes = field("scope");
+    assert_eq!(
+        scopes,
+        blyg_core::api::oauth::OWNER_SCOPES,
+        "all four offered"
+    );
+    let mut form: Vec<(&str, &str)> = vec![("handle", &handle), ("decision", "allow")];
+    form.extend(scopes.iter().map(|s| ("scope", s.as_str())));
+    let action = html
+        .split("<form method=\"post\" action=\"")
+        .nth(1)
+        .and_then(|s| s.split_once('"'))
+        .map(|(a, _)| a.to_string())
+        .expect("the consent form");
+    let r = match no_redirects()
+        .post(&action)
+        .set("cookie", &jar.header())
+        .set("origin", base)
+        .send_form(&form)
+    {
+        Ok(r) => r,
+        Err(ureq::Error::Status(c, r)) => panic!("consent → {c}: {}", r.into_string().unwrap()),
+        Err(e) => panic!("consent: {e}"),
+    };
+    assert_eq!(r.status(), 302);
+    r.header("location").expect("a redirect").to_string()
+}
+
+/// The browser following the studio's redirect to the loopback listener.
+fn browser_follows(location: String) -> std::thread::JoinHandle<(u16, String)> {
+    std::thread::spawn(move || match no_redirects().get(&location).call() {
+        Ok(r) => (r.status(), r.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(c, r)) => (c, r.into_string().unwrap_or_default()),
+        Err(e) => panic!("callback: {e}"),
+    })
+}
+
+fn url_query(url: &str, key: &str) -> String {
+    url::Url::parse(url)
+        .unwrap()
+        .query_pairs()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.into_owned())
+        .unwrap_or_default()
+}
+
+/// A browser sign-in on a studio 0.28+, or `None` (skipped) on an older one.
+fn signed_in_with_browser(
+    store: &dyn config::TokenStore,
+) -> Option<blyg_core::api::oauth::OAuthGrant> {
+    use blyg_core::api::oauth::BrowserSignIn;
+    let e = e2e();
+    let Some(password) = owner_password() else {
+        eprintln!("skipped: BLYG_E2E_OWNER_PASSWORD not set (run scripts/e2e-local.sh)");
+        return None;
+    };
+    let Some(sign_in) = BrowserSignIn::start(&e.url, store).expect("discovery") else {
+        eprintln!("skipped: this studio has no browser sign-in (older than 0.28)");
+        return None;
+    };
+    let location = owner_allows(&e.url, &sign_in.authorize_url, &password);
+    let redirect = url_query(&sign_in.authorize_url, "redirect_uri");
+    assert!(location.starts_with(&redirect), "{location}");
+    let browser = browser_follows(location);
+    let grant = sign_in
+        .finish(
+            &std::sync::atomic::AtomicBool::new(false),
+            Duration::from_secs(30),
+        )
+        .expect("the code exchange");
+    let (status, page) = browser.join().unwrap();
+    assert_eq!(status, 200, "{page}");
+    assert!(page.contains("signed in"), "{page}");
+    Some(grant)
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn browser_sign_in_renews_and_revokes() {
+    use blyg_core::api::oauth::{self, OAuthSession, client_key, grant_key};
+    use std::sync::Arc;
+    let e = e2e();
+    let mem = Arc::new(config::MemoryTokenStore::default());
+    let store: Arc<dyn config::TokenStore> = mem.clone();
+    let Some(grant) = signed_in_with_browser(store.as_ref()) else {
+        return;
+    };
+    let now = oauth::now_secs();
+    for s in oauth::OWNER_SCOPES {
+        assert!(grant.scope.split(' ').any(|x| x == s), "{}", grant.scope);
+    }
+    assert!(
+        grant.refresh.is_some(),
+        "offline_access gives a refresh token"
+    );
+    assert!(grant.expires > now + 3000 && grant.expires <= now + 3600 + 5);
+    assert!(
+        grant.deadline > now + 29 * 86400 && grant.deadline <= now + 30 * 86400 + 5,
+        "the grant ends within 30 days"
+    );
+    assert!(grant.resource.ends_with("/api"), "{}", grant.resource);
+    let debug = format!("{grant:?}");
+    assert!(!debug.contains(&grant.access), "Debug redacts the token");
+
+    // The registered client is kept, and a second sign-in reuses it.
+    let client: oauth::Client =
+        serde_json::from_str(&store.get(&client_key(&e.url)).unwrap().unwrap()).unwrap();
+    assert_eq!(client.client_id, grant.client_id);
+    let again = oauth::BrowserSignIn::start(&e.url, store.as_ref())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        url_query(&again.authorize_url, "client_id"),
+        grant.client_id
+    );
+    drop(again);
+
+    // Saved, it wins over a token and connects.
+    store.set(&e.url, "an-older-token").unwrap();
+    config::save_credential(
+        store.as_ref(),
+        &e.url,
+        &Credential::OAuth(OAuthSession::new(grant.clone())),
+    )
+    .unwrap();
+    assert!(
+        store.get(&e.url).unwrap().is_none(),
+        "one credential at a time"
+    );
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    assert!(matches!(cred, Credential::OAuth(_)));
+    verify_connection(&e.url, cred).expect("the API takes the access token");
+    let kept =
+        |s: &Arc<dyn config::TokenStore>| config::load_grant(s.as_ref(), &e.url).unwrap().unwrap();
+    assert_eq!(kept(&store), grant, "nothing renewed yet");
+    let put = |g: &oauth::OAuthGrant| {
+        store
+            .set(&grant_key(&e.url), &serde_json::to_string(g).unwrap())
+            .unwrap()
+    };
+
+    // Shortly before it expires, it's renewed first (and the rotation saved).
+    let mut due = grant.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, cred).expect("renewed before the call");
+    let renewed = kept(&store);
+    assert_ne!(renewed.access, grant.access);
+    assert_ne!(renewed.refresh, grant.refresh, "the refresh token rotates");
+    assert!(renewed.expires > oauth::now_secs() + 3000);
+    assert_eq!(
+        renewed.deadline, grant.deadline,
+        "renewal never extends the grant"
+    );
+
+    // A 401 (the server no longer takes the access token) renews and retries.
+    let mut rejected = renewed.clone();
+    rejected.access = "not-an-access-token".into();
+    put(&rejected);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, cred).expect("renewed after the 401");
+    let after_401 = kept(&store);
+    assert_ne!(after_401.access, rejected.access);
+    assert_ne!(after_401.refresh, renewed.refresh);
+    assert!(!after_401.invalid);
+
+    // Two Apis on one kept grant renew once between them: the second picks
+    // up the first's rotation instead of replaying the old refresh token
+    // (which would make the studio revoke the whole grant).
+    let mut due = after_401.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let a = config::load_credential(&store, &e.url).unwrap().unwrap();
+    let b = config::load_credential(&store, &e.url).unwrap().unwrap();
+    verify_connection(&e.url, a).expect("first");
+    verify_connection(&e.url, b).expect("second, on the first's renewal");
+    let shared = kept(&store);
+    assert!(!shared.invalid);
+    assert_ne!(shared.refresh, after_401.refresh);
+    let mut due = shared.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    verify_connection(
+        &e.url,
+        config::load_credential(&store, &e.url).unwrap().unwrap(),
+    )
+    .expect("the grant survived: it renews again");
+    let shared = kept(&store);
+
+    // Signing out revokes it: it can't be renewed any more, and the next
+    // renewal marks it ended instead of retrying.
+    oauth::revoke(&shared).expect("revoke");
+    assert!(matches!(
+        oauth::refresh(&shared),
+        Err(CoreError::Unauthorized)
+    ));
+    let mut due = shared.clone();
+    due.expires = oauth::now_secs() + 10;
+    put(&due);
+    let cred = config::load_credential(&store, &e.url).unwrap().unwrap();
+    assert!(verify_connection(&e.url, cred.clone()).is_err());
+    let ended = kept(&store);
+    assert!(ended.invalid && ended.ended(), "sign in again");
+    let Credential::OAuth(s) = cred else {
+        unreachable!()
+    };
+    assert!(
+        matches!(s.access_token(), Err(CoreError::Unauthorized)),
+        "no retry loop"
+    );
+
+    // A grant past its 30-day deadline ends without asking the server.
+    let mut old = grant.clone();
+    old.deadline = oauth::now_secs() - 1;
+    assert!(matches!(
+        OAuthSession::new(old).access_token(),
+        Err(CoreError::Unauthorized)
+    ));
+
+    config::delete_credential(store.as_ref(), &e.url).unwrap();
+    assert!(store.get(&grant_key(&e.url)).unwrap().is_none());
+    assert!(
+        store.get(&client_key(&e.url)).unwrap().is_some(),
+        "the client id stays, to be reused"
+    );
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_token_without_a_scope_says_which() {
+    let e = e2e();
+    let Some(password) = owner_password() else {
+        eprintln!("skipped: BLYG_E2E_OWNER_PASSWORD not set (run scripts/e2e-local.sh)");
+        return;
+    };
+    // A read-only manual token, minted as Studio → More → Client access does.
+    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let minted = match agent()
+        .post(&format!("{}/api/authorizations", e.url))
+        .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
+        .send_json(json!({"name": "burrow-e2e-read", "scope": ["owner:read"], "resource": "api"}))
+    {
+        Ok(r) => r.into_json::<Value>().unwrap(),
+        Err(ureq::Error::Status(404, _)) => {
+            eprintln!("skipped: this studio has no manual tokens (older than 0.28)");
+            return;
+        }
+        Err(e) => panic!("minting a token: {e}"),
+    };
+    let token = minted["access_token"]
+        .as_str()
+        .expect("a token")
+        .to_string();
+    let api = Api::new(&e.url, Credential::Token(token.clone()));
+    assert!(api.count_items().is_ok(), "reading is allowed");
+    match api.create_item("a draft", Kind::Fragment, None, None) {
+        Err(CoreError::Rejected {
+            status: 403,
+            message,
+            ..
+        }) => {
+            assert!(message.contains("owner:draft"), "{message}");
+            assert!(message.contains("Client access"), "{message}");
+            assert!(!message.contains(&token), "never the token");
+        }
+        other => panic!("expected a 403 naming the scope, got {other:?}"),
+    }
 }

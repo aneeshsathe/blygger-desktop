@@ -92,7 +92,7 @@ const DB_OWNER_FILE: &str = "blygger.db.blyg-url";
 pub fn open_live(
     data_dir: &Path,
     url: &str,
-    tokens: &dyn TokenStore,
+    tokens: &Arc<dyn TokenStore>,
 ) -> Result<Option<Arc<dyn Backend>>> {
     let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
@@ -189,7 +189,7 @@ pub fn go_live(url: &str, cx: &mut gpui_kit::App) -> Result<bool> {
     }
     let (switch, dir) = (conn.switch.clone(), conn.data_dir.clone());
     let tokens = crate::settings::get(cx).tokens.clone();
-    match open_live(&dir, url, &*tokens)? {
+    match open_live(&dir, url, &tokens)? {
         Some(live) => {
             switch.switch(live, Mode::Live, || {});
             Ok(true)
@@ -235,7 +235,19 @@ pub fn disconnect(
 ) -> std::result::Result<String, String> {
     let url = crate::settings::blyg_url(cx).ok_or("Not connected to a blyg")?;
     let host = crate::vm::url_host(&url).unwrap_or(url.clone());
-    blyg_core::config::delete_credential(crate::settings::get(cx).tokens.as_ref(), &url)
+    let tokens = crate::settings::get(cx).tokens.clone();
+    // A browser sign-in is revoked at the blyg too (best effort, off the
+    // UI thread; offline, it just lapses within 30 days).
+    if let Ok(Some(grant)) = blyg_core::config::load_grant(tokens.as_ref(), &url)
+        && !grant.ended()
+    {
+        std::thread::spawn(move || {
+            if let Err(e) = blyg_core::api::oauth::revoke(&grant) {
+                eprintln!("blygger: couldn't revoke the browser sign-in: {e}");
+            }
+        });
+    }
+    blyg_core::config::delete_credential(tokens.as_ref(), &url)
         .map_err(|e| format!("Couldn't remove it from the Keychain: {e}"))?;
     crate::settings::write(&[("blyg-url", blyg_core::config::Change::Remove)], cx)?;
     if let Some(conn) = cx.try_global::<Connection>()

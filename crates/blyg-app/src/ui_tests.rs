@@ -353,6 +353,20 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     let (view, _, cx) = setup_with(cx, "# fresh\n", tokens.clone());
     assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. }))));
     assert_eq!(view.read_with(cx, |v, _| v.title.clone()), "Burrow");
+    // Browser sign-in is the default; this test takes the password way in.
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.sheet,
+        Some(Sheet::Connect {
+            way: super::ConnectWay::Browser,
+            ..
+        })
+    )));
+    view.update_in(cx, |v, window, cx| {
+        v.set_connect_way(super::ConnectWay::Password, window, cx);
+        if let Some(Sheet::Connect { url, .. }) = &v.sheet {
+            url.update(cx, |s, cx| s.focus(window, cx));
+        }
+    });
 
     // A bad address is refused with a message; nothing is saved.
     cx.simulate_input("blyg.example.com");
@@ -379,7 +393,11 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
     assert_eq!(
-        blyg_core::config::load_credential(tokens.as_ref(), "https://blyg.example.com").unwrap(),
+        blyg_core::config::load_credential(
+            &(tokens.clone() as Arc<dyn TokenStore>),
+            "https://blyg.example.com"
+        )
+        .unwrap(),
         Some(blyg_core::api::auth::Credential::Password(
             "secret-token".into()
         ))
@@ -614,7 +632,7 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
     };
     // The owner-token way in (the password way is first_run_asks_to_connect_a_blyg).
     view.update_in(cx, |v, window, cx| {
-        v.set_connect_by_password(false, window, cx)
+        v.set_connect_way(super::ConnectWay::Token, window, cx)
     });
     let attempt = |cx: &mut VisualTestContext| {
         view.update_in(cx, |v, window, cx| {

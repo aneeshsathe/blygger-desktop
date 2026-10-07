@@ -14,7 +14,7 @@ use crate::model::*;
 pub enum CoreError {
     #[error("offline")]
     Offline,
-    #[error("not authorised — check the token")]
+    #[error("not authorised: sign in to your blyg again")]
     Unauthorized,
     #[error("not found")]
     NotFound,

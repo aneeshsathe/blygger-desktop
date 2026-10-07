@@ -1,14 +1,23 @@
-//! Owner-credential storage. Neither the token nor the password ever goes in
-//! a file: they live in the macOS Keychain under service
-//! `org.blygger.desktop`, account = the base URL's host (the token) or
-//! `<host> password` (the studio password). Access goes through the
-//! `TokenStore` trait so tests use `MemoryTokenStore` and never touch the
-//! real Keychain.
+//! Owner-credential storage. No credential ever goes in a file: they live
+//! in the macOS Keychain under service `org.blygger.desktop`, account =
+//!
+//! - `<host> oauth`: a browser sign-in's grant (JSON: tokens, expiry,
+//!   where to renew it);
+//! - `<host>`: an API token;
+//! - `<host> password`: the studio password;
+//! - `<host> oauth-client`: the client id Burrow registered with that blyg
+//!   (not a secret; kept across sign-outs so it's reused).
+//!
+//! A blyg has one credential at a time; when more than one is found, the
+//! browser sign-in wins, then the token, then the password. Access goes
+//! through the `TokenStore` trait so tests use `MemoryTokenStore` and never
+//! touch the real Keychain.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::api::auth::Credential;
+use crate::api::oauth::{OAuthGrant, OAuthSession, grant_key};
 use crate::backend::{CoreError, Result};
 
 pub const KEYCHAIN_SERVICE: &str = "org.blygger.desktop";
@@ -33,33 +42,66 @@ pub fn password_key(base_url: &str) -> String {
     format!("{} password", token_account(base_url))
 }
 
-/// The credential stored for a blyg: its password if one is kept, else its
-/// owner token.
-pub fn load_credential(store: &dyn TokenStore, base_url: &str) -> Result<Option<Credential>> {
-    if let Some(p) = store.get(&password_key(base_url))? {
-        return Ok(Some(Credential::Password(p)));
-    }
-    Ok(store.get(base_url)?.map(Credential::Token))
+/// The browser sign-in kept for a blyg, if any (also when it has ended).
+pub fn load_grant(store: &dyn TokenStore, base_url: &str) -> Result<Option<OAuthGrant>> {
+    Ok(store
+        .get(&grant_key(base_url))?
+        .and_then(|s| serde_json::from_str(&s).ok()))
 }
 
-/// Keep `cred` for a blyg, and drop the other kind, so there's one.
+/// The credential stored for a blyg: its browser sign-in, else its API
+/// token, else its studio password. A browser sign-in renews itself and
+/// saves each renewal back to `store`.
+pub fn load_credential(store: &Arc<dyn TokenStore>, base_url: &str) -> Result<Option<Credential>> {
+    if let Some(g) = load_grant(store.as_ref(), base_url)? {
+        return Ok(Some(Credential::OAuth(OAuthSession::kept(
+            g,
+            store.clone(),
+            base_url,
+        ))));
+    }
+    if let Some(t) = store.get(base_url)? {
+        return Ok(Some(Credential::Token(t)));
+    }
+    Ok(store
+        .get(&password_key(base_url))?
+        .map(Credential::Password))
+}
+
+/// Keep `cred` for a blyg, and drop the other kinds, so there's one.
 pub fn save_credential(store: &dyn TokenStore, base_url: &str, cred: &Credential) -> Result<()> {
-    match cred {
-        Credential::Token(t) => {
-            store.set(base_url, t)?;
-            store.delete(&password_key(base_url))
-        }
-        Credential::Password(p) => {
-            store.set(&password_key(base_url), p)?;
-            store.delete(base_url)
+    let (keep, value) = match cred {
+        Credential::Token(t) => (base_url.to_string(), t.clone()),
+        Credential::Password(p) => (password_key(base_url), p.clone()),
+        Credential::OAuth(s) => (
+            grant_key(base_url),
+            serde_json::to_string(&s.grant()).map_err(|e| CoreError::Other(e.to_string()))?,
+        ),
+    };
+    store.set(&keep, &value)?;
+    for key in credential_keys(base_url) {
+        if key != keep {
+            store.delete(&key)?;
         }
     }
+    Ok(())
 }
 
-/// Forget both the token and the password kept for a blyg.
+/// Forget every credential kept for a blyg (the grant, the token and the
+/// password). The registered client id stays, to be reused.
 pub fn delete_credential(store: &dyn TokenStore, base_url: &str) -> Result<()> {
-    store.delete(base_url)?;
-    store.delete(&password_key(base_url))
+    for key in credential_keys(base_url) {
+        store.delete(&key)?;
+    }
+    Ok(())
+}
+
+fn credential_keys(base_url: &str) -> [String; 3] {
+    [
+        grant_key(base_url),
+        base_url.to_string(),
+        password_key(base_url),
+    ]
 }
 
 /// In-memory token store (tests, `BLYGGER_FAKE`).
@@ -131,23 +173,66 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_password_and_a_token_are_kept_apart_and_one_at_a_time() {
-        let s = MemoryTokenStore::default();
+    fn credentials_are_kept_apart_and_one_at_a_time() {
+        let mem = Arc::new(MemoryTokenStore::default());
+        let s: Arc<dyn TokenStore> = mem.clone();
         let base = "https://blyg.example.com/";
         assert_eq!(password_key(base), "blyg.example.com password");
+        assert_eq!(grant_key(base), "blyg.example.com oauth");
         assert_eq!(load_credential(&s, base).unwrap(), None);
-        save_credential(&s, base, &Credential::Token("t".into())).unwrap();
+        save_credential(&*s, base, &Credential::Token("t".into())).unwrap();
         assert_eq!(
             load_credential(&s, base).unwrap(),
             Some(Credential::Token("t".into()))
         );
-        save_credential(&s, base, &Credential::Password("p".into())).unwrap();
+        save_credential(&*s, base, &Credential::Password("p".into())).unwrap();
         assert_eq!(
             load_credential(&s, base).unwrap(),
             Some(Credential::Password("p".into()))
         );
         assert_eq!(s.get(base).unwrap(), None, "the token is dropped");
-        delete_credential(&s, base).unwrap();
+        let grant = OAuthGrant {
+            access: "a".into(),
+            refresh: Some("r".into()),
+            expires: 1,
+            deadline: 0,
+            scope: "owner:read".into(),
+            client_id: "cid".into(),
+            token_endpoint: "https://blyg.example.com/t".into(),
+            revocation_endpoint: None,
+            resource: "https://blyg.example.com/api".into(),
+            invalid: false,
+        };
+        save_credential(
+            &*s,
+            base,
+            &Credential::OAuth(OAuthSession::new(grant.clone())),
+        )
+        .unwrap();
+        assert_eq!(
+            s.get(&password_key(base)).unwrap(),
+            None,
+            "the password is dropped"
+        );
+        match load_credential(&s, base).unwrap() {
+            Some(Credential::OAuth(o)) => assert_eq!(o.grant(), grant),
+            other => panic!("{other:?}"),
+        }
+        // More than one kept (an older version): browser, token, password.
+        s.set(base, "t").unwrap();
+        s.set(&password_key(base), "p").unwrap();
+        assert!(matches!(
+            load_credential(&s, base).unwrap(),
+            Some(Credential::OAuth(_))
+        ));
+        s.delete(&grant_key(base)).unwrap();
+        assert_eq!(
+            load_credential(&s, base).unwrap(),
+            Some(Credential::Token("t".into()))
+        );
+        s.set(&grant_key(base), &serde_json::to_string(&grant).unwrap())
+            .unwrap();
+        delete_credential(&*s, base).unwrap();
         assert_eq!(load_credential(&s, base).unwrap(), None);
     }
 
