@@ -531,9 +531,11 @@ impl MainView {
                             "Connected to {h}. You can change it later from the Burrow menu."
                         )
                         .into(),
-                        None => "Burrow writes to your own blyg. You'll need its address and its \
-                                 owner token; the token goes in your macOS Keychain, the \
-                                 address in your config file."
+                        None => "Burrow writes to your own blyg. You'll need its address; then \
+                                 sign in with your browser (blygger-studio 0.28 or later), or \
+                                 use an API token from Studio → More → Client access, or the \
+                                 studio password. The sign-in goes in your macOS Keychain, \
+                                 the address in your config file."
                             .into(),
                     }))
                     .child(div().mt(px(4.)).flex().flex_wrap().gap(px(8.)).map(|d| {

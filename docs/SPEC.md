@@ -18,7 +18,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 | UI | **GPUI** (Zed's framework) + `gpui-component` where it helps (text input/editor). |
 | Local data | **SQLite** via `rusqlite` (`bundled`, FTS5). Local-first: UI reads only from SQLite. DuckDB was considered and declined because this is an OLTP/tiny-write workload, and DuckDB can read the SQLite file later for analytics. |
 | Network | Blocking HTTP (`ureq`, rustls) on background threads. No tokio in the app. |
-| Auth | Base URL + `BLYG_OWNER_TOKEN` bearer. Token lives in the **macOS Keychain** (`keyring` crate), never in a file. |
+| Auth | Base URL + a bearer: **Sign in with browser** (OAuth, PKCE, loopback redirect; studio 0.28+; the default), else an API token (Studio → More → Client access, or a fork's `BLYG_OWNER_TOKEN`), else the studio password. Credentials live in the **macOS Keychain** (`keyring` crate), never in a file. See `crates/blyg-core/src/api/oauth.rs`. |
 | Platform | macOS first. |
 | Layout | **Side by side**: item list on the left (~38%), editor on the right. |
 | Theme | **Tufte colours** (paper `#fffff8`, ink `#111`, accent `#a4271b`; dark: `#161513` / `#e4dfd3` / `#e0775a`), follows system light/dark. Default in the mock was dark. |
@@ -134,7 +134,7 @@ media) lives in `~/Library/Application Support/org.blygger.desktop/`.
 
 Base: the configured `blyg-url` for public pages and the studio; `/api` is host-rooted (a
 blyg at `https://host/blyg` has its API at `https://host/api`). Every `/api` call carries
-either `Authorization: Bearer <token>` (the fork's extension 1) or the studio session
+either `Authorization: Bearer <token>` (a browser sign-in's access token, a manual API token, or a fork's extension-1 owner token) or the studio session
 cookie `blyg_session`, from `POST {blyg-url}/studio/login` (form field `password`; a 302
 with `Set-Cookie`; 30 days). JSON bodies are sent with `content-type: application/json`.
 Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issues?}`

@@ -72,6 +72,10 @@ else
 fi
 export BLYG_E2E_TOKEN
 [ -z "${BLYG_E2E_PASSWORD:-}" ] || export BLYG_E2E_PASSWORD
+# The browser sign-in tests act as the owner in a browser (sign in to the
+# studio, then allow Burrow), whatever the rest of the suite signs in with.
+BLYG_E2E_OWNER_PASSWORD="$("$CTL" password)"
+export BLYG_E2E_OWNER_PASSWORD
 export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"

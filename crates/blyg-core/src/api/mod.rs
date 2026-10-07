@@ -15,6 +15,7 @@
 //! advertised `read_state: true`.
 
 pub mod auth;
+pub mod oauth;
 pub mod public;
 pub mod wire;
 
@@ -112,39 +113,79 @@ impl Api {
         Ok(s)
     }
 
-    fn request(&self, method: &str, path: &str) -> Result<ureq::Request> {
+    /// A request with the credential on it, and the browser sign-in's
+    /// access token it carries (for the 401 retry).
+    fn request(&self, method: &str, path: &str) -> Result<(ureq::Request, Option<String>)> {
         let r = self
             .agent
             .request(method, &format!("{}{}", self.api_root, path))
             .set("accept", "application/json");
         Ok(match &self.cred {
-            Credential::Token(t) => r.set("authorization", &format!("Bearer {t}")),
-            Credential::Password(p) => r.set(
-                "cookie",
-                &format!("{}={}", auth::SESSION_COOKIE, self.session(p)?),
+            Credential::Token(t) => (r.set("authorization", &format!("Bearer {t}")), None),
+            Credential::Password(p) => (
+                r.set(
+                    "cookie",
+                    &format!("{}={}", auth::SESSION_COOKIE, self.session(p)?),
+                ),
+                None,
             ),
+            Credential::OAuth(s) => {
+                let t = s.access_token()?;
+                (r.set("authorization", &format!("Bearer {t}")), Some(t))
+            }
         })
     }
 
-    fn send(&self, method: &str, path: &str, body: &Body) -> Result<Value> {
-        let req = self.request(method, path)?;
-        read_json(match body {
+    fn send(&self, method: &str, path: &str, body: &Body) -> (Result<Value>, Option<String>) {
+        let (req, bearer) = match self.request(method, path) {
+            Ok(r) => r,
+            Err(e) => return (Err(e), None),
+        };
+        let res = match body {
             Body::None => req.call(),
             Body::Json(v) => req.send_json(v.clone()),
             Body::Bytes { content_type, data } => {
                 req.set("content-type", content_type).send_bytes(data)
             }
-        })
+        };
+        // A bearer without the scope this call needs (studio 0.28+): say
+        // which permission is missing (it's in the challenge).
+        if let Err(ureq::Error::Status(403, r)) = &res
+            && let Some(needed) = r
+                .header("www-authenticate")
+                .and_then(oauth::insufficient_scope)
+        {
+            let granted = match &self.cred {
+                Credential::OAuth(s) => Some(s.grant().scope),
+                _ => None,
+            };
+            let message = oauth::missing_scope_message(&needed, granted.as_deref());
+            return (
+                Err(CoreError::Rejected {
+                    status: 403,
+                    message,
+                    details: vec![],
+                }),
+                bearer,
+            );
+        }
+        (read_json(res), bearer)
     }
 
     /// One call. With a password, a 401 means the session ended (30 days,
-    /// or the server's secret changed): sign in again and retry once.
+    /// or the server's secret changed): sign in again and retry once. With
+    /// a browser sign-in, renew the access token and retry once; when the
+    /// renewal is refused the grant is marked ended (sign in again).
     fn exec(&self, method: &str, path: &str, body: Body) -> Result<Value> {
-        let r = self.send(method, path, &body);
+        let (r, bearer) = self.send(method, path, &body);
         match (&self.cred, r) {
             (Credential::Password(_), Err(CoreError::Unauthorized)) => {
                 *self.session.lock().unwrap() = None;
-                self.send(method, path, &body)
+                self.send(method, path, &body).0
+            }
+            (Credential::OAuth(s), Err(CoreError::Unauthorized)) if bearer.is_some() => {
+                s.after_unauthorized(bearer.as_deref())?;
+                self.send(method, path, &body).0
             }
             (_, r) => r,
         }
@@ -912,7 +953,7 @@ impl std::fmt::Display for ConnectError {
                 f.write_str("Couldn't reach that address. Check the URL and your connection.")
             }
             ConnectError::WrongToken => f.write_str(
-                "The blyg said the token is wrong (401). Paste the owner token again.",
+                "The blyg said the token is wrong or has expired (401). Make a new one in Studio → More → Client access and paste it.",
             ),
             ConnectError::WrongPassword => f.write_str(
                 "The blyg said the password is wrong. Type the studio password again.",

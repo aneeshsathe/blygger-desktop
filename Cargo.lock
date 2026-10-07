@@ -821,6 +821,8 @@ dependencies = [
 name = "blyg-core"
 version = "0.8.2"
 dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.2.17",
  "keyring",
  "rusqlite",
  "serde",

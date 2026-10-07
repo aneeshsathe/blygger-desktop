@@ -6,10 +6,17 @@ Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference
 0.26 is current) and needs **0.9 or later**. Every route the app shares with upstream is
 checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
-**A stock blygger-studio works.** Sign in with the studio password: Burrow signs in at
-`{blyg-url}/studio/login` like the browser does, keeps the session cookie in memory
-only (the password is in your Keychain), and signs in again when the 30-day session
-ends. Writing, publishing, versions, pins, subscriptions, mentions, settings and the
+**A stock blygger-studio works.** On studio 0.28 or later, **sign in with the browser**
+(the default): Burrow registers itself as an OAuth client of your blyg, opens the
+studio's consent page, and keeps the grant (a one-hour access token, renewed with a
+rotating refresh token until the grant ends, at most 30 days after your studio
+sign-in) in your Keychain. Signing out revokes it. Or make an **API token** in Studio →
+More → Client access (REST API, all four permissions: read, draft, publish, manage;
+it lasts 30 days) and paste it. A token missing a permission gets a 403 that names
+it. On an older studio, or as a fallback, sign in with the **studio password**: Burrow
+signs in at `{blyg-url}/studio/login` like the browser does, keeps the session cookie
+in memory only (the password is in your Keychain), and signs in again when the
+session ends (studio 0.28 also ended every earlier session once). Writing, publishing, versions, pins, subscriptions, mentions, settings and the
 reading list all work. The reading list is built from upstream's own routes:
 `GET /api/reading` lists the posts, `GET /api/imports/{sub}/{id}` reads each new or
 changed one, and thumbs and hoppers come from `/api/signals` and each hopper.
@@ -32,12 +39,14 @@ A Worker that carries these extensions gets all of the above:
 
 | # | Extension | Why the app needs it |
 |---|---|---|
-| 1 | *Optional.* **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | Sign in with a token instead of the password. Upstream is cookie-only; its OAuth plan replaces both. |
+| 1 | *Optional.* **Bearer-token owner auth**: `Authorization: Bearer <token>` is accepted wherever the owner session cookie is, when the Worker secret `BLYG_OWNER_TOKEN` is set. | On studio 0.28+ upstream's manual tokens and OAuth supersede it; a fork may still offer it (its owner token goes in the same "API token" field). Upstream's scoped tokens may not reach a fork's own extension routes, so such a fork keeps it for those. |
 | 3 | **Reading rows for the app** (without it, Burrow builds the same rows from upstream's routes, more slowly): `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state, lineage}`. Imported items only (tombstones too), newest `observed_at` first, in the app's row shape: raw `content_md`, `origin`, `author`, `page`, `thumb`, `hoppers`, `read_version`, `pinned_version_retained`, `transclusions[]` with `cited`, and `stub_of`/`forked_from` as imported (null when none). `lineage: true` says the rows carry those two; without it the app fetches them from each post's public document. `limit` defaults to 100, max 500; `next` is an opaque cursor passed back as `before`; a bad cursor is `400`. `content_html` is raw, as stored, so the app sanitizes it before display. | Upstream's `/api/reading` is a different resource: own and imported posts, rendered and sanitized, offset-paged (≤ 50), with no Markdown, author, thumb or hoppers. The reader can't use it as-is. |
 | 4 | **Client-recorded TK provenance**: `PUT /api/items/:id/tk-provenance {content_md?, scopes:[{index, model, sources?, at?} \| null]}` and `GET` of the same. Validated first, atomic with the text, never stores the instruction. | So text generated **in the app** is disclosed (`generated` + `blyg-tk-gen`) exactly like text the Worker generates itself. **Retired for studio 0.28+**, whose `PATCH /api/items/:id` takes `provenance` itself; Burrow uses this only when a server refuses that field (a strict 400 on the unknown key). A 403 here (a Worker that closes its extension routes to scoped tokens) reads as "disclosure not recordable". |
 | 5 | *Optional.* **Read-state sync**: `read_state: true` and a per-item `read_version` on `GET /api/reading/imported`; `PUT /api/reading/:sub/:remoteId/read` and `POST /api/reading/read`. See [Extension 5](#extension-5-read-state-sync). | So a post you read on one Mac reads as read on your others, and a fresh install doesn't show everything unread. |
 
-Extension 2 (owner JSON reads) is upstream now, so its number is retired.
+Extension 2 (owner JSON reads) is upstream now, so its number is retired. Extension 1
+is superseded upstream (studio 0.28's manual tokens and OAuth) but not retired: forks
+may still carry it.
 Field-level contracts: `docs/SPEC.md` § API and § Client-recorded provenance.
 
 ## Extension 5: read-state sync

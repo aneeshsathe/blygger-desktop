@@ -209,6 +209,7 @@ pub fn connect(
     let empty = match cred {
         Credential::Token(t) => t.trim().is_empty(),
         Credential::Password(p) => p.is_empty(),
+        Credential::OAuth(s) => s.grant().access.is_empty(),
     };
     if empty {
         return Err("Enter the studio password or the owner token".into());
