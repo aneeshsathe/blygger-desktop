@@ -15,6 +15,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-06
+
 ### Changed
 
 - **Burrow follows blygger-studio 0.32's owner API.** The tests check against 0.32.1's `openapi.json`, and the end-to-end tests run against a real local studio 0.32.1.
@@ -23,7 +25,8 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Cheaper, quicker sync.** On studio 0.32, Burrow asks the blyg what changed before reading anything, so a pull with nothing new is one small request, and it checks every 15 seconds.
 - **AI disclosure works on any studio 0.28 or later.** Text generated in Burrow is recorded with the post through the studio's own API; the Worker extension for it is only a fallback now.
 - **Generated text from your blyg's own AI** goes straight into the editor.
-- **The preview matches studio 0.32.1** byte for byte again, including its sanitizer for threads.
+- **The preview matches studio 0.32.2** byte for byte again, including its sanitizer for threads. A TK scope's sources are the posts its instruction names, not ones its output adds, as studio 0.32.2 records them.
+- **The stock-server notice is shorter.** On a current studio, only read state across Macs needs an extension; AI disclosure (0.28), removing deleted images (0.26) and replies and forks (0.18) are upstream now.
 
 ### Added
 

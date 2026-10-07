@@ -27,7 +27,7 @@ changed one, and thumbs and hoppers come from `/api/signals` and each hopper.
 |---|---|
 | AI disclosure for text generated **in Burrow** | Recorded on studio 0.28 or later: Burrow sends each TK scope's provenance with the text (`PATCH /api/items/:id {content_md, provenance}`, and on `POST /api/items`). On an older one it isn't, so before publishing such text Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
 | Read state across Macs | Stays on each Mac. |
-| Removing an image you pasted, then deleted | It stays on the server. |
+| Removing an image you pasted, then deleted | Removed on studio 0.26 or later; on an older one it stays on the server. |
 | Who a post replies to, or forks | Studio 0.18 or later sends it with each post. An older one doesn't, so Burrow fetches it from the author's blyg, a few posts per sync. |
 
 Burrow says this once, the first time it meets a stock server, and lists it in the

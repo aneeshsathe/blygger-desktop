@@ -26,8 +26,8 @@ Other ways to install, and what to do when macOS blocks a browser download,
 are in [the docs](https://aneeshsathe.github.io/blygger-desktop/install.html).
 
 Burrow works with any blyg on blygger-studio 0.9 or later: sign in with your
-studio password. A server with a few extra owner-API extensions gets a little
-more ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
+browser on studio 0.28 or later, or with your studio password on an older one.
+A server with a few extra owner-API extensions gets a little more ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
 No blyg? Try it on the built-in sample data.
 
 ## Links

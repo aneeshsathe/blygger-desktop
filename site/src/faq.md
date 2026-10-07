@@ -19,19 +19,20 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes, if it runs blygger-studio 0.9 or later: sign in with your studio password.
-A few things need extensions upstream doesn't have yet, and Burrow tells you
-which the first time it connects: AI disclosure for text generated in Burrow
-(it warns before publishing such text), read state across your Macs, and
-removing images you pasted and then deleted. See
-[Server requirements](server.md).
+Yes, if it runs blygger-studio 0.9 or later. On 0.28 or later, sign in with
+your browser (or an API token from the studio's Client access page); on an
+older one, with your studio password. On a current studio only one thing
+needs an extension upstream doesn't have yet: read state across your Macs.
+An older studio limits a little more (AI disclosure for text generated in
+Burrow, removing images you pasted and then deleted), and Burrow tells you
+which the first time it connects. See [Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 
 Your posts live on your blyg; Burrow keeps a local copy in
 `~/Library/Application Support/org.blygger.desktop/`, so everything works
 offline. Scratch notes and the notes drawer stay on your Mac until you make
-them drafts. Your owner token and AI keys are in the macOS Keychain, never in
+them drafts. Your sign-in (browser grant, token or password) and AI keys are in the macOS Keychain, never in
 a file, and never logged.
 
 Burrow is vibecoded and provided as is, with no warranty. Keep backups of

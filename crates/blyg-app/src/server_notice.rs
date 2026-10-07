@@ -31,14 +31,15 @@ pub const OUTDATED_NOTICE: &str = "Server needs updating · nothing syncs";
 /// The stock-server sheet.
 pub const LIMITS_TITLE: &str = "Your blyg runs stock blygger-studio";
 pub const LIMITS_INTRO: &str = "Writing, publishing, versions, subscriptions and your reading \
-     list all work. A few things need extensions this server doesn't have:";
+     list all work. A few things need a newer studio, or extensions this server doesn't have:";
 /// What's limited, and how Burrow copes. Also in the About window.
 pub const LIMITS: [&str; 4] = [
-    "AI disclosure for text generated in Burrow. Before you publish such text, Burrow says it \
-     will go out without the disclosure, and lets you cancel.",
     "Read state stays on this Mac. Posts you read here still show as unread on your other Macs.",
-    "An image you paste into a draft and then delete stays on the server.",
-    "Who a post replies to, or forks, appears once Burrow has fetched it from the author's blyg.",
+    "Before studio 0.28: AI disclosure for text generated in Burrow. Before you publish such \
+     text, Burrow says it will go out without the disclosure, and lets you cancel.",
+    "Before studio 0.26: an image you paste into a draft and then delete stays on the server.",
+    "Before studio 0.18: who a post replies to, or forks, appears once Burrow has fetched it \
+     from the author's blyg.",
 ];
 pub const LIMITS_OUTRO: &str =
     "Generation on your blyg's own server, if you use it, records its disclosure itself.";
