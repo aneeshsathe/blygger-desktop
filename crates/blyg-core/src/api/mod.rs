@@ -233,8 +233,16 @@ impl Api {
     /// Every item. Re-reads settings first, so `responses: "default"`
     /// resolves against the current site default.
     pub fn list_items(&self) -> Result<Vec<WireItem>> {
+        self.list_items_with(true)
+    }
+
+    /// Every item; `refresh_settings: false` resolves against the settings
+    /// as last read (when the blyg says they haven't changed).
+    pub fn list_items_with(&self, refresh_settings: bool) -> Result<Vec<WireItem>> {
         let items: Vec<WireItem> = self.collect("/api/items", "")?;
-        let _ = self.settings();
+        if refresh_settings || self.site.lock().unwrap().is_none() {
+            let _ = self.settings();
+        }
         Ok(items.into_iter().map(|w| self.resolve(w)).collect())
     }
 
@@ -251,17 +259,22 @@ impl Api {
         Ok(self.resolve(w))
     }
 
-    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?}` → the
-    /// new item's id.
+    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?,
+    /// provenance?}` → the new item's id. `provenance` (studio 0.28+) has one
+    /// entry per TK scope; an older server refuses the key with a 400.
     pub fn create_item(
         &self,
         content_md: &str,
         kind: Kind,
         stub_of: Option<&RemoteRef>,
+        provenance: Option<&[Option<ScopeProvenance>]>,
     ) -> Result<String> {
         let mut body = json!({ "mode": "blank", "content_md": content_md, "kind": kind_str(kind) });
         if let Some(s) = stub_of {
             body["stub_of"] = serde_json::to_value(s).unwrap_or(Value::Null);
+        }
+        if let Some(p) = provenance {
+            body["provenance"] = provenance_body(p);
         }
         Ok(self
             .call_as::<Created>("POST", "/api/items", Some(body))?
@@ -274,6 +287,23 @@ impl Api {
             "PATCH",
             &format!("/api/items/{}", enc(id)),
             Some(json!({ "content_md": content_md })),
+        )
+        .map(|_| ())
+    }
+
+    /// `PATCH /api/items/:id {content_md, provenance}` (studio 0.28+): the
+    /// text and its whole per-scope provenance in one atomic write. An older
+    /// server refuses the unknown key with a 400 ([`refused_provenance_key`]).
+    pub fn save_item_provenance(
+        &self,
+        id: &str,
+        content_md: &str,
+        provenance: &[Option<ScopeProvenance>],
+    ) -> Result<()> {
+        self.call(
+            "PATCH",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "content_md": content_md, "provenance": provenance_body(provenance) })),
         )
         .map(|_| ())
     }
@@ -340,21 +370,33 @@ impl Api {
             .map(|_| ())
     }
 
-    /// `POST /api/items/:id/generate {scope}` → (text, model). The server
-    /// fills that TK scope with its own model and records the provenance.
-    pub fn generate(&self, id: &str, scope: u32) -> Result<(String, String)> {
+    /// `POST /api/items/:id/generate {scope}`. The server fills that TK
+    /// scope with its own model and records the provenance.
+    pub fn generate(&self, id: &str, scope: u32) -> Result<Generated> {
         #[derive(serde::Deserialize)]
         struct R {
             text: String,
             #[serde(default)]
             model: Option<String>,
+            #[serde(default)]
+            content_md: Option<String>,
         }
         let r: R = self.call_as(
             "POST",
             &format!("/api/items/{}/generate", enc(id)),
             Some(json!({ "scope": scope })),
         )?;
-        Ok((r.text, r.model.unwrap_or_else(|| "unknown".into())))
+        Ok(Generated {
+            text: r.text,
+            model: r.model.unwrap_or_else(|| "unknown".into()),
+            content_md: r.content_md,
+        })
+    }
+
+    /// `GET /api/changes` (studio 0.32+): the blyg's change epoch and one
+    /// revision counter per data domain. `None` on an older server (404).
+    pub fn changes(&self) -> Result<Option<ChangeState>> {
+        Self::optional(self.call_as("GET", "/api/changes", None))
     }
 
     /// `POST /api/items {mode: "fork", source}` → the new draft.
@@ -987,6 +1029,9 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
         Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
         Err(ureq::Error::Status(401, _)) => Err(CoreError::Unauthorized),
         Err(ureq::Error::Status(404, _)) => Err(CoreError::NotFound),
+        Err(ureq::Error::Status(429, r)) => Err(CoreError::RateLimited {
+            retry_after: retry_after(r.header("retry-after")),
+        }),
         Err(ureq::Error::Status(code, r)) => {
             let body: Value = r
                 .into_string()
@@ -1058,8 +1103,89 @@ fn issue(v: &Value) -> String {
     }
 }
 
-/// True for failures worth retrying later (network down, server 5xx).
+/// When to try again after a 429, in seconds: `Retry-After` as a number of
+/// seconds (studio sends `60`); a minute when it's missing or unreadable (an
+/// HTTP date included). Clamped to 1 s – 1 h.
+pub(crate) fn retry_after(h: Option<&str>) -> u64 {
+    h.and_then(|h| h.trim().parse::<u64>().ok())
+        .unwrap_or(60)
+        .clamp(1, 3600)
+}
+
+/// True for failures worth retrying later (network down, server 5xx, or the
+/// blyg's work budget spent: a 429 never drops a queued change).
 pub fn is_transient(e: &CoreError) -> bool {
-    matches!(e, CoreError::Offline)
+    matches!(e, CoreError::Offline | CoreError::RateLimited { .. })
         || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
+}
+
+/// Upstream's `GenerationProvenance` array: `{sources: [{id, version}],
+/// model?, at?}` or `null` per scope.
+fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
+    Value::Array(
+        scopes
+            .iter()
+            .map(|p| match p {
+                None => Value::Null,
+                Some(p) => {
+                    let mut e = json!({ "model": p.model, "sources": p.sources });
+                    if let Some(at) = &p.at {
+                        e["at"] = json!(at);
+                    }
+                    e
+                }
+            })
+            .collect(),
+    )
+}
+
+/// A 400 that refuses the `provenance` key itself: a server older than
+/// studio 0.28, whose strict item schema doesn't know it.
+pub fn refused_provenance_key(e: &CoreError) -> bool {
+    match e {
+        CoreError::Rejected {
+            status: 400,
+            message,
+            details,
+        } => std::iter::once(message)
+            .chain(details)
+            .any(|m| m.contains("nrecognized") && m.contains("provenance")),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn retry_after_reads_seconds_and_defaults_to_a_minute() {
+        assert_eq!(retry_after(Some("60")), 60);
+        assert_eq!(retry_after(Some(" 5 ")), 5);
+        assert_eq!(retry_after(Some("0")), 1);
+        assert_eq!(retry_after(Some("999999")), 3600);
+        assert_eq!(retry_after(None), 60);
+        assert_eq!(retry_after(Some("Wed, 21 Oct 2015 07:28:00 GMT")), 60);
+    }
+
+    #[test]
+    fn a_rate_limit_is_transient() {
+        assert!(is_transient(&CoreError::RateLimited { retry_after: 60 }));
+    }
+
+    #[test]
+    fn an_unknown_provenance_key_reads_as_an_older_server() {
+        let strict = CoreError::Rejected {
+            status: 400,
+            message: "request: Unrecognized key(s) in object: 'provenance'".into(),
+            details: vec![],
+        };
+        assert!(refused_provenance_key(&strict));
+        let invalid = CoreError::Rejected {
+            status: 400,
+            message: "provenance must have one entry per TK scope".into(),
+            details: vec![],
+        };
+        assert!(!refused_provenance_key(&invalid));
+    }
 }

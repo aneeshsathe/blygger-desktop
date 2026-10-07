@@ -9,11 +9,12 @@
 
 mod worker;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
-use crate::api::{Api, is_transient};
+use crate::api::wire::ChangeState;
+use crate::api::{Api, is_transient, refused_provenance_key};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
@@ -21,8 +22,45 @@ use crate::util::now_ms;
 
 pub(crate) use worker::{Msg, spawn};
 
-/// `meta` key set when the server answered 404 to the provenance endpoint.
+/// `meta` key set when the server took provenance neither as the item's
+/// `provenance` field (studio 0.28+) nor through extension 4 (a 404).
+/// Cleared once a push with provenance lands.
 pub const PROVENANCE_UNAVAILABLE: &str = "tk_provenance_unavailable";
+
+/// `meta` key: the change epoch (`GET /api/changes`, studio 0.32+) the
+/// stored revisions belong to.
+pub const CHANGES_EPOCH: &str = "changes_epoch";
+
+/// `meta` key prefix: per consumer (`items`, `subscriptions`, `reading`),
+/// a JSON map of domain → the revision its last accepted fetch was loaded
+/// under (captured before the fetch, docs/d1-polling-cache-design.md R3).
+pub const CHANGES_SEEN: &str = "changes_seen:";
+
+/// What each pulled collection depends on, by `/api/changes` domain. A
+/// collection is fetched again only when one of these moved.
+const ITEMS_DEPS: &[&str] = &["items", "settings"];
+const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
+const READING_DEPS: &[&str] = &["reading", "subscriptions", "signals", "hoppers"];
+
+/// With `/api/changes`, everything is still read whole this often, as a
+/// safety net (a trigger the server's dependency matrix misses, lineage
+/// fills that wait on a later pull).
+const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
+
+/// One item's autosave pushes are at least this far apart (`force` ignores
+/// it): about 20 writes a minute at most from continuous typing, well under
+/// studio 0.28's budgets (60 writes a minute across all tokens, 120 for the
+/// owner).
+pub const SAVE_GAP: Duration = Duration::from_secs(3);
+
+/// How a push carries TK provenance (learned per session).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProvMode {
+    /// `PATCH /api/items/:id {content_md, provenance}` (studio 0.28+).
+    Field,
+    /// The server refused the field: extension 4's `PUT …/tk-provenance`.
+    Ext4,
+}
 
 /// `meta` key: "1" while the server advertises read-state sync (the last
 /// `GET /api/reading/imported` said `read_state: true`, extension 5), "0" or absent
@@ -66,7 +104,8 @@ impl Default for SyncOptions {
 }
 
 enum Precheck {
-    Proceed,
+    /// Carries the provenance the server reported with the item.
+    Proceed(Option<Vec<Option<ScopeProvenance>>>),
     Stop,
 }
 
@@ -100,6 +139,21 @@ struct NetState {
     /// Each stock entry's signature as last taken in (this session): a
     /// change shows even when the timestamps (whole seconds) don't move.
     stock_seen: std::collections::HashMap<(String, String), u64>,
+    /// The last stock reading pull left changed rows for later
+    /// (`STOCK_FETCHES`), so its revision isn't accepted yet.
+    stock_deferred: bool,
+    /// The server answers `GET /api/changes` (`None` before a pull).
+    changes: Option<bool>,
+    /// When everything was last read whole.
+    full_at: Option<Instant>,
+    /// A 429 is being waited out (its notice was sent).
+    rate_limited: bool,
+    /// How provenance travels to this server, once known.
+    prov_mode: Option<ProvMode>,
+    /// When each item's last autosave push landed (`SAVE_GAP`).
+    pushed: HashMap<LocalId, Instant>,
+    /// The earliest time a save held back by `SAVE_GAP` may go.
+    paced_until: Option<Instant>,
 }
 
 /// The time allowed per pull for fetching item documents (lineage).
@@ -152,6 +206,13 @@ impl Engine {
                 stock_reading: None,
                 stock_swept: None,
                 stock_seen: Default::default(),
+                stock_deferred: false,
+                changes: None,
+                full_at: None,
+                rate_limited: false,
+                prov_mode: None,
+                pushed: HashMap::new(),
+                paced_until: None,
             }),
             opts,
             scratch_dir: None,
@@ -268,11 +329,26 @@ impl Engine {
         st.health = Health::Ok;
         st.backoff = self.opts.backoff_initial;
         st.retry_at = None;
+        st.rate_limited = false;
     }
 
     /// Record a failed network call. Transient failures and auth failures
-    /// schedule an exponential backoff for the worker.
+    /// schedule an exponential backoff for the worker. A 429 waits exactly
+    /// the server's `Retry-After` instead, and says so once.
     pub fn note_err(&self, e: &CoreError) {
+        if let CoreError::RateLimited { retry_after } = e {
+            let first = {
+                let mut st = self.state();
+                st.retry_at = Some(Instant::now() + Duration::from_secs(*retry_after));
+                !std::mem::replace(&mut st.rate_limited, true)
+            };
+            if first {
+                self.emit(CoreEvent::Error(format!(
+                    "The blyg asked Burrow to slow down; retrying in {retry_after}s"
+                )));
+            }
+            return;
+        }
         let mut st = self.state();
         let health = match e {
             CoreError::Offline => Health::Offline,
@@ -287,6 +363,23 @@ impl Engine {
 
     pub fn retry_at(&self) -> Option<Instant> {
         self.state().retry_at
+    }
+
+    /// The earliest time an autosave held back by `SAVE_GAP` may go, as of
+    /// the last flush.
+    pub fn paced_until(&self) -> Option<Instant> {
+        self.state().paced_until
+    }
+
+    /// How often the worker pulls: a quarter of `pull_interval` (15 s by
+    /// default, like Studio) when the server answers `/api/changes`, since an
+    /// unchanged pull is then one small read; else the full interval.
+    pub fn pull_every(&self) -> Duration {
+        if self.state().changes == Some(true) {
+            (self.opts.pull_interval / 4).max(Duration::from_secs(1))
+        } else {
+            self.opts.pull_interval
+        }
     }
 
     /// Wrap a direct remote call so it feeds health/status.
@@ -322,6 +415,11 @@ impl Engine {
             self.set_pushing(false);
             match ran {
                 Ok(()) => {
+                    if op.kind == OpKind::Save {
+                        self.state()
+                            .pushed
+                            .insert(op.local_id.clone(), Instant::now());
+                    }
                     self.note_ok();
                     changed = true;
                 }
@@ -389,6 +487,8 @@ impl Engine {
         let conflicted = self.store.conflicted()?;
         let now = now_ms();
         let mut blocked: HashSet<LocalId> = HashSet::new();
+        let mut st = self.state();
+        st.paced_until = None;
         for op in ops {
             if only.is_some_and(|o| *o != op.local_id) || blocked.contains(&op.local_id) {
                 continue;
@@ -397,6 +497,16 @@ impl Engine {
             // the create that assigns its server id.
             if conflicted.contains(&op.local_id) || op.in_flight || (!force && op.not_before > now)
             {
+                blocked.insert(op.local_id.clone());
+                continue;
+            }
+            // Autosave pacing: the edits keep coalescing into this op meanwhile.
+            if !force
+                && op.kind == OpKind::Save
+                && let Some(at) = st.pushed.get(&op.local_id).map(|t| *t + SAVE_GAP)
+                && at > Instant::now()
+            {
+                st.paced_until = Some(st.paced_until.map_or(at, |p| p.min(at)));
                 blocked.insert(op.local_id.clone());
                 continue;
             }
@@ -453,27 +563,58 @@ impl Engine {
                 if item.server_id.is_some() {
                     return self.store.drop_op(op.seq);
                 }
+                // Studio 0.28+ takes the provenance with the text.
+                if let Some(prov) = self.create_provenance(&item.local_id, &content) {
+                    match self.api.create_item(
+                        &content,
+                        item.kind,
+                        item.stub_of.as_ref(),
+                        Some(&prov),
+                    ) {
+                        Ok(sid) => {
+                            self.state().prov_mode = Some(ProvMode::Field);
+                            self.store.op_created(
+                                op.seq,
+                                &item.local_id,
+                                &sid,
+                                &content,
+                                item.kind,
+                            )?;
+                            self.provenance_landed()?;
+                            return self.store.prov_pushed(&item.local_id, &content, &prov);
+                        }
+                        Err(e @ CoreError::Rejected { status: 400, .. }) => {
+                            if refused_provenance_key(&e) {
+                                self.state().prov_mode = Some(ProvMode::Ext4);
+                            }
+                            // Create without it; the push that follows
+                            // retries (or reports) the provenance.
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
                 let sid = self
                     .api
-                    .create_item(&content, item.kind, item.stub_of.as_ref())?;
+                    .create_item(&content, item.kind, item.stub_of.as_ref(), None)?;
                 self.store
                     .op_created(op.seq, &item.local_id, &sid, &content, item.kind)?;
-                // POST can't carry provenance; a combined push follows.
+                // The provenance follows in a combined push.
                 self.store.queue_prov_push(&item.local_id)
             }
             OpKind::Save => {
                 let Some(sid) = &item.server_id else {
                     return self.store.op_lost_server(op.seq, &item.local_id);
                 };
-                match self.precheck(op, &item.local_id, &sid.0)? {
-                    Precheck::Proceed => {}
+                let held = match self.precheck(op, &item.local_id, &sid.0)? {
+                    Precheck::Proceed(held) => held,
                     Precheck::Stop => return Ok(()),
-                }
+                };
                 match self.push_text(
                     &item.local_id,
                     &sid.0,
                     &content,
                     row.base_content.as_deref(),
+                    held,
                 ) {
                     Ok(()) => self.store.op_saved(op.seq, &item.local_id, &content),
                     Err(CoreError::NotFound) => self.store.op_lost_server(op.seq, &item.local_id),
@@ -488,17 +629,17 @@ impl Engine {
                     return self.store.drop_op(op.seq);
                 }
                 // Retiring the old draft must not throw away an edit made elsewhere.
-                match self.precheck(op, &item.local_id, &old.0)? {
-                    Precheck::Proceed => {}
+                let held = match self.precheck(op, &item.local_id, &old.0)? {
+                    Precheck::Proceed(held) => held,
                     Precheck::Stop => return Ok(()),
-                }
+                };
                 // A draft's kind can change until it is first published:
                 // one `PATCH {content_md, kind}` keeps its id. Provenance the
                 // server holds is keyed to `base`; adopt it so the push that
                 // follows remaps it onto the new text.
                 if self.store.provenance(&item.local_id).scopes.is_none()
                     && let Some(base) = &row.base_content
-                    && let Ok(Some(server)) = self.api.get_tk_provenance(&old.0)
+                    && let Ok(Some(server)) = self.server_provenance(&old.0, held)
                     && server.iter().any(Option::is_some)
                 {
                     self.store.adopt_prov(&item.local_id, base, &server)?;
@@ -520,9 +661,19 @@ impl Engine {
     /// Push the working copy. The Worker keys TK provenance by scope
     /// position, so when the scopes changed since `base` (what the server
     /// holds), or tracked provenance changed, the text and the whole
-    /// provenance array go together in one `PUT …/tk-provenance`. Otherwise
-    /// it's a plain `PUT /api/items/:id`.
-    fn push_text(&self, id: &LocalId, sid: &str, content: &str, base: Option<&str>) -> Result<()> {
+    /// provenance array go together in one write: `PATCH {content_md,
+    /// provenance}` on studio 0.28+, extension 4's `PUT …/tk-provenance` on
+    /// an older server that refuses the field. Otherwise it's a plain
+    /// `PATCH {content_md}`. `held` is the provenance the server reported
+    /// with the item (the precheck's read; `None` before studio 0.28).
+    fn push_text(
+        &self,
+        id: &LocalId,
+        sid: &str,
+        content: &str,
+        base: Option<&str>,
+        held: Option<Vec<Option<ScopeProvenance>>>,
+    ) -> Result<()> {
         let Some(n) = crate::tk::scope_count(content) else {
             // Malformed TK (mid-typing): positions mean nothing yet. The
             // tracked provenance stays dirty for the next well-formed push.
@@ -539,7 +690,7 @@ impl Engine {
             _ => {
                 // Not tracked here: carry the server's own provenance (keyed
                 // to `base`, which the precheck just confirmed) over.
-                match self.api.get_tk_provenance(sid) {
+                match self.server_provenance(sid, held) {
                     Ok(Some(server)) if server.iter().any(Option::is_some) => base
                         .and_then(|b| crate::tk::remap(b, &server, content))
                         .unwrap_or_else(|| vec![None; n]),
@@ -551,58 +702,207 @@ impl Engine {
         };
         let scopes: Vec<Option<ScopeProvenance>> = if crate::tk::validate(content, &scopes).is_ok()
         {
-            scopes
+            self.with_versions(scopes)
         } else {
             vec![None; n]
         };
-        match self.api.put_tk_provenance(sid, Some(content), &scopes) {
-            Ok(_) => self.store.prov_pushed(id, content, &scopes),
-            Err(CoreError::NotFound) => {
-                // No provenance extension on this server.
-                self.store.set_meta(PROVENANCE_UNAVAILABLE, "1")?;
-                self.api.save_item(sid, content)
+        self.push_provenance(id, sid, content, &scopes)
+    }
+
+    /// The provenance the server holds for an item: what its read reported
+    /// (`held`, studio 0.28+), else extension 4's `GET …/tk-provenance`.
+    fn server_provenance(
+        &self,
+        sid: &str,
+        held: Option<Vec<Option<ScopeProvenance>>>,
+    ) -> Result<Option<Vec<Option<ScopeProvenance>>>> {
+        if held.is_some() || self.state().prov_mode == Some(ProvMode::Field) {
+            return Ok(held);
+        }
+        match self.api.get_tk_provenance(sid) {
+            // Extension routes closed to this credential: nothing readable.
+            Err(CoreError::Rejected { status: 403, .. }) => Ok(None),
+            r => r,
+        }
+    }
+
+    /// Write `content` and `scopes` together, by whichever route the server
+    /// takes. A refusal of the provenance itself (e.g. a cited source that no
+    /// longer resolves) retries without the citations, then saves the text
+    /// with no disclosure and says so.
+    fn push_provenance(
+        &self,
+        id: &LocalId,
+        sid: &str,
+        content: &str,
+        scopes: &[Option<ScopeProvenance>],
+    ) -> Result<()> {
+        let field = self.state().prov_mode != Some(ProvMode::Ext4);
+        let first = if field {
+            match self.api.save_item_provenance(sid, content, scopes) {
+                Err(e) if refused_provenance_key(&e) => {
+                    // Older than studio 0.28: try extension 4.
+                    self.state().prov_mode = Some(ProvMode::Ext4);
+                    return self.push_provenance(id, sid, content, scopes);
+                }
+                Ok(()) => {
+                    self.state().prov_mode = Some(ProvMode::Field);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            match self.api.put_tk_provenance(sid, Some(content), scopes) {
+                // No provenance on this server at all, or not for this
+                // credential (a Worker answers scoped tokens 403 on its
+                // extension routes): disclosure isn't recordable here.
+                Err(CoreError::NotFound | CoreError::Rejected { status: 403, .. }) => {
+                    self.store.set_meta(PROVENANCE_UNAVAILABLE, "1")?;
+                    return self.api.save_item(sid, content);
+                }
+                r => r.map(|_| ()),
+            }
+        };
+        let message = match first {
+            Ok(()) => {
+                self.provenance_landed()?;
+                return self.store.prov_pushed(id, content, scopes);
             }
             Err(CoreError::Rejected {
                 status: 400,
                 message,
                 ..
-            }) => {
-                // E.g. a cited source that no longer resolves: keep the
-                // disclosure, drop the citations; then give up on provenance.
-                let bare: Vec<Option<ScopeProvenance>> = scopes
-                    .iter()
-                    .map(|p| {
-                        p.clone().map(|p| ScopeProvenance {
-                            sources: vec![],
-                            ..p
-                        })
-                    })
-                    .collect();
-                match self.api.put_tk_provenance(sid, Some(content), &bare) {
-                    Ok(_) => self.store.prov_pushed(id, content, &bare),
+            }) => message,
+            Err(e) => return Err(e),
+        };
+        let send = |s: &[Option<ScopeProvenance>]| {
+            if field {
+                self.api.save_item_provenance(sid, content, s)
+            } else {
+                self.api
+                    .put_tk_provenance(sid, Some(content), s)
+                    .map(|_| ())
+            }
+        };
+        let bare: Vec<Option<ScopeProvenance>> = scopes
+            .iter()
+            .map(|p| {
+                p.clone().map(|p| ScopeProvenance {
+                    sources: vec![],
+                    ..p
+                })
+            })
+            .collect();
+        match send(&bare) {
+            Ok(()) => self.store.prov_pushed(id, content, &bare),
+            Err(CoreError::Rejected { status: 400, .. }) => {
+                self.emit(CoreEvent::Error(format!(
+                    "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
+                )));
+                let none = vec![None; scopes.len()];
+                // Clear what the server held, so nothing stale stays keyed
+                // to the new text; failing that, the text alone.
+                match send(&none) {
                     Err(CoreError::Rejected { status: 400, .. }) => {
-                        self.emit(CoreEvent::Error(format!(
-                            "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
-                        )));
-                        self.api.save_item(sid, content)?;
-                        // Don't retry (and re-warn) on every keystroke.
-                        self.store.prov_pushed(id, content, &vec![None; n])
+                        self.api.save_item(sid, content)?
                     }
-                    Err(e) => Err(e),
+                    r => r?,
                 }
+                // Don't retry (and re-warn) on every keystroke.
+                self.store.prov_pushed(id, content, &none)
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// A push with provenance landed: the server takes it after all.
+    fn provenance_landed(&self) -> Result<()> {
+        if self.store.meta(PROVENANCE_UNAVAILABLE).is_some() {
+            self.store.delete_meta(PROVENANCE_UNAVAILABLE)?;
+        }
+        Ok(())
+    }
+
+    /// The provenance to send with a new item's `POST` (studio 0.28+): the
+    /// tracked provenance, keyed to `content` and valid, when it discloses
+    /// anything and the server isn't known to refuse the field.
+    fn create_provenance(
+        &self,
+        id: &LocalId,
+        content: &str,
+    ) -> Option<Vec<Option<ScopeProvenance>>> {
+        if self.state().prov_mode == Some(ProvMode::Ext4) {
+            return None;
+        }
+        let t = self.store.provenance(id);
+        let scopes = match (t.scopes, t.keyed_to) {
+            (Some(s), Some(k)) if k == content => s,
+            (Some(s), Some(k)) => crate::tk::remap(&k, &s, content)?,
+            _ => return None,
+        };
+        if !scopes.iter().any(Option::is_some) || crate::tk::validate(content, &scopes).is_err() {
+            return None;
+        }
+        Some(self.with_versions(scopes))
+    }
+
+    /// Upstream records each cited source with its version, and the app
+    /// may leave that to the server (`None`): fill it in from the item held
+    /// here (own posts) or the reading list, and drop a source neither
+    /// knows (the disclosure itself stays).
+    fn with_versions(&self, scopes: Vec<Option<ScopeProvenance>>) -> Vec<Option<ScopeProvenance>> {
+        if !scopes
+            .iter()
+            .flatten()
+            .any(|p| p.sources.iter().any(|s| s.version.is_none()))
+        {
+            return scopes;
+        }
+        let reading = self.store.reading();
+        let version_of = |id: &str| -> Option<u32> {
+            let own = self
+                .store
+                .local_id_for_server(id)
+                .and_then(|l| self.store.item(&l))
+                .map(|i| i.version)
+                .filter(|v| *v > 0);
+            own.or_else(|| {
+                reading
+                    .iter()
+                    .find(|r| r.remote_id == id)
+                    .map(|r| r.version)
+                    .filter(|v| *v > 0)
+            })
+        };
+        scopes
+            .into_iter()
+            .map(|p| {
+                p.map(|mut p| {
+                    p.sources = p
+                        .sources
+                        .into_iter()
+                        .filter_map(|mut s| {
+                            if s.version.is_none() {
+                                s.version = Some(version_of(&s.id)?);
+                            }
+                            Some(s)
+                        })
+                        .collect();
+                    p
+                })
+            })
+            .collect()
     }
 
     /// Before overwriting the server's working copy, make sure it is still
     /// what we last synced against. Otherwise the item enters conflict (and
     /// its ops stay queued, blocked) instead of silently clobbering an edit
     /// made on another device. This closes the gap between periodic pulls.
+    /// `Proceed` carries the provenance the server reported (studio 0.28+).
     fn precheck(&self, op: &Op, id: &LocalId, sid: &str) -> Result<Precheck> {
         match self.api.get_item(sid) {
             Ok(w) => match self.store.check_server(id, &w)? {
-                None => Ok(Precheck::Proceed),
+                None => Ok(Precheck::Proceed(w.server_provenance())),
                 Some((local_id, mine, theirs)) => {
                     self.store.set_in_flight(op.seq, false)?;
                     self.emit(CoreEvent::Conflict {
@@ -634,45 +934,146 @@ impl Engine {
         r
     }
 
+    /// One pull. On studio 0.32+, `GET /api/changes` comes first and each
+    /// collection is fetched only when a domain it depends on moved since
+    /// its last accepted fetch (everything, every `FULL_PULL_EVERY`). The
+    /// revisions are captured before any data is loaded and recorded only
+    /// after that collection's fetch succeeded, so a failed or partial
+    /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self) -> Result<()> {
         self.check_server()?;
-        let wires = self.api.list_items()?;
-        let out = self.store.merge_all(&wires)?;
-        for (local_id, mine, theirs) in out.conflicts {
-            self.emit(CoreEvent::Conflict {
-                local_id,
-                mine,
-                theirs,
-            });
-        }
-        if out.changed {
-            self.emit(CoreEvent::ItemsChanged);
+        let rev = self.revisions()?;
+        let full = rev.is_none()
+            || self
+                .state()
+                .full_at
+                .is_none_or(|t| t.elapsed() >= FULL_PULL_EVERY);
+        let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
+
+        if stale("items", ITEMS_DEPS) {
+            let settings = full || !self.unchanged(&rev, "items", &["settings"]);
+            let wires = self.api.list_items_with(settings)?;
+            let out = self.store.merge_all(&wires)?;
+            for (local_id, mine, theirs) in out.conflicts {
+                self.emit(CoreEvent::Conflict {
+                    local_id,
+                    mine,
+                    theirs,
+                });
+            }
+            if out.changed {
+                self.emit(CoreEvent::ItemsChanged);
+            }
+            self.accept(&rev, "items", ITEMS_DEPS)?;
         }
 
         let mut reading_changed = false;
-        match self.api.list_subscriptions() {
-            Ok(subs) => reading_changed |= self.store.replace_subscriptions(&subs)?,
-            Err(CoreError::NotFound) => {}
-            Err(e) => return Err(e),
+        if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
+            match self.api.list_subscriptions() {
+                Ok(subs) => reading_changed |= self.store.replace_subscriptions(&subs)?,
+                Err(CoreError::NotFound) => {}
+                Err(e) => return Err(e),
+            }
+            self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
         }
         let mut reading_err = None;
-        if let Some((items, complete)) = self.fetch_reading()? {
-            let kinds = self
-                .store
-                .subscriptions()
-                .into_iter()
-                .map(|s| (s.id, s.kind))
-                .collect();
-            reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
-            reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
-            if self.read_sync_on() {
-                reading_err = self.reconcile_reads(&items).err();
+        // Read state (extension 5) lives in a table the change counters
+        // don't watch: with it on, the reading list is always read.
+        if stale("reading", READING_DEPS) || self.read_sync_on() {
+            self.state().stock_deferred = false;
+            let fetched = self.fetch_reading()?;
+            let mut whole = true;
+            if let Some((items, complete)) = fetched {
+                let kinds = self
+                    .store
+                    .subscriptions()
+                    .into_iter()
+                    .map(|s| (s.id, s.kind))
+                    .collect();
+                reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
+                reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
+                if self.read_sync_on() {
+                    reading_err = self.reconcile_reads(&items).err();
+                }
+                // A stock pull that stopped early took in everything new
+                // (older edits wait for the next full pull's sweep); one
+                // that left changed rows for later isn't done.
+                let st = self.state();
+                whole = complete || (st.stock_reading == Some(true) && !st.stock_deferred);
+            }
+            if whole {
+                self.accept(&rev, "reading", READING_DEPS)?;
             }
         }
         if reading_changed {
             self.emit(CoreEvent::ReadingChanged);
         }
+        if full && rev.is_some() {
+            self.state().full_at = Some(Instant::now());
+        }
         reading_err.map_or(Ok(()), Err)
+    }
+
+    // ------------------------------------------------------------ revisions
+
+    /// `GET /api/changes`, captured before anything is loaded. `None` from
+    /// a server without it (older than studio 0.32), which is pulled whole
+    /// as before. A new epoch (the database was restored or replaced)
+    /// forgets every stored revision, so everything is read again.
+    fn revisions(&self) -> Result<Option<ChangeState>> {
+        let c = match self.api.changes() {
+            Ok(c) => c,
+            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
+            // Refused or unreadable: pull the old way.
+            Err(_) => None,
+        };
+        self.state().changes = Some(c.is_some());
+        let Some(c) = c else {
+            return Ok(None);
+        };
+        if self.store.meta(CHANGES_EPOCH).as_deref() != Some(c.epoch.as_str()) {
+            for consumer in ["items", "subscriptions", "reading"] {
+                self.store
+                    .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
+            }
+            self.store.set_meta(CHANGES_EPOCH, &c.epoch)?;
+            self.state().full_at = None;
+        }
+        Ok(Some(c))
+    }
+
+    /// The revisions `consumer`'s last accepted fetch was loaded under.
+    fn seen(&self, consumer: &str) -> BTreeMap<String, u64> {
+        self.store
+            .meta(&format!("{CHANGES_SEEN}{consumer}"))
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    /// Whether none of `deps` moved since `consumer` last fetched. A domain
+    /// the server doesn't report counts as moved.
+    fn unchanged(&self, rev: &Option<ChangeState>, consumer: &str, deps: &[&str]) -> bool {
+        let Some(rev) = rev else {
+            return false;
+        };
+        let seen = self.seen(consumer);
+        deps.iter()
+            .all(|d| rev.domains.get(*d).is_some_and(|n| seen.get(*d) == Some(n)))
+    }
+
+    /// `consumer`'s fetch succeeded: record the revisions captured before it.
+    fn accept(&self, rev: &Option<ChangeState>, consumer: &str, deps: &[&str]) -> Result<()> {
+        let Some(rev) = rev else {
+            return Ok(());
+        };
+        let seen: BTreeMap<&str, u64> = deps
+            .iter()
+            .filter_map(|d| rev.domains.get(*d).map(|n| (*d, *n)))
+            .collect();
+        self.store.set_meta(
+            &format!("{CHANGES_SEEN}{consumer}"),
+            &serde_json::to_string(&seen).unwrap_or_default(),
+        )
     }
 
     // ------------------------------------------------------------ read state
@@ -889,6 +1290,7 @@ impl Engine {
             }
         }
         let complete = reached_end && !deferred;
+        self.state().stock_deferred = deferred;
         if complete {
             self.state().stock_swept = Some(Instant::now());
         }

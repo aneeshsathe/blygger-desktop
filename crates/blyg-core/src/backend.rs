@@ -35,6 +35,11 @@ pub enum CoreError {
     NotSynced,
     #[error("storage: {0}")]
     Storage(String),
+    /// 429: the blyg's API work budget is spent (studio 0.28+). Transient:
+    /// nothing is dropped, and the next attempt waits `retry_after` seconds
+    /// (the server's `Retry-After`).
+    #[error("the blyg asked Burrow to slow down; retrying in {retry_after}s")]
+    RateLimited { retry_after: u64 },
     #[error("{0}")]
     Other(String),
 }

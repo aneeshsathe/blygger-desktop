@@ -50,7 +50,9 @@ impl Provider for BlygServer {
             ));
         };
         let (text, model) = match self.api.generate(&scope.item_id, scope.scope as u32) {
-            Ok(r) => r,
+            // `content_md` (studio 0.27+) is the whole body as stored; the
+            // caller splices `text` itself.
+            Ok(r) => (r.text, r.model),
             Err(CoreError::NotFound) => {
                 return Err(AiError::Provider(
                     "item not found on the server (or the server has no /generate)".into(),
