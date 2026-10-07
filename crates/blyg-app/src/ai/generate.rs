@@ -12,15 +12,9 @@ use blyg_core::{Backend, Item, ProvenanceSource, ReadingItem, ScopeProvenance, t
 
 /// Studio 0.27.2: `POST /api/items/:id/generate` also returns `content_md`,
 /// the whole working copy with the scope's output spliced in, as the
-/// server saved it. The adapter between the provider's result and the
-/// editor: `Some(text)` when the reply carried it.
-///
-/// ADAPTER: the provider result doesn't carry it yet (`Api::generate`'s
-/// change lands separately); once `GenResult` has the field, return it
-/// here. Until then `None` keeps the pull-and-reload path.
+/// server saved it (`None` from an older server: then the item is pulled).
 pub fn server_content_md(r: &blyg_ai::GenResult) -> Option<String> {
-    let _ = r;
-    None
+    r.content_md.clone()
 }
 
 /// The editor's text after a server generate: the server's `content_md`

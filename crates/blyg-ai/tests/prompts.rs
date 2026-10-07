@@ -111,6 +111,7 @@ impl Provider for Scripted {
             .expect("a scripted reply");
         on_delta(&text);
         Ok(GenResult {
+            content_md: None,
             text,
             model: "test-model".into(),
         })
