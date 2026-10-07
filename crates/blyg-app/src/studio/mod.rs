@@ -588,9 +588,7 @@ impl MainView {
             SurfaceEvent::PageEnd => {} // --- reader folders --- (the reader's)
             // --- selection --- the preview shows no pill (it is your own
             // draft, the one a quote would go into).
-            SurfaceEvent::Selected(_)
-            | SurfaceEvent::QuoteSelection
-            | SurfaceEvent::ReplySelection => {}
+            SurfaceEvent::Selected(_) | SurfaceEvent::QuoteSelection => {}
         }
     }
 

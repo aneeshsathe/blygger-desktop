@@ -445,6 +445,9 @@ impl Backend for SwitchBackend {
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
         self.cur().mark_read(sub_id, remote_id)
     }
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        self.cur().set_read(rows, read)
+    }
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
         self.cur().publish(id, note)
     }
@@ -515,6 +518,15 @@ impl Backend for SwitchBackend {
     }
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
         self.cur().pause_subscription(sub_id, paused)
+    }
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        self.cur().rename_subscription(sub_id, title)
+    }
+    fn poll_subscriptions(&self) -> Result<u32> {
+        self.cur().poll_subscriptions()
+    }
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        self.cur().check_subscription(sub_id)
     }
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
         self.cur().signal(sub_id, remote_id, thumb)

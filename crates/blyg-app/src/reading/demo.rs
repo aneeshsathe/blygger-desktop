@@ -123,6 +123,66 @@ impl MainView {
                 self.select_source(Source::Folder(FOLDER_FRIENDS.into()), cx);
                 open(self, RUE_TRUST, window, cx);
             }
+            // --- read/unread --- three posts picked, then the row menu.
+            ("rd-picks" | "rd-post-menu", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-picks" | "rd-post-menu", 1) => {
+                let keys = self.shown_keys();
+                open(self, &keys[0].1, window, cx);
+                let cur = self.reading.sel.clone();
+                for k in keys.iter().skip(1).take(2) {
+                    self.reading.picked.toggle(k, cur.as_ref());
+                }
+                cx.notify();
+            }
+            ("rd-post-menu", 2) => {
+                let k = self.shown_keys()[1].clone();
+                self.open_post_menu(k, point(px(420.), px(200.)), cx);
+            }
+            // --- subscription names --- a renamed subscription's menu.
+            ("rd-sub-menu", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-sub-menu", 1) => {
+                use super::sources::MenuTarget;
+                let _ = self
+                    .backend
+                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                self.reading.subs = self.backend.subscriptions();
+                self.set_pane(super::sources_vm::Pane::Sources, cx);
+                self.open_source_menu(
+                    MenuTarget::Sub("sub-omar".into()),
+                    point(px(96.), px(392.)),
+                    false,
+                    cx,
+                );
+            }
+            ("rd-sub-rename", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-sub-rename", 1) => {
+                let _ = self
+                    .backend
+                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                self.reading.subs = self.backend.subscriptions();
+                self.open_sub_name_sheet("sub-omar".into(), window, cx);
+            }
+            // --- stub quotes --- Reply: the whole post, the hint line; then
+            // the passage chooser with a selection; then that passage quoted.
+            ("rd-stub" | "rd-stub-passage", 0) => {
+                self.show_view(View::Reading, window, cx);
+                open(self, LIN_GARDENS, window, cx);
+            }
+            ("rd-stub" | "rd-stub-passage", 1) => {
+                if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
+                    self.item_action(item, "Reply", window, cx);
+                }
+                self.toggle_stub_chooser(window, cx);
+                if let Some(post) = self.reading.stub.as_ref().and_then(|c| c.post.clone()) {
+                    post.update(cx, |s, cx| {
+                        let t = s.value().to_string();
+                        let end = t.find('.').map_or(t.len().min(40), |i| i + 1);
+                        s.set_selected_range(0..end, cx);
+                        s.focus(window, cx);
+                    });
+                }
+            }
+            ("rd-stub-passage", 2) => self.quote_stub_passage(false, window, cx),
             // A subscription's context menu, on its "Move to folder ›" list.
             ("rd-folder-menu", 0) => self.show_view(View::Reading, window, cx),
             ("rd-folder-menu", 1) => {

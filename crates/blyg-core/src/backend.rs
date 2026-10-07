@@ -152,6 +152,25 @@ pub trait Backend: Send + Sync {
         Ok(())
     }
 
+    /// Mark many reading items (`(sub_id, remote_id)`, each with its
+    /// duplicates) read at their current versions, or unread: a selection
+    /// in the reading list, or all of it. Local and instant; on a server
+    /// that syncs read state the change is queued for it (unread only when
+    /// the server can clear read state; otherwise unread stays on this Mac).
+    /// Returns how many rows changed. Additive; the default marks read one
+    /// by one and refuses unread, so other implementors compile.
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        if !read {
+            return Err(CoreError::Other(
+                "marking unread isn't supported here".into(),
+            ));
+        }
+        for (s, r) in rows {
+            self.mark_read(s, r)?;
+        }
+        Ok(rows.len())
+    }
+
     // --- scratch notes ---
     // docs/SPEC.md § Scratch notes. Scratch items have `Status::Scratch`:
     // `save`, `set_kind`, `search` and `delete_draft` work on them locally,
@@ -255,6 +274,35 @@ pub trait Backend: Send + Sync {
         title: Option<&str>,
     ) -> Result<()>;
     fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()>;
+    /// Name a subscription: `Some(name)` is a name of your own (the source
+    /// stops renaming it); `None` hands the name back to the source, which
+    /// refreshes it while polling (studio 0.30, `title_follows_source`).
+    /// Additive; the default sets a name and refuses `None`.
+    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+        match title {
+            Some(t) => self.set_subscription(sub_id, None, Some(t)),
+            None => Err(CoreError::Other(
+                "following the source's name isn't supported here".into(),
+            )),
+        }
+    }
+    /// "Check all feeds now": the server polls every subscription that
+    /// isn't paused, in the background (studio 0.30), and answers with how
+    /// many; a pull follows. Additive; the default refuses.
+    fn poll_subscriptions(&self) -> Result<u32> {
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
+    /// "Check now" for one subscription: a blyg's index is reconciled at
+    /// once (true when anything changed); a feed is polled with the rest.
+    /// A pull follows. Additive; the default refuses.
+    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+        let _ = sub_id;
+        Err(CoreError::Other(
+            "checking feeds isn't supported here".into(),
+        ))
+    }
     /// thumb: Some(1) / Some(-1) / None (clear).
     fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()>;
     fn mentions(&self) -> Result<Vec<Mention>>;

@@ -48,10 +48,11 @@ The selected post shows its actions. Each says what it makes:
 
 - **Quote into a thread**: `![[id]]` in a thread of yours.
 - **Reply · new stub**: a new thread that responds to the post (a *stub*,
-  Blygger's reply), usually quoting it. With a passage selected in the
-  reading pane, the reply starts as a partial quote of that passage. Replying
-  to a long post with nothing selected leaves an empty `>` line under the
-  quote for you to fill in (delete it to quote the whole post).
+  Blygger's reply). It starts quoting the whole post. A line above the
+  editor says what the stub is doing; **quote a passage instead** shows the
+  post's text, and the passage you select there becomes the quote (`>` lines
+  under `![[id]]`). Once there is one, the next passage goes after the caret
+  as its own quote, for a running commentary; **quote whole post** goes back.
 - **AI reply · new stub**: the same, with a first draft from AI.
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.

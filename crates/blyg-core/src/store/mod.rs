@@ -57,6 +57,11 @@ pub enum OpKind {
     /// Send a reading row's read state (extension 5); payload = a `ReadMark`,
     /// `local_id` = `read_sync::read_key`, not an item.
     Read,
+    /// Clear a reading row's read state (mark unread, upstream's
+    /// `read_state_clear`); same key as `Read`, payload an `UnreadMark`.
+    /// A row has at most one waiting `Read` or `Unread` op: the last action
+    /// replaces the other (`read_sync::queue_read` / `queue_unread`).
+    Unread,
 }
 
 impl OpKind {
@@ -67,6 +72,7 @@ impl OpKind {
             OpKind::Recreate => "recreate",
             OpKind::DeleteRemote => "delete_remote",
             OpKind::Read => "read",
+            OpKind::Unread => "unread",
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -75,6 +81,7 @@ impl OpKind {
             "recreate" => OpKind::Recreate,
             "delete_remote" => OpKind::DeleteRemote,
             "read" => OpKind::Read,
+            "unread" => OpKind::Unread,
             _ => OpKind::Save,
         }
     }
@@ -1213,3 +1220,6 @@ mod pick_tests;
 
 #[cfg(test)]
 mod folders_tests; // --- reader folders ---
+
+#[cfg(test)]
+mod read_state_tests; // --- read/unread ---

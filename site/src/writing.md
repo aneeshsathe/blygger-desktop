@@ -132,7 +132,7 @@ isn't in the quoted post, and publishing refuses it. In the stream, a partial
 quote shows only its passage.
 
 The easy way to write one is to select the passage while reading and press
-⇧⌘D, or reply with it selected; see
+⇧⌘D, or to reply and choose **quote a passage instead** in the stub; see
 [Reading, quoting and responses](reading.md#universal-quoting).
 
 ### `[[id]]` links

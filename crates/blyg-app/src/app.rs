@@ -2395,6 +2395,8 @@ impl MainView {
                     },
                 ])
             })
+            // --- stub quotes --- a stub's hint line and passage chooser.
+            .children(self.render_stub_bar(cx))
             .child(
                 div()
                     .flex_1()

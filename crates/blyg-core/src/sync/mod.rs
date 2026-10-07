@@ -71,6 +71,10 @@ pub const READ_SYNC: &str = "read_sync";
 /// (the first time the server advertised read-state sync).
 pub const READ_SYNC_UPLOADED: &str = "read_sync_uploaded";
 
+/// `meta` key: "1" while the server also advertises `read_state_clear`
+/// (mark unread syncs, and reads carry `read_at`).
+pub const READ_CLEAR: &str = "read_clear";
+
 /// Timings. Defaults follow the spec; tests shrink them.
 #[derive(Debug, Clone)]
 pub struct SyncOptions {
@@ -156,6 +160,10 @@ struct NetState {
     pushed: HashMap<LocalId, Instant>,
     /// The earliest time a save held back by `SAVE_GAP` may go.
     paced_until: Option<Instant>,
+    /// --- read/unread --- The server refused a read-state write with 403
+    /// (a scoped token on a Worker that keeps those writes to the owner):
+    /// read state stays on this Mac for the rest of the session.
+    read_denied: bool,
 }
 
 /// The time allowed per pull for fetching item documents (lineage).
@@ -216,6 +224,7 @@ impl Engine {
                 prov_mode: None,
                 pushed: HashMap::new(),
                 paced_until: None,
+                read_denied: false,
             }),
             opts,
             scratch_dir: None,
@@ -539,7 +548,7 @@ impl Engine {
     }
 
     fn run_op(&self, op: &Op) -> Result<()> {
-        if op.kind == OpKind::Read {
+        if matches!(op.kind, OpKind::Read | OpKind::Unread) {
             return self.run_read(op);
         }
         if op.kind == OpKind::DeleteRemote {
@@ -677,7 +686,7 @@ impl Engine {
                     Err(e) => Err(e),
                 }
             }
-            OpKind::DeleteRemote | OpKind::Read => unreachable!(),
+            OpKind::DeleteRemote | OpKind::Read | OpKind::Unread => unreachable!(),
         }
     }
 
@@ -1002,7 +1011,10 @@ impl Engine {
         let mut reading_err = None;
         // Read state (extension 5) lives in a table the change counters
         // don't watch: with it on, the reading list is always read.
-        if stale("reading", READING_DEPS) || self.read_sync_on() {
+        // Upstream's own read state (studio's read-state routes, on a stock
+        // server) advances the `reading` revision, so it needs no exception.
+        let ext5_reads = self.read_sync_on() && self.state().stock_reading != Some(true);
+        if stale("reading", READING_DEPS) || ext5_reads {
             self.state().stock_deferred = false;
             let fetched = self.fetch_reading()?;
             let mut whole = true;
@@ -1016,7 +1028,10 @@ impl Engine {
                 reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
                 reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
                 if self.read_sync_on() {
-                    reading_err = self.reconcile_reads(&items).err();
+                    match self.reconcile_reads(&items) {
+                        Ok(cleared) => reading_changed |= cleared,
+                        Err(e) => reading_err = Some(e),
+                    }
                 }
                 // A stock pull that stopped early took in everything new
                 // (older edits wait for the next full pull's sweep); one
@@ -1101,9 +1116,31 @@ impl Engine {
 
     // ------------------------------------------------------------ read state
 
-    /// The server syncs read state (extension 5), as of the last reading pull.
+    /// The server syncs read state (extension 5, or upstream's read-state
+    /// routes), as of the last reading pull.
+    /// False for the rest of the session once a write was refused with 403
+    /// (`read_denied`): the marks stay here, unsent, and go up from a later
+    /// session that may write (each keeps its `read_at` until confirmed).
     pub fn read_sync_on(&self) -> bool {
-        self.store.meta(READ_SYNC).as_deref() == Some("1")
+        self.store.meta(READ_SYNC).as_deref() == Some("1") && !self.state().read_denied
+    }
+
+    /// A read-state write answered 403: stop sending them this session, and
+    /// say so once. The local marks stay.
+    fn read_denied(&self) -> Result<()> {
+        let first = !std::mem::replace(&mut self.state().read_denied, true);
+        if first {
+            self.emit(CoreEvent::Error(
+                "Read state stays on this Mac: this sign-in can't save it to your blyg".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The server can also clear read state (`read_state_clear`): unread
+    /// syncs, and reads carry `read_at`.
+    pub fn read_clear_on(&self) -> bool {
+        self.read_sync_on() && self.store.meta(READ_CLEAR).as_deref() == Some("1")
     }
 
     fn set_read_sync(&self, on: bool) -> Result<()> {
@@ -1114,29 +1151,55 @@ impl Engine {
         if !on {
             // Nothing to send them to any more.
             self.store.drop_read_ops()?;
+            self.set_read_clear(false)?;
+        }
+        Ok(())
+    }
+
+    fn set_read_clear(&self, on: bool) -> Result<()> {
+        let was = self.store.meta(READ_CLEAR).as_deref() == Some("1");
+        if was == on {
+            return Ok(());
+        }
+        self.store
+            .set_meta(READ_CLEAR, if on { "1" } else { "0" })?;
+        if !on {
+            // Unread stays on this Mac (each row's floor holds it).
+            self.store.drop_unread_ops()?;
         }
         Ok(())
     }
 
     /// After a pull from a server that syncs read state: the first time, send
-    /// everything read here in batches; afterwards, queue a read op for every
-    /// row held here that is ahead of what the server just reported (a read
-    /// made while the server couldn't take it, or an RSS row that inherited
-    /// read state from its renamed predecessor).
-    fn reconcile_reads(&self, pulled: &[ReadingItem]) -> Result<()> {
+    /// everything read here in batches; afterwards, settle each row the pull
+    /// reported (`Store::reconcile_read_state`): queue reads the server
+    /// lacks (made while it couldn't take them, or an RSS row that inherited
+    /// read state from its renamed predecessor), queue unreads it lacks (on a
+    /// server that can clear read state), and take the clears made on other
+    /// devices. True when a row here changed.
+    fn reconcile_reads(&self, pulled: &[ReadingItem]) -> Result<bool> {
+        let clear = self.read_clear_on();
         if self.store.meta(READ_SYNC_UPLOADED).is_none() {
-            let marks = self.store.read_marks()?;
+            let marks = self.store.read_marks(clear)?;
             for chunk in marks.chunks(crate::api::wire::READ_BATCH_MAX) {
                 match self.api.put_reads(chunk) {
                     Ok(()) => {}
-                    Err(CoreError::NotFound) => return self.set_read_sync(false),
+                    Err(CoreError::NotFound) => {
+                        self.set_read_sync(false)?;
+                        return Ok(false);
+                    }
+                    Err(CoreError::Rejected { status: 403, .. }) => {
+                        self.read_denied()?;
+                        return Ok(false);
+                    }
                     // Refused outright (a row it doesn't like): the rest
                     // still goes, and a retry wouldn't do better.
                     Err(CoreError::Rejected { .. }) => {}
                     Err(e) => return Err(e),
                 }
             }
-            return self.store.set_meta(READ_SYNC_UPLOADED, "1");
+            self.store.set_meta(READ_SYNC_UPLOADED, "1")?;
+            return Ok(false);
         }
         let server = pulled
             .iter()
@@ -1147,27 +1210,141 @@ impl Engine {
                 )
             })
             .collect();
-        let ahead = self.store.reads_ahead_of(&server)?;
-        self.store.queue_reads(&ahead)
+        let plan = self.store.reconcile_read_state(&server, clear)?;
+        Ok(plan.cleared > 0)
     }
 
-    /// Run one `read` op: `PUT /api/reading/:sub/:remoteId/read`.
+    /// Run a `read` or `unread` op: with others of its kind that wait, as
+    /// one batch (`POST /api/reading/read` or `/unread`, at most 500), else
+    /// one `PUT` or `DELETE`. Unread ops reach the server only when it
+    /// advertises `read_state_clear`; otherwise they're dropped (unread
+    /// stays on this Mac). `read_at` goes only to such a server too.
     fn run_read(&self, op: &Op) -> Result<()> {
-        let Ok(m) = serde_json::from_str::<crate::api::wire::ReadMark>(&op.payload) else {
-            return self.store.drop_op(op.seq);
-        };
-        if !self.read_sync_on() {
+        use crate::api::wire::{READ_BATCH_MAX, ReadMark, UnreadMark};
+        let unread = op.kind == OpKind::Unread;
+        if !self.read_sync_on() || (unread && !self.read_clear_on()) {
             return self.store.drop_op(op.seq);
         }
-        self.store.set_in_flight(op.seq, true)?;
-        match self.api.put_read(&m.sub, &m.remote_id, m.version) {
-            Ok(()) => self.store.drop_op(op.seq),
-            Err(CoreError::NotFound) => {
-                // The endpoint is gone (a downgraded Worker).
-                self.store.drop_op(op.seq)?;
-                self.set_read_sync(false)
+        let clear = self.read_clear_on();
+        // This op first, then every other of its kind that's next in line
+        // for its own row.
+        let mut batch = vec![op.clone()];
+        let mut seen: HashSet<LocalId> = HashSet::from([op.local_id.clone()]);
+        for o in self.store.ops()? {
+            if batch.len() >= READ_BATCH_MAX {
+                break;
             }
-            Err(e) => Err(e),
+            if !seen.insert(o.local_id.clone()) {
+                continue;
+            }
+            if o.kind == op.kind && !o.in_flight && o.local_id.0.starts_with("read\u{1f}") {
+                batch.push(o);
+            }
+        }
+        for o in &batch {
+            self.store.set_in_flight(o.seq, true)?;
+        }
+        let done = |this: &Self| -> Result<()> {
+            for o in &batch {
+                this.store.drop_op(o.seq)?;
+            }
+            Ok(())
+        };
+        let denied = |this: &Self| -> Result<()> {
+            // Unsent this session; the rows keep their `read_at` / floor,
+            // so a later session that may write sends them.
+            done(this)?;
+            this.read_denied()
+        };
+        let gone = |this: &Self| -> Result<()> {
+            // The endpoint is gone (a downgraded server).
+            done(this)?;
+            if unread {
+                this.set_read_clear(false)
+            } else {
+                this.set_read_sync(false)
+            }
+        };
+        if unread {
+            let marks: Vec<UnreadMark> = batch
+                .iter()
+                .filter_map(|o| serde_json::from_str(&o.payload).ok())
+                .collect();
+            let r = match marks.as_slice() {
+                [] => Ok(()),
+                [m] => self.api.delete_read(&m.sub, &m.remote_id),
+                ms => self.api.post_unreads(ms),
+            };
+            return match r {
+                Ok(()) => {
+                    self.store.unread_acked(&marks)?;
+                    done(self)
+                }
+                Err(CoreError::NotFound) => gone(self),
+                Err(CoreError::Rejected { status: 403, .. }) => denied(self),
+                Err(e) => {
+                    for o in &batch[1..] {
+                        self.store.set_in_flight(o.seq, false)?;
+                    }
+                    Err(e)
+                }
+            };
+        }
+        let marks: Vec<ReadMark> = batch
+            .iter()
+            .filter_map(|o| serde_json::from_str::<ReadMark>(&o.payload).ok())
+            .map(|mut m| {
+                if !clear {
+                    m.read_at = None;
+                }
+                m
+            })
+            .collect();
+        let r = match marks.as_slice() {
+            [] => Ok(None),
+            [m] => self
+                .api
+                .put_read(&m.sub, &m.remote_id, m.version, m.read_at.as_deref())
+                .map(Some),
+            ms => self.api.put_reads(ms).map(|()| None),
+        };
+        match r {
+            Ok(ack) => {
+                done(self)?;
+                let mut changed = false;
+                if let (Some(ack), [m]) = (ack, marks.as_slice()) {
+                    changed = self
+                        .store
+                        .read_acked(m, ack.stored, ack.read_version, clear)?;
+                }
+                if changed {
+                    self.emit(CoreEvent::ReadingChanged);
+                }
+                Ok(())
+            }
+            Err(CoreError::NotFound) => gone(self),
+            Err(CoreError::Rejected { status: 403, .. }) => denied(self),
+            // `read_at` refused (a strict body on a server that said it
+            // could clear): stop sending it and retry without.
+            Err(CoreError::Rejected {
+                status: 400,
+                details,
+                ..
+            }) if clear && details.iter().any(|d| d.contains("read_at")) => {
+                for o in &batch {
+                    self.store.set_in_flight(o.seq, false)?;
+                }
+                self.set_read_clear(false)?;
+                self.run_read(op)
+            }
+            Err(e) => {
+                // The flush retries `op` later or drops it; the rest of the
+                // batch waits for its own turn.
+                for o in &batch[1..] {
+                    self.store.set_in_flight(o.seq, false)?;
+                }
+                Err(e)
+            }
         }
     }
 
@@ -1193,6 +1370,7 @@ impl Engine {
                     }
                     if i == 0 {
                         self.set_read_sync(page.read_sync())?;
+                        self.set_read_clear(page.read_clear())?;
                     }
                     all.extend(page.items);
                     match page.next {
@@ -1212,7 +1390,6 @@ impl Engine {
     /// from their own routes; read state stays on this Mac. Unchanged rows
     /// are the stored ones, with fresh thumbs and hoppers.
     fn fetch_reading_stock(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
-        self.set_read_sync(false)?;
         let subs: std::collections::HashMap<String, (String, String)> = self
             .store
             .subscriptions()
@@ -1241,6 +1418,12 @@ impl Engine {
                 st.reading_unavailable = false;
                 st.stock_reading.replace(true) != Some(true)
             };
+            if offset == 0 {
+                // Read state, when the server keeps it (studio's read-state
+                // routes): `imported.readVersion` on each entry.
+                self.set_read_sync(page.read_sync())?;
+                self.set_read_clear(page.read_clear())?;
+            }
             if first && self.store.meta(STOCK_TOLD).is_none() {
                 self.store.set_meta(STOCK_TOLD, "1")?;
                 self.emit(CoreEvent::ServerLimited);
@@ -1265,18 +1448,25 @@ impl Engine {
                             || (imp.withdrawn
                                 && r.pinned_version_retained != imp.pinned_version_retained)
                     });
+                // What the merge takes as the server's read state.
+                let server_read = imp.read_version;
                 if !changed {
                     self.state().stock_seen.insert(key.clone(), sig);
                     let mut r = stored.unwrap();
                     r.thumb = thumb;
                     r.hoppers = hop;
+                    r.read_version = server_read;
                     out.push(r);
                     continue;
                 }
                 any_new = true;
                 if fetched >= STOCK_FETCHES {
                     deferred = true;
-                    out.extend(stored); // keep what's held until its turn
+                    // keep what's held until its turn
+                    out.extend(stored.map(|mut r| {
+                        r.read_version = server_read;
+                        r
+                    }));
                     continue;
                 }
                 fetched += 1;
@@ -1291,7 +1481,7 @@ impl Engine {
                     Err(e) => return Err(e),
                 };
                 self.state().stock_seen.insert(key.clone(), sig);
-                match crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop) {
+                match crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop, server_read) {
                     Some(mut r) => {
                         r.page = r
                             .page
@@ -1300,7 +1490,10 @@ impl Engine {
                         out.push(r);
                     }
                     // Doesn't read: keep what's held rather than lose it.
-                    None => out.extend(stored),
+                    None => out.extend(stored.map(|mut r| {
+                        r.read_version = server_read;
+                        r
+                    })),
                 }
             }
             offset += n;

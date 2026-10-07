@@ -724,70 +724,16 @@ fn floor_boundary(s: &str, mut i: usize) -> usize {
     i
 }
 
-/// A reply stub: a thread that transcludes what it answers.
+/// A reply stub: a thread that transcludes what it answers, the whole post
+/// (studio 0.31; the stub editor then offers a passage instead).
 pub fn stub_body(remote_id: &str) -> String {
-    format!("![[{remote_id}]]\n\n")
+    blyg_render::stub_quote::stub_body(remote_id)
 }
 
 /// A link post: a new fragment holding `[[id]]`, a plain link that declares
 /// nothing on the wire (no `stub_of`, no mention). Not a reply: that's a stub.
 pub fn link_post_body(remote_id: &str) -> String {
     format!("[[{remote_id}]]\n\n")
-}
-
-/// Past this much text, a stub prefills an empty quote line instead of the
-/// whole-item form (studio 0.8.1 `LONG_TARGET_CHARS`): quoting two thousand
-/// words to say one is what partial transclusion is for. JavaScript length.
-pub const LONG_TARGET_CHARS: usize = 600;
-
-/// A stub's starting text, and where the caret goes (`None`: at the end).
-#[derive(Debug, Clone, PartialEq)]
-pub struct StubPrefill {
-    pub body: String,
-    pub caret: Option<usize>,
-}
-
-/// The stub prefill, as studio 0.8.1's `POST /api/stubs` builds it:
-///
-/// - with a `selection` from the post: the directive plus the passage as an
-///   attached blockquote (the partial grammar), checked against the post's
-///   text now rather than at publish. `Err` when it isn't in the post.
-/// - without one, a post longer than [`LONG_TARGET_CHARS`] of text gets an
-///   empty quote line, with the caret on it; delete the line for the whole form.
-/// - otherwise, and always for feed posts (nothing to check a passage
-///   against), the whole-item form, [`stub_body`].
-pub fn stub_prefill(
-    remote_id: &str,
-    content_html: &str,
-    selection: Option<&str>,
-    blyg: bool,
-) -> Result<StubPrefill, &'static str> {
-    let whole = || StubPrefill {
-        body: stub_body(remote_id),
-        caret: None,
-    };
-    if !blyg {
-        return Ok(whole());
-    }
-    let hay = selection_text(content_html);
-    if let Some(sel) = selection.filter(|s| !s.trim().is_empty()) {
-        let sel = normalize_selection(sel);
-        if sel.is_empty() || !hay.contains(&sel) {
-            return Err("That passage isn't in the version held of this post");
-        }
-        return Ok(StubPrefill {
-            body: format!("{}\n\n", partial_quote(remote_id, &sel)),
-            caret: None,
-        });
-    }
-    if hay.encode_utf16().count() > LONG_TARGET_CHARS {
-        let head = format!("![[{remote_id}]]\n> ");
-        return Ok(StubPrefill {
-            caret: Some(head.len()),
-            body: format!("{head}\n\n"),
-        });
-    }
-    Ok(whole())
 }
 
 /// A partial transclusion: the directive with the (normalized) passage
@@ -1116,6 +1062,7 @@ mod tests {
             title: "Rue".into(),
             status: "active".into(),
             in_blogroll: false,
+            title_follows_source: true,
         };
         let mut r = ReadingItem {
             subscription_id: "s".into(),
@@ -1220,40 +1167,6 @@ mod tests {
     fn quote_lines_puts_a_bare_marker_between_paragraphs() {
         assert_eq!(quote_lines("one"), "> one");
         assert_eq!(quote_lines("one\ntwo"), "> one\n>\n> two");
-    }
-
-    #[test]
-    fn stub_prefill_mirrors_the_studio() {
-        let short = "<p>A short post.</p>";
-        let long = format!(
-            "<p>{}</p><p>Second paragraph here.</p>",
-            "word ".repeat(130)
-        );
-        // Short, no selection: the whole-item form, caret at the end.
-        let p = stub_prefill(ID, short, None, true).unwrap();
-        assert_eq!(p.body, format!("![[{ID}]]\n\n"));
-        assert_eq!(p.caret, None);
-        // Long, no selection: an empty quote line, caret on it.
-        let p = stub_prefill(ID, &long, Some("  \n"), true).unwrap();
-        assert_eq!(p.body, format!("![[{ID}]]\n> \n\n"));
-        let c = p.caret.unwrap();
-        assert_eq!(&p.body[..c], format!("![[{ID}]]\n> "));
-        // A selection spanning a paragraph break: two quote blocks.
-        let sel = "word word\n\nSecond  paragraph";
-        let p = stub_prefill(ID, &long, Some(sel), true).unwrap();
-        assert_eq!(
-            p.body,
-            format!("![[{ID}]]\n> word word\n>\n> Second paragraph\n\n")
-        );
-        assert_eq!(p.caret, None);
-        // A passage that isn't there (welding two paragraphs) is refused.
-        assert!(stub_prefill(ID, &long, Some("word Second paragraph"), true).is_err());
-        // Feed posts keep the old form: there's nothing to check against.
-        let p = stub_prefill(ID, &long, Some("word"), false).unwrap();
-        assert_eq!(p.body, stub_body(ID));
-        // Exactly the limit is not long.
-        let edge = format!("<p>{}</p>", "x".repeat(LONG_TARGET_CHARS));
-        assert_eq!(stub_prefill(ID, &edge, None, true).unwrap().caret, None);
     }
 
     /// Studio 0.8.2: a thread is named in its author's words; one that only

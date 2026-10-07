@@ -22,7 +22,9 @@ pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots 
 mod lineage;
 pub(crate) mod lineage_vm;
 mod list;
+mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
 mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
@@ -33,6 +35,8 @@ pub(crate) mod original;
 // --- responses --- (issue #7)
 pub(crate) mod responses;
 mod subscriptions;
+// --- stub quotes --- the stub editor's hint line and passage chooser.
+pub(crate) mod stub_bar;
 mod versions;
 // --- reader folders --- the Reader's sources pane (smart feeds, folders).
 pub(crate) mod sources;
@@ -226,6 +230,13 @@ pub enum RSheet {
         /// The name the error is about.
         tried: String,
     },
+    /// --- subscription names --- Rename… a subscription.
+    SubName {
+        input: Entity<InputState>,
+        sub: String,
+        error: Option<String>,
+        busy: bool,
+    },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
@@ -306,6 +317,10 @@ pub struct State {
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
     pub avatars: Vec<(String, String)>,
+    /// --- stub quotes --- the stub editor's passage chooser, when open.
+    pub stub: Option<stub_bar::Chooser>,
+    /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
+    pub picked: pick_vm::Picked,
 }
 
 impl State {
@@ -352,6 +367,8 @@ impl State {
             sticky: HashSet::new(),
             src_menu: None,
             avatars: sources::avatars(backend),
+            stub: None,
+            picked: Default::default(),
         }
         .refiltered()
     }
@@ -378,6 +395,11 @@ impl State {
             searched
         };
         self.stream.sync(&self.rows, &self.shown);
+        // --- read/unread --- picks the list no longer shows let go.
+        if !self.picked.is_empty() {
+            let keys: Vec<vm::Key> = self.shown_rows().map(vm::key).collect();
+            self.picked.retain_shown(&keys);
+        }
         self.down = lineage_vm::down_index(
             &self.rows,
             &self.own_refs,
@@ -649,6 +671,18 @@ impl MainView {
             cx.stop_propagation();
             return;
         }
+        // --- read/unread --- ⌘A picks every post the Reader's list shows
+        // (the search field's own ⌘A is the field's).
+        if self.reading.view == View::Reading
+            && self.reading.mode == stream_vm::ReadMode::Reader
+            && k.modifiers.platform
+            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
+            && k.key == "a"
+        {
+            self.pick_all(cx);
+            cx.stop_propagation();
+            return;
+        }
         if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
             return;
         }
@@ -667,6 +701,21 @@ impl MainView {
             (View::Reading | View::Subscriptions, "escape") if self.reading.src_menu.is_some() => {
                 self.reading.src_menu = None;
                 cx.notify();
+                true
+            }
+            // --- read/unread --- esc lets go of the picks first; r / u
+            // mark the picks (else the open post) read / unread.
+            (View::Reading, "escape") if !self.reading.picked.is_empty() => {
+                self.reading.picked.clear();
+                cx.notify();
+                true
+            }
+            (View::Reading, "r") => {
+                self.mark_picked(true, cx);
+                true
+            }
+            (View::Reading, "u") => {
+                self.mark_picked(false, cx);
                 true
             }
             // [ / ] step through the versions (←/→ in the stream).
@@ -744,6 +793,7 @@ impl MainView {
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
             RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
+            RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
         };
         Some(self.sheet_frame(width, content))
     }

@@ -25,6 +25,7 @@ mod native;
 mod punycode;
 mod sanitize;
 mod shell;
+pub mod stub_quote;
 mod tk;
 mod transclusion;
 mod util;

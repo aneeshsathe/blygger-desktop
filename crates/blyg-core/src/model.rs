@@ -233,6 +233,11 @@ pub struct Subscription {
     /// "active" | "paused" | "degraded"
     pub status: String,
     pub in_blogroll: bool,
+    /// The name is the source's own, refreshed while polling (studio 0.30).
+    /// False once the owner renamed it (`PATCH {title}`); `PATCH {title:
+    /// null}` hands it back. Absent from servers before 0.30 (false).
+    #[serde(default)]
+    pub title_follows_source: bool,
 }
 
 /// Result of `POST /api/subscriptions` without `confirm` — what the URL resolved to.
