@@ -656,9 +656,9 @@ impl MainView {
             SurfaceEvent::Ready => {
                 // --- selection --- the pill by a selection, for someone
                 // else's post (not your own, shown here from Posts).
-                if let Some(reply) = self.reader_selection_ui() {
-                    let js = webview::selection_ui_js(reply);
-                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(&js));
+                if self.reader_selection_ui() {
+                    let js = webview::SELECTION_UI_JS;
+                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(js));
                 }
                 if std::env::var_os("BLYGGER_TIMING").is_some() {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());
@@ -668,11 +668,6 @@ impl MainView {
             SurfaceEvent::Selected(on) => self.studio.reader.selected = on,
             SurfaceEvent::QuoteSelection => {
                 self.quote_from(Some(crate::app::notes::QuoteFrom::Reader), window, cx)
-            }
-            SurfaceEvent::ReplySelection => {
-                if self.reader_selection_ui() == Some(true) {
-                    self.reading_action("Reply", window, cx);
-                }
             }
             // A click in the page: the keyboard goes back to the list.
             SurfaceEvent::JumpToLine(_) | SurfaceEvent::Refocus => {
@@ -705,22 +700,11 @@ impl MainView {
         }
     }
 
-    /// --- selection --- Whether the page shows the pill by a selection:
-    /// `Some(reply)` for someone else's post in the Reading screen, with
-    /// "Reply with this" when it's the current version of a blyg post (a
-    /// feed post's reply can't quote a passage); `None` otherwise.
-    pub(crate) fn reader_selection_ui(&self) -> Option<bool> {
-        if self.reading.view != View::Reading {
-            return None;
-        }
-        let o = self.reading.opened.as_ref()?;
-        let blyg = self
-            .reading
-            .subs
-            .iter()
-            .find(|s| s.id == o.item.subscription_id)
-            .is_none_or(|s| s.kind == SubscriptionKind::Blyg);
-        Some(blyg && o.pinned_on_screen().is_none())
+    /// --- selection --- Whether the page shows the pill by a selection
+    /// ("Quote in draft"): for someone else's post in the Reading screen.
+    /// Replying with a passage happens in the stub editor now (studio 0.31).
+    pub(crate) fn reader_selection_ui(&self) -> bool {
+        self.reading.view == View::Reading && self.reading.opened.is_some()
     }
 
     /// --- reader folders --- Run `js` in the reader's page. False when
