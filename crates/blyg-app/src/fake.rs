@@ -251,7 +251,7 @@ impl FakeBackend {
                 pending_sync: false,
                 conflict: false,
                 highlight: false,
-                highlight_mode: None,
+                highlight_mode: Some(HighlightMode::Default),
             });
         }
         for (id, vs) in &rd.own_versions {
@@ -576,7 +576,7 @@ impl FakeBackend {
             pending_sync: status != Status::Scratch,
             conflict: false,
             highlight: false,
-            highlight_mode: None,
+            highlight_mode: Some(HighlightMode::Default),
         });
         id
     }

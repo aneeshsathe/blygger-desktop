@@ -2,6 +2,8 @@
 //! - `cm-mention`: typing `@a` in a thread shows the mention popup.
 //! - `cm-spell`: misspellings underlined (the system spell checker).
 //! - `cm-spell-menu`: the spelling menu on a flagged word.
+//! - `cm-link`: typing `[[gar` shows the link picker, typed in the editor.
+//! - `cm-quote`: typing `![[` on its own line in a thread: the quote picker.
 
 use blyg_core::LocalId;
 use gpui_kit::*;
@@ -28,6 +30,23 @@ impl MainView {
             // One keystroke per step: the popup reacts to each edit event.
             ("cm-mention", 1) => self.demo_type("@", window, cx),
             ("cm-mention", 2) => self.demo_type("a", window, cx),
+            ("cm-link" | "cm-quote", 0) => {
+                self.composer_demo_open(window, cx);
+                let lead = if scenario == "cm-link" {
+                    "\n\nSee also ["
+                } else {
+                    "\n\n!["
+                };
+                self.demo_type(lead, window, cx);
+            }
+            // The second bracket is its own keystroke: that opens the picker.
+            // (A plain insert, as a keystroke: the edit event does the rest.)
+            ("cm-link" | "cm-quote", 1) => self
+                .editor
+                .update(cx, |s, cx| s.insert("[".to_string(), window, cx)),
+            ("cm-link", 2) => self
+                .editor
+                .update(cx, |s, cx| s.insert("gar".to_string(), window, cx)),
             ("cm-spell" | "cm-spell-menu", 0) => {
                 self.composer_demo_open(window, cx);
                 self.demo_type(TYPO_LINE, window, cx);

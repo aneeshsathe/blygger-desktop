@@ -273,7 +273,13 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
         .enumerate()
         .map(|(i, r)| {
             let pick = pick.clone();
-            let excerpt = (r.excerpt != r.title).then(|| r.excerpt.clone());
+            // The excerpt after the title (it usually starts with it).
+            let rest = r
+                .excerpt
+                .strip_prefix(r.title.as_str())
+                .unwrap_or(&r.excerpt)
+                .trim();
+            let excerpt = (!rest.is_empty()).then(|| rest.to_string());
             div()
                 .id(("pick-row", i))
                 .px(px(8.))
