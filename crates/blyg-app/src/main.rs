@@ -341,6 +341,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- reader folders ---
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
+                MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),

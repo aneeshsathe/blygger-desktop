@@ -640,10 +640,14 @@ impl MainView {
             "j/k move · ⏎ read more · / search · esc back"
         } else {
             // --- reader folders ---
-            "←→ panes · j/k posts · space next unread · [ ] versions · / search"
+            "←→ panes · j/k posts · space next unread · r/u read/unread · / search"
         };
+        let picked = self.reading.picked.set.len();
         let hint = if !self.reading.available {
             String::new()
+        } else if picked > 0 {
+            // --- read/unread ---
+            format!("{picked} picked · r marks read · u unread · esc lets go")
         } else if unread > 0 {
             // Reader-local, private state: allowed (never social).
             format!("{unread} to read · {keys}")
@@ -806,6 +810,9 @@ impl MainView {
             })
             .collect();
         let when = vm::when_label(r, self.now);
+        // --- read/unread --- picked rows (⌘-click, ⇧-click, ⌘A).
+        let picked = self.reading.picked.contains(&key);
+        let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
             .px(px(14.))
@@ -814,6 +821,14 @@ impl MainView {
             .rule_b(&p)
             .cursor_pointer()
             .when(selected, |d| d.bg(sel_bg))
+            .when(picked, |d| d.bg(p.accent.opacity(0.22)))
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                    cx.stop_propagation();
+                    this.open_post_menu(menu_key.clone(), e.position, cx)
+                }),
+            )
             // --- themes --- the theme's selected-row shape (lit cell,
             // outline, lantern…) on the page's selected ground.
             .map(|d| crate::ornament::page_row(&self.theme, d, selected && focused && shaped))
@@ -829,9 +844,13 @@ impl MainView {
                         .bg(p.accent),
                 )
             })
-            .on_click(cx.listener(move |this, _, window, cx| {
+            .on_click(cx.listener(move |this, e: &ClickEvent, window, cx| {
                 window.focus(&this.reading.focus, cx);
                 this.set_pane(super::sources_vm::Pane::List, cx);
+                // --- read/unread --- ⌘ / ⇧ pick instead of opening.
+                if this.pick_click(&key, e.modifiers(), cx) {
+                    return;
+                }
                 this.open_reading(key.clone(), window, cx)
             }))
             .child(

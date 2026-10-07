@@ -51,10 +51,19 @@ Field-level contracts: `docs/SPEC.md` § API and § Client-recorded provenance.
 
 ## Extension 5: read-state sync
 
-The server keeps, per reading row, the highest version the owner has read. It never
-lowers that value, so every write is idempotent and replay-safe.
+**Becoming upstream.** blygger-studio is taking this extension in, as two PRs agreed
+with this app: PR 1 (read, built: the same write routes and bodies, plus read state on
+upstream's own `GET /api/reading`) and PR 2 (unread: clearing read state, with a
+tombstone against stale reads). Once they ship, a stock studio needs nothing from this
+section. The app speaks both: the fork's extension below, and upstream's routes.
 
-**Migration.** One new table (in the reference Worker: `migrations/0012_read_state.sql`):
+The server keeps, per reading row, the highest version the owner has read. It never
+lowers that value on a read, so every read write is idempotent and replay-safe; only a
+clear (PR 2) resets it.
+
+**Migration.** One new table (in the reference Worker: `migrations/0012_read_state.sql`;
+upstream: `0025_read_state.sql`, rebuilt by `0026_read_state_clear.sql` with a nullable
+`read_version` and an `unread_at` column):
 
 ```sql
 CREATE TABLE read_state (
@@ -67,39 +76,75 @@ CREATE TABLE read_state (
 ```
 
 It also adds two triggers, so a row goes away when its imported item or its subscription
-is deleted.
+is deleted. Upstream's change triggers also advance the `reading` revision of
+`GET /api/changes`, so a mark on one device shows on another's next pull.
 
-**Capability.** `GET /api/reading/imported` answers `{items, next, read_state: true}`, and each item
-carries `read_version` (an integer, or `null` when unread). The app reads `read_version`
-only when `read_state` is `true`. It checks the flag on every pull and remembers the
-last answer.
+**Capability.**
 
-**Writes** (owner bearer auth, like every `/api` call):
+- The fork: `GET /api/reading/imported` answers `{items, next, read_state: true}`, and
+  each item carries `read_version` (an integer, or `null` when unread).
+- Upstream (PR 1): `GET /api/reading` answers with top-level `read_state: true`, and each
+  imported entry carries `imported.readVersion` (camelCase; an integer, or `null`), and
+  (with PR 2's studio) `imported.version`, the version held. PR 2 adds
+  `read_state_clear: true`.
+
+The app reads the read version only when `read_state` is `true`. It checks the flags on
+every pull and remembers the last answer.
+
+**Writes** (owner auth, like every `/api` call):
 
 | Call | Body | Success | Errors |
 |---|---|---|---|
-| `PUT /api/reading/:sub/:remoteId/read` | `{version: integer ≥ 0}` | `200 {ok: true, stored: bool, read_version: n \| null}`. Stores `max(existing, version)`. For an unknown subscription or item: `stored: false`, nothing written. | `400` bad body, `401` |
-| `POST /api/reading/read` | `{items: [{sub, remote_id, version}]}`, at most 500 | `200 {ok: true, received: n}`. The same max-merge per row. Unknown rows are skipped. | `400 {error, errors?: [{index, reason}]}` for any malformed entry or more than 500 entries (nothing is written); `401` |
+| `PUT /api/reading/:sub/:remoteId/read` | `{version: integer ≥ 0, read_at?}` | `200 {ok: true, stored: bool, read_version: n \| null}`. Stores `max(existing, version)`. For an unknown subscription or item, or a read older than the row's last clear: `stored: false`, nothing written. | `400` bad body, `401`, `403` |
+| `POST /api/reading/read` | `{items: [{sub, remote_id, version, read_at?}]}`, at most 500 | `200 {ok: true, received: n}`. The same max-merge per row. Unknown or stale rows are skipped. | `400` for any malformed entry or more than 500 entries (nothing is written), `401`, `403` |
+| `DELETE /api/reading/:sub/:remoteId/read` (PR 2) | none | `200 {ok: true, stored: false, read_version: null}`. Clears the row and records `unread_at` (the server's time). Idempotent. | `401`, `403` |
+| `POST /api/reading/unread` (PR 2) | `{items: [{sub, remote_id}]}`, at most 500 | `200 {ok: true, received: n}`, all or nothing. | `400`, `401`, `403` |
+
+`read_at` (ISO-8601 with an offset, e.g. `2026-10-06T12:00:00Z`) is accepted only by a
+server that advertises `read_state_clear`: a read earlier than the row's `unread_at` is
+ignored, so a queued read can't undo a later "mark unread" from another device. Upstream
+bodies are strict, so the app **never** sends `read_at` to a server that doesn't advertise
+the flag. Upstream's `400` body is `{error, issues: [{path, message}]}`.
 
 Unknown rows are acknowledged, never `404`, because the app reads a `404` from these
-endpoints as "this server doesn't have extension 5".
+endpoints as "this server doesn't keep read state".
 
 **What the app does:**
 
-- Marking a post read stays instant and local. On a server with the capability, it also
-  queues one `read` op per reading row it marked (duplicates of the same post, too) in the
-  outbox. The outbox sends them like any other change, so they survive going offline and
-  restarting. Repeated reads of one row coalesce to its highest version.
-- A pull sets the local value to `max(local, server)`. It never lowers it.
+- Marking posts read or unread is instant and local: one post, a selection (⌘-click,
+  ⇧-click, ⌘A in the Reader's list; r / u, or the row's menu), or the open post. On a
+  server with the capability it also queues one op per reading row (duplicates of the
+  same post, too) in the outbox, so marks survive going offline and restarting. A row has
+  at most one waiting op, and the last action wins: an unread replaces a waiting read and
+  the other way round; repeated reads coalesce to the highest version.
+- Several waiting ops go as one `POST /api/reading/read` or `/unread` (500 per call), so
+  marking a whole list is one write against the owner budget; a single mark is one
+  `PUT` or `DELETE`.
+- A read carries `read_at`: when it was marked on this Mac, kept with the row until the
+  server confirms it (reads from before this was tracked count as the epoch, so any clear
+  wins over them). A `PUT` the server answers `stored: false` because of a later clear
+  takes the server's state: the row is unread here too.
+- A pull sets the local value to `max(local, server)`, except that a row marked unread
+  here ignores server read versions at or below the one it was read at (its *floor*). On
+  a server with `read_state_clear`, a row this Mac had confirmed but the server now
+  reports lower or unread was cleared on another device, and it becomes unread here; a
+  row read here that the server hasn't got is queued again (with its `read_at`).
+- **Unread without `read_state_clear`** (the fork's extension 5, or upstream PR 1 alone)
+  stays on this Mac: no unread op is sent, and the floor keeps the server's old read
+  version from re-marking the row read on every pull, so there's no loop of requests.
+  Reading the post again (here, or a newer version on another device) ends it. If the
+  server later gains `read_state_clear`, those local unreads are sent then.
 - The first time a database sees the capability, the app batch-uploads every read version
-  it holds (500 per call) and records that in its `meta` table. After that, a row held
-  locally that is ahead of the server is queued again on the next pull.
-- **Without extension 5**, or without extension 3, read state stays on this Mac. The app
-  makes no requests to these endpoints and shows no errors. A `404` from them turns sync off
-  and drops anything queued.
+  it holds (500 per call) and records that in its `meta` table.
+- A `403` on a write (a Worker that keeps these writes to the owner's own token) keeps read
+  state on this Mac for the rest of the session, says so once, and doesn't retry.
+- **Without the capability**, read state stays on this Mac. The app makes no requests to
+  these endpoints and shows no errors. A `404` from them turns sync off and drops anything
+  queued.
 
 **Privacy.** The table is owner-only. No public page, feed, `blyg.json`, item document or
-export reads it. It holds only numbers keyed by subscription and item, never text.
+export reads it. It holds only numbers (and, upstream, the time of a clear) keyed by
+subscription and item, never text.
 
 ## Also used when present
 

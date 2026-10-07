@@ -26,7 +26,7 @@ use super::{RSheet, View};
 use crate::app::MainView;
 use crate::theme::Rule; // --- themes --- dividers
 
-gpui_kit::actions!(blygger, [ToggleSources, NewFolder]);
+gpui_kit::actions!(blygger, [ToggleSources, NewFolder, CheckFeeds]);
 
 pub const SOURCES_W: f32 = 210.;
 const MIN_W: f32 = 150.;
@@ -57,6 +57,9 @@ pub enum MenuTarget {
     Pane,
     Folder(String),
     Sub(String),
+    /// --- read/unread --- a post in the list (and the picks, when it's
+    /// among them).
+    Posts(super::vm::Key),
 }
 
 /// A context menu, at a window position.
@@ -83,6 +86,18 @@ pub enum MenuCmd {
     /// A new folder, then file the subscription in it.
     NewFolderFor(String),
     Profile(String),
+    // --- subscription names & checks --- (studio 0.30)
+    /// Rename… a subscription (a name of your own).
+    RenameSub(String),
+    /// "Use the blyg's own name": the name follows the source again.
+    FollowSource(String),
+    /// Check one subscription now.
+    CheckNow(String),
+    /// Check all feeds now (⇧⌘R).
+    CheckAll,
+    // --- read/unread ---
+    /// Mark these posts read (`true`) or unread.
+    Mark(Vec<super::vm::Key>, bool),
 }
 
 /// A subscription being dragged onto a folder.
@@ -167,6 +182,9 @@ impl MainView {
         .on_action(cx.listener(|this, _: &NewFolder, window, cx| {
             this.open_folder_sheet(None, None, window, cx)
         }))
+        .on_action(
+            cx.listener(|this, _: &CheckFeeds, window, cx| this.check_feeds(None, window, cx)),
+        )
     }
 
     /// ⌥⌘S: show or hide the sources pane (and go to the Reader).
@@ -338,6 +356,11 @@ impl MainView {
             MenuCmd::NewFolderFor(sub) => self.open_folder_sheet(None, Some(sub), window, cx),
             MenuCmd::Profile(origin) => self.open_profile(origin, window, cx),
             MenuCmd::MoveToFolder => {}
+            MenuCmd::RenameSub(id) => self.open_sub_name_sheet(id, window, cx),
+            MenuCmd::FollowSource(id) => self.follow_source_name(id, window, cx),
+            MenuCmd::CheckNow(id) => self.check_feeds(Some(id), window, cx),
+            MenuCmd::CheckAll => self.check_feeds(None, window, cx),
+            MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
         }
         cx.notify();
     }
@@ -349,7 +372,16 @@ impl MainView {
         };
         let sep = || ("".to_string(), None, false);
         match &m.target {
-            MenuTarget::Pane => vec![("New Folder…".into(), Some(MenuCmd::NewFolder), false)],
+            MenuTarget::Pane => vec![
+                ("New Folder…".into(), Some(MenuCmd::NewFolder), false),
+                sep(),
+                ("Check All Feeds Now".into(), Some(MenuCmd::CheckAll), false),
+            ],
+            MenuTarget::Posts(key) => self
+                .post_menu_items(key)
+                .into_iter()
+                .map(|(label, cmd)| (label, Some(cmd), false))
+                .collect(),
             MenuTarget::Folder(id) => {
                 let i = self.reading.folders.iter().position(|f| &f.id == id);
                 let last = self.reading.folders.len().saturating_sub(1);
@@ -401,12 +433,8 @@ impl MainView {
                 v
             }
             MenuTarget::Sub(sub) => {
-                let origin = self
-                    .reading
-                    .subs
-                    .iter()
-                    .find(|s| &s.id == sub)
-                    .map(|s| s.origin.clone());
+                let held = self.reading.subs.iter().find(|s| &s.id == sub);
+                let origin = held.map(|s| s.origin.clone());
                 let mut v = vec![(
                     "Move to folder ›".into(),
                     Some(MenuCmd::MoveToFolder),
@@ -415,6 +443,25 @@ impl MainView {
                 if let Some(o) = origin {
                     v.push(("Profile".into(), Some(MenuCmd::Profile(o)), false));
                 }
+                // --- subscription names & checks --- (studio 0.30)
+                v.push(sep());
+                v.push((
+                    "Rename…".into(),
+                    Some(MenuCmd::RenameSub(sub.clone())),
+                    false,
+                ));
+                if held.is_some_and(|s| !s.title_follows_source) {
+                    v.push((
+                        own_name_label(held.map(|s| s.kind)).into(),
+                        Some(MenuCmd::FollowSource(sub.clone())),
+                        false,
+                    ));
+                }
+                v.push((
+                    "Check Now".into(),
+                    Some(MenuCmd::CheckNow(sub.clone())),
+                    false,
+                ));
                 v.push(sep());
                 v.push(("New Folder…".into(), Some(MenuCmd::NewFolder), false));
                 v
@@ -435,6 +482,267 @@ impl MainView {
             folders,
         });
         cx.notify();
+    }
+
+    // ------------------------------------------------------------ names & checks
+
+    /// Check feeds now: one subscription (`Check Now`: a blyg's index is
+    /// reconciled at once, a feed is polled with the rest), or all of them
+    /// (⇧⌘R, `Check All Feeds Now`: the blyg polls every subscription in
+    /// the background). A pull follows, and another a few seconds later for
+    /// what the background poll brings.
+    pub(crate) fn check_feeds(
+        &mut self,
+        sub: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let backend = self.backend.clone();
+        let one = sub.clone();
+        let name = sub
+            .as_ref()
+            .and_then(|id| self.reading.subs.iter().find(|s| &s.id == id))
+            .map(sources_vm::sub_name);
+        self.show_toast(
+            match &name {
+                Some(n) => format!("Checking {n}…"),
+                None => "Checking all feeds…".into(),
+            },
+            None,
+            cx,
+        );
+        let task = cx.background_spawn(async move {
+            let r = match &one {
+                Some(id) => backend.check_subscription(id).map(|_| None),
+                None => backend.poll_subscriptions().map(Some),
+            };
+            if r.is_ok() {
+                let _ = backend.sync_now();
+            }
+            r
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let r = task.await;
+            let again = r.is_ok();
+            let _ = this.update_in(cx, |v, _, cx| match r {
+                Ok(Some(n)) => v.show_toast(
+                    format!("Checking {n} feed{}", if n == 1 { "" } else { "s" }),
+                    Some("New posts arrive as the blyg finds them".into()),
+                    cx,
+                ),
+                Ok(None) => v.show_toast(
+                    format!("Checked {}", name.as_deref().unwrap_or("it")),
+                    None,
+                    cx,
+                ),
+                Err(e) => v.show_toast(format!("Couldn't check the feeds: {e}"), None, cx),
+            });
+            if again {
+                let backend = this.update(cx, |v, _| v.backend.clone()).ok();
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(5))
+                    .await;
+                if let Some(b) = backend {
+                    let _ = cx.background_spawn(async move { b.sync_now() }).await;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// "Use the blyg's own name": the name follows the source again
+    /// (`title: null`), and a check brings it now rather than at the next
+    /// poll.
+    pub(crate) fn follow_source_name(
+        &mut self,
+        sub: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let backend = self.backend.clone();
+        let id = sub.clone();
+        let task = cx.background_spawn(async move {
+            backend.rename_subscription(&id, None)?;
+            let _ = backend.poll_subscriptions();
+            let _ = backend.sync_now();
+            Ok::<(), blyg_core::CoreError>(())
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let r = task.await;
+            let _ = this.update_in(cx, |v, _, cx| {
+                v.reading.subs = v.backend.subscriptions();
+                match r {
+                    Ok(()) => v.show_toast(
+                        "It takes the blyg's own name again",
+                        Some("Renamed there, it's renamed here".into()),
+                        cx,
+                    ),
+                    Err(e) => v.show_toast(format!("Couldn't change the name: {e}"), None, cx),
+                }
+            });
+        })
+        .detach();
+    }
+
+    /// Rename… a subscription: a sheet like the folders' (⏎ renames).
+    pub(crate) fn open_sub_name_sheet(
+        &mut self,
+        sub: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let current = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == sub)
+            .map(|s| s.title.clone())
+            .unwrap_or_default();
+        let input = cx.new(|cx| {
+            let mut s = InputState::new(window, cx).placeholder("A name of your own");
+            s.set_value(current, window, cx);
+            s
+        });
+        let ev = cx.subscribe_in(&input, window, |this, _, ev, window, cx| match ev {
+            InputEvent::PressEnter { .. } => this.commit_sub_name_sheet(window, cx),
+            InputEvent::Change => {
+                if let Some(RSheet::SubName { error, .. }) = this.reading.sheet.as_mut()
+                    && error.take().is_some()
+                {
+                    cx.notify();
+                }
+            }
+            _ => {}
+        });
+        self._subs.push(ev);
+        input.update(cx, |s, cx| {
+            s.focus(window, cx);
+            s.select_all(window, cx);
+        });
+        self.open_reading_sheet(
+            RSheet::SubName {
+                input,
+                sub,
+                error: None,
+                busy: false,
+            },
+            cx,
+        );
+    }
+
+    /// ⏎ in the rename sheet.
+    pub(crate) fn commit_sub_name_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(RSheet::SubName {
+            input, sub, busy, ..
+        }) = self.reading.sheet.as_mut()
+        else {
+            return;
+        };
+        if *busy {
+            return;
+        }
+        let name = input.read(cx).value().trim().to_string();
+        if name.is_empty() {
+            if let Some(RSheet::SubName { error, .. }) = self.reading.sheet.as_mut() {
+                *error = Some("A name can't be empty".into());
+            }
+            return cx.notify();
+        }
+        *busy = true;
+        let (backend, id) = (self.backend.clone(), sub.clone());
+        let task =
+            cx.background_spawn(async move { backend.rename_subscription(&id, Some(&name)) });
+        cx.spawn_in(window, async move |this, cx| {
+            let r = task.await;
+            let _ = this.update_in(cx, |v, window, cx| match r {
+                Ok(()) => {
+                    v.close_reading_sheet(window, cx);
+                    v.reading.subs = v.backend.subscriptions();
+                    v.reading.refilter();
+                    v.show_toast(
+                        "Renamed",
+                        Some("Your name stays when the blyg renames itself".into()),
+                        cx,
+                    );
+                }
+                Err(e) => {
+                    if let Some(RSheet::SubName { error, busy, .. }) = v.reading.sheet.as_mut() {
+                        *busy = false;
+                        *error = Some(match e {
+                            blyg_core::CoreError::Rejected { message, .. } => message,
+                            e => e.to_string(),
+                        });
+                    }
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn render_sub_name_sheet(
+        &self,
+        sheet: &RSheet,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.palette.on_page();
+        let RSheet::SubName {
+            input,
+            sub,
+            error,
+            busy,
+        } = sheet
+        else {
+            return div().into_any_element();
+        };
+        let follows = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| &s.id == sub)
+            .is_some_and(|s| s.title_follows_source);
+        let id = sub.clone();
+        div()
+            .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                cx.stop_propagation();
+                this.close_reading_sheet(window, cx);
+            }))
+            .child(self.sheet_heading("Rename Subscription"))
+            .child(div().mb(px(8.)).text_color(p.muted).child(if follows {
+                "It goes by the blyg's own name now. A name of your own stays when the blyg renames itself."
+            } else {
+                "It goes by a name of your own."
+            }))
+            .child(self.input_box(
+                gpui_kit::base::input::Input::new(input).into_any_element(),
+                error.is_some(),
+            ))
+            .when_some(error.clone(), |d, e| {
+                d.child(div().mt(px(6.)).text_color(p.over).child(e))
+            })
+            .when(*busy, |d| {
+                d.child(div().mt(px(6.)).text_color(p.muted).child("Renaming…"))
+            })
+            .when(!follows, |d| {
+                d.child(
+                    div()
+                        .id("sub-own-name")
+                        .mt(px(8.))
+                        .cursor_pointer()
+                        .text_color(p.accent)
+                        .hover(|s| s.underline())
+                        .child("Use the blyg's own name")
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.close_reading_sheet(window, cx);
+                            this.follow_source_name(id.clone(), window, cx);
+                        })),
+                )
+            })
+            .child(self.keys_row(vec![
+                self.key_hint("⏎", "rename"),
+                self.key_hint("esc", "cancel"),
+            ]))
+            .into_any_element()
     }
 
     // ------------------------------------------------------------ folder sheet
@@ -1197,5 +1505,14 @@ impl MainView {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+}
+
+/// --- subscription names --- The menu item that hands a renamed
+/// subscription's name back to its source.
+fn own_name_label(kind: Option<blyg_core::SubscriptionKind>) -> &'static str {
+    match kind {
+        Some(blyg_core::SubscriptionKind::Rss) => "Use the Feed's Own Name",
+        _ => "Use the Blyg's Own Name",
     }
 }

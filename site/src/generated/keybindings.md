@@ -40,6 +40,7 @@
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
+| ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
 | ⌘I | Profile of this post's author (yours on your own post); again closes it | Blyg › Profile |
 | ⇧⌘O | Open a profile: paste a blyg, a post or a feed | Blyg › Open Profile… |

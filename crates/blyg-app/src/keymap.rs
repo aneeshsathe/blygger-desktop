@@ -36,7 +36,7 @@ use crate::app::reading::{
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
-use crate::app::reading::sources::{NewFolder, ToggleSources};
+use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -495,6 +495,15 @@ pub fn table() -> Vec<Keybind> {
             NewFolder,
             "A new folder for your subscriptions (on this Mac only)",
             "Blyg › New Folder…"
+        ),
+        // --- subscription checks --- (studio 0.30; one subscription's
+        // "Check Now" is in its menu in the sources pane)
+        kb!(
+            "cmd-shift-r",
+            Main,
+            CheckFeeds,
+            "Check all feeds now (your blyg polls every subscription)",
+            Some("Blyg › Check All Feeds Now")
         ),
         // --- end reader folders ---
         // --- end reading & versions ---
