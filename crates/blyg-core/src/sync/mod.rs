@@ -148,6 +148,8 @@ struct NetState {
     full_at: Option<Instant>,
     /// A 429 is being waited out (its notice was sent).
     rate_limited: bool,
+    /// A 403 is holding the outbox (its notice was sent).
+    scope_blocked: bool,
     /// How provenance travels to this server, once known.
     prov_mode: Option<ProvMode>,
     /// When each item's last autosave push landed (`SAVE_GAP`).
@@ -210,6 +212,7 @@ impl Engine {
                 changes: None,
                 full_at: None,
                 rate_limited: false,
+                scope_blocked: false,
                 prov_mode: None,
                 pushed: HashMap::new(),
                 paced_until: None,
@@ -330,6 +333,7 @@ impl Engine {
         st.backoff = self.opts.backoff_initial;
         st.retry_at = None;
         st.rate_limited = false;
+        st.scope_blocked = false;
     }
 
     /// Record a failed network call. Transient failures and auth failures
@@ -349,10 +353,20 @@ impl Engine {
             }
             return;
         }
+        if let CoreError::Rejected { status: 403, .. } = e {
+            let first = !std::mem::replace(&mut self.state().scope_blocked, true);
+            if first {
+                // The message names the scope the credential lacks.
+                self.emit(CoreEvent::Error(format!(
+                    "Changes are waiting: {e}. They'll be sent once you sign in with access to it."
+                )));
+            }
+        }
         let mut st = self.state();
         let health = match e {
             CoreError::Offline => Health::Offline,
             CoreError::Unauthorized | CoreError::ServerOutdated => Health::Error,
+            CoreError::Rejected { status: 403, .. } => Health::Error,
             e if is_transient(e) => Health::Error,
             _ => return,
         };
@@ -423,7 +437,16 @@ impl Engine {
                     self.note_ok();
                     changed = true;
                 }
-                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                // A 403 is the credential, not the change: a token without
+                // the scope this op needs (studio 0.28+). Like an ended
+                // sign-in, the op waits for a credential that can send it.
+                Err(e)
+                    if is_transient(&e)
+                        || matches!(
+                            e,
+                            CoreError::Unauthorized | CoreError::Rejected { status: 403, .. }
+                        ) =>
+                {
                     let _ = self.store.set_in_flight(op.seq, false);
                     self.note_err(&e);
                     break Err(e);

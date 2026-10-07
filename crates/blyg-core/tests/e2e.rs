@@ -2204,4 +2204,26 @@ fn a_token_without_a_scope_says_which() {
         }
         other => panic!("expected a 403 naming the scope, got {other:?}"),
     }
+    // The app's outbox keeps a change the token can't send, and sends it
+    // once a credential with the scope arrives.
+    let dir = tempfile::tempdir().unwrap();
+    let text = tag("waits-for-scope");
+    let id = {
+        let b = backend_at(dir.path(), &e.url, Credential::Token(token.clone()), false);
+        let id = b.create_draft(Kind::Fragment, &text).unwrap();
+        assert!(
+            matches!(b.sync_now(), Err(CoreError::Rejected { status: 403, .. })),
+            "the push is refused for the token's scope"
+        );
+        let item = b.item(&id).unwrap();
+        assert!(
+            item.server_id.is_none() && item.pending_sync,
+            "the draft still waits"
+        );
+        id
+    };
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), false);
+    b.sync_now().unwrap();
+    let sid = sid_of(&b, &id);
+    assert_eq!(server_item(&sid)["content_md"], text);
 }
