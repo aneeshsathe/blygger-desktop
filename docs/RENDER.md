@@ -216,7 +216,7 @@ cargo test -p blyg-render
 ```
 
 **Reference version.** The fixtures come from the reference Worker on
-blygger-studio 0.32.1 plus upstream PR #35, re-generated 2026-10-06
+blygger-studio 0.32.2 plus upstream PR #35, re-generated 2026-10-06
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
 versions). The Worker's preview helpers moved again in 0.32
 (`previewLinkDocs`/`spliceLinkDocs` became `previewInternalLinks`,
@@ -257,9 +257,10 @@ case is also byte-identical:
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`) | 4 | 4 | 4 |
 
-**Pending: studio 0.32.2.** The Worker will re-sync to upstream 0.32.2,
-which changes `tk.ts`. When it does, re-run the generator and follow the
-fixtures that change.
+**Studio 0.32.2** (upstream #60) takes a scope's sources from its
+instruction only: a `![[id]]` that only the output names is not a source.
+Both `blyg-render`'s `parse_scopes` and `blyg-core`'s `tk::parse` follow it,
+and the regenerated fixtures (two `tr_inline_tk_*` cases changed) match.
 
 **Partial quotes** match the Worker byte for byte in all 11 `tr_partial_*`
 cases: found, emphasis in the quote, paragraph breaks, text inside a nested

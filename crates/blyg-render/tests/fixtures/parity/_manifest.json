@@ -1,6 +1,6 @@
 {
   "generator": "gen_parity.mjs",
-  "studio": "0.32.1",
+  "studio": "0.32.2",
   "markdown_it": "14.3.2",
   "linkify_it": "5.0.2",
   "cases": 202,

@@ -186,7 +186,9 @@ pub fn parse_scopes(md: &str) -> (Vec<TkScope>, Vec<TkError>) {
             source_ids: if imported.is_some() {
                 Vec::new()
             } else {
-                extract_source_ids(&md[tk..end])
+                // The instruction's own refs (studio 0.32.2, upstream #60): a
+                // directive the output adds is not a source.
+                extract_source_ids(&md[tk + 4..instr_end])
             },
             output_start,
             block: blank_before(&md[..tk]) && blank_after(&md[end..]),
