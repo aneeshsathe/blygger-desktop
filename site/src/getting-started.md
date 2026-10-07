@@ -26,24 +26,35 @@ starts at the beginning, and esc skips it.
 
 ## Connecting your blyg
 
-Burrow works with any blyg running blygger-studio 0.9 or later (0.26 is current).
+Burrow works with any blyg running blygger-studio 0.9 or later (0.32 is current).
 A server with the extensions in [Server requirements](server.md) gets a few
 more features; without them, Burrow tells you what's limited. No blyg yet? Try
 the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
-`https://blyg.example.com`, including any path it lives under) and the password
-you sign in to its studio with. If its server has Burrow's extensions, you can
-choose **Owner token** and paste the Worker's `BLYG_OWNER_TOKEN` instead. It
-checks them with the server before saving anything, and says plainly what's
+`https://blyg.example.com`, including any path it lives under) and how to sign
+in:
+
+- **Sign in with browser** (the default, studio 0.28 or later): your browser
+  opens your studio's sign-in and asks you to allow Burrow. Burrow keeps the
+  grant in your Keychain and renews it in the background; after 30 days, or
+  if you revoke it in the studio (**More › Client access**), it asks you to
+  sign in again.
+- **API token**: make one in your studio under **More › Client access**
+  (REST API, with all four permissions) and paste it. A server with Burrow's
+  extensions also takes its `BLYG_OWNER_TOKEN` here.
+- **Studio password**, for a studio older than 0.28.
+
+It checks them with the server before saving anything, and says plainly what's
 wrong:
 
 - the address can't be reached;
-- the password or the token is wrong;
+- the password or the token is wrong, or the token lacks a permission (it
+  names which);
 - there's no studio sign-in at that address;
 - the server is older than blygger-studio 0.9.
 
-The password (or token) then goes in your Keychain and the address into the
+The sign-in, token or password then goes in your Keychain and the address into the
 config file as `blyg-url`, and the app loads your posts. If the server is
 older than 0.9, Burrow says so when it starts and pushes nothing until it's
 updated. **Burrow › Disconnect…** forgets

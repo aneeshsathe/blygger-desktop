@@ -141,7 +141,7 @@ Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issue
 (`issues: [{path, message}]` on validation failures). A wrong method is `405`.
 
 The authoritative contract is upstream blygger-studio's OpenAPI document
-(`openapi.json`, studio 0.26; vendored as `crates/blyg-core/tests/fixtures/openapi.json`,
+(`openapi.json`, studio 0.32.1; vendored as `crates/blyg-core/tests/fixtures/openapi.json`,
 and the test mock checks all traffic against it). Its route guide is `docs/api.md` in
 https://github.com/blygger/blygger-studio. Bearer auth and the other extensions this app
 uses are in `docs/SERVER.md`. The key points:

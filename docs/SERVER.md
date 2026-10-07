@@ -3,7 +3,7 @@
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). The app follows that contract (studio
-0.26 is current) and needs **0.9 or later**. Every route the app shares with upstream is
+0.32 is current) and needs **0.9 or later**. Every route the app shares with upstream is
 checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
 **A stock blygger-studio works.** On studio 0.28 or later, **sign in with the browser**

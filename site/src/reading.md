@@ -38,9 +38,27 @@ that source in the middle, and the post on the right.
 as you type, over the title, the author, the blyg and the text of the posts
 already on your Mac. Nothing is fetched to search.
 
-**Read state syncs** between your Macs through your blyg, when the server has
-the optional read-state extension (see [Server requirements](server.md)).
-Without it, read state stays on this Mac.
+**Mark read or unread.** ⌘-click and ⇧-click pick several posts, ⌘A picks
+every post in the list, and esc lets go. **r** marks the picks (or the open
+post) read, **u** unread; the right-click menu says how many (*Mark 3
+Unread*).
+
+![Picking posts in the Reader](screenshots/reader-picks.png)
+
+**Read state syncs** between your Macs through your blyg when its server keeps
+read state (see [Server requirements](server.md)), and marking unread syncs
+when it also supports clearing it. Otherwise it stays on this Mac, and a
+post you marked unread stays unread here until you read it again.
+
+**Subscriptions** take their name from the blyg or feed, and follow it when
+it changes. Right-click one for **Rename…** (your own name, kept as you
+set it), **Use the Blyg's Own Name** to hand it back, and **Check Now**.
+**⇧⌘R** (Blyg › Check All Feeds Now) asks your blyg to poll every
+subscription at once.
+
+| | |
+|---|---|
+| ![A subscription's menu](screenshots/reader-sub-menu.png) | ![Renaming a subscription](screenshots/reader-sub-rename.png) |
 
 ## Acting on a post
 
@@ -53,6 +71,8 @@ The selected post shows its actions. Each says what it makes:
   post's text, and the passage you select there becomes the quote (`>` lines
   under `![[id]]`). Once there is one, the next passage goes after the caret
   as its own quote, for a running commentary; **quote whole post** goes back.
+
+  ![Choosing a passage in a stub](screenshots/stub-passage.png)
 - **AI reply · new stub**: the same, with a first draft from AI.
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.

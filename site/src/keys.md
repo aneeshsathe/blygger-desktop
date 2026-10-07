@@ -24,6 +24,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 | esc | Clear the search; from the editor, back to the omnibar |
 | ⌃⌥B | Quick capture, from any app (`capture-hotkey`) |
 | ⌘K, or `![[` at the start of a line | Quote a post (threads only) |
+| `[[` | Link a post |
 | @ | Mention a blyg |
 
 **Quick capture and the notes drawer**
@@ -40,6 +41,8 @@ These belong to one screen or sheet, so they aren't in the table above.
 |---|---|
 | j / k, ↑ / ↓ | Next / previous post |
 | ⏎, Space | Open the post (stream); Space pages through it, then the next unread one (Reader) |
+| ⌘-click, ⇧-click, ⌘A | Pick posts in the Reader's list (esc lets go) |
+| r / u | Mark the picked posts, or the open one, read / unread |
 | ← / → | Move between the Reader's panes |
 | [ / ] | Step through a post's versions (current and pinned) |
 | ⌘F, / | Search what you're reading |
