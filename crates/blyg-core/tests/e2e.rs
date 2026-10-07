@@ -805,9 +805,11 @@ fn tk_output_with_dollar_patterns_publishes_verbatim() {
             || html.contains("It costs $&amp; and $1, or $$ and $` $' in total."),
         "{html}"
     );
-    // Disclosure of app-generated text needs the provenance extension; a
-    // stock server publishes it undisclosed (the app warns first).
-    let wrapped = if e.stock { 0 } else { 1 };
+    // Disclosure of app-generated text needs studio 0.28's provenance field
+    // or the provenance extension; an older stock server publishes it
+    // undisclosed (the app warns first).
+    let recordable = !e.stock || server_item(&sid).get("provenance").is_some();
+    let wrapped = if recordable { 1 } else { 0 };
     assert_eq!(html.matches("blyg-tk-gen").count(), wrapped, "{html}");
     assert!(
         !html.contains("[TK]") && !html.contains("\u{e000}"),
@@ -1103,8 +1105,14 @@ fn prov(model: &str, sources: &[&str]) -> Option<ScopeProvenance> {
     })
 }
 
+/// The provenance the server holds for an item: the item's own
+/// `provenance` (studio 0.28+), else extension 4's endpoint.
 fn server_provenance(sid: &str) -> Value {
     let e = e2e();
+    let item = server_item(sid);
+    if let Some(p) = item.get("provenance") {
+        return p.clone();
+    }
     let (s, v) = owner(
         "GET",
         &e.url,
@@ -1115,10 +1123,25 @@ fn server_provenance(sid: &str) -> Value {
     v["scopes"].clone()
 }
 
+/// Client-recorded provenance needs studio 0.28's item `provenance` field
+/// or the fork's extension 4; on an older stock server the test skips.
+fn provenance_recordable() -> bool {
+    let e = e2e();
+    let (s, v) = owner("GET", &e.url, "/api/items?offset=0&limit=1", None);
+    assert_eq!(s, 200, "{v}");
+    // An empty list says nothing: the contract decides (`/api/changes`
+    // came with 0.32, after the field).
+    let has_field = v["items"]
+        .get(0)
+        .is_some_and(|i| i.get("provenance").is_some())
+        || owner("GET", &e.url, "/api/changes", None).0 == 200;
+    has_field || needs_extensions("client-recorded AI provenance (before studio 0.28)")
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn client_recorded_provenance_is_disclosed() {
-    if !needs_extensions("client-recorded AI provenance") {
+    if !provenance_recordable() {
         return;
     }
     let dir = tempfile::tempdir().unwrap();
@@ -1189,7 +1212,7 @@ fn client_recorded_provenance_is_disclosed() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn server_held_provenance_follows_its_scope() {
-    if !needs_extensions("client-recorded AI provenance") {
+    if !provenance_recordable() {
         return;
     }
     // Provenance the app never saw (recorded by another client or the
@@ -1202,13 +1225,23 @@ fn server_held_provenance_follows_its_scope() {
     let id = b.create_draft(Kind::Fragment, &text).unwrap();
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
+    // Recorded by another client: studio 0.28's field, else extension 4.
     let (s, v) = owner(
-        "PUT",
+        "PATCH",
         &e.url,
-        &format!("/api/items/{sid}/tk-provenance"),
-        Some(json!({"scopes": [{"index": 0, "model": "elsewhere-model"}]})),
+        &format!("/api/items/{sid}"),
+        Some(json!({"provenance": [{"model": "elsewhere-model", "sources": []}]})),
     );
-    assert_eq!(s, 200, "{v}");
+    if s != 200 {
+        let (s, v) = owner(
+            "PUT",
+            &e.url,
+            &format!("/api/items/{sid}/tk-provenance"),
+            Some(json!({"scopes": [{"index": 0, "model": "elsewhere-model"}]})),
+        );
+        assert_eq!(s, 200, "{v}");
+    }
+    let _ = v;
     b.sync_now().unwrap();
     b.save(&id, &format!("[TK]opening[=]By hand.[/TK]\n\n{text}"))
         .unwrap();
@@ -1491,4 +1524,348 @@ fn read_state_syncs_between_two_macs() {
     mac1.unsubscribe(&sub.id).unwrap();
     let page = api.reading(500, None).unwrap().unwrap();
     assert!(!page.items.iter().any(|i| i.remote_id == rid));
+}
+
+// ------------------------------------------------- change revisions (0.32)
+
+/// A pass-through TCP proxy in front of the Worker that logs every request
+/// line (`METHOD /path`) the app sends through it.
+struct Proxy {
+    url: String,
+    log: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl Proxy {
+    fn start(target: &str) -> Proxy {
+        use std::io::{Read, Write};
+        let upstream = target
+            .trim_start_matches("http://")
+            .trim_end_matches('/')
+            .to_string();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let here = listener.local_addr().unwrap().to_string();
+        let url = format!("http://{here}");
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let l2 = log.clone();
+        std::thread::spawn(move || {
+            for client in listener.incoming() {
+                let Ok(mut client) = client else { return };
+                let Ok(mut server) = std::net::TcpStream::connect(&upstream) else {
+                    continue;
+                };
+                let (mut c2, mut s2) = (client.try_clone().unwrap(), server.try_clone().unwrap());
+                std::thread::spawn(move || {
+                    let _ = std::io::copy(&mut s2, &mut c2);
+                    let _ = c2.shutdown(std::net::Shutdown::Both);
+                });
+                let log = l2.clone();
+                // Tokens are bound to the blyg's origin: the Worker must see
+                // its own host, not the proxy's.
+                let (from_host, to_host) =
+                    (here.clone().into_bytes(), upstream.clone().into_bytes());
+                std::thread::spawn(move || {
+                    const MARK: &str = " HTTP/1.1\r\n";
+                    let mut carry = String::new();
+                    let mut buf = [0u8; 16 * 1024];
+                    loop {
+                        let n = match client.read(&mut buf) {
+                            Ok(0) | Err(_) => break,
+                            Ok(n) => n,
+                        };
+                        let mut out = Vec::with_capacity(n);
+                        let mut i = 0;
+                        while i < n {
+                            if buf[i..n].starts_with(&from_host) {
+                                out.extend_from_slice(&to_host);
+                                i += from_host.len();
+                            } else {
+                                out.push(buf[i]);
+                                i += 1;
+                            }
+                        }
+                        if server.write_all(&out).is_err() {
+                            break;
+                        }
+                        let old = carry.len();
+                        carry.push_str(&String::from_utf8_lossy(&buf[..n]));
+                        let mut from = 0;
+                        while let Some(i) = carry[from..].find(MARK) {
+                            let end = from + i + MARK.len();
+                            if end > old {
+                                let start = carry[..from + i].rfind("\r\n").map_or(0, |p| p + 2);
+                                // The previous request's body (no CRLF of
+                                // its own) can run straight into this line.
+                                let line = &carry[start..from + i];
+                                let at =
+                                    ["GET /", "POST /", "PUT /", "PATCH /", "DELETE /", "HEAD /"]
+                                        .iter()
+                                        .filter_map(|m| line.rfind(m))
+                                        .max();
+                                if let Some(at) = at {
+                                    log.lock().unwrap().push(line[at..].to_string());
+                                }
+                            }
+                            from = end;
+                        }
+                        if carry.len() > 8192 {
+                            let mut cut = carry.len() - 4096;
+                            while !carry.is_char_boundary(cut) {
+                                cut += 1;
+                            }
+                            carry.drain(..cut);
+                        }
+                    }
+                    let _ = server.shutdown(std::net::Shutdown::Both);
+                });
+            }
+        });
+        Proxy { url, log }
+    }
+
+    /// The requests logged since the last call, without query strings.
+    fn take(&self) -> Vec<String> {
+        std::mem::take(&mut *self.log.lock().unwrap())
+            .into_iter()
+            .map(|r| r.split('?').next().unwrap_or_default().to_string())
+            .collect()
+    }
+}
+
+/// `GET /api/changes` is there (studio 0.32+); else the test says so.
+fn has_changes() -> bool {
+    let e = e2e();
+    if owner("GET", &e.url, "/api/changes", None).0 == 200 {
+        return true;
+    }
+    eprintln!("skipped: this server has no GET /api/changes (older than studio 0.32)");
+    false
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn an_unchanged_pull_reads_only_the_change_counters() {
+    if !has_changes() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let proxy = Proxy::start(&e.url);
+    let b = backend_at(dir.path(), &proxy.url, e.cred.clone(), false);
+    let t = tag("changes");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.sync_now().unwrap();
+    let first = proxy.take();
+    assert!(first.contains(&"GET /api/changes".to_string()), "{first:?}");
+    assert!(first.contains(&"GET /api/items".to_string()), "{first:?}");
+
+    // Nothing changed since: one small read, no collection.
+    b.pull_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged pull");
+    b.sync_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged sync");
+
+    // An edit made elsewhere (the web studio, another Mac) moves `items`
+    // only: the items are read again, the reading list isn't.
+    let sid = sid_of(&b, &id);
+    let theirs = format!("{t} edited in the studio");
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{sid}"),
+        Some(json!({ "content_md": theirs })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert_eq!(seen.first().map(String::as_str), Some("GET /api/changes"));
+    assert!(seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    assert!(
+        !seen
+            .iter()
+            .any(|r| r.contains("/api/reading") || r.contains("/api/subscriptions")),
+        "{seen:?}"
+    );
+    assert_eq!(b.item(&id).unwrap().content_md, theirs, "picked up");
+
+    // A settings change re-reads the items with the settings (they resolve
+    // against them).
+    let (s, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "show_responses_default": false })),
+    );
+    assert_eq!(s, 200, "{v}");
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(seen.contains(&"GET /api/settings".to_string()), "{seen:?}");
+    b.pull_now().unwrap();
+    assert_eq!(proxy.take(), vec!["GET /api/changes"], "settled again");
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_subscription_change_is_picked_up_by_revision() {
+    if !has_changes() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let proxy = Proxy::start(&e.url);
+    let b = backend_at(dir.path(), &proxy.url, e.cred.clone(), false);
+    b.sync_now().unwrap();
+    b.pull_now().unwrap();
+    proxy.take();
+    // Subscribed elsewhere: `subscriptions` moves, so the list (and the
+    // reading list, which depends on it) is read again; the items aren't.
+    let api = Api::new(&e.url, e.cred.clone());
+    let sub = api.subscribe(&url_b(), Some("Revision test")).unwrap();
+    b.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(
+        seen.contains(&"GET /api/subscriptions".to_string()),
+        "{seen:?}"
+    );
+    assert!(!seen.contains(&"GET /api/items".to_string()), "{seen:?}");
+    assert!(b.subscriptions().iter().any(|s| s.id == sub));
+    api.delete_subscription(&sub).unwrap();
+    b.pull_now().unwrap();
+    assert!(!b.subscriptions().iter().any(|s| s.id == sub));
+}
+
+// ------------------------------------------------------ TK generate (0.27)
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn generate_returns_the_spliced_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("generate");
+    let id = b
+        .create_draft(Kind::Fragment, &format!("{t}\n\n[TK]say hello[/TK]"))
+        .unwrap();
+    b.sync_now().unwrap();
+    let sid = sid_of(&b, &id);
+    let api = Api::new(&e.url, e.cred.clone());
+    match api.generate(&sid, 0) {
+        Ok(g) => {
+            let body = g.content_md.expect("studio 0.27+ returns content_md");
+            assert!(body.contains(&g.text), "{body}");
+            assert_eq!(server_item(&sid)["content_md"], body);
+        }
+        // The local Worker has no Workers AI binding (nothing billed).
+        Err(err) => eprintln!("skipped: no AI on this local Worker ({err})"),
+    }
+}
+
+// ------------------------------------------------- work budgets (0.28)
+
+/// An instance the test starts with its own dev vars; stopped on drop.
+struct Instance {
+    name: &'static str,
+    url: String,
+}
+
+impl Drop for Instance {
+    fn drop(&mut self) {
+        let _ = Command::new(std::env::var("BLYG_E2E_CTL").unwrap())
+            .args(["stop", self.name])
+            .status();
+    }
+}
+
+fn ctl_out(args: &[&str]) -> String {
+    let ctl = std::env::var("BLYG_E2E_CTL").expect("BLYG_E2E_CTL not set");
+    let out = Command::new(ctl).args(args).output().expect("run e2e ctl");
+    assert!(out.status.success(), "ctl {args:?} failed");
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_429_keeps_the_change_and_lands_after_retry_after() {
+    e2e();
+    let port = ctl_out(&["free-port"]);
+    // Three writes a minute for this token; reads stay unlimited.
+    ctl(&[
+        "start",
+        "budget",
+        &port,
+        "API_WRITE_LIMIT=3",
+        "API_DELEGATED_WRITE_LIMIT=3",
+    ]);
+    let inst = Instance {
+        name: "budget",
+        url: format!("http://127.0.0.1:{port}"),
+    };
+    let token = ctl_out(&["mint-token", &port]);
+    if token.is_empty() {
+        eprintln!("skipped: no work budgets before studio 0.28");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let b = backend_at(
+        dir.path(),
+        &inst.url,
+        Credential::Token(token.clone()),
+        true,
+    );
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let ev = events.clone();
+        b.set_event_sink(Box::new(move |e| ev.lock().unwrap().push(e)));
+    }
+    let t = tag("budget");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    // Type until the blyg says slow down (the budget window is a clock
+    // minute, so how many writes that takes varies).
+    let mut text = t.clone();
+    let mut limited = None;
+    for i in 0..12 {
+        text = format!("{t} edit {i}");
+        b.save(&id, &text).unwrap();
+        match b.sync_now() {
+            Ok(()) => {}
+            Err(CoreError::RateLimited { retry_after }) => {
+                limited = Some(retry_after);
+                break;
+            }
+            Err(err) => panic!("unexpected: {err}"),
+        }
+    }
+    let retry_after = limited.expect("the budget ran out");
+    assert!((1..=60).contains(&retry_after), "{retry_after}");
+    // Not dropped: still queued, still here.
+    let item = b.item(&id).unwrap();
+    assert!(item.pending_sync, "the change stays queued");
+    assert_eq!(item.content_md, text);
+    assert!(
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| matches!(e, CoreEvent::Error(m) if m.contains("slow down"))),
+        "the status says why"
+    );
+    // The worker waits out Retry-After, then the change lands.
+    let get = |sid: &str| -> Value {
+        agent()
+            .get(&format!("{}/api/items/{sid}", inst.url))
+            .set("authorization", &format!("Bearer {token}"))
+            .call()
+            .unwrap()
+            .into_json()
+            .unwrap()
+    };
+    let sid = sid_of(&b, &id);
+    assert_ne!(get(&sid)["content_md"], text.as_str(), "not yet");
+    let t0 = Instant::now();
+    wait_until(
+        "the change to land after Retry-After",
+        Duration::from_secs(retry_after + 30),
+        || !b.item(&id).unwrap().pending_sync,
+    );
+    eprintln!("landed {:?} after the 429", t0.elapsed());
+    assert_eq!(get(&sid)["content_md"], text.as_str());
 }

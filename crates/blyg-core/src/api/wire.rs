@@ -45,9 +45,31 @@ pub struct WireItem {
     /// `responses` and the blyg's `show_responses_default`.
     #[serde(skip)]
     pub showing: Option<bool>,
+    /// The working copy's TK provenance, one entry per scope (studio 0.28+;
+    /// `None` from an older server). Raw: upstream's `model` is optional.
+    #[serde(default)]
+    pub provenance: Option<Vec<Option<Value>>>,
 }
 
 impl WireItem {
+    /// `provenance` as the app's shape (`None` from a server without the
+    /// field). An entry without a model reads as `"unknown"`; one that
+    /// doesn't parse as `null`.
+    pub fn server_provenance(&self) -> Option<Vec<Option<crate::model::ScopeProvenance>>> {
+        self.provenance.as_ref().map(|all| {
+            all.iter()
+                .map(|p| {
+                    let mut p = p.clone()?;
+                    let o = p.as_object_mut()?;
+                    if !o.get("model").is_some_and(Value::is_string) {
+                        o.insert("model".into(), Value::String("unknown".into()));
+                    }
+                    serde_json::from_value(p).ok()
+                })
+                .collect()
+        })
+    }
+
     /// Whether the page shows responses now.
     pub fn shows_responses(&self) -> bool {
         self.showing
@@ -223,6 +245,27 @@ pub fn status_str(s: Status) -> &'static str {
         Status::Withdrawn => "withdrawn",
         Status::Scratch => "scratch",
     }
+}
+
+/// `POST /api/items/:id/generate` → `{text, model, content_md}`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Generated {
+    /// The scope's new output.
+    pub text: String,
+    pub model: String,
+    /// The working copy with `text` spliced into its scope, as the server
+    /// stored it (studio 0.27+; `None` from an older server).
+    pub content_md: Option<String>,
+}
+
+/// `GET /api/changes` (studio 0.32+): `{epoch, domains: {items, reading,
+/// subscriptions, hoppers, signals, settings, feed}}`. A domain's counter
+/// moves whenever its data changes; a new epoch means the database was
+/// restored or replaced and no stored revision holds.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ChangeState {
+    pub epoch: String,
+    pub domains: std::collections::BTreeMap<String, u64>,
 }
 
 /// The id of a created resource (`POST /api/items` → `201 Item`,

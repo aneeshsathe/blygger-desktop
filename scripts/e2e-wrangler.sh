@@ -9,7 +9,9 @@
 #                                         token with all four owner scopes
 #                                         (studio 0.28+); prints it, or nothing
 #                                         on an older studio
-#   e2e-wrangler.sh start <name> <port>   start instance <name> (own D1/R2 state)
+#   e2e-wrangler.sh start <name> <port> [KEY=value…]
+#                                         start instance <name> (own D1/R2 state);
+#                                         KEY=value overrides its dev vars only
 #   e2e-wrangler.sh stop <name>           stop only the processes this script started
 #   e2e-wrangler.sh stop-all
 #
@@ -123,18 +125,34 @@ free_port() { node -e 'const s=require("net").createServer().listen(0,"127.0.0.1
 
 start() {
   local name="${1:?name}" port="${2:?port}"
+  shift 2
   local state="$BLYG_E2E_SCRATCH/$name"
   mkdir -p "$state"
   [ -f "$CONF" ] || setup
+  # Extra KEY=value args override the shared dev vars for this instance
+  # only: its own copy of the config, next to its own .dev.vars.
+  local conf="$CONF"
+  if [ "$#" -gt 0 ]; then
+    mkdir -p "$state/conf"
+    conf="$state/conf/wrangler.e2e.json"
+    cp "$CONF" "$conf"
+    local kv pattern=""
+    for kv in "$@"; do
+      case "$kv" in *=*) ;; *) die "start: expected KEY=value, got $kv" ;; esac
+      pattern="$pattern|^${kv%%=*}="
+    done
+    { grep -Ev "${pattern#|}" "$BLYG_E2E_SCRATCH/.dev.vars" || true; printf '%s\n' "$@"; } >"$state/conf/.dev.vars"
+    chmod 600 "$state/conf/.dev.vars"
+  fi
   # Idempotent: applies only what's new (the Worker may have moved on).
   (cd "$BLYG_WORKER_DIR" && "$WRANGLER" d1 migrations apply DB --local \
-    --persist-to "$state/d1" -c "$CONF") >"$state/migrate.log" 2>&1 \
+    --persist-to "$state/d1" -c "$conf") >"$state/migrate.log" 2>&1 \
     || { cat "$state/migrate.log" >&2; die "migrations failed for $name"; }
   local inspector; inspector="$(free_port)"
   # Own process group (set -m), so stop can signal exactly what we started.
   set -m
   (cd "$BLYG_WORKER_DIR" && exec "$WRANGLER" dev --local --ip 127.0.0.1 --port "$port" \
-    --inspector-port "$inspector" --persist-to "$state/d1" -c "$CONF" \
+    --inspector-port "$inspector" --persist-to "$state/d1" -c "$conf" \
     --test-scheduled --show-interactive-dev-session=false) >>"$state/wrangler.log" 2>&1 &
   local pid=$!
   set +m
