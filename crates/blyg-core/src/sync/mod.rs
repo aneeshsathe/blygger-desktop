@@ -1011,7 +1011,10 @@ impl Engine {
         let mut reading_err = None;
         // Read state (extension 5) lives in a table the change counters
         // don't watch: with it on, the reading list is always read.
-        if stale("reading", READING_DEPS) || self.read_sync_on() {
+        // Upstream's own read state (studio's read-state routes, on a stock
+        // server) advances the `reading` revision, so it needs no exception.
+        let ext5_reads = self.read_sync_on() && self.state().stock_reading != Some(true);
+        if stale("reading", READING_DEPS) || ext5_reads {
             self.state().stock_deferred = false;
             let fetched = self.fetch_reading()?;
             let mut whole = true;
