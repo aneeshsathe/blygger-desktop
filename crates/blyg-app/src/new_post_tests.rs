@@ -116,7 +116,13 @@ fn cmd_n_opens_an_empty_editor_and_leaves_the_search_alone(cx: &mut TestAppConte
     assert_eq!(editor_text(&view, cx), "");
     assert!(editor_focused(&view, cx), "the caret is in the editor");
     assert_eq!(omni_text(&view, cx), "the", "the omnibar keeps its text");
-    assert_eq!(list_state(&view, cx), before, "the list keeps its filter");
+    let after = list_state(&view, cx);
+    assert_eq!(
+        (&after.0, &after.1),
+        (&before.0, &before.1),
+        "the list keeps its filter"
+    );
+    assert_eq!(after.2, None, "no other post looks selected");
     assert_eq!(fake.items().len(), items, "nothing is created yet");
     assert_eq!(
         label(&view, cx),
@@ -251,4 +257,53 @@ fn the_omnibar_still_creates_from_a_search(cx: &mut TestAppContext) {
     assert_eq!(current_id(&view, cx), Some(first.local_id));
     assert_eq!(label(&view, cx), None);
     assert_eq!(omni_text(&view, cx), "");
+}
+
+#[gpui_kit::test]
+fn no_row_is_selected_while_the_new_post_is_not_listed(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(cx, CONNECTED);
+    typing(cx, "the");
+    key(cx, "down");
+    let (_, rows, before) = list_state(&view, cx);
+    assert!(rows.len() > 2, "{rows:?}");
+    assert_eq!(before.as_ref(), rows.get(1), "the second match is selected");
+
+    // A note that doesn't match the search: still nothing selected.
+    key(cx, "cmd-n");
+    typing(cx, "Tide pools forget, twice a day");
+    let id = current_id(&view, cx).unwrap();
+    let (q, rows_now, sel) = list_state(&view, cx);
+    assert_eq!((q.as_str(), &rows_now), ("the", &rows));
+    assert_eq!(sel, None);
+    assert!(!rows_now.contains(&id));
+
+    // ↓ from the omnibar goes on from the row selected before ⌘N and opens
+    // it: normal selection again.
+    key(cx, "cmd-l");
+    key(cx, "down");
+    let (_, _, sel) = list_state(&view, cx);
+    assert_eq!(sel.as_ref(), rows.get(2));
+    assert_eq!(current_id(&view, cx).as_ref(), rows.get(2));
+    assert_eq!(label(&view, cx), None, "the new post was left");
+}
+
+#[gpui_kit::test]
+fn a_new_post_that_matches_the_search_is_selected(cx: &mut TestAppContext) {
+    let (view, _fake, cx) = setup(cx, CONNECTED);
+    // No search: every post is listed, the new one first once it exists.
+    key(cx, "down");
+    key(cx, "cmd-n");
+    assert_eq!(list_state(&view, cx).2, None);
+    typing(cx, "Gulls on the harbour wall");
+    let id = current_id(&view, cx).unwrap();
+    let (_, rows, sel) = list_state(&view, cx);
+    assert_eq!(rows.first(), Some(&id));
+    assert_eq!(sel, Some(id));
+
+    // Leaving through a search selects as usual: its first match.
+    key(cx, "cmd-l");
+    typing(cx, "lighthouse");
+    let (_, rows, sel) = list_state(&view, cx);
+    assert!(sel.is_some());
+    assert_eq!(sel.as_ref(), rows.first());
 }

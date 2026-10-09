@@ -99,6 +99,11 @@ impl ListModel {
         }
     }
 
+    /// No row selected (a new post that isn't in the list is open).
+    pub fn clear_selection(&mut self) {
+        self.selected = None;
+    }
+
     pub fn select(&mut self, id: &LocalId) {
         if self.results.iter().any(|i| &i.local_id == id) {
             self.selected = Some(id.clone());

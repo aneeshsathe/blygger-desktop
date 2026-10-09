@@ -1047,6 +1047,7 @@ impl MainView {
     fn requery(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let results = self.backend.search(self.list.query());
         self.list.refresh(results);
+        self.new_post_sync_selection(); // --- new post ---
         // Refresh the current item's metadata without clobbering the editor.
         if let Some(cur) = &self.current {
             match self.backend.item(&cur.local_id) {
@@ -1314,7 +1315,9 @@ impl MainView {
     // ------------------------------------------------------------ actions
 
     fn move_selection(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.list.move_selection(delta).is_some() {
+        // --- new post --- ↑/↓ go on from the row selected before ⌘N.
+        let resumed = self.new_post_resume_selection();
+        if self.list.move_selection(delta).is_some() || resumed {
             if let Some(ix) = self.list.selected_index() {
                 self.list_scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
             }

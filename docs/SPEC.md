@@ -44,8 +44,10 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 - **List rows**: title (first line), then `◦ fragment`/`≡ thread`, a status pill
   (`draft` or `vN`), a dot for unpublished edits, and relative time.
 - **New post** (`⌘N`, Post › New Post): opens a fresh, empty editor with the caret
-  in it, without touching the omnibar: its text, the list's filter and the
-  selection stay as they were. Nothing exists until the first real keystroke,
+  in it, without touching the omnibar: its text, the list's filter and its
+  scroll stay as they were. No row shows as selected while the new post isn't
+  in the list (it's selected once it's listed); ↑/↓ go on from the row selected
+  before ⌘N, which opens that post and leaves the new one. Nothing exists until the first real keystroke,
   which creates a local scratch note (`Backend::create_scratch`; a draft with
   `new-note = draft`) that then autosaves like any edit. `⌘D` makes it a draft
   (same local id), `⌘⏎` publishes it through the publish sheet. Leaving it while

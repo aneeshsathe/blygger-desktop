@@ -1,8 +1,10 @@
 //! ⌘N, New Post (docs/SPEC.md § Interaction spec, "New post").
 //!
 //! A child module of `app` (like `scratch.rs`). ⌘N opens a fresh, empty
-//! editor with the caret in it; the omnibar's text and the list's filter and
-//! selection are left alone. Nothing exists until the first real keystroke,
+//! editor with the caret in it; the omnibar's text, the list's filter and its
+//! scroll are left alone, and no row shows as selected while the new post
+//! isn't in the list (it's selected once it is). ↑/↓ go on from the row that
+//! was selected before ⌘N (`prev_selected`). Nothing exists until the first real keystroke,
 //! which creates a local scratch note (`Backend::create_scratch`), or a draft
 //! with `new-note = draft`; after that it autosaves like any edit. ⌘D makes
 //! the scratch note a draft and ⌘⏎ publishes it, through the usual paths.
@@ -20,6 +22,8 @@ use super::*;
 pub(crate) struct NewPost {
     pub flavor: NewNote,
     pub id: Option<LocalId>,
+    /// The row selected before ⌘N, where ↑/↓ go on from.
+    pub prev_selected: Option<LocalId>,
 }
 
 /// The status a new post of `flavor` is created with.
@@ -57,13 +61,23 @@ impl MainView {
             .new_post
             .as_ref()
             .is_some_and(|np| np.id.is_none() && self.current.is_none());
+        let prev_selected = self.list.selected().cloned().or_else(|| {
+            self.new_post
+                .as_ref()
+                .and_then(|np| np.prev_selected.clone())
+        });
         if !fresh {
             self.leave_new_post(window, cx);
             self.current = None;
             self.set_editor_text("", window, cx);
             self.refresh_preview(true, cx);
         }
-        self.new_post = Some(NewPost { flavor, id: None });
+        self.new_post = Some(NewPost {
+            flavor,
+            id: None,
+            prev_selected,
+        });
+        self.new_post_sync_selection();
         // Edit first, so focusing the editor never runs the omnibar's create.
         self.mode = Mode::Edit;
         self.editor.update(cx, |s, cx| {
@@ -101,7 +115,7 @@ impl MainView {
                 // Same query: it shows (and is selected) if it matches.
                 let results = self.backend.search(self.list.query());
                 self.list.refresh(results);
-                self.list.select(&id);
+                self.new_post_sync_selection();
             }
             Err(e) => self.show_toast(
                 format!("Couldn't create a {}: {e}", scratch::new_note_noun(flavor)),
@@ -109,6 +123,40 @@ impl MainView {
                 cx,
             ),
         }
+    }
+
+    /// While a new post is open, the list selects it if it's listed, and
+    /// nothing otherwise (so no other post looks like the one being edited).
+    pub(super) fn new_post_sync_selection(&mut self) {
+        let Some(np) = &self.new_post else {
+            return;
+        };
+        match np
+            .id
+            .clone()
+            .filter(|id| self.list.results().iter().any(|i| &i.local_id == id))
+        {
+            Some(id) => self.list.select(&id),
+            None => self.list.clear_selection(),
+        }
+    }
+
+    /// ↑/↓ while a new post that isn't listed is open: put the selection
+    /// back on the row selected before ⌘N, so the move goes on from there
+    /// (from the top if that row is gone). `true` when it did.
+    pub(super) fn new_post_resume_selection(&mut self) -> bool {
+        if self.list.selected().is_some() {
+            return false;
+        }
+        let Some(prev) = self
+            .new_post
+            .as_ref()
+            .and_then(|np| np.prev_selected.clone())
+        else {
+            return false;
+        };
+        self.list.select(&prev);
+        self.list.selected().is_some()
     }
 
     /// Leave the new post: kept if it has any text, deleted if it's empty
