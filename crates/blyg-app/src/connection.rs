@@ -287,6 +287,9 @@ impl Backend for Disconnected {
     fn save(&self, _: &LocalId, _: &str) -> Result<()> {
         not_connected()
     }
+    fn save_if_base(&self, _: &LocalId, _: &str, _: &str) -> Result<()> {
+        not_connected()
+    }
     fn set_kind(&self, _: &LocalId, _: Kind) -> Result<()> {
         not_connected()
     }
@@ -393,6 +396,11 @@ impl Backend for SwitchBackend {
     }
     fn save(&self, id: &LocalId, content_md: &str) -> Result<()> {
         self.cur().save(id, content_md)
+    }
+    /// The inner backend's own compare-and-save (atomic under its lock),
+    /// not the trait default's compare-then-save.
+    fn save_if_base(&self, id: &LocalId, content_md: &str, base_hash: &str) -> Result<()> {
+        self.cur().save_if_base(id, content_md, base_hash)
     }
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()> {
         self.cur().set_kind(id, kind)
@@ -646,5 +654,32 @@ mod tests {
         // Events from the new backend reach the same sink.
         let id = sw.create_draft(Kind::Fragment, "hello").unwrap();
         assert!(sw.item(&id).is_some());
+    }
+
+    #[test]
+    fn save_if_base_reaches_the_inner_backend() {
+        use blyg_core::content_hash;
+        let sw = SwitchBackend::new(Arc::new(Disconnected), Mode::Disconnected);
+        let id = LocalId("nope".into());
+        let e = sw.save_if_base(&id, "x", "sha256:0").unwrap_err();
+        assert!(e.to_string().contains("Connect your blyg"), "{e}");
+
+        let fake = Arc::new(crate::fake::FakeBackend::with_timing(
+            crate::fake::Timing::instant(),
+        ));
+        let (tx, rx) = std::sync::mpsc::channel();
+        sw.switch(fake.clone(), Mode::Fake, move || tx.send(()).unwrap());
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        let id = sw.create_draft(Kind::Fragment, "first").unwrap();
+        let base = content_hash("first");
+        sw.save_if_base(&id, "second", &base).unwrap();
+        assert_eq!(sw.item(&id).unwrap().content_md, "second");
+        let stale = sw.save_if_base(&id, "third", &base).unwrap_err();
+        assert!(
+            matches!(&stale, CoreError::Rejected { status: 409, details, .. }
+                if details == &vec![content_hash("second")]),
+            "{stale:?}"
+        );
+        assert_eq!(sw.item(&id).unwrap().content_md, "second");
     }
 }
