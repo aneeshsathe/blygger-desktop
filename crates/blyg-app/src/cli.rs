@@ -6,6 +6,8 @@
 //! - `blygger +list-themes`
 //! - `blygger +copy-theme <built-in> [name]`
 //! - `blygger +list-keybinds`
+//! - `blygger +list-extensions`
+//! - `blygger +ext <bundled extension>` (run by Burrow itself, over stdio)
 //! - `blygger +version`
 //! - `blygger +help`
 
@@ -13,6 +15,7 @@ use std::process::ExitCode;
 
 use blyg_core::ConfigStore;
 use blyg_core::config::show::{ShowOptions, show_config};
+use blyg_core::config::{Diagnostic, Severity};
 
 use crate::prefs::{UI_FONTS, WRITING_FONTS};
 
@@ -33,6 +36,14 @@ pub fn run(args: &[String]) -> Option<ExitCode> {
         .skip(1)
         .map(String::as_str)
         .collect();
+    // A bundled extension speaks BXP over the stdin/stdout Burrow gave it:
+    // nothing else may touch them (no console attach, no help text), and it
+    // starts before any config, GUI or Keychain work.
+    if first == "+ext"
+        && let Some(serve) = rest.first().and_then(|n| bundled_extension(n))
+    {
+        return Some(serve());
+    }
     attach_parent_console();
     let out = exec(first, &rest, &mut ConfigStore::discover);
     // The docs name keys and places as macOS does; Windows respells them.
@@ -70,6 +81,11 @@ With no action, Burrow starts. Actions:
   +copy-theme <built-in> [name]
                           copy a built-in theme into the themes folder to edit
   +list-keybinds          every keyboard shortcut, and the ones reserved
+  +list-extensions        every extension, bundled and installed: whether it's
+                          on, what it's granted, what it still asks for, and
+                          problems with installed ones
+  +ext <name>             run a bundled extension (markdown-notes) over
+                          stdin/stdout; Burrow starts it itself
   +version                print the version
   +help                   this help
 
@@ -104,12 +120,28 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
             }
         }
         "+list-keybinds" => o.stdout = crate::keymap::list(),
+        // `run` serves a bundled extension before it gets here; what's left
+        // is a missing or unknown name.
+        "+ext" => {
+            let bundled = BUNDLED_EXTENSIONS.join(", ");
+            o.stderr = match args.first() {
+                Some(n) if bundled_extension(n).is_some() => {
+                    format!("blygger +ext {n}: it speaks BXP over stdin/stdout; Burrow starts it\n")
+                }
+                Some(n) => {
+                    format!("blygger +ext: `{n}` isn't a bundled extension (bundled: {bundled})\n")
+                }
+                None => format!("usage: blygger +ext <name>\nbundled: {bundled}\n"),
+            };
+            o.code = 2;
+        }
+        "+list-extensions" => o.stdout = list_extensions(&load()),
         "+show-config" => match ShowOptions::from_args(args.iter().copied()) {
             Ok(opts) => {
                 let store = load();
                 o.stdout = show_config(store.config(), opts);
                 if !opts.default {
-                    for d in crate::settings::diagnostics(store.loaded(), &themes_of(&store)) {
+                    for d in diagnostics(&store) {
                         o.stderr.push_str(&format!("{d}\n"));
                     }
                 }
@@ -121,7 +153,7 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
         },
         "+validate-config" => {
             let store = load();
-            let diags = crate::settings::diagnostics(store.loaded(), &themes_of(&store));
+            let diags = diagnostics(&store);
             for d in &diags {
                 o.stdout.push_str(&format!("{d}\n"));
             }
@@ -200,6 +232,239 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
         }
     }
     o
+}
+
+/// The config's problems: the settings' own, then the extensions'.
+fn diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
+    let mut out = crate::settings::diagnostics(store.loaded(), &themes_of(store));
+    out.extend(extension_diagnostics(store));
+    out
+}
+
+// --- extensions ---
+
+/// The extensions built into the app, each run as `blygger +ext <name>`.
+const BUNDLED_EXTENSIONS: &[&str] = &[blyg_ext_notes::NAME];
+
+/// How to serve a bundled extension over this process's stdin/stdout.
+fn bundled_extension(name: &str) -> Option<fn() -> ExitCode> {
+    match name {
+        blyg_ext_notes::NAME => Some(blyg_ext_notes::run_stdio),
+        _ => None,
+    }
+}
+
+/// The extension host's view of this config: the `extension`,
+/// `extension-allow` and `extension-setting` lines, the installed folder,
+/// and the bundled extensions run as this executable's `+ext <name>`.
+/// A `Host` built from it starts nothing until `Host::start`.
+pub(crate) fn host_config(store: &ConfigStore) -> blyg_ext::HostConfig {
+    let cfg = store.config();
+    let mut c = blyg_ext::HostConfig::new(blyg_core::config::data_dir(), env!("CARGO_PKG_VERSION"));
+    c.enabled = cfg.extensions_enabled();
+    c.grants = blyg_ext::Grants::from_allow_lines(&cfg.list("extension-allow")).0;
+    c.settings = blyg_ext::settings_from_lines(&cfg.list("extension-setting")).0;
+    c.extensions_dir = store.extensions_dir();
+    let exe = std::env::current_exe().unwrap_or_else(|_| "blygger".into());
+    let notes = c
+        .settings
+        .get(blyg_ext_notes::NAME)
+        .cloned()
+        .unwrap_or_default();
+    c.bundled = vec![blyg_ext_notes::bundled(
+        exe,
+        vec!["+ext".into(), blyg_ext_notes::NAME.into()],
+        &notes,
+    )];
+    c
+}
+
+/// What the extension lines and the manifests say, nothing started.
+struct ExtView {
+    status: Vec<blyg_ext::ExtensionStatus>,
+    installed: Vec<blyg_ext::Installed>,
+    problems: Vec<blyg_ext::Diagnostic>,
+}
+
+fn extension_view(store: &ConfigStore) -> ExtView {
+    let config = host_config(store);
+    let (installed, _) = blyg_ext::discover(&config.bundled, config.extensions_dir.as_deref());
+    // A host that is never started: its status comes from the manifests
+    // and the config alone, and no process runs.
+    let host = blyg_ext::Host::new(config, std::sync::Arc::new(blyg_ext::NoBlyg), |_| {});
+    ExtView {
+        status: host.status(),
+        installed,
+        problems: host.diagnostics(),
+    }
+}
+
+fn caps(list: &[blyg_ext::Capability]) -> String {
+    list.iter()
+        .map(|c| c.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// `+list-extensions`.
+fn list_extensions(store: &ConfigStore) -> String {
+    use blyg_ext::ExtState;
+    let view = extension_view(store);
+    let mut out = String::new();
+    for e in &view.status {
+        let whose = if e.bundled {
+            "bundled"
+        } else if e.state == ExtState::Missing {
+            "not installed"
+        } else {
+            "installed"
+        };
+        let state = match &e.state {
+            ExtState::Disabled => "off",
+            ExtState::Missing => "enabled, but not installed",
+            ExtState::NeedsConsent => "enabled; Burrow asks for consent when it starts it",
+            _ if e.missing.is_empty() => "enabled",
+            _ => "enabled; not everything it asks for is granted",
+        };
+        let version = if e.version.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", e.version)
+        };
+        out.push_str(&format!("{}{version} ({whose}): {state}\n", e.name));
+        if !e.description.is_empty() {
+            out.push_str(&format!("  {}\n", e.description));
+        }
+        if !e.requested.is_empty() {
+            out.push_str(&format!("  asks for: {}\n", caps(&e.requested)));
+        }
+        if !e.granted.is_empty() {
+            out.push_str(&format!("  granted:  {}\n", caps(&e.granted)));
+        }
+        if !e.missing.is_empty() && !e.granted.is_empty() {
+            out.push_str(&format!("  missing:  {}\n", caps(&e.missing)));
+        }
+        if !e.enabled {
+            out.push_str(&format!("  turn on:  extension = {}\n", e.name));
+        }
+    }
+    if !view.problems.is_empty() {
+        out.push_str("\nProblems:\n");
+        for d in &view.problems {
+            out.push_str(&format!(
+                "  {}: {}\n",
+                blyg_core::config::paths::tilde(&d.path),
+                d.message
+            ));
+        }
+    }
+    if let Some(d) = store.extensions_dir() {
+        out.push_str(&format!(
+            "\nInstall an extension by copying its folder into {}\n",
+            blyg_core::config::paths::tilde(&d)
+        ));
+    }
+    out
+}
+
+/// Warnings about the extension lines: a name no extension has, a grant
+/// an enabled extension lacks or never asks for, a setting it doesn't
+/// read, and broken manifests. Never errors: an extension problem never
+/// stops Burrow from starting.
+fn extension_diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
+    let loaded = store.loaded();
+    let view = extension_view(store);
+    let warn = |file: &std::path::Path, line: usize, message: String| Diagnostic {
+        file: file.to_path_buf(),
+        line,
+        severity: Severity::Warning,
+        message,
+    };
+    let mut out: Vec<Diagnostic> = view
+        .problems
+        .iter()
+        .map(|d| warn(&d.path, 0, format!("extension: {}", d.message)))
+        .collect();
+    let mut told = std::collections::HashSet::new();
+    for e in &loaded.entries {
+        let v = e.value.trim();
+        let (name, rest) = match e.key.as_str() {
+            "extension" => (v, ""),
+            "extension-allow" | "extension-setting" => match v.split_once(char::is_whitespace) {
+                Some((n, r)) => (n, r.trim()),
+                None => continue,
+            },
+            _ => continue,
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let at = |message: String| warn(&e.file, e.line, message);
+        let (Some(st), Some(inst)) = (
+            view.status
+                .iter()
+                .find(|s| s.name == name && s.state != blyg_ext::ExtState::Missing),
+            view.installed.iter().find(|i| i.manifest.name == name),
+        ) else {
+            out.push(at(format!(
+                "{}: no extension named `{name}` is installed. See `blygger +list-extensions`",
+                e.key
+            )));
+            continue;
+        };
+        match e.key.as_str() {
+            "extension" if !st.missing.is_empty() && told.insert(name.to_string()) => {
+                out.push(at(if st.granted.is_empty() {
+                    format!(
+                        "extension: `{name}` asks for {}; nothing is granted yet, so Burrow asks \
+                         before it starts it",
+                        caps(&st.missing)
+                    )
+                } else {
+                    format!(
+                        "extension: `{name}` asks for {}, not granted (add `extension-allow = \
+                         {name} <capability>`, or it runs without them)",
+                        caps(&st.missing)
+                    )
+                }));
+            }
+            "extension-allow" => {
+                if let Some(cap) = blyg_ext::Capability::parse(rest)
+                    && !st.requested.iter().any(|r| r.covered_by(&cap))
+                {
+                    let asks = if st.requested.is_empty() {
+                        "it asks for nothing".to_string()
+                    } else {
+                        format!("it asks for {}", caps(&st.requested))
+                    };
+                    out.push(at(format!(
+                        "extension-allow: `{name}` doesn't ask for {cap} ({asks})"
+                    )));
+                }
+            }
+            "extension-setting" => {
+                let key = rest.split_once('=').map_or("", |(k, _)| k.trim());
+                let keys: Vec<&str> = inst
+                    .manifest
+                    .settings
+                    .iter()
+                    .map(|s| s.key.as_str())
+                    .collect();
+                if !key.is_empty() && !keys.contains(&key) {
+                    let has = if keys.is_empty() {
+                        "it has no settings".to_string()
+                    } else {
+                        format!("its settings: {}", keys.join(", "))
+                    };
+                    out.push(at(format!(
+                        "extension-setting: `{name}` has no setting `{key}` ({has})"
+                    )));
+                }
+            }
+            _ => {}
+        }
+    }
+    out
 }
 
 /// The built-in themes plus the ones in this config's themes folder.
@@ -375,6 +640,91 @@ mod tests {
         assert!(d.stdout.contains("\ntheme = system\n"));
         assert!(d.stdout.contains("# Colour theme"));
         assert_eq!(exec("+show-config", &["--nope"], &mut with("")).code, 2);
+    }
+
+    #[test]
+    fn validate_config_warns_about_extension_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let ext = dir.path().join("extensions");
+        std::fs::create_dir_all(ext.join("hello")).unwrap();
+        std::fs::write(
+            ext.join("hello").join("extension.toml"),
+            "name = \"hello\"\nversion = \"0.1.0\"\nprotocol = 1\ncommand = [\"hello\"]\n\
+             capabilities = [\"ui\", \"items.read\"]\n\
+             [[settings]]\nkey = \"greeting\"\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(ext.join("broken")).unwrap();
+        std::fs::write(ext.join("broken").join("extension.toml"), "name = 3\n").unwrap();
+        std::fs::write(
+            dir.path().join("config"),
+            "extension = markdown-notes\n\
+             extension = hello\n\
+             extension-allow = hello ui\n\
+             extension-allow = hello net\n\
+             extension-setting = hello greeting=hi\n\
+             extension-setting = hello colour=red\n\
+             extension = typo-notes\n\
+             extension-allow = typo-notes ui\n",
+        )
+        .unwrap();
+        let o = exec("+validate-config", &[], &mut on_disk(dir.path()));
+        assert_eq!(o.code, 0, "extension problems are warnings: {}", o.stdout);
+        let lines: Vec<&str> = o.stdout.lines().collect();
+        let has = |line: usize, text: &str| {
+            assert!(
+                lines
+                    .iter()
+                    .any(|l| l.contains(&format!("config:{line}: warning: {text}"))),
+                "line {line}: {text}\n{}",
+                o.stdout
+            )
+        };
+        has(
+            1,
+            "extension: `markdown-notes` asks for fs:~/Notes, ui; nothing is granted yet",
+        );
+        has(
+            2,
+            "extension: `hello` asks for items.read, not granted (add `extension-allow = hello <capability>`",
+        );
+        has(
+            4,
+            "extension-allow: `hello` doesn't ask for net (it asks for ui, items.read)",
+        );
+        has(
+            6,
+            "extension-setting: `hello` has no setting `colour` (its settings: greeting)",
+        );
+        has(
+            7,
+            "extension: no extension named `typo-notes` is installed. See `blygger +list-extensions`",
+        );
+        has(8, "extension-allow: no extension named `typo-notes`");
+        assert!(
+            o.stdout.contains("broken") && o.stdout.contains("warning: extension:"),
+            "{}",
+            o.stdout
+        );
+        assert!(!o.stdout.contains("config:3:"), "{}", o.stdout);
+        assert!(!o.stdout.contains("config:5:"), "{}", o.stdout);
+
+        // Fully granted and known: nothing to say.
+        std::fs::remove_dir_all(ext.join("broken")).unwrap();
+        std::fs::write(
+            dir.path().join("config"),
+            "extension = hello\nextension-allow = hello ui\nextension-allow = hello items.read\n",
+        )
+        .unwrap();
+        let ok = exec("+validate-config", &[], &mut on_disk(dir.path()));
+        assert!(ok.stdout.starts_with("OK: "), "{}", ok.stdout);
+
+        let help = exec("+help", &[], &mut with(""));
+        assert!(help.stdout.contains("+list-extensions"));
+        assert!(help.stdout.contains("+ext <name>"));
+        let bad = exec("+ext", &["nope"], &mut with(""));
+        assert_eq!(bad.code, 2);
+        assert!(bad.stderr.contains("`nope` isn't a bundled extension"));
     }
 
     #[test]

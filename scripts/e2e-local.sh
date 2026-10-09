@@ -19,7 +19,10 @@
 #   2. starts two `wrangler dev --local` instances on free ports, each with
 #      its own scratch D1/R2 state (--persist-to): `a` is the blyg under test,
 #      `b` a second blyg to subscribe to;
-#   3. runs `cargo test -p blyg-core --test e2e -- --ignored --test-threads=1`;
+#   3. runs `cargo test -p blyg-core --test e2e -- --ignored --test-threads=1`,
+#      then the markdown-notes extension's e2e against the same blyg
+#      (`cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1`);
+#      extra test args go to the core suite only;
 #   4. stops only the wrangler processes it started, and deletes the scratch
 #      dir (set BLYG_E2E_KEEP=1 to keep it, e.g. to read the wrangler logs).
 #
@@ -80,3 +83,5 @@ export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"
 cargo test -p blyg-core --test e2e -- --ignored --test-threads=1 "$@"
+printf 'e2e-local: the markdown-notes extension…\n' >&2
+cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1
