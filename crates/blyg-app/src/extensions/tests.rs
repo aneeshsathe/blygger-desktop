@@ -981,7 +981,7 @@ mod macros {
             assert_eq!(s.info.note, want.note);
             assert!(s.info.note.is_some(), "cut to fit");
             assert_eq!(s.info.site, "Substack Notes");
-            assert_eq!(s.info.tested, "unverified");
+            assert_eq!(s.info.tested, "2026-10-09");
             assert_eq!(s.editor.read(cx).value().to_string(), want.text);
             assert!(v.browser.automation.running());
         });

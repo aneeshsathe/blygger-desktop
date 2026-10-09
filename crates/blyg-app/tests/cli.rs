@@ -240,7 +240,7 @@ fn list_extensions_shows_bundled_installed_and_broken() {
              Cross-posts a published post to Substack Notes, in the browser pane, after you confirm.\n  \
              asks for: items.read, ui, browser.automate:https://substack.com\n  \
              site:     substack-notes (Substack Notes, https://substack.com)\n  \
-             macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: unverified\n            \
+             macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: 2026-10-09\n            \
              last run: 2026-10-02T09:00:00Z posted via=paste \"Posted to Substack Notes\"\n  \
              turn on:  extension = cross-post\n"
         ),
@@ -431,7 +431,7 @@ fn ext_cross_post_runs_through_the_host() {
         .macro_entry(name, blyg_ext_crosspost::MACRO)
         .expect("the granted macro is offered");
     assert_eq!(entry.site.origin, "https://substack.com");
-    assert_eq!(entry.spec.tested, "unverified");
+    assert_eq!(entry.spec.tested, "2026-10-09");
     let r = host
         .macro_prepare(name, &prepare_params())
         .unwrap()

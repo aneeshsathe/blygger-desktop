@@ -100,10 +100,10 @@ extension-setting = cross-post max-chars=500
 
 ### Before you rely on it
 
-- **The recipe is unverified.** The steps that find Substack's notes box and
-  Post button are best guesses, marked `tested = "unverified"` until someone
-  checks them by hand against the live site. Substack can change its page at
-  any time. When a step doesn't find what it looks for, the run stops, says
+- **The recipe was last checked on 2026-10-09** (`tested = "2026-10-09"`):
+  it opens Substack's home feed, clicks "What's on your mind?", pastes into
+  the composer that opens, and clicks its Post button. Substack can change its
+  page at any time. When a step doesn't find what it looks for, the run stops, says
   which step, and **nothing is posted**. `blygger +list-extensions` shows each
   macro's `tested` value. The extension's `macro.log` (in Burrow's data
   folder, under `extensions/cross-post/`) then lists the text boxes and

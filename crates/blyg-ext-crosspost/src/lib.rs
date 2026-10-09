@@ -9,8 +9,8 @@
 //! - [`text`]: the text logic, pure.
 //! - [`run`]: the BXP extension around it (`blygger +ext cross-post`).
 //!
-//! The selectors in the recipe are best guesses, marked
-//! `tested = "unverified"` until someone checks them by hand.
+//! The recipe was checked by hand against the live Substack Notes on
+//! 2026-10-09 (`tested`); update the date when it's checked again.
 
 pub mod run;
 pub mod text;
@@ -68,7 +68,7 @@ detail = "The opening paragraph and the link, after you check it"
 site = "substack-notes"
 when = "published"
 template = "{{excerpt}}\n\n{{permalink}}"
-tested = "unverified"
+tested = "2026-10-09"
 steps = [
   { do = "open", url = "https://substack.com/home" },
   { do = "waitFor", selector = "[role='button'], button, div", text = "What's on your mind?", timeout = "20s" },
@@ -141,7 +141,10 @@ mod tests {
         assert_eq!(mac.id, MACRO);
         assert_eq!(mac.title, "Cross-post to Substack Notes…");
         assert_eq!(mac.when, When::Published);
-        assert_eq!(mac.tested, "unverified", "unverified until checked by hand");
+        assert_eq!(
+            mac.tested, "2026-10-09",
+            "the date it was last checked by hand"
+        );
         assert_eq!(mac.template, "{{excerpt}}\n\n{{permalink}}");
         check_macro(mac, &m.sites).unwrap();
         let names: Vec<&str> = mac.steps.iter().map(Step::name).collect();

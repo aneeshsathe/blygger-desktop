@@ -186,7 +186,7 @@ width, at the URL.
 
 The bundled `cross-post` extension (`crates/blyg-ext-crosspost`, run as
 `blygger +ext cross-post`) is the worked example: one site, one macro for
-Substack Notes (`tested = "unverified"`), and a `macro.prepare` that fits
+Substack Notes (`tested = "2026-10-09"`), and a `macro.prepare` that fits
 the opening paragraph and the link into `max-chars` (280) characters,
 counted as grapheme clusters.
 
