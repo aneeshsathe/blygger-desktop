@@ -16,7 +16,7 @@
 //! warnings; malformed lines and bad values are errors. Neither stops the
 //! rest of the file from loading.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -579,6 +579,136 @@ impl Config {
     pub fn tutorial_on_launch(&self) -> bool {
         self.get("tutorial-on-launch") == Some("true")
     }
+
+    // --- extensions ---
+
+    /// `extension`: the extensions to run, in the order first named,
+    /// without duplicates. Empty by default: nothing runs unless named.
+    pub fn extensions_enabled(&self) -> Vec<String> {
+        let mut seen = HashSet::new();
+        self.list("extension")
+            .into_iter()
+            .filter(|n| seen.insert(n.clone()))
+            .collect()
+    }
+
+    /// `extension-allow`: every extension's granted capabilities, by name.
+    /// `fs:<path>` grants are returned as written (`~` not expanded).
+    /// Extensions with no grants are absent.
+    pub fn extension_allows(&self) -> BTreeMap<String, BTreeSet<String>> {
+        let mut out: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for line in self.list("extension-allow") {
+            if let Some((name, cap)) = split_extension_line(&line) {
+                out.entry(name.to_string())
+                    .or_default()
+                    .insert(cap.to_string());
+            }
+        }
+        out
+    }
+
+    /// `extension-setting`: one extension's settings as `key -> value`;
+    /// a later line for the same key wins.
+    pub fn extension_settings(&self, name: &str) -> BTreeMap<String, String> {
+        self.list("extension-setting")
+            .iter()
+            .filter_map(|line| split_extension_line(line))
+            .filter(|(n, _)| *n == name)
+            .filter_map(|(_, kv)| kv.split_once('='))
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+}
+
+// ------------------------------------------------------------ extensions
+
+/// An extension name (or setting key): lowercase kebab-case
+/// (`markdown-notes`), ASCII letters and digits in `-`-separated words.
+pub fn valid_extension_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.split('-').all(|w| {
+            !w.is_empty()
+                && w.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        })
+}
+
+/// A capability `extension-allow` accepts: one of
+/// [`EXTENSION_CAPABILITIES`](super::keys::EXTENSION_CAPABILITIES) (exact
+/// case), or `fs:` followed by a path.
+pub fn valid_capability(cap: &str) -> bool {
+    match cap.strip_prefix(super::keys::EXTENSION_FS_PREFIX) {
+        Some(path) => !path.trim().is_empty() && path.trim() == path,
+        None => super::keys::EXTENSION_CAPABILITIES.contains(&cap),
+    }
+}
+
+/// `<name> <rest>` → `(name, rest)`, split at the first run of whitespace.
+fn split_extension_line(line: &str) -> Option<(&str, &str)> {
+    let (name, rest) = line.trim().split_once(char::is_whitespace)?;
+    Some((name, rest.trim()))
+}
+
+fn check_extension_name(name: &str) -> Result<(), String> {
+    if valid_extension_name(name) {
+        Ok(())
+    } else {
+        Err(format!(
+            "`{name}` isn't an extension name (lowercase kebab-case, e.g. markdown-notes)"
+        ))
+    }
+}
+
+fn validate_allow(v: &str) -> Result<String, String> {
+    let Some((name, cap)) = split_extension_line(v) else {
+        return Err(format!(
+            "`{v}` must be <name> <capability>, e.g. markdown-notes items.read"
+        ));
+    };
+    check_extension_name(name)?;
+    if !valid_capability(cap) {
+        let caps = super::keys::EXTENSION_CAPABILITIES;
+        let hint = caps
+            .iter()
+            .find(|c| c.eq_ignore_ascii_case(cap))
+            .map(|c| format!(" (did you mean `{c}`?)"))
+            .unwrap_or_default();
+        return Err(format!(
+            "unknown capability `{cap}`{hint}; one of {}, or fs:<path>",
+            caps.join(", ")
+        ));
+    }
+    Ok(format!("{name} {cap}"))
+}
+
+fn validate_setting(v: &str) -> Result<String, String> {
+    let Some((name, kv)) = split_extension_line(v) else {
+        return Err(format!(
+            "`{v}` must be <name> key=value, e.g. markdown-notes vault=~/Notes"
+        ));
+    };
+    check_extension_name(name)?;
+    let Some((k, val)) = kv.split_once('=') else {
+        return Err(format!("`{kv}` must be key=value"));
+    };
+    let k = k.trim();
+    if !valid_extension_name(k) {
+        return Err(format!(
+            "`{k}` isn't a setting key (lowercase kebab-case, e.g. export-dir)"
+        ));
+    }
+    Ok(format!("{name} {k}={}", val.trim()))
+}
+
+/// The line grammar of the extension keys. `None` for any other key;
+/// otherwise the normalised value (single spaces) or what's wrong.
+fn validate_extension_line(key: &str, v: &str) -> Option<Result<String, String>> {
+    Some(match key {
+        "extension" => check_extension_name(v).map(|()| v.to_string()),
+        "extension-allow" => validate_allow(v),
+        "extension-setting" => validate_setting(v),
+        _ => return None,
+    })
 }
 
 /// Validate and normalise one value. `Ok(None)` = empty (reset);
@@ -590,7 +720,10 @@ pub fn validate(spec: &KeySpec, raw: &str) -> Result<(Option<String>, Option<Str
     }
     let ok = |s: String| Ok((Some(s), None));
     match spec.kind {
-        ValueKind::Text => ok(raw.to_string()),
+        ValueKind::Text => match validate_extension_line(spec.name, v) {
+            Some(r) => ok(r?),
+            None => ok(raw.to_string()),
+        },
         ValueKind::Url => {
             let u = url::Url::parse(v).map_err(|e| format!("`{v}` isn't a URL ({e})"))?;
             if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none() {

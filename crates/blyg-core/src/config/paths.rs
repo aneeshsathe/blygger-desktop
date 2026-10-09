@@ -178,3 +178,29 @@ pub fn tilde(p: &Path) -> String {
     }
     p.display().to_string()
 }
+
+// --- extensions ---
+
+/// The folder of installed extensions (one folder each, holding its
+/// `extension.toml`), beside the config file.
+pub const EXTENSIONS_DIR_NAME: &str = "extensions";
+
+impl ConfigFiles {
+    /// Where installed extensions live: `extensions/` beside the first config
+    /// file (`~/.config/blygger/extensions/`), or `BLYGGER_EXTENSIONS_DIR`.
+    pub fn extensions_dir(&self) -> PathBuf {
+        self.extensions_dir_with(&|k| std::env::var_os(k))
+    }
+
+    /// Pure version for tests: `env` looks up variables.
+    pub fn extensions_dir_with(&self, env: &dyn Fn(&str) -> Option<OsString>) -> PathBuf {
+        if let Some(p) = env("BLYGGER_EXTENSIONS_DIR").filter(|p| !p.is_empty()) {
+            return PathBuf::from(p);
+        }
+        let first = self.load.first().unwrap_or(&self.primary);
+        first
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join(EXTENSIONS_DIR_NAME)
+    }
+}

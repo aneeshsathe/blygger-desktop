@@ -203,6 +203,39 @@ Generated text is always disclosed as generated when published. This is fixed: a
 Show the interactive tutorial every time Burrow opens. The very first launch always shows it; after that it follows this setting.
 
 
+### `extension`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+An extension to run, by name (lowercase kebab-case), e.g. extension = markdown-notes. Repeat the key for each one. None by default: nothing runs until you name it here. Extensions are the bundled markdown-notes and folders in ~/.config/blygger/extensions/; `blygger +list-extensions` lists them.
+
+An extension is a separate program that talks to Burrow over its standard input and output. It never sees your owner token, API keys or the database: Burrow makes every call for it, and only the ones extension-allow grants.
+
+
+### `extension-allow`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+A permission granted to an extension, as &lt;name> &lt;capability>, e.g. extension-allow = markdown-notes items.read. One capability per line. Burrow writes these when you click Allow in the permission sheet.
+
+Capabilities: items.read (read your posts, drafts and scratch notes), items.write (create drafts and scratch notes and edit their text; an extension can never publish, withdraw, pin or delete), reading.read (read posts from your subscriptions already on this Mac), blyg.identity (your blyg's address, never the token), ui (show messages and open a post), hooks:itemPublished, hooks:itemSaved and hooks:itemCreated (be told when you publish, save or create a post), net (uses the network) and fs:&lt;path> (reads and writes files under path, e.g. fs:~/Notes).
+
+net and fs: are declarations you agree to, not a sandbox: an extension runs as a program with your user's rights.
+
+
+### `extension-setting`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+A setting for one extension, as &lt;name> key=value, e.g. extension-setting = markdown-notes vault=~/Notes. Repeatable; a later line for the same key wins. An extension sees its own settings and no other part of this file.
+
+
 ### `config-file`
 
 - **Values:** a file path (`~/` is expanded; a leading `?` makes it optional)

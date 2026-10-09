@@ -120,6 +120,25 @@ span. Core therefore:
 `ConnectError::Unreachable`, 401 to `WrongToken`, 404 to `MissingExtensions`
 (a server older than blygger-studio 0.9) and anything else to `Other`.
 
+## Extension keys
+
+The extension config (`docs/SPEC.md` § Extensions) is three repeatable
+`ValueKind::Text` keys whose line grammar `parse.rs` checks, so a bad line is
+an ordinary config error with a line number and the rest still loads.
+`extension = <name>`. `extension-allow = <name> <capability>`, where the
+capability is one of `keys::EXTENSION_CAPABILITIES` (exact case, so
+`hooks:itemPublished`) or `fs:<path>`. `extension-setting = <name> key=value`.
+Names and setting keys are lowercase kebab-case (`parse::valid_extension_name`).
+Values are stored normalised (`name cap`, `name key=value`) so write-back
+prints one form. The accessors are `Config::extensions_enabled()` (deduplicated,
+in first-named order), `extension_allows()` (`BTreeMap<name, BTreeSet<cap>>`,
+with `fs:` paths as written and `~` unexpanded) and `extension_settings(name)`
+(a later line for the same key wins). Consent writes grants with
+`ConfigStore::set(&[("extension-allow", Change::List(..))])`. Installed
+extensions live in `ConfigFiles::extensions_dir()`: `extensions/` beside the
+first config file, or `BLYGGER_EXTENSIONS_DIR`. Nothing in blyg-core starts
+an extension. The host is in the `blyg-ext` crate.
+
 ## End-to-end tests
 
 `crates/blyg-core/tests/e2e.rs` runs against a real Worker under
