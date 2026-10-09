@@ -11,6 +11,8 @@
 //! Re-runs only when the checked-out commit, the index, a ref or a source
 //! file under `crates/` changes, so an unchanged tree doesn't recompile the
 //! crate on every build.
+//!
+//! On Windows it also embeds the exe's icon (`windows_icon`).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,6 +48,8 @@ fn main() {
         if dirty { "1" } else { "0" }
     );
     println!("cargo:rustc-env=BLYGGER_BUILD_EPOCH={epoch}");
+
+    windows_icon(&manifest);
 }
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
@@ -98,4 +102,31 @@ fn watch_paths(dir: &Path) -> Vec<PathBuf> {
     }
     watch.retain(|p| p.exists());
     watch
+}
+
+/// Windows only: embed the icon Explorer and the taskbar show into the exe.
+/// The manifest (per-monitor DPI awareness, common controls v6) comes from
+/// GPUI's own `windows-manifest` feature, and a second one would be a
+/// duplicate resource. Other targets need nothing here.
+fn windows_icon(manifest: &Path) {
+    let icon = manifest.join("../../packaging/Blygger.ico");
+    println!("cargo:rerun-if-changed={}", icon.display());
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    // An absolute path, so neither rc.exe nor windres has to guess what a
+    // relative one is relative to.
+    let icon = icon.canonicalize().unwrap_or(icon);
+    let rc = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("blygger.rc");
+    std::fs::write(
+        &rc,
+        format!(
+            "1 ICON \"{}\"\n",
+            icon.display().to_string().replace('\\', "\\\\")
+        ),
+    )
+    .unwrap();
+    embed_resource::compile(&rc, embed_resource::NONE)
+        .manifest_optional()
+        .unwrap();
 }

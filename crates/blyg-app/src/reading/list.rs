@@ -73,8 +73,10 @@ impl MainView {
         if self.reading.search.is_some() {
             return;
         }
-        let input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search your reading…  (⌘F or /)"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::keymap::hint("Search your reading…  (⌘F or /)"))
+        });
         let sub = cx.subscribe_in(&input, window, |this, input, ev, window, cx| match ev {
             InputEvent::Change => {
                 let q = input.read(cx).value().to_string();
@@ -699,9 +701,9 @@ impl MainView {
             .when(held > 0, |d| d.child(self.render_source_title()))
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
-                d.child(
-                    self.empty_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
-                )
+                d.child(self.empty_note(crate::keymap::hint(
+                    "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
+                )))
             })
             .when(empty_source, |d| {
                 d.child(self.empty_note(super::sources_vm::empty_label(&self.reading.source)))
@@ -725,10 +727,10 @@ impl MainView {
                                 .font_family(self.chrome())
                                 .text_size(px(11.5))
                                 .text_color(p.muted)
-                                .child(
+                                .child(crate::keymap::hint(
                                     "Searches titles, authors and text of the posts held \
                                      on this Mac · esc clears",
-                                ),
+                                )),
                         ),
                 )
             })

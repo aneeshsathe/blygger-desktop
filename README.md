@@ -4,6 +4,15 @@
 [Blygger](https://blygger.org) blogs ("blygs"), built to be as fast as
 Notational Velocity.
 
+> **This repository is the Windows port.** It is Aneesh Sathe's
+> [Burrow](https://github.com/aneeshsathe/blygger-desktop) (formerly Blygger
+> Desktop) with a set of Windows changes, each gated to Windows so the macOS
+> build is unchanged. Download the Windows build from this repository's
+> [Releases](../../releases), and read [WINDOWS.md](WINDOWS.md) for setup,
+> what differs from macOS, and how the port works. `UPSTREAM.json` names the
+> upstream commit it is built on. The rest of this README is upstream's and
+> describes the macOS app.
+
 There's one window: type to search, press ⏎ to create, and nothing ever waits
 on the network. Everything you write is saved on your Mac first and synced to
 your blyg in the background. It's written in Rust with

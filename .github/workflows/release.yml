@@ -43,6 +43,9 @@ env:
 jobs:
   # Is there a version to release? (No Mac time spent when there isn't.)
   decide:
+    # Windows port: upstream's macOS release is upstream's alone. This fork
+    # releases Windows builds from windows.yml instead.
+    if: github.repository == 'aneeshsathe/blygger-desktop'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

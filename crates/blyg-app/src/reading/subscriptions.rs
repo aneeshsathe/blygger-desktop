@@ -79,7 +79,7 @@ impl MainView {
                         v.reading.subs = v.backend.subscriptions();
                         v.show_toast(format!("Subscribed to {}", s.title), None, cx);
                     }
-                    Err(e) => v.subscribe_failed(e.to_string(), cx),
+                    Err(e) => v.subscribe_failed(e.to_string(), window, cx),
                 });
             })
             .detach();
@@ -88,7 +88,7 @@ impl MainView {
             let task = cx.background_spawn(async move { backend.preview_subscription(&u) });
             cx.spawn_in(window, async move |this, cx| {
                 let r = task.await;
-                let _ = this.update_in(cx, |v, _, cx| match r {
+                let _ = this.update_in(cx, |v, window, cx| match r {
                     Ok(p) => {
                         if let Some(RSheet::Subscribe {
                             previewed, busy, ..
@@ -99,17 +99,25 @@ impl MainView {
                         }
                         cx.notify();
                     }
-                    Err(e) => v.subscribe_failed(e.to_string(), cx),
+                    Err(e) => v.subscribe_failed(e.to_string(), window, cx),
                 });
             })
             .detach();
         }
     }
 
-    fn subscribe_failed(&mut self, msg: String, cx: &mut Context<Self>) {
-        if let Some(RSheet::Subscribe { error, busy, .. }) = self.reading.sheet.as_mut() {
+    fn subscribe_failed(&mut self, msg: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(RSheet::Subscribe {
+            input, error, busy, ..
+        }) = self.reading.sheet.as_mut()
+        {
             *busy = false;
             *error = Some(msg);
+            // Windows: keep the keyboard in the field, so Esc still cancels.
+            if cfg!(target_os = "windows") {
+                let input = input.clone();
+                input.update(cx, |s, cx| s.focus(window, cx));
+            }
         }
         cx.notify();
     }
@@ -155,7 +163,7 @@ impl MainView {
             .into_any_element();
         let header = self.screen_header(
             "Subscriptions",
-            "following is private to this blyg · esc back".into(),
+            "following is private to this blyg · ⏎ open · esc back".into(),
             vec![add],
         );
         let rows = self.reading.subs.iter().enumerate().map(|(i, s)| {
@@ -163,6 +171,7 @@ impl MainView {
             let selected = i == self.reading.sub_sel;
             let confirming = self.reading.unsub_confirm.as_deref() == Some(s.id.as_str());
             let (id1, id2, id3) = (s.id.clone(), s.id.clone(), s.id.clone());
+            let origin = s.origin.clone();
             let blogroll = s.in_blogroll;
             // --- reader folders --- which folder it's in (local only).
             let id4 = s.id.clone();
@@ -187,15 +196,29 @@ impl MainView {
                     cx.notify();
                 }))
                 .child(
+                    // The name and address open the blyg's profile (its posts,
+                    // blogroll and connections) on top of this screen.
                     div()
+                        .id(("sub-open", i))
                         .flex_1()
                         .min_w_0()
+                        .cursor_pointer()
+                        .tooltip(|_, cx| cx.new(|_| super::Tip("Open this blyg (⏎)".into())).into())
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.reading.sub_sel = i;
+                            this.open_profile(origin.clone(), window, cx);
+                        }))
                         .child(
                             div()
                                 .flex()
                                 .gap(px(6.))
                                 .items_center()
-                                .child(div().font_weight(FontWeight::MEDIUM).child(s.title.clone()))
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .hover(|s| s.text_color(p.accent_text()))
+                                        .child(s.title.clone()),
+                                )
                                 .child(div().text_size(px(10.5)).text_color(p.muted).child(
                                     match s.kind {
                                         SubscriptionKind::Blyg => "blyg",
@@ -404,17 +427,45 @@ impl MainView {
                 d.child(div().mt(px(6.)).text_color(p.muted).child("Checking…"))
             })
             .children(preview)
-            .child(self.keys_row(if previewed.is_some() {
-                vec![
-                    self.key_hint("⏎", "subscribe"),
-                    self.key_hint("esc", "cancel"),
-                ]
+            .child(if cfg!(target_os = "windows") {
+                // Windows: the keys are buttons too.
+                self.keys_row(vec![])
+                    .child(
+                        self.key_hint(
+                            "⏎",
+                            if previewed.is_some() {
+                                "subscribe"
+                            } else {
+                                "preview"
+                            },
+                        )
+                        .id("subscribe-enter")
+                        .cursor_pointer()
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.subscribe_enter(window, cx)),
+                        ),
+                    )
+                    .child(
+                        self.key_hint("esc", "cancel")
+                            .id("subscribe-cancel")
+                            .cursor_pointer()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.close_reading_sheet(window, cx)
+                            })),
+                    )
             } else {
-                vec![
-                    self.key_hint("⏎", "preview"),
-                    self.key_hint("esc", "cancel"),
-                ]
-            }))
+                self.keys_row(if previewed.is_some() {
+                    vec![
+                        self.key_hint("⏎", "subscribe"),
+                        self.key_hint("esc", "cancel"),
+                    ]
+                } else {
+                    vec![
+                        self.key_hint("⏎", "preview"),
+                        self.key_hint("esc", "cancel"),
+                    ]
+                })
+            })
             .into_any_element()
     }
 }

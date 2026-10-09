@@ -495,9 +495,12 @@ impl MainView {
                     .flex_col()
                     .gap(px(10.))
                     .child(para(
-                        "A fast, keyboard-first studio for your blyg: search, write, publish \
-                         and read from one window, with everything kept on this Mac too."
-                            .into(),
+                        crate::keymap::hint(
+                            "A fast, keyboard-first studio for your blyg: search, write, \
+                             publish and read from one window, with everything kept on this \
+                             Mac too.",
+                        )
+                        .into(),
                     ))
                     .child(
                         div()
@@ -527,16 +530,18 @@ impl MainView {
                     .flex_col()
                     .gap(px(10.))
                     .child(para(match &host {
-                        Some(h) => format!(
+                        Some(h) => crate::keymap::hint_owned(format!(
                             "Connected to {h}. You can change it later from the Burrow menu."
-                        )
+                        ))
                         .into(),
-                        None => "Burrow writes to your own blyg. You'll need its address; then \
+                        None => crate::keymap::hint(
+                            "Burrow writes to your own blyg. You'll need its address; then \
                                  sign in with your browser (blygger-studio 0.28 or later), or \
                                  use an API token from Studio → More → Client access, or the \
                                  studio password. The sign-in goes in your macOS Keychain, \
-                                 the address in your config file."
-                            .into(),
+                                 the address in your config file.",
+                        )
+                        .into(),
                     }))
                     .child(div().mt(px(4.)).flex().flex_wrap().gap(px(8.)).map(|d| {
                         if host.is_some() {

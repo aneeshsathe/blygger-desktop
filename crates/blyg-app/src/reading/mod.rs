@@ -662,9 +662,16 @@ impl MainView {
         // ⌘F searches the reading list. Handled here, not in the keymap
         // table: gpui-base's inputs bind ⌘F themselves, and this is the
         // reading list's own key like `/`, ↑/↓ and ←/→.
+        // `secondary` is ⌘ on macOS and Ctrl on Windows; nothing else held.
+        let m = &k.modifiers;
+        let other = if cfg!(target_os = "macos") {
+            m.control
+        } else {
+            m.platform
+        };
         if self.reading.view == View::Reading
-            && k.modifiers.platform
-            && !(k.modifiers.control || k.modifiers.alt || k.modifiers.shift)
+            && m.secondary()
+            && !(other || m.alt || m.shift)
             && k.key == "f"
         {
             self.focus_reading_search(window, cx);
@@ -774,6 +781,14 @@ impl MainView {
                 cx.notify();
                 true
             }
+            (View::Subscriptions, "enter") => match self.reading.subs.get(self.reading.sub_sel) {
+                Some(s) => {
+                    let origin = s.origin.clone();
+                    self.open_profile(origin, window, cx);
+                    true
+                }
+                None => false,
+            },
             _ => false,
         };
         if handled {
@@ -795,7 +810,7 @@ impl MainView {
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
         };
-        Some(self.sheet_frame(width, content))
+        Some(self.sheet_frame(width, content, cx))
     }
 
     pub(super) fn close_reading_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -817,7 +832,7 @@ impl MainView {
     // ------------------------------------------------------------ shared UI
 
     /// The same drop-from-the-title-bar frame the main sheets use.
-    fn sheet_frame(&self, width: f32, content: AnyElement) -> AnyElement {
+    fn sheet_frame(&self, width: f32, content: AnyElement, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette.on_page();
         let gen_ = self.reading.sheet_gen;
         div()
@@ -835,6 +850,17 @@ impl MainView {
                     .max_w(relative(0.92))
                     .map(|d| self.sheet_style(d))
                     .text_color(p.ink)
+                    // Windows: Esc closes the sheet from anywhere inside it,
+                    // not only from its text field (which loses focus after
+                    // a click or an error).
+                    .when(cfg!(target_os = "windows"), |d| {
+                        d.on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                            if ev.keystroke.key == "escape" {
+                                cx.stop_propagation();
+                                this.close_reading_sheet(window, cx);
+                            }
+                        }))
+                    })
                     .child(content)
                     .with_animation(
                         ("reading-sheet-in", gen_),
