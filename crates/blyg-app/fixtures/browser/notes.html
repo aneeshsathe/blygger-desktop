@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fixture Notes (test page)</title>
+<script>
+  // ?away=1: off to another origin (localhost for 127.0.0.1) before
+  // anything renders: the runner must stop ("off-origin").
+  if (location.search.indexOf("away=1") >= 0) {
+    var other = location.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+    location.replace(location.protocol + "//" + other + ":" + location.port + "/notes.html");
+  }
+</script>
+<style>
+  body { font: 15px -apple-system, sans-serif; margin: 2em auto; max-width: 36em; }
+  .pm { min-height: 4em; border: 1px solid #999; border-radius: 6px; padding: .5em; }
+  .pm p { margin: 0 0 .6em; }
+</style>
+</head>
+<body>
+<h1>Fixture Notes</h1>
+<p>A test page for Burrow's macro runner. Nothing here leaves this machine.</p>
+<div id="app"></div>
+<h2>Posted</h2>
+<ul id="posted"></ul>
+<script src="pm-lite.js"></script>
+<script>
+  (function () {
+    var app = document.getElementById("app");
+    // Cookie-gated, like a real composer: signed out, only a sign-in link.
+    if (document.cookie.indexOf("fixture_session=1") < 0) {
+      app.innerHTML = '<p>You are signed out. <a class="sign-in" href="login.html">Sign in</a></p>';
+      return;
+    }
+    var box = document.createElement("div");
+    app.appendChild(box);
+    var editor = new PmLite(box);
+    var post = document.createElement("button");
+    post.id = "post";
+    post.textContent = "Post";
+    app.appendChild(post);
+    post.addEventListener("click", function () {
+      var text = editor.doc.trim();
+      if (!text) return;
+      var li = document.createElement("li");
+      li.textContent = text;
+      document.getElementById("posted").appendChild(li);
+      editor.clear();
+    });
+  })();
+</script>
+</body>
+</html>

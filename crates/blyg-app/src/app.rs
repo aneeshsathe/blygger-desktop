@@ -167,9 +167,14 @@ enum Sheet {
         waiting: Option<CancelOnDrop>,
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
-    Disconnect { host: String, focus: FocusHandle },
+    Disconnect {
+        host: String,
+        focus: FocusHandle,
+    },
     /// What's limited on a stock blygger-studio (`server_notice`).
-    ServerLimits { focus: FocusHandle },
+    ServerLimits {
+        focus: FocusHandle,
+    },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -184,6 +189,10 @@ enum Sheet {
         title: String,
         note: Entity<InputState>,
     },
+    // --- browser macros --- (browser/automation): the text before a run,
+    // and what the composer holds before its `submit`.
+    MacroPreview(browser::automation::PreviewSheet),
+    MacroPost(browser::automation::PostSheet),
 }
 
 struct Toast {
@@ -1410,8 +1419,14 @@ impl MainView {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
                         };
+                        // --- browser macros --- a granted macro can cross-post it.
+                        let cross = if v.macro_cross_post_hint() {
+                            " · ⇧⌘P to cross-post"
+                        } else {
+                            ""
+                        };
                         let sub = crate::keymap::hint_owned(format!(
-                            "{} · ⌘O opens it",
+                            "{} · ⌘O opens it{cross}",
                             vm::short_permalink(&out.permalink)
                         ));
                         let head = match out.warning {
@@ -2770,6 +2785,9 @@ impl MainView {
         };
 
         let (width, content): (f32, AnyElement) = match sheet {
+            // --- browser macros ---
+            Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
+            Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Publish {
                 title,
                 next_version,

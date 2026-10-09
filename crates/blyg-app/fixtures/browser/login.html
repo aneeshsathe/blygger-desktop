@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sign in · Fixture Notes (test page)</title>
+<style>
+  body { font: 15px -apple-system, sans-serif; margin: 2em auto; max-width: 24em; }
+  label { display: block; margin: .6em 0; }
+</style>
+</head>
+<body>
+<h1>Sign in</h1>
+<p>A test page: any password works, and nothing is sent anywhere.</p>
+<form id="login" onsubmit="return false">
+  <label>Email <input type="email" name="email" autocomplete="username"></label>
+  <label>Password <input type="password" name="password" autocomplete="current-password"></label>
+  <button id="sign-in" type="button">Sign in</button>
+</form>
+<script>
+  // A session cookie (no expiry), then the composer.
+  document.getElementById("sign-in").addEventListener("click", function () {
+    document.cookie = "fixture_session=1; path=/; SameSite=Lax";
+    location.href = "notes.html";
+  });
+</script>
+</body>
+</html>

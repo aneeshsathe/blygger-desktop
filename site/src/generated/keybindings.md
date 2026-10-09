@@ -65,6 +65,7 @@
 | ⌘] | Browser pane: forward |  |
 | ⌘R | Browser pane: reload (or stop) |  |
 | ⌘L | Browser pane: edit the address |  |
+| ⇧⌘C | Browser pane: clip the page (or the passage selected on it) into the draft | Post › Clip Page to Draft |
 
 ### In the menus, without a key
 

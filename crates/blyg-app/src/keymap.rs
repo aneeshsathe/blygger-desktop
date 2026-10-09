@@ -54,7 +54,7 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- browser ---
 use crate::app::browser::{
-    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
+    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, ToggleBrowser,
 };
 
 pub const MAIN: &str = crate::app::CONTEXT;
@@ -626,6 +626,14 @@ pub fn mac_table() -> Vec<Keybind> {
             BrowserAddress,
             "Browser pane: edit the address",
             None
+        ),
+        // --- capture ---
+        kb!(
+            "cmd-shift-c",
+            Browser,
+            ClipPage,
+            "Browser pane: clip the page (or the passage selected on it) into the draft",
+            Some("Post › Clip Page to Draft")
         ),
         // --- end browser ---
         // --- notes --- (esc, which closes the drawer, is the drawer's own key)

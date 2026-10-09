@@ -92,6 +92,25 @@ pub trait BrowserSurface {
     fn selection(&mut self, reply: Sender<String>) {
         let _ = reply.try_send(String::new());
     }
+    /// --- browser macros --- Run `js`, an expression that evaluates to a
+    /// string (`JSON.stringify(…)`), in the main frame and send that string
+    /// on `reply` (`"null"` when it fails or isn't a string). The script
+    /// runs apart from the page's own scripts where the engine allows it
+    /// (WebKit: `WKContentWorld.defaultClientWorld`, which shares the DOM,
+    /// not the page's globals). For host features only (the macro runner,
+    /// Clip Page); never offered to an extension.
+    fn eval_json(&mut self, _js: &str, reply: Sender<String>) {
+        let _ = reply.try_send("null".into());
+    }
+    /// --- browser macros --- Give the web view the keyboard (make it the
+    /// first responder), so an edit command reaches the focused field.
+    fn focus_page(&mut self) {}
+    /// --- browser macros --- Whether [`Self::edit_command`] reaches the
+    /// page (`paste:` then pastes the clipboard as a trusted paste). Where
+    /// it doesn't, the macro runner starts its insert chain at `execCommand`.
+    fn has_edit_commands(&self) -> bool {
+        false
+    }
 }
 
 /// Makes the browser's surface. Returns a sentence for the pane when it can't.
@@ -238,7 +257,11 @@ mod wry_browser {
                 })
                 .with_url("about:blank");
             // Its own cookie jar: persistent on macOS 14+, else in memory.
-            b = if macos_major() >= 14 {
+            // Debug builds: `BLYGGER_BROWSER_EPHEMERAL` keeps a smoke test's
+            // fixture cookies out of the persistent store.
+            let ephemeral =
+                cfg!(debug_assertions) && std::env::var_os("BLYGGER_BROWSER_EPHEMERAL").is_some();
+            b = if macos_major() >= 14 && !ephemeral {
                 b.with_data_store_identifier(DATA_STORE_ID)
             } else {
                 b.with_incognito(true)
@@ -427,6 +450,54 @@ mod wry_browser {
             let _ = self
                 .view
                 .evaluate_script_with_callback(js, move |json| println!("{label} {json}"));
+        }
+
+        // --- browser macros ---
+        fn eval_json(&mut self, js: &str, reply: Sender<String>) {
+            use objc2_foundation::{NSError, NSString};
+            use objc2_web_kit::WKContentWorld;
+            let Some(mtm) = objc2::MainThreadMarker::new() else {
+                let _ = reply.try_send("null".into());
+                return;
+            };
+            let wk = self.wk();
+            let script = NSString::from_str(js);
+            let block = block2::RcBlock::new(
+                move |result: *mut objc2::runtime::AnyObject, _err: *mut NSError| {
+                    // SAFETY: WebKit hands a live (or nil) result object.
+                    let text = unsafe { result.as_ref() }
+                        .and_then(|o| o.downcast_ref::<NSString>())
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "null".into());
+                    let _ = reply.try_send(text);
+                },
+            );
+            // SAFETY: main thread; live view; WebKit copies the block.
+            unsafe {
+                let world = WKContentWorld::defaultClientWorld(mtm);
+                wk.evaluateJavaScript_inFrame_inContentWorld_completionHandler(
+                    &script,
+                    None,
+                    &world,
+                    Some(&block),
+                );
+            }
+        }
+
+        fn focus_page(&mut self) {
+            let wk = self.wk();
+            // SAFETY: main thread; `makeFirstResponder:` on the view's own
+            // window (there's none while it isn't in one).
+            unsafe {
+                let win: *mut objc2::runtime::AnyObject = objc2::msg_send![&*wk, window];
+                if let Some(win) = win.as_ref() {
+                    let _: bool = objc2::msg_send![win, makeFirstResponder: &*wk];
+                }
+            }
+        }
+
+        fn has_edit_commands(&self) -> bool {
+            true
         }
 
         // --- notes ---
