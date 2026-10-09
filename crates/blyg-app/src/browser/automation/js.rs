@@ -5,8 +5,13 @@
 //! see or patch it). It only ever finds elements, focuses, clicks, reads
 //! text, and puts the previewed text into one element.
 //!
-//! A selector is a `querySelectorAll` selector; with `text`, the first
-//! match whose `innerText.trim()` (or `value`) equals it exactly.
+//! A selector is a `querySelectorAll` selector; a list (`a, b`) is tried
+//! part by part, the first part with a match winning. Of the matches, the
+//! first visible one (else the first). With `text`, only matches whose
+//! `innerText` (or `value`) equals it (whitespace collapsed, curly quotes
+//! folded), the innermost of a nested run (a card's label, not the whole
+//! card); failing that, one whose placeholder or `aria-label` equals it.
+//! A click is pointer and mouse down/up, then `click()`, all bubbling.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,6 +49,9 @@ pub enum Op {
     Exec { sel: String, payload: String },
     /// Prep, then a synthetic `paste` ClipboardEvent carrying `payload`.
     Synth { sel: String, payload: String },
+    /// A privacy-limited outline of the page's text boxes, dialogs and
+    /// buttons ([`Outline`]), for `macro.log` when a selector misses.
+    Outline,
 }
 
 /// What an [`Op`] answers. Missing fields are their defaults.
@@ -63,7 +71,58 @@ pub struct Reply {
     pub refused: Option<String>,
     /// `location.href`.
     pub url: String,
+    /// `document.readyState` (`loading`, `interactive`, `complete`).
+    pub ready: String,
+    /// The element has a box and isn't `visibility: hidden`.
+    pub visible: bool,
+    /// The element (or the button it's in) is `disabled` or
+    /// `aria-disabled="true"`: a click wouldn't reach the site.
+    pub disabled: bool,
+    /// [`Op::Outline`]'s answer.
+    pub outline: Option<Outline>,
 }
+
+/// What [`Op::Outline`] sees: the page's path (no query), the title's
+/// length (never its text), and up to [`OUTLINE_MAX`] candidate elements.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Outline {
+    pub path: String,
+    pub title_len: usize,
+    /// How many candidates the page has (only the first are listed).
+    pub total: usize,
+    pub els: Vec<OutlineEl>,
+}
+
+/// One candidate: its tag and attributes, never its text, except a
+/// button's or link's label (at most 30 characters).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct OutlineEl {
+    pub tag: String,
+    pub id: String,
+    pub cls: Vec<String>,
+    pub role: String,
+    /// `aria-label`.
+    pub aria: String,
+    /// `placeholder`, else `data-placeholder`.
+    pub ph: String,
+    /// `data-testid`.
+    pub testid: String,
+    pub name: String,
+    /// An `<input>`'s `type`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// The `contenteditable` attribute.
+    pub ce: String,
+    pub vis: bool,
+    pub disabled: bool,
+    /// A button's or link's `innerText`, cut to 30 characters.
+    pub label: String,
+}
+
+/// The most candidates an outline lists (the in-page library's `25`).
+pub const OUTLINE_MAX: usize = 25;
 
 impl Reply {
     /// The JSON a page answered (`None` for `"null"` or garbage: no answer).
@@ -97,11 +156,67 @@ pub fn decode(js: &str) -> Option<Op> {
 const LIB: &str = r#"
 "use strict";
 const CRED = ["current-password", "new-password", "one-time-code", "username"];
+// Quotes folded, whitespace collapsed: "What’s on your mind?" matches
+// "What's on your mind?".
+function norm(s) {
+  return String(s == null ? "" : s).replace(/[‘’]/g, "'")
+    .replace(/[“”]/g, '"').replace(/\s+/g, " ").trim();
+}
+function shown(el) {
+  if (!el.getClientRects || el.getClientRects().length === 0) return false;
+  const st = getComputedStyle(el);
+  return st.visibility !== "hidden" && st.display !== "none";
+}
+function disabled(el) {
+  const b = el.closest ? el.closest("button,[role=button]") : null;
+  for (const e of [el, b]) {
+    if (e && (e.disabled === true || e.getAttribute("aria-disabled") === "true")) return true;
+  }
+  return false;
+}
+// A selector list's top-level parts, in order (commas inside quotes,
+// brackets or parentheses don't split).
+function parts(sel) {
+  const out = [];
+  let depth = 0, quote = null, cur = "";
+  for (const c of sel) {
+    if (quote) { if (c === quote) quote = null; cur += c; continue; }
+    if (c === "'" || c === '"') quote = c;
+    else if (c === "(" || c === "[") depth++;
+    else if (c === ")" || c === "]") depth--;
+    else if (c === "," && depth === 0) { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map(p => p.trim()).filter(p => p);
+}
+// The first visible candidate (else the first); with text, the innermost
+// of a nested run of matches (a card's text, not the whole card).
+function best(cands, text) {
+  const vis = cands.filter(shown);
+  const list = vis.length ? vis : cands;
+  let b = list[0];
+  if (text) for (let i = 1; i < list.length && b.contains(list[i]); i++) b = list[i];
+  return b;
+}
+const PH = ["data-placeholder", "placeholder", "aria-label"];
+// A selector list's parts in order (the first part with a match wins);
+// with text, elements whose innerText (or value) is it, else ones whose
+// placeholder or aria-label is it.
 function pick(sel, text) {
-  let all;
-  try { all = document.querySelectorAll(sel); } catch (e) { return { bad: true }; }
-  for (const el of all) {
-    if (text == null || holds(el).trim() === text) return { el };
+  try { document.querySelectorAll(sel); } catch (e) { return { bad: true }; }
+  const want = text == null ? null : norm(text);
+  const tests = want == null ? [() => true] : [
+    el => (el.textContent || "").length <= want.length * 4 + 200 && norm(holds(el)) === want,
+    el => PH.some(a => norm(el.getAttribute(a)) === want),
+  ];
+  for (const t of tests) {
+    for (const p of parts(sel)) {
+      let all;
+      try { all = document.querySelectorAll(p); } catch (e) { continue; }
+      const cands = Array.prototype.filter.call(all, t);
+      if (cands.length) return { el: best(cands, want != null) };
+    }
   }
   return {};
 }
@@ -109,6 +224,49 @@ function holds(el) {
   if (!el) return "";
   if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") return el.value || "";
   return el.innerText || el.textContent || "";
+}
+// What a page's handler sees from a real click: pointer and mouse down/up
+// at the element's centre, then click. They bubble, so a handler on the
+// closest clickable ancestor (or a framework's root listener) gets them.
+function press(el) {
+  const r = el.getBoundingClientRect();
+  const base = { bubbles: true, cancelable: true, composed: true, view: window,
+    clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, button: 0 };
+  const ptr = Object.assign({ pointerId: 1, pointerType: "mouse", isPrimary: true }, base);
+  const P = typeof PointerEvent === "function" ? PointerEvent : null;
+  if (P) el.dispatchEvent(new P("pointerdown", Object.assign({ buttons: 1 }, ptr)));
+  el.dispatchEvent(new MouseEvent("mousedown", Object.assign({ buttons: 1 }, base)));
+  if (P) el.dispatchEvent(new P("pointerup", Object.assign({ buttons: 0 }, ptr)));
+  el.dispatchEvent(new MouseEvent("mouseup", Object.assign({ buttons: 0 }, base)));
+  el.click();
+}
+// The candidates when a selector misses. Never text but a button's label
+// (30 characters), never a value.
+const OUTLINE = "[contenteditable],textarea,input:not([type=hidden]),[role=textbox],[role=dialog],button,[role=button]";
+function cut(v, n) {
+  const t = norm(v);
+  return t.length > n ? t.slice(0, n) + "…" : t;
+}
+function outline() {
+  const all = Array.from(document.querySelectorAll(OUTLINE));
+  const seen = all.map(el => [el, shown(el)]);
+  const order = seen.filter(x => x[1]).concat(seen.filter(x => !x[1])).slice(0, 25);
+  const els = order.map(([el, vis]) => {
+    const tag = el.tagName.toLowerCase();
+    const role = el.getAttribute("role") || "";
+    const at = a => cut(el.getAttribute(a), 40);
+    const o = {
+      tag, vis, role: cut(role, 20), id: cut(el.id, 40),
+      cls: Array.from(el.classList || []).slice(0, 4).map(c => cut(c, 40)),
+      aria: at("aria-label"), ph: at("placeholder") || at("data-placeholder"),
+      testid: at("data-testid"), name: at("name"), ce: at("contenteditable"),
+      disabled: disabled(el),
+    };
+    if (tag === "input") o.type = at("type");
+    if (tag === "button" || tag === "a" || role === "button") o.label = cut(el.innerText, 30);
+    return o;
+  });
+  return { path: location.pathname, titleLen: (document.title || "").length, total: all.length, els };
 }
 function credential(el) {
   if (!el || !el.getAttribute) return null;
@@ -145,7 +303,8 @@ function prep(el) {
   return null;
 }
 function run(op) {
-  const out = { found: false, url: location.href };
+  const out = { found: false, url: location.href, ready: document.readyState };
+  if (op.op === "outline") { out.outline = outline(); return out; }
   if (op.signedOut) {
     try { out.signedOut = document.querySelector(op.signedOut) !== null; } catch (e) {}
   }
@@ -154,6 +313,8 @@ function run(op) {
   const el = p.el;
   if (!el) return out;
   out.found = true;
+  out.visible = shown(el);
+  out.disabled = disabled(el);
   switch (op.op) {
     case "find": break;
     case "focus": {
@@ -162,7 +323,7 @@ function run(op) {
       if (why) out.refused = why;
       break;
     }
-    case "click": el.click(); break;
+    case "click": press(el); break;
     case "prep": {
       const why = prep(el);
       if (why) out.refused = why;

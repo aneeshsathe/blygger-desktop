@@ -49,6 +49,13 @@ pub struct PageState {
     pub progress: f64,
     pub can_back: bool,
     pub can_forward: bool,
+    /// Main-frame navigations committed (a new document shown) since the
+    /// view was made: WebKit's `didCommitNavigation`.
+    pub commits: u64,
+    /// Main-frame navigations finished (the page's load event) since the
+    /// view was made: `didFinishNavigation`. A macro's `open` waits for
+    /// this to move past what it was before the load.
+    pub finishes: u64,
 }
 
 /// Whether blocking applies to a main-frame URL (shared with the view's
@@ -165,6 +172,9 @@ mod wry_browser {
         blocking: BlockingFor,
         /// Lists are attached right now (and which generation of them).
         attached: Rc<Cell<Option<u64>>>,
+        /// (commits, finishes) of main-frame navigations, from wry's page
+        /// load handler.
+        navs: Rc<(Cell<u64>, Cell<u64>)>,
     }
 
     fn macos_major() -> isize {
@@ -213,6 +223,8 @@ mod wry_browser {
                 tx.clone(),
                 tx,
             );
+            let navs: Rc<(Cell<u64>, Cell<u64>)> = Rc::default();
+            let load_navs = navs.clone();
             let mut b = WebViewBuilder::new()
                 .with_bounds(rect(Bounds::default()))
                 .with_visible(false)
@@ -246,7 +258,14 @@ mod wry_browser {
                     }
                     false
                 })
-                .with_on_page_load_handler(move |_ev: PageLoadEvent, _url| {
+                .with_on_page_load_handler(move |ev: PageLoadEvent, _url| {
+                    // wry: Started is didCommitNavigation, Finished is
+                    // didFinishNavigation (both main-frame only).
+                    let (c, f) = &*load_navs;
+                    match ev {
+                        PageLoadEvent::Started => c.set(c.get() + 1),
+                        PageLoadEvent::Finished => f.set(f.get() + 1),
+                    }
                     let _ = load_tx.try_send(BrowserEvent::Changed);
                 })
                 .with_document_title_changed_handler(move |_| {
@@ -275,6 +294,7 @@ mod wry_browser {
                 rules,
                 blocking,
                 attached,
+                navs,
             };
             this.install_hook();
             Ok(this)
@@ -377,6 +397,8 @@ mod wry_browser {
                     progress: wk.estimatedProgress(),
                     can_back: wk.canGoBack(),
                     can_forward: wk.canGoForward(),
+                    commits: self.navs.0.get(),
+                    finishes: self.navs.1.get(),
                 }
             }
         }

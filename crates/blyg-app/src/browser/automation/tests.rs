@@ -102,6 +102,15 @@ pub struct Dom {
     pub nav_at: Option<(Duration, String)>,
     /// What `eval_json` answers a script that isn't an op (Clip Page).
     pub capture: String,
+    /// Main-frame navigations committed and finished (`PageState`).
+    pub commits: u64,
+    pub finishes: u64,
+    /// The last load hasn't finished yet.
+    pub finish_pending: bool,
+    /// Loads never finish (`loading` stays true: a request that never ends).
+    pub never_finish: bool,
+    /// `document.readyState` instead of the load's (`complete` once loaded).
+    pub ready: Option<&'static str>,
 }
 
 impl Dom {
@@ -124,6 +133,11 @@ impl Dom {
             pages,
             nav_at: None,
             capture: "null".into(),
+            commits: 0,
+            finishes: 0,
+            finish_pending: false,
+            never_finish: false,
+            ready: None,
         }))
     }
 
@@ -146,6 +160,73 @@ impl Dom {
         {
             self.nav_at = None;
             self.url = url;
+        }
+        if self.finish_pending && !self.never_finish && now >= self.loaded_at {
+            self.finish_pending = false;
+            self.finishes += 1;
+        }
+    }
+
+    fn loading(&self) -> bool {
+        self.never_finish || self.now() < self.loaded_at
+    }
+
+    /// What `Op::Outline` sees: the text boxes and buttons (never the
+    /// static text), as the in-page library lists them.
+    fn outline(&self) -> js::Outline {
+        let els: Vec<js::OutlineEl> = self
+            .els
+            .iter()
+            .filter(|e| !matches!(e.kind, Kind::Static))
+            .map(|e| {
+                let sel = e.sels.first().cloned().unwrap_or_default();
+                let tag: String = sel
+                    .chars()
+                    .take_while(|c| c.is_ascii_alphabetic())
+                    .collect();
+                let rest = &sel[tag.len()..];
+                let cls = rest
+                    .split('[')
+                    .next()
+                    .unwrap_or("")
+                    .split('.')
+                    .filter(|c| !c.is_empty())
+                    .map(String::from)
+                    .collect();
+                let button = matches!(e.kind, Kind::Button(_));
+                js::OutlineEl {
+                    tag: if tag.is_empty() { "div".into() } else { tag },
+                    cls,
+                    ce: if matches!(e.kind, Kind::Editor { .. }) {
+                        "true".into()
+                    } else {
+                        String::new()
+                    },
+                    aria: if button {
+                        String::new()
+                    } else {
+                        "Write a note".into()
+                    },
+                    vis: self.visible(e),
+                    label: if button {
+                        e.text.chars().take(30).collect()
+                    } else {
+                        String::new()
+                    },
+                    ..js::OutlineEl::default()
+                }
+            })
+            .collect();
+        js::Outline {
+            path: self
+                .url
+                .split("://")
+                .nth(1)
+                .and_then(|r| r.find('/').map(|i| r[i..].to_string()))
+                .unwrap_or_else(|| "/".into()),
+            title_len: 13,
+            total: els.len(),
+            els,
         }
     }
 
@@ -195,11 +276,21 @@ impl Dom {
 
     fn answer(&mut self, op: &Op) -> Reply {
         self.tick();
+        let ready = self.ready.unwrap_or(if self.loading() {
+            "interactive"
+        } else {
+            "complete"
+        });
         let mut r = Reply {
             url: self.url.clone(),
+            ready: ready.into(),
             ..Reply::default()
         };
         let (sel, text, signed_out) = match op {
+            Op::Outline => {
+                r.outline = Some(self.outline());
+                return r;
+            }
             Op::Find {
                 sel,
                 text,
@@ -221,8 +312,9 @@ impl Dom {
             return r;
         };
         r.found = true;
+        r.visible = true;
         match op {
-            Op::Find { .. } | Op::Read { .. } => {}
+            Op::Outline | Op::Find { .. } | Op::Read { .. } => {}
             Op::Focus { .. } => {
                 self.focused = Some(i);
                 r.refused = Self::credential(&self.els[i]);
@@ -292,6 +384,8 @@ impl BrowserSurface for ScriptedDom {
         d.els = els;
         d.focused = None;
         d.loaded_at = d.now() + d.load_time;
+        d.commits += 1;
+        d.finish_pending = true;
     }
     fn back(&mut self) {}
     fn forward(&mut self) {}
@@ -303,7 +397,9 @@ impl BrowserSurface for ScriptedDom {
         PageState {
             url: d.url.clone(),
             title: "Fixture Notes".into(),
-            loading: d.now() < d.loaded_at,
+            loading: d.loading(),
+            commits: d.commits,
+            finishes: d.finishes,
             ..PageState::default()
         }
     }
@@ -368,6 +464,9 @@ struct TestPage {
     saved: Option<String>,
     previews: Vec<Preview>,
     confirms: Vec<Confirm>,
+    /// `BLYGGER_MACRO_TRACE=1`, and what it wrote.
+    trace_on: bool,
+    traces: Vec<Vec<String>>,
 }
 
 impl TestPage {
@@ -382,6 +481,8 @@ impl TestPage {
             saved: None,
             previews: vec![],
             confirms: vec![],
+            trace_on: false,
+            traces: vec![],
         }
     }
     fn clock(&self) -> Rc<Cell<Duration>> {
@@ -455,6 +556,12 @@ impl Page for TestPage {
         let clock = self.clock();
         clock.set(clock.get() + self.sheet_time);
         self.choice
+    }
+    fn tracing(&self) -> bool {
+        self.trace_on
+    }
+    fn trace(&mut self, lines: &[String]) {
+        self.traces.push(lines.to_vec());
     }
 }
 
@@ -944,6 +1051,229 @@ fn steps_time_out_and_say_which() {
     assert!(page.now() < Duration::from_secs(1));
 }
 
+/// `/notes` redirects to `/home`, and `/home` is the composer.
+fn redirecting_site() -> Pages {
+    let inner = notes_site(pm_editor());
+    Rc::new(move |url: &str, cookie: bool| {
+        let to = if url.ends_with("/notes") {
+            format!("{ORIGIN}/home")
+        } else {
+            url.to_string()
+        };
+        let (_, els) = inner(&to, cookie);
+        (to, els)
+    })
+}
+
+#[test]
+fn open_counts_a_redirect_back_to_the_page_already_shown() {
+    let dom = Dom::new(redirecting_site());
+    let mut page = TestPage::new(dom.clone());
+    // The pane is already on /home (a run before this one).
+    page.load(&format!("{ORIGIN}/home"));
+    block_on(page.sleep(Duration::from_secs(1)));
+    assert_eq!(page.surface.state().url, format!("{ORIGIN}/home"));
+    let out = go(&mut page, standard_steps());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    assert_eq!(dom.borrow().posted, vec![PAYLOAD.to_string()]);
+    // Loaded as soon as the navigation finished, not after a settle.
+    assert_eq!(
+        dom.borrow().loads,
+        vec![format!("{ORIGIN}/home"), format!("{ORIGIN}/notes")]
+    );
+}
+
+#[test]
+fn open_counts_a_complete_document_when_loading_never_ends() {
+    // `loading` stays true (a request that never ends), but the document
+    // is complete: loaded after the settle.
+    let dom = Dom::new(notes_site(pm_editor()));
+    dom.borrow_mut().never_finish = true;
+    dom.borrow_mut().ready = Some("complete");
+    let mut page = TestPage::new(dom.clone());
+    let out = go(&mut page, standard_steps());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    // Only `interactive`: after the long settle.
+    let dom = Dom::new(notes_site(pm_editor()));
+    dom.borrow_mut().never_finish = true;
+    dom.borrow_mut().ready = Some("interactive");
+    let mut page = TestPage::new(dom.clone());
+    let out = go(&mut page, standard_steps()[..2].to_vec());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    assert!(page.now() >= runner::LONG_SETTLE, "{:?}", page.now());
+    // Never even interactive: the open times out, after 30 s (not 10).
+    let dom = Dom::new(notes_site(pm_editor()));
+    dom.borrow_mut().never_finish = true;
+    dom.borrow_mut().ready = Some("loading");
+    let mut page = TestPage::new(dom.clone());
+    let out = go(&mut page, standard_steps());
+    let e = failed(&out);
+    assert_eq!((e.step, e.do_, &e.reason), (1, "open", &Reason::Timeout));
+    assert!(page.now() >= recipe::MAX_STEP_TIMEOUT, "{:?}", page.now());
+}
+
+const SECRET: &str = "SECRET-BODY-7f3a";
+
+/// The composer plus page text and a button whose label is the payload's
+/// start (a preview card): neither may reach an outline.
+fn outline_site() -> Pages {
+    Rc::new(|url: &str, _| {
+        (
+            url.to_string(),
+            vec![
+                El::new(&["h1"], Kind::Static).text(SECRET),
+                El::new(&["p.body"], Kind::Static).text(&format!("{SECRET} more text")),
+                El::new(
+                    &["div.ProseMirror.tiptap[contenteditable='true']", PM],
+                    pm_editor(),
+                ),
+                El::new(&["button.card", "button"], Kind::Button(Action::None))
+                    .text("Tide pools forget, twice a day."),
+                El::new(&["button.primary", "button"], Kind::Button(Action::Post)).text("Post"),
+            ],
+        )
+    })
+}
+
+#[test]
+fn a_missed_selector_logs_an_outline_without_page_text_or_the_payload() {
+    let dom = Dom::new(outline_site());
+    let mut page = TestPage::new(dom.clone());
+    let mut steps = standard_steps();
+    steps[0] = Step::Open {
+        url: format!("{ORIGIN}/notes?ref=SECRETQUERY"),
+    };
+    steps[1] = Step::WaitFor {
+        selector: "div.missing".into(),
+        text: None,
+        empty: false,
+        absent: false,
+        timeout: Some("2s".into()),
+    };
+    let out = go(&mut page, steps);
+    let e = failed(&out);
+    assert_eq!(e.reason, Reason::Timeout);
+    let dom_text = e.dom.join("\n");
+    assert!(e.dom.iter().all(|l| l.starts_with("  dom: ")), "{dom_text}");
+    assert!(
+        dom_text.contains("  dom: page path=/notes title-len=13 candidates=3 listed=3"),
+        "{dom_text}"
+    );
+    assert!(
+        dom_text.contains(
+            "  dom: div.ProseMirror.tiptap ce=\"true\" aria=\"Write a note\" visible=yes"
+        ),
+        "{dom_text}"
+    );
+    assert!(
+        dom_text.contains("button.primary visible=yes label=\"Post\""),
+        "{dom_text}"
+    );
+    assert!(
+        dom_text.contains("button.card visible=yes label=\"(the text)\""),
+        "{dom_text}"
+    );
+    for never in [SECRET, "SECRETQUERY", "Tide pools", "twice a day"] {
+        assert!(!dom_text.contains(never), "{never} in {dom_text}");
+    }
+    // The log entry is the error line, then the outline.
+    let line = runner::log_line("t", &macro_run(vec![]), &out);
+    let lines: Vec<&str> = line.lines().collect();
+    assert!(lines[0].starts_with("t cross-post-note error step=2 do=waitFor reason=timeout"));
+    assert!(lines[1].starts_with("  dom: page path=/notes"));
+    assert!(!line.contains(SECRET) && !line.contains("Tide pools"));
+    // A click that finds nothing logs one too.
+    let dom = Dom::new(outline_site());
+    let mut page = TestPage::new(dom);
+    let steps = vec![
+        standard_steps()[0].clone(),
+        Step::Click {
+            selector: "button".into(),
+            text: Some("New note".into()),
+        },
+        Step::Insert {
+            selector: PM.into(),
+        },
+        standard_steps()[4].clone(),
+    ];
+    let out = go(&mut page, steps);
+    let e = failed(&out);
+    assert_eq!((e.step, e.do_), (2, "click"));
+    assert!(e.dom.len() > 1, "{:?}", e.dom);
+    // Off the origin: no outline (the page isn't the site's).
+    let dom = Dom::new(Rc::new(|_: &str, _| {
+        ("https://login.other.example/sso".to_string(), vec![])
+    }));
+    let mut page = TestPage::new(dom);
+    assert!(failed(&go(&mut page, standard_steps())).dom.is_empty());
+}
+
+#[test]
+fn an_outline_is_capped_at_3_kb() {
+    let el = js::OutlineEl {
+        tag: "button".into(),
+        id: "x".repeat(40),
+        cls: vec!["c".repeat(40); 4],
+        aria: "a".repeat(40),
+        label: "l".repeat(30),
+        vis: true,
+        ..js::OutlineEl::default()
+    };
+    let o = js::Outline {
+        path: "/home".into(),
+        title_len: 8,
+        total: 400,
+        els: vec![el; 25],
+    };
+    let lines = runner::outline_lines(&o, PAYLOAD);
+    let bytes: usize = lines.iter().map(|l| l.len() + 1).sum();
+    assert!(bytes <= runner::OUTLINE_BYTES, "{bytes}");
+    assert_eq!(lines.last().unwrap(), "  dom: (cut at 3 KB)");
+}
+
+#[test]
+fn a_trace_outlines_the_page_after_every_step() {
+    let dom = Dom::new(outline_site());
+    let mut page = TestPage::new(dom.clone());
+    page.trace_on = true;
+    let out = go(&mut page, standard_steps());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    let firsts: Vec<&str> = page.traces.iter().map(|t| t[0].as_str()).collect();
+    assert_eq!(
+        firsts,
+        [
+            "trace step=1 do=open ok",
+            "trace step=2 do=waitFor ok",
+            "trace step=3 do=focus ok",
+            "trace step=4 do=insert ok",
+            "trace step=5 do=submit ok",
+            "trace step=6 do=waitFor ok",
+        ]
+    );
+    let all = page.traces.concat().join("\n");
+    assert!(all.contains("  dom: div.ProseMirror.tiptap"));
+    assert!(
+        !all.contains(SECRET) && !all.contains("Tide pools"),
+        "{all}"
+    );
+    let entry = runner::trace_entry("t", "cross-post-note", &page.traces[0]);
+    assert!(
+        entry.starts_with("t cross-post-note trace step=1 do=open ok\n  dom: page path=/notes")
+    );
+    // Off unless asked.
+    let mut page = TestPage::new(Dom::new(outline_site()));
+    go(&mut page, standard_steps());
+    assert!(page.traces.is_empty());
+}
+
+#[test]
+fn the_ring_never_starts_inside_an_outline() {
+    let log = runner::ring_append("", "a error\n  dom: one\n  dom: two", 10);
+    assert_eq!(log, "a error\n  dom: one\n  dom: two\n");
+    let log = runner::ring_append(&log, "b posted", 3);
+    assert_eq!(log, "b posted\n", "orphaned dom lines go with their entry");
+}
+
 #[test]
 fn a_run_is_capped_but_the_sheets_dont_count() {
     // Seven waits of 29 s each: over MAX_RUN.
@@ -1158,6 +1488,7 @@ fn the_log_is_a_ring_without_the_text() {
             selector: Some(PM.into()),
             reason: Reason::Timeout,
             after_submit: false,
+            dom: vec![],
         }),
     );
     assert!(line.starts_with(

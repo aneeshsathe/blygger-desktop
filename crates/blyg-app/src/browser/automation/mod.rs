@@ -116,6 +116,15 @@ struct UiPage<'a> {
     edit_commands: bool,
     /// The user's clipboard before the run (`Some(None)`: it was empty).
     saved: Option<Option<ClipboardItem>>,
+    /// The extension and macro (for trace entries in `macro.log`).
+    ext: String,
+    macro_id: String,
+}
+
+/// `BLYGGER_MACRO_TRACE=1`: `macro.log` gets the page's outline after every
+/// step (tags, classes, roles, aria labels, button labels; never the text).
+pub(crate) fn tracing() -> bool {
+    std::env::var("BLYGGER_MACRO_TRACE").is_ok_and(|v| v == "1")
 }
 
 impl Page for UiPage<'_> {
@@ -236,6 +245,22 @@ impl Page for UiPage<'_> {
         rx.recv().await.unwrap_or(PostChoice::Cancel)
     }
 
+    fn tracing(&self) -> bool {
+        tracing()
+    }
+
+    fn trace(&mut self, lines: &[String]) {
+        let dir = self.this.update(self.cx, |v, _| v.browser_data_dir());
+        if let Ok(Some(dir)) = dir {
+            let time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+            append_log(
+                &dir,
+                &self.ext,
+                &runner::trace_entry(&time, &self.macro_id, lines),
+            );
+        }
+    }
+
     fn progress(&mut self, index: usize, step: &blyg_ext::recipe::Step) {
         if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
             println!(
@@ -309,6 +334,8 @@ impl MainView {
                 stop,
                 edit_commands: false,
                 saved: None,
+                ext: run.ext.clone(),
+                macro_id: run.spec.id.clone(),
             };
             let out = runner::run(&mut page, &run).await;
             let _ = this.update_in(cx, |v, window, cx| v.macro_finished(&run, out, window, cx));
@@ -798,7 +825,9 @@ impl MainView {
     /// built-in test macros against the fixture site at `BLYGGER_DEMO_URL`
     /// (served on 127.0.0.1, never a real site), the sheets answering
     /// themselves. Signed out first, then signed in by the fixture's own
-    /// button, then posted; again at once (min-interval); a password field
+    /// button, then posted; again at once (min-interval); the feed shape
+    /// (a prompt opening a modal composer, home.html); `/notes`, which
+    /// redirects to the page the pane is already on; a password field
     /// (refused); a page that goes to another origin (off-origin).
     pub(crate) fn macro_demo(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !demo_auto() {
@@ -848,8 +877,9 @@ impl MainView {
                         break;
                     }
                 }
-                if label == "post" {
+                if matches!(label, "post" | "feed" | "redirect") {
                     pause(500).await;
+                    println!("macro-dom-of {label}");
                     let _ = this.update(cx, |v, _| {
                         v.browser.with(|s| {
                             s.probe(
@@ -986,6 +1016,64 @@ fn demo_runs(base: &str, origin: &str) -> Vec<(&'static str, MacroRun)> {
             "fixture-away",
             note_steps(format!("{base}/notes.html?away=1")),
         ),
+        payload.clone(),
+    );
+    // The bundled cross-post's shape: a home feed whose prompt opens a modal
+    // composer (home.html). Then /notes, which the fixture server
+    // redirects to home.html: the page the pane is already on.
+    let feed_steps = |url: String| {
+        let prompt = "[role='button'], button, div".to_string();
+        let editor = blyg_ext_crosspost::EDITOR.to_string();
+        let wait = |selector: String, text: Option<&str>, absent: bool| Step::WaitFor {
+            selector,
+            text: text.map(String::from),
+            empty: false,
+            absent,
+            timeout: Some("10s".into()),
+        };
+        let mind = "What's on your mind?";
+        vec![
+            Step::Open { url },
+            wait(prompt.clone(), Some(mind), false),
+            Step::Click {
+                selector: prompt,
+                text: Some(mind.into()),
+            },
+            wait(editor.clone(), None, false),
+            Step::Focus {
+                selector: editor.clone(),
+            },
+            Step::Insert {
+                selector: editor.clone(),
+            },
+            Step::Submit {
+                selector: "[role='dialog'] button, [aria-modal='true'] button".into(),
+                text: Some("Post".into()),
+            },
+            wait(editor, None, true),
+            Step::Done {
+                text: "Posted to Fixture Notes".into(),
+            },
+        ]
+    };
+    let feed = MacroRun::new(
+        "demo",
+        site("fixture-feed", None),
+        spec(
+            "fixture-feed",
+            "fixture-feed",
+            feed_steps(format!("{base}/home.html")),
+        ),
+        payload.clone(),
+    );
+    let redirect = MacroRun::new(
+        "demo",
+        site("fixture-redirect", None),
+        spec(
+            "fixture-redirect",
+            "fixture-redirect",
+            feed_steps(format!("{base}/notes")),
+        ),
         payload,
     );
     vec![
@@ -993,6 +1081,8 @@ fn demo_runs(base: &str, origin: &str) -> Vec<(&'static str, MacroRun)> {
         ("sign-in", notes.clone()),
         ("post", notes.clone()),
         ("too-soon", notes),
+        ("feed", feed),
+        ("redirect", redirect),
         ("refused", login),
         ("off-origin", away),
     ]

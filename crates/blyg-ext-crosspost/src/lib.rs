@@ -51,12 +51,16 @@ docs = "The longest note, link included, in characters as a reader counts them (
 id = "substack-notes"
 title = "Substack Notes"
 origin = "https://substack.com"
-home = "https://substack.com/notes"
+home = "https://substack.com/home"
 signed-out = "a[href*='sign-in'], form[action*='sign-in']"
 content-blocking = false
 min-interval = "60s"
 
 # The selectors are best guesses, not yet checked against the live site.
+# The home feed has a "What's on your mind?" prompt; clicking it opens a
+# modal composer (an editor, Cancel, and Post, disabled until there's
+# text). The editor is only ever looked for inside the dialog, never the
+# feed's prompt. A selector list is tried part by part, in order.
 [[macros]]
 id = "cross-post-note"
 title = "Cross-post to Substack Notes…"
@@ -66,15 +70,22 @@ when = "published"
 template = "{{excerpt}}\n\n{{permalink}}"
 tested = "unverified"
 steps = [
-  { do = "open", url = "https://substack.com/notes" },
-  { do = "waitFor", selector = "div.ProseMirror[contenteditable='true']", timeout = "20s" },
-  { do = "focus", selector = "div.ProseMirror[contenteditable='true']" },
-  { do = "insert", selector = "div.ProseMirror[contenteditable='true']" },
-  { do = "submit", selector = "button", text = "Post" },
-  { do = "waitFor", selector = "div.ProseMirror[contenteditable='true']", empty = true, timeout = "15s" },
+  { do = "open", url = "https://substack.com/home" },
+  { do = "waitFor", selector = "[role='button'], button, div", text = "What's on your mind?", timeout = "20s" },
+  { do = "click", selector = "[role='button'], button, div", text = "What's on your mind?" },
+  { do = "waitFor", selector = "[role='dialog'] div.ProseMirror[contenteditable='true'], [role='dialog'] [contenteditable='true'], [aria-modal='true'] [contenteditable='true']", timeout = "10s" },
+  { do = "focus", selector = "[role='dialog'] div.ProseMirror[contenteditable='true'], [role='dialog'] [contenteditable='true'], [aria-modal='true'] [contenteditable='true']" },
+  { do = "insert", selector = "[role='dialog'] div.ProseMirror[contenteditable='true'], [role='dialog'] [contenteditable='true'], [aria-modal='true'] [contenteditable='true']" },
+  { do = "submit", selector = "[role='dialog'] button, [aria-modal='true'] button", text = "Post" },
+  { do = "waitFor", selector = "[role='dialog'] div.ProseMirror[contenteditable='true'], [role='dialog'] [contenteditable='true'], [aria-modal='true'] [contenteditable='true']", absent = true, timeout = "15s" },
   { do = "done", text = "Posted to Substack Notes" },
 ]
 "#;
+
+/// The composer's editor: inside the modal only (never the feed's prompt).
+pub const EDITOR: &str = "[role='dialog'] div.ProseMirror[contenteditable='true'], \
+                          [role='dialog'] [contenteditable='true'], \
+                          [aria-modal='true'] [contenteditable='true']";
 
 /// The manifest (checked by the same rules as any extension's).
 pub fn manifest() -> Manifest {
@@ -137,12 +148,32 @@ mod tests {
         assert_eq!(
             names,
             [
-                "open", "waitFor", "focus", "insert", "submit", "waitFor", "done"
+                "open", "waitFor", "click", "waitFor", "focus", "insert", "submit", "waitFor",
+                "done"
             ]
         );
-        assert_eq!(insert_index(&mac.steps), Some(3));
-        assert_eq!(first_submit(&mac.steps), Some(4));
-        assert_eq!(mac.steps[4].match_text(), Some("Post"));
-        assert!(matches!(&mac.steps[5], Step::WaitFor { empty: true, .. }));
+        // The home feed, not /notes (which redirects).
+        assert!(matches!(&mac.steps[0], Step::Open { url } if url == "https://substack.com/home"));
+        assert_eq!(mac.steps[2].match_text(), Some("What's on your mind?"));
+        assert_eq!(insert_index(&mac.steps), Some(5));
+        assert_eq!(first_submit(&mac.steps), Some(6));
+        assert_eq!(mac.steps[6].match_text(), Some("Post"));
+        assert!(
+            mac.steps[6]
+                .selector()
+                .unwrap()
+                .starts_with("[role='dialog'] button")
+        );
+        // The editor only inside the modal; gone once it closes.
+        let editor = EDITOR.split_whitespace().collect::<Vec<_>>().join(" ");
+        for i in [3, 4, 5, 7] {
+            assert_eq!(
+                mac.steps[i].selector(),
+                Some(editor.as_str()),
+                "step {}",
+                i + 1
+            );
+        }
+        assert!(matches!(&mac.steps[7], Step::WaitFor { absent: true, .. }));
     }
 }

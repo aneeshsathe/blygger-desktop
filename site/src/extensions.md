@@ -67,7 +67,7 @@ site exactly, so it can't act anywhere else. If you leave the `extension-allow`
 lines out, Burrow asks for them the first time it starts cross-post.
 
 Sign in to Substack **once, by hand**, in the browser pane (open
-`https://substack.com/notes` there). The pane remembers it (on macOS 14 or
+`https://substack.com/home` there). The pane remembers it (on macOS 14 or
 later; on older macOS, sign in before each run). cross-post never
 signs in for you, never sees your sign-in, and stops with "Sign in to Substack
 in this pane" if you're signed out.
@@ -79,7 +79,8 @@ Notes…**. Every run shows **two confirmation sheets**, and no setting skips
 them:
 
 1. **The text.** You see the note it will post, and can edit it. Continue
-   opens Substack Notes in the pane and puts the text in the notes box.
+   opens your Substack home feed in the pane, clicks "What's on your mind?",
+   and puts the text in the note composer that opens.
 2. **Post this to Substack Notes?** You see what the notes box now holds. Post
    clicks Substack's Post button; you can also click Post yourself, or cancel.
 
@@ -103,7 +104,11 @@ extension-setting = cross-post max-chars=500
   checks them by hand against the live site. Substack can change its page at
   any time. When a step doesn't find what it looks for, the run stops, says
   which step, and **nothing is posted**. `blygger +list-extensions` shows each
-  macro's `tested` value.
+  macro's `tested` value. The extension's `macro.log` (in Burrow's data
+  folder, under `extensions/cross-post/`) then lists the text boxes and
+  buttons the page did have (tags, classes, labels such as "Post"; never the
+  page's text or yours), so the recipe can be fixed. Start Burrow with
+  `BLYGGER_MACRO_TRACE=1` to log that after every step.
 - **One post per click.** cross-post posts once each time you confirm. It
   never posts on a schedule, in the background, or again by itself, and it
   waits at least 60 seconds between two runs.

@@ -15,8 +15,10 @@
 //! ]
 //! ```
 //!
-//! A selector is a `querySelectorAll` selector; with `text`, the first
-//! match whose `innerText.trim()` equals it exactly.
+//! A selector is a `querySelectorAll` selector (a list is tried part by
+//! part, in order); with `text`, a match whose `innerText` equals it
+//! (whitespace collapsed, curly quotes folded; the browser pane's runner
+//! has the details).
 //!
 //! The rules ([`check_macro`]): the first step is `open`; every `open` URL
 //! is on one of the manifest's sites; exactly one `insert`; at least one
