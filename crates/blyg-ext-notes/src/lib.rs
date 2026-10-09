@@ -5,13 +5,20 @@
 //! notes panel shows the notes and copies text from them into a post (a
 //! host action); "Save selection to notes" makes a new plain note.
 //!
-//! This first step holds only its manifest; the vault and the extension
-//! loop follow.
+//! - [`vault`]: the folder logic, usable without Burrow.
+//! - [`frontmatter`]: the bit of YAML frontmatter it reads (never writes).
+//! - [`run`]: the BXP extension around it (`blygger +ext markdown-notes`).
+
+pub mod frontmatter;
+pub mod run;
+pub mod vault;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use blyg_ext::manifest::{Installed, Manifest, Origin};
+
+pub use run::{NotesExt, run, run_stdio};
 
 /// The extension's name (`extension = markdown-notes`).
 pub const NAME: &str = "markdown-notes";
