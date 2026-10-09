@@ -19,6 +19,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 - **Burrow runs on Windows.** A 64-bit Windows build, from the same code, ships with every release as `Burrow-<version>-windows-x64.zip`: unzip it and run `blygger.exe`. Shortcuts use Ctrl where the Mac uses ⌘ (Versions is Ctrl+Shift+Y), a Menu button stands in for the menu bar, posts and the editor show in WebView2, and sign-ins are kept in Windows Credential Manager. It doesn't update itself yet, the browser pane is macOS only, and the build isn't code-signed. See [Windows](https://aneeshsathe.github.io/blygger-desktop/install.html#windows). The port is by Patrick Atwater ([@patwater](https://github.com/patwater)); thank you!
 - CI checks every change on Windows too (fmt, clippy, tests and a release build).
+- **cross-post**, a second bundled extension, puts a published post on Substack Notes: its opening paragraph and the link, at most 280 characters (`max-chars`, `template`). It runs in the browser pane where you signed in by hand, shows the text to edit and then what the notes box holds, and posts only when you click Post. It's off until `extension = cross-post`, needs `extension-allow = cross-post browser.automate:https://substack.com`, and its recipe is marked unverified until it's checked against the live site. `blygger +list-extensions` now lists each extension's sites and macros, with when the macro was last checked. See [Extensions](https://aneeshsathe.github.io/blygger-desktop/extensions.html#cross-post).
 
 ## [0.9.0] - 2026-10-06
 

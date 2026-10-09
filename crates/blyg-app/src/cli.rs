@@ -82,10 +82,10 @@ With no action, Burrow starts. Actions:
                           copy a built-in theme into the themes folder to edit
   +list-keybinds          every keyboard shortcut, and the ones reserved
   +list-extensions        every extension, bundled and installed: whether it's
-                          on, what it's granted, what it still asks for, and
-                          problems with installed ones
-  +ext <name>             run a bundled extension (markdown-notes) over
-                          stdin/stdout; Burrow starts it itself
+                          on, what it's granted, what it still asks for, its
+                          sites and macros, and problems with installed ones
+  +ext <name>             run a bundled extension (markdown-notes,
+                          cross-post) over stdin/stdout; Burrow starts it itself
   +version                print the version
   +help                   this help
 
@@ -244,12 +244,13 @@ fn diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
 // --- extensions ---
 
 /// The extensions built into the app, each run as `blygger +ext <name>`.
-const BUNDLED_EXTENSIONS: &[&str] = &[blyg_ext_notes::NAME];
+const BUNDLED_EXTENSIONS: &[&str] = &[blyg_ext_notes::NAME, blyg_ext_crosspost::NAME];
 
 /// How to serve a bundled extension over this process's stdin/stdout.
 fn bundled_extension(name: &str) -> Option<fn() -> ExitCode> {
     match name {
         blyg_ext_notes::NAME => Some(blyg_ext_notes::run_stdio),
+        blyg_ext_crosspost::NAME => Some(blyg_ext_crosspost::run_stdio),
         _ => None,
     }
 }
@@ -271,11 +272,15 @@ pub(crate) fn host_config(store: &ConfigStore) -> blyg_ext::HostConfig {
         .get(blyg_ext_notes::NAME)
         .cloned()
         .unwrap_or_default();
-    c.bundled = vec![blyg_ext_notes::bundled(
-        exe,
-        vec!["+ext".into(), blyg_ext_notes::NAME.into()],
-        &notes,
-    )];
+    // Both are off until the config names them (`extension = …`).
+    c.bundled = vec![
+        blyg_ext_notes::bundled(
+            exe.clone(),
+            vec!["+ext".into(), blyg_ext_notes::NAME.into()],
+            &notes,
+        ),
+        blyg_ext_crosspost::bundled(exe, vec!["+ext".into(), blyg_ext_crosspost::NAME.into()]),
+    ];
     c
 }
 
@@ -343,6 +348,18 @@ fn list_extensions(store: &ConfigStore) -> String {
         }
         if !e.missing.is_empty() && !e.granted.is_empty() {
             out.push_str(&format!("  missing:  {}\n", caps(&e.missing)));
+        }
+        for s in &e.sites {
+            out.push_str(&format!(
+                "  site:     {} ({}, {})\n",
+                s.id, s.title, s.origin
+            ));
+        }
+        for m in &e.macros {
+            out.push_str(&format!(
+                "  macro:    {} \"{}\" on {}, tested: {}\n",
+                m.id, m.title, m.site, m.tested
+            ));
         }
         if !e.enabled {
             out.push_str(&format!("  turn on:  extension = {}\n", e.name));

@@ -159,6 +159,12 @@ runs the steps up to the first `submit`, shows what the composer now
 holds, and runs `submit` only when the user clicks Post. Only granted
 macros of running extensions are offered (`Host::macros`).
 
+The bundled `cross-post` extension (`crates/blyg-ext-crosspost`, run as
+`blygger +ext cross-post`) is the worked example: one site, one macro for
+Substack Notes (`tested = "unverified"`), and a `macro.prepare` that fits
+the opening paragraph and the link into `max-chars` (280) characters,
+counted as grapheme clusters.
+
 ## Wire format
 
 JSON-RPC 2.0, one JSON object per line (LF or CRLF), both directions on the

@@ -1,6 +1,7 @@
 //! The `blygger` executable's extension actions, as real processes over a
-//! real temp config: `+ext markdown-notes` served through the real host,
-//! `+ext` with a wrong name, and `+list-extensions`.
+//! real temp config: `+ext markdown-notes` and `+ext cross-post` served
+//! through the real host and over raw stdio, `+ext` with a wrong name, and
+//! `+list-extensions`.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -118,7 +119,9 @@ fn ext_with_an_unknown_name_exits_2() {
     assert!(o.stdout.is_empty(), "stdout stays clean");
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
-        err.contains("`no-such-thing` isn't a bundled extension (bundled: markdown-notes)"),
+        err.contains(
+            "`no-such-thing` isn't a bundled extension (bundled: markdown-notes, cross-post)"
+        ),
         "{err}"
     );
     let o = blygger(dir.path(), &["+ext"]);
@@ -224,6 +227,17 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         out.contains("ghost (not installed): enabled, but not installed\n"),
         "{out}"
     );
+    assert!(
+        out.contains(
+            "cross-post 0.1.0 (bundled): off\n  \
+             Cross-posts a published post to Substack Notes, in the browser pane, after you confirm.\n  \
+             asks for: items.read, ui, browser.automate:https://substack.com\n  \
+             site:     substack-notes (Substack Notes, https://substack.com)\n  \
+             macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: unverified\n  \
+             turn on:  extension = cross-post\n"
+        ),
+        "{out}"
+    );
     assert!(out.contains("\nProblems:\n"), "{out}");
     assert!(out.contains("broken"), "{out}");
     assert!(
@@ -231,4 +245,181 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         "{out}"
     );
     assert!(!dir.path().join("data").exists(), "listing starts nothing");
+}
+
+/// One JSON line from `stdout`, which must hold nothing else.
+fn read_json(stdout: &mut impl std::io::BufRead) -> serde_json::Value {
+    let mut line = String::new();
+    stdout.read_line(&mut line).unwrap();
+    serde_json::from_str(&line).unwrap_or_else(|e| panic!("{e}: {line:?}"))
+}
+
+fn sample_item() -> ItemSummary {
+    ItemSummary {
+        id: "local-7".into(),
+        server_id: Some("p7".into()),
+        kind: "post".into(),
+        status: "public".into(),
+        version: 3,
+        dirty: false,
+        created: "2026-10-01T00:00:00Z".into(),
+        updated: "2026-10-02T00:00:00Z".into(),
+        permalink: Some("https://blyg.example.com/p/7".into()),
+        title: "Tide tables".into(),
+        content_hash: "sha256:00".into(),
+        content_md: Some(
+            "# Tide tables\r\n\r\n> Time and tide.\r\n\r\n![[img01]]\r\n\r\n\
+             The **moon** pulls the sea 🌊\r\ntwice a day.\r\n\r\nMore.\r\n"
+                .into(),
+        ),
+    }
+}
+
+fn prepare_params() -> MacroPrepareParams {
+    MacroPrepareParams {
+        macro_id: blyg_ext_crosspost::MACRO.into(),
+        item: sample_item(),
+        permalink: "https://blyg.example.com/p/7".into(),
+        text: "The host's own text".into(),
+    }
+}
+
+#[test]
+fn ext_cross_post_prepares_a_note_on_stdio() {
+    use std::io::{BufReader, Write};
+    let dir = tempfile::tempdir().unwrap();
+    let mut child = Command::new(BLYGGER)
+        .args(["+ext", blyg_ext_crosspost::NAME])
+        .env("BLYGGER_CONFIG", dir.path().join("config"))
+        .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut stdout = BufReader::new(child.stdout.take().unwrap());
+    let params = InitializeParams {
+        protocol_version: PROTOCOL_VERSION,
+        host: HostInfo {
+            name: "Burrow".into(),
+            version: "0.0.0-test".into(),
+            platform: std::env::consts::OS.into(),
+        },
+        granted: vec![
+            "items.read".into(),
+            "browser.automate:https://substack.com".into(),
+        ],
+        settings: [("max-chars".to_string(), "60".to_string())].into(),
+        storage_dir: dir.path().join("data"),
+        blyg_origin: None,
+    };
+    let send = |stdin: &mut std::process::ChildStdin, v: serde_json::Value| {
+        writeln!(stdin, "{v}").unwrap();
+    };
+    send(
+        &mut stdin,
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": params}),
+    );
+    let v = read_json(&mut stdout);
+    assert_eq!(v["id"], 1, "{v}");
+    assert_eq!(v["result"]["name"], blyg_ext_crosspost::NAME, "{v}");
+    assert_eq!(v["result"]["protocolVersion"], PROTOCOL_VERSION, "{v}");
+
+    send(
+        &mut stdin,
+        serde_json::json!({
+            "jsonrpc": "2.0", "id": 2, "method": methods::MACRO_PREPARE,
+            "params": prepare_params(),
+        }),
+    );
+    let v = read_json(&mut stdout);
+    assert_eq!(v["id"], 2, "{v}");
+    let r: MacroPrepareResult = serde_json::from_value(v["result"].clone()).expect("a result");
+    // 60 characters in all: the link (28) and the blank line (2) leave 30.
+    assert_eq!(
+        r.text,
+        "The moon pulls the sea 🌊…\n\nhttps://blyg.example.com/p/7"
+    );
+    assert_eq!(r.note.as_deref(), Some("Cut to 60 characters (max-chars)"));
+
+    send(
+        &mut stdin,
+        serde_json::json!({"jsonrpc": "2.0", "id": 3, "method": "extension/command",
+                           "params": {"id": "nope", "context": {}}}),
+    );
+    let v = read_json(&mut stdout);
+    assert_eq!(v["error"]["code"], codes::METHOD_NOT_FOUND, "{v}");
+
+    send(
+        &mut stdin,
+        serde_json::json!({"jsonrpc": "2.0", "id": 4, "method": "shutdown"}),
+    );
+    let v = read_json(&mut stdout);
+    assert_eq!(v["id"], 4, "{v}");
+    drop(stdin);
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break s;
+        }
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("blygger +ext cross-post didn't exit after shutdown");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(status.success(), "{status:?}");
+}
+
+#[test]
+fn ext_cross_post_runs_through_the_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let name = blyg_ext_crosspost::NAME;
+    let mut c = HostConfig::new(dir.path().join("data"), "0.0.0-test");
+    c.bundled = vec![blyg_ext_crosspost::bundled(
+        PathBuf::from(BLYGGER),
+        vec!["+ext".into(), name.into()],
+    )];
+    c.enabled = vec![name.into()];
+    c.grants = Grants::from_allow_lines(&[
+        format!("{name} items.read"),
+        format!("{name} ui"),
+        format!("{name} browser.automate:https://substack.com"),
+    ])
+    .0;
+    let (tx, events) = channel();
+    let host = Host::new(c, Arc::new(NoBlyg), move |e| {
+        let _ = tx.send(e);
+    });
+    host.start();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(ExtEvent::Started { name: n, .. }) => {
+                assert_eq!(n, name);
+                break;
+            }
+            Ok(ExtEvent::Failed {
+                message, stderr, ..
+            }) => panic!("{message}: {stderr:?}"),
+            Ok(_) => {}
+            Err(_) => panic!("blygger +ext {name} didn't start"),
+        }
+    }
+    let entry = host
+        .macro_entry(name, blyg_ext_crosspost::MACRO)
+        .expect("the granted macro is offered");
+    assert_eq!(entry.site.origin, "https://substack.com");
+    assert_eq!(entry.spec.tested, "unverified");
+    let r = host
+        .macro_prepare(name, &prepare_params())
+        .unwrap()
+        .expect("cross-post implements macro.prepare");
+    assert_eq!(
+        r.text,
+        "The moon pulls the sea 🌊 twice a day.\n\nhttps://blyg.example.com/p/7"
+    );
+    assert_eq!(r.note, None);
+    host.shutdown();
 }

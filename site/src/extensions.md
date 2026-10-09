@@ -5,8 +5,8 @@ separate program that Burrow starts and talks to. **Nothing runs unless your
 config file names it**, and an extension gets only the permissions you grant
 it.
 
-Burrow comes with one extension, **markdown-notes**. You can also install
-extensions other people write, or write your own.
+Burrow comes with two extensions, **markdown-notes** and **cross-post**. You
+can also install extensions other people write, or write your own.
 
 ## markdown-notes
 
@@ -45,6 +45,72 @@ extension-setting = markdown-notes folder=Inbox
 extension-setting = markdown-notes poll-ms=5000
 ```
 
+## cross-post
+
+cross-post puts a post you've published on Substack Notes too: its opening
+paragraph and the link back to your blyg. It runs in Burrow's browser pane,
+where you're signed in to Substack, and it never posts without you clicking
+Post.
+
+### Turning it on
+
+```text
+extension = cross-post
+extension-allow = cross-post items.read
+extension-allow = cross-post ui
+extension-allow = cross-post browser.automate:https://substack.com
+```
+
+The last line is the one that matters: it lets cross-post fill in, and when
+you confirm, click Post on substack.com, signed in as you. It names that one
+site exactly, so it can't act anywhere else. If you leave the `extension-allow`
+lines out, Burrow asks for them the first time it starts cross-post.
+
+Sign in to Substack **once, by hand**, in the browser pane (open
+`https://substack.com/notes` there). The pane remembers it (on macOS 14 or
+later; on older macOS, sign in before each run). cross-post never
+signs in for you, never sees your sign-in, and stops with "Sign in to Substack
+in this pane" if you're signed out.
+
+### Cross-posting
+
+With a published post open, press ⇧⌘P and pick **Cross-post to Substack
+Notes…**. Every run shows **two confirmation sheets**, and no setting skips
+them:
+
+1. **The text.** You see the note it will post, and can edit it. Continue
+   opens Substack Notes in the pane and puts the text in the notes box.
+2. **Post this to Substack Notes?** You see what the notes box now holds. Post
+   clicks Substack's Post button; you can also click Post yourself, or cancel.
+
+The note is the post's first paragraph of prose (headings, quotes, images and
+code are skipped, and Markdown marks are taken out), a blank line, and the
+link. The whole note is at most 280 characters, the link included, counted as
+a reader counts them (an emoji is one, and is never cut in half); the
+paragraph is cut on a word boundary with "…" to fit. Two settings change it:
+
+```text
+# the note: {{excerpt}}, {{title}} and {{permalink}}; \n is a line break
+extension-setting = cross-post template={{title}}\n\n{{excerpt}}\n\n{{permalink}}
+# the longest note, link included (default 280)
+extension-setting = cross-post max-chars=500
+```
+
+### Before you rely on it
+
+- **The recipe is unverified.** The steps that find Substack's notes box and
+  Post button are best guesses, marked `tested = "unverified"` until someone
+  checks them by hand against the live site. Substack can change its page at
+  any time. When a step doesn't find what it looks for, the run stops, says
+  which step, and **nothing is posted**. `blygger +list-extensions` shows each
+  macro's `tested` value.
+- **One post per click.** cross-post posts once each time you confirm. It
+  never posts on a schedule, in the background, or again by itself, and it
+  waits at least 60 seconds between two runs.
+- **It's your account.** cross-post acts as you on Substack, the same as if
+  you typed and clicked yourself. If Substack limits or acts on an account
+  for automated posting, that's your risk; check its terms.
+
 ## Permissions and consent
 
 The first time Burrow starts an extension, it shows what the extension asks
@@ -68,10 +134,12 @@ back. Each line grants one capability:
 | `blyg.identity` | know your blyg's address (never your sign-in) |
 | `ui` | show messages, and select a post in the list |
 | `hooks:itemPublished`, `hooks:itemSaved`, `hooks:itemCreated` | be told when you publish, edit or create a post, with its text |
+| `browser.capture` | read the page open in the browser pane when you run one of its commands (never cookies or sign-ins) |
+| `browser.automate:<site>` | fill in and, when you confirm, click Post on that one site, signed in as you |
 | `fs:<folder>` | read and write files in that folder |
 | `net` | use the network |
 
-Burrow enforces the first eight: without the grant, the extension's request
+Burrow enforces the first ten: without the grant, the extension's request
 is refused. **`fs:` and `net` are the extension's own promise.** An extension
 is a program that runs as you, so Burrow can't stop it from reading other
 files or using the network. Only install extensions you trust.

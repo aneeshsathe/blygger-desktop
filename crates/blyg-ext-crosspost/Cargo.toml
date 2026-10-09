@@ -1,0 +1,21 @@
+[package]
+name = "blyg-ext-crosspost"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "cross-post: Burrow's bundled extension that cross-posts a published post to Substack Notes"
+
+[dependencies]
+blyg-ext = { path = "../blyg-ext" }
+serde_json = "1"
+# Counting what a reader sees as one character (an emoji with a skin tone,
+# a flag or a family is one), so a cut never splits one.
+unicode-segmentation = "1"
+
+# The same extension as a standalone executable, for the tests here (the app
+# runs it as `blygger +ext cross-post`).
+[[bin]]
+name = "burrow-cross-post"
+path = "src/bin/burrow-cross-post.rs"
+test = false
+doc = false
