@@ -543,11 +543,18 @@ fn capture_default_and_new_note_parse() {
     let l = load_text("");
     assert_eq!(l.config.capture_default(), CaptureDefault::Scratch);
     assert_eq!(l.config.new_note(), NewNote::Draft);
+    // Unset, ⌘N starts a scratch note while the omnibar still makes drafts.
+    assert_eq!(l.config.new_post(), NewNote::Scratch);
+
+    let l = load_text("new-note = draft\n");
+    assert_eq!(l.config.new_note(), NewNote::Draft);
+    assert_eq!(l.config.new_post(), NewNote::Draft);
 
     let l = load_text("capture-default = Draft\nnew-note = scratch\n");
     assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
     assert_eq!(l.config.capture_default(), CaptureDefault::Draft);
     assert_eq!(l.config.new_note(), NewNote::Scratch);
+    assert_eq!(l.config.new_post(), NewNote::Scratch);
 
     let l = load_text("capture-default = publish\nnew-note = later\n");
     assert_eq!(l.diagnostics.len(), 2, "{:?}", l.diagnostics);
@@ -561,7 +568,7 @@ fn capture_default_and_new_note_parse() {
         ShowOptions::from_args(["--default", "--docs"]).unwrap(),
     );
     assert!(out.contains("\ncapture-default = scratch\n"), "{out}");
-    assert!(out.contains("\nnew-note = draft\n"), "{out}");
+    assert!(out.contains("\nnew-note =\n"), "{out}");
 }
 
 // ------------------------------------------------------------ spellcheck

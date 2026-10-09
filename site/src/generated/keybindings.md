@@ -17,7 +17,7 @@
 | Key | What it does | Menu |
 |---|---|---|
 | ⌘L | Search / the omnibar | Post › Find… |
-| ⌘N | New draft | Post › New Draft |
+| ⌘N | New post | Post › New Post |
 | ⌘⏎ | Publish… (focus outside a text field) |  |
 | ⌘T | Fragment ⇄ thread | Post › Fragment ⇄ Thread |
 | ⌘E | Preview on/off, in place | View › Preview |

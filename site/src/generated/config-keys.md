@@ -120,9 +120,11 @@ In the capture panel, ⌘D always saves a draft and ⌘⏎ always publishes.
 ### `new-note`
 
 - **Values:** `draft`, `scratch`
-- **Default:** `draft`
+- **Default:** unset
 
-What the main window's omnibar creates when ⏎ finds nothing: draft (a draft on your blyg) or scratch (a scratch note that stays on this Mac until ⌘D or ⌘⏎).
+What a new post starts as: scratch (a scratch note that stays on this Mac until ⌘D makes it a draft or ⌘⏎ publishes it) or draft (a draft on your blyg).
+
+It applies to ⌘N (Post › New Post), which opens an empty editor, and to the omnibar's create (⏎ when the search finds nothing). Unset, ⌘N starts a scratch note and the omnibar creates a draft.
 
 
 ### `edited-posts`

@@ -26,6 +26,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Changed
 
+- **⌘N opens a new post** (Post › New Post, was New Draft). Instead of putting you in the search, it opens an empty editor with the caret in it, and leaves your search and the list as they were. What you type is a scratch note, saved on this Mac as you go ("New note · saved locally · ⌘D draft · ⌘⏎ publish"); ⌘D makes it a draft and ⌘⏎ publishes it. Leave without typing and nothing is kept. `new-note = draft` makes ⌘N start a draft instead; the omnibar's ⏎-to-create is unchanged.
 - **The preview matches studio 0.36.1** byte for byte. An `[[id]]` link to a post that opens with a heading is labelled with that heading, without quotes; other links still show a quoted excerpt. A TK scope at the very start or end of a post shows as a block even with a stray newline or spaces between it and the edge. A link to, or quote of, a post whose blyg gives it a full permalink (a templated blyg) goes to that permalink. The Reader labels links in a post the same way.
 
 ## [0.9.0] - 2026-10-06

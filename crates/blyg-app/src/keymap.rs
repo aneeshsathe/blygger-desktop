@@ -187,13 +187,7 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Post › Find…")
         ),
         button!(
-            kb!(
-                "cmd-n",
-                Main,
-                NewDraft,
-                "New draft",
-                Some("Post › New Draft")
-            ),
+            kb!("cmd-n", Main, NewDraft, "New post", Some("Post › New Post")),
             "plus",
             "New"
         ),

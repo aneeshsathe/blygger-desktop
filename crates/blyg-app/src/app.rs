@@ -60,6 +60,9 @@ mod composer_demo;
 
 #[path = "scratch.rs"]
 pub(crate) mod scratch;
+// --- new post --- ⌘N: a fresh editor that becomes a scratch note (or a draft)
+#[path = "new_post.rs"]
+pub(crate) mod new_post;
 // --- AI --- (the window's AI UI; logic in crate::ai)
 #[path = "ai/view.rs"]
 mod ai_view;
@@ -263,6 +266,8 @@ pub struct MainView {
     notes: notes::Notes,
     // --- extensions ---
     ext: extensions::Extensions,
+    // --- new post --- ⌘N's fresh editor, until it's left
+    new_post: Option<new_post::NewPost>,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -403,6 +408,7 @@ impl MainView {
             now: chrono::Utc::now(),
             first_frame: Some(launched),
             ai: Default::default(), // --- AI ---
+            new_post: None,         // --- new post ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -1007,6 +1013,7 @@ impl MainView {
 
     /// Load the selected row into the editor (NV preview-as-you-move).
     fn load_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_new_post(window, cx); // --- new post ---
         let q = self.list.trimmed_query().to_string();
         if self.list.wants_create() {
             self.current = None;
@@ -1071,6 +1078,14 @@ impl MainView {
     }
 
     fn open(&mut self, id: &LocalId, window: &mut Window, cx: &mut Context<Self>) {
+        // --- new post --- opening another post leaves the new one.
+        if self
+            .new_post
+            .as_ref()
+            .is_some_and(|np| np.id.as_ref() != Some(id))
+        {
+            self.leave_new_post(window, cx);
+        }
         self.list.select(id);
         if self.current.as_ref().map(|c| &c.local_id) != Some(id) {
             self.current = self.backend.item(id);
@@ -1158,7 +1173,7 @@ impl MainView {
     }
 
     fn focus_after_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.mode == Mode::Edit && self.current.is_some() {
+        if self.mode == Mode::Edit && (self.current.is_some() || self.new_post.is_some()) {
             self.editor.update(cx, |s, cx| s.focus(window, cx));
         } else {
             self.omni.update(cx, |s, cx| s.focus(window, cx));
@@ -1235,6 +1250,8 @@ impl MainView {
                 }
             }
             InputEvent::Change if !self.loading_editor => {
+                // --- new post --- the first keystroke creates the note.
+                self.new_post_first_keystroke(cx);
                 // Typing `![[` at the start of a line opens the quote picker,
                 // and `[[` the link picker.
                 let typed = self.typed_picker(cx);
@@ -1319,9 +1336,10 @@ impl MainView {
         cx.notify();
     }
 
+    /// ⌘N: a fresh, empty editor (`new_post.rs`). The omnibar and the list
+    /// are left as they are.
     fn new_draft(&mut self, _: &NewDraft, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_query_text("", window, cx);
-        self.back_to_search(window, cx);
+        self.start_new_post(window, cx);
     }
 
     fn on_publish(&mut self, _: &Publish, window: &mut Window, cx: &mut Context<Self>) {
@@ -2645,7 +2663,12 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
-            .children(item.map(vm::version_label))
+            // --- new post --- "New note · saved locally · …" while in it.
+            .children(
+                self.new_post_label()
+                    .map(str::to_string)
+                    .or_else(|| item.map(vm::version_label)),
+            )
             // --- themes ---
             .children(crate::ornament::status(
                 &self.theme,

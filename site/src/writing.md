@@ -6,6 +6,13 @@ The omnibar filters your posts as you type. ↑/↓ previews each post, ⏎ open
 it, and ⏎ with no match starts a new draft seeded with what you typed. ⌘L
 comes back to the omnibar from anywhere, and so does esc from the editor.
 
+**⌘N** (Post › New Post) opens an empty editor with the caret in it. Your
+search and the list stay as they were. What you type is a **scratch note**,
+kept on this Mac and saved as you go; the status bar says "New note · saved
+locally · ⌘D draft · ⌘⏎ publish". ⌘D makes it a draft on your blyg, and ⌘⏎
+publishes it. If you leave without typing anything, nothing is kept. With
+`new-note = draft`, ⌘N starts a draft instead.
+
 Posts are **plain Markdown**, and there's no save button. Every keystroke is
 saved on your Mac and synced shortly after you stop typing. A post's title is
 its first line of text (a leading heading is the title), never a quote it
@@ -68,7 +75,9 @@ editable, and ⌘D or ⌘⏎ there promotes them too. Images pasted into a scrat
 note stay on your Mac until it's promoted, when they're uploaded.
 
 - `capture-default = draft` makes esc save a draft instead.
-- `new-note = scratch` makes the omnibar create scratch notes.
+- `new-note = scratch` makes the omnibar create scratch notes too, and
+  `new-note = draft` makes ⌘N start drafts. Unset, ⌘N starts a scratch note
+  and the omnibar creates a draft.
 
 | | |
 |---|---|

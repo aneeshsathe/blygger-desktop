@@ -342,7 +342,9 @@ pub enum CaptureDefault {
     Draft,
 }
 
-/// `new-note`: what the omnibar's create makes.
+/// `new-note`: what ⌘N (`Config::new_post`) and the omnibar's create
+/// (`Config::new_note`) make. Unset, they differ: ⌘N starts a scratch note,
+/// the omnibar a draft.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NewNote {
     #[default]
@@ -530,10 +532,19 @@ impl Config {
         }
     }
 
+    /// What the omnibar's create makes: a draft unless `new-note = scratch`.
     pub fn new_note(&self) -> NewNote {
         match self.get("new-note") {
             Some("scratch") => NewNote::Scratch,
             _ => NewNote::Draft,
+        }
+    }
+
+    /// What ⌘N (New Post) starts: a scratch note unless `new-note = draft`.
+    pub fn new_post(&self) -> NewNote {
+        match self.get("new-note") {
+            Some("draft") => NewNote::Draft,
+            _ => NewNote::Scratch,
         }
     }
 

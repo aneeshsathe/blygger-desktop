@@ -373,7 +373,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
         Menu {
             name: "Post".into(),
             items: vec![
-                MenuItem::action("New Draft", app::NewDraft),
+                MenuItem::action("New Post", app::NewDraft),
                 MenuItem::action("Find…", app::FocusSearch),
                 MenuItem::separator(),
                 MenuItem::action("Publish…", app::Publish),

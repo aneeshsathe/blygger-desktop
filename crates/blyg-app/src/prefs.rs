@@ -179,6 +179,8 @@ pub struct Prefs {
     // --- scratch notes --- (read-only here: set in the config file)
     pub capture_default: CaptureDefault,
     pub new_note: NewNote,
+    /// What ⌘N starts (`Config::new_post`): scratch unless `new-note = draft`.
+    pub new_post: NewNote,
     // --- buttons ---
     /// `show-buttons`: the title-bar toolbar and quick capture's button row.
     pub show_buttons: bool,
@@ -231,6 +233,7 @@ impl Prefs {
             hotkey: c.capture_hotkey().to_string(),
             capture_default: c.capture_default(),
             new_note: c.new_note(),
+            new_post: c.new_post(),
             show_buttons: c.show_buttons(), // --- buttons ---
             auto_update: AutoUpdate::from_value(c.get("auto-update")), // --- auto-update ---
             spellcheck: c.spellcheck(),     // --- spellcheck ---

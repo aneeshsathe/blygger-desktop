@@ -43,7 +43,18 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   / `public v3 · unpublished edits`).
 - **List rows**: title (first line), then `◦ fragment`/`≡ thread`, a status pill
   (`draft` or `vN`), a dot for unpublished edits, and relative time.
-- **Keys**: `⌘L` focus omnibar · `esc` (in editor) back to omnibar ·
+- **New post** (`⌘N`, Post › New Post): opens a fresh, empty editor with the caret
+  in it, without touching the omnibar: its text, the list's filter and the
+  selection stay as they were. Nothing exists until the first real keystroke,
+  which creates a local scratch note (`Backend::create_scratch`; a draft with
+  `new-note = draft`) that then autosaves like any edit. `⌘D` makes it a draft
+  (same local id), `⌘⏎` publishes it through the publish sheet. Leaving it while
+  it's empty (another post, a search, `⌘N` again) deletes it, so there are no
+  blank items. While it's open the status bar says "New note · saved locally ·
+  ⌘D draft · ⌘⏎ publish" ("New draft · syncs to your blyg · ⌘⏎ publish" with
+  `new-note = draft`). The omnibar's create (`⏎` with no match) is unchanged.
+  Code: `crates/blyg-app/src/new_post.rs`.
+- **Keys**: `⌘L` focus omnibar · `⌘N` new post · `esc` (in editor) back to omnibar ·
   `⌘⏎` publish · `⌘T` fragment⇄thread · `⌘E` preview (see § Full editor) · `⌘O` open
   permalink in browser · `⌘,` settings · `⌘+/⌘−` font size · `⇧⌘⌫` delete a
   draft or scratch note.
@@ -311,9 +322,9 @@ Quick capture is for collecting thoughts, not for deciding. So:
   show it from disk. Promotion uploads each one (without `item_id`) and rewrites the references to
   `<blyg origin>/media/<id>.<ext>` before the item is created. A failed upload refuses the promotion
   (the note stays scratch). Offline, the uploads go with the queued `create`.
-- The main window's omnibar create stays a **draft** (unchanged), unless the config sets `new-note = scratch`.
+- ⌘N (New Post) starts a **scratch note** in an empty editor (see § Interaction spec, "New post"), unless the config sets `new-note = draft`. The main window's omnibar create stays a **draft** (unchanged), unless the config sets `new-note = scratch`.
 - Core: `Status::Scratch` (stored as `items.status = 'scratch'`), `Backend::create_scratch(kind, content_md)`, `Backend::promote(id, to: Promote::Draft|Promote::Publish{note}) -> Promoted{kind, published}`. `save`, `set_kind`, `search` and `delete_draft` work on scratch items locally; `publish` on one promotes it first. The sync engine ignores local-only items. Tests: scratch never hits the network (mock server asserts zero requests), promotion keeps the id, and offline promotion queues.
-- Config keys: `capture-default = scratch|draft` (default scratch) and `new-note = draft|scratch` (default draft).
+- Config keys: `capture-default = scratch|draft` (default scratch) and `new-note = draft|scratch` (unset by default: ⌘N starts a scratch note and the omnibar creates a draft; when set, both follow it; `Config::new_post` / `Config::new_note`).
 
 ### Notes drawer
 
@@ -328,7 +339,7 @@ A scratchpad for running notes while reading (issue: "notes while I browse"). Co
 ## Buttons (optional toolbar)
 
 Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**default true** for new installs; the maintainer sets `false`). It's toggled in Settings (⌘,) and offered in the first-run tutorial ("Buttons or keyboard?").
-- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (draft/scratch per `new-note`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
+- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (⌘N: a scratch note, or a draft with `new-note = draft`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
 - **Generated from the single keymap table** (action, key, context, menu label, icon, button label), so buttons, menus and shortcuts can't drift. Every tooltip shows the shortcut, so the buttons teach the keys.
 - Buttons are disabled with a reason in the tooltip when unavailable (e.g. Publish on an over-limit fragment: "Too long for a fragment. ⌘T makes it a thread").
 - With `show-buttons = false`, the window is exactly the minimalist layout in the mocks.
