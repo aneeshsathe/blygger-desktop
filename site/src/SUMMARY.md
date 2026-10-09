@@ -19,6 +19,7 @@
 - [Server requirements](server.md)
 - [FAQ](faq.md)
 - [Changelog](changelog.md)
+- [Contributors](contributors.md)
 
 # Developers
 
