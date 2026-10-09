@@ -157,7 +157,16 @@ item, permalink, text}` (10 s) → `{text, note?}`; method-not-found means
 the template's text stands. The user sees and can edit the text, Burrow
 runs the steps up to the first `submit`, shows what the composer now
 holds, and runs `submit` only when the user clicks Post. Only granted
-macros of running extensions are offered (`Host::macros`).
+macros of running extensions are offered (`Host::macros`), as ⇧⌘P rows
+titled "<title> ↗ <site title>", when a published post is open. The
+template's `{{excerpt}}` is the post's opening paragraph (not a heading,
+quote or embed), cut at 280 characters on a word boundary. An error from
+`macro.prepare` is a toast, and nothing runs.
+
+While a macro runs, `burrow/browser.page` answers `-32004` and
+`burrow/browser.open` is refused (`-32003`): an extension never reads or
+moves the page a macro fills in. `browser.open` shows the pane, full
+width, at the URL.
 
 The bundled `cross-post` extension (`crates/blyg-ext-crosspost`, run as
 `blygger +ext cross-post`) is the worked example: one site, one macro for

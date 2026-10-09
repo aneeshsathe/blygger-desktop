@@ -1320,6 +1320,13 @@ impl MainView {
             }
             return;
         }
+        // An installed extension's macro, through the ⇧⌘P palette.
+        if scenario == "br-macro-ext" {
+            if n == 0 {
+                self.macro_ext_demo(window, cx);
+            }
+            return;
+        }
         // A post open in the reader, then a link from it: the reader's web
         // view is cut off at the pane's edge.
         if scenario == "br-reader" {

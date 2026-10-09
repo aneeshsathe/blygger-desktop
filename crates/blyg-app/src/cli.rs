@@ -289,10 +289,23 @@ struct ExtView {
     status: Vec<blyg_ext::ExtensionStatus>,
     installed: Vec<blyg_ext::Installed>,
     problems: Vec<blyg_ext::Diagnostic>,
+    /// Where each extension's storage (and `macro.log`) lives.
+    data_dir: std::path::PathBuf,
+}
+
+/// The last `macro.log` line for macro `id` (`<time> <id> <outcome>`), as
+/// `<time> <outcome>`.
+fn last_macro_outcome(log: &str, id: &str) -> Option<String> {
+    log.lines().rev().find_map(|l| {
+        let mut w = l.splitn(3, ' ');
+        let (time, mid, outcome) = (w.next()?, w.next()?, w.next()?);
+        (mid == id).then(|| format!("{time} {outcome}"))
+    })
 }
 
 fn extension_view(store: &ConfigStore) -> ExtView {
     let config = host_config(store);
+    let data_dir = config.data_dir.clone();
     let (installed, _) = blyg_ext::discover(&config.bundled, config.extensions_dir.as_deref());
     // A host that is never started: its status comes from the manifests
     // and the config alone, and no process runs.
@@ -301,6 +314,7 @@ fn extension_view(store: &ConfigStore) -> ExtView {
         status: host.status(),
         installed,
         problems: host.diagnostics(),
+        data_dir,
     }
 }
 
@@ -355,11 +369,18 @@ fn list_extensions(store: &ConfigStore) -> String {
                 s.id, s.title, s.origin
             ));
         }
+        let log = std::fs::read_to_string(
+            blyg_ext::storage_dir(&view.data_dir, &e.name).join("macro.log"),
+        )
+        .unwrap_or_default();
         for m in &e.macros {
             out.push_str(&format!(
                 "  macro:    {} \"{}\" on {}, tested: {}\n",
                 m.id, m.title, m.site, m.tested
             ));
+            if let Some(last) = last_macro_outcome(&log, &m.id) {
+                out.push_str(&format!("            last run: {last}\n"));
+            }
         }
         if !e.enabled {
             out.push_str(&format!("  turn on:  extension = {}\n", e.name));

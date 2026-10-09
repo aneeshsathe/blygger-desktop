@@ -59,6 +59,9 @@ pub struct Timing {
     pub timeouts_before_restart: u32,
     /// How long a `burrow/requestCapability` waits for the user.
     pub consent: Duration,
+    /// How long `burrow/browser.page` and `burrow/browser.open` wait for
+    /// the window to answer.
+    pub browser: Duration,
 }
 
 impl Default for Timing {
@@ -78,6 +81,7 @@ impl Default for Timing {
             max_failures: 3,
             timeouts_before_restart: 3,
             consent: Duration::from_secs(300),
+            browser: Duration::from_secs(5),
         }
     }
 }
@@ -171,6 +175,44 @@ pub enum ExtEvent {
         capability: Capability,
         reply: ConsentReply,
     },
+    /// `burrow/browser.page` while one of the extension's commands runs:
+    /// read the page in the browser pane and answer `Some`, or `None` when
+    /// the pane is closed or has no page (`-32004`).
+    BrowserPage {
+        name: String,
+        reply: UiReply<Option<PageCapture>>,
+    },
+    /// `burrow/browser.open`, `url` on an origin the user granted (checked
+    /// already): show the pane at `url` and answer the URL it's loading,
+    /// or why not (`-32003`).
+    BrowserOpen {
+        name: String,
+        url: String,
+        reply: UiReply<Result<String, String>>,
+    },
+}
+
+/// The window's answer to a browser event. Dropping it answers "no page"
+/// (or "refused").
+pub struct UiReply<T>(Sender<T>);
+
+impl<T> UiReply<T> {
+    /// A reply and where its answer arrives (what the host does; for the
+    /// app's tests).
+    pub fn pair() -> (UiReply<T>, Receiver<T>) {
+        let (tx, rx) = mpsc::channel();
+        (UiReply(tx), rx)
+    }
+
+    pub fn answer(self, v: T) {
+        let _ = self.0.send(v);
+    }
+}
+
+impl<T> std::fmt::Debug for UiReply<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("UiReply")
+    }
 }
 
 /// The answer to a [`ExtEvent::CapabilityRequested`]. Dropping it answers no.
@@ -334,6 +376,8 @@ struct Ext {
     timeouts: AtomicU32,
     state: Mutex<ExtState>,
     contributions: Mutex<Contributions>,
+    /// `extension/command` requests in flight (`browser.page` needs one).
+    commands: AtomicU32,
     ctl: Mutex<Sender<Ctl>>,
     thread: Mutex<Option<JoinHandle<()>>>,
 }
@@ -482,6 +526,7 @@ impl Host {
             generation: AtomicU64::new(0),
             timeouts: AtomicU32::new(0),
             state: Mutex::new(ExtState::Starting),
+            commands: AtomicU32::new(0),
             ctl: Mutex::new(ctl_tx),
             thread: Mutex::new(None),
         });
@@ -793,6 +838,18 @@ impl Host {
             context,
         })
         .map_err(ExtError::Rpc)?;
+        // While it runs, the extension may read the browser pane's page.
+        struct Running(Option<Arc<Ext>>);
+        impl Drop for Running {
+            fn drop(&mut self) {
+                if let Some(e) = &self.0 {
+                    e.commands.fetch_sub(1, Ordering::SeqCst);
+                }
+            }
+        }
+        let _running = Running(self.ext(ext).inspect(|e| {
+            e.commands.fetch_add(1, Ordering::SeqCst);
+        }));
         self.request(ext, methods::COMMAND, p, self.timing().command)
     }
 
@@ -1146,13 +1203,14 @@ fn launch(ext: &Arc<Ext>, ctx: &RunCtx, generation: u64, log: &StderrLog) -> Res
         let conn = conn.clone();
         let shared = ctx.shared.clone();
         let consent = ctx.timing.consent;
+        let browser = ctx.timing.browser;
         let _ = std::thread::Builder::new()
             .name(format!("bxp-serve-{name}"))
             .spawn(move || {
                 while let Ok(msg) = incoming.recv() {
                     if let Incoming::Request { id, method, params } = msg {
                         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            answer(&ext, &shared, consent, &method, params)
+                            answer(&ext, &shared, (consent, browser), &method, params)
                         }))
                         .unwrap_or_else(|_| {
                             Err(RpcError::new(
@@ -1230,7 +1288,7 @@ fn launch(ext: &Arc<Ext>, ctx: &RunCtx, generation: u64, log: &StderrLog) -> Res
 fn answer(
     ext: &Arc<Ext>,
     shared: &Shared,
-    consent: Duration,
+    (consent, browser): (Duration, Duration),
     method: &str,
     p: Value,
 ) -> Result<Value, RpcError> {
@@ -1290,6 +1348,39 @@ fn answer(
                 yes
             };
             to_value(&CapabilityAnswer { granted })
+        }
+        methods::BROWSER_PAGE => {
+            let no_page = |why: &str| RpcError::new(codes::NO_PAGE, why);
+            if ext.commands.load(Ordering::SeqCst) == 0 {
+                return Err(no_page("only while one of its commands runs"));
+            }
+            let (tx, rx) = mpsc::channel();
+            (shared.sink)(ExtEvent::BrowserPage {
+                name,
+                reply: UiReply(tx),
+            });
+            match rx.recv_timeout(browser) {
+                Ok(Some(page)) => to_value(&page),
+                _ => Err(no_page("no page open in the browser pane")),
+            }
+        }
+        methods::BROWSER_OPEN => {
+            // `check` above refused a URL off the granted origins.
+            let p: BrowserOpenParams = params(p)?;
+            let (tx, rx) = mpsc::channel();
+            (shared.sink)(ExtEvent::BrowserOpen {
+                name,
+                url: p.url,
+                reply: UiReply(tx),
+            });
+            match rx.recv_timeout(browser) {
+                Ok(Ok(url)) => to_value(&BrowserOpened { url }),
+                Ok(Err(why)) => Err(RpcError::new(codes::REFUSED, why)),
+                Err(_) => Err(RpcError::new(
+                    codes::REFUSED,
+                    "the browser pane didn't open",
+                )),
+            }
         }
         _ => shared.api.call(&name, &granted, method, p),
     }

@@ -48,7 +48,6 @@ impl MacroRun {
         }
     }
 
-    #[allow(dead_code)] // the palette passes macro.prepare's note
     pub fn with_note(mut self, note: Option<String>) -> Self {
         self.note = note;
         self

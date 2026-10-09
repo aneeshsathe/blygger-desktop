@@ -29,11 +29,36 @@ use crate::prefs::Prefs;
 
 // ------------------------------------------------------------ the child
 
-/// This test's name, as the harness filters by it.
-fn child_name() -> String {
+/// A child test's name, as the harness filters by it.
+fn child_test(name: &str) -> String {
     let m = module_path!();
     let m = m.split_once("::").map(|(_, rest)| rest).unwrap_or(m);
-    format!("{m}::markdown_notes_child")
+    format!("{m}::{name}")
+}
+
+fn child_name() -> String {
+    child_test("markdown_notes_child")
+}
+
+/// Not a test: the bundled cross-post extension's process (as
+/// [`markdown_notes_child`]), for the macro tests below.
+#[test]
+#[ignore = "the cross-post child process of the extension tests"]
+fn cross_post_child() {
+    let me = child_test("cross_post_child");
+    if std::env::args().any(|a| a == me) {
+        let _ = blyg_ext_crosspost::run_stdio();
+    }
+}
+
+fn child_args(name: String) -> Vec<String> {
+    vec![
+        "--exact".into(),
+        name,
+        "--ignored".into(),
+        "--quiet".into(),
+        "--test-threads=1".into(),
+    ]
 }
 
 /// Not a test: the bundled extension's process for the tests below (run
@@ -50,13 +75,8 @@ fn markdown_notes_child() {
 fn launch(data_dir: PathBuf) -> Launch {
     Launch {
         program: std::env::current_exe().expect("the test binary"),
-        args: vec![
-            "--exact".into(),
-            child_name(),
-            "--ignored".into(),
-            "--quiet".into(),
-            "--test-threads=1".into(),
-        ],
+        args: child_args(child_name()),
+        crosspost_args: child_args(child_test("cross_post_child")),
         data_dir,
         timing: blyg_ext::Timing::default(),
     }
@@ -197,9 +217,20 @@ fn setup<'a>(
     Arc<FakeBackend>,
     &'a mut VisualTestContext,
 ) {
+    setup_launch(cx, config, launch(v.data.clone()))
+}
+
+fn setup_launch<'a>(
+    cx: &'a mut TestAppContext,
+    config: &str,
+    l: Launch,
+) -> (
+    Entity<MainView>,
+    Arc<FakeBackend>,
+    &'a mut VisualTestContext,
+) {
     let config = format!("blyg-url = https://blyg.example.com\n{config}");
     let prefs = Prefs::from_config(ConfigStore::in_memory(&config).config());
-    let l = launch(v.data.clone());
     cx.update(|cx| {
         gpui_kit::init(cx);
         crate::app::bind_keys(cx);
@@ -680,4 +711,428 @@ fn settings_point_markdown_notes_at_a_folder_and_ask(cx: &mut TestAppContext) {
         };
         assert_eq!(caps[0].0, Capability::Fs(r.clone()));
     });
+}
+
+// ------------------------------------------------------------ browser macros
+
+mod macros {
+    //! The bundled cross-post extension, running for real (this test
+    //! binary as its process): its ⇧⌘P row, `macro.prepare`, the Preview
+    //! sheet; and the window's side of `burrow/browser.page` and
+    //! `burrow/browser.open`. The browser pane is a stub surface; nothing
+    //! loads a real website (the Preview sheet comes before any load, and
+    //! the run is cancelled there).
+
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use blyg_ext::protocol::{PageCapture, Screen};
+    use blyg_ext::{ExtEvent, ExtState, UiReply};
+    use gpui_kit::{Bounds, Pixels};
+
+    use super::*;
+    use crate::app::Sheet;
+    use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
+
+    const XP: &str = blyg_ext_crosspost::NAME;
+    const ROW: &str = "Cross-post to Substack Notes… ↗ Substack Notes";
+    const POST: &str = "Tide pools are small oceans that forget, twice a day, that they \
+                        belong to a larger one.\n\nThe second paragraph stays home.\n";
+    const TEMPLATE: &str = "{{excerpt}} (via {{permalink}})";
+
+    /// Enabled, with `items.read` and `ui`, and Substack when `site`.
+    fn config(site: bool) -> String {
+        let mut c = format!(
+            "extension = {XP}\nextension-allow = {XP} items.read\nextension-allow = {XP} ui\n\
+             extension-setting = {XP} template={TEMPLATE}\nextension-setting = {XP} max-chars=110\n"
+        );
+        if site {
+            c.push_str(&format!(
+                "extension-allow = {XP} browser.automate:https://substack.com\n"
+            ));
+        }
+        c
+    }
+
+    /// A browser pane that loads nothing: its address is what it was told,
+    /// and the capture script answers `capture`.
+    struct Stub {
+        url: Rc<RefCell<String>>,
+        capture: String,
+    }
+
+    impl BrowserSurface for Stub {
+        fn set_frame(&mut self, _: Bounds<Pixels>) {}
+        fn set_visible(&mut self, _: bool) {}
+        fn load_url(&mut self, url: &str) {
+            *self.url.borrow_mut() = url.to_string();
+        }
+        fn back(&mut self) {}
+        fn forward(&mut self) {}
+        fn reload(&mut self) {}
+        fn stop(&mut self) {}
+        fn state(&self) -> PageState {
+            PageState {
+                url: self.url.borrow().clone(),
+                title: "Harbour log".into(),
+                ..PageState::default()
+            }
+        }
+        fn refresh_blocking(&mut self) {}
+        fn focus_parent(&mut self) {}
+        fn eval_json(&mut self, _js: &str, reply: async_channel::Sender<String>) {
+            let _ = reply.try_send(self.capture.clone());
+        }
+    }
+
+    fn stub_pane(cx: &mut VisualTestContext) -> Rc<RefCell<String>> {
+        let url = Rc::new(RefCell::new(String::new()));
+        let u = url.clone();
+        cx.update(|_, cx| {
+            cx.set_global(FactoryGlobal(Rc::new(move |_, _, _, _| {
+                Ok(Box::new(Stub {
+                    url: u.clone(),
+                    capture: r#"{"url": "https://news.example.com/story", "title": "Harbour log",
+                        "canonical": "", "selection": "low water",
+                        "html": "<article><p>The tide went out.</p></article>"}"#
+                        .into(),
+                }) as Box<dyn BrowserSurface>)
+            })));
+        });
+        url
+    }
+
+    /// Wait for cross-post to run.
+    fn started(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+        view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+        wait(view, cx, "cross-post running", |cx| {
+            view.read_with(cx, |v, _| {
+                v.ext.host.as_ref().is_some_and(|h| {
+                    h.status()
+                        .iter()
+                        .any(|s| s.name == XP && s.state == ExtState::Running)
+                })
+            })
+        });
+    }
+
+    /// A published post (the fake publishes at once) and a draft, the post open.
+    fn published(
+        view: &Entity<MainView>,
+        fake: &FakeBackend,
+        cx: &mut VisualTestContext,
+    ) -> (blyg_core::LocalId, blyg_core::LocalId) {
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        let out = fake.publish(&post, None).unwrap();
+        assert!(!out.permalink.is_empty());
+        let draft = fake.create_draft(Kind::Fragment, "Not yet.").unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        (post, draft)
+    }
+
+    fn labels(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<String> {
+        view.update_in(cx, |v, window, cx| {
+            v.ext_palette_rows(window, cx)
+                .into_iter()
+                .map(|r| r.label)
+                .collect()
+        })
+    }
+
+    fn toast(view: &Entity<MainView>, cx: &mut VisualTestContext) -> (String, String) {
+        view.read_with(cx, |v, _| {
+            v.toast
+                .as_ref()
+                .map(|t| {
+                    (
+                        t.text.to_string(),
+                        t.sub.as_ref().map(|s| s.to_string()).unwrap_or_default(),
+                    )
+                })
+                .unwrap_or_default()
+        })
+    }
+
+    /// ⇧⌘P, then the macro's row.
+    fn choose_macro(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        let i = view.read_with(cx, |v, _| {
+            let Some(Overlay::Palette { rows, .. }) = &v.ext.overlay else {
+                panic!("no palette")
+            };
+            rows.iter().position(|r| r.label == ROW).expect("the row")
+        });
+        view.update_in(cx, |v, window, cx| v.ext_run_row(i, window, cx));
+    }
+
+    #[gpui_kit::test]
+    fn the_palette_offers_the_macro_for_a_published_post_with_the_grant(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        started(&view, cx);
+        let (_, draft) = published(&view, &fake, cx);
+        let rows = labels(&view, cx);
+        assert!(rows.contains(&ROW.to_string()), "{rows:?}");
+        // Its row says where it comes from.
+        view.update_in(cx, |v, window, cx| {
+            let r = v
+                .ext_palette_rows(window, cx)
+                .into_iter()
+                .find(|r| r.label == ROW)
+                .unwrap();
+            assert_eq!(r.from.as_deref(), Some(XP));
+            assert_eq!(v.ext_macro_rows(Screen::Reading).len(), 0, "posts only");
+        });
+        // A draft isn't published: no row.
+        view.update_in(cx, |v, window, cx| v.open(&draft, window, cx));
+        cx.run_until_parked();
+        assert!(!labels(&view, cx).contains(&ROW.to_string()));
+    }
+
+    #[gpui_kit::test]
+    fn without_the_site_grant_there_is_no_row(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(false));
+        started(&view, cx);
+        published(&view, &fake, cx);
+        assert!(!labels(&view, cx).contains(&ROW.to_string()));
+        view.read_with(cx, |v, _| assert!(!v.macro_cross_post_hint()));
+    }
+
+    #[gpui_kit::test]
+    fn choosing_it_prepares_the_text_and_opens_the_preview_sheet(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        let pane = stub_pane(cx);
+        started(&view, cx);
+        let (post, _) = published(&view, &fake, cx);
+        view.read_with(cx, |v, _| assert!(v.macro_cross_post_hint()));
+        choose_macro(&view, cx);
+        wait(&view, cx, "the Preview sheet", |cx| {
+            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_))))
+        });
+        // The extension's own template and limit shaped it (macro.prepare
+        // ran), from the post as published.
+        let item = fake.item(&post).unwrap();
+        let link = item.permalink.clone().unwrap();
+        let want = blyg_ext_crosspost::text::prepare(
+            Some(&item.content_md),
+            &item.title(),
+            &link,
+            TEMPLATE,
+            110,
+            "",
+        );
+        view.read_with(cx, |v, cx| {
+            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+                unreachable!()
+            };
+            assert_eq!(s.info.payload, want.text);
+            assert!(
+                s.info.payload.ends_with(&format!(" (via {link})")),
+                "{}",
+                s.info.payload
+            );
+            assert!(
+                s.info.payload.starts_with("Tide pools are"),
+                "{}",
+                s.info.payload
+            );
+            assert_eq!(s.info.note, want.note);
+            assert!(s.info.note.is_some(), "cut to fit");
+            assert_eq!(s.info.site, "Substack Notes");
+            assert_eq!(s.info.tested, "unverified");
+            assert_eq!(s.editor.read(cx).value().to_string(), want.text);
+            assert!(v.browser.automation.running());
+        });
+        // Nothing loaded before Continue.
+        assert!(pane.borrow().is_empty());
+
+        // While the run holds the pane, an extension can't read or move it.
+        let (reply, page) = UiReply::<Option<PageCapture>>::pair();
+        view.update_in(cx, |v, window, cx| {
+            v.ext_event(
+                ExtEvent::BrowserPage {
+                    name: XP.into(),
+                    reply,
+                },
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        assert_eq!(page.try_recv(), Ok(None));
+        let (reply, opened) = UiReply::<Result<String, String>>::pair();
+        view.update_in(cx, |v, window, cx| {
+            v.ext_event(
+                ExtEvent::BrowserOpen {
+                    name: XP.into(),
+                    url: "https://substack.com/notes".into(),
+                    reply,
+                },
+                window,
+                cx,
+            )
+        });
+        assert!(matches!(opened.try_recv(), Ok(Err(_))));
+
+        // Cancel: nothing ran.
+        view.update_in(cx, |v, window, cx| {
+            v.macro_preview_answer(false, window, cx)
+        });
+        wait(&view, cx, "the run to end", |cx| {
+            view.read_with(cx, |v, _| !v.browser.automation.running())
+        });
+        assert!(pane.borrow().is_empty());
+        assert_eq!(toast(&view, cx).0, "Cancelled. Nothing was posted.");
+    }
+
+    #[gpui_kit::test]
+    fn an_unpublished_post_gets_a_clear_message(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        started(&view, cx);
+        let (_, draft) = published(&view, &fake, cx);
+        // The row was offered; then the post went back to being a draft.
+        view.update_in(cx, |v, window, cx| v.open(&draft, window, cx));
+        cx.run_until_parked();
+        view.update_in(cx, |v, window, cx| {
+            v.ext_run_macro(XP.into(), blyg_ext_crosspost::MACRO.into(), window, cx)
+        });
+        cx.run_until_parked();
+        let (text, sub) = toast(&view, cx);
+        assert_eq!(text, "Publish it first to cross-post it to Substack Notes");
+        assert!(sub.contains("published post"), "{sub}");
+        view.read_with(cx, |v, _| {
+            assert!(v.sheet.is_none() && !v.browser.automation.running())
+        });
+        // A macro that isn't granted (or doesn't exist) runs nothing.
+        view.update_in(cx, |v, window, cx| {
+            v.ext_run_macro(XP.into(), "nope".into(), window, cx)
+        });
+        assert_eq!(
+            toast(&view, cx).0,
+            format!("{XP} can't post there any more")
+        );
+    }
+
+    #[gpui_kit::test]
+    fn a_prepare_error_is_a_toast_and_nothing_runs(cx: &mut TestAppContext) {
+        let v = vault();
+        let mut l = launch(v.data.clone());
+        l.crosspost_args = child_args(child_test("macros::failing_cross_post_child"));
+        let (view, fake, cx) = setup_launch(cx, &config(true), l);
+        let pane = stub_pane(cx);
+        started(&view, cx);
+        published(&view, &fake, cx);
+        choose_macro(&view, cx);
+        wait(&view, cx, "the toast", |cx| {
+            toast(&view, cx).0 == format!("{XP}: the template is broken")
+        });
+        assert_eq!(toast(&view, cx).1, "Nothing was posted to Substack Notes");
+        view.read_with(cx, |v, _| {
+            assert!(v.sheet.is_none(), "no Preview sheet");
+            assert!(!v.browser.automation.running());
+            assert!(!v.browser.open);
+        });
+        assert!(pane.borrow().is_empty());
+    }
+
+    /// Not a test: a cross-post whose `macro.prepare` fails, as the bundled
+    /// extension's process for the test above.
+    #[test]
+    #[ignore = "a failing cross-post child process of the macro tests"]
+    fn failing_cross_post_child() {
+        use blyg_ext::ext::{Extension, HostClient, serve};
+        use blyg_ext::protocol::*;
+        struct Failing;
+        impl Extension for Failing {
+            fn initialize(
+                &mut self,
+                _: &HostClient,
+                _: InitializeParams,
+            ) -> Result<InitializeResult, RpcError> {
+                Ok(InitializeResult {
+                    protocol_version: blyg_ext::PROTOCOL_VERSION,
+                    name: XP.into(),
+                    version: "0.0.1".into(),
+                    commands: vec![],
+                    sources: vec![],
+                    libraries: vec![],
+                })
+            }
+            fn request(
+                &mut self,
+                _: &HostClient,
+                method: &str,
+                _: serde_json::Value,
+            ) -> Result<serde_json::Value, RpcError> {
+                Err(match method {
+                    methods::MACRO_PREPARE => {
+                        RpcError::new(codes::INTERNAL_ERROR, "the template is broken")
+                    }
+                    m => RpcError::method_not_found(m),
+                })
+            }
+            fn notification(&mut self, _: &HostClient, _: &str, _: serde_json::Value) {}
+        }
+        let me = child_test("macros::failing_cross_post_child");
+        if std::env::args().any(|a| a == me) {
+            serve(std::io::stdin(), std::io::stdout(), &mut Failing);
+        }
+    }
+
+    #[gpui_kit::test]
+    fn browser_page_and_open_are_answered_from_the_pane(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, _, cx) = setup(cx, &v, "");
+        let pane = stub_pane(cx);
+        let page = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+            let (reply, rx) = UiReply::<Option<PageCapture>>::pair();
+            view.update_in(cx, |v, window, cx| {
+                v.ext_event(
+                    ExtEvent::BrowserPage {
+                        name: "x".into(),
+                        reply,
+                    },
+                    window,
+                    cx,
+                )
+            });
+            cx.run_until_parked();
+            rx.try_recv().expect("answered")
+        };
+        // The pane is closed: no page.
+        assert_eq!(page(&view, cx), None);
+        // browser.open (its origin was checked by the host) opens the pane.
+        let (reply, rx) = UiReply::<Result<String, String>>::pair();
+        view.update_in(cx, |v, window, cx| {
+            v.ext_event(
+                ExtEvent::BrowserOpen {
+                    name: "x".into(),
+                    url: "https://news.example.com/story".into(),
+                    reply,
+                },
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        assert_eq!(
+            rx.try_recv(),
+            Ok(Ok("https://news.example.com/story".into()))
+        );
+        assert_eq!(*pane.borrow(), "https://news.example.com/story");
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open);
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+        });
+        // Now the page is there: address, title, selection, the article.
+        let got = page(&view, cx).expect("a page");
+        assert_eq!(got.url, "https://news.example.com/story");
+        assert_eq!(got.title, "Harbour log");
+        assert_eq!(got.selection, "low water");
+        assert_eq!(got.markdown.trim(), "The tide went out.");
+    }
 }

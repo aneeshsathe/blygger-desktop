@@ -9,6 +9,10 @@
 //! - `env`: toasts the names of its environment variables, as JSON.
 //! - `stderr`: writes two lines to stderr.
 //!
+//! `extension/macro.prepare` for macro `page` calls `burrow/browser.page`
+//! (outside any command) and answers the host's reply as the text; any
+//! other macro is method-not-found.
+//!
 //! Settings: `hang-init=1` (never answers initialize), `crash-init=1`
 //! (exits during initialize), `protocol=<n>` (answers with that version).
 //! Every initialize is appended to `<storageDir>/starts.log`; notifications
@@ -118,6 +122,18 @@ impl Extension for TestExt {
                     markdown: "hello".into(),
                     body: "hello".into(),
                     hash: "sha256:00".into(),
+                })
+            }
+            // Macro "page": calls `burrow/browser.page` outside any command
+            // and answers what the host said as the text. Others: none.
+            methods::MACRO_PREPARE if p["macro"] == "page" => {
+                let r = match host.call(methods::BROWSER_PAGE, json!({})) {
+                    Ok(v) => json!({ "ok": v }),
+                    Err(e) => json!({ "err": e }),
+                };
+                to_value(&MacroPrepareResult {
+                    text: r.to_string(),
+                    note: None,
                 })
             }
             methods::LIBRARY_WRITE => Err(RpcError::new(codes::STALE, "changed on disk")
