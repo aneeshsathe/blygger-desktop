@@ -15,14 +15,22 @@
 //! Burrow's to give or withhold (an extension runs as the user), so `fs:`
 //! and `net` are declarations shown at consent, not enforcement.
 
+pub mod api;
 pub mod capability;
 pub mod ext;
 pub mod grants;
+pub mod host;
 pub mod manifest;
 pub mod protocol;
 pub mod rpc;
+pub mod spawn;
 
+pub use api::{BackendApi, HostApi, NoBlyg};
 pub use capability::{CONSENT_CAVEAT, Capability, DECLARED_SUFFIX, consent_sentence, describe};
 pub use grants::{Grants, settings_from_lines};
+pub use host::{
+    ConsentReply, ExtError, ExtEvent, ExtState, ExtensionStatus, Host, HostConfig, LibraryRef,
+    PaletteEntry, Timing, storage_dir,
+};
 pub use manifest::{Diagnostic, Installed, MANIFEST_FILE, Manifest, Origin, discover};
 pub use protocol::PROTOCOL_VERSION;
