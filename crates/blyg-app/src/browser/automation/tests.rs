@@ -1744,7 +1744,7 @@ mod ui {
             s.editor.read(cx).focus_handle(cx).is_focused(window)
         });
         assert!(focused, "the text box has the keyboard");
-        cx.simulate_keystrokes("cmd-enter");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
         cx.simulate_keystrokes("enter");
         until(&view, cx, |v| !v.browser.automation.running());
@@ -1770,7 +1770,7 @@ mod ui {
         let dom = quick_dom();
         let (view, cx) = setup(cx, dom.clone());
         start(&view, cx);
-        cx.simulate_keystrokes("cmd-enter");
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
         cx.simulate_keystrokes("escape");
         until(&view, cx, |v| !v.browser.automation.running());
