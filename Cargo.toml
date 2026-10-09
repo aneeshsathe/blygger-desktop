@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-app"]
+members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-app"]
 
 [workspace.package]
 edition = "2024"

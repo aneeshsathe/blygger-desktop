@@ -43,6 +43,8 @@ crates/blyg-app     the GPUI app. It talks only to Arc<dyn Backend>, and has a
 - [blyg-ai](ai.md) (`docs/AI.md`): providers, sign-in, prompts, provenance.
 - [Blygger protocol digest](protocol.md) (`docs/BLYGGER-SPEC-DIGEST.md`): the
   parts of the Blygger protocol a desktop client needs.
+- [Extensions (BXP)](extensions.md) (`docs/EXTENSIONS.md`): the extension
+  protocol, manifests, capabilities and the host's lifecycle.
 - [Server requirements](../server.md) (`docs/SERVER.md`): the owner-API
   extensions the app needs.
 

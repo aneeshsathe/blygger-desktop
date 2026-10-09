@@ -68,7 +68,8 @@ both, and can also delete the local copy.
 
 There's one window. At the top is the **omnibar**: type to filter your posts,
 ↑/↓ to preview each one, ⏎ to open it, and ⏎ with no match to start a new
-draft with what you typed. esc goes back to the omnibar. The **status bar**
+draft with what you typed. ⌘N opens an empty editor for a new post (a
+scratch note until you make it a draft). esc goes back to the omnibar. The **status bar**
 at the bottom shows the post's kind (`◦ fragment` or `≡ thread`, click to
 switch), the character count, the sync state (`synced`, `saved on this Mac`,
 `syncing…`, `offline · N changes waiting`) and the version (`draft`,

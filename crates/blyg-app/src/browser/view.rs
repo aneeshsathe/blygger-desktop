@@ -25,10 +25,14 @@ gpui_kit::actions!(
     blygger,
     [
         ToggleBrowser,
+        /// View › Open Browser…: the pane, with the address field ready.
+        OpenBrowser,
         BrowserBack,
         BrowserForward,
         BrowserReload,
-        BrowserAddress
+        BrowserAddress,
+        /// --- capture --- ⇧⌘C / Post › Clip Page to Draft / "✂ Clip".
+        ClipPage
     ]
 );
 
@@ -114,8 +118,8 @@ pub struct Browser {
     pub page: PageState,
     events: Sender<BrowserEvent>,
     events_rx: Option<Receiver<BrowserEvent>>,
-    address: Option<Entity<InputState>>,
-    editing: bool,
+    pub(crate) address: Option<Entity<InputState>>,
+    pub(crate) editing: bool,
     focus: Option<FocusHandle>,
     /// A URL waiting for the block lists (at most `RULES_WAIT`).
     pending: Option<String>,
@@ -145,6 +149,9 @@ pub struct Browser {
     /// (the page, the mode, and whether the pane was open), put back when
     /// the tour ends.
     tour: Option<(PageState, OpenMode, bool)>,
+    /// --- browser macros --- The running macro, the run-scoped unblocked
+    /// hosts, and the per-site pacing.
+    pub(crate) automation: super::automation::State,
     /// URLs loaded (tests).
     #[cfg(test)]
     pub(crate) loads: Vec<String>,
@@ -185,6 +192,7 @@ impl Browser {
             teardown: None,
             dark: None,
             tour: None,
+            automation: Default::default(),
             #[cfg(test)]
             loads: Vec::new(),
         }
@@ -202,7 +210,12 @@ impl Browser {
 
     /// Blocking applies to the current page.
     pub fn blocking_here(&self) -> bool {
-        super::blocking_applies(self.global.get(), &self.unblocked.borrow(), &self.page.url)
+        super::blocking_applies_in_run(
+            self.global.get(),
+            &self.unblocked.borrow(),
+            &self.automation.run_unblocked.borrow(),
+            &self.page.url,
+        )
     }
 
     /// The window became active again: if the keyboard fell to the window
@@ -219,7 +232,7 @@ impl Browser {
         }
     }
 
-    fn with<R>(&self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
+    pub(crate) fn with<R>(&self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
         self.placed.borrow_mut().with(f)
     }
 
@@ -305,7 +318,50 @@ impl MainView {
         cx.notify();
     }
 
-    /// ⇧⌘B: close the pane, or bring back the last page.
+    /// View › Open Browser…: show the pane (on its last page, or blank)
+    /// with the address field focused, to type an address.
+    pub(crate) fn open_browser(
+        &mut self,
+        _: &OpenBrowser,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.browser_open_for_address(window, cx);
+    }
+
+    /// The pane with its address field focused (⌘L). Elsewhere than macOS
+    /// there is no pane: say so (links open in the default browser).
+    fn browser_open_for_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if cfg!(all(not(target_os = "macos"), not(test))) {
+            return self.show_toast(
+                "The browser pane is macOS-only for now",
+                Some("Links open in your default browser".into()),
+                cx,
+            );
+        }
+        if !self.browser.open {
+            let b = &mut self.browser;
+            if b.mode != OpenMode::Full && b.page.url.is_empty() {
+                b.mode = OpenMode::Full;
+            }
+            b.shown += 1;
+            b.open = true;
+            b.editing = false;
+            b.close_gen += 1;
+            b.teardown = None;
+            let url = b.page.url.clone();
+            let reload = !url.is_empty() && !b.alive();
+            self.browser_ensure(window, cx);
+            if reload {
+                self.browser_load(url, cx);
+            }
+        }
+        self.browser_edit_address(window, cx);
+        cx.notify();
+    }
+
+    /// ⇧⌘B: close the pane, or bring back the last page (none yet: open it
+    /// blank, the address field ready to type in).
     pub(crate) fn toggle_browser(
         &mut self,
         _: &ToggleBrowser,
@@ -330,6 +386,8 @@ impl MainView {
                 self.browser.page.url.clear();
                 self.open_url_in_app(&url, mode, window, cx);
             }
+        } else {
+            self.browser_open_for_address(window, cx);
         }
     }
 
@@ -337,6 +395,15 @@ impl MainView {
     pub(crate) fn close_browser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let b = &mut self.browser;
         if !b.open {
+            return;
+        }
+        // --- browser macros --- the pane stays while a macro runs in it.
+        if b.automation.running() {
+            self.show_toast(
+                "A macro is running in the browser pane",
+                Some("■ Stop in the pane's bar stops it".into()),
+                cx,
+            );
             return;
         }
         b.open = false;
@@ -353,7 +420,8 @@ impl MainView {
                 .timer(super::teardown_after())
                 .await;
             let _ = this.update(cx, |v, _| {
-                if !v.browser.open && v.browser.close_gen == gen_ {
+                if !v.browser.open && v.browser.close_gen == gen_ && !v.browser.automation.running()
+                {
                     // Frees the WebContent process; the URL is kept for ⇧⌘B.
                     v.browser.placed.borrow_mut().surface = None;
                     v.browser.placed.borrow_mut().frame = None;
@@ -407,8 +475,15 @@ impl MainView {
             .map(|g| g.0.clone())
             .unwrap_or_else(surface::default_factory);
         let (global, unblocked) = (b.global.clone(), b.unblocked.clone());
-        let blocking: surface::BlockingFor =
-            Rc::new(move |url| super::blocking_applies(global.get(), &unblocked.borrow(), url));
+        let run_unblocked = b.automation.run_unblocked.clone();
+        let blocking: surface::BlockingFor = Rc::new(move |url| {
+            super::blocking_applies_in_run(
+                global.get(),
+                &unblocked.borrow(),
+                &run_unblocked.borrow(),
+                url,
+            )
+        });
         let t0 = std::time::Instant::now();
         match factory(window, b.events.clone(), b.rules.clone(), blocking) {
             Ok(s) => {
@@ -735,6 +810,51 @@ impl MainView {
         super::is_web_url(url).then(|| super::notes_link(&self.browser.page.title, url))
     }
 
+    // ------------------------------------------------------ browser macros
+
+    /// --- browser macros --- A run's `open`: the pane full width and
+    /// visible on `url`, loaded even if it's the page already showing.
+    pub(crate) fn browser_run_open(
+        &mut self,
+        url: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !super::is_web_url(url) {
+            return;
+        }
+        let b = &mut self.browser;
+        if !b.open || b.mode != OpenMode::Full {
+            b.shown += 1;
+        }
+        b.open = true;
+        b.mode = OpenMode::Full;
+        b.editing = false;
+        b.close_gen += 1;
+        b.teardown = None;
+        self.browser_ensure(window, cx);
+        self.browser.page.url = url.to_string();
+        self.browser.page.title.clear();
+        self.browser_load(url.to_string(), cx);
+        cx.notify();
+    }
+
+    /// --- browser macros --- The page as a run sees it (`None`: no web
+    /// view). A load still waiting for the block lists counts as loading.
+    pub(crate) fn browser_run_state(&mut self, cx: &mut Context<Self>) -> Option<PageState> {
+        let mut st = self.browser.with(|s| s.state())?;
+        if self.browser.pending.is_some() {
+            st.loading = true;
+        }
+        self.browser_refresh_state(cx);
+        Some(st)
+    }
+
+    /// The data dir (`None` in tests without one).
+    pub(crate) fn browser_data_dir(&self) -> Option<PathBuf> {
+        self.browser.data_dir.clone()
+    }
+
     // ------------------------------------------------------------ onboarding
 
     /// --- onboarding --- The tutorial's browser step: the pane slides in on
@@ -822,6 +942,7 @@ impl MainView {
     pub(crate) fn browser_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let covered = self.sheet.is_some()
             || self.ai.has_overlay()
+            || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()
             || self.onboarding.flow.is_some()
             || self.onboarding.tutorial.is_some()
@@ -883,6 +1004,10 @@ impl MainView {
             })
         }
         d.on_action(cx.listener(Self::toggle_browser))
+            .on_action(cx.listener(Self::open_browser))
+            .on_action(cx.listener(|this, _: &ClipPage, window, cx| {
+                this.browser_clip(window, cx) // --- capture ---
+            }))
             .capture_action(fwd::<Copy>("copy:", cx))
             .capture_action(fwd::<Cut>("cut:", cx))
             .capture_action(fwd::<Paste>("paste:", cx))
@@ -1185,6 +1310,30 @@ impl MainView {
                     this.quote_from(Some(crate::app::notes::QuoteFrom::Browser), window, cx)
                 })),
             )
+            // --- capture ---
+            .child(
+                button(
+                    "browser-clip",
+                    "✂ Clip",
+                    has_page,
+                    "Clip the page (or the passage selected on it) into your draft, with its link  ⇧⌘C",
+                )
+                .on_mouse_down(MouseButton::Left, keep_selection())
+                .on_click(cx.listener(|this, _, window, cx| this.browser_clip(window, cx))),
+            )
+            // --- browser macros --- the running macro, and its Stop.
+            .when(b.automation.running(), |d| {
+                d.child(
+                    button(
+                        "browser-macro-stop",
+                        "■ Stop",
+                        true,
+                        "Stop the running macro (nothing more is typed or clicked)",
+                    )
+                    .text_color(p.warn)
+                    .on_click(cx.listener(|this, _, window, cx| this.macro_stop(window, cx))),
+                )
+            })
             .child(
                 button("browser-close", "×", true, "Close  esc")
                     .on_click(cx.listener(|this, _, window, cx| this.close_browser(window, cx))),
@@ -1212,6 +1361,20 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // --- browser macros --- the built-in test macro against a fixture.
+        if scenario == "br-macro" {
+            if n == 0 {
+                self.macro_demo(window, cx);
+            }
+            return;
+        }
+        // An installed extension's macro, through the ⇧⌘P palette.
+        if scenario == "br-macro-ext" {
+            if n == 0 {
+                self.macro_ext_demo(window, cx);
+            }
+            return;
+        }
         // A post open in the reader, then a link from it: the reader's web
         // view is cut off at the pane's edge.
         if scenario == "br-reader" {

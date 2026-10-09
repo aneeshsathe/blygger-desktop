@@ -46,6 +46,19 @@ pub enum CoreError {
 
 pub type Result<T> = std::result::Result<T, CoreError>;
 
+/// The message of a [`stale`] refusal.
+pub const STALE_MESSAGE: &str = "changed since it was read";
+
+/// [`Backend::save_if_base`]'s refusal: `Rejected{409}` with the working
+/// copy's current `content_hash` as the only detail.
+pub fn stale(current_hash: String) -> CoreError {
+    CoreError::Rejected {
+        status: 409,
+        message: STALE_MESSAGE.into(),
+        details: vec![current_hash],
+    }
+}
+
 pub struct PublishOutcome {
     pub version: u32,
     pub permalink: String,
@@ -130,6 +143,20 @@ pub trait Backend: Send + Sync {
     ) -> Result<()> {
         let _ = (id, content_md, scopes);
         Err(CoreError::Other("provenance isn't supported here".into()))
+    }
+    /// `save`, but only if the working copy is still the text whose
+    /// [`content_hash`] is `base_hash` (an extension editing an item it read
+    /// earlier). A mismatch refuses with [`stale`] (`Rejected{409}`, the
+    /// current hash in `details[0]`) and changes nothing. Local. Additive:
+    /// the default compares and then saves (a tiny window between the two);
+    /// `LiveBackend` checks and writes under the store's lock.
+    fn save_if_base(&self, id: &LocalId, content_md: &str, base_hash: &str) -> Result<()> {
+        let item = self.item(id).ok_or(CoreError::NotFound)?;
+        let current = content_hash(&item.content_md);
+        if current != base_hash {
+            return Err(stale(current));
+        }
+        self.save(id, content_md)
     }
     fn sync_status(&self) -> SyncStatus;
     /// The blyg's origin (`https://blyg.example.com`, no trailing slash), for

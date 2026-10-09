@@ -78,6 +78,11 @@ fn main() -> ExitCode {
     for d in settings::diagnostics(store.loaded(), &themes.registry) {
         eprintln!("blygger: {d}");
     }
+    // --- extensions --- lines naming no installed extension, ungranted
+    // capabilities, bad manifests (as `+validate-config` says).
+    for d in cli::extension_diagnostics(&store) {
+        eprintln!("blygger: {d}");
+    }
     let mut prefs = Prefs::from_config(store.config());
     prefs.apply_theme_override();
     // Fake mode never touches the real Keychain.
@@ -368,7 +373,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
         Menu {
             name: "Post".into(),
             items: vec![
-                MenuItem::action("New Draft", app::NewDraft),
+                MenuItem::action("New Post", app::NewDraft),
                 MenuItem::action("Find…", app::FocusSearch),
                 MenuItem::separator(),
                 MenuItem::action("Publish…", app::Publish),
@@ -384,6 +389,9 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Lineage…", app::reading::ShowLineage),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
+                MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
+                // --- extensions ---
+                MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
                 MenuItem::separator(),
                 MenuItem::action("Delete Draft…", app::discard::DeleteDraft),
@@ -430,7 +438,8 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Actual Size", app::FontReset),
                 // --- browser ---
                 MenuItem::separator(),
-                MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
+                MenuItem::action("Open Browser…", app::browser::OpenBrowser),
+                MenuItem::action("Show/Hide Browser Pane", app::browser::ToggleBrowser),
                 MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
             ],
             disabled: false,

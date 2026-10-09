@@ -11,6 +11,7 @@
 - [Notes and the browser](notes-and-browser.md)
 - [AI helpers](ai.md)
 - [Themes](themes.md)
+- [Extensions](extensions.md)
 
 # Reference
 
@@ -29,5 +30,6 @@
   - [blyg-render](dev/render.md)
   - [blyg-ai](dev/ai.md)
   - [Blygger protocol digest](dev/protocol.md)
+  - [Extensions (BXP)](dev/extensions.md)
 - [Building and testing](dev/building.md)
 - [Releasing](dev/releasing.md)

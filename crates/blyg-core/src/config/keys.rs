@@ -52,6 +52,29 @@ pub const AI_PROVIDERS: &[&str] = &[
     "server",
 ];
 
+/// The fixed extension capabilities `extension-allow` accepts, besides
+/// `fs:<path>` ([`EXTENSION_FS_PREFIX`]) and `browser.automate:<origin>`
+/// ([`EXTENSION_AUTOMATE_PREFIX`]).
+pub const EXTENSION_CAPABILITIES: &[&str] = &[
+    "items.read",
+    "items.write",
+    "reading.read",
+    "blyg.identity",
+    "ui",
+    "hooks:itemPublished",
+    "hooks:itemSaved",
+    "hooks:itemCreated",
+    "browser.capture",
+    "net",
+];
+
+/// `fs:<path>`: the directory tree an extension declares it reads and writes.
+pub const EXTENSION_FS_PREFIX: &str = "fs:";
+
+/// `browser.automate:<origin>`: the one website (scheme, host and port, no
+/// path) an extension's macros may fill in and post to.
+pub const EXTENSION_AUTOMATE_PREFIX: &str = "browser.automate:";
+
 const AI_PROVIDER_CHOICES: &[&str] = &[
     "claude-code",
     "codex",
@@ -200,13 +223,12 @@ pub const KEYS: &[KeySpec] = &[
          In the capture panel, ⌘D always saves a draft and ⌘⏎ always publishes.",
     ),
     docs(
-        key(
-            "new-note",
-            ValueKind::Choice(&["draft", "scratch"]),
-            Some("draft"),
-        ),
-        "What the main window's omnibar creates when ⏎ finds nothing: draft (a draft on your \
-         blyg) or scratch (a scratch note that stays on this Mac until ⌘D or ⌘⏎).",
+        key("new-note", ValueKind::Choice(&["draft", "scratch"]), None),
+        "What a new post starts as: scratch (a scratch note that stays on this Mac until ⌘D \
+         makes it a draft or ⌘⏎ publishes it) or draft (a draft on your blyg).\n\
+         It applies to ⌘N (Post › New Post), which opens an empty editor, and to the omnibar's \
+         create (⏎ when the search finds nothing). Unset, ⌘N starts a scratch note and the \
+         omnibar creates a draft.",
     ),
     docs(
         key(
@@ -272,6 +294,44 @@ pub const KEYS: &[KeySpec] = &[
         "Show the interactive tutorial every time Burrow opens. The very first launch always \
          shows it; after that it follows this setting.",
     ),
+    // --- extensions ---
+    docs(
+        list(key("extension", ValueKind::Text, None), &[]),
+        "An extension to run, by name (lowercase kebab-case), e.g. extension = \
+         markdown-notes. Repeat the key for each one. None by default: nothing runs until \
+         you name it here. Extensions are the bundled markdown-notes and folders in \
+         ~/.config/blygger/extensions/; `blygger +list-extensions` lists them.\n\
+         An extension is a separate program that talks to Burrow over its standard input \
+         and output. It never sees your owner token, API keys or the database: Burrow makes \
+         every call for it, and only the ones extension-allow grants.",
+    ),
+    docs(
+        list(key("extension-allow", ValueKind::Text, None), &[]),
+        "A permission granted to an extension, as <name> <capability>, e.g. \
+         extension-allow = markdown-notes items.read. One capability per line. Burrow \
+         writes these when you click Allow in the permission sheet.\n\
+         Capabilities: items.read (read your posts, drafts and scratch notes), items.write \
+         (create drafts and scratch notes and edit their text; an extension can never \
+         publish, withdraw, pin or delete), reading.read (read posts from your \
+         subscriptions already on this Mac), blyg.identity (your blyg's address, never the \
+         token), ui (show messages and open a post), hooks:itemPublished, hooks:itemSaved \
+         and hooks:itemCreated (be told when you publish, save or create a post), \
+         browser.capture (read the page open in the browser pane when you run one of its \
+         commands: address, title, selection and article text, never cookies or sign-ins), \
+         browser.automate:<origin> (fill in and, when you confirm, post on that one website, \
+         signed in as you, e.g. browser.automate:https://social.example.com; exact origin, \
+         no path or wildcards), net (uses the network) and fs:<path> (reads and writes \
+         files under path, e.g. fs:~/Notes).\n\
+         net and fs: are declarations you agree to, not a sandbox: an extension runs as a \
+         program with your user's rights.",
+    ),
+    docs(
+        list(key("extension-setting", ValueKind::Text, None), &[]),
+        "A setting for one extension, as <name> key=value, e.g. extension-setting = \
+         markdown-notes vault=~/Notes. Repeatable; a later line for the same key wins. An \
+         extension sees its own settings and no other part of this file.",
+    ),
+    // --- end extensions ---
     docs(
         list(key("config-file", ValueKind::Path, None), &[]),
         "Load another config file after this one. Relative paths are relative to this file. \

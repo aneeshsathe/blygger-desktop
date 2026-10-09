@@ -310,13 +310,24 @@ mod ui {
         cx.run_until_parked();
     }
 
-    /// Let the slide-out finish.
+    /// Let the slide-out finish. The slide follows the wall clock, so on a
+    /// slow machine one `settle` can land mid-slide: wait until the drawer
+    /// (and what moves with it) stops moving, for at most about a second.
     fn slide_out(cx: &mut VisualTestContext) {
         cx.executor()
             .advance_clock(std::time::Duration::from_millis(
                 crate::app::notes::SLIDE_MS + 50,
             ));
-        settle(cx);
+        let mut last = None;
+        for _ in 0..50 {
+            settle(cx);
+            let now = Some(cx.debug_bounds("notes-drawer"));
+            if now == last {
+                return;
+            }
+            last = now;
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
     }
 
     fn reading(view: &Entity<MainView>, mode: ReadMode, cx: &mut VisualTestContext) {

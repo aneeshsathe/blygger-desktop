@@ -11,6 +11,11 @@ path = "src/main.rs"
 [dependencies]
 blyg-core = { path = "../blyg-core" }
 blyg-ai = { path = "../blyg-ai" }
+# --- extensions --- (the host, and the bundled extensions, markdown-notes and
+# cross-post, run as `blygger +ext <name>`)
+blyg-ext = { path = "../blyg-ext" }
+blyg-ext-notes = { path = "../blyg-ext-notes" }
+blyg-ext-crosspost = { path = "../blyg-ext-crosspost" }
 # gpui-kit pins the matching GPUI snapshot (gpui-pre 0.3.6) plus gpui-base /
 # gpui-component 0.6.6. We use gpui-base's unstyled textarea and draw the rest.
 gpui-kit = { version = "=0.6.6", default-features = false }
@@ -56,6 +61,10 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "WKNavigationAction",
     "WKNavigationDelegate",
     "WKFrameInfo",
+    # --- browser macros --- evaluateJavaScript:inFrame:inContentWorld:
+    # completionHandler: and callAsyncJavaScript:… (the runner's JS runs in
+    # WKContentWorld.defaultClientWorld, apart from the page's own scripts).
+    "WKContentWorld",
 ] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
@@ -69,6 +78,10 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     # --- spellcheck ---
     "NSRange",
     "NSTextCheckingResult",
+    # --- browser macros --- callAsyncJavaScript's arguments and the
+    # completion handler's NSNumber results.
+    "NSDictionary",
+    "NSValue",
 ] }
 block2 = "0.6"
 

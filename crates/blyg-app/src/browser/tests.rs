@@ -298,6 +298,96 @@ mod pane {
         assert_eq!(log.borrow().loads.len(), 2);
     }
 
+    /// Whether the pane's address field has the keyboard.
+    fn address_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+        view.update_in(cx, |v, window, cx| {
+            use gpui_kit::Focusable as _;
+            v.browser
+                .address
+                .as_ref()
+                .is_some_and(|a| a.read(cx).focus_handle(cx).is_focused(window))
+        })
+    }
+
+    /// ⇧⌘B before any page: the pane opens blank with the address field
+    /// focused (never nothing), and what's typed there loads.
+    #[gpui_kit::test]
+    fn toggle_with_no_page_opens_the_pane_for_an_address(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b"));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open, "the pane opens");
+            assert!(v.browser.editing, "the address field is up");
+            assert_eq!(v.browser.mode, super::OpenMode::Full);
+        });
+        assert!(address_focused(&view, cx));
+        assert!(log.borrow().loads.is_empty(), "nothing loads by itself");
+        cx.simulate_input("https://blyg.example.com/f/tide/");
+        cx.simulate_keystrokes("enter");
+        cx.run_until_parked();
+        assert_eq!(log.borrow().loads, vec!["https://blyg.example.com/f/tide/"]);
+        // ⇧⌘B again closes it.
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b"));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| assert!(!v.browser.open));
+    }
+
+    /// View › Open Browser…: the pane with the address field ready, on the
+    /// last page if there is one (selected, to type over).
+    #[gpui_kit::test]
+    fn open_browser_focuses_the_address(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        cx.dispatch_action(super::OpenBrowser);
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| assert!(v.browser.open && v.browser.editing));
+        assert!(address_focused(&view, cx));
+        // With a page: closed, then Open Browser… shows it and the address.
+        view.update_in(cx, |v, window, cx| {
+            v.open_url_in_app(
+                "https://blyg.example.com/",
+                super::OpenMode::Slide,
+                window,
+                cx,
+            );
+            v.close_browser(window, cx);
+        });
+        cx.dispatch_action(super::OpenBrowser);
+        cx.run_until_parked();
+        view.read_with(cx, |v, cx| {
+            assert!(v.browser.open && v.browser.editing);
+            let shown = v
+                .browser
+                .address
+                .as_ref()
+                .unwrap()
+                .read(cx)
+                .value()
+                .to_string();
+            assert_eq!(shown, "https://blyg.example.com/");
+        });
+        assert!(address_focused(&view, cx));
+        assert_eq!(log.borrow().loads.len(), 1, "no reload");
+        // It's in the View menu, next to Show/Hide Browser Pane.
+        let view_menu = crate::menus(true)
+            .into_iter()
+            .find(|m| m.name == "View")
+            .unwrap();
+        let names: Vec<String> = view_menu
+            .items
+            .into_iter()
+            .filter_map(|i| match i {
+                gpui_kit::MenuItem::Action { name, .. } => Some(name.to_string()),
+                _ => None,
+            })
+            .collect();
+        assert!(names.iter().any(|n| n == "Open Browser…"), "{names:?}");
+        assert!(
+            names.iter().any(|n| n == "Show/Hide Browser Pane"),
+            "{names:?}"
+        );
+    }
+
     #[gpui_kit::test]
     fn a_closed_pane_frees_its_web_view(cx: &mut TestAppContext) {
         let (view, cx, log) = setup(cx);

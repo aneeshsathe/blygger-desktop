@@ -60,6 +60,9 @@ mod composer_demo;
 
 #[path = "scratch.rs"]
 pub(crate) mod scratch;
+// --- new post --- ⌘N: a fresh editor that becomes a scratch note (or a draft)
+#[path = "new_post.rs"]
+pub(crate) mod new_post;
 // --- AI --- (the window's AI UI; logic in crate::ai)
 #[path = "ai/view.rs"]
 mod ai_view;
@@ -96,6 +99,9 @@ pub(crate) mod browser;
 // --- notes --- (the notes drawer; hooks marked the same way)
 #[path = "notes/mod.rs"]
 pub(crate) mod notes;
+// --- extensions --- (the host, its sheets and the notes library; hooks marked the same way)
+#[path = "extensions/mod.rs"]
+pub(crate) mod extensions;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -164,9 +170,14 @@ enum Sheet {
         waiting: Option<CancelOnDrop>,
     },
     /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
-    Disconnect { host: String, focus: FocusHandle },
+    Disconnect {
+        host: String,
+        focus: FocusHandle,
+    },
     /// What's limited on a stock blygger-studio (`server_notice`).
-    ServerLimits { focus: FocusHandle },
+    ServerLimits {
+        focus: FocusHandle,
+    },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -181,6 +192,10 @@ enum Sheet {
         title: String,
         note: Entity<InputState>,
     },
+    // --- browser macros --- (browser/automation): the text before a run,
+    // and what the composer holds before its `submit`.
+    MacroPreview(browser::automation::PreviewSheet),
+    MacroPost(browser::automation::PostSheet),
 }
 
 struct Toast {
@@ -249,6 +264,10 @@ pub struct MainView {
     browser: browser::Browser,
     // --- notes ---
     notes: notes::Notes,
+    // --- extensions ---
+    ext: extensions::Extensions,
+    // --- new post --- ⌘N's fresh editor, until it's left
+    new_post: Option<new_post::NewPost>,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -346,8 +365,9 @@ impl MainView {
                 .map(|c| c.data_dir.clone()),
         );
         let mut this = Self {
-            browser, // --- browser ---
-            notes,   // --- notes ---
+            browser,                 // --- browser ---
+            notes,                   // --- notes ---
+            ext: Default::default(), // --- extensions ---
             reading,
             onboarding: onboarding::State::new(cx), // --- onboarding ---
             profiles: Default::default(),           // --- profiles ---
@@ -388,6 +408,7 @@ impl MainView {
             now: chrono::Utc::now(),
             first_frame: Some(launched),
             ai: Default::default(), // --- AI ---
+            new_post: None,         // --- new post ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -397,6 +418,7 @@ impl MainView {
         this.studio_init(window, cx);
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
+        this.ext_init(window, cx); // --- extensions ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -588,6 +610,7 @@ impl MainView {
             msg = format!("{msg} · {n} problem{}", if n == 1 { "" } else { "s" });
         }
         self.apply_prefs_live(window, cx);
+        self.ext_reload(window, cx); // --- extensions ---
         self.show_toast(msg, None, cx);
     }
 
@@ -990,6 +1013,7 @@ impl MainView {
 
     /// Load the selected row into the editor (NV preview-as-you-move).
     fn load_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_new_post(window, cx); // --- new post ---
         let q = self.list.trimmed_query().to_string();
         if self.list.wants_create() {
             self.current = None;
@@ -1023,6 +1047,7 @@ impl MainView {
     fn requery(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let results = self.backend.search(self.list.query());
         self.list.refresh(results);
+        self.new_post_sync_selection(); // --- new post ---
         // Refresh the current item's metadata without clobbering the editor.
         if let Some(cur) = &self.current {
             match self.backend.item(&cur.local_id) {
@@ -1054,6 +1079,14 @@ impl MainView {
     }
 
     fn open(&mut self, id: &LocalId, window: &mut Window, cx: &mut Context<Self>) {
+        // --- new post --- opening another post leaves the new one.
+        if self
+            .new_post
+            .as_ref()
+            .is_some_and(|np| np.id.as_ref() != Some(id))
+        {
+            self.leave_new_post(window, cx);
+        }
         self.list.select(id);
         if self.current.as_ref().map(|c| &c.local_id) != Some(id) {
             self.current = self.backend.item(id);
@@ -1141,7 +1174,7 @@ impl MainView {
     }
 
     fn focus_after_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.mode == Mode::Edit && self.current.is_some() {
+        if self.mode == Mode::Edit && (self.current.is_some() || self.new_post.is_some()) {
             self.editor.update(cx, |s, cx| s.focus(window, cx));
         } else {
             self.omni.update(cx, |s, cx| s.focus(window, cx));
@@ -1218,6 +1251,8 @@ impl MainView {
                 }
             }
             InputEvent::Change if !self.loading_editor => {
+                // --- new post --- the first keystroke creates the note.
+                self.new_post_first_keystroke(cx);
                 // Typing `![[` at the start of a line opens the quote picker,
                 // and `[[` the link picker.
                 let typed = self.typed_picker(cx);
@@ -1280,7 +1315,9 @@ impl MainView {
     // ------------------------------------------------------------ actions
 
     fn move_selection(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.list.move_selection(delta).is_some() {
+        // --- new post --- ↑/↓ go on from the row selected before ⌘N.
+        let resumed = self.new_post_resume_selection();
+        if self.list.move_selection(delta).is_some() || resumed {
             if let Some(ix) = self.list.selected_index() {
                 self.list_scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
             }
@@ -1302,9 +1339,10 @@ impl MainView {
         cx.notify();
     }
 
+    /// ⌘N: a fresh, empty editor (`new_post.rs`). The omnibar and the list
+    /// are left as they are.
     fn new_draft(&mut self, _: &NewDraft, window: &mut Window, cx: &mut Context<Self>) {
-        self.set_query_text("", window, cx);
-        self.back_to_search(window, cx);
+        self.start_new_post(window, cx);
     }
 
     fn on_publish(&mut self, _: &Publish, window: &mut Window, cx: &mut Context<Self>) {
@@ -1315,6 +1353,9 @@ impl MainView {
                 self.do_publish(text, window, cx);
             }
             Some(Sheet::Connect { .. }) => self.submit_connect(window, cx),
+            // --- browser macros --- Never publish under a macro's sheet: its
+            // own ⌘⏎ (MacroContinue, keymap.rs) continues the run.
+            Some(Sheet::MacroPreview(_) | Sheet::MacroPost(_)) => {}
             Some(_) => {}
             None => self.publish(window, cx),
         }
@@ -1397,12 +1438,19 @@ impl MainView {
                 }
                 match result {
                     Ok(out) => {
+                        v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
                         let head = match &note_opt {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
                         };
+                        // --- browser macros --- a granted macro can cross-post it.
+                        let cross = if v.macro_cross_post_hint() {
+                            " · ⇧⌘P to cross-post"
+                        } else {
+                            ""
+                        };
                         let sub = crate::keymap::hint_owned(format!(
-                            "{} · ⌘O opens it",
+                            "{} · ⌘O opens it{cross}",
                             vm::short_permalink(&out.permalink)
                         ));
                         let head = match out.warning {
@@ -1986,6 +2034,7 @@ impl Render for MainView {
             .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
             .map(|d| self.browser_actions(d, cx)) // --- browser ---
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
+            .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .size_full()
             .relative()
             .flex()
@@ -2038,6 +2087,7 @@ impl Render for MainView {
             .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
+            .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
@@ -2608,6 +2658,7 @@ impl MainView {
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
             .children(self.render_server_notice())
+            .children(self.render_ext_notice(cx)) // --- extensions ---
             .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(
@@ -2618,7 +2669,12 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
-            .children(item.map(vm::version_label))
+            // --- new post --- "New note · saved locally · …" while in it.
+            .children(
+                self.new_post_label()
+                    .map(str::to_string)
+                    .or_else(|| item.map(vm::version_label)),
+            )
             // --- themes ---
             .children(crate::ornament::status(
                 &self.theme,
@@ -2758,6 +2814,9 @@ impl MainView {
         };
 
         let (width, content): (f32, AnyElement) = match sheet {
+            // --- browser macros ---
+            Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
+            Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Publish {
                 title,
                 next_version,
@@ -3540,6 +3599,7 @@ impl MainView {
                     .into_any_element(),
             ))
             .child(self.render_ai_settings_row(cx)) // --- AI ---
+            .child(self.render_ext_settings_row(cx)) // --- extensions ---
             .child(row(
                 "CONFIG FILE",
                 div()

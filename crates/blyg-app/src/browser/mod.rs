@@ -10,6 +10,10 @@
 //!   http(s) only); `nav_policy` below is the URL/scheme policy.
 //! - `blocklist` + `rules`: uBlock Origin's default lists as WebKit content
 //!   blockers, per-site shield in `state.json`, `content-blocking` config.
+//! - `capture`: Clip Page (✂ Clip, ⇧⌘C): the page as Markdown into a
+//!   draft; the same `PageCapture` that `burrow/browser.page` answers.
+//! - `automation`: running an extension's macro in the pane (the Preview
+//!   and Post sheets, the insert chain), over `surface::BrowserSurface`.
 //! - `view`: the GPUI chrome and the `MainView` hooks. Other screens open a
 //!   link with [`MainView::open_link`] (click modifiers decide) or
 //!   [`MainView::open_url_in_app`].
@@ -17,7 +21,9 @@
 //! The web view is made on first use and dropped (freeing its WebContent
 //! process) [`TEARDOWN_AFTER`] after the pane closes.
 
+pub mod automation;
 pub mod blocklist;
+pub mod capture;
 #[cfg(all(target_os = "macos", not(test)))]
 mod driver;
 #[cfg(all(target_os = "macos", not(test)))]
@@ -32,7 +38,8 @@ mod tests;
 use std::time::Duration;
 
 pub use view::{
-    Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
+    Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
+    ToggleBrowser,
 };
 
 /// How long a closed pane keeps its web view (and page) alive.
@@ -180,6 +187,19 @@ pub fn blocking_applies(
     url: &str,
 ) -> bool {
     global && host_of(url).is_none_or(|h| !unblocked.contains(&h))
+}
+
+/// --- browser macros --- [`blocking_applies`], with the hosts a macro run
+/// switched off for itself (`content-blocking = false` on its site) off
+/// too. That set lives for the run only and is never saved.
+pub fn blocking_applies_in_run(
+    global: bool,
+    unblocked: &std::collections::BTreeSet<String>,
+    run_unblocked: &std::collections::BTreeSet<String>,
+    url: &str,
+) -> bool {
+    blocking_applies(global, unblocked, url)
+        && host_of(url).is_none_or(|h| !run_unblocked.contains(&h))
 }
 
 /// `[title](url)` for the notes drawer (and, for now, the clipboard).

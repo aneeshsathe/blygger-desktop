@@ -437,7 +437,7 @@ impl MainView {
             ai_enabled,
             publishing: self.publishing,
             sheet_open: self.sheet.is_some() || self.reading.sheet.is_some(),
-            new_note: self.prefs.new_note,
+            new_note: self.prefs.new_post,
         }
     }
 

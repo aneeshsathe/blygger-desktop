@@ -120,9 +120,11 @@ In the capture panel, ⌘D always saves a draft and ⌘⏎ always publishes.
 ### `new-note`
 
 - **Values:** `draft`, `scratch`
-- **Default:** `draft`
+- **Default:** unset
 
-What the main window's omnibar creates when ⏎ finds nothing: draft (a draft on your blyg) or scratch (a scratch note that stays on this Mac until ⌘D or ⌘⏎).
+What a new post starts as: scratch (a scratch note that stays on this Mac until ⌘D makes it a draft or ⌘⏎ publishes it) or draft (a draft on your blyg).
+
+It applies to ⌘N (Post › New Post), which opens an empty editor, and to the omnibar's create (⏎ when the search finds nothing). Unset, ⌘N starts a scratch note and the omnibar creates a draft.
 
 
 ### `edited-posts`
@@ -201,6 +203,39 @@ Generated text is always disclosed as generated when published. This is fixed: a
 - **Default:** `false`
 
 Show the interactive tutorial every time Burrow opens. The very first launch always shows it; after that it follows this setting.
+
+
+### `extension`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+An extension to run, by name (lowercase kebab-case), e.g. extension = markdown-notes. Repeat the key for each one. None by default: nothing runs until you name it here. Extensions are the bundled markdown-notes and folders in ~/.config/blygger/extensions/; `blygger +list-extensions` lists them.
+
+An extension is a separate program that talks to Burrow over its standard input and output. It never sees your owner token, API keys or the database: Burrow makes every call for it, and only the ones extension-allow grants.
+
+
+### `extension-allow`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+A permission granted to an extension, as &lt;name> &lt;capability>, e.g. extension-allow = markdown-notes items.read. One capability per line. Burrow writes these when you click Allow in the permission sheet.
+
+Capabilities: items.read (read your posts, drafts and scratch notes), items.write (create drafts and scratch notes and edit their text; an extension can never publish, withdraw, pin or delete), reading.read (read posts from your subscriptions already on this Mac), blyg.identity (your blyg's address, never the token), ui (show messages and open a post), hooks:itemPublished, hooks:itemSaved and hooks:itemCreated (be told when you publish, save or create a post), browser.capture (read the page open in the browser pane when you run one of its commands: address, title, selection and article text, never cookies or sign-ins), browser.automate:&lt;origin> (fill in and, when you confirm, post on that one website, signed in as you, e.g. browser.automate:https://social.example.com; exact origin, no path or wildcards), net (uses the network) and fs:&lt;path> (reads and writes files under path, e.g. fs:~/Notes).
+
+net and fs: are declarations you agree to, not a sandbox: an extension runs as a program with your user's rights.
+
+
+### `extension-setting`
+
+- **Values:** text
+- **Default:** none
+- **Repeatable:** yes, one value per line
+
+A setting for one extension, as &lt;name> key=value, e.g. extension-setting = markdown-notes vault=~/Notes. Repeatable; a later line for the same key wins. An extension sees its own settings and no other part of this file.
 
 
 ### `config-file`

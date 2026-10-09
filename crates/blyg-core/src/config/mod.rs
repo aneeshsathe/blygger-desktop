@@ -117,6 +117,14 @@ impl ConfigStore {
         }
     }
 
+    /// Where installed extensions are read from (`None` for in-memory stores).
+    pub fn extensions_dir(&self) -> Option<PathBuf> {
+        match &self.backing {
+            Backing::Files(f) => Some(f.extensions_dir()),
+            Backing::Memory { .. } => None,
+        }
+    }
+
     /// The in-memory file's text (in-memory stores only).
     pub fn text(&self) -> Option<&str> {
         match &self.backing {
