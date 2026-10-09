@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fixture Feed (test page)</title>
+<style>
+  body { font: 15px -apple-system, sans-serif; margin: 2em auto; max-width: 36em; }
+  .feed-prompt { display: flex; gap: .6em; align-items: center; border: 1px solid #ccc;
+    border-radius: 8px; padding: .7em; cursor: text; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: #c96; }
+  .prompt-text { color: #888; }
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex;
+    align-items: flex-start; justify-content: center; padding-top: 4em; }
+  [role=dialog] { background: #fff; border-radius: 10px; padding: 1em; width: 30em; }
+  .pm { min-height: 4em; border: 1px solid #999; border-radius: 6px; padding: .5em; margin: .5em 0; }
+  .pm p { margin: 0 0 .6em; }
+  .toolbar button { font-size: 12px; }
+  .actions { display: flex; justify-content: flex-end; gap: .5em; }
+</style>
+</head>
+<body>
+<h1>Fixture Feed</h1>
+<p>A test page for Burrow's macro runner, shaped like a social site's home
+feed: a prompt that opens a modal composer. Nothing here leaves this machine.</p>
+<div id="app"></div>
+<h2>Posted</h2>
+<ul id="posted"></ul>
+<script src="pm-lite.js"></script>
+<script>
+  (function () {
+    var app = document.getElementById("app");
+    if (document.cookie.indexOf("fixture_session=1") < 0) {
+      app.innerHTML = '<p>You are signed out. <a class="sign-in" href="login.html">Sign in</a></p>';
+      return;
+    }
+    // The feed's prompt: not an editor. Like a framework's delegated
+    // handler, it opens the composer on a click that followed a
+    // pointerdown on it (a bare element.click() isn't enough).
+    app.innerHTML =
+      '<div class="feed-prompt"><div class="avatar"></div>' +
+      '<div class="prompt-text"><span>What’s on your mind?</span></div></div>';
+    var armed = false;
+    document.addEventListener("pointerdown", function (e) {
+      armed = !!(e.target.closest && e.target.closest(".feed-prompt"));
+    });
+    document.addEventListener("click", function (e) {
+      if (armed && e.target.closest && e.target.closest(".feed-prompt")) open();
+      armed = false;
+    });
+    var modal = null;
+    function open() {
+      if (modal) return;
+      modal = document.createElement("div");
+      modal.className = "backdrop";
+      modal.innerHTML =
+        '<div role="dialog" aria-modal="true" aria-label="New note">' +
+        '<div class="author">Fixture Writer</div><div class="box"></div>' +
+        '<div class="toolbar"><button aria-label="Bold">B</button>' +
+        '<button aria-label="Add image">Img</button></div>' +
+        '<div class="actions"><a href="#" class="drafts">Drafts</a>' +
+        '<button class="cancel">Cancel</button>' +
+        '<button class="post" disabled>Post</button></div></div>';
+      document.body.appendChild(modal);
+      var editor = new PmLite(modal.querySelector(".box"));
+      editor.el.classList.add("ProseMirror");
+      var post = modal.querySelector("button.post");
+      // Post is disabled until there's text.
+      var timer = setInterval(function () { post.disabled = !editor.doc.trim(); }, 50);
+      function close() { clearInterval(timer); modal.remove(); modal = null; }
+      modal.querySelector("button.cancel").addEventListener("click", close);
+      post.addEventListener("click", function () {
+        var text = editor.doc.trim();
+        if (!text) return;
+        var li = document.createElement("li");
+        li.textContent = text;
+        document.getElementById("posted").appendChild(li);
+        close();
+      });
+    }
+  })();
+</script>
+</body>
+</html>

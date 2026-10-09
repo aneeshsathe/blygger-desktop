@@ -438,7 +438,8 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Actual Size", app::FontReset),
                 // --- browser ---
                 MenuItem::separator(),
-                MenuItem::action("Browser Pane", app::browser::ToggleBrowser),
+                MenuItem::action("Open Browser…", app::browser::OpenBrowser),
+                MenuItem::action("Show/Hide Browser Pane", app::browser::ToggleBrowser),
                 MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
             ],
             disabled: false,

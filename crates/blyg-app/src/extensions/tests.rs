@@ -890,6 +890,45 @@ mod macros {
         assert!(!labels(&view, cx).contains(&ROW.to_string()));
     }
 
+    /// A granted site has an "Open <site>" row: its home in the pane, to
+    /// sign in by hand. Without the grant, no row.
+    #[gpui_kit::test]
+    fn a_granted_site_opens_from_the_palette(cx: &mut TestAppContext) {
+        const OPEN: &str = "Open Substack Notes";
+        let v = vault();
+        let (view, _fake, cx) = setup(cx, &v, &config(true));
+        let url = stub_pane(cx);
+        started(&view, cx);
+        let rows = labels(&view, cx);
+        assert_eq!(rows.iter().filter(|r| *r == OPEN).count(), 1, "{rows:?}");
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        let i = view.read_with(cx, |v, _| {
+            let Some(Overlay::Palette { rows, .. }) = &v.ext.overlay else {
+                panic!("no palette")
+            };
+            rows.iter().position(|r| r.label == OPEN).expect("the row")
+        });
+        view.update_in(cx, |v, window, cx| v.ext_run_row(i, window, cx));
+        cx.run_until_parked();
+        assert_eq!(*url.borrow(), "https://substack.com/home");
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open);
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+        });
+    }
+
+    #[gpui_kit::test]
+    fn without_the_site_grant_there_is_no_open_row(cx: &mut TestAppContext) {
+        let v = vault();
+        let (view, _fake, cx) = setup(cx, &v, &config(false));
+        started(&view, cx);
+        assert!(
+            !labels(&view, cx)
+                .iter()
+                .any(|r| r.starts_with("Open Substack"))
+        );
+    }
+
     #[gpui_kit::test]
     fn without_the_site_grant_there_is_no_row(cx: &mut TestAppContext) {
         let v = vault();

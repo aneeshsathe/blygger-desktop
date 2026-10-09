@@ -83,6 +83,69 @@ impl MainView {
             .collect()
     }
 
+    /// The palette's "Open <site>" rows: each granted macro site of a
+    /// running extension, once, so signing in there is one click (the
+    /// browser pane is macOS only).
+    pub(crate) fn ext_site_rows(&self) -> Vec<Row> {
+        let Some(host) = &self.ext.host else {
+            return vec![];
+        };
+        if cfg!(all(not(target_os = "macos"), not(test))) {
+            return vec![];
+        }
+        let mut rows: Vec<Row> = vec![];
+        for m in host.macros() {
+            let action = RowAction::OpenSite {
+                ext: m.ext.clone(),
+                site: m.site.id.clone(),
+            };
+            if rows.iter().any(|r| r.action == action) {
+                continue;
+            }
+            rows.push(Row {
+                action,
+                label: format!("Open {}", m.site.title),
+                detail: "In the browser pane: sign in there once, by hand".into(),
+                from: Some(m.ext),
+            });
+        }
+        rows
+    }
+
+    /// An "Open <site>" row: the site's `home` in the pane (the grant is
+    /// checked again, as for a macro).
+    pub(crate) fn ext_open_site(
+        &mut self,
+        ext: &str,
+        site: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(host) = self.ext.host.clone() else {
+            return;
+        };
+        let Some(entry) = host
+            .macros()
+            .into_iter()
+            .find(|m| m.ext == ext && m.site.id == site)
+        else {
+            return self.show_toast(
+                format!("{ext} can't open that site any more"),
+                Some("Its site isn't allowed: Manage extensions…".into()),
+                cx,
+            );
+        };
+        if self.browser.automation.running() {
+            return self.show_toast(
+                "A macro is running in the browser pane",
+                Some("■ Stop in the pane's bar stops it".into()),
+                cx,
+            );
+        }
+        let home = entry.site.home.clone();
+        self.open_url_in_app(&home, crate::app::browser::OpenMode::Full, window, cx);
+    }
+
     /// A macro row was chosen: check, fill in, prepare, run.
     pub(crate) fn ext_run_macro(
         &mut self,

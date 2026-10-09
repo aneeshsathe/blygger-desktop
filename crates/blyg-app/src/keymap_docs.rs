@@ -40,6 +40,10 @@ fn render() -> String {
             "While typing in the editor or a text field",
         ),
         (Scope::Browser, "In the browser pane"),
+        (
+            Scope::MacroSheet,
+            "On a browser macro's Preview and Post sheets",
+        ),
     ];
     let rows = mac_table();
     for (scope, heading) in groups {

@@ -19,6 +19,8 @@ pub(crate) enum RowAction {
     Command { ext: String, id: String },
     /// A browser macro (`extensions/macros.rs`).
     Macro { ext: String, id: String },
+    /// A granted macro site's `home`, in the browser pane (to sign in).
+    OpenSite { ext: String, site: String },
     /// A library's notes, in the notes drawer.
     Library { ext: String, title: String },
     /// The Manage extensions sheet.
@@ -82,6 +84,7 @@ impl MainView {
                 });
             }
             rows.extend(self.ext_macro_rows(screen));
+            rows.extend(self.ext_site_rows());
             for l in host.libraries() {
                 rows.push(Row {
                     action: RowAction::Library {
@@ -179,6 +182,7 @@ impl MainView {
             RowAction::Library { .. } => self.ext_lib_show(window, cx),
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
             RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
+            RowAction::OpenSite { ext, site } => self.ext_open_site(&ext, &site, window, cx),
         }
         cx.notify();
     }

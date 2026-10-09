@@ -38,7 +38,8 @@ mod tests;
 use std::time::Duration;
 
 pub use view::{
-    Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, ToggleBrowser,
+    Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
+    ToggleBrowser,
 };
 
 /// How long a closed pane keeps its web view (and page) alive.

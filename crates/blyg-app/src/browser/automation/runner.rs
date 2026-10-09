@@ -15,14 +15,25 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use blyg_ext::protocol::{MacroSpec, SiteSpec};
-use blyg_ext::recipe::{self, MAX_RUN, Step};
+use blyg_ext::recipe::{self, MAX_RUN, MAX_STEP_TIMEOUT, Step};
 
 use super::insert::{self, Via};
-use super::js::{Op, Reply};
+use super::js::{Op, Outline, Reply};
 use crate::app::browser::surface::PageState;
 
 /// How often a waiting step looks again.
 pub const POLL: Duration = Duration::from_millis(150);
+
+/// How long after `load()` an `open` may count a page as loaded without a
+/// finished navigation (`document.readyState` is `complete`): a
+/// same-document or app-routed navigation, or a load event held back by a
+/// request that never ends.
+pub const SETTLE: Duration = Duration::from_secs(1);
+/// After this, a committed page whose `readyState` is only `interactive`
+/// (the DOM is there; a subresource never finished) counts too.
+pub const LONG_SETTLE: Duration = Duration::from_secs(8);
+/// The most bytes of `macro.log` one DOM outline takes.
+pub const OUTLINE_BYTES: usize = 3 * 1024;
 
 /// What to run: a granted macro and the text to post (the template
 /// expanded, or `extension/macro.prepare`'s answer).
@@ -143,6 +154,9 @@ pub struct MacroError {
     pub reason: Reason,
     /// A `submit` had already run: it may have been posted.
     pub after_submit: bool,
+    /// The page's outline when the step's element wasn't found
+    /// ([`outline_lines`]: `  dom: …` lines for `macro.log`).
+    pub dom: Vec<String>,
 }
 
 impl MacroError {
@@ -228,6 +242,16 @@ impl Outcome {
         }
     }
 
+    /// What `macro.log` gets: [`Self::log_text`], then a failure's DOM
+    /// outline lines.
+    pub fn log_lines(&self) -> Vec<String> {
+        let mut out = vec![self.log_text()];
+        if let Outcome::Failed(e) = self {
+            out.extend(e.dom.iter().cloned());
+        }
+        out
+    }
+
     /// One line for `macro.log`.
     pub fn log_text(&self) -> String {
         match self {
@@ -280,6 +304,14 @@ pub(crate) trait Page {
     async fn confirm(&mut self, c: Confirm) -> PostChoice;
     /// A step is starting (the demo prints it).
     fn progress(&mut self, _index: usize, _step: &Step) {}
+    /// `BLYGGER_MACRO_TRACE=1`: [`Self::trace`] gets the page's outline
+    /// after every step.
+    fn tracing(&self) -> bool {
+        false
+    }
+    /// A trace entry for `macro.log`: a first line (`trace step=…`), then
+    /// `  dom:` lines.
+    fn trace(&mut self, _lines: &[String]) {}
 }
 
 struct Ctx {
@@ -291,6 +323,8 @@ struct Ctx {
     /// The address before the last `open`, while the pane may still show
     /// it (not yet judged against the origin).
     stale: Option<String>,
+    /// The text going in (an outline never shows it).
+    payload: String,
 }
 
 impl Ctx {
@@ -312,6 +346,8 @@ impl Ctx {
         if self.opened
             && !st.loading
             && !st.url.is_empty()
+            // A new web view's first page, before the load commits.
+            && st.url != "about:blank"
             && self.stale.as_deref() != Some(st.url.as_str())
             && !recipe::url_on(&st.url, &self.origin)
         {
@@ -357,33 +393,68 @@ impl Ctx {
         }
     }
 
-    /// The step's element, waiting for it.
+    /// The step's element, waiting for it (to click: for it to be
+    /// enabled, as a Post button is once there's text).
     async fn element<P: Page>(&self, page: &mut P, step: &Step) -> Result<Reply, Reason> {
         let sel = step.selector().unwrap_or_default();
         let op = self.find(sel, step.match_text());
-        self.wait(page, &op, step.timeout(), |r| r.found).await
+        let clicks = matches!(step, Step::Click { .. } | Step::Submit { .. });
+        self.wait(page, &op, step.timeout(), move |r| {
+            r.found && !(clicks && r.disabled)
+        })
+        .await
     }
 
-    /// After `open`: loaded, on the origin, and not signed out.
-    async fn loaded<P: Page>(&mut self, page: &mut P, timeout: Duration) -> Result<(), Reason> {
+    /// The page's outline as `  dom:` lines (one line saying so when the
+    /// page doesn't answer).
+    async fn outline<P: Page>(&self, page: &mut P) -> Vec<String> {
+        match page.eval(&Op::Outline).await.and_then(|r| r.outline) {
+            Some(o) => outline_lines(&o, &self.payload),
+            None => vec!["  dom: (the page didn't answer)".into()],
+        }
+    }
+
+    /// After `open`: loaded, on the origin, and not signed out. Loaded is
+    /// a main-frame navigation finishing after the `load()` (`before`: the
+    /// state then), whatever URL it ends on: a redirect back to the page
+    /// the pane already showed counts. Without one, after [`SETTLE`]:
+    /// `document.readyState` is `complete` and either a new document was
+    /// committed or nothing is loading (same-document and app-routed
+    /// navigations; a load event held back by a never-ending request);
+    /// after [`LONG_SETTLE`], a committed document that's `interactive`.
+    async fn loaded<P: Page>(
+        &mut self,
+        page: &mut P,
+        before: (u64, u64),
+        timeout: Duration,
+    ) -> Result<(), Reason> {
         let start = page.now();
         loop {
             page.sleep(POLL).await;
             self.guard(page)?;
             let st = page.state().ok_or(Reason::Gone)?;
-            if !st.loading
-                && self.stale.as_deref() != Some(st.url.as_str())
-                && recipe::url_on(&st.url, &self.origin)
-            {
-                self.stale = None;
-                if let Some(r) = page.eval(&self.find("html", None)).await
-                    && r.signed_out
-                {
-                    return Err(Reason::SignedOut);
+            let since = page.now().saturating_sub(start);
+            if recipe::url_on(&st.url, &self.origin) {
+                let committed = st.commits > before.0;
+                let finished = st.finishes > before.1 && !st.loading;
+                let reply = if finished || since >= SETTLE {
+                    page.eval(&self.find("html", None)).await
+                } else {
+                    None
+                };
+                let ready = reply.as_ref().map(|r| r.ready.as_str()).unwrap_or("");
+                let done = finished
+                    || (since >= SETTLE && ready == "complete" && (committed || !st.loading))
+                    || (since >= LONG_SETTLE && committed && ready == "interactive");
+                if done {
+                    self.stale = None;
+                    if reply.is_some_and(|r| r.signed_out) {
+                        return Err(Reason::SignedOut);
+                    }
+                    return Ok(());
                 }
-                return Ok(());
             }
-            if page.now().saturating_sub(start) >= timeout {
+            if since >= timeout {
                 return Err(Reason::Timeout);
             }
         }
@@ -431,7 +502,9 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
         sheets: Duration::ZERO,
         opened: false,
         stale: None,
+        payload: payload.clone(),
     };
+    let tracing = page.tracing();
     let first_submit = recipe::first_submit(&run.spec.steps);
     let insert_sel = recipe::insert_index(&run.spec.steps)
         .and_then(|i| run.spec.steps[i].selector())
@@ -441,7 +514,7 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
     let mut via = Via::Manual;
     for (i, step) in run.spec.steps.iter().enumerate() {
         page.progress(i, step);
-        let fail = |reason: Reason, submitted: bool| match reason {
+        let fail = |reason: Reason, submitted: bool, dom: Vec<String>| match reason {
             Reason::Stopped => Outcome::Cancelled {
                 after_submit: submitted,
             },
@@ -451,10 +524,11 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
                 selector: step.selector().map(String::from),
                 reason,
                 after_submit: submitted,
+                dom,
             }),
         };
         if let Err(r) = ctx.guard(page) {
-            return fail(r, submitted);
+            return fail(r, submitted, vec![]);
         }
         let result: Result<Flow, Reason> = async {
             match step {
@@ -462,10 +536,15 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
                     if !recipe::url_on(url, &ctx.origin) {
                         return Err(Reason::OffOrigin(url.clone()));
                     }
-                    ctx.stale = page.state().map(|s| s.url).filter(|u| u != url);
+                    let st = page.state();
+                    let before = st.as_ref().map_or((0, 0), |s| (s.commits, s.finishes));
+                    ctx.stale = st.map(|s| s.url).filter(|u| u != url);
                     page.load(url);
                     ctx.opened = true;
-                    ctx.loaded(page, step.timeout()).await.map(|_| Flow::Next)
+                    // Heavy sites take more than the default 10 s.
+                    ctx.loaded(page, before, MAX_STEP_TIMEOUT)
+                        .await
+                        .map(|_| Flow::Next)
                 }
                 Step::WaitFor {
                     selector,
@@ -478,7 +557,7 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
                     let (empty, absent) = (*empty, *absent);
                     ctx.wait(page, &op, step.timeout(), move |r| {
                         if absent {
-                            !r.found
+                            !r.found || !r.visible
                         } else if empty {
                             r.found && r.text.trim().is_empty()
                         } else {
@@ -567,11 +646,34 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
             }
         }
         .await;
+        if tracing && !matches!(step, Step::Done { .. }) {
+            let mut lines = vec![format!(
+                "trace step={} do={} {}",
+                i + 1,
+                step.name(),
+                if result.is_ok() { "ok" } else { "failed" }
+            )];
+            if matches!(result, Err(Reason::OffOrigin(_) | Reason::Gone)) {
+                // Not the site's page: nothing of it in the log.
+                lines.push("  dom: (not the site's page)".into());
+            } else {
+                lines.extend(ctx.outline(page).await);
+            }
+            page.trace(&lines);
+        }
         match result {
             Ok(Flow::Next) => {}
             Ok(Flow::Handed { manual }) => return Outcome::Handed { manual },
             Ok(Flow::Done(message)) => return Outcome::Posted { message, via },
-            Err(r) => return fail(r, submitted),
+            Err(r) => {
+                // What the page does have, so the selector can be fixed.
+                let dom = if matches!(r, Reason::Timeout | Reason::Missing) {
+                    ctx.outline(page).await
+                } else {
+                    vec![]
+                };
+                return fail(r, submitted, dom);
+            }
         }
     }
     Outcome::Posted {
@@ -625,20 +727,119 @@ impl Pacing {
 
 // ------------------------------------------------------------ the log
 
-/// The most lines `macro.log` keeps.
-pub const LOG_LINES: usize = 200;
+/// The most lines `macro.log` keeps. A failure's DOM outline is up to 27
+/// lines (3 KB), and a traced run has one per step, so this keeps dozens
+/// of runs with outlines (hundreds without) in about 200 KB at most.
+pub const LOG_LINES: usize = 2000;
 
-/// `existing` with `line` appended, keeping the last `cap` lines.
-pub fn ring_append(existing: &str, line: &str, cap: usize) -> String {
+/// `existing` with `entry` (one line or several) appended, keeping the
+/// last `cap` lines, and never starting on an indented (`  dom:`) line
+/// whose entry's first line was cut.
+pub fn ring_append(existing: &str, entry: &str, cap: usize) -> String {
     let mut lines: Vec<&str> = existing.lines().filter(|l| !l.is_empty()).collect();
-    lines.push(line.trim_end());
-    let skip = lines.len().saturating_sub(cap);
+    lines.extend(entry.lines().map(str::trim_end).filter(|l| !l.is_empty()));
+    let mut skip = lines.len().saturating_sub(cap);
+    while skip < lines.len() && lines[skip].starts_with("  ") {
+        skip += 1;
+    }
     let mut out = lines[skip..].join("\n");
     out.push('\n');
     out
 }
 
-/// A log line: `<time> <macro> <outcome>`. Never the text itself.
+/// A log entry: `<time> <macro> <outcome>`, then a failure's `  dom:`
+/// lines. Never the text itself.
 pub fn log_line(time: &str, run: &MacroRun, out: &Outcome) -> String {
-    format!("{time} {} {}", run.spec.id, out.log_text())
+    let mut lines = out.log_lines().into_iter();
+    let mut s = format!(
+        "{time} {} {}",
+        run.spec.id,
+        lines.next().unwrap_or_default()
+    );
+    for l in lines {
+        s.push('\n');
+        s.push_str(&l);
+    }
+    s
+}
+
+/// A trace entry: `<time> <macro> trace step=…`, then its `  dom:` lines.
+pub fn trace_entry(time: &str, macro_id: &str, lines: &[String]) -> String {
+    let mut s = format!("{time} {macro_id}");
+    for (i, l) in lines.iter().enumerate() {
+        s.push(if i == 0 { ' ' } else { '\n' });
+        s.push_str(l);
+    }
+    s
+}
+
+// ------------------------------------------------------------ the outline
+
+/// `s`, unless it's (part of) the payload: an outline never shows the text.
+fn scrub(s: &str, payload: &str) -> String {
+    let bare = s.trim_end_matches('\u{2026}').trim();
+    let p = payload.split_whitespace().collect::<Vec<_>>().join(" ");
+    let head: String = p.chars().take(12).collect();
+    let in_payload = bare.chars().count() >= 6 && p.contains(bare);
+    let holds_payload = head.chars().count() >= 4 && bare.contains(head.as_str());
+    if in_payload || holds_payload {
+        "(the text)".into()
+    } else {
+        s.to_string()
+    }
+}
+
+/// `macro.log`'s lines for an outline: the page (path without the query,
+/// the title's length, how many candidates), then one line per candidate:
+/// `tag#id.class…` and its role, contenteditable, aria-label,
+/// placeholder, data-testid, name, type, visible, disabled, and a
+/// button's label. Cut at [`OUTLINE_BYTES`]. Nothing that is (part of)
+/// the payload.
+pub fn outline_lines(o: &Outline, payload: &str) -> Vec<String> {
+    let sc = |s: &str| scrub(s, payload);
+    let path = o.path.split(['?', '#']).next().unwrap_or("");
+    let listed = o.els.len().min(super::js::OUTLINE_MAX);
+    let mut out = vec![format!(
+        "  dom: page path={path} title-len={} candidates={} listed={listed}",
+        o.title_len, o.total
+    )];
+    let mut bytes = out[0].len() + 1;
+    for e in o.els.iter().take(super::js::OUTLINE_MAX) {
+        let mut l = format!("  dom: {}", e.tag);
+        if !e.id.is_empty() {
+            l += &format!("#{}", sc(&e.id));
+        }
+        for c in e.cls.iter().take(4) {
+            l += &format!(".{}", sc(c));
+        }
+        let attrs = [
+            ("role", &e.role),
+            ("ce", &e.ce),
+            ("aria", &e.aria),
+            ("ph", &e.ph),
+            ("testid", &e.testid),
+            ("name", &e.name),
+            ("type", &e.kind),
+        ];
+        for (k, v) in attrs {
+            if !v.is_empty() {
+                l += &format!(" {k}={:?}", sc(v));
+            }
+        }
+        l += if e.vis { " visible=yes" } else { " visible=no" };
+        if e.disabled {
+            l += " disabled";
+        }
+        if !e.label.is_empty() {
+            let label: String = e.label.chars().take(31).collect();
+            l += &format!(" label={:?}", sc(&label));
+        }
+        if bytes + l.len() + 1 > OUTLINE_BYTES {
+            out.push("  dom: (cut at 3 KB)".into());
+            break;
+        }
+        bytes += l.len() + 1;
+        out.push(l);
+    }
+    out
 }

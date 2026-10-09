@@ -135,9 +135,25 @@ steps = [
 Steps: `open {url}`, `waitFor {selector, text?, empty?, absent?, timeout?}`,
 `assert {selector, text?}`, `focus {selector}`, `click {selector, text?}`,
 `insert {selector}`, `submit {selector, text?}`, `done {text}`. A selector
-is a `querySelectorAll` selector; with `text`, the first match whose
-`innerText.trim()` equals it. Durations are a whole number and `ms`, `s` or
-`m`. A step waits 10 s unless it says otherwise.
+is a `querySelectorAll` selector; a list (`a, b`) is tried part by part,
+the first part with a match winning (so `[role='dialog'] [contenteditable],
+[contenteditable]` prefers the one in a dialog). Of the matches, the first
+visible one. With `text`, only matches whose `innerText` equals it
+(whitespace collapsed, curly quotes folded), the innermost of nested ones
+(a card's label, not the card); failing that, one whose placeholder or
+`aria-label` equals it. `click` and `submit` wait for the element to be
+enabled, and send pointer and mouse down/up before the click; `waitFor
+absent` also counts a hidden element as gone. Durations are a whole number
+and `ms`, `s` or `m`. A step waits 10 s unless it says otherwise; `open`
+waits up to 30 s for a navigation to finish (whatever URL it ends on).
+
+When a step's element isn't found, `macro.log` gets, under the error line,
+an outline of what the page does have: its path (no query), the title's
+length, and up to 25 text boxes, dialogs and buttons (tag, id, classes,
+role, aria-label, placeholder, data-testid, name, visible, and a button's
+label cut to 30 characters), at most 3 KB, never other page text, a value
+or the post's text. With `BLYGGER_MACRO_TRACE=1` it gets one after every
+step.
 
 The manifest is refused unless: every site's origin is declared as
 `browser.automate:`, and its `home` is on it; `min-interval` parses; each

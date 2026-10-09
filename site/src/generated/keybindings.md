@@ -46,7 +46,7 @@
 | ⇧⌘O | Open a profile: paste a blyg, a post or a feed | Blyg › Open Profile… |
 | ⌥⌘→ | Tutorial: next step |  |
 | ⌥⌘← | Tutorial: previous step |  |
-| ⇧⌘B | Browser pane: close it, or bring back the last page | View › Browser Pane |
+| ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
 | ⇧⌘D | Quote the highlighted passage (a page, a post or your notes) in the draft | Post › Quote Selection in Draft |
 | ⇧⌘P | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
@@ -67,6 +67,14 @@
 | ⌘L | Browser pane: edit the address |  |
 | ⇧⌘C | Browser pane: clip the page (or the passage selected on it) into the draft | Post › Clip Page to Draft |
 
+### On a browser macro's Preview and Post sheets
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘⏎ | Macro Preview sheet: continue |  |
+| ⏎ | Macro Post sheet: post |  |
+| esc | Macro Preview or Post sheet: cancel |  |
+
 ### In the menus, without a key
 
 | What it does | Menu |
@@ -84,3 +92,4 @@
 | The interactive tutorial (on sample data) | Help › Burrow Tutorial |
 | Version, build, updates and connection info | Burrow › About Burrow |
 | Version, build, updates and connection info | Help › About Burrow |
+| Browser pane: open it with the address field ready (macOS) | View › Open Browser… |
