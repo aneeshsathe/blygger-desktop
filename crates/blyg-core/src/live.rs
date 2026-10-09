@@ -551,6 +551,14 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
+    fn save_if_base(&self, id: &LocalId, content_md: &str, base_hash: &str) -> Result<()> {
+        self.e()
+            .store
+            .save_if_base(id, content_md, base_hash, self.e().debounce_ms())?;
+        self.wake();
+        Ok(())
+    }
+
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()> {
         self.e().store.set_kind(id, kind, self.e().debounce_ms())?;
         self.wake();

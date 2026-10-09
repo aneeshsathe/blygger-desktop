@@ -1,0 +1,23 @@
+[package]
+name = "blyg-ext-notes"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "markdown-notes: Burrow's bundled extension for a folder of Markdown notes (an Obsidian vault)"
+
+[dependencies]
+blyg-ext = { path = "../blyg-ext" }
+blyg-core = { path = "../blyg-core", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+# The same extension as a standalone executable, for the tests here (the app
+# runs it as `blygger +ext markdown-notes`).
+[[bin]]
+name = "burrow-markdown-notes"
+path = "src/bin/burrow-markdown-notes.rs"
+test = false
+doc = false

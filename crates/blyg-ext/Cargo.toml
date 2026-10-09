@@ -1,0 +1,24 @@
+[package]
+name = "blyg-ext"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Burrow extensions: the protocol (BXP), manifests, grants and the host runtime"
+
+[dependencies]
+# The types and the `Backend` the host adapter wraps. No Keychain here: the
+# extension host never touches a credential.
+blyg-core = { path = "../blyg-core", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+# The test extension every host test spawns (`CARGO_BIN_EXE_bxp-test-ext`).
+[[bin]]
+name = "bxp-test-ext"
+path = "src/bin/bxp-test-ext.rs"
+test = false
+doc = false
