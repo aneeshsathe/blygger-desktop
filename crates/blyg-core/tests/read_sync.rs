@@ -214,7 +214,8 @@ fn duplicates_are_marked_and_sent_per_row() {
             json!({ "id": "F", "kind": "rss", "origin": "https://them.example/feed.xml", "feed_url": "x",
                     "title": "Them (feed)", "status": "active", "in_blogroll": false }),
         ];
-        let mut rss = item("F", page, Some(page), 0, "2030-01-02T00:00:00Z");
+        // The studio numbers RSS items from 1, like every imported row.
+        let mut rss = item("F", page, Some(page), 1, "2030-01-02T00:00:00Z");
         rss["origin"] = json!("https://them.example/feed.xml");
         st.reading = Some(vec![
             rss,
@@ -232,7 +233,7 @@ fn duplicates_are_marked_and_sent_per_row() {
         vec!["POST /api/reading/read".to_string()]
     );
     assert_eq!(server_read(&env, "B", "A1"), Some(1));
-    assert_eq!(server_read(&env, "F", page), Some(0));
+    assert_eq!(server_read(&env, "F", page), Some(1));
 
     // A second Mac sees both rows read.
     let env2_dir = tempfile::tempdir().unwrap();
