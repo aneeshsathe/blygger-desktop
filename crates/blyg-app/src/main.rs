@@ -9,6 +9,13 @@
 //! --default --docs`); `blygger +action` runs a command-line action instead
 //! of the app (see `cli.rs`).
 
+// A GUI program on Windows, so no console window opens behind the app.
+// Debug builds keep the console for their logs.
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
+
 mod about; // --- about ---
 mod ai;
 mod app;
@@ -30,6 +37,8 @@ mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
+#[cfg(target_os = "windows")]
+mod windows_menu;
 
 use std::process::ExitCode;
 use std::sync::Arc;
@@ -45,6 +54,16 @@ use fake::FakeBackend;
 use prefs::Prefs;
 
 fn main() -> ExitCode {
+    // GPUI draws through a topmost DirectComposition visual on Windows, which
+    // would cover the WebView2 child window that shows posts. Its plain
+    // swap-chain path leaves child windows visible above the app.
+    #[cfg(target_os = "windows")]
+    if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_none() {
+        // SAFETY: first thing in main, before any other thread exists.
+        unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
+    }
+    #[cfg(target_os = "windows")]
+    install_crash_log();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = cli::run(&args) {
         return code;
@@ -194,7 +213,9 @@ fn open_main(
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(TitlebarOptions {
             title: Some(vm::window_title(settings::blyg_url(cx).as_deref()).into()),
-            appears_transparent: true,
+            // Windows keeps its own title bar: GPUI draws no caption buttons
+            // (minimise, maximise, close) into a transparent one.
+            appears_transparent: cfg!(target_os = "macos"),
             traffic_light_position: Some(point(px(12.), px(11.))),
         }),
         window_min_size: Some(size(px(640.), px(360.))),
@@ -218,6 +239,40 @@ fn open_main(
     }
 }
 
+/// Windows: a GUI program has nowhere to print a panic, and a panic inside
+/// a window callback ends the process at once. Write what happened to
+/// `%LOCALAPPDATA%\Blygger\crash.log` (the latest crash only) and say so.
+#[cfg(target_os = "windows")]
+fn install_crash_log() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let dir = blyg_core::config::data_dir();
+        let path = dir.join("crash.log");
+        let report = format!(
+            "Burrow {} crashed at {}\n\n{info}\n\n{}\n",
+            env!("CARGO_PKG_VERSION"),
+            chrono::Utc::now().to_rfc3339(),
+            std::backtrace::Backtrace::force_capture()
+        );
+        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::write(&path, report);
+        previous(info);
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn MessageBoxW(hwnd: isize, text: *const u16, caption: *const u16, kind: u32) -> i32;
+        }
+        let wide = |s: &str| s.encode_utf16().chain(Some(0)).collect::<Vec<u16>>();
+        let text = wide(&format!(
+            "Burrow hit a bug and has to close.\n\nWhat happened is saved in {}",
+            path.display()
+        ));
+        let caption = wide("Burrow");
+        const MB_ICONERROR: u32 = 0x10;
+        // SAFETY: two NUL-terminated UTF-16 strings that outlive the call.
+        unsafe { MessageBoxW(0, text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
+    }));
+}
+
 /// Run a backend call that parses other people's content (profiles, public
 /// items) on a background thread, turning a parser panic into an error. A
 /// panic that escapes a background task aborts the whole app.
@@ -237,6 +292,12 @@ pub fn no_activate() -> bool {
 
 /// Show a window without activating the app (automation only): an app that
 /// never activates doesn't get its windows ordered in otherwise.
+#[cfg(not(target_os = "macos"))]
+pub fn order_front_regardless(_window: &Window) {}
+
+/// Show a window without activating the app (automation only): an app that
+/// never activates doesn't get its windows ordered in otherwise.
+#[cfg(target_os = "macos")]
 pub fn order_front_regardless(window: &Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let Ok(handle) = HasWindowHandle::window_handle(window) else {

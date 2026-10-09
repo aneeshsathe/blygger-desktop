@@ -423,7 +423,7 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     assert_eq!(tour_step(&mut e), Some("search"));
 
     // ⌘T isn't this step's key.
-    e.cx.simulate_keystrokes("cmd-t");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-t"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("search"));
     // ↓ is.
@@ -437,7 +437,7 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     assert_eq!(tour_step(&mut e), Some("create"));
 
     // ⏎ with no match creates the seeded draft (in the sample data).
-    e.cx.simulate_keystrokes("cmd-t");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-t"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("create"));
     e.cx.simulate_keystrokes("enter");
@@ -449,7 +449,7 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     assert!(cur.unwrap().content_md.starts_with("tide pools"));
 
     // Typing advances "Just write"; ↓ doesn't.
-    e.cx.simulate_keystrokes("cmd-l down");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-l down"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("autosave"));
     e.view.update_in(e.cx, |v, window, cx| {
@@ -458,11 +458,11 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     e.cx.simulate_input(" at low tide");
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("kinds"));
-    e.cx.simulate_keystrokes("cmd-t");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-t"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("capture"));
     // The scratch note is in the tutorial's fake; ⌘D makes it a draft.
-    e.cx.simulate_keystrokes("cmd-d");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("publish"));
     let fake = fake.expect("the tutorial's fake");
@@ -473,10 +473,10 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     );
 
     // Next and Back work at any time.
-    e.cx.simulate_keystrokes("alt-cmd-right");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
     e.cx.run_until_parked();
     assert_eq!(tour_step(&mut e), Some("publish-note"));
-    e.cx.simulate_keystrokes("alt-cmd-left");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-left"));
     e.cx.run_until_parked();
     assert_eq!(tour_step(&mut e), Some("publish"));
 }
@@ -497,7 +497,7 @@ fn tutorial_ring_never_draws_over_a_picker(cx: &mut TestAppContext) {
             .update_in(e.cx, |v, window, cx| v.tutorial_ring(region, window, cx))
     };
     assert!(ring(&mut e).is_some(), "the editor is ringed before ⌘K");
-    e.cx.simulate_keystrokes("cmd-k");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-k"));
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| v.reading.sheet.is_some()));
     assert_eq!(ring(&mut e), None, "the picker covers the editor");
@@ -532,16 +532,18 @@ fn do_step(e: &mut Env, id: &str) {
         "search" => e.cx.simulate_keystrokes("down"),
         "create" => e.cx.simulate_keystrokes("enter"),
         "autosave" => e.cx.simulate_input(" at dusk"),
-        "kinds" => e.cx.simulate_keystrokes("cmd-t"),
-        "capture" => e.cx.simulate_keystrokes("cmd-d"),
-        "publish" => e.cx.simulate_keystrokes("cmd-enter"),
+        "kinds" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-t")),
+        "capture" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-d")),
+        "publish" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
         "publish-note" => e.cx.simulate_keystrokes("enter"),
-        "full-editor" => e.cx.simulate_keystrokes("cmd-3"),
-        "write-view" => e.cx.simulate_keystrokes("cmd-1"),
-        "tk" => e.cx.simulate_keystrokes("cmd-g"),
-        "shorten" => e.cx.simulate_keystrokes("cmd-shift-g"),
-        "versions" => e.cx.simulate_keystrokes("cmd-y"),
-        "quotes" => e.cx.simulate_keystrokes("cmd-k"),
+        "full-editor" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-3")),
+        "write-view" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-1")),
+        "tk" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g")),
+        "shorten" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-g"))
+        }
+        "versions" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
+        "quotes" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-k")),
         "mentions" => e.cx.simulate_input("@"),
         "stream" => e.cx.simulate_keystrokes("enter"),
         "original" => e.view.update_in(e.cx, |v, window, cx| {
@@ -554,10 +556,12 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the quoted post is held");
             v.open_original(origin, steps::QUOTED.into(), Some(1), window, cx)
         }),
-        "lineage" => e.cx.simulate_keystrokes("cmd-j"),
+        "lineage" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
         "ring" => e.cx.simulate_keystrokes("space"),
-        "reader" => e.cx.simulate_keystrokes("alt-cmd-2"),
-        "notes" => e.cx.simulate_keystrokes("cmd-shift-n"),
+        "reader" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2")),
+        "notes" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"))
+        }
         "browser" => e.cx.simulate_keystrokes("escape"),
         other => panic!("no way to do step {other}"),
     }
@@ -583,7 +587,7 @@ fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
         if step.stay {
             // It opened something to look at: it waits for Next.
             assert_eq!(tour_step(&mut e), Some(step.id), "{} stays", step.id);
-            e.cx.simulate_keystrokes("alt-cmd-right");
+            e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
             settle(&mut e);
         } else if tour_step(&mut e) == Some(step.id) {
             e.cx.simulate_keystrokes("escape");
@@ -659,7 +663,7 @@ fn the_ring_steps_aside_for_the_drawer_the_browser_and_popups(cx: &mut TestAppCo
     // The notes drawer slides over the post pane the notes step rings.
     enter(&mut e, "notes");
     assert!(ring_now(&mut e, Region::ReaderPost).is_some());
-    e.cx.simulate_keystrokes("cmd-shift-n");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| v.notes.open));
     assert_eq!(
@@ -708,7 +712,7 @@ fn the_ring_steps_aside_for_the_drawer_the_browser_and_popups(cx: &mut TestAppCo
 fn the_tour_puts_reading_mode_notes_and_browser_back(cx: &mut TestAppContext) {
     let mut e = setup(cx, CONNECTED, true);
     // The user reads in Reader mode.
-    e.cx.simulate_keystrokes("alt-cmd-2");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2"));
     e.cx.run_until_parked();
     assert_eq!(
         state::AppState::load(e.dir.path()).reading_mode.as_deref(),
@@ -722,7 +726,7 @@ fn the_tour_puts_reading_mode_notes_and_browser_back(cx: &mut TestAppContext) {
         Some("stream")
     );
     enter(&mut e, "notes");
-    e.cx.simulate_keystrokes("cmd-shift-n");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
     e.cx.simulate_input("a note in the tour");
     e.cx.run_until_parked();
     enter(&mut e, "browser");
@@ -776,7 +780,7 @@ fn finishing_restores_the_real_backend(cx: &mut TestAppContext) {
     e.view
         .update_in(e.cx, |v, window, cx| v.tutorial_enter(publish, window, cx));
     e.cx.run_until_parked();
-    e.cx.simulate_keystrokes("cmd-enter");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("publish-note"));
     e.cx.simulate_input("first version");
@@ -790,7 +794,7 @@ fn finishing_restores_the_real_backend(cx: &mut TestAppContext) {
     );
     // Walk the rest of the tour with its keys and Next.
     for _ in 0..STEPS.len() {
-        e.cx.simulate_keystrokes("alt-cmd-right");
+        e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
         e.cx.run_until_parked();
     }
     settle(&mut e);
@@ -831,7 +835,7 @@ fn no_call_reaches_the_real_backend_during_the_tour(cx: &mut TestAppContext) {
             .update_in(e.cx, |v, window, cx| v.tutorial_enter(step, window, cx));
         e.cx.run_until_parked();
     }
-    e.cx.simulate_keystrokes("cmd-3 cmd-1 cmd-r cmd-r cmd-y");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-3 cmd-1 cmd-r cmd-r cmd-y"));
     settle(&mut e);
     assert_eq!(e.real.take(), Vec::<&str>::new());
     e.view
@@ -847,7 +851,7 @@ fn no_call_reaches_the_real_backend_during_the_tour(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn replay_from_settings(cx: &mut TestAppContext) {
     let mut e = setup(cx, CONNECTED, true);
-    e.cx.simulate_keystrokes("cmd-,");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     e.cx.run_until_parked();
     assert!(
         e.view
@@ -859,7 +863,7 @@ fn replay_from_settings(cx: &mut TestAppContext) {
     assert_eq!(tour_step(&mut e), Some("search"));
     assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
     // "Show onboarding again" ends the tour and opens the flow.
-    e.cx.simulate_keystrokes("cmd-,");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     e.cx.run_until_parked();
     e.view
         .update_in(e.cx, |v, window, cx| v.help_onboarding(window, cx));
@@ -929,7 +933,7 @@ fn whats_new_opens_the_tour_with_a_way_out(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     assert!(news_up(&e) && !tour_done(&mut e));
     // ⌥⌘→: what's new, straight to its first step.
-    e.cx.simulate_keystrokes("alt-cmd-right");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
     e.cx.run_until_parked();
     assert!(!news_up(&e));
     let step = e.view.read_with(e.cx, |v, _| {

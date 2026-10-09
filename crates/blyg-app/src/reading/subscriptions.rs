@@ -79,7 +79,7 @@ impl MainView {
                         v.reading.subs = v.backend.subscriptions();
                         v.show_toast(format!("Subscribed to {}", s.title), None, cx);
                     }
-                    Err(e) => v.subscribe_failed(e.to_string(), cx),
+                    Err(e) => v.subscribe_failed(e.to_string(), window, cx),
                 });
             })
             .detach();
@@ -88,7 +88,7 @@ impl MainView {
             let task = cx.background_spawn(async move { backend.preview_subscription(&u) });
             cx.spawn_in(window, async move |this, cx| {
                 let r = task.await;
-                let _ = this.update_in(cx, |v, _, cx| match r {
+                let _ = this.update_in(cx, |v, window, cx| match r {
                     Ok(p) => {
                         if let Some(RSheet::Subscribe {
                             previewed, busy, ..
@@ -99,17 +99,25 @@ impl MainView {
                         }
                         cx.notify();
                     }
-                    Err(e) => v.subscribe_failed(e.to_string(), cx),
+                    Err(e) => v.subscribe_failed(e.to_string(), window, cx),
                 });
             })
             .detach();
         }
     }
 
-    fn subscribe_failed(&mut self, msg: String, cx: &mut Context<Self>) {
-        if let Some(RSheet::Subscribe { error, busy, .. }) = self.reading.sheet.as_mut() {
+    fn subscribe_failed(&mut self, msg: String, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(RSheet::Subscribe {
+            input, error, busy, ..
+        }) = self.reading.sheet.as_mut()
+        {
             *busy = false;
             *error = Some(msg);
+            // Windows: keep the keyboard in the field, so Esc still cancels.
+            if cfg!(target_os = "windows") {
+                let input = input.clone();
+                input.update(cx, |s, cx| s.focus(window, cx));
+            }
         }
         cx.notify();
     }
@@ -404,17 +412,27 @@ impl MainView {
                 d.child(div().mt(px(6.)).text_color(p.muted).child("Checking…"))
             })
             .children(preview)
-            .child(self.keys_row(if previewed.is_some() {
-                vec![
-                    self.key_hint("⏎", "subscribe"),
-                    self.key_hint("esc", "cancel"),
-                ]
-            } else {
-                vec![
-                    self.key_hint("⏎", "preview"),
-                    self.key_hint("esc", "cancel"),
-                ]
-            }))
+            // The keys are buttons too on Windows (`platform::key_button`).
+            .child(
+                self.keys_row(vec![])
+                    .child(crate::platform::key_button(
+                        self.key_hint(
+                            "⏎",
+                            if previewed.is_some() {
+                                "subscribe"
+                            } else {
+                                "preview"
+                            },
+                        ),
+                        "subscribe-enter",
+                        cx.listener(|this, _, window, cx| this.subscribe_enter(window, cx)),
+                    ))
+                    .child(crate::platform::key_button(
+                        self.key_hint("esc", "cancel"),
+                        "subscribe-cancel",
+                        cx.listener(|this, _, window, cx| this.close_reading_sheet(window, cx)),
+                    )),
+            )
             .into_any_element()
     }
 }

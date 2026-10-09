@@ -18,8 +18,9 @@ break things.
 
 On every push to `main`, `.github/workflows/release.yml` checks whether the
 Cargo version has a `vx.y.z` tag yet. If it does, nothing runs. If not, it
-checks that the version and the changelog agree, builds a universal app, signs `SHA256SUMS` for the
-in-app updater, and creates the GitHub release, tagging the merged commit, with
+checks that the version and the changelog agree, builds a universal app and
+a Windows x64 zip (the `windows` job, on `windows-latest`, which hands its zip
+to the macOS job), signs `SHA256SUMS` for the in-app updater, and creates the GitHub release, tagging the merged commit, with
 that changelog section as its notes (`scripts/changelog-notes.sh x.y.z` prints it). A version with a
 `-` in it (`0.7.0-rc.1`) is published as a prerelease, which the updater
 skips.
@@ -38,7 +39,11 @@ optional; the workflow's header lists their secrets.
 - versioned assets: `Burrow-<version>-macos-universal.zip` and `.dmg`;
 - version-less copies, `Burrow-macos-universal.zip` and `.dmg`, which the
   `releases/latest/download/…` URLs (and the one-line installer) point to;
-- `SHA256SUMS`, signed as `SHA256SUMS.sig`;
+- `Burrow-<version>-windows-x64.zip` and the version-less
+  `Burrow-windows-x64.zip` (built by `scripts/package-windows.ps1`: a
+  `Burrow\` folder with `blygger.exe` and its licenses);
+- `SHA256SUMS`, signed as `SHA256SUMS.sig`, covering every zip and dmg above,
+  the Windows ones included (the macOS updater only reads its own zip's line);
 - for now, `Blygger-<version>-macos-universal.zip` and
   `Blygger-macos-universal.zip`: the same signed app in a folder called
   `Blygger.app`, because that's the only asset 0.6.0 and earlier can update

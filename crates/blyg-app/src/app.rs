@@ -89,6 +89,9 @@ pub(crate) mod server_notice;
 mod update_view;
 // --- browser --- (the in-app browser pane; hooks marked the same way)
 #[path = "browser/mod.rs"]
+// The pane is macOS only for now (a WKWebView); elsewhere links open in
+// the default browser, which leaves its machinery unused.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) mod browser;
 // --- notes --- (the notes drawer; hooks marked the same way)
 #[path = "notes/mod.rs"]
@@ -445,17 +448,17 @@ impl MainView {
                     (Ok(()), Some(host)) => v.show_toast(
                         format!("Connected to {host}"),
                         Some(
-                            format!(
+                            crate::keymap::hint_owned(format!(
                                 "{n} post{} loaded · the token is in your Keychain",
                                 if n == 1 { "" } else { "s" }
-                            )
+                            ))
                             .into(),
                         ),
                         cx,
                     ),
                     (Ok(()), None) => {}
                     (Err(CoreError::Offline), _) => v.show_toast(
-                        "Offline: showing what's on this Mac",
+                        crate::keymap::hint("Offline: showing what's on this Mac"),
                         Some("Changes sync when the blyg is reachable".into()),
                         cx,
                     ),
@@ -596,7 +599,7 @@ impl MainView {
         match crate::settings::open_config_file(cx) {
             Ok(path) => self.show_toast(
                 format!("Opening {}", blyg_core::config::paths::tilde(&path)),
-                Some("Save it, then ⌘⇧, reloads".into()),
+                Some(crate::keymap::hint("Save it, then ⌘⇧, reloads").into()),
                 cx,
             ),
             Err(e) => self.show_toast(e, None, cx),
@@ -915,11 +918,11 @@ impl MainView {
                 self.show_toast(
                     format!("Connected to {host}"),
                     Some(
-                        match cred {
+                        crate::keymap::hint(match cred {
                             Credential::Password(_) => "The password is in your Keychain",
                             Credential::Token(_) => "The token is in your Keychain",
                             Credential::OAuth(_) => "Your sign-in is in your Keychain",
-                        }
+                        })
                         .into(),
                     ),
                     cx,
@@ -964,7 +967,7 @@ impl MainView {
                     Some(if delete_local {
                         "The token and the local copy are gone".into()
                     } else {
-                        "The token is gone; your posts stay on this Mac".into()
+                        crate::keymap::hint("The token is gone; your posts stay on this Mac").into()
                     }),
                     cx,
                 );
@@ -1329,7 +1332,9 @@ impl MainView {
             PublishDecision::Shake => {
                 self.shake_gen += 1;
                 self.show_toast(
-                    "Too long to publish as a fragment. Press ⌘T to make it a thread.",
+                    crate::keymap::hint(
+                        "Too long to publish as a fragment. Press ⌘T to make it a thread.",
+                    ),
                     None,
                     cx,
                 );
@@ -1396,7 +1401,10 @@ impl MainView {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
                         };
-                        let sub = format!("{} · ⌘O opens it", vm::short_permalink(&out.permalink));
+                        let sub = crate::keymap::hint_owned(format!(
+                            "{} · ⌘O opens it",
+                            vm::short_permalink(&out.permalink)
+                        ));
                         let head = match out.warning {
                             Some(w) => format!("{head} · {w}"),
                             None => head,
@@ -1828,7 +1836,7 @@ enum ListLength {
     Height(Pixels),
 }
 
-const TITLEBAR_H: f32 = 34.;
+pub(crate) const TITLEBAR_H: f32 = 34.;
 const OMNI_H: f32 = 46.;
 const STATUS_H: f32 = 30.;
 
@@ -1985,7 +1993,9 @@ impl Render for MainView {
             .bg(p.bg)
             .text_color(p.ink)
             .font_family(ui_font.clone())
-            .child(self.render_titlebar(&ui_font, show_title))
+            // Windows shows the title in its own title bar.
+            .child(self.render_titlebar(&ui_font, show_title && cfg!(target_os = "macos")))
+            .children(crate::platform::menu_button(p, cx)) // Windows menu
             .child(self.render_view_switcher(cx)) // --- reading & versions ---
             .children(self.render_toolbar(toolbar, &ui_font, cx)) // --- buttons ---
             .children(self.render_problems(cx))
@@ -2032,6 +2042,7 @@ impl Render for MainView {
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
             .children(onboarding) // --- onboarding ---
+            .children(crate::platform::menu_panel(p, window, cx)) // Windows menu
     }
 }
 
@@ -2041,7 +2052,12 @@ impl MainView {
         let plate = crate::ornament::title_plate(&self.theme);
         div()
             .id("titlebar")
-            .window_control_area(WindowControlArea::Drag)
+            // On Windows the OS title bar moves the window, and a drag area
+            // here would answer HTCAPTION for the toolbar and Menu buttons
+            // drawn over it, so clicks on them would drag the window instead.
+            .when(!cfg!(target_os = "windows"), |d| {
+                d.window_control_area(WindowControlArea::Drag)
+            })
             .h(px(TITLEBAR_H))
             .flex_none()
             .relative()
@@ -2113,11 +2129,11 @@ impl MainView {
                             div()
                                 .text_color(p.ink)
                                 .font_weight(FontWeight::MEDIUM)
-                                .child(format!(
+                                .child(crate::keymap::hint_owned(format!(
                                     "The config file has {n} problem{} · ⌘⇧, reloads it after you fix {}",
                                     if n == 1 { "" } else { "s" },
                                     if n == 1 { "it" } else { "them" }
-                                )),
+                                ))),
                         )
                         .children(lines)
                         .when(n > SHOWN, |d| {
@@ -2888,14 +2904,37 @@ impl MainView {
                     }))
                     .child(heading(format!("Disconnect from {host}?")))
                     .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        "The password or owner token is removed from your Keychain and the \
-                         address from your config file. Nothing changes on the blyg itself.",
+                        crate::keymap::hint(
+                            "The password or owner token is removed from your Keychain and the \
+                             address from your config file. Nothing changes on the blyg itself.",
+                        ),
                     ))
-                    .child(keys_row(vec![
-                        key_hint("1", "disconnect, keep the posts on this Mac"),
-                        key_hint("2", "also delete the local copy"),
-                    ]))
-                    .child(keys_row(vec![key_hint("esc", "cancel")]))
+                    // The keys are buttons too on Windows (`platform::key_button`).
+                    .child(
+                        keys_row(vec![])
+                            .child(crate::platform::key_button(
+                                key_hint(
+                                    "1",
+                                    crate::keymap::hint("disconnect, keep the posts on this Mac"),
+                                ),
+                                "disconnect-keep",
+                                cx.listener(|this, _, window, cx| {
+                                    this.disconnect_now(false, window, cx)
+                                }),
+                            ))
+                            .child(crate::platform::key_button(
+                                key_hint("2", "also delete the local copy"),
+                                "disconnect-delete",
+                                cx.listener(|this, _, window, cx| {
+                                    this.disconnect_now(true, window, cx)
+                                }),
+                            )),
+                    )
+                    .child(keys_row(vec![]).child(crate::platform::key_button(
+                        key_hint("esc", "cancel"),
+                        "disconnect-cancel",
+                        cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                    )))
                     .into_any_element(),
             ),
             Sheet::ServerLimits { focus } => (
@@ -3066,17 +3105,27 @@ impl MainView {
                                 ConnectWay::Token => "Checking the address and token…",
                             }))
                         })
-                        .child(keys_row(vec![
-                            key_hint(
-                                "⏎",
-                                if way == ConnectWay::Browser {
-                                    "next · open the browser"
-                                } else {
-                                    "next · connect"
-                                },
-                            ),
-                            key_hint("esc", "not now"),
-                        ]))
+                        .child({
+                            let next = if way == ConnectWay::Browser {
+                                "next · open the browser"
+                            } else {
+                                "next · connect"
+                            };
+                            // The keys are buttons too on Windows (`platform::key_button`).
+                            keys_row(vec![])
+                                .child(crate::platform::key_button(
+                                    key_hint("⏎", next),
+                                    "connect-submit",
+                                    cx.listener(|this, _, window, cx| {
+                                        this.submit_connect(window, cx)
+                                    }),
+                                ))
+                                .child(crate::platform::key_button(
+                                    key_hint("esc", "not now"),
+                                    "connect-cancel",
+                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                                ))
+                        })
                         .into_any_element(),
                 )
             }
@@ -3429,7 +3478,12 @@ impl MainView {
                             },
                         )),
                     )
-                    .child(div().ml(px(8.)).text_color(p.muted).child("⌘+  ⌘−  ⌘0"))
+                    .child(
+                        div()
+                            .ml(px(8.))
+                            .text_color(p.muted)
+                            .child(crate::keymap::hint("⌘+  ⌘−  ⌘0")),
+                    )
                     .into_any_element(),
             ))
             .child(row(
@@ -3505,10 +3559,17 @@ impl MainView {
                                     ),
                             )
                             .child(
-                                chip("reload-config".into(), "Reload  ⌘⇧,".into(), false, None)
-                                    .on_click(cx.listener(|this, _, window, cx| {
+                                chip(
+                                    "reload-config".into(),
+                                    crate::keymap::hint("Reload  ⌘⇧,").into(),
+                                    false,
+                                    None,
+                                )
+                                .on_click(cx.listener(
+                                    |this, _, window, cx| {
                                         this.reload_config(&ReloadConfig, window, cx)
-                                    })),
+                                    },
+                                )),
                             ),
                     )
                     .child(
@@ -3536,18 +3597,25 @@ impl MainView {
                     .text_color(p.muted)
                     .child(
                         div()
+                            .id("settings-close")
                             .flex()
                             .items_center()
                             .gap(px(5.))
                             .child(kbd("esc"))
-                            .child("close"),
+                            .child("close")
+                            // Windows: the key is a button too.
+                            .when(cfg!(target_os = "windows"), |d| {
+                                d.cursor_pointer().on_click(
+                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                                )
+                            }),
                     )
                     .child(
                         div()
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .child(kbd("⌘,"))
+                            .child(kbd(crate::keymap::hint("⌘,")))
                             .child("toggle"),
                     ),
             )

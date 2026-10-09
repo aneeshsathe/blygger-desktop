@@ -277,6 +277,12 @@ impl MainView {
         if !super::is_web_url(url) {
             return;
         }
+        // The pane is a WKWebView, macOS only for now: elsewhere links go to
+        // the default browser, as they did before the pane existed.
+        if cfg!(all(not(target_os = "macos"), not(test))) {
+            cx.open_url(url);
+            return;
+        }
         let b = &mut self.browser;
         if !b.open || b.mode != mode {
             b.shown += 1;

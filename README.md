@@ -1,12 +1,12 @@
 # Burrow
 
-**Burrow is a blygger client:** a native macOS studio for
+**Burrow is a blygger client:** a native studio for macOS and Windows for
 [Blygger](https://blygger.org) blogs ("blygs"), built to be as fast as
 Notational Velocity.
 
 There's one window: type to search, press ⏎ to create, and nothing ever waits
-on the network. Everything you write is saved on your Mac first and synced to
-your blyg in the background. It's written in Rust with
+on the network. Everything you write is saved on your computer first and
+synced to your blyg in the background. It's written in Rust with
 [GPUI](https://www.gpui.rs), the UI framework behind Zed.
 
 Burrow was called Blygger Desktop up to 0.6.0. See
@@ -24,6 +24,18 @@ This puts **Burrow.app** in `/Applications`, checked against the release's
 signed checksums. Requires macOS 11 or later. Burrow then updates itself.
 Other ways to install, and what to do when macOS blocks a browser download,
 are in [the docs](https://aneeshsathe.github.io/blygger-desktop/install.html).
+
+### Windows
+
+Download `Burrow-windows-x64.zip` from the
+[latest release](https://github.com/aneeshsathe/blygger-desktop/releases/latest),
+unzip it anywhere and run `Burrow\blygger.exe` (Windows 10 or 11, x64). The
+build isn't code-signed yet, so SmartScreen asks the first time: choose
+**More info**, then **Run anyway**. Posts and the full editor need the
+Microsoft Edge WebView2 Runtime, which Windows 11 includes. The Windows build
+doesn't update itself yet. See
+[Windows](https://aneeshsathe.github.io/blygger-desktop/install.html#windows)
+in the docs for what differs from the Mac.
 
 Burrow works with any blyg on blygger-studio 0.9 or later: sign in with your
 browser on studio 0.28 or later, or with your studio password on an older one.
@@ -60,6 +72,9 @@ Issues and pull requests are welcome. Start with
 and [the architecture](https://aneeshsathe.github.io/blygger-desktop/dev/architecture.html).
 Every commit must pass
 `cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`.
+Changes must keep Windows building too: CI runs the same checks on
+`windows-latest`, and platform code goes behind `cfg(target_os = …)` (see
+[Keeping Windows building](https://aneeshsathe.github.io/blygger-desktop/dev/building.html#keeping-windows-building)).
 This is a public repository: use `blyg.example.com` and invented sample
 content, never personal data, and never test against a real blyg.
 

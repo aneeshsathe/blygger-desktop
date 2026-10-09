@@ -44,6 +44,50 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+  # Windows is a supported platform: the same checks, plus a release build
+  # packaged as the zip a release would attach (kept a week, for testing a
+  # pull request on a real Windows machine). Tests that need macOS are
+  # cfg(target_os = "macos"); see "Keeping Windows building" in
+  # site/src/dev/building.md.
+  windows:
+    name: Windows · fmt · clippy · test · build
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the pinned toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked
+
+      - name: Build (release)
+        run: cargo build --release -p blyg-app --locked
+
+      - name: Package
+        shell: pwsh
+        run: scripts/package-windows.ps1
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.ZIP_STEM }}
+          path: |
+            dist/${{ env.ZIP_STEM }}.zip
+            dist/SHA256SUMS-windows
+          if-no-files-found: error
+          retention-days: 7
+
   docs:
     name: docs site
     runs-on: ubuntu-latest
