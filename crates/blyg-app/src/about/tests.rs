@@ -65,6 +65,7 @@ fn copy_build_info_puts_the_report_on_the_clipboard(cx: &mut TestAppContext) {
         "about-release",
         "about-license",
         "about-reveal-data",
+        "about-contributors",
     ] {
         assert!(vcx.debug_bounds(id).is_some(), "{id} is drawn");
     }

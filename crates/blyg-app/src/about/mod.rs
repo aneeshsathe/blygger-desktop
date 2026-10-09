@@ -407,6 +407,10 @@ impl Render for AboutView {
                             .italic()
                             .text_color(p.muted)
                             .child("Burrow is a blygger client."),
+                    )
+                    .child(
+                        link("about-contributors", "Made by its contributors")
+                            .on_click(|_, _, cx| cx.open_url(info::CONTRIBUTORS_URL)),
                     ),
             );
 

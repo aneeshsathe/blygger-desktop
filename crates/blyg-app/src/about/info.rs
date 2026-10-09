@@ -109,6 +109,10 @@ pub fn license_url() -> String {
     format!("https://github.com/{REPO}/blob/main/LICENSE")
 }
 
+/// The docs site's Contributors page.
+pub const CONTRIBUTORS_URL: &str =
+    "https://aneeshsathe.github.io/blygger-desktop/contributors.html";
+
 pub fn auto_update_value(a: AutoUpdate) -> &'static str {
     match a {
         AutoUpdate::Install => "install",
