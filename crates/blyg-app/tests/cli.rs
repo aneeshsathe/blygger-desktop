@@ -205,6 +205,13 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         &dir.path().join("extensions/broken/extension.toml"),
         "name = \"Broken Name\"\n",
     );
+    // The last run of each macro, from its log.
+    write(
+        &dir.path().join("data/extensions/cross-post/macro.log"),
+        "2026-10-01T09:00:00Z cross-post-note error step=2 do=waitFor reason=timeout selector=\"div\" after-submit=false\n\
+         2026-10-02T09:00:00Z cross-post-note posted via=paste \"Posted to Substack Notes\"\n\
+         2026-10-03T09:00:00Z other-macro cancelled after-submit=false\n",
+    );
     let o = blygger(dir.path(), &["+list-extensions"]);
     assert_eq!(o.status.code(), Some(0));
     let out = String::from_utf8_lossy(&o.stdout);
@@ -233,7 +240,8 @@ fn list_extensions_shows_bundled_installed_and_broken() {
              Cross-posts a published post to Substack Notes, in the browser pane, after you confirm.\n  \
              asks for: items.read, ui, browser.automate:https://substack.com\n  \
              site:     substack-notes (Substack Notes, https://substack.com)\n  \
-             macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: unverified\n  \
+             macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: unverified\n            \
+             last run: 2026-10-02T09:00:00Z posted via=paste \"Posted to Substack Notes\"\n  \
              turn on:  extension = cross-post\n"
         ),
         "{out}"
@@ -244,7 +252,19 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         out.contains("Install an extension by copying its folder into"),
         "{out}"
     );
-    assert!(!dir.path().join("data").exists(), "listing starts nothing");
+    // Listing starts nothing: the data folder holds only the log above.
+    let names = |p: &Path| -> Vec<String> {
+        std::fs::read_dir(p)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect()
+    };
+    assert_eq!(names(&dir.path().join("data")), ["extensions"]);
+    assert_eq!(names(&dir.path().join("data/extensions")), ["cross-post"]);
+    assert_eq!(
+        names(&dir.path().join("data/extensions/cross-post")),
+        ["macro.log"]
+    );
 }
 
 /// One JSON line from `stdout`, which must hold nothing else.

@@ -17,6 +17,8 @@ use crate::app::{MainView, TITLEBAR_H};
 pub(crate) enum RowAction {
     /// An extension's command.
     Command { ext: String, id: String },
+    /// A browser macro (`extensions/macros.rs`).
+    Macro { ext: String, id: String },
     /// A library's notes, in the notes drawer.
     Library { ext: String, title: String },
     /// The Manage extensions sheet.
@@ -79,6 +81,7 @@ impl MainView {
                     from: Some(e.ext),
                 });
             }
+            rows.extend(self.ext_macro_rows(screen));
             for l in host.libraries() {
                 rows.push(Row {
                     action: RowAction::Library {
@@ -175,6 +178,7 @@ impl MainView {
             RowAction::Manage => self.ext_open_manage(window, cx),
             RowAction::Library { .. } => self.ext_lib_show(window, cx),
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
+            RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
         }
         cx.notify();
     }

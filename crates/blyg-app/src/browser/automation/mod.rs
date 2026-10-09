@@ -29,9 +29,8 @@ use gpui_kit::base::input::{InputEvent, Textarea, TextareaState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-// The palette's macro rows (extensions/macros.rs) build on these.
-#[allow(unused_imports)]
-pub use runner::{MacroError, MacroRun, Outcome, PostChoice, Reason};
+// What the palette (extensions/macros.rs) and the tests use.
+pub use runner::{MacroRun, Outcome, PostChoice};
 
 use self::js::{Op, Reply};
 use self::runner::{Confirm, Pacing, Page, Preview};
@@ -81,7 +80,6 @@ pub struct PostSheet {
 /// (after `Host::macro_entry` re-checked the grant and
 /// `extension/macro.prepare` shaped the text). Shows the Preview sheet
 /// first; nothing is loaded or typed before the user continues.
-#[allow(dead_code)] // the palette (extensions/macros.rs) calls it
 pub fn start(view: &mut MainView, run: MacroRun, window: &mut Window, cx: &mut Context<MainView>) {
     view.macro_start(run, window, cx);
 }
@@ -102,10 +100,11 @@ pub fn append_log(data_dir: &Path, ext: &str, line: &str) {
     let _ = std::fs::write(&path, runner::ring_append(&old, line, runner::LOG_LINES));
 }
 
-/// `BLYGGER_DEMO=br-macro` in a debug build: the sheets answer themselves
+/// `BLYGGER_DEMO=br-macro` (or `br-macro-ext`) in a debug build: the sheets answer themselves
 /// (the smoke test). Never in a release build.
 pub(crate) fn demo_auto() -> bool {
-    cfg!(debug_assertions) && std::env::var("BLYGGER_DEMO").is_ok_and(|d| d == "br-macro")
+    cfg!(debug_assertions)
+        && std::env::var("BLYGGER_DEMO").is_ok_and(|d| d == "br-macro" || d == "br-macro-ext")
 }
 
 /// The pane, the sheets and the clipboard, as the runner's [`Page`].

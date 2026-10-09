@@ -18,6 +18,7 @@
 //! backend, whatever it holds (a blyg, the fake, or none).
 
 mod library;
+mod macros;
 mod sheets;
 
 #[cfg(test)]
@@ -65,7 +66,10 @@ pub const START_DELAY: Duration = Duration::from_millis(1000);
 #[derive(Clone)]
 pub struct Launch {
     pub program: PathBuf,
+    /// markdown-notes: `program args…`.
     pub args: Vec<String>,
+    /// cross-post: `program crosspost_args…`.
+    pub crosspost_args: Vec<String>,
     pub data_dir: PathBuf,
     pub timing: Timing,
 }
@@ -78,6 +82,7 @@ impl Launch {
         Some(Launch {
             program: std::env::current_exe().ok()?,
             args: vec!["+ext".into(), NOTES.into()],
+            crosspost_args: vec!["+ext".into(), blyg_ext_crosspost::NAME.into()],
             data_dir,
             timing: Timing::default(),
         })
@@ -93,11 +98,11 @@ pub fn host_config(store: &ConfigStore, launch: &Launch) -> HostConfig {
     let mut hc = crate::cli::host_config(store);
     hc.data_dir = launch.data_dir.clone();
     let notes = hc.settings.get(NOTES).cloned().unwrap_or_default();
-    hc.bundled = vec![blyg_ext_notes::bundled(
-        launch.program.clone(),
-        launch.args.clone(),
-        &notes,
-    )];
+    // Both are off until the config names them (`extension = …`).
+    hc.bundled = vec![
+        blyg_ext_notes::bundled(launch.program.clone(), launch.args.clone(), &notes),
+        blyg_ext_crosspost::bundled(launch.program.clone(), launch.crosspost_args.clone()),
+    ];
     hc.timing = launch.timing.clone();
     hc
 }
@@ -431,6 +436,10 @@ impl MainView {
                 window,
                 cx,
             ),
+            ExtEvent::BrowserPage { reply, .. } => self.ext_browser_page(reply, window, cx),
+            ExtEvent::BrowserOpen { url, reply, .. } => {
+                self.ext_browser_open(url, reply, window, cx)
+            }
         }
         cx.notify();
     }
