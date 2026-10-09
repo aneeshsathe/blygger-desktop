@@ -58,7 +58,8 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- browser ---
 use crate::app::browser::{
-    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, ToggleBrowser,
+    BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
+    ToggleBrowser,
 };
 // --- browser macros ---
 use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
@@ -620,8 +621,13 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-b",
             Main,
             ToggleBrowser,
-            "Browser pane: close it, or bring back the last page",
-            Some("View › Browser Pane")
+            "Browser pane: close it, or bring back the last page (none yet: open it to type an address)",
+            Some("View › Show/Hide Browser Pane")
+        ),
+        menu_only!(
+            OpenBrowser,
+            "Browser pane: open it with the address field ready (macOS)",
+            "View › Open Browser…"
         ),
         kb!("cmd-[", Browser, BrowserBack, "Browser pane: back", None),
         kb!(

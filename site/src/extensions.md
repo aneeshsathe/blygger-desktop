@@ -66,8 +66,9 @@ you confirm, click Post on substack.com, signed in as you. It names that one
 site exactly, so it can't act anywhere else. If you leave the `extension-allow`
 lines out, Burrow asks for them the first time it starts cross-post.
 
-Sign in to Substack **once, by hand**, in the browser pane (open
-`https://substack.com/home` there). The pane remembers it (on macOS 14 or
+Sign in to Substack **once, by hand**, in the browser pane: press ⇧⌘P and
+pick **Open Substack Notes** (or View › Open Browser… and type
+`substack.com`). The pane remembers it (on macOS 14 or
 later; on older macOS, sign in before each run). cross-post never
 signs in for you, never sees your sign-in, and stops with "Sign in to Substack
 in this pane" if you're signed out.

@@ -25,6 +25,8 @@ gpui_kit::actions!(
     blygger,
     [
         ToggleBrowser,
+        /// View › Open Browser…: the pane, with the address field ready.
+        OpenBrowser,
         BrowserBack,
         BrowserForward,
         BrowserReload,
@@ -116,8 +118,8 @@ pub struct Browser {
     pub page: PageState,
     events: Sender<BrowserEvent>,
     events_rx: Option<Receiver<BrowserEvent>>,
-    address: Option<Entity<InputState>>,
-    editing: bool,
+    pub(crate) address: Option<Entity<InputState>>,
+    pub(crate) editing: bool,
     focus: Option<FocusHandle>,
     /// A URL waiting for the block lists (at most `RULES_WAIT`).
     pending: Option<String>,
@@ -316,7 +318,50 @@ impl MainView {
         cx.notify();
     }
 
-    /// ⇧⌘B: close the pane, or bring back the last page.
+    /// View › Open Browser…: show the pane (on its last page, or blank)
+    /// with the address field focused, to type an address.
+    pub(crate) fn open_browser(
+        &mut self,
+        _: &OpenBrowser,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.browser_open_for_address(window, cx);
+    }
+
+    /// The pane with its address field focused (⌘L). Elsewhere than macOS
+    /// there is no pane: say so (links open in the default browser).
+    fn browser_open_for_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if cfg!(all(not(target_os = "macos"), not(test))) {
+            return self.show_toast(
+                "The browser pane is macOS-only for now",
+                Some("Links open in your default browser".into()),
+                cx,
+            );
+        }
+        if !self.browser.open {
+            let b = &mut self.browser;
+            if b.mode != OpenMode::Full && b.page.url.is_empty() {
+                b.mode = OpenMode::Full;
+            }
+            b.shown += 1;
+            b.open = true;
+            b.editing = false;
+            b.close_gen += 1;
+            b.teardown = None;
+            let url = b.page.url.clone();
+            let reload = !url.is_empty() && !b.alive();
+            self.browser_ensure(window, cx);
+            if reload {
+                self.browser_load(url, cx);
+            }
+        }
+        self.browser_edit_address(window, cx);
+        cx.notify();
+    }
+
+    /// ⇧⌘B: close the pane, or bring back the last page (none yet: open it
+    /// blank, the address field ready to type in).
     pub(crate) fn toggle_browser(
         &mut self,
         _: &ToggleBrowser,
@@ -341,6 +386,8 @@ impl MainView {
                 self.browser.page.url.clear();
                 self.open_url_in_app(&url, mode, window, cx);
             }
+        } else {
+            self.browser_open_for_address(window, cx);
         }
     }
 
@@ -957,6 +1004,7 @@ impl MainView {
             })
         }
         d.on_action(cx.listener(Self::toggle_browser))
+            .on_action(cx.listener(Self::open_browser))
             .on_action(cx.listener(|this, _: &ClipPage, window, cx| {
                 this.browser_clip(window, cx) // --- capture ---
             }))
