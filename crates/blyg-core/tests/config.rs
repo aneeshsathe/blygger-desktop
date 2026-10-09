@@ -601,3 +601,226 @@ fn show_buttons_defaults_on_and_is_documented() {
     assert!(out.contains("\nshow-buttons = true\n"), "{out}");
     assert!(out.contains("tooltip shows its shortcut"), "{out}");
 }
+
+// ------------------------------------------------------------ extensions
+
+#[test]
+fn extension_keys_parse_into_names_grants_and_settings() {
+    let l = load_text(
+        "extension = markdown-notes\n\
+         extension = word-count\n\
+         extension = markdown-notes\n\
+         extension-allow = markdown-notes items.read\n\
+         extension-allow =   markdown-notes    items.write\n\
+         extension-allow = markdown-notes hooks:itemPublished\n\
+         extension-allow = markdown-notes fs:~/My Notes\n\
+         extension-allow = word-count ui\n\
+         extension-allow = markdown-notes items.read\n\
+         extension-setting = markdown-notes vault=~/Notes\n\
+         extension-setting = markdown-notes export-dir = Burrow\n\
+         extension-setting = markdown-notes vault=~/Vault\n\
+         extension-setting = markdown-notes query=a=b\n\
+         extension-setting = word-count goal=\n",
+    );
+    assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
+    let c = &l.config;
+    assert_eq!(c.extensions_enabled(), vec!["markdown-notes", "word-count"]);
+
+    let allows = c.extension_allows();
+    assert_eq!(allows.len(), 2);
+    let notes: Vec<&str> = allows["markdown-notes"]
+        .iter()
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        notes,
+        vec![
+            "fs:~/My Notes",
+            "hooks:itemPublished",
+            "items.read",
+            "items.write"
+        ]
+    );
+    assert_eq!(allows["word-count"].len(), 1);
+
+    let s = c.extension_settings("markdown-notes");
+    assert_eq!(
+        s.get("vault").map(String::as_str),
+        Some("~/Vault"),
+        "later wins"
+    );
+    assert_eq!(s.get("export-dir").map(String::as_str), Some("Burrow"));
+    assert_eq!(s.get("query").map(String::as_str), Some("a=b"));
+    assert_eq!(s.len(), 3);
+    assert_eq!(
+        c.extension_settings("word-count")
+            .get("goal")
+            .map(String::as_str),
+        Some("")
+    );
+    assert!(c.extension_settings("nobody").is_empty());
+
+    // Stored normalised, so write-back and +show-config print one form.
+    assert!(
+        c.list("extension-allow")
+            .contains(&"markdown-notes items.write".to_string())
+    );
+    assert!(
+        c.list("extension-setting")
+            .contains(&"markdown-notes export-dir=Burrow".to_string())
+    );
+}
+
+#[test]
+fn extensions_are_off_by_default() {
+    let c = load_text("").config;
+    assert!(
+        c.extensions_enabled().is_empty(),
+        "nothing runs unless named"
+    );
+    assert!(c.extension_allows().is_empty());
+    assert!(c.extension_settings("markdown-notes").is_empty());
+    let c = load_text("extension = markdown-notes\nextension =\n").config;
+    assert!(
+        c.extensions_enabled().is_empty(),
+        "an empty value clears it"
+    );
+}
+
+#[test]
+fn bad_extension_lines_are_errors_and_the_rest_loads() {
+    let l = load_text(
+        "extension = Markdown_Notes\n\
+         extension = markdown-notes\n\
+         extension-allow = markdown-notes\n\
+         extension-allow = markdown-notes publish\n\
+         extension-allow = markdown-notes hooks:itempublished\n\
+         extension-allow = markdown-notes fs:\n\
+         extension-allow = -bad- items.read\n\
+         extension-allow = markdown-notes items.read\n\
+         extension-setting = markdown-notes vault\n\
+         extension-setting = markdown-notes Vault=x\n\
+         extension-setting = markdown-notes\n\
+         extension-setting = markdown-notes =x\n\
+         extension-setting = markdown-notes vault=~/Notes\n",
+    );
+    let lines: Vec<usize> = l.diagnostics.iter().map(|d| d.line).collect();
+    assert_eq!(
+        lines,
+        vec![1, 3, 4, 5, 6, 7, 9, 10, 11, 12],
+        "{:?}",
+        l.diagnostics
+    );
+    assert!(l.diagnostics.iter().all(|d| d.severity == Severity::Error));
+    let msg = |line: usize| {
+        l.diagnostics
+            .iter()
+            .find(|d| d.line == line)
+            .unwrap()
+            .message
+            .clone()
+    };
+    assert!(msg(1).starts_with("extension: "), "{}", msg(1));
+    assert!(msg(1).contains("kebab-case"), "{}", msg(1));
+    assert!(
+        msg(4).contains("unknown capability `publish`"),
+        "{}",
+        msg(4)
+    );
+    assert!(msg(4).contains("fs:<path>"), "{}", msg(4));
+    assert!(
+        msg(5).contains("did you mean `hooks:itemPublished`"),
+        "{}",
+        msg(5)
+    );
+    // The good lines still count.
+    let c = &l.config;
+    assert_eq!(c.extensions_enabled(), vec!["markdown-notes"]);
+    assert_eq!(c.extension_allows()["markdown-notes"].len(), 1);
+    assert_eq!(c.extension_settings("markdown-notes").len(), 1);
+}
+
+#[test]
+fn every_fixed_capability_is_accepted() {
+    use blyg_core::config::keys::EXTENSION_CAPABILITIES;
+    use blyg_core::config::parse::{valid_capability, valid_extension_name};
+    let text: String = EXTENSION_CAPABILITIES
+        .iter()
+        .map(|c| format!("extension-allow = x1 {c}\n"))
+        .collect();
+    let l = load_text(&text);
+    assert!(l.diagnostics.is_empty(), "{:?}", l.diagnostics);
+    assert_eq!(
+        l.config.extension_allows()["x1"].len(),
+        EXTENSION_CAPABILITIES.len()
+    );
+    assert!(valid_capability("fs:/tmp/x") && valid_capability("fs:~/Notes"));
+    assert!(!valid_capability("fs:") && !valid_capability("fs: x") && !valid_capability("NET"));
+    assert!(valid_extension_name("markdown-notes") && valid_extension_name("a2"));
+    for bad in ["", "-a", "a-", "a--b", "A", "a_b", "a.b", "a b"] {
+        assert!(!valid_extension_name(bad), "{bad:?}");
+    }
+}
+
+#[test]
+fn consent_write_back_round_trips_the_grants() {
+    let mut s = ConfigStore::in_memory("# mine\nextension = markdown-notes\n");
+    s.set(&[(
+        "extension-allow",
+        Change::List(vec![
+            "markdown-notes items.read".into(),
+            "markdown-notes fs:~/My Notes".into(),
+        ]),
+    )])
+    .unwrap();
+    assert!(s.diagnostics().is_empty(), "{:?}", s.diagnostics());
+    let text = s.text().unwrap();
+    assert!(
+        text.starts_with("# mine\nextension = markdown-notes\n"),
+        "{text}"
+    );
+    assert!(
+        text.contains("extension-allow = markdown-notes fs:~/My Notes\n"),
+        "{text}"
+    );
+    assert_eq!(s.config().extension_allows()["markdown-notes"].len(), 2);
+    assert_eq!(s.extensions_dir(), None, "in-memory stores have no folder");
+}
+
+#[test]
+fn extensions_dir_sits_beside_the_first_config_file() {
+    use blyg_core::config::paths::EXTENSIONS_DIR_NAME;
+    let none = |_: &Path| false;
+    let f = ConfigFiles::discover_with(&env(&[("HOME", "/home/u")]), &none);
+    assert_eq!(
+        f.extensions_dir_with(&env(&[])),
+        PathBuf::from("/home/u/.config/blygger").join(EXTENSIONS_DIR_NAME)
+    );
+    assert_eq!(
+        f.extensions_dir_with(&env(&[("BLYGGER_EXTENSIONS_DIR", "/ext")])),
+        PathBuf::from("/ext")
+    );
+    assert_eq!(
+        f.extensions_dir_with(&env(&[("BLYGGER_EXTENSIONS_DIR", "")])),
+        PathBuf::from("/home/u/.config/blygger/extensions"),
+        "an empty override is ignored"
+    );
+    let single = ConfigFiles::single(PathBuf::from("/tmp/x/config"));
+    assert_eq!(
+        single.extensions_dir_with(&env(&[])),
+        PathBuf::from("/tmp/x/extensions")
+    );
+}
+
+#[test]
+fn extension_keys_are_documented() {
+    let out = show_config(
+        &Default::default(),
+        ShowOptions::from_args(["--default", "--docs"]).unwrap(),
+    );
+    assert!(out.contains("\nextension =\n"), "{out}");
+    assert!(out.contains("\nextension-allow =\n"), "{out}");
+    assert!(out.contains("\nextension-setting =\n"), "{out}");
+    assert!(out.contains("not a sandbox"), "{out}");
+    assert!(out.contains("never publish"), "{out}");
+}
