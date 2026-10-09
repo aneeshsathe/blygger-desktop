@@ -15,6 +15,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-09
+
 ### Added
 
 - **Burrow runs on Windows.** A 64-bit Windows build, from the same code, ships with every release as `Burrow-<version>-windows-x64.zip`: unzip it and run `blygger.exe`. Shortcuts use Ctrl where the Mac uses ⌘ (Versions is Ctrl+Shift+Y), a Menu button stands in for the menu bar, posts and the editor show in WebView2, and sign-ins are kept in Windows Credential Manager. It doesn't update itself yet, the browser pane is macOS only, and the build isn't code-signed. See [Windows](https://aneeshsathe.github.io/blygger-desktop/install.html#windows). The port is by Patrick Atwater ([@patwater](https://github.com/patwater)); thank you!
