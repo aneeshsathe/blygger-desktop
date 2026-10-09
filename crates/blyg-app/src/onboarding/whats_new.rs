@@ -15,6 +15,20 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.10.0",
+        items: &[
+            "Extensions: ⇧⌘P lists what they offer; Burrow asks before one may do anything, \
+             and none can publish or see your sign-in.",
+            "markdown-notes opens a folder of Markdown notes in the Notes drawer: search, edit, \
+             and quote a note into your post.",
+            "cross-post puts a published post on Substack Notes from the browser pane, after \
+             you check the text twice.",
+            "⌘N opens an empty editor; it's kept on this Mac until ⌘D makes it a draft.",
+            "✂ Clip (⇧⌘C) in the browser pane quotes the page into a draft.",
+        ],
+        first_step: Some("notes"),
+    },
+    Release {
         version: "0.9.0",
         items: &[
             "Sign in with your browser: Burrow asks your studio for access and renews it.",
