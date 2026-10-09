@@ -407,6 +407,20 @@ impl Store {
         self.save_inner(id, content, None, debounce_ms)
     }
 
+    /// `save`, but only when the working copy's `content_hash` is still
+    /// `base_hash`: checked and written in one transaction under the
+    /// connection lock, so no other save can slip in between. A mismatch is
+    /// `Rejected{409}` (`backend::stale`) and changes nothing.
+    pub fn save_if_base(
+        &self,
+        id: &LocalId,
+        content: &str,
+        base_hash: &str,
+        debounce_ms: i64,
+    ) -> Result<()> {
+        self.save_checked(id, content, None, Some(base_hash), debounce_ms)
+    }
+
     /// `save`, optionally replacing the tracked TK provenance (already
     /// validated against `content`). Without it, tracked provenance follows
     /// its scopes (`tk::remap`).
@@ -417,9 +431,26 @@ impl Store {
         provenance: Option<&[Option<ScopeProvenance>]>,
         debounce_ms: i64,
     ) -> Result<()> {
+        self.save_checked(id, content, provenance, None, debounce_ms)
+    }
+
+    fn save_checked(
+        &self,
+        id: &LocalId,
+        content: &str,
+        provenance: Option<&[Option<ScopeProvenance>]>,
+        base_hash: Option<&str>,
+        debounce_ms: i64,
+    ) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let row = get_row(&tx, id)?.ok_or(CoreError::NotFound)?;
+        if let Some(base) = base_hash {
+            let current = content_hash(&row.item.content_md);
+            if current != base {
+                return Err(crate::backend::stale(current));
+            }
+        }
         match provenance {
             Some(p) => provenance::set_tx(&tx, id, content, p)?,
             None if row.item.content_md == content => return Ok(()),

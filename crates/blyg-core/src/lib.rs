@@ -17,7 +17,7 @@ mod util;
 
 pub use backend::{
     Backend, CoreError, MediaRef, Promote, Promoted, PublicItem, PublishOutcome, Result,
-    promotion_kind,
+    STALE_MESSAGE, promotion_kind, stale,
 };
 pub use config::{Config, ConfigStore};
 pub use live::LiveBackend;
