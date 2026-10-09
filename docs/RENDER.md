@@ -43,6 +43,13 @@ real quote: upstream took that reading provisionally (v0.4-plan §9.2), so a
 multi-line inline scope holding `![[id]]` splits its `span` around the
 quote, as the Worker's does (`tr_inline_tk_multiline_directive`).
 
+A scope is a **block** (its output, or the ungenerated marker, renders as a
+`div` of its own) when a blank line, or the document's edge, sits on both
+sides of it; otherwise it is an inline `span`. Since studio 0.36 the edge
+counts even with whitespace or a single newline between it and the scope,
+since editors commonly end a post with `\n` (tk.ts `BLANK_BEFORE` /
+`BLANK_AFTER`; the `tk_doc_edge_*` cases).
+
 **`impyrt` scopes** (decision #37): `[TK]impyrt=<pasted text>[/TK]` or
 `[TK]impyrt <model>=…[/TK]` (also with `[=]`; the keyword is
 case-insensitive) mark text generated elsewhere. The instruction reads
@@ -88,10 +95,19 @@ Worker's `resolveInternalLinks` / `previewInternalLinks` /
 `applyInternalLinks`). A link is inline and bakes nothing: no
 `transclusions[]` entry, no mention, no self or cycle check. It resolves
 through the same `Resolver` as a quote (`Resolver::resolve_link`, which
-defaults to `resolve`) and becomes `<a href="…">“excerpt”</a>`, where the
-excerpt is the first 60 UTF-16 units of the target's text (else "a thread"
-or "a fragment"). Your own items link to `{mount}/{f|t}/{id}/`, imported ones
-to their origin's `page` or `{origin}{f|t}/{id}/`. An unresolved link shows
+defaults to `resolve`) and becomes `<a href="…">label</a>`
+(transclusion.ts `anchorText`, `anchor_label`). Since studio 0.36 the label
+is the target's heading, as plain text without quotes (80 UTF-16 units),
+when its `content_html` opens with an `<h1>`–`<h6>`; otherwise it is
+`“excerpt”`, the first 60 UTF-16 units of the target's text, else "a
+thread" or "a fragment". Like everything rendered, it is frozen at publish.
+The Reader labels `[[id]]` links in a held post the same way
+(`stream_vm::link_label`). Your own items link to `{mount}/{f|t}/{id}/`,
+imported ones to their origin's `page` or `{origin}{f|t}/{id}/`
+(importer/util.ts `blygItemUrl`, `util::blyg_item_url`, which the
+provenance line uses too). A relative `page` is origin-relative, a leading
+`/` included; since studio 0.36 an absolute http(s) `page` is kept as it is
+(templated blygs, §16.6e). An unresolved link shows
 `span.blyg-link-unresolved` and joins `Stats::unresolved` after the quotes,
 with `directive` `[[id]]`; publish refuses it ("one or more references do not
 resolve"). A link in code (`codeRanges`; in a generated block's rendered
@@ -216,9 +232,10 @@ cargo test -p blyg-render
 ```
 
 **Reference version.** The fixtures come from the reference Worker on
-blygger-studio 0.32.2 plus upstream PR #35, re-generated 2026-10-06
+blygger-studio 0.36.1, re-generated 2026-10-08
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
-versions). The Worker's preview helpers moved again in 0.32
+versions). From 0.32.2 to 0.36.1, `markdown.ts`, `preview.ts`, `embeds.ts`
+and `authoring.ts` are unchanged; see "Studio 0.36.1" below for the rest. The Worker's preview helpers moved again in 0.32
 (`previewLinkDocs`/`spliceLinkDocs` became `previewInternalLinks`,
 `resolveBlockLinks` and `applyInternalLinks`), so the generator now calls the
 handler's own sequence instead of a copy of it.
@@ -252,7 +269,7 @@ case is also byte-identical:
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, sanitizing) | 202 | 202 | 202 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, sanitizing) | 212 | 212 | 212 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`) | 4 | 4 | 4 |
@@ -261,6 +278,21 @@ case is also byte-identical:
 instruction only: a `![[id]]` that only the output names is not a source.
 Both `blyg-render`'s `parse_scopes` and `blyg-core`'s `tk::parse` follow it,
 and the regenerated fixtures (two `tr_inline_tk_*` cases changed) match.
+
+**Studio 0.36.1** changed three things the preview shows, and this crate
+follows each. None of the 202 existing cases changed; 10 were added, with
+five local items and one imported item in `fake_store.json`:
+
+- An `[[id]]` anchor is labelled with the target's opening heading
+  (`link_heading_label`: a heading with markup and an entity, an empty
+  heading, a heading after a paragraph, one over 80 units, and `<header>`,
+  which is not a heading; `link_heading_label_thread`).
+- A scope at the document's edge is a block across whitespace or one
+  newline (`tk_doc_edge_*`: a trailing or leading newline, stray
+  whitespace, an ungenerated scope, a scope one newline from text, which
+  stays inline, and a thread).
+- An imported item's absolute `page` is its link and its provenance `href`
+  as it is (`link_imported_absolute_page`, `link_heading_label_thread`).
 
 **Partial quotes** match the Worker byte for byte in all 11 `tr_partial_*`
 cases: found, emphasis in the quote, paragraph breaks, text inside a nested

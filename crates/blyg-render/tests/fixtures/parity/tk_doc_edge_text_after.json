@@ -1,0 +1,19 @@
+{
+  "name": "tk_doc_edge_text_after",
+  "kind": "fragment",
+  "md": "\n[TK]a[=]inline, text follows[/TK]\nmore text",
+  "html": "<p><span class=\"blyg-tk-gen\">inline, text follows</span>\nmore text</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

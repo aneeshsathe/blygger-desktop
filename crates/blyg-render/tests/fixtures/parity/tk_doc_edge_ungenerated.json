@@ -1,0 +1,19 @@
+{
+  "name": "tk_doc_edge_ungenerated",
+  "kind": "fragment",
+  "md": "Intro.\n\n[TK]write the ending[/TK]\n",
+  "html": "<p>Intro.</p>\n<div class=\"blyg-tk-gen\"><p>⚠ ungenerated — write the ending</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write the ending",
+        "generated": false,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

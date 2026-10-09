@@ -7,17 +7,18 @@
 //! A link is inline and bakes nothing: no `transclusions[]` entry, no
 //! mention, no self or cycle check. It resolves in the same order as a
 //! quote (your published item, then an imported blyg item) and becomes an
-//! anchor whose text is a short excerpt of the target in quotes.
+//! anchor whose text is the target's opening heading, else a short excerpt
+//! of the target in quotes.
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
+use crate::ID_ALPHABET;
 use crate::linemap::Mapped;
 use crate::markdown;
 use crate::transclusion::{Found, Resolution, Resolver, Unresolved, UnresolvedReason};
-use crate::util::{escape_html, is_js_ws};
-use crate::{ID_ALPHABET, ItemKind};
+use crate::util::{blyg_item_url, escape_html, is_js_ws};
 
 /// The token a link becomes before rendering (the Worker's U+E003).
 const SENTINEL: char = '\u{E003}';
@@ -209,25 +210,54 @@ fn our_origin(mount: &str) -> String {
     }
 }
 
-/// importer/util.ts `blygItemUrl`.
-fn item_url(origin: &str, kind: ItemKind, id: &str, page: Option<&str>) -> String {
-    match page.filter(|p| !p.is_empty()) {
-        Some(p) => format!("{origin}{}", p.strip_prefix('/').unwrap_or(p)),
-        None => {
-            let seg = if kind == ItemKind::Thread { "t" } else { "f" };
-            format!("{origin}{seg}/{id}/")
-        }
-    }
+/// transclusion.ts `anchorText`: the target's opening heading as plain text,
+/// else its excerpt in curly quotes, else "a thread" or "a fragment".
+fn anchor_text(f: &Found) -> String {
+    anchor_label(&f.content_html).unwrap_or_else(|| format!("a {}", f.kind.as_str()))
 }
 
-/// transclusion.ts `anchorText`: the target's excerpt in curly quotes.
-fn anchor_text(f: &Found) -> String {
-    let excerpt = excerpt_from_html(&f.content_html, 60);
-    if excerpt.is_empty() {
-        format!("a {}", f.kind.as_str())
-    } else {
-        format!("“{excerpt}”")
+/// The label an `[[id]]` anchor takes from its target's `content_html`
+/// (transclusion.ts `anchorText`, studio 0.36): when the HTML opens with an
+/// `<h1>`–`<h6>`, that heading's text (80 UTF-16 units, no quotes);
+/// otherwise the first 60 units in curly quotes. `None` when the target has
+/// no text. Not HTML-escaped.
+pub fn anchor_label(content_html: &str) -> Option<String> {
+    if let Some(heading) = leading_heading(content_html) {
+        let title = excerpt_from_html(heading, 80);
+        if !title.is_empty() {
+            return Some(title);
+        }
     }
+    let excerpt = excerpt_from_html(content_html, 60);
+    (!excerpt.is_empty()).then(|| format!("“{excerpt}”"))
+}
+
+/// `/^\s*<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/i`: the inner HTML of a heading
+/// that opens the document.
+fn leading_heading(html: &str) -> Option<&str> {
+    let s = html.trim_start_matches(is_js_ws);
+    let b = s.as_bytes();
+    let opens = b.len() >= 3
+        && b[0] == b'<'
+        && b[1].eq_ignore_ascii_case(&b'h')
+        && (b'1'..=b'6').contains(&b[2])
+        // `\b` after the digit: the next character is not an ASCII word one.
+        && b.get(3).is_some_and(|c| !c.is_ascii_alphanumeric() && *c != b'_');
+    if !opens {
+        return None;
+    }
+    let inner = &s[s[3..].find('>')? + 4..];
+    let lower = inner.to_ascii_lowercase();
+    let mut from = 0;
+    while let Some(i) = lower[from..].find("</h") {
+        let at = from + i;
+        let t = &lower.as_bytes()[at + 3..];
+        if t.len() >= 2 && (b'1'..=b'6').contains(&t[0]) && t[1] == b'>' {
+            return Some(&inner[..at]);
+        }
+        from = at + 3;
+    }
+    None
 }
 
 fn reason(r: Resolution) -> Result<Found, UnresolvedReason> {
@@ -320,8 +350,8 @@ fn substitute(
         let (html, label) = match reason(resolver.resolve_link(id)) {
             Ok(f) => {
                 let href = match &f.origin {
-                    Some(o) => item_url(o, f.kind, &f.id, f.page.as_deref()),
-                    None => item_url(&origin, f.kind, &f.id, None),
+                    Some(o) => blyg_item_url(o, f.kind, &f.id, f.page.as_deref()),
+                    None => blyg_item_url(&origin, f.kind, &f.id, None),
                 };
                 links.resolved += 1;
                 let label = escape_html(&anchor_text(&f));
@@ -637,6 +667,7 @@ pub fn excerpt_from_html(html: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ItemKind;
 
     const A: &str = "01j9zq3k4m5n6p7q8r9s0t1v2w";
 
@@ -663,6 +694,53 @@ mod tests {
         assert_eq!(
             plain_text_from_html("<p>a &amp;lt; b</p><p>c<br>d</p>"),
             "a &lt; b c d"
+        );
+    }
+
+    #[test]
+    fn anchor_label_prefers_an_opening_heading() {
+        assert_eq!(
+            anchor_label("<h2 id=\"x\">Tide <em>tables</em></h2>\n<p>Body.</p>").as_deref(),
+            Some("Tide tables")
+        );
+        assert_eq!(anchor_label("\n<H1>Up</H1>").as_deref(), Some("Up"));
+        let long = format!("<h1>{}</h1>", "a".repeat(90));
+        assert_eq!(anchor_label(&long), Some(format!("{}…", "a".repeat(80))));
+        // Not at the start, an empty heading, or `<header>`: the quoted excerpt.
+        assert_eq!(
+            anchor_label("<p>Lead.</p><h1>Late</h1>").as_deref(),
+            Some("“Lead. Late”")
+        );
+        assert_eq!(
+            anchor_label("<h1></h1><p>Body.</p>").as_deref(),
+            Some("“Body.”")
+        );
+        assert_eq!(
+            anchor_label("<header>Mast</header>").as_deref(),
+            Some("“Mast”")
+        );
+        assert_eq!(anchor_label("<p></p>"), None);
+    }
+
+    #[test]
+    fn item_url_keeps_an_absolute_page() {
+        let o = "https://blyg.example.com/blyg/";
+        assert_eq!(
+            blyg_item_url(
+                o,
+                ItemKind::Thread,
+                "x",
+                Some("HTTPS://cms.example.com/2026/a/")
+            ),
+            "HTTPS://cms.example.com/2026/a/"
+        );
+        assert_eq!(
+            blyg_item_url(o, ItemKind::Thread, "x", Some("/t/x/")),
+            "https://blyg.example.com/blyg/t/x/"
+        );
+        assert_eq!(
+            blyg_item_url(o, ItemKind::Fragment, "x", Some("")),
+            "https://blyg.example.com/blyg/f/x/"
         );
     }
 

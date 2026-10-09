@@ -11,7 +11,7 @@ use std::sync::OnceLock;
 use crate::embeds::JS_WS;
 use crate::linemap::Mapped;
 use crate::markdown::{self, MdStats};
-use crate::util::{escape_html, is_js_ws, js_trim};
+use crate::util::{blyg_item_url, escape_html, is_js_ws, js_trim};
 use crate::{ID_ALPHABET, ItemKind};
 
 /// A resolved quote: the snapshot to bake and the provenance to show.
@@ -527,15 +527,7 @@ fn host_of(origin: &str) -> String {
 pub(crate) fn provenance_line(f: &Found, partial: bool, mount: &str) -> String {
     let (href, label) = match &f.origin {
         Some(origin) => {
-            // importer/util.ts blygItemUrl
-            let href = match f.page.as_deref().filter(|p| !p.is_empty()) {
-                Some(page) => format!("{origin}{}", page.strip_prefix('/').unwrap_or(page)),
-                None => format!(
-                    "{origin}{}/{}/",
-                    if f.kind == ItemKind::Thread { "t" } else { "f" },
-                    f.id
-                ),
-            };
+            let href = blyg_item_url(origin, f.kind, &f.id, f.page.as_deref());
             let label = match f.author.as_deref().filter(|a| !a.is_empty()) {
                 Some(name) => format!("from <em>{}</em> ↗", escape_html(name)),
                 None => format!("from {} ↗", escape_html(&host_of(origin))),
