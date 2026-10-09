@@ -163,7 +163,7 @@ impl MainView {
             .into_any_element();
         let header = self.screen_header(
             "Subscriptions",
-            "following is private to this blyg · ⏎ open · esc back".into(),
+            "following is private to this blyg · esc back".into(),
             vec![add],
         );
         let rows = self.reading.subs.iter().enumerate().map(|(i, s)| {
@@ -171,7 +171,6 @@ impl MainView {
             let selected = i == self.reading.sub_sel;
             let confirming = self.reading.unsub_confirm.as_deref() == Some(s.id.as_str());
             let (id1, id2, id3) = (s.id.clone(), s.id.clone(), s.id.clone());
-            let origin = s.origin.clone();
             let blogroll = s.in_blogroll;
             // --- reader folders --- which folder it's in (local only).
             let id4 = s.id.clone();
@@ -196,29 +195,15 @@ impl MainView {
                     cx.notify();
                 }))
                 .child(
-                    // The name and address open the blyg's profile (its posts,
-                    // blogroll and connections) on top of this screen.
                     div()
-                        .id(("sub-open", i))
                         .flex_1()
                         .min_w_0()
-                        .cursor_pointer()
-                        .tooltip(|_, cx| cx.new(|_| super::Tip("Open this blyg (⏎)".into())).into())
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.reading.sub_sel = i;
-                            this.open_profile(origin.clone(), window, cx);
-                        }))
                         .child(
                             div()
                                 .flex()
                                 .gap(px(6.))
                                 .items_center()
-                                .child(
-                                    div()
-                                        .font_weight(FontWeight::MEDIUM)
-                                        .hover(|s| s.text_color(p.accent_text()))
-                                        .child(s.title.clone()),
-                                )
+                                .child(div().font_weight(FontWeight::MEDIUM).child(s.title.clone()))
                                 .child(div().text_size(px(10.5)).text_color(p.muted).child(
                                     match s.kind {
                                         SubscriptionKind::Blyg => "blyg",

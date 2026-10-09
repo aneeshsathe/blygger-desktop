@@ -781,14 +781,6 @@ impl MainView {
                 cx.notify();
                 true
             }
-            (View::Subscriptions, "enter") => match self.reading.subs.get(self.reading.sub_sel) {
-                Some(s) => {
-                    let origin = s.origin.clone();
-                    self.open_profile(origin, window, cx);
-                    true
-                }
-                None => false,
-            },
             _ => false,
         };
         if handled {
