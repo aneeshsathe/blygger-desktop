@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use crate::ID_ALPHABET;
 use crate::linemap::{MapBuilder, Mapped};
 use crate::markdown;
-use crate::util::{escape_html, js_trim};
+use crate::util::{escape_html, is_js_ws, js_trim};
 
 /// One parsed scope.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,12 +68,13 @@ fn extract_source_ids(scope_text: &str) -> Vec<String> {
     ids
 }
 
-/// `BLANK_BEFORE = /(^|\n[ \t]*\n)[ \t]*$/` on the text before the scope.
+/// `BLANK_BEFORE = /(^\s*|\n[ \t]*\n)[ \t]*$/` on the text before the scope:
+/// a blank line, or only whitespace back to the document's start (studio 0.36).
 fn blank_before(before: &str) -> bool {
-    let t = before.trim_end_matches([' ', '\t']);
-    if t.is_empty() {
+    if before.chars().all(is_js_ws) {
         return true;
     }
+    let t = before.trim_end_matches([' ', '\t']);
     let Some(t) = t.strip_suffix('\n') else {
         return false;
     };
@@ -81,12 +82,13 @@ fn blank_before(before: &str) -> bool {
     t.ends_with('\n')
 }
 
-/// `BLANK_AFTER = /^[ \t]*(\n[ \t]*\n|$)/` on the text after the scope.
+/// `BLANK_AFTER = /^[ \t]*(\n[ \t]*\n|\s*$)/` on the text after the scope:
+/// a blank line, or only whitespace to the document's end (studio 0.36).
 fn blank_after(after: &str) -> bool {
-    let t = after.trim_start_matches([' ', '\t']);
-    if t.is_empty() {
+    if after.chars().all(is_js_ws) {
         return true;
     }
+    let t = after.trim_start_matches([' ', '\t']);
     let Some(t) = t.strip_prefix('\n') else {
         return false;
     };

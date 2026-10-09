@@ -21,6 +21,10 @@ teaches something new in the tour, set the newest entry's `version` in
 - CI checks every change on Windows too (fmt, clippy, tests and a release build).
 - **cross-post**, a second bundled extension, puts a published post on Substack Notes: its opening paragraph and the link, at most 280 characters (`max-chars`, `template`). It runs in the browser pane where you signed in by hand, shows the text to edit and then what the notes box holds, and posts only when you click Post. It's off until `extension = cross-post`, needs `extension-allow = cross-post browser.automate:https://substack.com`, and its recipe is marked unverified until it's checked against the live site. `blygger +list-extensions` now lists each extension's sites and macros, with when the macro was last checked. See [Extensions](https://aneeshsathe.github.io/blygger-desktop/extensions.html#cross-post).
 
+### Changed
+
+- **The preview matches studio 0.36.1** byte for byte. An `[[id]]` link to a post that opens with a heading is labelled with that heading, without quotes; other links still show a quoted excerpt. A TK scope at the very start or end of a post shows as a block even with a stray newline or spaces between it and the edge. A link to, or quote of, a post whose blyg gives it a full permalink (a templated blyg) goes to that permalink. The Reader labels links in a post the same way.
+
 ## [0.9.0] - 2026-10-06
 
 ### Changed

@@ -1,0 +1,30 @@
+{
+  "name": "tk_doc_edge_thread",
+  "kind": "thread",
+  "md": "[TK]open[=]Generated opening.[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]close[=]Generated closing.[/TK]\n",
+  "html": "<div class=\"blyg-tk-gen\"><p>Generated opening.</p>\n</div>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>\n<div class=\"blyg-tk-gen\"><p>Generated closing.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "open",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      },
+      {
+        "instruction": "close",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

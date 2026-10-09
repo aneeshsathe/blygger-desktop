@@ -1,0 +1,12 @@
+{
+  "name": "link_heading_label",
+  "kind": "fragment",
+  "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vh1]], [[01j9zq3k4m5n6p7q8r9s0t1vh2]], [[01j9zq3k4m5n6p7q8r9s0t1vh3]], [[01j9zq3k4m5n6p7q8r9s0t1vh4]] and [[01j9zq3k4m5n6p7q8r9s0t1vh5]].",
+  "html": "<p>See <a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1vh1/\">Field notes &amp; tides</a>, <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vh2/\">“An empty heading falls back to the excerpt.”</a>, <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vh3/\">“A lead line comes first. A later heading”</a>, <a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1vh4/\">A rather long heading that keeps going well past the eighty character label limi…</a> and <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vh5/\">“Not a heading tag Body.”</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

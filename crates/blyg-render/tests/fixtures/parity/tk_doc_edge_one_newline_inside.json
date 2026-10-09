@@ -1,0 +1,25 @@
+{
+  "name": "tk_doc_edge_one_newline_inside",
+  "kind": "fragment",
+  "md": "Intro.\n[TK]a[=]stays inline[/TK]\n\n[TK]b[=]block at the end[/TK]\n",
+  "html": "<p>Intro.\n<span class=\"blyg-tk-gen\">stays inline</span></p>\n<div class=\"blyg-tk-gen\"><p>block at the end</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "a",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      },
+      {
+        "instruction": "b",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

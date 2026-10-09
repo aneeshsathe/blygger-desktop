@@ -1,0 +1,19 @@
+{
+  "name": "tk_doc_edge_leading_newline",
+  "kind": "fragment",
+  "md": "\n[TK]write a line[=]A generated line.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>A generated line.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write a line",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,22 @@
+{
+  "name": "link_heading_label_thread",
+  "kind": "thread",
+  "md": "Notes on [[01j9zq3k4m5n6p7q8r9s0t1vh1]] and [[02abcdefghjkmnpqrstvwxyz06]].\n\n![[02abcdefghjkmnpqrstvwxyz06]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1vh1]]",
+  "html": "<p>Notes on <a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1vh1/\">Field notes &amp; tides</a> and <a href=\"https://cms.example.net/2026/10/templated-post/\">A templated post</a>.</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz06\" data-blyg-version=\"4\" data-blyg-origin=\"https://blyg.example.com/\">\n<h2>A templated post</h2>\n<p>Its permalink lives outside the blyg's mount.</p>\n\n\n<p class=\"provenance\"><a href=\"https://cms.example.net/2026/10/templated-post/\">from <em>Example Notes</em> ↗</a> · snapshot of v4</p></blockquote>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vh1\" data-blyg-version=\"2\">\n<h1>Field <em>notes</em> &amp; tides</h1>\n<p>The harbour fills twice a day.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/t/01j9zq3k4m5n6p7q8r9s0t1vh1/\">thread ↗</a> · snapshot of v2</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "02abcdefghjkmnpqrstvwxyz06",
+      "version": 4,
+      "origin": "https://blyg.example.com/"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vh1",
+      "version": 2
+    }
+  ],
+  "errors": []
+}

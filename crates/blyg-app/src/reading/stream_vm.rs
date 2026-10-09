@@ -266,8 +266,9 @@ pub fn cited<'a>(post: &'a ReadingItem, id: &str) -> Option<&'a blyg_core::Cited
         .and_then(|t| t.cited.as_ref())
 }
 
-/// The text an `[[id]]` link shows: the held target's excerpt in quotes,
-/// as the published page's anchor reads, else a neutral label.
+/// The text an `[[id]]` link shows, as the published page's anchor reads:
+/// the held target's opening heading, else its excerpt in quotes, else a
+/// neutral label.
 pub fn link_label(held: Option<&ReadingItem>) -> String {
     let Some(h) = held else {
         return blyg_render::LINK_LABEL.to_string();
@@ -277,12 +278,7 @@ pub fn link_label(held: Option<&ReadingItem>) -> String {
     } else {
         h.content_html.clone()
     };
-    let e = blyg_render::excerpt_from_html(&html, 60);
-    if e.is_empty() {
-        blyg_render::LINK_LABEL.to_string()
-    } else {
-        format!("“{e}”")
-    }
+    blyg_render::anchor_label(&html).unwrap_or_else(|| blyg_render::LINK_LABEL.to_string())
 }
 
 /// The origin and version a quote box names: the `transclusions[]` entry
@@ -516,6 +512,8 @@ mod tests {
         held.content_md = "Tides keep *time*.".into();
         held.content_html = String::new();
         assert_eq!(link_label(Some(&held)), "“Tides keep time.”");
+        held.content_md = "# Tide *tables*\n\nTides keep time.".into();
+        assert_eq!(link_label(Some(&held)), "Tide tables");
     }
 
     #[test]

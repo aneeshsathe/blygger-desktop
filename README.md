@@ -78,6 +78,9 @@ Changes must keep Windows building too: CI runs the same checks on
 This is a public repository: use `blyg.example.com` and invented sample
 content, never personal data, and never test against a real blyg.
 
+The people who have contributed are listed on
+[Contributors](https://aneeshsathe.github.io/blygger-desktop/contributors.html).
+
 ## License
 
 Different parts of the project are under different licenses:

@@ -31,7 +31,9 @@ mod transclusion;
 mod util;
 
 pub use embeds::{embed_css, preview_script, youtube_facade_html, youtube_id};
-pub use links::{excerpt_from_html, normalize_selection, plain_text_from_html, selection_text};
+pub use links::{
+    anchor_label, excerpt_from_html, normalize_selection, plain_text_from_html, selection_text,
+};
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
     Attachment, Citation, ShellOpts, article_html, csp, fork_lineage_html, media_html, page_shell,
