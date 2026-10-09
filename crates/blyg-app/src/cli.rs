@@ -371,7 +371,7 @@ fn list_extensions(store: &ConfigStore) -> String {
 /// an enabled extension lacks or never asks for, a setting it doesn't
 /// read, and broken manifests. Never errors: an extension problem never
 /// stops Burrow from starting.
-fn extension_diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
+pub(crate) fn extension_diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
     let loaded = store.loaded();
     let view = extension_view(store);
     let warn = |file: &std::path::Path, line: usize, message: String| Diagnostic {

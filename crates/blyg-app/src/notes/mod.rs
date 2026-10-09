@@ -323,6 +323,13 @@ impl Notes {
         })
     }
 
+    /// --- extensions --- The drawer has the keyboard.
+    pub fn has_keyboard(&self, window: &Window, cx: &App) -> bool {
+        self.focus
+            .as_ref()
+            .is_some_and(|f| f.contains_focused(window, cx))
+    }
+
     /// The editor's text ("" before the drawer was first opened).
     pub fn text(&self, cx: &App) -> String {
         self.editor

@@ -112,6 +112,11 @@ impl MainView {
             *sel = (*sel).min(found.len().saturating_sub(1));
             *rows = found;
         }
+        // --- extensions --- the notes chip searches the library too.
+        if let Some(RSheet::Quote { input, .. }) = self.reading.sheet.as_ref() {
+            let q = input.read(cx).value().to_string();
+            self.ext_picker_search(q, cx);
+        }
     }
 
     /// Did the edit that just happened type the `[` of a line-leading `![[`
@@ -198,7 +203,11 @@ impl MainView {
     }
 
     fn move_quote(&mut self, delta: isize, cx: &mut Context<Self>) {
-        let n = self.quote_candidates(cx).len();
+        let n = if self.ext_picker_on() {
+            self.ext.lib.picker_hits.len() // --- extensions ---
+        } else {
+            self.quote_candidates(cx).len()
+        };
         if let Some(RSheet::Quote { sel, .. }) = self.reading.sheet.as_mut()
             && n > 0
         {
@@ -208,6 +217,21 @@ impl MainView {
     }
 
     pub(crate) fn pick_quote(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- extensions --- a note: quoted as text (never `![[…]]`).
+        if self.ext_picker_on()
+            && let Some(RSheet::Quote {
+                target,
+                sel,
+                kind: PickKind::Quote,
+                ..
+            }) = self.reading.sheet.as_ref()
+        {
+            let (target, sel) = (target.clone(), *sel);
+            self.reading.sheet = None;
+            self.ext_picker_pick(sel, target, window, cx);
+            cx.notify();
+            return;
+        }
         let cands = self.quote_candidates(cx);
         let Some(RSheet::Quote {
             target,
@@ -302,19 +326,36 @@ impl MainView {
                 gpui_kit::base::input::Input::new(input).into_any_element(),
                 false,
             ))
-            .child(div().mt(px(8.)).child(picker::filter_row(p, &filters, &subs, set)))
+            .child(
+                div()
+                    .mt(px(8.))
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .child(div().flex_1().child(picker::filter_row(p, &filters, &subs, set)))
+                    // --- extensions --- notes, read-only, quoted as text.
+                    .when(kind == PickKind::Quote, |d| {
+                        d.children(self.ext_picker_chip(input.read(cx).value().to_string(), cx))
+                    }),
+            )
             .child(
                 div()
                     .id("quote-list")
                     .mt(px(8.))
                     .max_h(px(260.))
                     .overflow_y_scroll()
-                    .when(cands.is_empty(), |d| {
-                        d.child(div().p(px(8.)).italic().text_color(p.muted).child(
-                            "Nothing held matches. Links and quotes come from your published posts and your blyg subscriptions.",
-                        ))
-                    })
-                    .children(picker::rows(p, &cands, sel, pick)),
+                    .map(|d| {
+                        // --- extensions --- the notes chip shows notes instead.
+                        if self.ext_picker_on() && kind == PickKind::Quote {
+                            return d.children(self.ext_picker_rows(sel, cx));
+                        }
+                        d.when(cands.is_empty(), |d| {
+                            d.child(div().p(px(8.)).italic().text_color(p.muted).child(
+                                "Nothing held matches. Links and quotes come from your published posts and your blyg subscriptions.",
+                            ))
+                        })
+                        .children(picker::rows(p, &cands, sel, pick))
+                    }),
             )
             .child(self.keys_row(vec![
                 self.key_hint("↑↓", "choose"),

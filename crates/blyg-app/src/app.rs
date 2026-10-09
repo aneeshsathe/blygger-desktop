@@ -96,6 +96,9 @@ pub(crate) mod browser;
 // --- notes --- (the notes drawer; hooks marked the same way)
 #[path = "notes/mod.rs"]
 pub(crate) mod notes;
+// --- extensions --- (the host, its sheets and the notes library; hooks marked the same way)
+#[path = "extensions/mod.rs"]
+pub(crate) mod extensions;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -249,6 +252,8 @@ pub struct MainView {
     browser: browser::Browser,
     // --- notes ---
     notes: notes::Notes,
+    // --- extensions ---
+    ext: extensions::Extensions,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -346,8 +351,9 @@ impl MainView {
                 .map(|c| c.data_dir.clone()),
         );
         let mut this = Self {
-            browser, // --- browser ---
-            notes,   // --- notes ---
+            browser,                 // --- browser ---
+            notes,                   // --- notes ---
+            ext: Default::default(), // --- extensions ---
             reading,
             onboarding: onboarding::State::new(cx), // --- onboarding ---
             profiles: Default::default(),           // --- profiles ---
@@ -397,6 +403,7 @@ impl MainView {
         this.studio_init(window, cx);
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
+        this.ext_init(window, cx); // --- extensions ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -588,6 +595,7 @@ impl MainView {
             msg = format!("{msg} · {n} problem{}", if n == 1 { "" } else { "s" });
         }
         self.apply_prefs_live(window, cx);
+        self.ext_reload(window, cx); // --- extensions ---
         self.show_toast(msg, None, cx);
     }
 
@@ -1397,6 +1405,7 @@ impl MainView {
                 }
                 match result {
                     Ok(out) => {
+                        v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
                         let head = match &note_opt {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
@@ -1986,6 +1995,7 @@ impl Render for MainView {
             .map(|d| self.discard_actions(d, cx)) // --- delete & withdraw ---
             .map(|d| self.browser_actions(d, cx)) // --- browser ---
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
+            .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .size_full()
             .relative()
             .flex()
@@ -2038,6 +2048,7 @@ impl Render for MainView {
             .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
+            .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
@@ -2608,6 +2619,7 @@ impl MainView {
             )
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
             .children(self.render_server_notice())
+            .children(self.render_ext_notice(cx)) // --- extensions ---
             .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(
@@ -3540,6 +3552,7 @@ impl MainView {
                     .into_any_element(),
             ))
             .child(self.render_ai_settings_row(cx)) // --- AI ---
+            .child(self.render_ext_settings_row(cx)) // --- extensions ---
             .child(row(
                 "CONFIG FILE",
                 div()
