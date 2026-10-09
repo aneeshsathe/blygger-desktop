@@ -1,0 +1,12 @@
+{
+  "name": "link_imported_absolute_page",
+  "kind": "fragment",
+  "md": "[[02abcdefghjkmnpqrstvwxyz06]]",
+  "html": "<p><a href=\"https://cms.example.net/2026/10/templated-post/\">A templated post</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

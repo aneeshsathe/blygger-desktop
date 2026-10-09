@@ -200,5 +200,15 @@
   {"name": "tr_sanitize_markdown", "kind": "thread", "md": "| a | b |\n|--:|:-:|\n| 1 | 2 |\n\n3. three\n4. four\n\n![pic](https://images.example.org/p.png) and ![local](/blyg/media/x.png)\n\nhttps://www.youtube.com/watch?v=Zx9_abc-123\n\n[mail](mailto:a@example.org) [tel](tel:+15550100) [rel](/blyg/f/x/)\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
   {"name": "tr_sanitize_target", "kind": "thread", "md": "Quoting a stranger:\n\n![[01j9zq3k4m5n6p7q8r9s0t1vss]]\n\nAnd [[01j9zq3k4m5n6p7q8r9s0t1vss]] as a link."},
   {"name": "tr_sanitize_tk_block", "kind": "thread", "md": "[TK]x[=]| h |\n|:-|\n| c |[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"},
-  {"name": "link_in_tk_code", "kind": "fragment", "md": "[TK]x[=]`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` and [[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nAnd `[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]`."}
+  {"name": "link_in_tk_code", "kind": "fragment", "md": "[TK]x[=]`[[01j9zq3k4m5n6p7q8r9s0t1v2w]]` and [[01j9zq3k4m5n6p7q8r9s0t1v2w]][/TK]\n\nAnd `[[0zzzzzzzzzzzzzzzzzzzzzzzzz]]`."},
+  {"name": "link_heading_label", "kind": "fragment", "md": "See [[01j9zq3k4m5n6p7q8r9s0t1vh1]], [[01j9zq3k4m5n6p7q8r9s0t1vh2]], [[01j9zq3k4m5n6p7q8r9s0t1vh3]], [[01j9zq3k4m5n6p7q8r9s0t1vh4]] and [[01j9zq3k4m5n6p7q8r9s0t1vh5]]."},
+  {"name": "link_heading_label_thread", "kind": "thread", "md": "Notes on [[01j9zq3k4m5n6p7q8r9s0t1vh1]] and [[02abcdefghjkmnpqrstvwxyz06]].\n\n![[02abcdefghjkmnpqrstvwxyz06]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1vh1]]"},
+  {"name": "link_imported_absolute_page", "kind": "fragment", "md": "[[02abcdefghjkmnpqrstvwxyz06]]"},
+  {"name": "tk_doc_edge_trailing_newline", "kind": "fragment", "md": "[TK]write a line[=]A generated line.[/TK]\n"},
+  {"name": "tk_doc_edge_leading_newline", "kind": "fragment", "md": "\n[TK]write a line[=]A generated line.[/TK]"},
+  {"name": "tk_doc_edge_whitespace", "kind": "fragment", "md": " \t\n [TK]write a line[=]A generated line.[/TK] \n \n"},
+  {"name": "tk_doc_edge_ungenerated", "kind": "fragment", "md": "Intro.\n\n[TK]write the ending[/TK]\n"},
+  {"name": "tk_doc_edge_one_newline_inside", "kind": "fragment", "md": "Intro.\n[TK]a[=]stays inline[/TK]\n\n[TK]b[=]block at the end[/TK]\n"},
+  {"name": "tk_doc_edge_text_after", "kind": "fragment", "md": "\n[TK]a[=]inline, text follows[/TK]\nmore text"},
+  {"name": "tk_doc_edge_thread", "kind": "thread", "md": "[TK]open[=]Generated opening.[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]close[=]Generated closing.[/TK]\n"}
 ]

@@ -16,6 +16,33 @@ pub fn escape_html(s: &str) -> String {
     out
 }
 
+/// importer/util.ts `blygItemUrl`: an imported item's own `page` when it has
+/// one (an absolute http(s) `page` as-is, since studio 0.36's templated blygs,
+/// §16.6e; a relative one origin-relative, a leading `/` dropped), else this
+/// client's `{origin}{f|t}/{id}/` convention.
+pub fn blyg_item_url(origin: &str, kind: crate::ItemKind, id: &str, page: Option<&str>) -> String {
+    match page.filter(|p| !p.is_empty()) {
+        Some(p) if is_http_url(p) => p.to_string(),
+        Some(p) => format!("{origin}{}", p.strip_prefix('/').unwrap_or(p)),
+        None => {
+            let seg = if kind == crate::ItemKind::Thread {
+                "t"
+            } else {
+                "f"
+            };
+            format!("{origin}{seg}/{id}/")
+        }
+    }
+}
+
+/// `/^https?:\/\//i`.
+fn is_http_url(s: &str) -> bool {
+    ["http://", "https://"].iter().any(|p| {
+        s.get(..p.len())
+            .is_some_and(|head| head.eq_ignore_ascii_case(p))
+    })
+}
+
 /// The Worker's `escapeHref` (util.ts, studio 0.28): an http(s) or mailto
 /// URL (relative ones resolve to https), HTML-escaped; anything else is `#`.
 pub fn escape_href(value: &str) -> String {
