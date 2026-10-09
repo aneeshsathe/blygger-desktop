@@ -797,6 +797,8 @@ dependencies = [
  "block2 0.6.2",
  "blyg-ai",
  "blyg-core",
+ "blyg-ext",
+ "blyg-ext-notes",
  "blyg-render",
  "chrono",
  "ed25519-dalek",
@@ -834,6 +836,28 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "blyg-ext"
+version = "0.9.0"
+dependencies = [
+ "blyg-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml 1.1.6+spec-1.1.0",
+]
+
+[[package]]
+name = "blyg-ext-notes"
+version = "0.9.0"
+dependencies = [
+ "blyg-core",
+ "blyg-ext",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
