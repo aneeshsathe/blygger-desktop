@@ -210,6 +210,9 @@ pub enum ExtState {
     Stopped,
 }
 
+/// How long `extension/macro.prepare` may take.
+pub const MACRO_PREPARE_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// One extension, for a manage-extensions sheet or `+list-extensions`.
 #[derive(Debug, Clone)]
 pub struct ExtensionStatus {
@@ -226,6 +229,9 @@ pub struct ExtensionStatus {
     pub commands: Vec<CommandSpec>,
     pub sources: Vec<SourceSpec>,
     pub libraries: Vec<LibrarySpec>,
+    /// From the manifest (macros aren't replaced at `initialize`).
+    pub sites: Vec<SiteSpec>,
+    pub macros: Vec<MacroSpec>,
 }
 
 /// A palette row: run with `Host::command(&ext, &command.id, …)`.
@@ -233,6 +239,15 @@ pub struct ExtensionStatus {
 pub struct PaletteEntry {
     pub ext: String,
     pub command: CommandSpec,
+}
+
+/// A browser macro a running extension offers ([`Host::macros`]), with the
+/// site it runs on. The app runs `spec.steps` itself.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MacroEntry {
+    pub ext: String,
+    pub site: SiteSpec,
+    pub spec: MacroSpec,
 }
 
 /// A library a running extension offers.
@@ -597,6 +612,8 @@ impl Host {
                 commands: contrib.commands,
                 sources: contrib.sources,
                 libraries: contrib.libraries,
+                sites: m.sites.clone(),
+                macros: m.macros.clone(),
             });
         }
         for name in &st.config.enabled {
@@ -614,6 +631,8 @@ impl Host {
                     commands: vec![],
                     sources: vec![],
                     libraries: vec![],
+                    sites: vec![],
+                    macros: vec![],
                 });
             }
         }
@@ -645,6 +664,58 @@ impl Host {
             }
         }
         out
+    }
+
+    /// The browser macros of running extensions whose site origin the user
+    /// granted (`browser.automate:<origin>`), by extension name then
+    /// manifest order. The palette filters them with
+    /// [`MacroSpec::applies`]; a macro whose grant is missing isn't listed.
+    pub fn macros(&self) -> Vec<MacroEntry> {
+        let st = lock(&self.inner.state);
+        let mut out = vec![];
+        for (name, e) in &st.running {
+            if *lock(&e.state) != ExtState::Running {
+                continue;
+            }
+            for (spec, site) in e.installed.manifest.macros_with_sites() {
+                if e.allows(&Capability::BrowserAutomate(site.origin.clone())) {
+                    out.push(MacroEntry {
+                        ext: name.clone(),
+                        site: site.clone(),
+                        spec: spec.clone(),
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    /// One macro of a running extension, if its site is granted: what the
+    /// app checks again just before a run.
+    pub fn macro_entry(&self, ext: &str, id: &str) -> Option<MacroEntry> {
+        self.macros()
+            .into_iter()
+            .find(|m| m.ext == ext && m.spec.id == id)
+    }
+
+    /// Ask the extension to shape a macro's text
+    /// (`extension/macro.prepare`, 10 s). `Ok(None)` when it doesn't
+    /// implement the method: use `params.text` (the expanded template).
+    pub fn macro_prepare(
+        &self,
+        ext: &str,
+        params: &MacroPrepareParams,
+    ) -> Result<Option<MacroPrepareResult>, ExtError> {
+        match self.request(
+            ext,
+            methods::MACRO_PREPARE,
+            to_value(params).map_err(ExtError::Rpc)?,
+            MACRO_PREPARE_TIMEOUT,
+        ) {
+            Ok(r) => Ok(Some(r)),
+            Err(ExtError::Rpc(e)) if e.code == codes::METHOD_NOT_FOUND => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// The libraries of running extensions, for the notes panel.
@@ -1165,7 +1236,7 @@ fn answer(
 ) -> Result<Value, RpcError> {
     let name = ext.name().to_string();
     let granted = ext.granted();
-    crate::api::check(&granted, method)?;
+    crate::api::check(&granted, method, &p)?;
     match method {
         methods::TOAST => {
             let p: ToastParams = params(p)?;

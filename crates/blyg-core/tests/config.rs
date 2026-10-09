@@ -763,6 +763,101 @@ fn every_fixed_capability_is_accepted() {
 }
 
 #[test]
+fn browser_capabilities_parse_and_origins_normalise() {
+    use blyg_core::config::parse::{normalize_origin, url_origin, valid_capability};
+    let l = load_text(
+        "extension-allow = x1 browser.capture\n\
+         extension-allow = x1 browser.automate:HTTPS://Social.Example.com:443/\n\
+         extension-allow = x1 browser.automate:http://127.0.0.1:8123\n\
+         extension-allow = x1 browser.automate:https://social.example.com/notes\n\
+         extension-allow = x1 browser.automate:ftp://social.example.com\n\
+         extension-allow = x1 browser.automate:\n\
+         extension-allow = x1 browser.automate:https://*.example.com\n\
+         extension-allow = x1 Browser.Capture\n",
+    );
+    let lines: Vec<usize> = l.diagnostics.iter().map(|d| d.line).collect();
+    assert_eq!(lines, vec![4, 5, 6, 7, 8], "{:?}", l.diagnostics);
+    let msg = |line: usize| {
+        l.diagnostics
+            .iter()
+            .find(|d| d.line == line)
+            .unwrap()
+            .message
+            .clone()
+    };
+    assert!(msg(4).contains("no path"), "{}", msg(4));
+    assert!(msg(5).contains("https://"), "{}", msg(5));
+    assert!(
+        msg(8).contains("did you mean `browser.capture`"),
+        "{}",
+        msg(8)
+    );
+    let allows = &l.config.extension_allows()["x1"];
+    let got: Vec<&str> = allows.iter().map(String::as_str).collect();
+    assert_eq!(
+        got,
+        [
+            "browser.automate:http://127.0.0.1:8123",
+            "browser.automate:https://social.example.com",
+            "browser.capture",
+        ],
+        "stored normalised"
+    );
+
+    for (raw, want) in [
+        ("https://social.example.com", "https://social.example.com"),
+        ("https://social.example.com/", "https://social.example.com"),
+        ("HTTPS://SOCIAL.Example.COM", "https://social.example.com"),
+        (
+            "https://social.example.com:443",
+            "https://social.example.com",
+        ),
+        ("http://social.example.com:80/", "http://social.example.com"),
+        (
+            "https://social.example.com:8443",
+            "https://social.example.com:8443",
+        ),
+        ("http://127.0.0.1:8123", "http://127.0.0.1:8123"),
+        ("http://[::1]:8123", "http://[::1]:8123"),
+        ("https://bücher.example", "https://xn--bcher-kva.example"),
+        (
+            "  https://social.example.com  ",
+            "https://social.example.com",
+        ),
+    ] {
+        assert_eq!(normalize_origin(raw).as_deref(), Ok(want), "{raw}");
+    }
+    for bad in [
+        "",
+        "social.example.com",
+        "ftp://social.example.com",
+        "file:///tmp",
+        "https://",
+        "https://social.example.com/notes",
+        "https://social.example.com/?q=1",
+        "https://social.example.com/#top",
+        "https://social.example.com?",
+        "https://me@social.example.com",
+        "https://me:pw@social.example.com",
+        "about:blank",
+    ] {
+        assert!(normalize_origin(bad).is_err(), "accepted {bad:?}");
+    }
+    assert!(valid_capability(
+        "browser.automate:https://social.example.com"
+    ));
+    assert!(!valid_capability(
+        "browser.automate: https://social.example.com"
+    ));
+    assert!(!valid_capability("browser.automate:"));
+    assert_eq!(
+        url_origin("https://Social.Example.com:443/notes?x=1#y").as_deref(),
+        Some("https://social.example.com")
+    );
+    assert_eq!(url_origin("javascript:alert(1)"), None);
+}
+
+#[test]
 fn consent_write_back_round_trips_the_grants() {
     let mut s = ConfigStore::in_memory("# mine\nextension = markdown-notes\n");
     s.set(&[(

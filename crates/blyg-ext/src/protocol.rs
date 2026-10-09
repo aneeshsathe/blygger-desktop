@@ -33,6 +33,9 @@ pub mod methods {
     pub const LIBRARY_SEARCH: &str = "extension/library.search";
     pub const LIBRARY_READ: &str = "extension/library.read";
     pub const LIBRARY_WRITE: &str = "extension/library.write";
+    /// Optional: shape a macro's text before the preview sheet
+    /// ([`super::MacroPrepareParams`]). Method-not-found = use the template.
+    pub const MACRO_PREPARE: &str = "extension/macro.prepare";
     // host -> extension (notifications)
     pub const ITEM_PUBLISHED: &str = "burrow/itemPublished";
     pub const ITEM_SAVED: &str = "burrow/itemSaved";
@@ -48,6 +51,13 @@ pub mod methods {
     pub const OPEN_ITEM: &str = "burrow/openItem";
     pub const TOAST: &str = "burrow/toast";
     pub const REQUEST_CAPABILITY: &str = "burrow/requestCapability";
+    /// The page open in the browser pane ([`super::PageCapture`]); needs
+    /// `browser.capture`, and only while one of the extension's commands
+    /// runs. `-32004` when the pane has no page.
+    pub const BROWSER_PAGE: &str = "burrow/browser.page";
+    /// Load a URL in the pane ([`super::BrowserOpenParams`]); needs
+    /// `browser.automate:<the URL's origin>`.
+    pub const BROWSER_OPEN: &str = "burrow/browser.open";
 }
 
 /// JSON-RPC error codes. The `-326xx` ones are JSON-RPC's own.
@@ -67,6 +77,9 @@ pub mod codes {
     pub const STALE: i64 = -32002;
     /// Burrow refused (the backend's own error, e.g. not found).
     pub const REFUSED: i64 = -32003;
+    /// `burrow/browser.page` with no page open in the browser pane (or not
+    /// while one of the extension's commands runs).
+    pub const NO_PAGE: i64 = -32004;
 }
 
 /// A JSON-RPC error object.
@@ -189,6 +202,10 @@ pub enum When {
     Reading,
     /// The notes drawer.
     Notes,
+    /// The posts screen with a published item open (cross-posting
+    /// macros). The palette checks the item's status: see
+    /// [`CommandSpec::applies_to`].
+    Published,
 }
 
 /// The screen a command runs from.
@@ -217,13 +234,29 @@ pub struct CommandSpec {
 
 impl CommandSpec {
     /// Whether the palette offers it on `screen` (`has_item`: an item is
-    /// open in the editor).
+    /// open in the editor). Without the item's status, `published` is
+    /// treated like `editor`; [`CommandSpec::applies_to`] knows better.
     pub fn applies(&self, screen: Screen, has_item: bool) -> bool {
-        match self.when {
+        self.when.applies(screen, has_item, has_item)
+    }
+
+    /// [`CommandSpec::applies`] knowing whether the open item is published.
+    pub fn applies_to(&self, screen: Screen, has_item: bool, published: bool) -> bool {
+        self.when.applies(screen, has_item, published)
+    }
+}
+
+impl When {
+    /// Whether something filed under this applies on `screen`, with an item
+    /// open (`has_item`) that is published (`published`; implies
+    /// `has_item`).
+    pub fn applies(self, screen: Screen, has_item: bool, published: bool) -> bool {
+        match self {
             When::Always => true,
             When::Editor => screen == Screen::Posts && has_item,
             When::Reading => screen == Screen::Reading,
             When::Notes => screen == Screen::Notes,
+            When::Published => screen == Screen::Posts && has_item && published,
         }
     }
 }
@@ -671,6 +704,165 @@ pub struct CapabilityAnswer {
     pub granted: bool,
 }
 
+// ---------------------------------------------------------------- browser
+//
+// Sites and macros are manifest contributions (`[[sites]]`, `[[macros]]`,
+// kebab-case keys as in the rest of `extension.toml`; the camelCase
+// spellings are accepted too). A macro is a declarative recipe the host
+// runs in the browser pane ([`crate::recipe`]); the extension never sees
+// the page of a signed-in site, and only `extension/macro.prepare` (the
+// text) goes over the wire.
+
+/// A website an extension's macros run on (manifest `[[sites]]`). Its
+/// `origin` must be declared as `browser.automate:<origin>`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct SiteSpec {
+    pub id: String,
+    pub title: String,
+    /// Normalised by the manifest loader (`https://social.example.com`).
+    pub origin: String,
+    /// Where the user signs in by hand; on `origin`.
+    pub home: String,
+    /// A selector that, when it matches, means "signed out": the run stops
+    /// and asks the user to sign in in the pane.
+    #[serde(default, alias = "signedOut", skip_serializing_if = "Option::is_none")]
+    pub signed_out: Option<String>,
+    /// `false`: the browser pane's content blocking is off for this origin
+    /// during a run only (never saved).
+    #[serde(default = "yes", alias = "contentBlocking")]
+    pub content_blocking: bool,
+    /// The shortest gap between two runs against this site, as a duration
+    /// (`"60s"`, `"2m"`); validated by the manifest loader.
+    #[serde(
+        default,
+        alias = "minInterval",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub min_interval: Option<String>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl SiteSpec {
+    /// The parsed `min-interval` (zero when absent or invalid; the
+    /// manifest loader refuses an invalid one).
+    pub fn min_interval(&self) -> std::time::Duration {
+        self.min_interval
+            .as_deref()
+            .and_then(|s| crate::recipe::parse_duration(s).ok())
+            .unwrap_or_default()
+    }
+}
+
+/// A macro (manifest `[[macros]]`): an ⇧⌘P row that fills in a post on a
+/// site and, after the user confirms, submits it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct MacroSpec {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub detail: String,
+    /// A [`SiteSpec::id`] of the same manifest.
+    pub site: String,
+    /// Where the palette offers it; `published` by default.
+    #[serde(default = "published")]
+    pub when: When,
+    /// The text to post, before `extension/macro.prepare`:
+    /// `{{title}}`, `{{excerpt}}` and `{{permalink}}` are filled in
+    /// ([`crate::recipe::expand`]).
+    #[serde(default = "default_template")]
+    pub template: String,
+    /// When the maintainer last checked the selectors by hand, as free
+    /// text (`"2026-10-01"`); shown on the preview sheet and in errors.
+    #[serde(default = "unverified")]
+    pub tested: String,
+    pub steps: Vec<crate::recipe::Step>,
+}
+
+fn published() -> When {
+    When::Published
+}
+
+fn default_template() -> String {
+    crate::recipe::DEFAULT_TEMPLATE.into()
+}
+
+fn unverified() -> String {
+    "unverified".into()
+}
+
+impl MacroSpec {
+    /// Whether the palette offers it (see [`When::applies`]).
+    pub fn applies(&self, screen: Screen, has_item: bool, published: bool) -> bool {
+        self.when.applies(screen, has_item, published)
+    }
+}
+
+/// `extension/macro.prepare` (host -> extension, 10 s): shape the text
+/// before the preview sheet. The answer's `text` replaces the template's;
+/// the user still sees and edits it. Method-not-found = use `text`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroPrepareParams {
+    /// The [`MacroSpec::id`].
+    #[serde(rename = "macro")]
+    pub macro_id: String,
+    /// The item, with `contentMd`.
+    pub item: ItemSummary,
+    pub permalink: String,
+    /// The macro's template, expanded.
+    pub text: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacroPrepareResult {
+    pub text: String,
+    /// A line for the preview sheet ("cut to 280 characters").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+/// `burrow/browser.page` (needs `browser.capture`): the page open in the
+/// browser pane, and what Clip Page puts in a draft. Never cookies, storage
+/// or headers.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageCapture {
+    pub url: String,
+    /// `<link rel=canonical>`, when the page names one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canonical_url: Option<String>,
+    #[serde(default)]
+    pub title: String,
+    /// The selected text; empty when nothing is selected.
+    #[serde(default)]
+    pub selection: String,
+    /// The readable main content as Markdown (capped).
+    #[serde(default)]
+    pub markdown: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+}
+
+/// `burrow/browser.open` (needs `browser.automate:<the URL's origin>`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserOpenParams {
+    pub url: String,
+}
+
+/// The answer to `burrow/browser.open`: the URL the pane is loading.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserOpened {
+    pub url: String,
+}
+
 // ------------------------------------------------------------------ names
 
 pub fn kind_str(k: blyg_core::Kind) -> &'static str {
@@ -766,5 +958,118 @@ mod tests {
         let e = RpcError::permission_denied("items.write");
         assert_eq!(e.code, codes::PERMISSION_DENIED);
         assert_eq!(e.data.unwrap()["capability"], "items.write");
+    }
+
+    #[test]
+    fn published_is_editor_with_a_public_item() {
+        let c = CommandSpec {
+            id: "x".into(),
+            title: "X".into(),
+            detail: String::new(),
+            when: When::Published,
+            key: None,
+        };
+        assert!(c.applies_to(Screen::Posts, true, true));
+        assert!(!c.applies_to(Screen::Posts, true, false));
+        assert!(!c.applies_to(Screen::Posts, false, true));
+        assert!(!c.applies_to(Screen::Reading, true, true));
+        assert!(
+            c.applies(Screen::Posts, true),
+            "without status: like editor"
+        );
+        assert_eq!(
+            serde_json::to_value(When::Published).unwrap(),
+            json!("published")
+        );
+    }
+
+    #[test]
+    fn browser_messages_round_trip_and_ignore_the_unknown() {
+        let page: PageCapture = serde_json::from_value(json!({
+            "url": "https://news.example.com/a",
+            "canonicalUrl": "https://news.example.com/a?ref=x",
+            "title": "A story",
+            "selection": "",
+            "markdown": "Text",
+            "author": "Someone",
+            "cookies": "never read",
+        }))
+        .unwrap();
+        assert_eq!(
+            page.canonical_url.as_deref(),
+            Some("https://news.example.com/a?ref=x")
+        );
+        let v = serde_json::to_value(&page).unwrap();
+        assert!(v.get("cookies").is_none());
+        assert_eq!(v["canonicalUrl"], "https://news.example.com/a?ref=x");
+        assert_eq!(serde_json::from_value::<PageCapture>(v).unwrap(), page);
+        let bare: PageCapture =
+            serde_json::from_value(json!({ "url": "https://news.example.com/" })).unwrap();
+        assert!(bare.canonical_url.is_none() && bare.author.is_none());
+        let v = serde_json::to_value(&bare).unwrap();
+        assert!(v.get("canonicalUrl").is_none() && v.get("author").is_none());
+
+        let item = ItemSummary {
+            id: "L1".into(),
+            server_id: Some("S1".into()),
+            kind: "fragment".into(),
+            status: "public".into(),
+            version: 2,
+            dirty: false,
+            created: "2026-10-01T00:00:00Z".into(),
+            updated: "2026-10-02T00:00:00Z".into(),
+            permalink: Some("https://blyg.example.com/p/1".into()),
+            title: "Hello".into(),
+            content_hash: "sha256:00".into(),
+            content_md: Some("Hello".into()),
+        };
+        let p = MacroPrepareParams {
+            macro_id: "cross-post-note".into(),
+            item,
+            permalink: "https://blyg.example.com/p/1".into(),
+            text: "Hello\n\nhttps://blyg.example.com/p/1".into(),
+        };
+        let mut v = serde_json::to_value(&p).unwrap();
+        assert_eq!(v["macro"], "cross-post-note");
+        assert_eq!(v["item"]["contentMd"], "Hello");
+        v["somethingNew"] = json!(true);
+        assert_eq!(serde_json::from_value::<MacroPrepareParams>(v).unwrap(), p);
+        let r: MacroPrepareResult =
+            serde_json::from_value(json!({ "text": "t", "later": [1] })).unwrap();
+        assert_eq!(r.note, None);
+        let v = serde_json::to_value(&r).unwrap();
+        assert!(v.get("note").is_none());
+        let o: BrowserOpenParams =
+            serde_json::from_value(json!({ "url": "https://social.example.com/", "tab": 2 }))
+                .unwrap();
+        assert_eq!(o.url, "https://social.example.com/");
+        assert_eq!(methods::BROWSER_PAGE, "burrow/browser.page");
+        assert_eq!(methods::BROWSER_OPEN, "burrow/browser.open");
+        assert_eq!(methods::MACRO_PREPARE, "extension/macro.prepare");
+        assert_eq!(codes::NO_PAGE, -32004);
+    }
+
+    #[test]
+    fn sites_and_macros_round_trip() {
+        let site: SiteSpec = toml::from_str(
+            "id = \"s\"\ntitle = \"S\"\norigin = \"https://social.example.com\"\n\
+             home = \"https://social.example.com/\"\nfuture = 1\n",
+        )
+        .unwrap();
+        assert!(site.content_blocking && site.signed_out.is_none());
+        assert_eq!(site.min_interval(), std::time::Duration::ZERO);
+        let v = serde_json::to_value(&site).unwrap();
+        assert_eq!(v["content-blocking"], true);
+        assert_eq!(serde_json::from_value::<SiteSpec>(v).unwrap(), site);
+        let m: MacroSpec = toml::from_str(
+            "id = \"m\"\ntitle = \"M\"\nsite = \"s\"\n\
+             steps = [{ do = \"open\", url = \"https://social.example.com/\" }]\n",
+        )
+        .unwrap();
+        assert_eq!(m.when, When::Published);
+        assert!(m.applies(Screen::Posts, true, true));
+        assert!(!m.applies(Screen::Posts, true, false));
+        let back: MacroSpec = serde_json::from_value(serde_json::to_value(&m).unwrap()).unwrap();
+        assert_eq!(back, m);
     }
 }

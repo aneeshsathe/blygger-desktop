@@ -37,25 +37,56 @@ pub trait HostApi: Send + Sync {
 }
 
 /// The capability `method` needs, or `None` for a method the host answers
-/// without one (or doesn't know).
+/// without one (or doesn't know). `burrow/browser.open` needs one that
+/// depends on its URL: see [`required_capability_for`].
 pub fn required_capability(method: &str) -> Option<Capability> {
     Some(match method {
         methods::LIST_ITEMS | methods::GET_ITEM | methods::SEARCH_ITEMS => Capability::ItemsRead,
         methods::CREATE_DRAFT | methods::SAVE_ITEM => Capability::ItemsWrite,
         methods::LIST_READING => Capability::ReadingRead,
         methods::TOAST | methods::OPEN_ITEM => Capability::Ui,
+        methods::BROWSER_PAGE => Capability::BrowserCapture,
         _ => return None,
     })
 }
 
-/// Refuse unless `granted` covers what `method` needs.
-pub fn check(granted: &[Capability], method: &str) -> Result<(), RpcError> {
-    match required_capability(method) {
+/// The capability this call needs, looking at its params where that
+/// matters: `burrow/browser.open {url}` needs `browser.automate:<the URL's
+/// origin>` (a URL that isn't http(s) with a host is invalid params).
+pub fn required_capability_for(method: &str, p: &Value) -> Result<Option<Capability>, RpcError> {
+    if method == methods::BROWSER_OPEN {
+        let open: BrowserOpenParams = params(p.clone())?;
+        return Capability::automate_for_url(&open.url)
+            .map(Some)
+            .ok_or_else(|| {
+                RpcError::invalid_params(format!("{:?} isn't an http(s) URL", open.url))
+            });
+    }
+    Ok(required_capability(method))
+}
+
+/// Refuse unless `granted` covers what `method` (with params `p`) needs.
+pub fn check(granted: &[Capability], method: &str, p: &Value) -> Result<(), RpcError> {
+    match required_capability_for(method, p)? {
         Some(c) if !granted.iter().any(|g| c.covered_by(g)) => {
             Err(RpcError::permission_denied(&c.as_string()))
         }
         _ => Ok(()),
     }
+}
+
+/// Whether `method` is one [`HostApi`] answers from the backend (item and
+/// reading calls), as opposed to a UI hop the app answers.
+fn backend_method(method: &str) -> bool {
+    matches!(
+        method,
+        methods::LIST_ITEMS
+            | methods::GET_ITEM
+            | methods::SEARCH_ITEMS
+            | methods::CREATE_DRAFT
+            | methods::SAVE_ITEM
+            | methods::LIST_READING
+    )
 }
 
 /// The real host API over the app's backend.
@@ -104,7 +135,7 @@ impl HostApi for BackendApi {
         method: &str,
         p: Value,
     ) -> Result<Value, RpcError> {
-        check(granted, method)?;
+        check(granted, method, &p)?;
         let b = &self.backend;
         match method {
             methods::LIST_ITEMS => {
@@ -198,12 +229,98 @@ impl HostApi for NoBlyg {
         _ext: &str,
         granted: &[Capability],
         method: &str,
-        _p: Value,
+        p: Value,
     ) -> Result<Value, RpcError> {
-        check(granted, method)?;
-        match required_capability(method) {
-            Some(_) => Err(RpcError::new(codes::REFUSED, "no blyg is connected")),
-            None => Err(RpcError::method_not_found(method)),
+        check(granted, method, &p)?;
+        if backend_method(method) {
+            Err(RpcError::new(codes::REFUSED, "no blyg is connected"))
+        } else {
+            Err(RpcError::method_not_found(method))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn browser_page_needs_capture() {
+        assert_eq!(
+            required_capability(methods::BROWSER_PAGE),
+            Some(Capability::BrowserCapture)
+        );
+        let e = check(&[Capability::Ui], methods::BROWSER_PAGE, &json!({})).unwrap_err();
+        assert_eq!(e.code, codes::PERMISSION_DENIED);
+        assert_eq!(e.data.unwrap()["capability"], "browser.capture");
+        assert!(
+            check(
+                &[Capability::BrowserCapture],
+                methods::BROWSER_PAGE,
+                &json!({})
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn browser_open_needs_the_urls_own_origin() {
+        let granted = [Capability::BrowserAutomate(
+            "https://social.example.com".into(),
+        )];
+        let open = |url: &str| json!({ "url": url, "futureField": 1 });
+        let ok = |url: &str| check(&granted, methods::BROWSER_OPEN, &open(url));
+        assert!(ok("https://social.example.com/notes").is_ok());
+        assert!(ok("HTTPS://Social.Example.com:443/x?y#z").is_ok());
+        for other in [
+            "https://other.example.com/",
+            "http://social.example.com/",
+            "https://social.example.com:8443/",
+            "https://evil.social.example.com/",
+        ] {
+            assert_eq!(
+                ok(other).unwrap_err().code,
+                codes::PERMISSION_DENIED,
+                "{other}"
+            );
+        }
+        let e = check(
+            &[Capability::BrowserCapture],
+            methods::BROWSER_OPEN,
+            &open("https://social.example.com/"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            e.data.unwrap()["capability"],
+            "browser.automate:https://social.example.com"
+        );
+        for bad in [
+            json!({ "url": "file:///etc/hosts" }),
+            json!({ "url": "javascript:1" }),
+            json!({}),
+        ] {
+            let e = check(&granted, methods::BROWSER_OPEN, &bad).unwrap_err();
+            assert_eq!(e.code, codes::INVALID_PARAMS, "{bad}");
+        }
+        assert_eq!(required_capability(methods::BROWSER_OPEN), None);
+    }
+
+    #[test]
+    fn no_blyg_leaves_browser_calls_to_the_app() {
+        let call = |granted: &[Capability], method: &str| {
+            NoBlyg
+                .call("x", granted, method, json!({}))
+                .unwrap_err()
+                .code
+        };
+        assert_eq!(
+            call(&[Capability::BrowserCapture], methods::BROWSER_PAGE),
+            codes::METHOD_NOT_FOUND
+        );
+        assert_eq!(
+            call(&[Capability::ItemsRead], methods::LIST_ITEMS),
+            codes::REFUSED
+        );
+        assert_eq!(call(&[], methods::LIST_ITEMS), codes::PERMISSION_DENIED);
     }
 }

@@ -635,12 +635,66 @@ pub fn valid_extension_name(name: &str) -> bool {
 
 /// A capability `extension-allow` accepts: one of
 /// [`EXTENSION_CAPABILITIES`](super::keys::EXTENSION_CAPABILITIES) (exact
-/// case), or `fs:` followed by a path.
+/// case), `fs:` followed by a path, or `browser.automate:` followed by an
+/// origin [`normalize_origin`] accepts.
 pub fn valid_capability(cap: &str) -> bool {
+    if let Some(origin) = cap.strip_prefix(super::keys::EXTENSION_AUTOMATE_PREFIX) {
+        return origin.trim() == origin && normalize_origin(origin).is_ok();
+    }
     match cap.strip_prefix(super::keys::EXTENSION_FS_PREFIX) {
         Some(path) => !path.trim().is_empty() && path.trim() == path,
         None => super::keys::EXTENSION_CAPABILITIES.contains(&cap),
     }
+}
+
+/// A website origin, normalised: `http` or `https`, a host, and nothing
+/// after it but an optional `/` (no path, query, fragment or sign-in).
+/// The host is lower-cased (an international name becomes its `xn--`
+/// form) and a default port is dropped, so `HTTPS://Social.Example.com:443/`
+/// is `https://social.example.com`. `Err` says what's wrong.
+pub fn normalize_origin(s: &str) -> Result<String, String> {
+    let s = s.trim();
+    let u = url::Url::parse(s).map_err(|e| format!("`{s}` isn't a URL ({e})"))?;
+    if !matches!(u.scheme(), "http" | "https") {
+        return Err(format!("`{s}` must start with https:// or http://"));
+    }
+    match u.host() {
+        None => return Err(format!("`{s}` has no host")),
+        Some(url::Host::Domain("")) => {
+            return Err(format!("`{s}` has no host"));
+        }
+        Some(url::Host::Domain(d))
+            if !d
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.')) =>
+        {
+            return Err(format!(
+                "`{s}` must name one exact host (letters, digits, '-' and '.'; no wildcards)"
+            ));
+        }
+        Some(_) => {}
+    }
+    if !u.username().is_empty() || u.password().is_some() {
+        return Err(format!("`{s}` must not carry a user name or password"));
+    }
+    if u.path() != "/" || u.query().is_some() || u.fragment().is_some() {
+        return Err(format!(
+            "`{s}` must be an origin only (scheme and host, e.g. \
+             https://social.example.com), with no path, query or #fragment"
+        ));
+    }
+    Ok(u.origin().ascii_serialization())
+}
+
+/// The normalised origin of any http(s) URL with a host (`None` for
+/// anything else): what a URL is checked against a
+/// `browser.automate:<origin>` grant with.
+pub fn url_origin(s: &str) -> Option<String> {
+    let u = url::Url::parse(s.trim()).ok()?;
+    if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none_or(str::is_empty) {
+        return None;
+    }
+    Some(u.origin().ascii_serialization())
 }
 
 /// `<name> <rest>` → `(name, rest)`, split at the first run of whitespace.
@@ -666,6 +720,13 @@ fn validate_allow(v: &str) -> Result<String, String> {
         ));
     };
     check_extension_name(name)?;
+    if let Some(origin) = cap.strip_prefix(super::keys::EXTENSION_AUTOMATE_PREFIX) {
+        let origin = normalize_origin(origin).map_err(|e| format!("browser.automate: {e}"))?;
+        return Ok(format!(
+            "{name} {}{origin}",
+            super::keys::EXTENSION_AUTOMATE_PREFIX
+        ));
+    }
     if !valid_capability(cap) {
         let caps = super::keys::EXTENSION_CAPABILITIES;
         let hint = caps
@@ -674,7 +735,8 @@ fn validate_allow(v: &str) -> Result<String, String> {
             .map(|c| format!(" (did you mean `{c}`?)"))
             .unwrap_or_default();
         return Err(format!(
-            "unknown capability `{cap}`{hint}; one of {}, or fs:<path>",
+            "unknown capability `{cap}`{hint}; one of {}, fs:<path> or \
+             browser.automate:<origin>",
             caps.join(", ")
         ));
     }

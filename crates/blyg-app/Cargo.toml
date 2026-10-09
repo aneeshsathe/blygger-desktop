@@ -60,6 +60,10 @@ objc2-web-kit = { version = "0.3.2", default-features = false, features = [
     "WKNavigationAction",
     "WKNavigationDelegate",
     "WKFrameInfo",
+    # --- browser macros --- evaluateJavaScript:inFrame:inContentWorld:
+    # completionHandler: and callAsyncJavaScript:… (the runner's JS runs in
+    # WKContentWorld.defaultClientWorld, apart from the page's own scripts).
+    "WKContentWorld",
 ] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
@@ -73,6 +77,10 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
     # --- spellcheck ---
     "NSRange",
     "NSTextCheckingResult",
+    # --- browser macros --- callAsyncJavaScript's arguments and the
+    # completion handler's NSNumber results.
+    "NSDictionary",
+    "NSValue",
 ] }
 block2 = "0.6"
 

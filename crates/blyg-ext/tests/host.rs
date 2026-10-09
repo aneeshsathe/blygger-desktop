@@ -48,10 +48,37 @@ when = "editor"
 id = "notes"
 title = "Notes"
 writable = true
-"#,
-        caps.join(", ")
+{}"#,
+        caps.join(", "),
+        if capabilities.contains(&SOCIAL) {
+            BROWSER_TABLES
+        } else {
+            ""
+        }
     )
 }
+
+/// A manifest asking for this gets a site and a macro on it.
+const SOCIAL: &str = "browser.automate:https://social.example.com";
+
+const BROWSER_TABLES: &str = r#"
+[[sites]]
+id = "social"
+title = "Social"
+origin = "https://social.example.com"
+home = "https://social.example.com/notes"
+
+[[macros]]
+id = "cross-post"
+title = "Cross-post to Social…"
+site = "social"
+steps = [
+  { do = "open", url = "https://social.example.com/notes" },
+  { do = "insert", selector = "textarea" },
+  { do = "submit", selector = "button", text = "Post" },
+  { do = "done", text = "Posted" },
+]
+"#;
 
 fn timing() -> Timing {
     Timing {
@@ -251,6 +278,79 @@ fn calls_without_a_grant_are_denied() {
     // There is no publish method at all.
     let r = env.call_host("burrow/publish", json!({"id": "x"}));
     assert_eq!(r["err"]["code"], codes::METHOD_NOT_FOUND);
+}
+
+#[test]
+fn macros_are_listed_only_with_their_site_granted() {
+    let env = setup(
+        &["ui", SOCIAL, "browser.capture"],
+        &["ui", SOCIAL, "browser.capture"],
+        &[],
+    );
+    env.started();
+    let macros = env.host.macros();
+    assert_eq!(macros.len(), 1, "{macros:?}");
+    assert_eq!(macros[0].ext, NAME);
+    assert_eq!(macros[0].site.origin, "https://social.example.com");
+    assert_eq!(macros[0].spec.when, When::Published);
+    assert!(env.host.macro_entry(NAME, "cross-post").is_some());
+    assert!(env.host.macro_entry(NAME, "nope").is_none());
+    // The test extension has no macro.prepare: use the template.
+    let item = ItemSummary {
+        id: "L1".into(),
+        server_id: None,
+        kind: "fragment".into(),
+        status: "public".into(),
+        version: 1,
+        dirty: false,
+        created: String::new(),
+        updated: String::new(),
+        permalink: Some("https://blyg.example.com/p/1".into()),
+        title: "Hi".into(),
+        content_hash: content_hash("Hi"),
+        content_md: Some("Hi".into()),
+    };
+    let prepared = env.host.macro_prepare(
+        NAME,
+        &MacroPrepareParams {
+            macro_id: "cross-post".into(),
+            item,
+            permalink: "https://blyg.example.com/p/1".into(),
+            text: "Hi".into(),
+        },
+    );
+    assert_eq!(prepared, Ok(None));
+    // browser.open is checked against the URL's origin; the app answers it.
+    let r = env.call_host(
+        methods::BROWSER_OPEN,
+        json!({"url": "https://other.example.com/"}),
+    );
+    assert_eq!(r["err"]["code"], codes::PERMISSION_DENIED, "{r}");
+    let r = env.call_host(
+        methods::BROWSER_OPEN,
+        json!({"url": "https://social.example.com/notes"}),
+    );
+    assert_eq!(r["err"]["code"], codes::METHOD_NOT_FOUND, "{r}");
+    let r = env.call_host(methods::BROWSER_PAGE, json!({}));
+    assert_eq!(r["err"]["code"], codes::METHOD_NOT_FOUND, "{r}");
+    let st = env.host.status();
+    assert_eq!(st[0].macros.len(), 1);
+    assert_eq!(st[0].sites[0].id, "social");
+}
+
+#[test]
+fn an_ungranted_site_hides_its_macros_and_the_page() {
+    let env = setup(&["ui", SOCIAL, "browser.capture"], &["ui"], &[]);
+    env.started();
+    assert!(env.host.macros().is_empty());
+    let r = env.call_host(methods::BROWSER_PAGE, json!({}));
+    assert_eq!(r["err"]["code"], codes::PERMISSION_DENIED, "{r}");
+    assert_eq!(r["err"]["data"]["capability"], "browser.capture");
+    let r = env.call_host(
+        methods::BROWSER_OPEN,
+        json!({"url": "https://social.example.com/notes"}),
+    );
+    assert_eq!(r["err"]["code"], codes::PERMISSION_DENIED, "{r}");
 }
 
 #[test]

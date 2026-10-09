@@ -12,7 +12,7 @@
 //! [[commands]]
 //! id = "hello"
 //! title = "Say hello"
-//! when = "always"                   # always | editor | reading | notes
+//! when = "always"                   # always | editor | reading | notes | published
 //!
 //! [[libraries]]
 //! id = "notes"
@@ -23,10 +23,24 @@
 //! key = "greeting"
 //! kind = "text"                     # text | path | bool | number
 //! docs = "What to say."
+//!
+//! [[sites]]                         # needs "browser.automate:<origin>"
+//! id = "social"
+//! title = "Social"
+//! origin = "https://social.example.com"
+//! home = "https://social.example.com/notes"
+//!
+//! [[macros]]                        # see crate::recipe for the steps
+//! id = "cross-post"
+//! title = "Cross-post to Social…"
+//! site = "social"
+//! steps = [ … ]
 //! ```
 //!
 //! Unknown keys are ignored (a newer manifest still loads); invalid values
-//! are errors, reported per file.
+//! are errors, reported per file. A site whose origin isn't declared as a
+//! `browser.automate:` capability, or a macro that breaks a recipe rule
+//! ([`crate::recipe::check_macro`]), makes the whole manifest invalid.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -34,7 +48,10 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use crate::capability::Capability;
-use crate::protocol::{CommandSpec, LibrarySpec, PROTOCOL_VERSION, SourceSpec};
+use crate::protocol::{
+    CommandSpec, LibrarySpec, MacroSpec, PROTOCOL_VERSION, SiteSpec, SourceSpec,
+};
+use crate::recipe::{check_macro, check_site};
 
 pub const MANIFEST_FILE: &str = "extension.toml";
 
@@ -76,6 +93,10 @@ struct Raw {
     libraries: Vec<LibrarySpec>,
     #[serde(default)]
     settings: Vec<SettingSpec>,
+    #[serde(default)]
+    sites: Vec<SiteSpec>,
+    #[serde(default)]
+    macros: Vec<MacroSpec>,
 }
 
 /// A validated manifest.
@@ -93,6 +114,25 @@ pub struct Manifest {
     pub sources: Vec<SourceSpec>,
     pub libraries: Vec<LibrarySpec>,
     pub settings: Vec<SettingSpec>,
+    /// Websites its macros run on, origins normalised; each one's origin
+    /// is declared as `browser.automate:<origin>`.
+    pub sites: Vec<SiteSpec>,
+    /// Browser macros, checked ([`crate::recipe::check_macro`]).
+    pub macros: Vec<MacroSpec>,
+}
+
+impl Manifest {
+    /// The site a macro runs on.
+    pub fn site(&self, id: &str) -> Option<&SiteSpec> {
+        self.sites.iter().find(|s| s.id == id)
+    }
+
+    /// Each macro with its site, in manifest order.
+    pub fn macros_with_sites(&self) -> impl Iterator<Item = (&MacroSpec, &SiteSpec)> {
+        self.macros
+            .iter()
+            .filter_map(|m| self.site(&m.site).map(|s| (m, s)))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +220,22 @@ impl Manifest {
                 ));
             }
         }
+        unique_ids("site", raw.sites.iter().map(|s| s.id.as_str()))?;
+        unique_ids("macro", raw.macros.iter().map(|m| m.id.as_str()))?;
+        let mut sites = raw.sites;
+        for s in &mut sites {
+            s.origin = check_site(s).map_err(|e| ManifestError(e.to_string()))?;
+            let cap = Capability::BrowserAutomate(s.origin.clone());
+            if !capabilities.iter().any(|c| cap.covered_by(c)) {
+                return err(format!(
+                    "site {:?}: its origin must be declared in capabilities as \"{cap}\"",
+                    s.id
+                ));
+            }
+        }
+        for m in &raw.macros {
+            check_macro(m, &sites).map_err(|e| ManifestError(e.to_string()))?;
+        }
         Ok(Manifest {
             name: raw.name,
             version: raw.version,
@@ -191,6 +247,8 @@ impl Manifest {
             sources: raw.sources,
             libraries: raw.libraries,
             settings: raw.settings,
+            sites,
+            macros: raw.macros,
         })
     }
 }
@@ -369,6 +427,160 @@ kind = "path"
                 .0
                 .contains("newer Burrow")
         );
+    }
+
+    const BROWSER: &str = r#"
+name = "cross-post"
+version = "0.1.0"
+protocol = 1
+command = ["cross-post"]
+capabilities = ["items.read", "browser.automate:HTTPS://Social.Example.com/", "browser.capture"]
+
+[[sites]]
+id = "social"
+title = "Social Notes"
+origin = "https://social.example.com:443"
+home = "https://social.example.com/notes"
+signed-out = "a[href*='sign-in']"
+content-blocking = false
+min-interval = "60s"
+someday = "ignored"
+
+[[macros]]
+id = "cross-post-note"
+title = "Cross-post to Social Notes…"
+site = "social"
+when = "published"
+template = "{{excerpt}}\r\n\r\n{{permalink}}"
+tested = "unverified"
+steps = [
+  { do = "open", url = "https://social.example.com/notes" },
+  { do = "waitFor", selector = "div.box[contenteditable='true']", timeout = "20s" },
+  { do = "focus",  selector = "div.box[contenteditable='true']" },
+  { do = "insert", selector = "div.box[contenteditable='true']" },
+  { do = "submit", selector = "button", text = "Post" },
+  { do = "waitFor", selector = "div.box[contenteditable='true']", empty = true, timeout = "15s" },
+  { do = "done", text = "Posted to Social Notes" },
+]
+"#;
+
+    #[test]
+    fn sites_and_macros_load_against_declared_origins() {
+        let m = Manifest::parse(BROWSER, false).unwrap();
+        assert_eq!(
+            m.capabilities[1],
+            Capability::BrowserAutomate("https://social.example.com".into())
+        );
+        assert_eq!(m.sites.len(), 1);
+        let s = &m.sites[0];
+        assert_eq!(s.origin, "https://social.example.com", "normalised");
+        assert!(!s.content_blocking);
+        assert_eq!(s.min_interval(), std::time::Duration::from_secs(60));
+        assert_eq!(s.signed_out.as_deref(), Some("a[href*='sign-in']"));
+        let (mac, site) = m.macros_with_sites().next().unwrap();
+        assert_eq!(site.id, "social");
+        assert_eq!(mac.when, crate::protocol::When::Published);
+        assert_eq!(mac.tested, "unverified");
+        assert_eq!(mac.steps.len(), 7);
+        assert_eq!(
+            crate::recipe::expand(
+                &mac.template,
+                &crate::recipe::Vars {
+                    title: String::new(),
+                    excerpt: "Hi".into(),
+                    permalink: "https://blyg.example.com/p/1".into(),
+                }
+            ),
+            "Hi\n\nhttps://blyg.example.com/p/1"
+        );
+        // Defaults: content blocking on, when = published, tested = unverified.
+        let bare = BROWSER
+            .replace("content-blocking = false\n", "")
+            .replace("when = \"published\"\n", "")
+            .replace("tested = \"unverified\"\n", "")
+            .replace("template = \"{{excerpt}}\\r\\n\\r\\n{{permalink}}\"\n", "");
+        let m = Manifest::parse(&bare, false).unwrap();
+        assert!(m.sites[0].content_blocking);
+        assert_eq!(m.macros[0].when, crate::protocol::When::Published);
+        assert_eq!(m.macros[0].tested, "unverified");
+        assert_eq!(m.macros[0].template, crate::recipe::DEFAULT_TEMPLATE);
+        // The camelCase spellings work too.
+        let camel = BROWSER
+            .replace("signed-out", "signedOut")
+            .replace("content-blocking", "contentBlocking")
+            .replace("min-interval", "minInterval");
+        let m = Manifest::parse(&camel, false).unwrap();
+        assert!(!m.sites[0].content_blocking && m.sites[0].signed_out.is_some());
+    }
+
+    #[test]
+    fn browser_rules_are_manifest_errors() {
+        let bad = |from: &str, to: &str| {
+            let text = BROWSER.replace(from, to);
+            assert_ne!(text, BROWSER, "{from}");
+            Manifest::parse(&text, false).unwrap_err().0
+        };
+        let e = bad("\"browser.automate:HTTPS://Social.Example.com/\", ", "");
+        assert!(
+            e.contains("must be declared in capabilities as \"browser.automate:https://social.example.com\""),
+            "{e}"
+        );
+        let e = bad(
+            "browser.automate:HTTPS://Social.Example.com/",
+            "browser.automate:https://www.social.example.com",
+        );
+        assert!(e.contains("must be declared"), "{e}");
+        let e = bad(
+            "browser.automate:HTTPS://Social.Example.com/",
+            "browser.automate:https://social.example.com/notes",
+        );
+        assert!(e.contains("unknown capability"), "{e}");
+        let e = bad("site = \"social\"", "site = \"elsewhere\"");
+        assert!(e.contains("isn't one of this extension's [[sites]]"), "{e}");
+        let e = bad(
+            "home = \"https://social.example.com/notes\"",
+            "home = \"https://evil.example/\"",
+        );
+        assert!(e.starts_with("site \"social\": home"), "{e}");
+        let e = bad("min-interval = \"60s\"", "min-interval = \"soon\"");
+        assert!(e.contains("min-interval"), "{e}");
+        let e = bad("timeout = \"20s\"", "timeout = \"45s\"");
+        assert!(
+            e.contains("step 2 (waitFor): timeout \"45s\" is over the 30s limit"),
+            "{e}"
+        );
+        let e = bad(
+            "{ do = \"open\", url = \"https://social.example.com/notes\" }",
+            "{ do = \"open\", url = \"https://elsewhere.example/notes\" }",
+        );
+        assert!(e.contains("step 1 (open)"), "{e}");
+        let e = bad("{ do = \"done\", text = \"Posted to Social Notes\" },", "");
+        assert!(e.contains("the last step must be done"), "{e}");
+        let e = bad("{ do = \"submit\"", "{ do = \"click\"");
+        assert!(e.contains("click after insert"), "{e}");
+        let e = bad("do = \"focus\"", "do = \"eval\"");
+        assert!(
+            e.contains("eval"),
+            "unknown step kinds are TOML errors: {e}"
+        );
+        let e = bad("when = \"published\"", "when = \"later\"");
+        assert!(!e.is_empty());
+        let twice = format!(
+            "{BROWSER}\n[[sites]]\nid = \"social\"\ntitle = \"x\"\norigin = \"https://social.example.com\"\nhome = \"https://social.example.com/\"\n"
+        );
+        assert!(
+            Manifest::parse(&twice, false)
+                .unwrap_err()
+                .0
+                .contains("site id \"social\" appears twice")
+        );
+    }
+
+    #[test]
+    fn a_manifest_without_browser_tables_has_none() {
+        let m = Manifest::parse(GOOD, false).unwrap();
+        assert!(m.sites.is_empty() && m.macros.is_empty());
+        assert_eq!(m.macros_with_sites().count(), 0);
     }
 
     #[test]

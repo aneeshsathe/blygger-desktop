@@ -51,7 +51,7 @@ capabilities = ["ui"]             # see below
 id = "hello"
 title = "Say hello"
 detail = "A friendly message"
-when = "always"                   # always | editor | reading | notes
+when = "always"                   # always | editor | reading | notes | published
 
 [[libraries]]                     # documents for the notes panel
 id = "notes"
@@ -77,8 +77,87 @@ Unknown keys are ignored. On Windows a bare `command` name also tries the
 | `blyg.identity` | the blyg's origin in `initialize` (never a token) | yes |
 | `ui` | `burrow/toast`, `burrow/openItem` | yes |
 | `hooks:itemPublished`, `hooks:itemSaved`, `hooks:itemCreated` | the matching notifications, with the post's text | yes |
+| `browser.capture` | `burrow/browser.page`: the page open in the browser pane (address, title, selection, readable text) while one of its commands runs; never cookies or sign-ins | yes |
+| `browser.automate:<origin>` | run its `[[macros]]` on that one origin, and `burrow/browser.open` URLs on it | yes |
 | `fs:<path>` | declares the folder it reads and writes | **no** |
 | `net` | declares that it uses the network | **no** |
+
+## Browser: capture and macros
+
+Two capabilities reach the browser pane, both enforced by Burrow:
+
+- `browser.capture` lets the extension call `burrow/browser.page` while one
+  of its commands runs. The answer is `{url, canonicalUrl?, title,
+  selection, markdown, author?}` (`PageCapture`), or `-32004` when the
+  pane has no page. There is no method that returns cookies, storage or
+  headers, or that runs script.
+- `browser.automate:<origin>` names one website exactly: `http` or `https`,
+  a host, an optional port, nothing after it. Burrow normalises it (lower
+  case, `xn--` for international names, default port dropped:
+  `HTTPS://Social.Example.com:443/` is `https://social.example.com`) and
+  compares origins exactly, so no wildcards, parent domains or other
+  ports. The consent sheet reads "fill in and, when you confirm, click Post
+  on social.example.com, signed in as you".
+
+A **macro** is a declarative recipe that Burrow runs in the pane, the one
+the user signs in to by hand. The extension never sees that page:
+
+```toml
+capabilities = ["items.read", "browser.automate:https://social.example.com"]
+
+[[sites]]
+id = "social"
+title = "Social Notes"
+origin = "https://social.example.com"        # must be declared above
+home = "https://social.example.com/notes"     # where to sign in; on origin
+signed-out = "a[href*='sign-in']"            # optional: matches = signed out
+content-blocking = false                     # optional: shield off during a run only
+min-interval = "60s"                         # optional: the shortest gap between runs
+
+[[macros]]
+id = "cross-post-note"
+title = "Cross-post to Social Notes…"
+site = "social"
+when = "published"                 # the default: a published post is open
+template = "{{excerpt}}\n\n{{permalink}}"   # the default; {{title}} too
+tested = "unverified"              # free text: when the selectors were last checked
+steps = [
+  { do = "open", url = "https://social.example.com/notes" },
+  { do = "waitFor", selector = "div[contenteditable='true']", timeout = "20s" },
+  { do = "focus",  selector = "div[contenteditable='true']" },
+  { do = "insert", selector = "div[contenteditable='true']" },
+  { do = "submit", selector = "button", text = "Post" },
+  { do = "waitFor", selector = "div[contenteditable='true']", empty = true, timeout = "15s" },
+  { do = "done", text = "Posted to Social Notes" },
+]
+```
+
+Steps: `open {url}`, `waitFor {selector, text?, empty?, absent?, timeout?}`,
+`assert {selector, text?}`, `focus {selector}`, `click {selector, text?}`,
+`insert {selector}`, `submit {selector, text?}`, `done {text}`. A selector
+is a `querySelectorAll` selector; with `text`, the first match whose
+`innerText.trim()` equals it. Durations are a whole number and `ms`, `s` or
+`m`. A step waits 10 s unless it says otherwise.
+
+The manifest is refused unless: every site's origin is declared as
+`browser.automate:`, and its `home` is on it; `min-interval` parses; each
+macro names one of the manifest's sites and its template uses only
+`{{title}}`, `{{excerpt}}` and `{{permalink}}`; the first step is `open`
+and every `open` URL is on one of the sites; there is exactly one
+`insert`, no `submit` before it and at least one after it; nothing
+`click`s after `insert`, and nothing `open`s between it and the first
+`submit`; `done` is the last step and only there; timeouts are more than 0
+and at most 30 s; at most 64 steps. Errors name the step:
+`macro "cross-post-note" step 2 (waitFor): timeout "45s" is over the 30s
+limit`. Types and rules: `crates/blyg-ext/src/recipe.rs`.
+
+Before a run, Burrow expands the template (one pass; CRLF becomes LF) and,
+if the extension implements it, calls `extension/macro.prepare {macro,
+item, permalink, text}` (10 s) → `{text, note?}`; method-not-found means
+the template's text stands. The user sees and can edit the text, Burrow
+runs the steps up to the first `submit`, shows what the composer now
+holds, and runs `submit` only when the user clicks Post. Only granted
+macros of running extensions are offered (`Host::macros`).
 
 ## Wire format
 
@@ -101,11 +180,17 @@ Host → extension, notifications: `burrow/itemPublished`, `burrow/itemSaved`,
 Extension → host: `burrow/listItems`, `getItem`, `searchItems`,
 `createDraft`, `saveItem {id, contentMd, baseHash?}`, `listReading`,
 `openItem`, `toast`, `requestCapability {capability}` (asks the user once
-per capability per session; only capabilities the manifest declares).
+per capability per session; only capabilities the manifest declares),
+`browser.page` (`browser.capture`), `browser.open {url}`
+(`browser.automate:` for the URL's origin) → `{url}`.
+
+Host → extension, also: `extension/macro.prepare` (10 s, optional; see
+Browser above).
 
 Errors: `-32000` timeout, `-32001` permission denied
 (`data.capability`), `-32002` stale (`data.currentHash`: the item or
-document changed since the hash you sent), `-32003` refused.
+document changed since the hash you sent), `-32003` refused, `-32004` no
+page in the browser pane.
 
 Hashes are `"sha256:" + hex(SHA-256(text as UTF-8))`, the blyg's
 `content_hash`. A write that names a `baseHash` lands only if the current
