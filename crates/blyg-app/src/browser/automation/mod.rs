@@ -40,6 +40,23 @@ use crate::app::{MainView, Sheet};
 /// How long one in-page operation may take to answer.
 const EVAL_TIMEOUT: Duration = Duration::from_secs(3);
 
+gpui_kit::actions!(
+    blygger,
+    [
+        /// The Preview sheet's Continue (⌘⏎).
+        MacroContinue,
+        /// The Post sheet's Post (⏎).
+        MacroPost,
+        /// Cancel either sheet (esc).
+        MacroCancel,
+    ]
+);
+
+/// The Preview and Post sheets' key context (`keymap::MACRO_SHEET`): their
+/// keys live in the keymap table and out-rank the main window's (⌘⏎ is
+/// Publish there), also while the Preview's text box has focus.
+pub const SHEET_CONTEXT: &str = "MacroSheet";
+
 /// The pane's macro state (one run at a time).
 #[derive(Default)]
 pub struct State {
@@ -584,15 +601,12 @@ impl MainView {
             .trim_start_matches("http://")
             .to_string();
         let body = div()
-            .capture_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                let k = &ev.keystroke;
-                if k.key == "escape" {
-                    cx.stop_propagation();
-                    this.macro_preview_answer(false, window, cx);
-                } else if k.key == "enter" && k.modifiers.platform {
-                    cx.stop_propagation();
-                    this.macro_preview_answer(true, window, cx);
-                }
+            .key_context(SHEET_CONTEXT)
+            .on_action(cx.listener(|this, _: &MacroContinue, window, cx| {
+                this.macro_preview_answer(true, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MacroCancel, window, cx| {
+                this.macro_preview_answer(false, window, cx)
             }))
             .child(
                 div()
@@ -700,14 +714,13 @@ impl MainView {
             info.read_back.clone()
         };
         let body = div()
+            .key_context(SHEET_CONTEXT)
             .track_focus(&s.focus)
-            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                match ev.keystroke.key.as_str() {
-                    "enter" => this.macro_post_answer(PostChoice::Post, window, cx),
-                    "escape" => this.macro_post_answer(PostChoice::Cancel, window, cx),
-                    _ => return,
-                }
-                cx.stop_propagation();
+            .on_action(cx.listener(|this, _: &MacroPost, window, cx| {
+                this.macro_post_answer(PostChoice::Post, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &MacroCancel, window, cx| {
+                this.macro_post_answer(PostChoice::Cancel, window, cx)
             }))
             .child(
                 div()

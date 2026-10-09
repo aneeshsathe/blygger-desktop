@@ -1729,6 +1729,60 @@ mod ui {
         assert!(dom.borrow().loads.len() == 1);
     }
 
+    /// The sheets' own keys, as typed: ⌘⏎ with the Preview's text box
+    /// focused continues (it isn't Publish there), ⏎ posts, esc cancels.
+    #[gpui_kit::test]
+    fn the_sheets_answer_their_keys(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        let (view, cx) = setup(cx, dom.clone());
+        start(&view, cx);
+        let focused = view.update_in(cx, |v, window, cx| {
+            use gpui_kit::Focusable as _;
+            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+                panic!("no preview sheet");
+            };
+            s.editor.read(cx).focus_handle(cx).is_focused(window)
+        });
+        assert!(focused, "the text box has the keyboard");
+        cx.simulate_keystrokes("cmd-enter");
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        cx.simulate_keystrokes("enter");
+        until(&view, cx, |v| !v.browser.automation.running());
+        assert_eq!(dom.borrow().posted, vec![PAYLOAD.trim().to_string()]);
+    }
+
+    /// esc in the Preview's text box cancels; nothing loads.
+    #[gpui_kit::test]
+    fn esc_in_the_preview_text_cancels(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        let (view, cx) = setup(cx, dom.clone());
+        start(&view, cx);
+        assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_)))));
+        cx.simulate_keystrokes("escape");
+        until(&view, cx, |v| !v.browser.automation.running());
+        assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+        assert!(dom.borrow().loads.is_empty());
+    }
+
+    /// esc on the Post sheet cancels; nothing is posted.
+    #[gpui_kit::test]
+    fn esc_on_the_post_sheet_cancels(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        let (view, cx) = setup(cx, dom.clone());
+        start(&view, cx);
+        cx.simulate_keystrokes("cmd-enter");
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        cx.simulate_keystrokes("escape");
+        until(&view, cx, |v| !v.browser.automation.running());
+        assert!(dom.borrow().posted.is_empty());
+        view.read_with(cx, |v, _| {
+            assert_eq!(
+                v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
+                Some("Cancelled. Nothing was posted.")
+            );
+        });
+    }
+
     #[gpui_kit::test]
     fn clip_page_quotes_the_page_into_a_new_draft(cx: &mut TestAppContext) {
         let dom = quick_dom();

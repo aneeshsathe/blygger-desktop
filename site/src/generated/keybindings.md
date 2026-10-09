@@ -67,6 +67,14 @@
 | ⌘L | Browser pane: edit the address |  |
 | ⇧⌘C | Browser pane: clip the page (or the passage selected on it) into the draft | Post › Clip Page to Draft |
 
+### On a browser macro's Preview and Post sheets
+
+| Key | What it does | Menu |
+|---|---|---|
+| ⌘⏎ | Macro Preview sheet: continue |  |
+| ⏎ | Macro Post sheet: post |  |
+| esc | Macro Preview or Post sheet: cancel |  |
+
 ### In the menus, without a key
 
 | What it does | Menu |

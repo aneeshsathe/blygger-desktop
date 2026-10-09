@@ -10,6 +10,10 @@
 //! - `MainInput`: `Blygger > Input`, a binding that deliberately out-ranks
 //!   gpui-base's own binding of the same key inside our inputs (⌘⏎, which
 //!   gpui-base binds to "submit").
+//! - `MacroSheet` / `MacroSheetInput`: a browser macro's Preview and Post
+//!   sheets (`MacroSheet`, and `MacroSheet > Input` for the Preview's text
+//!   box). Deeper than, or as deep as and later than, the main window's
+//!   rows, so ⌘⏎ continues there instead of reaching Publish.
 
 use gpui_kit::{Action, App, KeyBinding};
 
@@ -56,6 +60,8 @@ use crate::app::extensions::ShowExtensions;
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, ToggleBrowser,
 };
+// --- browser macros ---
+use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -66,6 +72,10 @@ const MENU_ONLY: &str = "BlyggerMenuKeyEquivalent";
 /// --- browser --- The browser pane (its own place: its keys may reuse
 /// main-window keys, which it out-ranks while it has focus).
 pub const BROWSER: &str = "Blygger > Browser";
+/// --- browser macros --- A macro's Preview and Post sheets.
+pub const MACRO_SHEET: &str = crate::app::browser::automation::SHEET_CONTEXT;
+/// --- browser macros --- The Preview sheet's text box.
+pub const MACRO_SHEET_INPUT: &str = "MacroSheet > Input";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
@@ -74,6 +84,11 @@ pub enum Scope {
     MainInput,
     /// --- browser --- `Blygger > Browser`: the browser pane.
     Browser,
+    /// --- browser macros --- `MacroSheet`: a macro's Preview or Post sheet.
+    MacroSheet,
+    /// --- browser macros --- `MacroSheet > Input`: the Preview's text box
+    /// (out-ranks gpui-base's and the main window's keys there).
+    MacroSheetInput,
 }
 
 impl Scope {
@@ -83,6 +98,8 @@ impl Scope {
             Scope::Main => Some(MAIN),
             Scope::MainInput => Some(MAIN_INPUT),
             Scope::Browser => Some(BROWSER), // --- browser ---
+            Scope::MacroSheet => Some(MACRO_SHEET),
+            Scope::MacroSheetInput => Some(MACRO_SHEET_INPUT),
         }
     }
 
@@ -92,6 +109,7 @@ impl Scope {
     fn place(self) -> &'static str {
         match self {
             Scope::Browser => "browser pane", // --- browser ---
+            Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
             _ => "main window",
         }
     }
@@ -636,6 +654,44 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Post › Clip Page to Draft")
         ),
         // --- end browser ---
+        // --- browser macros --- (after Publish's rows: on a tie in depth,
+        // the later binding wins)
+        kb!(
+            "cmd-enter",
+            MacroSheet,
+            MacroContinue,
+            "Macro Preview sheet: continue",
+            None
+        ),
+        kb!(
+            "cmd-enter",
+            MacroSheetInput,
+            MacroContinue,
+            "Macro Preview sheet: continue (typing in the text)",
+            None
+        ),
+        kb!(
+            "enter",
+            MacroSheet,
+            MacroPost,
+            "Macro Post sheet: post",
+            None
+        ),
+        kb!(
+            "escape",
+            MacroSheet,
+            MacroCancel,
+            "Macro Preview or Post sheet: cancel",
+            None
+        ),
+        kb!(
+            "escape",
+            MacroSheetInput,
+            MacroCancel,
+            "Macro Preview sheet: cancel (typing in the text)",
+            None
+        ),
+        // --- end browser macros ---
         // --- notes --- (esc, which closes the drawer, is the drawer's own key)
         kb!(
             "cmd-shift-n",
@@ -1174,6 +1230,7 @@ pub fn list() -> String {
             Scope::Main => "main window",
             Scope::MainInput => "text fields",
             Scope::Browser => "browser", // --- browser ---
+            Scope::MacroSheet | Scope::MacroSheetInput => "macro sheet",
         };
         let mut line = format!(
             "{:<12} {:<19} {:<12} {}",
@@ -1245,7 +1302,14 @@ mod tests {
         // field on purpose while you type an address, so they're exempt.
         for k in live()
             .iter()
-            .filter(|k| k.scope != Scope::Global && k.scope != Scope::Browser)
+            // --- browser macros --- The sheets' keys out-rank Input on
+            // purpose (their own `MacroSheet > Input` rows).
+            .filter(|k| {
+                !matches!(
+                    k.scope,
+                    Scope::Global | Scope::Browser | Scope::MacroSheet | Scope::MacroSheetInput
+                )
+            })
         {
             let shadowed = input_keys.contains(&normalize(k.key));
             let deliberate = OUTRANKS_INPUT.contains(&k.key);

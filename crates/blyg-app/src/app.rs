@@ -1332,6 +1332,9 @@ impl MainView {
                 self.do_publish(text, window, cx);
             }
             Some(Sheet::Connect { .. }) => self.submit_connect(window, cx),
+            // --- browser macros --- Never publish under a macro's sheet: its
+            // own ⌘⏎ (MacroContinue, keymap.rs) continues the run.
+            Some(Sheet::MacroPreview(_) | Sheet::MacroPost(_)) => {}
             Some(_) => {}
             None => self.publish(window, cx),
         }
