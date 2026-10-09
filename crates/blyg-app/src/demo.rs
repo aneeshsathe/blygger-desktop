@@ -65,6 +65,21 @@ impl MainView {
                     cx,
                 );
             }
+            // --- new post --- ⌘N over a search: an empty editor, the list
+            // as it was; then the first words make it a scratch note.
+            ("new-post" | "new-post-typed", 0) => self.set_query_text("the", window, cx),
+            ("new-post" | "new-post-typed", 1) => self.start_new_post(window, cx),
+            ("new-post-typed", 2) => {
+                self.editor.update(cx, |s, cx| {
+                    s.insert(
+                        "Tide pools are small oceans that forget, twice a day.".to_string(),
+                        window,
+                        cx,
+                    )
+                });
+                self.new_post_first_keystroke(cx);
+                self.after_edit(cx);
+            }
             ("publish", 0) => {
                 self.demo_open("01J9QK3", window, cx);
                 self.demo_type(" So is a good notebook.", window, cx);
