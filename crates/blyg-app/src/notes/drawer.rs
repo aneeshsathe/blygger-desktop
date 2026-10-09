@@ -387,7 +387,9 @@ impl MainView {
         self.notes.open = true;
         self.notes.closing = false;
         self.notes.close_gen += 1;
-        if let Some(editor) = self.notes.editor.clone() {
+        if let Some(editor) = self.notes.editor.clone()
+            && !self.ext_lib_showing()
+        {
             editor.update(cx, |s, cx| {
                 s.focus(window, cx);
                 let end = s.text().len();
@@ -872,6 +874,24 @@ impl MainView {
                         })),
                 )
             });
+        let notes_body = div()
+            .id("notes-body")
+            .flex_1()
+            .min_h_0()
+            .relative()
+            .font_family(body_font)
+            .text_size(px((self.prefs.font_size - 2.).max(12.)))
+            .line_height(relative(1.5))
+            .on_click(cx.listener(|this, _, window, cx| {
+                if let Some(e) = this.notes.editor.clone() {
+                    e.update(cx, |s, cx| s.focus(window, cx));
+                }
+            }))
+            .child(Textarea::new(&editor))
+            .child(assist);
+        // --- extensions ---
+        let tabs = self.render_ext_tabs(cx);
+        let library = self.render_ext_library(cx);
         let w = WIDTH;
         Some(
             div()
@@ -908,6 +928,9 @@ impl MainView {
                     }
                 }))
                 .capture_action(cx.listener(|this, _: &Paste, window, cx| {
+                    if this.ext_lib_showing() {
+                        return; // --- extensions --- the note editor's own paste
+                    }
                     if let Some(a) = &this.notes.assist {
                         a.update(cx, |a, _| a.note_paste());
                     }
@@ -969,25 +992,13 @@ impl MainView {
                         .detach();
                     }),
                 )
-                .child(header)
-                .child(
-                    div()
-                        .id("notes-body")
-                        .flex_1()
-                        .min_h_0()
-                        .relative()
-                        .font_family(body_font)
-                        .text_size(px((self.prefs.font_size - 2.).max(12.)))
-                        .line_height(relative(1.5))
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            if let Some(e) = this.notes.editor.clone() {
-                                e.update(cx, |s, cx| s.focus(window, cx));
-                            }
-                        }))
-                        .child(Textarea::new(&editor))
-                        .child(assist),
-                )
-                .child(footer)
+                // --- extensions --- "Reading notes | Notes" when a library
+                // runs; its tab replaces the header, body and footer.
+                .children(tabs)
+                .map(|d| match library {
+                    Some((h, b, f)) => d.child(h).child(b).child(f),
+                    None => d.child(header).child(notes_body).child(footer),
+                })
                 .with_animation(
                     ElementId::NamedInteger(
                         if closing { "notes-out" } else { "notes-in" }.into(),

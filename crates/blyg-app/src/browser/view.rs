@@ -822,6 +822,7 @@ impl MainView {
     pub(crate) fn browser_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let covered = self.sheet.is_some()
             || self.ai.has_overlay()
+            || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()
             || self.onboarding.flow.is_some()
             || self.onboarding.tutorial.is_some()

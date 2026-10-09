@@ -629,6 +629,7 @@ impl MainView {
             && self.reading.view == View::Reading;
         let suppressed = self.sheet.is_some()
             || self.ai.has_overlay()
+            || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()
             || dropdown
             || self.onboarding.flow.is_some()

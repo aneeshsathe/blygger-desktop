@@ -50,6 +50,8 @@ use crate::about::ShowAbout;
 use crate::composer::ToggleSpellcheck;
 // --- notes ---
 use crate::app::notes::{QuoteToDraft, ToggleNotes};
+// --- extensions ---
+use crate::app::extensions::ShowExtensions;
 // --- browser ---
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ToggleBrowser,
@@ -644,6 +646,15 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
+        // --- extensions --- the commands extensions add, their libraries,
+        // and Manage extensions.
+        kb!(
+            "cmd-shift-p",
+            Main,
+            ShowExtensions,
+            "Extensions: run an extension's command, browse its notes, manage them",
+            Some("Post › Extensions…")
+        ),
     ]
 }
 
