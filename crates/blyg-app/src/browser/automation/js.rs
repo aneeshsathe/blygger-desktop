@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 /// One operation on the page.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "op", rename_all = "camelCase")]
+#[serde(tag = "op", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum Op {
     /// Is the element there, and what does it hold? Also: does
     /// `signed_out` match (the site's signed-out selector)?
@@ -204,6 +204,27 @@ mod tests {
         assert!(js.contains("execCommand"));
         assert!(!js.contains('\u{2028}'));
         assert_eq!(decode(&js), Some(op));
+    }
+
+    /// The names the in-page library reads (`op.op`, `op.sel`,
+    /// `op.signedOut`, `op.payload`).
+    #[test]
+    fn ops_use_the_names_the_page_reads() {
+        let js = call(&Op::Find {
+            sel: "a".into(),
+            text: Some("Post".into()),
+            signed_out: Some("a.sign-in".into()),
+        });
+        assert!(
+            js.contains(r#"{"op":"find","sel":"a","text":"Post","signedOut":"a.sign-in"}"#),
+            "{js}"
+        );
+        assert!(LIB.contains("op.signedOut") && LIB.contains("op.payload"));
+        let js = call(&Op::Synth {
+            sel: "b".into(),
+            payload: "x".into(),
+        });
+        assert!(js.contains(r#"{"op":"synth","sel":"b","payload":"x"}"#));
     }
 
     #[test]
