@@ -1307,6 +1307,9 @@ impl Engine {
         let marks: Vec<ReadMark> = batch
             .iter()
             .filter_map(|o| serde_json::from_str::<ReadMark>(&o.payload).ok())
+            // Items start at version 1 and the server refuses a lower one
+            // with a 400, which would sink the whole batch.
+            .filter(|m| m.version >= 1)
             .map(|mut m| {
                 if !clear {
                     m.read_at = None;
