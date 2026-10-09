@@ -31,7 +31,7 @@ pub use capability::{CONSENT_CAVEAT, Capability, DECLARED_SUFFIX, consent_senten
 pub use grants::{Grants, settings_from_lines};
 pub use host::{
     ConsentReply, ExtError, ExtEvent, ExtState, ExtensionStatus, Host, HostConfig, LibraryRef,
-    MacroEntry, PaletteEntry, Timing, storage_dir,
+    MacroEntry, PaletteEntry, Timing, UiReply, storage_dir,
 };
 pub use manifest::{Diagnostic, Installed, MANIFEST_FILE, Manifest, Origin, discover};
 pub use protocol::PROTOCOL_VERSION;

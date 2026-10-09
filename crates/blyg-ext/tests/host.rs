@@ -320,22 +320,157 @@ fn macros_are_listed_only_with_their_site_granted() {
         },
     );
     assert_eq!(prepared, Ok(None));
-    // browser.open is checked against the URL's origin; the app answers it.
+    let st = env.host.status();
+    assert_eq!(st[0].macros.len(), 1);
+    assert_eq!(st[0].sites[0].id, "social");
+}
+
+/// `call_host` on another thread, so this one can answer the window's
+/// side of the call.
+fn call_host_bg(env: &Env, method: &'static str, params: Value) -> std::thread::JoinHandle<Value> {
+    let host = env.host.clone();
+    std::thread::spawn(move || call_host(&host, method, params))
+}
+
+/// The events that came in by now, without waiting.
+fn drain(env: &Env) -> Vec<ExtEvent> {
+    std::iter::from_fn(|| env.events.try_recv().ok()).collect()
+}
+
+#[test]
+fn browser_open_hops_to_the_window_for_a_granted_origin_only() {
+    let env = setup(&["ui", SOCIAL], &["ui", SOCIAL], &[]);
+    env.started();
+    // Another origin never reaches the window.
     let r = env.call_host(
         methods::BROWSER_OPEN,
         json!({"url": "https://other.example.com/"}),
     );
     assert_eq!(r["err"]["code"], codes::PERMISSION_DENIED, "{r}");
-    let r = env.call_host(
+    assert!(
+        !drain(&env)
+            .iter()
+            .any(|e| matches!(e, ExtEvent::BrowserOpen { .. })),
+        "refused before the window"
+    );
+    // The granted one: the window opens the pane and answers the URL.
+    let t = call_host_bg(
+        &env,
         methods::BROWSER_OPEN,
         json!({"url": "https://social.example.com/notes"}),
     );
-    assert_eq!(r["err"]["code"], codes::METHOD_NOT_FOUND, "{r}");
-    let r = env.call_host(methods::BROWSER_PAGE, json!({}));
-    assert_eq!(r["err"]["code"], codes::METHOD_NOT_FOUND, "{r}");
-    let st = env.host.status();
-    assert_eq!(st[0].macros.len(), 1);
-    assert_eq!(st[0].sites[0].id, "social");
+    let ExtEvent::BrowserOpen { name, url, reply } =
+        env.wait_for("BrowserOpen", |e| matches!(e, ExtEvent::BrowserOpen { .. }))
+    else {
+        unreachable!()
+    };
+    assert_eq!(
+        (name.as_str(), url.as_str()),
+        (NAME, "https://social.example.com/notes")
+    );
+    reply.answer(Ok(url));
+    let r = t.join().unwrap();
+    assert_eq!(r["ok"]["url"], "https://social.example.com/notes", "{r}");
+    // The window says no (a macro is running there): refused, with why.
+    let t = call_host_bg(
+        &env,
+        methods::BROWSER_OPEN,
+        json!({"url": "https://social.example.com/"}),
+    );
+    let ExtEvent::BrowserOpen { reply, .. } =
+        env.wait_for("BrowserOpen", |e| matches!(e, ExtEvent::BrowserOpen { .. }))
+    else {
+        unreachable!()
+    };
+    reply.answer(Err("a macro is running in the browser pane".into()));
+    let r = t.join().unwrap();
+    assert_eq!(r["err"]["code"], codes::REFUSED, "{r}");
+    assert_eq!(
+        r["err"]["message"],
+        "a macro is running in the browser pane"
+    );
+}
+
+#[test]
+fn browser_page_is_answered_only_while_a_command_runs() {
+    let env = setup(
+        &["ui", SOCIAL, "browser.capture"],
+        &["ui", SOCIAL, "browser.capture"],
+        &[],
+    );
+    env.started();
+    // During a command: the window reads the pane.
+    let t = call_host_bg(&env, methods::BROWSER_PAGE, json!({}));
+    let ExtEvent::BrowserPage { name, reply } =
+        env.wait_for("BrowserPage", |e| matches!(e, ExtEvent::BrowserPage { .. }))
+    else {
+        unreachable!()
+    };
+    assert_eq!(name, NAME);
+    reply.answer(Some(PageCapture {
+        url: "https://news.example.com/a".into(),
+        title: "Tide pools".into(),
+        selection: "small oceans".into(),
+        markdown: "Tide pools are small oceans.".into(),
+        ..PageCapture::default()
+    }));
+    let r = t.join().unwrap();
+    assert_eq!(r["ok"]["url"], "https://news.example.com/a", "{r}");
+    assert_eq!(r["ok"]["selection"], "small oceans");
+    assert_eq!(r["ok"]["markdown"], "Tide pools are small oceans.");
+    // No page in the pane (or the window let go of the reply): -32004.
+    for answer in [true, false] {
+        let t = call_host_bg(&env, methods::BROWSER_PAGE, json!({}));
+        let ExtEvent::BrowserPage { reply, .. } =
+            env.wait_for("BrowserPage", |e| matches!(e, ExtEvent::BrowserPage { .. }))
+        else {
+            unreachable!()
+        };
+        if answer {
+            reply.answer(None);
+        } else {
+            drop(reply);
+        }
+        let r = t.join().unwrap();
+        assert_eq!(r["err"]["code"], codes::NO_PAGE, "{r}");
+    }
+    // Outside a command (here, from macro.prepare): -32004, and the window
+    // is never asked.
+    let item = ItemSummary {
+        id: "L1".into(),
+        server_id: None,
+        kind: "fragment".into(),
+        status: "public".into(),
+        version: 1,
+        dirty: false,
+        created: String::new(),
+        updated: String::new(),
+        permalink: None,
+        title: "Hi".into(),
+        content_hash: content_hash("Hi"),
+        content_md: None,
+    };
+    let prepared = env
+        .host
+        .macro_prepare(
+            NAME,
+            &MacroPrepareParams {
+                macro_id: "page".into(),
+                item,
+                permalink: String::new(),
+                text: String::new(),
+            },
+        )
+        .unwrap()
+        .expect("answered");
+    let r: Value = serde_json::from_str(&prepared.text).unwrap();
+    assert_eq!(r["err"]["code"], codes::NO_PAGE, "{r}");
+    assert!(
+        !drain(&env)
+            .iter()
+            .any(|e| matches!(e, ExtEvent::BrowserPage { .. })),
+        "the window wasn't asked"
+    );
 }
 
 #[test]
