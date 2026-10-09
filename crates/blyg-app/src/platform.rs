@@ -1,9 +1,12 @@
-//! Small macOS-only touches GPUI doesn't cover.
+//! Small platform touches GPUI doesn't cover. Most are macOS-only; on
+//! Windows the icon comes from the executable's resources (`build.rs`).
 
 /// `packaging/icon.svg` rendered at 512 px (`scripts/make-icon.sh`).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 static ICON_PNG: &[u8] = include_bytes!("../../../packaging/icon-512.png");
 
 /// Whether this process runs from inside an `.app` bundle.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn is_bundled(exe: &std::path::Path) -> bool {
     exe.to_string_lossy().contains(".app/Contents/MacOS/")
 }
@@ -11,6 +14,7 @@ pub fn is_bundled(exe: &std::path::Path) -> bool {
 /// A bare `cargo run` binary has no bundle, so the Dock shows a generic
 /// icon. Give it ours. Launched from Burrow.app, the bundle's .icns is
 /// already in use and this does nothing.
+#[cfg(target_os = "macos")]
 pub fn set_dock_icon_unless_bundled() {
     if std::env::current_exe().is_ok_and(|p| is_bundled(&p)) {
         return;
@@ -39,6 +43,52 @@ pub fn set_dock_icon_unless_bundled() {
         }
     }
 }
+
+/// Windows has no menu bar: a "Menu" button in the title strip instead
+/// (`windows_menu`). Nothing elsewhere.
+pub fn menu_button(p: crate::theme::Palette, cx: &gpui_kit::App) -> Option<gpui_kit::AnyElement> {
+    #[cfg(target_os = "windows")]
+    return Some(crate::windows_menu::button(p, cx));
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (p, cx);
+        None
+    }
+}
+
+/// The open Windows menu, if any.
+pub fn menu_panel(
+    p: crate::theme::Palette,
+    window: &gpui_kit::Window,
+    cx: &gpui_kit::App,
+) -> Option<gpui_kit::AnyElement> {
+    #[cfg(target_os = "windows")]
+    return crate::windows_menu::panel(p, window, cx);
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (p, window, cx);
+        None
+    }
+}
+
+/// A sheet's key hint (`⏎ connect`, `esc cancel`) that is also a button on
+/// Windows, where people reach for the mouse in a sheet. On macOS the keys
+/// alone drive sheets, so it renders and behaves as the plain hint.
+pub fn key_button(
+    hint: gpui_kit::Div,
+    id: impl Into<gpui_kit::ElementId>,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    use gpui_kit::prelude::FluentBuilder as _;
+    use gpui_kit::{InteractiveElement as _, StatefulInteractiveElement as _, Styled as _};
+    hint.id(id).when(cfg!(target_os = "windows"), |d| {
+        d.cursor_pointer().on_click(on_click)
+    })
+}
+
+/// Off macOS the taskbar and window icon is embedded in the executable.
+#[cfg(not(target_os = "macos"))]
+pub fn set_dock_icon_unless_bundled() {}
 
 #[cfg(test)]
 mod tests {

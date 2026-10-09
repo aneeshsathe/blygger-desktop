@@ -11,7 +11,6 @@ pub mod info;
 mod tests;
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use blyg_core::ConfigStore;
@@ -159,9 +158,20 @@ pub fn report(cx: &App) -> Report {
     }
 }
 
-/// `15.6.1 (Build 24G90)`, from NSProcessInfo.
+/// The OS name and version for the report. Elsewhere than macOS: the OS name.
+#[cfg(not(target_os = "macos"))]
 pub fn macos_version() -> &'static str {
-    static V: OnceLock<String> = OnceLock::new();
+    if cfg!(target_os = "windows") {
+        "Windows"
+    } else {
+        std::env::consts::OS
+    }
+}
+
+/// `15.6.1 (Build 24G90)`, from NSProcessInfo.
+#[cfg(target_os = "macos")]
+pub fn macos_version() -> &'static str {
+    static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
         use objc2::runtime::AnyObject;
         use objc2::{class, msg_send};
@@ -186,8 +196,26 @@ pub fn macos_version() -> &'static str {
     })
 }
 
-/// Finder, with `path` selected (or its folder, if it doesn't exist yet).
+/// Finder (Explorer on Windows), with `path` selected (or its folder, if it
+/// doesn't exist yet).
 fn reveal(path: &Path) {
+    if cfg!(target_os = "windows") {
+        let mut cmd = std::process::Command::new("explorer.exe");
+        if path.exists() {
+            // One argument: Explorer parses `/select,` and the path itself.
+            let mut arg = std::ffi::OsString::from("/select,");
+            arg.push(path);
+            cmd.arg(arg);
+        } else if let Some(parent) = path.parent().filter(|p| p.exists()) {
+            cmd.arg(parent);
+        } else {
+            return;
+        }
+        if let Err(e) = cmd.spawn() {
+            eprintln!("blygger: couldn't open Explorer: {e}");
+        }
+        return;
+    }
     let mut cmd = std::process::Command::new("/usr/bin/open");
     if path.exists() {
         cmd.arg("-R").arg(path);

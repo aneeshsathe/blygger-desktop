@@ -3,6 +3,11 @@
 Burrow is keyboard-first. Every toolbar button's tooltip shows its key, and
 `blygger +list-keybinds` prints this list from the app itself.
 
+**On Windows**, read every ⌘ as **Ctrl** (⌘⏎ is Ctrl+Enter, ⇧⌘, is
+Ctrl+Shift+,), with one exception: Versions is Ctrl+Shift+Y, because Ctrl+Y
+is Redo there. The app's tooltips, menu and `+list-keybinds` show the Windows
+keys.
+
 ## The main table
 
 This part is generated from the app's key table

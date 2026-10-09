@@ -1,5 +1,6 @@
 //! The native preview surface: a WKWebView (through `wry`) attached as a
-//! child of GPUI's NSView and positioned over the preview pane.
+//! child of GPUI's NSView and positioned over the preview pane. On Windows
+//! it is a WebView2 child window of GPUI's HWND instead (`wry_surface_windows`).
 //!
 //! The rest of the app sees only [`PreviewSurface`], so headless tests run on
 //! a stub and a machine without a usable WebView falls back to a message.
@@ -105,8 +106,8 @@ pub type Factory = std::rc::Rc<
 pub struct FactoryGlobal(pub Factory);
 impl gpui_kit::Global for FactoryGlobal {}
 
-/// The default factory: a real WKWebView, except in unit tests (no
-/// surface at all, so no test ever needs a WebView).
+/// The default factory: a real WKWebView (WebView2 on Windows), except in
+/// unit tests (no surface at all, so no test ever needs a WebView).
 pub fn default_factory() -> Factory {
     #[cfg(all(target_os = "macos", not(test)))]
     {
@@ -114,7 +115,14 @@ pub fn default_factory() -> Factory {
             wry_surface::WrySurface::new(window, tx).map(|s| Box::new(s) as Box<dyn PreviewSurface>)
         })
     }
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(all(target_os = "windows", not(test)))]
+    {
+        std::rc::Rc::new(|window, tx| {
+            wry_surface_windows::DeferredSurface::new(window, tx)
+                .map(|s| Box::new(s) as Box<dyn PreviewSurface>)
+        })
+    }
+    #[cfg(any(not(any(target_os = "macos", target_os = "windows")), test))]
     {
         std::rc::Rc::new(|_, _| Err("The preview isn't available here.".to_string()))
     }
@@ -409,7 +417,22 @@ pub const HOST_SCRIPT: &str = r#"
 "#;
 
 #[cfg(all(target_os = "macos", not(test)))]
-pub(crate) use wry_surface::{Keyboard, keyboard_of, rect, set_appearance};
+pub(crate) use wry_surface::{Keyboard, keyboard_of, set_appearance};
+
+/// A pane's bounds as a `wry` rect in logical pixels (never zero-sized).
+/// Shared by the macOS and Windows surfaces.
+#[cfg(all(any(target_os = "macos", target_os = "windows"), not(test)))]
+pub(crate) fn rect(b: Bounds<Pixels>) -> wry::Rect {
+    use wry::dpi::{LogicalPosition, LogicalSize};
+    wry::Rect {
+        position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
+        size: LogicalSize::new(
+            f64::from(b.size.width).max(1.0),
+            f64::from(b.size.height).max(1.0),
+        )
+        .into(),
+    }
+}
 
 // --- browser --- The modifier keys held when a link was followed (⌘ and ⌥),
 // read when WebKit asks about the navigation, so the browser pane knows a
@@ -445,22 +468,10 @@ fn note_click_modifiers() {
 #[cfg(all(target_os = "macos", not(test)))]
 mod wry_surface {
     use super::*;
-    use wry::dpi::{LogicalPosition, LogicalSize};
-    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
+    use wry::{NewWindowResponse, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
 
     pub struct WrySurface {
         view: WebView,
-    }
-
-    pub(crate) fn rect(b: Bounds<Pixels>) -> Rect {
-        Rect {
-            position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
-            size: LogicalSize::new(
-                f64::from(b.size.width).max(1.0),
-                f64::from(b.size.height).max(1.0),
-            )
-            .into(),
-        }
     }
 
     /// Where the window's keyboard is, as far as a WebView is concerned.
@@ -625,6 +636,324 @@ mod wry_surface {
         let c = std::ffi::CString::new(s).unwrap_or_default();
         // SAFETY: stringWithUTF8String: copies the bytes; `c` outlives the call.
         unsafe { objc2::msg_send![objc2::class!(NSString), stringWithUTF8String: c.as_ptr()] }
+    }
+}
+
+/// The Windows surface: a WebView2 child window over GPUI's HWND.
+///
+/// GPUI normally draws through a topmost DirectComposition visual, which
+/// would cover any child window; `main` turns that off on Windows
+/// (`GPUI_DISABLE_DIRECT_COMPOSITION`) so this view shows above the app.
+#[cfg(all(target_os = "windows", not(test)))]
+mod wry_surface_windows {
+    use super::*;
+    use raw_window_handle::{
+        HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
+    };
+    use std::cell::{Cell, RefCell};
+    use std::num::NonZeroIsize;
+    use std::rc::{Rc, Weak};
+    use wry::{NewWindowResponse, Theme, WebView, WebViewBuilder, WebViewExtWindows};
+
+    // Creating a WebView2 waits for it in a nested message loop
+    // (webview2-com's `wait_with_pump`). GPUI asks for the surface while it
+    // draws a frame, with the app borrowed, and a GPUI task or event that the
+    // nested loop dispatches then borrows the app again and panics, which
+    // aborts the process. So the WebView is built later, from a Win32 thread
+    // timer that GPUI's top-level message loop dispatches while nothing is
+    // borrowed; until then `DeferredSurface` records what it is asked to do.
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn SetTimer(
+            hwnd: isize,
+            id: usize,
+            elapse_ms: u32,
+            timer_proc: Option<unsafe extern "system" fn(isize, u32, usize, u32)>,
+        ) -> usize;
+        fn KillTimer(hwnd: isize, id: usize) -> i32;
+    }
+
+    type Job = Box<dyn FnOnce()>;
+
+    thread_local! {
+        static JOBS: RefCell<Vec<Job>> = const { RefCell::new(Vec::new()) };
+        static TIMER: Cell<usize> = const { Cell::new(0) };
+    }
+
+    unsafe extern "system" fn run_jobs(_: isize, _: u32, id: usize, _: u32) {
+        // SAFETY: a thread timer this module set; killing it is always valid.
+        unsafe { KillTimer(0, id) };
+        TIMER.with(|t| t.set(0));
+        let jobs = JOBS.with(|j| std::mem::take(&mut *j.borrow_mut()));
+        for job in jobs {
+            job();
+        }
+    }
+
+    /// Run `job` soon, from the top-level message loop.
+    fn defer(job: Job) {
+        JOBS.with(|j| j.borrow_mut().push(job));
+        if TIMER.with(Cell::get) == 0 {
+            // SAFETY: a plain thread timer with a static callback.
+            let id = unsafe { SetTimer(0, 0, 1, Some(run_jobs)) };
+            TIMER.with(|t| t.set(id));
+        }
+    }
+
+    /// GPUI's window, by its HWND, for building the child WebView later.
+    struct Hwnd(NonZeroIsize);
+
+    impl HasWindowHandle for Hwnd {
+        fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+            let raw = RawWindowHandle::Win32(Win32WindowHandle::new(self.0));
+            // SAFETY: GPUI's window HWND. If the window has closed since, the
+            // build fails, and that is handled.
+            Ok(unsafe { WindowHandle::borrow_raw(raw) })
+        }
+    }
+
+    /// What the surface was asked to do before its WebView existed.
+    #[derive(Default)]
+    struct Pending {
+        view: Option<WrySurface>,
+        frame: Option<Bounds<Pixels>>,
+        visible: bool,
+        dark: Option<bool>,
+        html: Option<String>,
+        evals: Vec<String>,
+    }
+
+    /// A WebView2 surface built outside GPUI's frame (see above).
+    pub struct DeferredSurface(Rc<RefCell<Pending>>);
+
+    impl DeferredSurface {
+        pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
+            let hwnd = match HasWindowHandle::window_handle(&*window).map(|h| h.as_raw()) {
+                Ok(RawWindowHandle::Win32(h)) => Hwnd(h.hwnd),
+                _ => return Err("The preview couldn't find its window.".into()),
+            };
+            let pending = Rc::new(RefCell::new(Pending::default()));
+            let weak: Weak<RefCell<Pending>> = Rc::downgrade(&pending);
+            defer(Box::new(move || {
+                if weak.upgrade().is_none() {
+                    return; // the pane went away first
+                }
+                let built = WrySurface::new(&hwnd, tx);
+                let Some(pending) = weak.upgrade() else {
+                    return;
+                };
+                match built {
+                    Ok(mut view) => {
+                        let mut p = pending.borrow_mut();
+                        if let Some(b) = p.frame {
+                            view.set_frame(b);
+                        }
+                        if let Some(d) = p.dark {
+                            view.set_dark(d);
+                        }
+                        if let Some(h) = p.html.take() {
+                            view.load(&h);
+                        }
+                        for js in std::mem::take(&mut p.evals) {
+                            view.eval(&js);
+                        }
+                        view.set_visible(p.visible);
+                        p.view = Some(view);
+                    }
+                    Err(msg) => eprintln!("blygger: {msg}"),
+                }
+            }));
+            Ok(DeferredSurface(pending))
+        }
+    }
+
+    impl PreviewSurface for DeferredSurface {
+        fn set_frame(&mut self, bounds: Bounds<Pixels>) {
+            let mut p = self.0.borrow_mut();
+            match p.view.as_mut() {
+                Some(v) => v.set_frame(bounds),
+                None => p.frame = Some(bounds),
+            }
+        }
+
+        fn set_visible(&mut self, visible: bool) {
+            let mut p = self.0.borrow_mut();
+            match p.view.as_mut() {
+                Some(v) => v.set_visible(visible),
+                None => p.visible = visible,
+            }
+        }
+
+        fn reclaim_keyboard(&mut self) {
+            if let Some(v) = self.0.borrow_mut().view.as_mut() {
+                v.reclaim_keyboard();
+            }
+        }
+
+        fn load(&mut self, html: &str) {
+            let mut p = self.0.borrow_mut();
+            match p.view.as_mut() {
+                Some(v) => v.load(html),
+                None => {
+                    // A new page makes script queued for the old one moot.
+                    p.html = Some(html.to_string());
+                    p.evals.clear();
+                }
+            }
+        }
+
+        fn eval(&mut self, js: &str) {
+            let mut p = self.0.borrow_mut();
+            match p.view.as_mut() {
+                Some(v) => v.eval(js),
+                None => p.evals.push(js.to_string()),
+            }
+        }
+
+        fn focus_parent(&mut self) {
+            if let Some(v) = self.0.borrow_mut().view.as_mut() {
+                v.focus_parent();
+            }
+        }
+
+        fn probe(&mut self) {
+            if let Some(v) = self.0.borrow_mut().view.as_mut() {
+                v.probe();
+            }
+        }
+
+        fn set_dark(&mut self, dark: bool) {
+            let mut p = self.0.borrow_mut();
+            match p.view.as_mut() {
+                Some(v) => v.set_dark(dark),
+                None => p.dark = Some(dark),
+            }
+        }
+
+        // --- notes --- (nothing is selected before the page exists)
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            match self.0.borrow_mut().view.as_mut() {
+                Some(v) => v.selection(reply),
+                None => {
+                    let _ = reply.try_send(String::new());
+                }
+            }
+        }
+    }
+
+    pub struct WrySurface {
+        view: WebView,
+        /// Set by `load`: the next top-level navigation is our own
+        /// `NavigateToString`, whatever URI WebView2 reports for it.
+        own_load: Rc<Cell<bool>>,
+    }
+
+    impl WrySurface {
+        fn new(parent: &impl HasWindowHandle, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
+            let (ipc_tx, nav_tx, new_tx) = (tx.clone(), tx.clone(), tx);
+            let own_load = Rc::new(Cell::new(true));
+            let nav_own = own_load.clone();
+            let view = WebViewBuilder::new()
+                .with_bounds(rect(Bounds::default()))
+                .with_visible(false)
+                .with_focused(false)
+                .with_initialization_script_for_main_only(HOST_SCRIPT, true)
+                .with_ipc_handler(move |req| {
+                    if let Some(ev) = parse_ipc(req.body()) {
+                        let _ = ipc_tx.try_send(ev);
+                    }
+                })
+                .with_navigation_handler(move |url| {
+                    if nav_own.replace(false) {
+                        return true;
+                    }
+                    match navigation(&url) {
+                        Nav::Allow => true,
+                        Nav::OpenExternally(u) => {
+                            let _ = nav_tx.try_send(SurfaceEvent::OpenUrl(u));
+                            false
+                        }
+                        Nav::Deny => false,
+                    }
+                })
+                .with_new_window_req_handler(move |url, _| {
+                    if let Nav::OpenExternally(u) = navigation(&url) {
+                        let _ = new_tx.try_send(SurfaceEvent::OpenUrl(u));
+                    }
+                    NewWindowResponse::Deny
+                })
+                .with_html("<!doctype html><html><body></body></html>")
+                .build_as_child(parent)
+                .map_err(|e| {
+                    format!(
+                        "The preview couldn't start ({e}). It needs the Microsoft Edge \
+                         WebView2 Runtime, which Windows 11 includes."
+                    )
+                })?;
+            Ok(WrySurface { view, own_load })
+        }
+    }
+
+    impl PreviewSurface for WrySurface {
+        fn set_frame(&mut self, bounds: Bounds<Pixels>) {
+            let _ = self.view.set_bounds(rect(bounds));
+        }
+
+        fn set_visible(&mut self, visible: bool) {
+            // A hidden WebView2 can keep keyboard focus; hand it back first.
+            if !visible {
+                let _ = self.view.focus_parent();
+            }
+            let _ = self.view.set_visible(visible);
+        }
+
+        fn reclaim_keyboard(&mut self) {
+            // WebView2 has no cheap "who has focus" query through wry, and
+            // giving focus to GPUI's window when it already has it is harmless.
+            let _ = self.view.focus_parent();
+        }
+
+        fn load(&mut self, html: &str) {
+            self.own_load.set(true);
+            if self.view.load_html(html).is_err() {
+                self.own_load.set(false);
+            }
+        }
+
+        fn eval(&mut self, js: &str) {
+            let _ = self.view.evaluate_script(js);
+        }
+
+        fn focus_parent(&mut self) {
+            let _ = self.view.focus_parent();
+        }
+
+        fn probe(&mut self) {
+            let _ = self
+                .view
+                .evaluate_script_with_callback(PROBE_JS, |json| println!("preview-probe {json}"));
+        }
+
+        fn set_dark(&mut self, dark: bool) {
+            let _ = self
+                .view
+                .set_theme(if dark { Theme::Dark } else { Theme::Light });
+        }
+
+        // --- notes ---
+        fn selection(&mut self, reply: async_channel::Sender<String>) {
+            let fallback = reply.clone();
+            let sent = self.view.evaluate_script_with_callback(
+                crate::app::notes::SELECTION_JS,
+                move |json| {
+                    let _ = reply.try_send(crate::app::notes::parse_selection(&json));
+                },
+            );
+            if sent.is_err() {
+                let _ = fallback.try_send(String::new());
+            }
+        }
     }
 }
 

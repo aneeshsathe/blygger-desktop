@@ -2,8 +2,8 @@
 
 **Burrow is a blygger client.**
 
-It's a native macOS studio for [Blygger](https://blygger.org) blogs, built to
-be as fast as Notational Velocity. Burrow was called Blygger Desktop up to
+It's a native studio for [Blygger](https://blygger.org) blogs, on macOS and
+Windows, built to be as fast as Notational Velocity. Burrow was called Blygger Desktop up to
 0.6.0 (see [the rename](install.md#the-rename)).
 
 ![Burrow, light theme](screenshots/light.png)

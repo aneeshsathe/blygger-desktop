@@ -15,6 +15,11 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Burrow runs on Windows.** A 64-bit Windows build, from the same code, ships with every release as `Burrow-<version>-windows-x64.zip`: unzip it and run `blygger.exe`. Shortcuts use Ctrl where the Mac uses ⌘ (Versions is Ctrl+Shift+Y), a Menu button stands in for the menu bar, posts and the editor show in WebView2, and sign-ins are kept in Windows Credential Manager. It doesn't update itself yet, the browser pane is macOS only, and the build isn't code-signed. See [Windows](https://aneeshsathe.github.io/blygger-desktop/install.html#windows). The port is by Patrick Atwater ([@patwater](https://github.com/patwater)); thank you!
+- CI checks every change on Windows too (fmt, clippy, tests and a release build).
+
 ### Changed
 
 - **The preview matches studio 0.36.1** byte for byte. An `[[id]]` link to a post that opens with a heading is labelled with that heading, without quotes; other links still show a quoted excerpt. A TK scope at the very start or end of a post shows as a block even with a stray newline or spaces between it and the edge. A link to, or quote of, a post whose blyg gives it a full permalink (a templated blyg) goes to that permalink. The Reader labels links in a post the same way.
