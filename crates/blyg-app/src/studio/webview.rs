@@ -417,7 +417,22 @@ pub const HOST_SCRIPT: &str = r#"
 "#;
 
 #[cfg(all(target_os = "macos", not(test)))]
-pub(crate) use wry_surface::{Keyboard, keyboard_of, rect, set_appearance};
+pub(crate) use wry_surface::{Keyboard, keyboard_of, set_appearance};
+
+/// A pane's bounds as a `wry` rect in logical pixels (never zero-sized).
+/// Shared by the macOS and Windows surfaces.
+#[cfg(all(any(target_os = "macos", target_os = "windows"), not(test)))]
+pub(crate) fn rect(b: Bounds<Pixels>) -> wry::Rect {
+    use wry::dpi::{LogicalPosition, LogicalSize};
+    wry::Rect {
+        position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
+        size: LogicalSize::new(
+            f64::from(b.size.width).max(1.0),
+            f64::from(b.size.height).max(1.0),
+        )
+        .into(),
+    }
+}
 
 // --- browser --- The modifier keys held when a link was followed (⌘ and ⌥),
 // read when WebKit asks about the navigation, so the browser pane knows a
@@ -453,22 +468,10 @@ fn note_click_modifiers() {
 #[cfg(all(target_os = "macos", not(test)))]
 mod wry_surface {
     use super::*;
-    use wry::dpi::{LogicalPosition, LogicalSize};
-    use wry::{NewWindowResponse, Rect, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
+    use wry::{NewWindowResponse, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};
 
     pub struct WrySurface {
         view: WebView,
-    }
-
-    pub(crate) fn rect(b: Bounds<Pixels>) -> Rect {
-        Rect {
-            position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
-            size: LogicalSize::new(
-                f64::from(b.size.width).max(1.0),
-                f64::from(b.size.height).max(1.0),
-            )
-            .into(),
-        }
     }
 
     /// Where the window's keyboard is, as far as a WebView is concerned.
@@ -650,8 +653,7 @@ mod wry_surface_windows {
     use std::cell::{Cell, RefCell};
     use std::num::NonZeroIsize;
     use std::rc::{Rc, Weak};
-    use wry::dpi::{LogicalPosition, LogicalSize};
-    use wry::{NewWindowResponse, Rect, Theme, WebView, WebViewBuilder, WebViewExtWindows};
+    use wry::{NewWindowResponse, Theme, WebView, WebViewBuilder, WebViewExtWindows};
 
     // Creating a WebView2 waits for it in a nested message loop
     // (webview2-com's `wait_with_pump`). GPUI asks for the surface while it
@@ -845,17 +847,6 @@ mod wry_surface_windows {
         /// Set by `load`: the next top-level navigation is our own
         /// `NavigateToString`, whatever URI WebView2 reports for it.
         own_load: Rc<Cell<bool>>,
-    }
-
-    fn rect(b: Bounds<Pixels>) -> Rect {
-        Rect {
-            position: LogicalPosition::new(f64::from(b.origin.x), f64::from(b.origin.y)).into(),
-            size: LogicalSize::new(
-                f64::from(b.size.width).max(1.0),
-                f64::from(b.size.height).max(1.0),
-            )
-            .into(),
-        }
     }
 
     impl WrySurface {

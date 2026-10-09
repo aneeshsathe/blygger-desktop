@@ -71,6 +71,21 @@ pub fn menu_panel(
     }
 }
 
+/// A sheet's key hint (`⏎ connect`, `esc cancel`) that is also a button on
+/// Windows, where people reach for the mouse in a sheet. On macOS the keys
+/// alone drive sheets, so it renders and behaves as the plain hint.
+pub fn key_button(
+    hint: gpui_kit::Div,
+    id: impl Into<gpui_kit::ElementId>,
+    on_click: impl Fn(&gpui_kit::ClickEvent, &mut gpui_kit::Window, &mut gpui_kit::App) + 'static,
+) -> gpui_kit::Stateful<gpui_kit::Div> {
+    use gpui_kit::prelude::FluentBuilder as _;
+    use gpui_kit::{InteractiveElement as _, StatefulInteractiveElement as _, Styled as _};
+    hint.id(id).when(cfg!(target_os = "windows"), |d| {
+        d.cursor_pointer().on_click(on_click)
+    })
+}
+
 /// Off macOS the taskbar and window icon is embedded in the executable.
 #[cfg(not(target_os = "macos"))]
 pub fn set_dock_icon_unless_bundled() {}

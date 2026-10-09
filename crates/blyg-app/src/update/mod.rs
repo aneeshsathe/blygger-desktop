@@ -236,7 +236,7 @@ pub fn disabled_reason() -> Option<&'static str> {
         return Some("BLYGGER_NO_UPDATE is set");
     }
     // Releases, signing and the bundle swap are macOS-only so far. Windows
-    // builds are downloaded from GitHub by hand (desktop/WINDOWS.md).
+    // builds are downloaded from the Releases page by hand (site/src/install.md).
     if cfg!(target_os = "windows") {
         return Some("not yet on Windows; download new builds from GitHub");
     }

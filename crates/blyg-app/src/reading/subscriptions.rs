@@ -412,10 +412,10 @@ impl MainView {
                 d.child(div().mt(px(6.)).text_color(p.muted).child("Checking…"))
             })
             .children(preview)
-            .child(if cfg!(target_os = "windows") {
-                // Windows: the keys are buttons too.
+            // The keys are buttons too on Windows (`platform::key_button`).
+            .child(
                 self.keys_row(vec![])
-                    .child(
+                    .child(crate::platform::key_button(
                         self.key_hint(
                             "⏎",
                             if previewed.is_some() {
@@ -423,34 +423,16 @@ impl MainView {
                             } else {
                                 "preview"
                             },
-                        )
-                        .id("subscribe-enter")
-                        .cursor_pointer()
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.subscribe_enter(window, cx)),
                         ),
-                    )
-                    .child(
-                        self.key_hint("esc", "cancel")
-                            .id("subscribe-cancel")
-                            .cursor_pointer()
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.close_reading_sheet(window, cx)
-                            })),
-                    )
-            } else {
-                self.keys_row(if previewed.is_some() {
-                    vec![
-                        self.key_hint("⏎", "subscribe"),
+                        "subscribe-enter",
+                        cx.listener(|this, _, window, cx| this.subscribe_enter(window, cx)),
+                    ))
+                    .child(crate::platform::key_button(
                         self.key_hint("esc", "cancel"),
-                    ]
-                } else {
-                    vec![
-                        self.key_hint("⏎", "preview"),
-                        self.key_hint("esc", "cancel"),
-                    ]
-                })
-            })
+                        "subscribe-cancel",
+                        cx.listener(|this, _, window, cx| this.close_reading_sheet(window, cx)),
+                    )),
+            )
             .into_any_element()
     }
 }

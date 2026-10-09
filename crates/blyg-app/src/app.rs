@@ -2909,49 +2909,32 @@ impl MainView {
                              address from your config file. Nothing changes on the blyg itself.",
                         ),
                     ))
-                    // Windows: the keys are buttons too.
-                    .child(if cfg!(target_os = "windows") {
+                    // The keys are buttons too on Windows (`platform::key_button`).
+                    .child(
                         keys_row(vec![])
-                            .child(
+                            .child(crate::platform::key_button(
                                 key_hint(
                                     "1",
                                     crate::keymap::hint("disconnect, keep the posts on this Mac"),
-                                )
-                                .id("disconnect-keep")
-                                .cursor_pointer()
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| this.disconnect_now(false, window, cx),
-                                )),
-                            )
-                            .child(
-                                key_hint("2", "also delete the local copy")
-                                    .id("disconnect-delete")
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.disconnect_now(true, window, cx)
-                                    })),
-                            )
-                    } else {
-                        keys_row(vec![
-                            key_hint(
-                                "1",
-                                crate::keymap::hint("disconnect, keep the posts on this Mac"),
-                            ),
-                            key_hint("2", "also delete the local copy"),
-                        ])
-                    })
-                    .child(if cfg!(target_os = "windows") {
-                        keys_row(vec![]).child(
-                            key_hint("esc", "cancel")
-                                .id("disconnect-cancel")
-                                .cursor_pointer()
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
                                 ),
-                        )
-                    } else {
-                        keys_row(vec![key_hint("esc", "cancel")])
-                    })
+                                "disconnect-keep",
+                                cx.listener(|this, _, window, cx| {
+                                    this.disconnect_now(false, window, cx)
+                                }),
+                            ))
+                            .child(crate::platform::key_button(
+                                key_hint("2", "also delete the local copy"),
+                                "disconnect-delete",
+                                cx.listener(|this, _, window, cx| {
+                                    this.disconnect_now(true, window, cx)
+                                }),
+                            )),
+                    )
+                    .child(keys_row(vec![]).child(crate::platform::key_button(
+                        key_hint("esc", "cancel"),
+                        "disconnect-cancel",
+                        cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                    )))
                     .into_any_element(),
             ),
             Sheet::ServerLimits { focus } => (
@@ -3128,28 +3111,20 @@ impl MainView {
                             } else {
                                 "next · connect"
                             };
-                            // Windows: the keys are buttons too.
-                            if cfg!(target_os = "windows") {
-                                keys_row(vec![])
-                                    .child(
-                                        key_hint("⏎", next)
-                                            .id("connect-submit")
-                                            .cursor_pointer()
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.submit_connect(window, cx)
-                                            })),
-                                    )
-                                    .child(
-                                        key_hint("esc", "not now")
-                                            .id("connect-cancel")
-                                            .cursor_pointer()
-                                            .on_click(cx.listener(|this, _, window, cx| {
-                                                this.close_sheet(window, cx)
-                                            })),
-                                    )
-                            } else {
-                                keys_row(vec![key_hint("⏎", next), key_hint("esc", "not now")])
-                            }
+                            // The keys are buttons too on Windows (`platform::key_button`).
+                            keys_row(vec![])
+                                .child(crate::platform::key_button(
+                                    key_hint("⏎", next),
+                                    "connect-submit",
+                                    cx.listener(|this, _, window, cx| {
+                                        this.submit_connect(window, cx)
+                                    }),
+                                ))
+                                .child(crate::platform::key_button(
+                                    key_hint("esc", "not now"),
+                                    "connect-cancel",
+                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                                ))
                         })
                         .into_any_element(),
                 )
