@@ -389,6 +389,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Lineage…", app::reading::ShowLineage),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
+                MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
                 // --- extensions ---
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---

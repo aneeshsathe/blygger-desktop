@@ -165,6 +165,15 @@ impl MainView {
         Some((sel, source))
     }
 
+    /// Where a quote (or a clipped page) goes: the draft or scratch note
+    /// open in the editor (not the notes' own), else a new draft (`None`).
+    pub(crate) fn selection_target(&self) -> Option<blyg_core::Item> {
+        self.current.clone().filter(|c| {
+            matches!(c.status, Status::Draft | Status::Scratch)
+                && self.notes.id.as_ref() != Some(&c.local_id)
+        })
+    }
+
     /// Put `selection` into the draft being written (at its caret), or a
     /// new draft, and show it.
     pub(crate) fn quote_into_draft(
@@ -174,10 +183,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let target = self.current.clone().filter(|c| {
-            matches!(c.status, Status::Draft | Status::Scratch)
-                && self.notes.id.as_ref() != Some(&c.local_id)
-        });
+        let target = self.selection_target();
         let blyg = matches!(source, QuoteSource::Blyg { .. });
         let into_thread = target.as_ref().map_or(blyg, |t| t.kind == Kind::Thread);
         let Some(block) = vm::quote_block(&selection, &source, into_thread) else {
