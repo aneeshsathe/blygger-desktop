@@ -23,7 +23,7 @@ its version), **Take the whole tour** starts at the beginning, and esc skips
 it. After updating to 0.11, sign in again once if you read on several Macs
 (see [the FAQ](faq.md#do-i-need-to-sign-in-again-after-updating)).
 
-**Coming from another feed reader?** File › Import Subscriptions from OPML…
+**Coming from another feed reader?** Blyg › Import Subscriptions from OPML…
 brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-reader)).
 
 ![What's new after an update](screenshots/whats-new.png)

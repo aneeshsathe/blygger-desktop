@@ -63,6 +63,9 @@ pub enum Key {
     NotesVault,
     /// The browser pane was folded while a macro runs.
     MacroFolded,
+    /// Import OPML… (the Subscriptions screen's chip, or Blyg › Import
+    /// Subscriptions from OPML…).
+    OpmlImport,
 }
 
 /// The part of the window a step highlights.
@@ -92,6 +95,8 @@ pub enum Region {
     /// A macro's run: the browser pane's toolbar while it's open, the
     /// status bar once it's folded.
     MacroRun,
+    /// A reading screen's header (Subscriptions: its chips).
+    ScreenHeader,
     /// The whole window (no ring).
     Whole,
 }
@@ -149,6 +154,8 @@ pub enum Setup {
     /// A sample consent sheet for markdown-notes (answering it writes
     /// nothing).
     Consent,
+    /// The Subscriptions screen (⇧⌘S).
+    Subscriptions,
 }
 
 /// One step of the tour.
@@ -194,11 +201,6 @@ pub const THREAD: &str = "01J9H4C";
 pub const QUOTING: &str = crate::fake::reading_seed::ADA_REPLY;
 /// The post it quotes (it lists the quoting post as a response).
 pub const QUOTED: &str = crate::fake::reading_seed::LIN_BENCH;
-
-/// Steps with nothing to press (what they teach lives in the menu bar,
-/// which the tour can't ring): only Next moves on.
-#[cfg(test)]
-pub const CAPTION_ONLY: &[&str] = &["opml"];
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -533,24 +535,22 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
-    // Caption-only: the tour can't point into the menu bar, so it names the
-    // menu path (the import's sheet opens only on a file the user picks).
     Step {
         id: "opml",
         since: "0.11.0",
-        title: "Bring your feeds along",
-        caption: "File › Import Subscriptions from OPML… reads another reader's export: tick \
-                  the feeds you want and Burrow subscribes them at a steady pace; they land in \
-                  an Imported feeds folder here in the Reader, and stay out of your public \
-                  blogroll. File › Export Subscriptions as OPML… saves yours.",
-        keys: &[],
-        key_label: "",
-        region: Region::Reader,
+        title: "Moving from another reader?",
+        caption: "Import OPML… (here on Subscriptions, ⇧⌘S, or Blyg › Import Subscriptions \
+                  from OPML…) reads its export: Burrow lists the feeds, ticks the new ones, and \
+                  files them in an Imported feeds folder in the Reader, out of your public \
+                  blogroll. Export OPML… saves yours. Try the sample file.",
+        keys: &[Key::OpmlImport],
+        key_label: "click",
+        region: Region::ScreenHeader,
         button: None,
-        setup: Setup::Reader,
-        pause_ms: 0,
+        setup: Setup::Subscriptions,
+        pause_ms: 1600,
         settle: false,
-        stay: false,
+        stay: true,
     },
     Step {
         id: "notes",
@@ -715,8 +715,8 @@ mod tests {
             let last = i + 1 == STEPS.len();
             assert_eq!(
                 s.keys.is_empty(),
-                last || CAPTION_ONLY.contains(&s.id),
-                "{}: only the last step, and caption-only ones, wait for Next",
+                last,
+                "{}: only the last step waits for Next",
                 s.id
             );
             assert_eq!(s.key_label.is_empty(), s.keys.is_empty(), "{}", s.id);
@@ -751,6 +751,7 @@ mod tests {
             Key::SlotSheet,
             Key::NotesVault,
             Key::MacroFolded,
+            Key::OpmlImport,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

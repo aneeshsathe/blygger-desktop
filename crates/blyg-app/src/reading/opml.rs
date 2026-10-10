@@ -26,6 +26,19 @@ gpui_kit::actions!(blygger, [ImportOpml, ExportOpml]);
 /// Where imported feeds go, in the user's words.
 pub const WHERE_THEY_GO: &str = "Added to the Imported feeds folder in the Reader";
 
+/// --- onboarding --- The tour's sample export from "another reader":
+/// one feed the sample data already follows, two it doesn't.
+const TOUR_OPML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0">
+  <head><title>Another reader's subscriptions</title></head>
+  <body>
+    <outline text="Rue" type="rss" xmlUrl="https://rue.blyg.example.com/feed.json"/>
+    <outline text="Tide Watch" type="rss" xmlUrl="https://tidewatch.example.com/feed.xml"/>
+    <outline text="Harbour Log" type="rss" xmlUrl="https://harbourlog.example.org/feed.xml"/>
+  </body>
+</opml>
+"#;
+
 /// The import pace; tests set a quicker one.
 pub struct ImportPace(pub Pace);
 
@@ -178,6 +191,15 @@ impl MainView {
     /// Import Subscriptions from OPML…: the file picker.
     pub(crate) fn opml_pick(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.opml_needs_blyg(cx) || self.reading.sheet.is_some() {
+            return;
+        }
+        // --- onboarding --- the tour's opml step: a sample file, no picker
+        // (importing it subscribes in the tour's sample data).
+        if self.onboarding.tutorial.is_some() {
+            self.tutorial_key(crate::app::onboarding::Key::OpmlImport, window, cx);
+            if let Ok(p) = opml::parse(TOUR_OPML) {
+                self.opml_open_preview("another-reader.opml".into(), p, window, cx);
+            }
             return;
         }
         let rx = cx.prompt_for_paths(PathPromptOptions {

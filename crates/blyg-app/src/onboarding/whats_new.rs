@@ -27,7 +27,7 @@ pub const RELEASES: &[Release] = &[
              “· 3 min” on each post you read, and ⋯ › inspect for the record behind it.",
             "The lineage glyph, ⌘J and the ring now count: how many posts a post draws on, \
              and how many draw on it.",
-            "Bring your feeds from another reader: File › Import Subscriptions from OPML… (and \
+            "Bring your feeds from another reader: Blyg › Import Subscriptions from OPML… (and \
              Export). They land in an Imported feeds folder in the Reader.",
             "markdown-notes takes several folders, and none until you choose one: Add folder… \
              in the drawer's Notes tab, or Settings › Notes folders.",

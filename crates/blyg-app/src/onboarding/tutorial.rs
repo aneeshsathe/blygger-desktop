@@ -754,6 +754,10 @@ impl MainView {
                 self.tutorial_setup(Setup::Posts, window, cx);
                 self.ext_tour_consent(window, cx);
             }
+            Setup::Subscriptions => {
+                self.tutorial_tidy(window, cx);
+                self.show_view(View::Subscriptions, window, cx);
+            }
         }
     }
 
@@ -789,6 +793,7 @@ impl MainView {
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
             "new" => self.start_new_post(window, cx),
+            "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
             "extensions" => self.ext_toggle_palette(window, cx),
@@ -810,8 +815,11 @@ impl MainView {
                 }
             }
             "notes-library" => {
-                let second = self.ext_libraries().into_iter().nth(1);
-                if let Some(l) = second {
+                let garden = self
+                    .ext_libraries()
+                    .into_iter()
+                    .find(|l| l.library.title == "Garden");
+                if let Some(l) = garden {
                     self.ext_lib_choose(Some(l.library.id), window, cx);
                 }
             }
@@ -873,6 +881,12 @@ impl MainView {
                 }
                 let nw = crate::app::notes::WIDTH;
                 ((w - nw).max(0.), top, nw.min(w), h - top)
+            }
+            Region::ScreenHeader => {
+                if self.reading.view == View::Posts {
+                    return None;
+                }
+                (0., top, w, OMNI_H)
             }
             Region::MacroRun => {
                 if let Some([_, chrome]) = self.browser_rects(w, h) {

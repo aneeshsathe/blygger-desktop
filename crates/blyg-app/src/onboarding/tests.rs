@@ -654,6 +654,10 @@ fn do_step(e: &mut Env, id: &str) {
         }
         "browser" => e.cx.simulate_keystrokes("escape"),
         "new" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
+        // A click on Import OPML… (the chip's own call).
+        "opml" => e
+            .view
+            .update_in(e.cx, |v, window, cx| v.opml_pick(window, cx)),
         // A click on ⋯ (the chip's own call).
         "slots" => e.view.update_in(e.cx, |v, window, cx| {
             let item = v
@@ -762,6 +766,7 @@ fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
             Region::ReaderPost => &["responses"],
             Region::BrowserChrome => &["browser-shield", "browser-clip", "browser-close"],
             Region::MacroRun => &["browser-macro-stop", "browser-close"],
+            Region::ScreenHeader => &["opml-import-chip"],
             Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
             _ => &[],
         };
@@ -1129,6 +1134,20 @@ fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
     do_step(&mut e, "lineage");
     wait_drawn(&mut e, "lineage", "lineage-count-up");
     assert!(drawn(&mut e, "lineage-count-down"));
+
+    // Import OPML… on Subscriptions: the preview of a sample file, the
+    // feed the sample data follows already marked.
+    enter(&mut e, "opml");
+    assert!(drawn(&mut e, "opml-import-chip"));
+    do_step(&mut e, "opml");
+    assert!(tour_done(&mut e));
+    wait_drawn(&mut e, "opml", "opml-row-2");
+    e.view.read_with(e.cx, |v, _| {
+        assert!(matches!(
+            v.reading.sheet,
+            Some(crate::app::reading::RSheet::Opml(_))
+        ))
+    });
 
     // The drawer's Notes tab: a chip per folder, Add folder…, Remove.
     enter(&mut e, "notes-library");

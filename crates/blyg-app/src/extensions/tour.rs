@@ -73,8 +73,9 @@ const VAULTS: &[SampleVault] = &[
         true,
     ),
     (
-        "vault-archive",
-        "Archive",
+        // (After Garden: labels sort, and the step says "Choose Garden".)
+        "vault-shelf",
+        "Shelf",
         &[(
             "Old letters.md",
             "# Old letters\n\nA box of postcards from the lighthouse.\n",

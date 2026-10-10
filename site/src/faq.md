@@ -95,11 +95,13 @@ Client access** that includes reading:state.
 
 ### Can I bring my feeds from another reader?
 
-Yes. **File › Import Subscriptions from OPML…** reads the OPML file most
-feed readers export: tick the feeds you want, and Burrow subscribes them a
-few at a time, files them in an **Imported feeds** folder in the Reader, and
-keeps them out of your public blogroll. **File › Export Subscriptions as
-OPML…** goes the other way. See [Reading](reading.md).
+Yes. **Blyg › Import Subscriptions from OPML…** (or **Import OPML…** on the
+Subscriptions screen, ⇧⌘S) reads the OPML file most feed readers export:
+tick the feeds you want, and Burrow subscribes them a few at a time, files
+them in an **Imported feeds** folder in the Reader, and keeps them out of
+your public blogroll. **Blyg › Export Subscriptions as OPML…** goes the
+other way. See
+[Import and export subscriptions](reading.md#import-and-export-subscriptions-opml).
 
 ### Can I sign in with my Claude Pro/Max subscription?
 
