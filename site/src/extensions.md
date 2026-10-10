@@ -207,3 +207,59 @@ repository.
 For an extension in Rust, the `blyg-ext` crate has the protocol types and a
 `serve` loop, and markdown-notes (`crates/blyg-ext-notes`) is a worked
 example.
+
+## Submit your extension
+
+Wrote an extension? List it on the
+[Community extensions](generated/community-extensions.md) page. The page is
+made from one file in the repository, `extensions/community.toml`, every time
+the documentation site is built, so a merged entry shows up on its own.
+
+> **Community extensions are used at your own risk.** The Burrow maintainers
+> do not review, verify, audit or endorse them. An extension is a program that
+> runs with your user's rights, and `fs:` and `net` are its own declarations,
+> not something Burrow can enforce. Read the source before you install one. To
+> report a malicious or misleading listing,
+> [open an issue](https://github.com/aneeshsathe/blygger-desktop/issues/new)
+> and it will be removed.
+
+To submit one, open a pull request that adds an `[[extension]]` table to
+`extensions/community.toml`, in alphabetical order by `name`:
+
+```toml
+[[extension]]
+name = "wordcount"                  # the name in your extension.toml
+title = "Word count"
+description = "Shows the word count and reading time of the open draft."
+repo = "https://github.com/example/burrow-ext-wordcount"
+homepage = "https://example.com/wordcount"   # optional
+author = "example"                  # your GitHub handle, not an email
+capabilities = ["items.read", "ui"] # exactly what your manifest asks for
+platforms = ["macos", "windows"]
+added = 2026-10-09                  # a date, without quotes
+```
+
+If you'd rather not open a pull request, fill in the
+[extension submission form](https://github.com/aneeshsathe/blygger-desktop/issues/new?template=extension-submission.yml)
+and a maintainer will add the entry for you.
+
+CI runs `scripts/community-extensions.py check` on the pull request (you can
+run it yourself first). It checks that:
+
+- the file is valid TOML, and every entry has all the fields above and no
+  others (only `homepage` is optional);
+- `name` is lowercase kebab-case (`word-count`), at most 40 characters, not
+  already listed, and not the name of an extension that comes with Burrow;
+- `title` (at most 60 characters) and `description` (one line, at most 160)
+  are plain text, with no HTML or Markdown code;
+- `repo` and `homepage` are `https://` addresses;
+- `author` is a GitHub handle, and no field holds an email address;
+- each capability is one Burrow knows (see
+  [Permissions and consent](#permissions-and-consent)), and `platforms` is
+  `macos`, `windows` or both;
+- the entries are sorted by `name`.
+
+A maintainer merges an entry after a light look at its format, and nothing
+more: the source code isn't read, run or tested. List the source code's
+repository, keep `capabilities` in step with your manifest, and open another
+pull request when the details change, or to take the entry down.

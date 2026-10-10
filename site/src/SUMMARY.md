@@ -12,6 +12,7 @@
 - [AI helpers](ai.md)
 - [Themes](themes.md)
 - [Extensions](extensions.md)
+  - [Community extensions](generated/community-extensions.md)
 
 # Reference
 

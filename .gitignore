@@ -11,3 +11,5 @@
 
 # The documentation site build (mdbook build site)
 /site/book/
+# Made from extensions/community.toml by scripts/build-site.sh
+/site/src/generated/community-extensions.md

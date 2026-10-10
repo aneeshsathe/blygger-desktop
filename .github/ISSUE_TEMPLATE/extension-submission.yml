@@ -1,0 +1,82 @@
+name: Submit a community extension
+description: Ask for your Burrow extension to be listed on the Community extensions page.
+title: "Community extension: "
+labels: ["community-extension"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Prefer a pull request? Add an `[[extension]]` entry to `extensions/community.toml` instead (see "Submit your extension" on the Extensions page of the documentation).
+
+        **The Burrow maintainers don't review, verify, audit or endorse community extensions.** We check that the entry is well-formed, add it, and the listing says it is used at the reader's own risk. Don't put an email address or other personal data in this form.
+  - type: input
+    id: name
+    attributes:
+      label: Name
+      description: The `name` in your extension.toml. Lowercase kebab-case, at most 40 characters.
+      placeholder: wordcount
+    validations:
+      required: true
+  - type: input
+    id: title
+    attributes:
+      label: Title
+      description: A short human name, at most 60 characters.
+      placeholder: Word count
+    validations:
+      required: true
+  - type: input
+    id: description
+    attributes:
+      label: Description
+      description: One line of plain text, at most 160 characters.
+      placeholder: Shows the word count and reading time of the open draft.
+    validations:
+      required: true
+  - type: input
+    id: repo
+    attributes:
+      label: Source repository
+      description: An https:// link to the public source code.
+      placeholder: https://github.com/example/burrow-ext-wordcount
+    validations:
+      required: true
+  - type: input
+    id: homepage
+    attributes:
+      label: Homepage (optional)
+      placeholder: https://example.com/wordcount
+  - type: input
+    id: author
+    attributes:
+      label: Author
+      description: Your GitHub handle, without the @. Not an email address.
+      placeholder: example
+    validations:
+      required: true
+  - type: textarea
+    id: capabilities
+    attributes:
+      label: Capabilities
+      description: Exactly what your manifest's `capabilities` asks for, one per line (or "none").
+      placeholder: |
+        items.read
+        ui
+    validations:
+      required: true
+  - type: checkboxes
+    id: platforms
+    attributes:
+      label: Platforms
+      options:
+        - label: macOS
+        - label: Windows
+  - type: checkboxes
+    id: understood
+    attributes:
+      label: Before you submit
+      options:
+        - label: I wrote this extension, or I maintain it, and its source code is public.
+          required: true
+        - label: I understand the maintainers check the entry's format only, and that the listing can be removed if it's reported as malicious or misleading.
+          required: true
