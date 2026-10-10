@@ -4,8 +4,10 @@
 pub mod api;
 pub mod backend;
 pub mod config;
+pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod model;
+pub mod opml; // --- OPML import/export ---
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;

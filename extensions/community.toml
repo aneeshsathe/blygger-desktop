@@ -1,0 +1,41 @@
+# Community extensions for Burrow.
+#
+# Every entry here is listed on the documentation site's "Community extensions"
+# page (site/src/generated/community-extensions.md, made by
+# scripts/build-site.sh). The Burrow maintainers do NOT review, verify, audit
+# or endorse these extensions. A listing only means the entry below passed
+# scripts/community-extensions.py check, which looks at its format, nothing
+# else.
+#
+# To list your extension, open a pull request that adds one [[extension]]
+# table, kept in alphabetical order by `name`. See "Submit your extension" on
+# the Extensions page of the documentation site.
+#
+# Fields (all strings unless noted; plain text, no Markdown or HTML):
+#
+#   name          required. The `name` in your extension.toml: lowercase
+#                 kebab-case ([a-z0-9]+(-[a-z0-9]+)*), at most 40 characters,
+#                 not a bundled extension's name, not already listed.
+#   title         required. A short human name, at most 60 characters.
+#   description   required. One line, at most 160 characters.
+#   repo          required. https:// URL of the source code.
+#   homepage      optional. https:// URL of a page about it.
+#   author        required. Your GitHub handle, without "@". Never an email.
+#   capabilities  required, a list (may be empty). Exactly what your
+#                 manifest's `capabilities` asks for, e.g. "items.read", "ui",
+#                 "net", "fs:~/Notes", "browser.automate:https://example.com".
+#   platforms     required, a non-empty list: "macos", "windows".
+#   added         required, a TOML date (no quotes): the day it was listed.
+#
+# Example (commented out; it is not a real extension):
+#
+# [[extension]]
+# name = "wordcount"
+# title = "Word count"
+# description = "Shows the word count and reading time of the open draft."
+# repo = "https://github.com/example/burrow-ext-wordcount"
+# homepage = "https://example.com/wordcount"
+# author = "example"
+# capabilities = ["items.read", "ui"]
+# platforms = ["macos", "windows"]
+# added = 2026-10-09

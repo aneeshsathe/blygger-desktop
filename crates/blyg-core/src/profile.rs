@@ -373,7 +373,8 @@ pub fn xml_unescape(s: &str) -> String {
                 .ok()
                 .and_then(char::from_u32),
             e if e.starts_with('#') => e[1..].parse().ok().and_then(char::from_u32),
-            _ => None,
+            // HTML's, which feed readers' exports and feeds use anyway.
+            e => html_entity(e),
         };
         match ch {
             Some(c) => {
@@ -390,9 +391,45 @@ pub fn xml_unescape(s: &str) -> String {
     out
 }
 
+/// The common HTML named entities that turn up in OPML and feeds.
+fn html_entity(name: &str) -> Option<char> {
+    Some(match name {
+        "nbsp" => '\u{a0}',
+        "eacute" => 'é',
+        "egrave" => 'è',
+        "ecirc" => 'ê',
+        "aacute" => 'á',
+        "agrave" => 'à',
+        "iacute" => 'í',
+        "oacute" => 'ó',
+        "uacute" => 'ú',
+        "auml" => 'ä',
+        "ouml" => 'ö',
+        "uuml" => 'ü',
+        "szlig" => 'ß',
+        "ntilde" => 'ñ',
+        "ccedil" => 'ç',
+        "hellip" => '…',
+        "mdash" => '—',
+        "ndash" => '–',
+        "lsquo" => '‘',
+        "rsquo" => '’',
+        "ldquo" => '“',
+        "rdquo" => '”',
+        "laquo" => '«',
+        "raquo" => '»',
+        "middot" => '·',
+        "bull" => '•',
+        "copy" => '©',
+        "reg" => '®',
+        "trade" => '™',
+        _ => return None,
+    })
+}
+
 /// The attributes of one start tag's inside (`outline text="a" xmlUrl='b'`),
 /// names lowercased. Unquoted values and junk are tolerated.
-fn attrs(tag: &str) -> BTreeMap<String, String> {
+pub(crate) fn attrs(tag: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     let b = tag.as_bytes();
     let mut i = 0;
@@ -468,34 +505,17 @@ fn start_tags<'a>(xml: &'a str, name: &str) -> Vec<&'a str> {
 
 /// Parse an OPML blogroll: every `<outline>` with a feed or site URL (http(s)
 /// only). Nested folders are flattened; junk around them is ignored.
+/// The parser is `opml::outlines` (shared with the OPML import).
 pub fn parse_opml(xml: &str) -> Vec<BlogrollEntry> {
     let mut seen = HashSet::new();
-    start_tags(xml, "outline")
+    crate::opml::outlines(xml)
         .into_iter()
-        .filter_map(|t| {
-            let a = attrs(t);
-            let http = |k: &str| {
-                a.get(k)
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| s.starts_with("http://") || s.starts_with("https://"))
-            };
-            let xml_url = http("xmlurl");
-            let html_url = http("htmlurl");
-            if xml_url.is_none() && html_url.is_none() {
-                return None;
-            }
-            let title = a
-                .get("title")
-                .or_else(|| a.get("text"))
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .or_else(|| html_url.as_deref().or(xml_url.as_deref()).and_then(host_of))
-                .unwrap_or_default();
-            let key = xml_url.clone().or_else(|| html_url.clone());
+        .filter_map(|o| {
+            let key = o.xml_url.clone().or_else(|| o.html_url.clone());
             seen.insert(key).then_some(BlogrollEntry {
-                title,
-                xml_url,
-                html_url,
+                title: o.title,
+                xml_url: o.xml_url,
+                html_url: o.html_url,
             })
         })
         .collect()

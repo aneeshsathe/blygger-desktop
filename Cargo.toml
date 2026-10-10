@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-app"]
+members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-ext-reading-time", "crates/blyg-ext-inspect", "crates/blyg-app"]
 
 [workspace.package]
 edition = "2024"
-version = "0.10.0"
+version = "0.11.0"
 license = "MIT"
 description = "A fast, local-first macOS studio for Blygger blogs"
 # Placeholder repo; set it with scripts/set-repo.sh (see packaging/config.env).

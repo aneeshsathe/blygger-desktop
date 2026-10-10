@@ -554,3 +554,123 @@ fn lineage_walks_one_step_at_a_time_and_rings_the_actions(cx: &mut TestAppContex
     let draft = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
     assert!(draft.contains(&format!("[[{ADA_REPLY}]]")), "{draft}");
 }
+
+// --- lineage counts --- (SPEC rule 1's lineage exception, 2026-10-09)
+
+fn glyph_of(
+    view: &Entity<MainView>,
+    cx: &mut VisualTestContext,
+    id: &str,
+) -> super::lineage_vm::Glyph {
+    view.read_with(cx, |v, _| {
+        let r = v.reading.rows.iter().find(|r| r.remote_id == id).unwrap();
+        v.lineage_glyph_of(r)
+    })
+}
+
+#[gpui_kit::test]
+fn the_glyph_shows_how_many_next_to_the_kinds(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    settle(cx);
+    // Ada's reply both stubs and quotes Lin's bench note: one reference,
+    // counted once, as the stub (the studio's rule).
+    let reply = glyph_of(&view, cx, ADA_REPLY);
+    assert_eq!((reply.up.counts.stub, reply.up.counts.transclusion), (1, 0));
+    let bench = glyph_of(&view, cx, LIN_BENCH);
+    assert!(
+        bench.down.counts.stub >= 1,
+        "the reply draws on the bench note"
+    );
+    assert!(bench.label().starts_with("0 · "), "{}", bench.label());
+    assert!(cx.debug_bounds("lineage-glyph").is_some());
+    assert!(
+        cx.debug_bounds("lineage-glyph-counts").is_some(),
+        "the counts are drawn beside the glyph"
+    );
+
+    // The node's counts, when it serves them, win over this Mac's.
+    view.update(cx, |v, cx| {
+        let sub = v
+            .reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == LIN_BENCH)
+            .unwrap()
+            .subscription_id
+            .clone();
+        let mut s = blyg_core::lineage::LineageSummary::default();
+        s.down.stub = 4;
+        s.down.transclusion = 3;
+        v.reading
+            .served
+            .insert(blyg_core::lineage::imported_key(&sub, LIN_BENCH), s);
+        cx.notify();
+    });
+    settle(cx);
+    let bench = glyph_of(&view, cx, LIN_BENCH);
+    assert_eq!(bench.label(), "0 · 7");
+    assert_eq!(bench.down.quote, super::lineage_vm::Mark::Whole);
+    assert!(
+        bench.tip().contains("4 replies, 3 quotes"),
+        "{}",
+        bench.tip()
+    );
+}
+
+#[gpui_kit::test]
+fn lineage_and_its_ring_show_the_counts_and_opening_marks_read(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    settle(cx);
+    assert_eq!(read_version(&fake, LIN_BENCH), None, "unread to begin with");
+    let ix = view.read_with(cx, |v, _| {
+        v.reading
+            .shown_rows()
+            .position(|r| r.remote_id == ADA_REPLY)
+            .unwrap()
+    });
+    view.update_in(cx, |v, window, cx| v.stream_select(ix, window, cx));
+    settle(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-j"));
+    settle(cx);
+    // The view counts what it lists, and agrees with the glyph.
+    let summary = view.read_with(cx, |v, _| match &v.reading.sheet {
+        Some(super::RSheet::Lineage(s)) => s.model.summary(),
+        _ => panic!("⌘J opens it"),
+    });
+    let glyph = glyph_of(&view, cx, ADA_REPLY);
+    assert_eq!(summary.up, glyph.up.counts);
+    assert_eq!(summary.down, glyph.down.counts);
+    assert!(cx.debug_bounds("lineage-count-up").is_some());
+    assert!(cx.debug_bounds("lineage-count-down").is_some());
+
+    // The ring says how many replies are known.
+    cx.simulate_keystrokes("space r");
+    settle(cx);
+    assert!(cx.debug_bounds("lineage-ring-count").is_some());
+    cx.simulate_keystrokes("escape escape");
+    settle(cx);
+
+    // Up to the bench note, `o` opens it in the reader: read, as from the list.
+    let at = view.read_with(cx, |v, _| match &v.reading.sheet {
+        Some(super::RSheet::Lineage(s)) => s
+            .model
+            .ups
+            .iter()
+            .position(|n| n.id.eq_ignore_ascii_case(LIN_BENCH))
+            .unwrap(),
+        _ => panic!("still open"),
+    });
+    cx.simulate_keystrokes("up");
+    for _ in 0..4 {
+        cx.simulate_keystrokes("left");
+    }
+    for _ in 0..at {
+        cx.simulate_keystrokes("right");
+    }
+    cx.simulate_keystrokes("o");
+    settle(cx);
+    assert_eq!(opened(&view, cx).as_deref(), Some(LIN_BENCH));
+    assert_eq!(read_version(&fake, LIN_BENCH), Some(1), "marked read");
+}

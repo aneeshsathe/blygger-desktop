@@ -5,7 +5,7 @@
 //!
 //! - `BLYG_E2E_URL`   the Worker under test (e.g. `http://127.0.0.1:18787`)
 //! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`, or on studio 0.28+ a manual
-//!   token minted with all four owner scopes
+//!   token minted with every owner scope (`reading:state` too, on 0.39+)
 //! - `BLYG_E2E_TOKEN_B` the same for `BLYG_E2E_URL_B` (studio 0.28+ only;
 //!   without it, `b` takes `a`'s credential)
 //! - `BLYG_E2E_OWNER_PASSWORD` its studio password, always: the browser
@@ -2105,7 +2105,7 @@ fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
     assert_eq!(
         scopes,
         blyg_core::api::oauth::OWNER_SCOPES,
-        "all four offered"
+        "every owner scope offered (reading:state: studio 0.39+)"
     );
     let mut form: Vec<(&str, &str)> = vec![("handle", &handle), ("decision", "allow")];
     form.extend(scopes.iter().map(|s| ("scope", s.as_str())));
@@ -2391,6 +2391,205 @@ fn a_token_without_a_scope_says_which() {
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
     assert_eq!(server_item(&sid)["content_md"], text);
+}
+
+/// A manual token with `scope`, minted as Studio → More → Client access
+/// does; `None` (skipped) on a studio without manual tokens.
+fn minted_token(scope: &[&str]) -> Option<String> {
+    let e = e2e();
+    let password = owner_password()?;
+    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let minted = match agent()
+        .post(&format!("{}/api/authorizations", e.url))
+        .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
+        .send_json(json!({"name": "burrow-e2e-scoped", "scope": scope, "resource": "api"}))
+    {
+        Ok(r) => r.into_json::<Value>().unwrap(),
+        Err(ureq::Error::Status(404, _)) => return None,
+        Err(e) => panic!("minting a token: {e}"),
+    };
+    Some(
+        minted["access_token"]
+            .as_str()
+            .expect("a token")
+            .to_string(),
+    )
+}
+
+/// The read/unread ops waiting in a closed backend's outbox.
+fn queued_reads(dir: &Path) -> usize {
+    let store = blyg_core::store::Store::open(&dir.join(blyg_core::live::DB_FILE)).unwrap();
+    store
+        .ops()
+        .unwrap()
+        .iter()
+        .filter(|o| {
+            matches!(
+                o.kind,
+                blyg_core::store::OpKind::Read | blyg_core::store::OpKind::Unread
+            )
+        })
+        .count()
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn read_state_needs_its_own_scope() {
+    // Studio 0.39 moved the read-state writes from owner:manage to
+    // reading:state (provisional name). A sign-in from before then holds
+    // the four owner scopes only: its reads are refused, stay queued, and
+    // go once a credential with the scope arrives; the rest still syncs.
+    use blyg_core::api::oauth::READ_STATE_SCOPE;
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let Some(page) = api.stock_reading(0).unwrap() else {
+        eprintln!("SKIP: no GET /api/reading");
+        return;
+    };
+    if !e.stock || !page.read_sync() {
+        eprintln!("SKIP: needs a stock studio that keeps read state (0.39+)");
+        return;
+    }
+    let old_four = ["owner:read", "owner:draft", "owner:publish", "owner:manage"];
+    let Some(old) = minted_token(&old_four) else {
+        eprintln!("SKIP: no manual tokens here");
+        return;
+    };
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
+    let t = tag("scope");
+    let (_, a) = published(&source, Kind::Fragment, &format!("{t} A"), None);
+    let owner_mac = manual(d2.path());
+    let sub = owner_mac.subscribe(&src_url, Some("Scope")).unwrap();
+    let _unsub = Unsub(&owner_mac, sub.id.clone());
+    sync_until_held(&owner_mac, &[&a]);
+
+    // The API names the missing scope, never the token.
+    let scoped = Api::new(&e.url, Credential::Token(old.clone()));
+    match scoped.put_read(&sub.id, &a, 1, None) {
+        Err(CoreError::Rejected {
+            status: 403,
+            message,
+            ..
+        }) => {
+            assert!(message.contains(READ_STATE_SCOPE), "{message}");
+            assert!(!message.contains(&old), "never the token");
+        }
+        other => panic!("expected a 403 naming {READ_STATE_SCOPE}, got {other:?}"),
+    }
+    assert_eq!(server_read_version(&a), Some(Value::Null));
+
+    // The app on that token: the read is held, the draft still goes.
+    let b = backend_at(d1.path(), &e.url, Credential::Token(old), false);
+    let (tx, rx) = std::sync::mpsc::channel();
+    b.set_event_sink(Box::new(move |ev| {
+        if let CoreEvent::Error(m) = ev {
+            let _ = tx.send(m);
+        }
+    }));
+    sync_until_held(&b, &[&a]);
+    assert_eq!(b.set_read(&[(sub.id.clone(), a.clone())], true).unwrap(), 1);
+    let text = tag("goes-anyway");
+    let id = b.create_draft(Kind::Fragment, &text).unwrap();
+    b.sync_now().expect("other sync keeps working");
+    assert_eq!(server_item(&sid_of(&b, &id))["content_md"], text);
+    assert_eq!(server_read_version(&a), Some(Value::Null), "refused");
+    assert!(!reading_item(&b, &a).unwrap().is_unread(), "read here");
+    b.sync_now().unwrap();
+    b.sync_now().unwrap();
+    let notices: Vec<String> = rx.try_iter().collect();
+    let about_reads: Vec<&String> = notices
+        .iter()
+        .filter(|m| m.contains("Read state"))
+        .collect();
+    assert_eq!(about_reads.len(), 1, "said once: {notices:?}");
+    assert!(
+        about_reads[0].contains(READ_STATE_SCOPE),
+        "{}",
+        about_reads[0]
+    );
+    assert!(
+        about_reads[0].contains("Client access"),
+        "a manual token: make a new one: {}",
+        about_reads[0]
+    );
+    drop(b);
+    assert_eq!(queued_reads(d1.path()), 1, "the read is still queued");
+
+    // A credential with reading:state (a new sign-in) sends it.
+    let b = manual(d1.path());
+    b.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    drop(b);
+    assert_eq!(queued_reads(d1.path()), 0);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn signing_in_again_with_a_kept_client_adds_reading_state() {
+    // An existing user's fix for held read state: sign in again. Burrow 0.10
+    // registered (and kept) its client asking for the four owner scopes;
+    // the studio doesn't hold a client to its registered scope, so the kept
+    // client is reused and the new grant has reading:state.
+    use blyg_core::api::oauth::{self, READ_STATE_SCOPE, client_key};
+    let e = e2e();
+    let Some(d) = oauth::discover(&e.url).unwrap() else {
+        eprintln!("skipped: this studio has no browser sign-in (older than 0.28)");
+        return;
+    };
+    if !d.scope.split(' ').any(|s| s == READ_STATE_SCOPE) {
+        eprintln!("skipped: this studio has no {READ_STATE_SCOPE} (older than 0.39)");
+        return;
+    }
+    let r: Value = agent()
+        .post(&d.registration_endpoint)
+        .send_json(json!({
+            "client_name": oauth::CLIENT_NAME,
+            "application_type": "native",
+            "redirect_uris": oauth::registered_redirect_uris(),
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "owner:read owner:draft owner:publish owner:manage offline_access",
+        }))
+        .expect("register a 0.10-style client")
+        .into_json()
+        .unwrap();
+    let old_id = r["client_id"].as_str().unwrap().to_string();
+    let mem = config::MemoryTokenStore::default();
+    let store: &dyn config::TokenStore = &mem;
+    store
+        .set(
+            &client_key(&e.url),
+            &json!({"issuer": d.issuer, "client_id": old_id,
+                    "redirect_uris": oauth::registered_redirect_uris()})
+            .to_string(),
+        )
+        .unwrap();
+    let Some(grant) = signed_in_with_browser(store) else {
+        return;
+    };
+    assert_eq!(grant.client_id, old_id, "the kept client is reused");
+    assert!(
+        grant.scope.split(' ').any(|s| s == READ_STATE_SCOPE),
+        "{}",
+        grant.scope
+    );
+    // And it may write read state (refused for a reading row it doesn't
+    // know only as `stored: false`, never 403).
+    let api = Api::new(
+        &e.url,
+        Credential::OAuth(oauth::OAuthSession::new(grant.clone())),
+    );
+    match api.put_read("no-such-sub", "no-such-item", 1, None) {
+        Ok(_) => {}
+        Err(e) => panic!("a reading:state grant may write read state: {e:?}"),
+    }
 }
 
 // ------------------------------------------------- studio 0.30–0.33 reading
@@ -2780,4 +2979,412 @@ fn read_and_unread_sync_through_upstreams_read_state() {
     assert!(!reading_item(&mac2, &a).unwrap().is_unread());
     assert!(!reading_item(&mac2, &b).unwrap().is_unread());
     mac1.unsubscribe(&sub.id).unwrap();
+}
+
+// --- lineage counts --- blygger-studio's `lineage-glyph` extension (PR #53,
+// dc632c5). Run against a studio built with it compiled in:
+// `BLYG_EXTENSIONS=lineage-glyph npm run build` in the Worker dir.
+
+/// Turn the extension on or off on `a` (`owner:manage`). False when the
+/// build doesn't carry it (the setting refuses unknown names).
+fn set_lineage_glyph(on: bool) -> bool {
+    let e = e2e();
+    let names = if on {
+        json!(["lineage-glyph"])
+    } else {
+        json!([])
+    };
+    let (st, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "extensions": names })),
+    );
+    if st != 200 {
+        eprintln!("lineage-glyph can't be turned on here ({st}): {v}");
+    }
+    st == 200
+}
+
+/// `GET path` as the owner must answer 200 with a body that matches the
+/// vendored lineage-glyph contract.
+fn lineage_conforms(path: &str) -> Value {
+    let e = e2e();
+    let (st, v) = owner("GET", &e.url, path, None);
+    let (p, _) = path.split_once('?').unwrap_or((path, ""));
+    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
+    if let Err(err) = contract::lineage_glyph().check_response("GET", &segs, st, &v) {
+        panic!("GET {path} broke the lineage-glyph contract: {err}\n{v}");
+    }
+    assert_eq!(st, 200, "GET {path}: {v}");
+    v
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn lineage_counts_come_from_the_node_when_it_serves_them() {
+    use blyg_core::lineage::{Centre, Local, imported_key};
+    let e = e2e();
+    // A stock build takes `extensions: []` but refuses to turn on one it
+    // wasn't built with: find out before subscribing to anything, so a skip
+    // leaves nothing behind for the tests after it.
+    if !set_lineage_glyph(true) || !set_lineage_glyph(false) {
+        eprintln!("skipped: this studio build doesn't carry lineage-glyph");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("lineage");
+    // On b: a fragment, and a thread that quotes it.
+    let (_, frag) = published(&source, Kind::Fragment, &format!("{t} the bench"), None);
+    let (_, thread) = published(
+        &source,
+        Kind::Thread,
+        &format!("![[{frag}]]\n\n{t} on the bench"),
+        None,
+    );
+
+    // a subscribes to b and holds both.
+    let off = manual(d1.path());
+    let sub = off.subscribe(&src_url, Some("Lineage source")).unwrap();
+    sync_until_held(&off, &[&frag, &thread]);
+    let keys = vec![imported_key(&sub.id, &frag), imported_key(&sub.id, &thread)];
+
+    // Off: the route is a 404, taken silently as "count here", and remembered.
+    let (st, _) = owner(
+        "GET",
+        &e.url,
+        "/api/ext/lineage-glyph/summaries?keys=%5B%5D",
+        None,
+    );
+    assert_eq!(st, 404);
+    assert_eq!(off.lineage_summaries(&keys, 0), None);
+    assert_eq!(off.cached_lineage_summaries(&keys), None);
+    let rows = off.reading();
+    let base = off.base_url().expect("a base url");
+    let local = Local::build(&rows, &off.items(), Some(&base), &[]);
+    let origin_b = reading_item(&off, &frag).unwrap().origin;
+    let here_frag = local.summary(&origin_b, &frag);
+    let here_thread = local.summary(&origin_b, &thread);
+    assert_eq!(here_frag.down.transclusion, 1, "{here_frag:?}");
+    assert_eq!(here_thread.up.transclusion, 1, "{here_thread:?}");
+
+    // On: a fresh Mac asks the node, and the node agrees with the local port.
+    assert!(set_lineage_glyph(true));
+    let on = manual(d3.path());
+    on.sync_now().unwrap();
+    let v = lineage_conforms(&format!(
+        "/api/ext/lineage-glyph/summaries?keys={}",
+        url::form_urlencoded::byte_serialize(serde_json::to_string(&keys).unwrap().as_bytes())
+            .collect::<String>()
+    ));
+    assert_eq!(v["summaries"].as_object().unwrap().len(), 2, "{v}");
+    let served = on.lineage_summaries(&keys, 0).expect("served now");
+    assert_eq!(served[&keys[0]], here_frag, "the node and this Mac agree");
+    assert_eq!(served[&keys[1]], here_thread);
+    assert_eq!(
+        on.cached_lineage_summaries(&keys).expect("cached")[&keys[0]],
+        here_frag
+    );
+
+    // The ⌘J graph: the thread is below the fragment, by reference.
+    lineage_conforms(&format!(
+        "/api/ext/lineage-glyph/lineage?{}",
+        Centre::Imported {
+            sub: sub.id.clone(),
+            id: frag.clone()
+        }
+        .query()
+    ));
+    let graph = on
+        .lineage_graph(
+            &Centre::Imported {
+                sub: sub.id.clone(),
+                id: frag.clone(),
+            },
+            0,
+        )
+        .expect("a graph");
+    assert_eq!(graph.summary(), here_frag);
+    assert!(
+        graph
+            .descendants
+            .iter()
+            .any(|d| d.post.id.as_deref() == Some(thread.as_str())),
+        "{graph:?}"
+    );
+
+    // Off again: the next ask finds out, drops what it served, and counts here.
+    assert!(set_lineage_glyph(false));
+    assert_eq!(on.lineage_summaries(&keys, 0), None);
+    assert_eq!(on.cached_lineage_summaries(&keys), None);
+    off.unsubscribe(&sub.id).unwrap();
+}
+
+// ---------------------------------------------------------------- OPML
+
+/// A tiny static feed server on 127.0.0.1 (never the internet): `path →
+/// body`, 404 for anything else. Lives as long as the test process.
+fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let files = std::sync::Arc::new(files);
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let files = files.clone();
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() {
+                    return;
+                }
+                // Drain the headers.
+                let mut h = String::new();
+                while reader.read_line(&mut h).is_ok_and(|n| n > 2) {
+                    h.clear();
+                }
+                // The path without the query.
+                let target = line.split_whitespace().nth(1).unwrap_or("/");
+                let path = target.split('?').next().unwrap_or("/");
+                let (status, ctype, body) = match files.iter().find(|(p, _)| *p == path) {
+                    Some((p, b)) => (
+                        "200 OK",
+                        if p.ends_with(".atom") {
+                            "application/atom+xml"
+                        } else {
+                            "application/rss+xml"
+                        },
+                        b.clone(),
+                    ),
+                    None => ("404 Not Found", "text/plain", "not here".to_string()),
+                };
+                let mut s = stream;
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            });
+        }
+    });
+    format!("http://{addr}")
+}
+
+fn rss(title: &str, link: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>{title}</title><link>{link}</link><description>Invented sample feed</description><item><title>Hello from {title}</title><link>{link}hello</link><guid>{link}hello</guid><pubDate>Fri, 02 Oct 2026 10:00:00 GMT</pubDate><description>An invented post.</description></item></channel></rss>"#
+    )
+}
+
+fn atom(title: &str, link: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>{title}</title><link href="{link}"/><id>{link}</id><updated>2026-10-02T10:00:00Z</updated><entry><title>Hello from {title}</title><link href="{link}hello"/><id>{link}hello</id><updated>2026-10-02T10:00:00Z</updated><summary>An invented post.</summary></entry></feed>"#
+    )
+}
+
+/// OPML import against the real studio: a mixed file (two new feeds, one
+/// already followed, one dead URL) maps 201 / 409 / 422, files what's added
+/// in the local "Imported feeds" folder (and leaves the followed one where
+/// it was), keeps them out of the public blogroll, and export round-trips.
+/// With `BLYG_E2E_BLYGGER` (a built `blygger`), the CLI does it too.
+#[test]
+#[ignore]
+fn opml_import_and_export() {
+    use blyg_core::opml::{self, FailKind, IMPORT_FOLDER, Outcome, Pace};
+    let e = e2e();
+    let t = tag("opml");
+    let host = serve_feeds(vec![
+        ("/ada.xml", rss("Ada Example", "https://ada.example.com/")),
+        ("/kit.atom", atom("Kit Example", "https://kit.example.org/")),
+        ("/rue.xml", rss("Rue Example", "https://rue.example.net/")),
+        (
+            "/moss.xml",
+            rss("Moss Example", "https://moss.example.org/"),
+        ),
+    ]);
+    // A query makes each run's feeds new to the studio.
+    let (ada, kit, rue, dead) = (
+        format!("{host}/ada.xml?run={t}"),
+        format!("{host}/kit.atom?run={t}"),
+        format!("{host}/rue.xml?run={t}"),
+        format!("{host}/gone.xml"),
+    );
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+
+    // Rue is already followed, and filed by the user.
+    let followed = me.subscribe(&rue, None).expect("subscribe to a local feed");
+    let mine = me.create_folder(&format!("Mine {t}")).unwrap();
+    me.set_subscription_folder(&followed.id, Some(&mine.id))
+        .unwrap();
+
+    let file = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0"><head><title>Another reader</title></head><body>
+  <outline text="Tech" title="Tech">
+    <outline type="rss" text="Ada &amp; co" xmlUrl="{ada}" htmlUrl="https://ada.example.com/"/>
+    <outline type="atom" text="Kit" xmlUrl="{kit}"/>
+  </outline>
+  <outline text="Rue" xmlUrl="{}"/>
+  <outline text="Gone" xmlUrl="{dead}"/>
+</body></opml>"#,
+        followed.feed_url
+    );
+    let parsed = opml::parse(&file).unwrap();
+    assert_eq!(parsed.feeds.len(), 4);
+    // The preview marks Rue as followed.
+    let subs = me.subscriptions();
+    let marks: Vec<bool> = parsed
+        .feeds
+        .iter()
+        .map(|f| opml::followed(f, &subs).is_some())
+        .collect();
+    assert_eq!(marks, [false, false, true, false], "{subs:?}");
+
+    // Run all four (Rue too) to see each answer.
+    let pace = Pace {
+        concurrency: 2,
+        interval: Duration::from_millis(300),
+        max_waits: 3,
+    };
+    let results = opml::run_import(
+        &me,
+        &parsed.feeds,
+        &pace,
+        &std::sync::atomic::AtomicBool::new(false),
+        &|_| {},
+    );
+    let ids: Vec<String> = results[..2]
+        .iter()
+        .map(|r| match r {
+            Some(Outcome::Added { id, .. }) => id.clone(),
+            other => panic!("201 for a new feed: {other:?}"),
+        })
+        .collect();
+    assert_eq!(results[2], Some(Outcome::AlreadyFollowing), "409");
+    match &results[3] {
+        Some(Outcome::Failed {
+            kind: FailKind::NotAFeed,
+            reason,
+        }) => assert!(
+            reason.contains("could not resolve"),
+            "the server's reason: {reason}"
+        ),
+        other => panic!("422 for a dead URL: {other:?}"),
+    }
+    assert_eq!(
+        opml::Summary::of(&results).line(),
+        "2 added, 1 already followed, 1 failed"
+    );
+
+    // Filed locally; the followed one stays where the user put it.
+    let folder = me
+        .folders()
+        .into_iter()
+        .find(|f| f.name == IMPORT_FOLDER)
+        .expect("the Imported feeds folder");
+    let filed = me.subscription_folders();
+    for id in &ids {
+        assert_eq!(filed.get(id), Some(&folder.id));
+    }
+    assert_eq!(filed.get(&followed.id), Some(&mine.id));
+
+    // Not in the public blogroll: new subscriptions are in_blogroll = 0.
+    let api = Api::new(&e.url, e.cred.clone());
+    let server = api.list_subscriptions().unwrap();
+    for id in &ids {
+        let s = server.iter().find(|s| &s.id == id).expect("on the server");
+        assert!(!s.in_blogroll, "{s:?}");
+    }
+    let (_, roll) = public_get(&format!("{}/blogroll.opml", e.url));
+    assert!(!roll.contains(&host), "{roll}");
+
+    // Export round-trips: every subscription, read back as followed.
+    let all = me.subscriptions();
+    let xml = opml::export(&all);
+    let back = opml::parse(&xml).unwrap();
+    let keys = |v: Vec<String>| {
+        let mut k: Vec<String> = v.iter().map(|u| opml::feed_key(u)).collect();
+        k.sort();
+        k
+    };
+    assert_eq!(
+        keys(back.feeds.iter().map(|f| f.xml_url.clone()).collect()),
+        keys(all.iter().map(|s| s.feed_url.clone()).collect())
+    );
+    for s in all.iter().filter(|s| s.feed_url.starts_with(&host)) {
+        assert!(back.feeds.iter().all(|f| opml::followed(f, &all).is_some()));
+        assert!(xml.contains(&s.feed_url.replace('&', "&amp;")));
+    }
+    assert_eq!(
+        all.iter().filter(|s| s.feed_url.starts_with(&host)).count(),
+        3
+    );
+
+    // The CLI, when a built `blygger` is given.
+    if let (Ok(bin), Credential::Token(token)) = (std::env::var("BLYG_E2E_BLYGGER"), &e.cred) {
+        let moss = format!("{host}/moss.xml?run={t}");
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config");
+        std::fs::write(&cfg, format!("blyg-url = {}\n", e.url)).unwrap();
+        let opml_file = dir.path().join("feeds.opml");
+        std::fs::write(
+            &opml_file,
+            format!(
+                "<opml version=\"2.0\"><body><outline text=\"Moss\" xmlUrl=\"{moss}\"/><outline text=\"Ada\" xmlUrl=\"{}\"/></body></opml>",
+                all.iter()
+                    .find(|s| s.id == ids[0])
+                    .map(|s| s.feed_url.clone())
+                    .unwrap()
+            ),
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let out = Command::new(&bin)
+                .args(args)
+                .env("BLYGGER_CONFIG", &cfg)
+                .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+                .env("BLYGGER_TEST_TOKEN", token)
+                .output()
+                .unwrap();
+            let s = String::from_utf8_lossy(&out.stdout).into_owned();
+            let err = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(!s.contains(token.as_str()) && !err.contains(token.as_str()));
+            (out.status.code(), s, err)
+        };
+        let f = opml_file.to_str().unwrap();
+        let (code, out, err) = run(&["+import-opml", f, "--dry-run"]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        assert!(out.contains("would add") && out.contains("Moss"), "{out}");
+        assert!(out.contains("already followed"), "{out}");
+        let (code, out, err) = run(&["+import-opml", f]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        assert!(
+            out.contains(
+                "1 added, 1 already followed, 0 failed. Added to the Imported feeds folder in the Reader."
+            ),
+            "{out}{err}"
+        );
+        let exported = dir.path().join("burrow-subscriptions.opml");
+        let (code, out, err) = run(&["+export-opml", exported.to_str().unwrap()]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        let back = opml::read_file(&exported).unwrap();
+        assert!(back.feeds.iter().any(|f| f.xml_url.contains("/moss.xml")));
+        eprintln!("the CLI imported and exported");
+    } else {
+        eprintln!("BLYG_E2E_BLYGGER not set (or a password sign-in): the CLI part skipped");
+    }
+
+    // Leave the studio as it was.
+    for s in api.list_subscriptions().unwrap() {
+        if s.feed_url.starts_with(&host) {
+            api.delete_subscription(&s.id).unwrap();
+        }
+    }
 }

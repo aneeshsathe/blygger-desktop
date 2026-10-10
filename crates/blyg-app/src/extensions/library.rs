@@ -44,6 +44,13 @@ pub(crate) struct OpenNote {
     pub folder: Option<String>,
 }
 
+/// A quote picker hit, with the library (vault) it came from.
+#[derive(Debug, Clone)]
+pub(crate) struct PickerHit {
+    pub lib: LibraryRef,
+    pub hit: SourceEntry,
+}
+
 /// The panel's state (part of `Extensions`).
 #[derive(Default)]
 pub(crate) struct Library {
@@ -63,14 +70,29 @@ pub(crate) struct Library {
     pub editor: Option<Entity<TextareaState>>,
     /// Setting the editor's text (not an edit).
     loading: bool,
+    /// The library (vault) chosen in the switcher, by id; `None` or one
+    /// that's gone: the first. Kept in `state.json` (`notes_vault`).
+    pub vault: Option<String>,
+    /// `vault` has been read from `state.json`.
+    vault_loaded: bool,
     // --- the quote picker's Notes chip ---
     pub picker: bool,
-    pub picker_hits: Vec<SourceEntry>,
+    /// Hits from every library (vault), in library order.
+    pub picker_hits: Vec<PickerHit>,
     picker_gen: u64,
     pub picker_status: Option<String>,
 }
 
 impl Library {
+    /// --- onboarding --- The tour's panel: the first sample folder, and
+    /// nothing read from (or written to) `state.json`.
+    pub fn for_tour() -> Library {
+        Library {
+            vault_loaded: true,
+            ..Library::default()
+        }
+    }
+
     /// The open note has edits not saved yet.
     pub fn dirty(&self, cx: &App) -> bool {
         match (&self.note, &self.editor) {
@@ -91,9 +113,106 @@ fn failure(lib: &LibraryRef, e: &ExtError) -> String {
 }
 
 impl MainView {
-    /// The library the panel shows: the first running extension's first.
+    /// Every running library, in order (each markdown-notes vault is one).
+    pub(crate) fn ext_libraries(&self) -> Vec<LibraryRef> {
+        self.ext
+            .host
+            .as_ref()
+            .map(|h| h.libraries())
+            .unwrap_or_default()
+    }
+
+    /// The library the panel shows: the one chosen in the switcher, else
+    /// the first.
     pub(crate) fn ext_library(&self) -> Option<LibraryRef> {
-        self.ext.host.as_ref()?.libraries().into_iter().next()
+        let all = self.ext_libraries();
+        let chosen = self.ext.lib.vault.as_deref();
+        all.iter()
+            .find(|l| Some(l.library.id.as_str()) == chosen)
+            .cloned()
+            .or_else(|| all.into_iter().next())
+    }
+
+    /// markdown-notes is turned on (its tab shows even with no folder, to
+    /// offer one).
+    pub(crate) fn ext_notes_on(&self) -> bool {
+        self.ext.host.as_ref().is_some_and(|h| {
+            h.status()
+                .iter()
+                .any(|s| s.name == super::NOTES && s.enabled)
+        })
+    }
+
+    /// The markdown-notes libraries whose folder isn't allowed yet.
+    fn ext_vaults_denied(&self, cx: &App) -> Vec<String> {
+        let Some(host) = self.ext.host.as_ref() else {
+            return vec![];
+        };
+        let Some(st) = host.status().into_iter().find(|s| s.name == super::NOTES) else {
+            return vec![];
+        };
+        self.ext_vaults(cx)
+            .1
+            .into_iter()
+            .filter(|v| {
+                st.missing
+                    .contains(&blyg_ext::Capability::Fs(v.path.clone()))
+            })
+            .map(|v| v.library)
+            .collect()
+    }
+
+    /// Show library `id` (`None`: the first) and remember it. An edit to
+    /// the open note is saved first.
+    pub(crate) fn ext_lib_choose(
+        &mut self,
+        id: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.ext_lib_load_choice();
+        if self.ext.lib.vault == id {
+            return;
+        }
+        let keep = self.ext.lib.note.as_ref().is_some_and(|n| n.stale);
+        if self.ext.lib.dirty(cx) && !keep {
+            self.ext_lib_save(window, cx);
+        }
+        self.ext.lib.vault = id.clone();
+        self.ext.lib.note = None;
+        self.ext.lib.path = None;
+        self.ext.lib.entries.clear();
+        self.ext.lib.hits = None;
+        self.ext.lib.status = None;
+        // (The tour's sample folders aren't remembered.)
+        if let Some(d) = self.ext.launch.as_ref().map(|l| &l.data_dir)
+            && !self.ext_tour_on()
+        {
+            let _ = blyg_core::state::AppState::update(d, |s| s.notes_vault = id);
+        }
+        self.ext_lib_refresh(window, cx);
+        cx.notify();
+    }
+
+    /// Read the remembered vault from `state.json` (once).
+    fn ext_lib_load_choice(&mut self) {
+        if self.ext.lib.vault_loaded {
+            return;
+        }
+        self.ext.lib.vault_loaded = true;
+        if self.ext.lib.vault.is_none() {
+            self.ext.lib.vault = self
+                .ext
+                .launch
+                .as_ref()
+                .map(|l| blyg_core::state::AppState::load(&l.data_dir))
+                .and_then(|s| s.notes_vault);
+        }
+    }
+
+    /// `lib` is still the library on screen.
+    fn ext_lib_is(&self, lib: &LibraryRef) -> bool {
+        self.ext_library().as_ref() == Some(lib)
     }
 
     fn ext_lib_host(&self) -> Option<(Host, LibraryRef)> {
@@ -102,6 +221,7 @@ impl MainView {
 
     /// Make the search box and the note editor (once).
     fn ext_lib_ensure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.ext_lib_load_choice();
         if self.ext.lib.search.is_none() {
             let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search notes…"));
             self._subs.push(cx.subscribe_in(
@@ -148,7 +268,7 @@ impl MainView {
 
     /// Open the drawer on the library (the palette's "Browse Notes").
     pub(crate) fn ext_lib_show(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.ext_library().is_none() {
+        if self.ext_library().is_none() && !self.ext_notes_on() {
             return self.show_toast("No notes library is running", None, cx);
         }
         self.ext_lib_ensure(window, cx);
@@ -187,7 +307,9 @@ impl MainView {
 
     /// The drawer shows the library now.
     pub(crate) fn ext_lib_showing(&self) -> bool {
-        self.ext.lib.tab && self.ext.host.is_some() && self.ext_library().is_some()
+        self.ext.lib.tab
+            && self.ext.host.is_some()
+            && (self.ext_library().is_some() || self.ext_notes_on())
     }
 
     /// List the folder on screen again (and search again), when shown.
@@ -222,6 +344,9 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, _, cx| {
+                if !v.ext_lib_is(&lib) {
+                    return; // another vault was chosen meanwhile
+                }
                 match r {
                     Ok(entries) => {
                         v.ext.lib.path = path;
@@ -267,7 +392,7 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, _, cx| {
-                if v.ext.lib.search_gen != gen_ {
+                if v.ext.lib.search_gen != gen_ || !v.ext_lib_is(&lib) {
                     return; // a newer search is on its way
                 }
                 match r {
@@ -298,6 +423,9 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
+                if !v.ext_lib_is(&lib) {
+                    return;
+                }
                 match r {
                     Ok(doc) => v.ext_lib_load(doc, window, cx),
                     Err(e) => v.ext.lib.status = Some(failure(&lib, &e)),
@@ -424,6 +552,13 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
+                if !v.ext_lib_is(&lib) {
+                    // Saved on the way to another vault: nothing to show.
+                    if let Err(e) = &r {
+                        v.show_toast(failure(&lib, e), None, cx);
+                    }
+                    return;
+                }
                 match r {
                     Ok(doc) => {
                         let id = doc.id.clone();
@@ -548,39 +683,57 @@ impl MainView {
         self.ext.lib.picker && self.ext_library().is_some()
     }
 
-    /// Search the notes for the picker's box (only the newest answer shows).
+    /// Search the notes for the picker's box: every library (vault), in
+    /// order, together at most [`SEARCH_LIMIT`] hits; a vault that refuses
+    /// (not allowed yet) is skipped. Only the newest answer shows.
     pub(crate) fn ext_picker_search(&mut self, query: String, cx: &mut Context<Self>) {
         if !self.ext.lib.picker {
             return;
         }
-        let Some((host, lib)) = self.ext_lib_host() else {
+        let Some(host) = self.ext.host.clone() else {
             return;
         };
+        let libs = self.ext_libraries();
+        if libs.is_empty() {
+            return;
+        }
         self.ext.lib.picker_gen += 1;
         let gen_ = self.ext.lib.picker_gen;
-        let p = LibrarySearchParams {
-            library: Some(lib.library.id.clone()),
-            query,
-            limit: SEARCH_LIMIT,
-        };
-        let e = lib.ext.clone();
-        let task = cx.background_spawn(async move { host.library_search(&e, &p) });
+        let task = cx.background_spawn(async move {
+            let mut hits = vec![];
+            let mut failed = None;
+            let mut answered = false;
+            for lib in libs {
+                let p = LibrarySearchParams {
+                    library: Some(lib.library.id.clone()),
+                    query: query.clone(),
+                    limit: SEARCH_LIMIT,
+                };
+                match host.library_search(&lib.ext, &p) {
+                    Ok(h) => {
+                        answered = true;
+                        hits.extend(h.into_iter().map(|hit| PickerHit {
+                            lib: lib.clone(),
+                            hit,
+                        }));
+                    }
+                    Err(e) => {
+                        failed.get_or_insert_with(|| failure(&lib, &e));
+                    }
+                }
+            }
+            hits.truncate(SEARCH_LIMIT);
+            (hits, failed.filter(|_| !answered))
+        });
         cx.spawn(async move |this, cx| {
-            let r = task.await;
+            let (hits, failed) = task.await;
             let _ = this.update(cx, |v, cx| {
                 if v.ext.lib.picker_gen != gen_ {
                     return;
                 }
-                match r {
-                    Ok(h) => {
-                        v.ext.lib.picker_hits = h;
-                        v.ext.lib.picker_status = None;
-                    }
-                    Err(e) => {
-                        v.ext.lib.picker_hits.clear();
-                        v.ext.lib.picker_status = Some(failure(&lib, &e));
-                    }
-                }
+                // A failure only shows when no vault answered.
+                v.ext.lib.picker_status = failed;
+                v.ext.lib.picker_hits = hits;
                 cx.notify();
             });
         })
@@ -596,10 +749,10 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some((host, lib)) = self.ext_lib_host() else {
+        let Some(host) = self.ext.host.clone() else {
             return;
         };
-        let Some(hit) = self.ext.lib.picker_hits.get(i).cloned() else {
+        let Some(PickerHit { lib, hit }) = self.ext.lib.picker_hits.get(i).cloned() else {
             return;
         };
         let p = LibraryReadParams {
@@ -659,7 +812,11 @@ impl MainView {
                 .text_size(px(11.))
                 .cursor_pointer()
                 .hover(|s| s.bg(p.hover()))
-                .child(lib.library.title.to_lowercase())
+                .child(if lib.ext == super::NOTES {
+                    "notes".to_string()
+                } else {
+                    lib.library.title.to_lowercase()
+                })
                 .on_click(
                     cx.listener(move |this, _, _, cx| this.ext_picker_toggle(query.clone(), cx)),
                 )
@@ -691,12 +848,19 @@ impl MainView {
                     .into_any_element(),
             ];
         }
+        let several = self.ext_libraries().len() > 1;
         self.ext
             .lib
             .picker_hits
             .iter()
             .enumerate()
-            .map(|(i, h)| {
+            .map(|(i, ph)| {
+                let h = &ph.hit;
+                let from = if several {
+                    format!("{} · ", ph.lib.library.title)
+                } else {
+                    String::new()
+                };
                 let when =
                     h.at.as_deref()
                         .map(|t| crate::vm::relative_time(t, now))
@@ -728,7 +892,7 @@ impl MainView {
                             .text_size(px(10.5))
                             .text_color(p.muted)
                             .truncate()
-                            .child(format!("note · quoted as text · {when}")),
+                            .child(format!("note · {from}quoted as text · {when}")),
                     )
                     .into_any_element()
             })
@@ -739,7 +903,13 @@ impl MainView {
 
     /// Hook (the drawer's top): "Reading notes | Notes" when a library runs.
     pub(crate) fn render_ext_tabs(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let lib = self.ext_library()?;
+        // markdown-notes shows its tab with no folder yet, to offer one.
+        let (title, ext): (SharedString, String) = match self.ext_library() {
+            Some(l) if l.ext != super::NOTES => (l.library.title.into(), l.ext),
+            Some(_) => ("Notes".into(), super::NOTES.into()),
+            None if self.ext_notes_on() => ("Notes".into(), super::NOTES.into()),
+            None => return None,
+        };
         let p = self.palette;
         let theme = &*self.theme;
         let on = self.ext.lib.tab;
@@ -771,18 +941,11 @@ impl MainView {
                         cx.listener(|this, _, window, cx| this.ext_lib_tab(false, window, cx)),
                     ),
                 )
-                .child(
-                    tab("notes-tab-library", lib.library.title.clone().into(), on).on_click(
-                        cx.listener(|this, _, window, cx| this.ext_lib_tab(true, window, cx)),
-                    ),
-                )
+                .child(tab("notes-tab-library", title, on).on_click(
+                    cx.listener(|this, _, window, cx| this.ext_lib_tab(true, window, cx)),
+                ))
                 .child(div().flex_1())
-                .child(
-                    div()
-                        .text_size(px(10.5))
-                        .text_color(p.muted)
-                        .child(lib.ext.clone()),
-                )
+                .child(div().text_size(px(10.5)).text_color(p.muted).child(ext))
                 .into_any_element(),
         )
     }
@@ -796,7 +959,20 @@ impl MainView {
         if !self.ext_lib_showing() {
             return None;
         }
-        let lib = self.ext_library()?;
+        let Some(lib) = self.ext_library() else {
+            return Some(self.render_ext_lib_empty(cx));
+        };
+        let switcher = self.render_ext_vault_switcher(&lib, cx);
+        let denied = (lib.ext == super::NOTES)
+            .then(|| {
+                let denied = self.ext_vaults_denied(cx);
+                self.ext_vaults(cx)
+                    .1
+                    .into_iter()
+                    .find(|v| v.library == lib.library.id && denied.contains(&v.library))
+                    .map(|v| v.path)
+            })
+            .flatten();
         let search = self.ext.lib.search.clone()?;
         let editor = self.ext.lib.editor.clone()?;
         let p = self.palette;
@@ -1001,6 +1177,7 @@ impl MainView {
                 .flex_col()
                 .gap(px(6.))
                 .rule_b(&p)
+                .children(switcher)
                 .child(
                     div()
                         .flex()
@@ -1107,6 +1284,18 @@ impl MainView {
         };
         let empty = rows.is_empty();
         let searching = self.ext.lib.hits.is_some();
+        // The vault on screen isn't allowed yet: say so, offer to ask.
+        if let Some(path) = denied {
+            let body = message_body(
+                &p,
+                format!("Burrow needs your permission to read and write {path}."),
+                chip("lib-vault-allow", "Allow…".into()).on_click(
+                    cx.listener(|this, _, window, cx| this.ext_ask_again(super::NOTES, window, cx)),
+                ),
+            );
+            let footer = footer_hint("Your other notes folders work meanwhile");
+            return Some((header, body, footer));
+        }
         let body = div()
             .id("lib-list")
             .flex_1()
@@ -1145,6 +1334,162 @@ impl MainView {
         Some((header, body, footer))
     }
 
+    /// A small chip for the drawer (`active`: the chosen one).
+    fn ext_lib_chip(&self, id: ElementId, label: SharedString, active: bool) -> Stateful<Div> {
+        let p = self.palette;
+        div()
+            .id(id)
+            .flex_none()
+            .px(px(7.))
+            .h(px(22.))
+            .flex()
+            .items_center()
+            .map(|d| crate::theme_ext::chip(d, &self.theme, active))
+            .when(active, |d| d.bg(p.pick()))
+            .text_size(px(11.5))
+            .text_color(p.ink)
+            .cursor_pointer()
+            .hover(|s| s.bg(p.hover()))
+            .child(label)
+    }
+
+    /// The vault switcher above markdown-notes' folders: a chip per vault
+    /// (one not allowed yet in the warning colour), "Add folder…", and the
+    /// chosen vault's folder with "Remove from Burrow" (the config line
+    /// only; the folder is never touched).
+    fn render_ext_vault_switcher(
+        &self,
+        lib: &LibraryRef,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        if lib.ext != super::NOTES {
+            return None;
+        }
+        let p = self.palette;
+        let vaults = self.ext_vaults(cx).1;
+        let denied = self.ext_vaults_denied(cx);
+        let libs: Vec<LibraryRef> = self
+            .ext_libraries()
+            .into_iter()
+            .filter(|l| l.ext == super::NOTES)
+            .collect();
+        let mut chips: Vec<AnyElement> = vec![];
+        for (i, l) in libs.iter().enumerate() {
+            let active = l.library.id == lib.library.id;
+            let id = l.library.id.clone();
+            let warn = denied.contains(&l.library.id);
+            chips.push(
+                self.ext_lib_chip(
+                    ElementId::NamedInteger("lib-vault".into(), i as u64),
+                    l.library.title.clone().into(),
+                    active,
+                )
+                .debug_selector(move || format!("lib-vault-{i}"))
+                .when(warn, |d| d.text_color(p.warn_text()))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.ext_lib_choose(Some(id.clone()), window, cx)
+                }))
+                .into_any_element(),
+            );
+        }
+        chips.push(
+            self.ext_lib_chip("lib-vault-add".into(), "Add folder…".into(), false)
+                .debug_selector(|| "lib-vault-add".into())
+                .text_color(p.muted)
+                .on_click(cx.listener(|this, _, window, cx| this.ext_pick_vaults(window, cx)))
+                .into_any_element(),
+        );
+        let spec = vaults.into_iter().find(|v| v.library == lib.library.id);
+        Some(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(5.))
+                        .children(chips),
+                )
+                .children(spec.map(|v| {
+                    let key = v.key.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(10.5))
+                        .text_color(p.muted)
+                        .child(div().flex_1().min_w_0().truncate().child(v.path))
+                        .child(
+                            div()
+                                .id("lib-vault-remove")
+                                .debug_selector(|| "lib-vault-remove".into())
+                                .flex_none()
+                                .cursor_pointer()
+                                .hover(|s| s.underline().text_color(p.ink))
+                                .child("Remove from Burrow")
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.ext_remove_vault(&key, window, cx)
+                                })),
+                        )
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// The Notes tab with no library to show: no folder chosen yet
+    /// ("Choose a folder…"), or folders waiting for permission ("Allow…").
+    fn render_ext_lib_empty(&self, cx: &mut Context<Self>) -> (AnyElement, AnyElement, AnyElement) {
+        let p = self.palette;
+        let (_, vaults) = self.ext_vaults(cx);
+        let header = div()
+            .flex_none()
+            .px(px(14.))
+            .pt(px(8.))
+            .pb(px(8.))
+            .rule_b(&p)
+            .text_size(px(13.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .child("Notes")
+            .into_any_element();
+        let body = if vaults.is_empty() {
+            message_body(
+                &p,
+                "Pick a folder of Markdown notes, an Obsidian vault say. Burrow reads and \
+                 writes only the folders you choose, and you can add more later."
+                    .to_string(),
+                self.ext_lib_chip("lib-choose".into(), "Choose a folder…".into(), false)
+                    .debug_selector(|| "lib-choose".into())
+                    .on_click(cx.listener(|this, _, window, cx| this.ext_pick_vaults(window, cx))),
+            )
+        } else {
+            let names: Vec<String> = vaults.iter().map(|v| v.path.clone()).collect();
+            message_body(
+                &p,
+                format!(
+                    "Notes isn't running yet. It's waiting for your permission to use {}.",
+                    names.join(", ")
+                ),
+                self.ext_lib_chip("lib-vault-allow".into(), "Allow…".into(), false)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.ext_ask_again(super::NOTES, window, cx)
+                    })),
+            )
+        };
+        let footer = div()
+            .flex_none()
+            .px(px(14.))
+            .py(px(6.))
+            .rule_t(&p)
+            .text_size(px(11.))
+            .text_color(p.muted)
+            .child("Settings › Notes folders lists them too")
+            .into_any_element();
+        (header, body, footer)
+    }
+
     /// A click on the picker's note row `i`.
     fn ext_picker_pick_row(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
         self.ext_picker_select(i);
@@ -1157,6 +1502,24 @@ impl MainView {
             *sel = i;
         }
     }
+}
+
+/// The drawer's body for a message and one button under it.
+fn message_body(p: &crate::theme::Palette, text: String, button: impl IntoElement) -> AnyElement {
+    div()
+        .id("lib-message")
+        .flex_1()
+        .min_h_0()
+        .px(px(14.))
+        .py(px(14.))
+        .flex()
+        .flex_col()
+        .items_start()
+        .gap(px(10.))
+        .text_size(px(12.5))
+        .child(div().text_color(p.muted).child(text))
+        .child(button)
+        .into_any_element()
 }
 
 /// What "Copy into post" puts in the draft: the text quoted with the

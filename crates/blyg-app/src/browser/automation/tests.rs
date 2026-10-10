@@ -1653,15 +1653,15 @@ mod ui {
             };
             assert!(!s.info.differs);
             assert!(v.browser.open, "the pane is open");
-            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+            // The ordinary side pane, not the whole window.
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Slide);
         });
-        // esc while it runs: the pane stays.
-        view.update_in(cx, |v, window, cx| v.close_browser(window, cx));
-        view.read_with(cx, |v, _| assert!(v.browser.open));
         view.update_in(cx, |v, window, cx| {
             v.macro_post_answer(PostChoice::Post, window, cx)
         });
         until(&view, cx, |v| !v.browser.automation.running());
+        // It was folded before the run: folded again after a post.
+        view.read_with(cx, |v, _| assert!(!v.browser.open));
         assert_eq!(dom.borrow().posted, vec![PAYLOAD.trim().to_string()]);
         // The paste went through the clipboard, and it's the user's again.
         assert_eq!(dom.borrow().commands, vec!["paste:"]);
@@ -1687,6 +1687,156 @@ mod ui {
         // Now the pane closes.
         view.update_in(cx, |v, window, cx| v.close_browser(window, cx));
         view.read_with(cx, |v, _| assert!(!v.browser.open));
+    }
+
+    /// The Post sheet sits beside the side pane, over the app's content, so
+    /// the page stays on screen while the user checks it.
+    #[gpui_kit::test]
+    fn the_post_sheet_leaves_the_page_in_view(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        let (view, cx) = setup(cx, dom.clone());
+        cx.simulate_resize(gpui_kit::size(gpui_kit::px(1400.), gpui_kit::px(900.)));
+        start(&view, cx);
+        view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            let right = v.macro_sheet_right().expect("beside the pane");
+            let pane_w = 1400. * crate::app::browser::view::SLIDE_WIDTH;
+            assert!(
+                (f32::from(right) - pane_w).abs() < 1.5,
+                "the sheet's right margin is the pane: {right:?}"
+            );
+            assert!(v.browser.visible(), "the page isn't hidden under the sheet");
+            assert!(
+                !dom.borrow().web_focused,
+                "⏎ is the sheet's, not the page's"
+            );
+        });
+        view.update_in(cx, |v, window, cx| {
+            v.macro_post_answer(PostChoice::Cancel, window, cx)
+        });
+        until(&view, cx, |v| !v.browser.automation.running());
+        // Too narrow beside the pane: the sheet drops over the window and the
+        // web view hides under it, as for any sheet.
+        cx.simulate_resize(gpui_kit::size(gpui_kit::px(900.), gpui_kit::px(700.)));
+        view.update_in(cx, |v, window, cx| {
+            v.open_url_in_app(
+                "https://social.example.com/notes",
+                crate::app::browser::OpenMode::Slide,
+                window,
+                cx,
+            )
+        });
+        cx.executor().advance_clock(Duration::from_secs(70)); // min-interval
+        start(&view, cx);
+        view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(v.macro_sheet_right().is_none());
+            assert!(!v.browser.visible());
+        });
+    }
+
+    /// Folding the pane (esc, ×, ⇧⌘B) while a macro runs doesn't stop it:
+    /// the web view lives on, parked off the window's edge, and the status
+    /// bar says a macro is running. Before it types, the pane comes back.
+    #[gpui_kit::test]
+    fn folding_keeps_the_run_alive_and_it_unfolds_to_type(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        // The page loads when the test says (its clock doesn't move).
+        dom.borrow_mut().load_time = Duration::from_secs(1);
+        let (view, cx) = setup(cx, dom.clone());
+        start(&view, cx);
+        view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
+        until(&view, cx, |v| v.browser.open);
+        view.read_with(cx, |v, _| {
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Slide);
+            assert!(!v.browser.automation.folded_run(v.browser.open));
+        });
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b")); // fold
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(!v.browser.open, "folded");
+            assert!(v.browser.automation.running(), "still running");
+            assert!(v.browser.alive(), "the web view is kept");
+            assert!(v.browser.parked(), "parked off-screen, not hidden");
+            assert!(!v.browser.visible());
+            assert!(v.browser.automation.folded_run(v.browser.open));
+        });
+        assert!(
+            cx.debug_bounds("macro-folded").is_some(),
+            "the status bar shows the folded run"
+        );
+        // A teardown never takes a running macro's page.
+        cx.executor()
+            .advance_clock(crate::app::browser::TEARDOWN_AFTER + Duration::from_secs(1));
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.browser.alive()));
+        assert!(dom.borrow().posted.is_empty());
+        // The page loads; before the text goes in, the pane unfolds.
+        dom.borrow().clock.set(Duration::from_secs(2));
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open, "unfolded to type and to check");
+            assert!(!v.browser.parked());
+            assert!(v.browser.visible());
+        });
+        assert!(cx.debug_bounds("macro-folded").is_none());
+        view.update_in(cx, |v, window, cx| {
+            v.macro_post_answer(PostChoice::Post, window, cx)
+        });
+        until(&view, cx, |v| !v.browser.automation.running());
+        assert_eq!(dom.borrow().posted, vec![PAYLOAD.trim().to_string()]);
+        // The user folded it during the run: their choice stands (it's open
+        // now, as the run left it), it isn't put back to folded.
+        view.read_with(cx, |v, _| assert!(v.browser.open));
+    }
+
+    /// A pane the user had open is reused as it is and stays open; "I'll
+    /// click Post myself" keeps a pane that was folded open too.
+    #[gpui_kit::test]
+    fn an_open_pane_is_reused_and_handing_over_keeps_it(cx: &mut TestAppContext) {
+        let dom = quick_dom();
+        let (view, cx) = setup(cx, dom.clone());
+        view.update_in(cx, |v, window, cx| {
+            v.open_url_in_app(
+                "https://social.example.com/notes",
+                crate::app::browser::OpenMode::Full,
+                window,
+                cx,
+            )
+        });
+        start(&view, cx);
+        view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        view.read_with(cx, |v, _| {
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+            // No room beside a full-width pane: the sheet covers as usual.
+            assert!(v.macro_sheet_right().is_none());
+        });
+        view.update_in(cx, |v, window, cx| {
+            v.macro_post_answer(PostChoice::Cancel, window, cx)
+        });
+        until(&view, cx, |v| !v.browser.automation.running());
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open, "it was open: it stays");
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+        });
+        // Folded, then a run handed over to the user: the pane stays open.
+        view.update_in(cx, |v, window, cx| v.close_browser(window, cx));
+        start(&view, cx);
+        view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
+        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        view.update_in(cx, |v, window, cx| {
+            v.macro_post_answer(PostChoice::Myself, window, cx)
+        });
+        until(&view, cx, |v| !v.browser.automation.running());
+        view.read_with(cx, |v, _| {
+            assert!(v.browser.open, "Click Post in the pane: it's there");
+        });
     }
 
     #[gpui_kit::test]

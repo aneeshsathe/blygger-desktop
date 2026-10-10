@@ -120,7 +120,8 @@ fn ext_with_an_unknown_name_exits_2() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
         err.contains(
-            "`no-such-thing` isn't a bundled extension (bundled: markdown-notes, cross-post)"
+            "`no-such-thing` isn't a bundled extension \
+             (bundled: markdown-notes, cross-post, reading-time, inspect)"
         ),
         "{err}"
     );
@@ -193,6 +194,7 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         &dir.path().join("config"),
         "extension = markdown-notes\n\
          extension-allow = markdown-notes ui\n\
+         extension-setting = markdown-notes vault=~/Notes\n\
          extension = hello\n\
          extension = ghost\n",
     );

@@ -6,7 +6,8 @@
 #   e2e-wrangler.sh setup                 derive the scratch config + secrets
 #   e2e-wrangler.sh token | password      print a scratch dev secret
 #   e2e-wrangler.sh mint-token <port>     sign in once and mint a manual API
-#                                         token with all four owner scopes
+#                                         token with every owner scope, and
+#                                         reading:state on studio 0.39+
 #                                         (studio 0.28+); prints it, or nothing
 #                                         on an older studio
 #   e2e-wrangler.sh start <name> <port> [KEY=value…]
@@ -110,9 +111,18 @@ mint_token() {
   jar="$BLYG_E2E_SCRATCH/cookies.$port"
   curl -fsS -o /dev/null -c "$jar" --data-urlencode "password=$(password)" "$base/studio/login" \
     || die "signing in to :$port failed"
+  # reading:state (studio 0.39+; the name is provisional, see READ_STATE_SCOPE
+  # in crates/blyg-core/src/api/oauth.rs): an older studio refuses a scope it
+  # doesn't know with a 400, so it gets the four owner scopes.
+  local four='"owner:read","owner:draft","owner:publish","owner:manage"'
   out="$(curl -sS -b "$jar" -H 'content-type: application/json' -w '\n%{http_code}' \
-    -d '{"name":"burrow-e2e","scope":["owner:read","owner:draft","owner:publish","owner:manage"],"resource":"api"}' \
+    -d "{\"name\":\"burrow-e2e\",\"scope\":[$four,\"reading:state\"],\"resource\":\"api\"}" \
     "$base/api/authorizations")"
+  if [ "${out##*$'\n'}" = 400 ]; then
+    out="$(curl -sS -b "$jar" -H 'content-type: application/json' -w '\n%{http_code}' \
+      -d "{\"name\":\"burrow-e2e\",\"scope\":[$four],\"resource\":\"api\"}" \
+      "$base/api/authorizations")"
+  fi
   rm -f "$jar"
   case "${out##*$'\n'}" in
     200) printf '%s' "${out%$'\n'*}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).access_token))' ;;

@@ -872,3 +872,38 @@ fn library_calls_map_stale_writes() {
         })
     );
 }
+
+#[test]
+fn a_reload_without_its_extension_line_stops_it() {
+    // Running: Burrow's Turn off removes `extension = <name>`, keeping its grants.
+    let env = setup(&["ui"], &["ui"], &[]);
+    env.started();
+    let mut off = config(env.dir.path(), &["ui"], &[]);
+    off.enabled.clear();
+    env.host.reload(off);
+    env.wait_for("Stopped", |e| {
+        matches!(e, ExtEvent::Stopped { message: None, .. })
+    });
+    assert_eq!(env.host.status()[0].state, ExtState::Disabled);
+    assert_eq!(env.command("echo", None), Err(ExtError::NotRunning));
+    // Back on: its grants were kept, so it starts without asking.
+    env.host.reload(config(env.dir.path(), &["ui"], &[]));
+    env.started();
+
+    // Waiting out a crash's backoff: it stops and isn't started again.
+    let env = setup_with(&[], &[], &["crash-init=1"], |c| {
+        c.timing.max_failures = 100;
+        c.timing.backoff = vec![Duration::from_millis(400)];
+    });
+    env.wait_for("Failed", |e| matches!(e, ExtEvent::Failed { .. }));
+    let mut off = config(env.dir.path(), &[], &["crash-init=1"]);
+    off.enabled.clear();
+    env.host.reload(off);
+    env.wait_for("Stopped", |e| {
+        matches!(e, ExtEvent::Stopped { message: None, .. })
+    });
+    let starts = read_lines(&env.storage().join("starts.log")).len();
+    std::thread::sleep(Duration::from_millis(600));
+    assert_eq!(read_lines(&env.storage().join("starts.log")).len(), starts);
+    assert_eq!(env.host.status()[0].state, ExtState::Disabled);
+}

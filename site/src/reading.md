@@ -60,6 +60,42 @@ subscription at once.
 |---|---|
 | ![A subscription's menu](screenshots/reader-sub-menu.png) | ![Renaming a subscription](screenshots/reader-sub-rename.png) |
 
+## Import and export subscriptions (OPML)
+
+Moving from another feed reader? Export an OPML file there (Feedly,
+NetNewsWire, Inoreader, Miniflux, Reeder and most others can), then choose
+**Blyg › Import Subscriptions from OPML…**, or **Import OPML…** on the
+Subscriptions screen (⇧⌘S).
+
+- Burrow lists the file's feeds, grouped under the folders they had in the
+  other reader. Feeds you already follow say **already following** and start
+  unticked, and a feed listed twice appears once.
+- 1–9 or Space tick and untick, ⌘A ticks all or none, ⏎ imports the ticked
+  ones, and esc cancels.
+- Every feed is subscribed on your blyg, as if you'd added it by hand. The
+  import goes slowly, about 30 feeds a minute, because each new subscription
+  makes your blyg fetch that feed's archive. Esc stops it after the feed in
+  progress, and what's done stays done.
+- Imported feeds go into a folder named **Imported feeds** in the Reader,
+  made the first time you import (file them elsewhere whenever you like).
+  Feeds you already followed stay where you filed them. The other reader's
+  folders are only shown in the list; they don't become folders here.
+- Imported feeds aren't added to your public blogroll.
+- At the end Burrow says how many were added, already followed, or failed,
+  with each failure's reason: *not a feed* (nothing at that address your blyg
+  could read as a blyg or a feed), *unreachable* (Burrow couldn't reach your
+  blyg), or *refused*. **r** retries the failed ones.
+
+**Blyg › Export Subscriptions as OPML…** (or **Export OPML…** on the
+Subscriptions screen) saves every subscription to an OPML file
+(`burrow-subscriptions.opml`) that other readers can import. Your blyg's
+public `blogroll.opml` lists only the subscriptions you put in your blogroll;
+the export lists them all.
+
+Both need a connected blyg, since your subscriptions live there. From a
+terminal: `blygger +import-opml <file>` (add `--dry-run` to see what would be
+added) and `blygger +export-opml <file>`.
+
 ## Acting on a post
 
 The selected post shows its actions. Each says what it makes:
@@ -139,14 +175,21 @@ Beside each post's name, in the stream and in Reader, a small **glyph** shows
 its lineage: lines coming in on the left are the kinds of post it draws on,
 lines going out on the right the kinds that draw on it. Each kind has its own
 place (fork at the top, reply in the middle, quote at the bottom) and colour,
-and a dotted line means only a passage. It never says how many; hover for the
-kinds in words.
+and a dotted line means only a passage. Beside it, **2 · 3** says how many:
+the posts it draws on, then the posts known here that draw on it. Hover for
+the counts by kind in words. These are the same numbers the web Studio's
+lineage glyph shows: when your blyg runs blygger-studio with the
+`lineage-glyph` extension turned on, Burrow asks it for them; otherwise it
+counts what this Mac holds, by the same rules. The lineage glyph is the one
+place Burrow shows counts: responses and mentions stay lists.
 
 **⌘J** (Post › Lineage…), or a click on the glyph, opens the lineage view. The
 post sits in a hexagon, what it draws on above it and what draws on it below.
 The arrow keys move between them, ⏎ makes a neighbour the centre so you can
 walk a conversation one step at a time, ⌫ walks back, **o** opens the selected
-post in the reader, and esc closes. Responses are what this Mac holds: posts
+post in the reader (marking it read, as opening it from the list does), and
+esc closes. Beside the hexagon it says how many each way. Responses are what
+your blyg knows when it serves the lineage, else what this Mac holds: posts
 in your reading list, your own posts, and verified mentions of your posts.
 
 ![The lineage view](screenshots/lineage.png)
@@ -156,11 +199,20 @@ actions, always in the same places: **F** fork, **R** reply, **Q** quote,
 **L** link post, **V** versions, **O** open on the web. A letter previews the
 action: a dashed node shows what it would make, and the panel answers the same
 four questions for each (is it a response, is the author told, are their
-words in yours, does it show under their post). ⏎, or the same letter again,
+words in yours, does it show under their post). Fork, reply and quote also
+say how many of that kind are already known (**R · 2**). ⏎, or the same letter again,
 does it; esc backs out. An action that can't be done (a fork of a post with
 no pinned version, say) says why.
 
 ![The action ring, previewing Reply](screenshots/lineage-ring.png)
+
+## Reading time and inspect
+
+Two bundled [extensions](extensions.md#reading-time-and-inspect), off until
+you turn them on, add to each post: **reading-time** ends its byline with
+**· 4 min** (the word count on hover), and **inspect** adds **⋯** to its
+actions, with the record Burrow holds for it (ids, versions, references,
+hashes, and its JSON).
 
 ## Mentions and responses
 

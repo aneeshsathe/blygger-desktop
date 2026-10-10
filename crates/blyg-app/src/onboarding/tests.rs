@@ -237,14 +237,42 @@ fn setup_mode<'a>(
     onboarded: bool,
     mode: Mode,
 ) -> Env<'a> {
+    // This version already seen: no what's-new card.
+    let seen = onboarded.then_some(env!("CARGO_PKG_VERSION"));
+    setup_full(cx, config, seen, mode, false)
+}
+
+/// The tour with its sample extensions running (the bundled ones, as this
+/// test binary's children; see `extensions::test_launch`).
+fn setup_ext<'a>(cx: &'a mut TestAppContext) -> Env<'a> {
+    setup_full(
+        cx,
+        CONNECTED,
+        Some(env!("CARGO_PKG_VERSION")),
+        Mode::Fake,
+        true,
+    )
+}
+
+/// `seen`: onboarded, having last launched that version.
+fn setup_full<'a>(
+    cx: &'a mut TestAppContext,
+    config: &str,
+    seen: Option<&str>,
+    mode: Mode,
+    extensions: bool,
+) -> Env<'a> {
     let dir = tempfile::tempdir().unwrap();
-    if onboarded {
+    if let Some(seen) = seen {
         state::AppState::update(dir.path(), |s| {
             s.onboarded = true;
-            // This version already seen: no what's-new card.
-            s.seen_version = Some(env!("CARGO_PKG_VERSION").into());
+            s.seen_version = Some(seen.into());
         })
         .unwrap();
+    }
+    if extensions {
+        let launch = crate::app::extensions::test_launch(dir.path().join("ext-data"));
+        cx.update(|cx| cx.set_global(launch));
     }
     let real = Recording::new();
     let switch = SwitchBackend::new(real.clone(), mode);
@@ -311,6 +339,57 @@ fn settle(e: &mut Env) {
 fn real_is_back(e: &Env) -> bool {
     let cur = e.switch.current();
     std::ptr::addr_eq(Arc::as_ptr(&cur), Arc::as_ptr(&e.real))
+}
+
+/// Run the window until `done`: the tour's extensions answer from other
+/// processes, in real time.
+fn wait(e: &mut Env, what: &str, mut done: impl FnMut(&mut Env) -> bool) {
+    let t = std::time::Instant::now();
+    loop {
+        e.cx.run_until_parked();
+        e.view
+            .update_in(e.cx, |v, window, cx| v.ext_pump(window, cx));
+        e.cx.update(|window, _| window.refresh());
+        e.cx.run_until_parked();
+        if done(e) {
+            return;
+        }
+        assert!(
+            t.elapsed() < Duration::from_secs(30),
+            "timed out waiting for {what}"
+        );
+        std::thread::sleep(Duration::from_millis(15));
+    }
+}
+
+/// The tour's sample extensions are up: both notes folders listed and the
+/// reading slots running.
+fn tour_extensions_ready(e: &mut Env) {
+    wait(e, "the tour's sample extensions", |e| {
+        e.view.read_with(e.cx, |v, _| {
+            let slots = v
+                .ext
+                .host
+                .as_ref()
+                .map(|h| h.entry_slots().len())
+                .unwrap_or(0);
+            v.ext_tour_on() && v.ext_libraries().len() >= 2 && slots >= 2
+        })
+    });
+}
+
+fn in_reader(e: &mut Env) -> bool {
+    e.view.read_with(e.cx, |v, _| {
+        v.reading.mode == crate::app::reading::stream_vm::ReadMode::Reader && v.reading.sources_open
+    })
+}
+
+fn drawn(e: &mut Env, sel: &'static str) -> bool {
+    e.cx.debug_bounds(sel).is_some()
+}
+
+fn wait_drawn(e: &mut Env, step: &str, sel: &'static str) {
+    wait(e, &format!("{step}: {sel} on screen"), |e| drawn(e, sel));
 }
 
 #[gpui_kit::test]
@@ -441,19 +520,30 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("create"));
     e.cx.simulate_keystrokes("enter");
-    settle(&mut e);
-    assert_eq!(tour_step(&mut e), Some("autosave"));
+    e.cx.run_until_parked();
     let (cur, fake) = e
         .view
         .read_with(e.cx, |v, _| (v.current.clone(), v.fake.clone()));
     assert!(cur.unwrap().content_md.starts_with("tide pools"));
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("new"));
+
+    // ⌘N opens the empty editor; the step stays for a look, then Next.
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n"));
+    settle(&mut e);
+    assert!(tour_done(&mut e));
+    assert_eq!(tour_step(&mut e), Some("new"), "it stays");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("autosave"));
 
     // Typing advances "Just write"; ↓ doesn't.
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-l down"));
     settle(&mut e);
     assert_eq!(tour_step(&mut e), Some("autosave"));
+    let autosave = STEPS.iter().position(|s| s.id == "autosave").unwrap();
     e.view.update_in(e.cx, |v, window, cx| {
-        v.tutorial_enter(2, window, cx);
+        v.tutorial_enter(autosave, window, cx);
     });
     e.cx.simulate_input(" at low tide");
     settle(&mut e);
@@ -563,6 +653,44 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"))
         }
         "browser" => e.cx.simulate_keystrokes("escape"),
+        "new" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
+        // A click on Import OPML… (the chip's own call).
+        "opml" => e
+            .view
+            .update_in(e.cx, |v, window, cx| v.opml_pick(window, cx)),
+        // A click on ⋯ (the chip's own call).
+        "slots" => e.view.update_in(e.cx, |v, window, cx| {
+            let item = v
+                .reading
+                .sel
+                .as_ref()
+                .and_then(|k| {
+                    v.reading
+                        .rows
+                        .iter()
+                        .find(|r| r.subscription_id == k.0 && r.remote_id == k.1)
+                })
+                .cloned()
+                .expect("a post is selected");
+            v.slots_open(item, window, cx)
+        }),
+        // A click on the second folder's chip.
+        "notes-library" => e.view.update_in(e.cx, |v, window, cx| {
+            let second = v.ext_libraries().into_iter().nth(1).expect("two folders");
+            v.ext_lib_choose(Some(second.library.id), window, cx)
+        }),
+        "clip" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-c"))
+        }
+        "cross-post" => e.cx.simulate_keystrokes("escape"),
+        "extensions" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
+        }
+        // Manage extensions… is the palette's last row.
+        "manage" => e.cx.simulate_keystrokes("up enter"),
+        "consent" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-backspace"))
+        }
         other => panic!("no way to do step {other}"),
     }
     e.cx.run_until_parked();
@@ -570,9 +698,10 @@ fn do_step(e: &mut Env, id: &str) {
 
 #[gpui_kit::test]
 fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
-    let mut e = setup(cx, CONNECTED, true);
+    let mut e = setup_ext(cx);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
     e.real.take();
     for (i, step) in STEPS.iter().enumerate() {
         if step.keys.is_empty() {
@@ -605,9 +734,10 @@ fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
-    let mut e = setup(cx, CONNECTED, true);
+    let mut e = setup_ext(cx);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
     let (vw, vh) = e.cx.update(|window, _| {
         let s = window.viewport_size();
         (f32::from(s.width), f32::from(s.height))
@@ -630,12 +760,20 @@ fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
         );
         // What the caption points at is inside the ring.
         let inside: &[&str] = match step.region {
-            Region::Reader => &["mode-stream", "mode-reader"],
+            // The toggle in the Stream; in Reader mode, the sources pane.
+            Region::Reader if !in_reader(&mut e) => &["mode-stream", "mode-reader"],
             Region::StreamPost => &["stream-actions"],
             Region::ReaderPost => &["responses"],
-            Region::BrowserChrome => &["browser-shield", "browser-close"],
+            Region::BrowserChrome => &["browser-shield", "browser-clip", "browser-close"],
+            Region::MacroRun => &["browser-macro-stop", "browser-close"],
+            Region::ScreenHeader => &["opml-import-chip"],
+            Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
             _ => &[],
         };
+        // The drawer's folders come from the extension: wait for them.
+        if step.region == Region::NotesDrawer {
+            wait_drawn(&mut e, step.id, "lib-vault-1");
+        }
         for sel in inside {
             let b =
                 e.cx.debug_bounds(sel)
@@ -644,7 +782,7 @@ fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
             let (bx1, by1) = (f32::from(b.right()), f32::from(b.bottom()));
             // The browser pane may still be sliding in from the right (the
             // ring is where it lands): only its left and vertical edges.
-            let sliding = step.region == Region::BrowserChrome;
+            let sliding = matches!(step.region, Region::BrowserChrome | Region::MacroRun);
             assert!(
                 bx >= x - 1. && by >= y - 1. && (sliding || bx1 <= x + w + 1.) && by1 <= y + h + 1.,
                 "{}: {sel} ({bx}, {by})–({bx1}, {by1}) is outside the ring ({x}, {y}, {w}, {h})",
@@ -962,4 +1100,191 @@ fn an_update_remembers_the_version_once_seen(cx: &mut TestAppContext) {
         state::AppState::load(e.dir.path()).seen_version.as_deref(),
         Some(env!("CARGO_PKG_VERSION"))
     );
+}
+
+// --- 0.10.0 and 0.11.0 --- the steps that teach them, on the real UI.
+
+/// Each new step lands on its feature: what its caption names is drawn in
+/// the state the step sets up, and after its key.
+#[gpui_kit::test]
+fn the_new_steps_show_their_features(cx: &mut TestAppContext) {
+    let mut e = setup_ext(cx);
+    let before = config_text(e.cx);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
+
+    // ⌘N: an empty editor, a scratch note once typed in.
+    enter(&mut e, "new");
+    do_step(&mut e, "new");
+    assert!(e.view.read_with(e.cx, |v, _| v.new_post.is_some()));
+    assert!(tour_done(&mut e));
+
+    // reading-time's "· N min" and inspect's ⋯, then its sheet.
+    enter(&mut e, "slots");
+    wait_drawn(&mut e, "slots", "slot-byline-reading-time");
+    assert!(drawn(&mut e, "slot-more"), "the ⋯ chip");
+    do_step(&mut e, "slots");
+    wait_drawn(&mut e, "slots", "slot-sheet");
+    assert!(tour_done(&mut e));
+
+    // The lineage glyph's counts, and the map's.
+    enter(&mut e, "lineage");
+    wait_drawn(&mut e, "lineage", "lineage-glyph-counts");
+    do_step(&mut e, "lineage");
+    wait_drawn(&mut e, "lineage", "lineage-count-up");
+    assert!(drawn(&mut e, "lineage-count-down"));
+
+    // Import OPML… on Subscriptions: the preview of a sample file, the
+    // feed the sample data follows already marked.
+    enter(&mut e, "opml");
+    assert!(drawn(&mut e, "opml-import-chip"));
+    do_step(&mut e, "opml");
+    assert!(tour_done(&mut e));
+    wait_drawn(&mut e, "opml", "opml-row-2");
+    e.view.read_with(e.cx, |v, _| {
+        assert!(matches!(
+            v.reading.sheet,
+            Some(crate::app::reading::RSheet::Opml(_))
+        ))
+    });
+
+    // The drawer's Notes tab: a chip per folder, Add folder…, Remove.
+    enter(&mut e, "notes-library");
+    for sel in [
+        "notes-tab-library",
+        "lib-vault-0",
+        "lib-vault-1",
+        "lib-vault-2",
+        "lib-vault-add",
+        "lib-vault-remove",
+    ] {
+        wait_drawn(&mut e, "notes-library", sel);
+    }
+    do_step(&mut e, "notes-library");
+    assert!(tour_done(&mut e));
+    // Remove from Burrow and Add folder… write nothing in the tour.
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.ext_remove_vault("vault-garden", window, cx);
+        v.ext_pick_vaults(window, cx);
+    });
+    e.cx.run_until_parked();
+
+    // ✂ Clip on the sample page: a quote with its link in a draft.
+    enter(&mut e, "clip");
+    assert!(drawn(&mut e, "browser-clip"));
+    do_step(&mut e, "clip");
+    assert!(tour_done(&mut e));
+    let text = e
+        .view
+        .read_with(e.cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert!(
+        text.contains("blyg.example.com/tide-tables"),
+        "clipped: {text}"
+    );
+
+    // cross-post's run in the pane, then folded: the status bar's mark.
+    enter(&mut e, "cross-post");
+    wait_drawn(&mut e, "cross-post", "browser-macro-stop");
+    assert!(!drawn(&mut e, "macro-folded"));
+    do_step(&mut e, "cross-post");
+    wait_drawn(&mut e, "cross-post", "macro-folded");
+    assert!(tour_done(&mut e));
+    assert!(
+        ring_now(&mut e, Region::MacroRun).is_some(),
+        "the ring moves to the status bar"
+    );
+
+    // ⇧⌘P, then Manage: Turn off and Forget permissions on the sample.
+    enter(&mut e, "extensions");
+    do_step(&mut e, "extensions");
+    wait_drawn(&mut e, "extensions", "ext-sheet");
+    assert!(drawn(&mut e, "ext-pal-0"));
+    enter(&mut e, "manage");
+    do_step(&mut e, "manage");
+    wait_drawn(&mut e, "manage", "ext-off-markdown-notes");
+    assert!(drawn(&mut e, "ext-forget-markdown-notes"));
+    assert!(tour_done(&mut e));
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.ext_turn_off(crate::app::extensions::NOTES, true, window, cx)
+    });
+    e.cx.run_until_parked();
+
+    // The consent sheet's ⌘⌫: the sheet goes, nothing is written.
+    enter(&mut e, "consent");
+    wait_drawn(&mut e, "consent", "ext-turn-off");
+    do_step(&mut e, "consent");
+    assert!(tour_done(&mut e));
+    e.view.read_with(e.cx, |v, _| {
+        assert!(v.ext.overlay.is_none());
+        assert!(v.ext.notices.is_empty(), "{:?}", v.ext.notices);
+    });
+
+    // Nothing the tour did reached the config file.
+    assert_eq!(config_text(e.cx), before);
+}
+
+/// Finishing the tour stops its extensions and puts the user's back.
+#[gpui_kit::test]
+fn the_tour_puts_the_users_extensions_back(cx: &mut TestAppContext) {
+    let mut e = setup_ext(cx);
+    let mine = e
+        .view
+        .read_with(e.cx, |v, _| v.ext.host.as_ref().map(|h| h.status().len()));
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
+    enter(&mut e, "notes-library");
+    wait_drawn(&mut e, "notes-library", "lib-vault-1");
+    enter(&mut e, "consent");
+    e.view
+        .update_in(e.cx, |v, window, cx| v.finish_tutorial(window, cx));
+    e.cx.run_until_parked();
+    e.view.read_with(e.cx, |v, _| {
+        assert!(!v.ext_tour_on());
+        assert!(v.ext.overlay.is_none(), "the sample sheet went");
+        assert!(!v.ext.lib.tab);
+        assert!(v.ext.notices.is_empty(), "{:?}", v.ext.notices);
+        // The user's host: nothing on, as before the tour.
+        assert_eq!(v.ext.host.as_ref().map(|h| h.status().len()), mine);
+        assert!(v.ext_libraries().is_empty());
+        assert!(!v.ext.started, "not started before the tour, nor after");
+    });
+    assert_eq!(
+        state::AppState::load(e.dir.path()).notes_vault,
+        None,
+        "the sample folder isn't remembered"
+    );
+}
+
+/// The first launch after updating from 0.10.0 to 0.11.0: the card lists
+/// 0.11.0's news, and "Show me what's new" lands on its first step.
+#[gpui_kit::test]
+fn a_launch_after_updating_from_0_10_starts_at_0_11s_first_step(cx: &mut TestAppContext) {
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = Some("0.11.0"));
+    let mut e = setup_full(cx, CONNECTED, Some("0.10.0"), Mode::Fake, false);
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = None);
+    assert!(news_up(&e), "the card is up");
+    let versions: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        v.onboarding
+            .tutorial
+            .as_ref()
+            .unwrap()
+            .news
+            .iter()
+            .map(|r| r.version)
+            .collect()
+    });
+    assert_eq!(versions, ["0.11.0"]);
+    assert_eq!(
+        state::AppState::load(e.dir.path()).seen_version.as_deref(),
+        Some("0.11.0")
+    );
+    // ⏎ on the card: Show me what's new.
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(!news_up(&e));
+    let first_new = STEPS.iter().find(|s| s.since == "0.11.0").map(|s| s.id);
+    assert_eq!(tour_step(&mut e), first_new);
+    assert_eq!(tour_step(&mut e), Some("slots"));
 }

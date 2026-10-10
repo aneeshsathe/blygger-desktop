@@ -97,6 +97,11 @@ jobs:
         with:
           persist-credentials: false
 
+      # The community extension list: format only (valid TOML, required
+      # fields, names, https URLs, sorted). It never fetches or runs anything.
+      - name: Check the community extension list
+        run: python3 scripts/community-extensions.py check
+
       # The pinned mdBook; fails on mdBook errors or broken links.
       - name: Build the book
         run: scripts/build-site.sh

@@ -1273,6 +1273,19 @@ impl Backend for FakeBackend {
         let p = fake_preview(url)?;
         let sub = {
             let mut st = self.lock();
+            // One subscription per source, as the studio refuses a second.
+            let feed = p.feed_url.clone().unwrap_or_else(|| url.to_string());
+            // A feed under a blyg's origin resolves to that blyg.
+            let origin = p.origin.clone().unwrap_or_default();
+            if let Some(s) = st.rd.subs.iter().find(|s| {
+                s.feed_url == feed || (s.kind == SubscriptionKind::Blyg && s.origin == origin)
+            }) {
+                return Err(CoreError::Rejected {
+                    status: 409,
+                    message: format!("already subscribed to {}", s.title),
+                    details: vec![],
+                });
+            }
             st.next_id += 1;
             let sub = Subscription {
                 id: format!("sub-{}", st.next_id),

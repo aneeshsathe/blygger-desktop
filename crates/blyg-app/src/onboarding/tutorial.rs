@@ -128,6 +128,8 @@ impl MainView {
                 None
             }
         };
+        // --- extensions --- the sample extensions, over the tour's backend.
+        self.ext_tour_start(window, cx);
         crate::ai::init(cx);
         let provider = cx
             .global_mut::<crate::ai::AiGlobal>()
@@ -208,7 +210,9 @@ impl MainView {
         if let Some(notes) = p.notes.take() {
             self.notes_tour_restore(notes, cx);
         }
+        self.browser.automation.tour_sample(false);
         self.browser_tour_end(cx);
+        self.ext_tour_end(window, cx);
         // The reading mode as it was (the new reading state loads it).
         let data_dir = cx.try_global::<Connection>().map(|c| c.data_dir.clone());
         stream_vm::save_mode(data_dir.as_deref(), p.read_mode);
@@ -315,7 +319,12 @@ impl MainView {
     /// The user did `key`. If the step waits for it, show ✓ and move on
     /// after the step's pause (once things have settled, if it asks), or,
     /// for a step that `stay`s, leave the moving on to Next.
-    pub(super) fn tutorial_key(&mut self, key: Key, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::app) fn tutorial_key(
+        &mut self,
+        key: Key,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(t) = self.onboarding.tutorial.as_mut() else {
             return;
         };
@@ -369,6 +378,7 @@ impl MainView {
         self.sheet.is_some()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
+            || self.ext.has_overlay()
             || self.render_ai_status().is_some()
     }
 
@@ -412,6 +422,40 @@ impl MainView {
             (Key::SpellMenu, assist.menu_open()),
             (Key::Lineage, self.lineage_open()),
             (Key::LineageRing, self.lineage_ring_open()),
+            // --- extensions ---
+            (
+                Key::ExtPalette,
+                matches!(
+                    self.ext.overlay,
+                    Some(crate::app::extensions::Overlay::Palette { .. })
+                ),
+            ),
+            (
+                Key::ExtManage,
+                matches!(
+                    self.ext.overlay,
+                    Some(crate::app::extensions::Overlay::Manage { .. })
+                ),
+            ),
+            (
+                Key::ConsentAnswered,
+                !matches!(
+                    self.ext.overlay,
+                    Some(crate::app::extensions::Overlay::Consent { .. })
+                ),
+            ),
+            (Key::SlotSheet, self.ext.slots.sheet.is_some()),
+            (
+                Key::NotesVault,
+                self.ext_lib_showing() && {
+                    let first = self.ext_libraries().into_iter().next();
+                    first.is_some() && self.ext_library() != first
+                },
+            ),
+            (
+                Key::MacroFolded,
+                self.browser.automation.folded_run(self.browser.open),
+            ),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -472,6 +516,7 @@ impl MainView {
         let d = on!(d, crate::ai::AiGenerate, Key::AiGenerate);
         let d = on!(d, crate::ai::AiShorten, Key::AiShorten);
         let d = on!(d, crate::app::reading::ShowVersions, Key::ShowVersions);
+        let d = on!(d, crate::app::NewDraft, Key::NewPost);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -489,10 +534,12 @@ impl MainView {
         if self.notes.drawn() {
             self.notes_tour_hide(cx);
         }
+        self.browser.automation.tour_sample(false);
         self.browser_tour_hide(cx);
         if self.profile_sheet_open() {
             self.close_profile(window, cx);
         }
+        self.ext_tour_close_sheets(window, cx);
     }
 
     /// Reading, in `mode`, nothing open, the search cleared.
@@ -686,6 +733,31 @@ impl MainView {
                 self.tutorial_setup(Setup::Reader, window, cx);
                 self.browser_tour_open(window, cx);
             }
+            Setup::NotesLibrary => {
+                self.tutorial_setup(Setup::Reader, window, cx);
+                self.ext_lib_choose(None, window, cx);
+                if self.ext_library().is_some() || self.ext_notes_on() {
+                    self.ext_lib_show(window, cx);
+                } else {
+                    self.open_notes(window, cx);
+                }
+            }
+            Setup::CrossPost => {
+                self.tutorial_setup(Setup::Browser, window, cx);
+                self.browser.automation.tour_sample(true);
+            }
+            Setup::Palette => {
+                self.tutorial_setup(Setup::Posts, window, cx);
+                self.ext_toggle_palette(window, cx);
+            }
+            Setup::Consent => {
+                self.tutorial_setup(Setup::Posts, window, cx);
+                self.ext_tour_consent(window, cx);
+            }
+            Setup::Subscriptions => {
+                self.tutorial_tidy(window, cx);
+                self.show_view(View::Subscriptions, window, cx);
+            }
         }
     }
 
@@ -720,6 +792,37 @@ impl MainView {
             "quotes" => self.open_quote_picker(window, cx),
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
+            "new" => self.start_new_post(window, cx),
+            "opml" => self.opml_pick(window, cx),
+            "clip" => self.browser_clip(window, cx),
+            "cross-post" => self.close_browser(window, cx),
+            "extensions" => self.ext_toggle_palette(window, cx),
+            "manage" => {
+                self.ext.overlay = None;
+                self.ext_open_manage(window, cx);
+            }
+            "slots" => {
+                let item = self.reading.sel.as_ref().and_then(|k| {
+                    self.reading
+                        .rows
+                        .iter()
+                        .find(|r| r.subscription_id == k.0 && r.remote_id == k.1)
+                        .cloned()
+                });
+                if let Some(item) = item {
+                    self.slots_open(item, window, cx);
+                    self.slots_choose(0, cx);
+                }
+            }
+            "notes-library" => {
+                let garden = self
+                    .ext_libraries()
+                    .into_iter()
+                    .find(|l| l.library.title == "Garden");
+                if let Some(l) = garden {
+                    self.ext_lib_choose(Some(l.library.id), window, cx);
+                }
+            }
             _ => {}
         }
     }
@@ -772,6 +875,28 @@ impl MainView {
             Region::Editor => editor,
             Region::Counter => (0., h - STATUS_H, 230., STATUS_H),
             Region::Sheet => ((w - 468.) / 2., top, 468., 132.),
+            Region::NotesDrawer => {
+                if !self.notes.drawn() {
+                    return None;
+                }
+                let nw = crate::app::notes::WIDTH;
+                ((w - nw).max(0.), top, nw.min(w), h - top)
+            }
+            Region::ScreenHeader => {
+                if self.reading.view == View::Posts {
+                    return None;
+                }
+                (0., top, w, OMNI_H)
+            }
+            Region::MacroRun => {
+                if let Some([_, chrome]) = self.browser_rects(w, h) {
+                    chrome
+                } else if self.browser.automation.folded_run(self.browser.open) {
+                    (0., h - STATUS_H, w, STATUS_H)
+                } else {
+                    return None;
+                }
+            }
             Region::Stream
             | Region::StreamPost
             | Region::Reader
@@ -843,12 +968,12 @@ impl MainView {
     /// would draw over it).
     fn tutorial_overlays(&self, region: Region, w: f32, h: f32) -> Vec<Rect> {
         let mut v = Vec::new();
-        if region != Region::BrowserChrome
+        if !matches!(region, Region::BrowserChrome | Region::MacroRun)
             && let Some([pane, _]) = self.browser_rects(w, h)
         {
             v.push(pane);
         }
-        if self.notes.drawn() {
+        if self.notes.drawn() && region != Region::NotesDrawer {
             let nw = crate::app::notes::WIDTH;
             v.push(((w - nw).max(0.), TITLEBAR_H, nw, h - TITLEBAR_H));
         }
@@ -882,6 +1007,7 @@ impl MainView {
         let covered = self.sheet.is_some()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
+            || self.ext.has_overlay() // --- extensions --- its sheets
             || self.profile_sheet_open()
             // The editor's @-mention popup and spelling menu.
             || assist.mention_open()
@@ -1034,9 +1160,15 @@ impl MainView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.muted)
                     .child(format!(
-                        "TOUR · {} OF {} · SAMPLE DATA",
+                        "TOUR · {} OF {}{} · SAMPLE DATA",
                         index + 1,
-                        STEPS.len()
+                        STEPS.len(),
+                        // What this version added says so.
+                        if step.since == super::whats_new::running_version() {
+                            format!(" · NEW IN {}", step.since)
+                        } else {
+                            String::new()
+                        }
                     ))
                     .child(div().flex_1())
                     .child(

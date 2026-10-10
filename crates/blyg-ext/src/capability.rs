@@ -176,7 +176,12 @@ pub fn describe(cap: &Capability) -> String {
     let base = match cap {
         Capability::ItemsRead => "read your posts, drafts and scratch notes".to_string(),
         Capability::ItemsWrite => "create and edit drafts (it can never publish)".to_string(),
-        Capability::ReadingRead => "read the posts held from your subscriptions".to_string(),
+        // --- reading slots --- the same posts reach its byline marker and ⋯ rows.
+        Capability::ReadingRead => {
+            "read the posts held from your subscriptions, and add to how each one shows \
+             while you read"
+                .to_string()
+        }
         Capability::BlygIdentity => "know your blyg's address (never your sign-in)".to_string(),
         Capability::Ui => "show messages and select posts in the list".to_string(),
         Capability::HookPublished => "be told when you publish, with the post's text".to_string(),

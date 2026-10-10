@@ -160,10 +160,27 @@ struct NetState {
     pushed: HashMap<LocalId, Instant>,
     /// The earliest time a save held back by `SAVE_GAP` may go.
     paced_until: Option<Instant>,
-    /// --- read/unread --- The server refused a read-state write with 403
-    /// (a scoped token on a Worker that keeps those writes to the owner):
-    /// read state stays on this Mac for the rest of the session.
+    /// --- read/unread --- The server refused a read-state write with 403:
+    /// a credential without `reading:state` (studio 0.39+; a sign-in made
+    /// before it), or a scoped token on a Worker that keeps those writes to
+    /// the owner. Read ops stay queued but aren't sent for the rest of the
+    /// session (a new sign-in is a new session), and the rest of the outbox
+    /// goes on without them.
     read_denied: bool,
+}
+
+/// What to say, once a session, when the blyg refuses a read-state write.
+/// A studio 0.39+ names the scope (`reading:state`) in its challenge, and
+/// `e` carries `oauth::missing_scope_message` (sign in again / a new token).
+fn read_denied_message(e: &CoreError) -> String {
+    let why = match e {
+        CoreError::Rejected { message, .. } if !message.is_empty() => message.as_str(),
+        _ => "The blyg refused to save read state for this sign-in.",
+    };
+    format!(
+        "Read state isn't syncing. {why} Until then your read marks are kept on this \
+         Mac and wait to be sent; everything else syncs as usual."
+    )
 }
 
 /// The time allowed per pull for fetching item documents (lineage).
@@ -451,6 +468,10 @@ impl Engine {
             let ran = self.run_op(&op);
             self.set_pushing(false);
             match ran {
+                // A read op held for the scope (`read_denied`): not a success,
+                // so no other 403's notice is reset; the loop goes on to the
+                // rest of the outbox, which skips the held reads.
+                Ok(()) if self.read_held(&op) => {}
                 Ok(()) => {
                     if op.kind == OpKind::Save {
                         self.state()
@@ -541,6 +562,11 @@ impl Engine {
             }
             // Ops for one item run strictly in order: a later save waits for
             // the create that assigns its server id.
+            // Read state the credential can't write waits, queued, for one
+            // that can; it holds nothing else up.
+            if self.read_held_locked(&st, &op) {
+                continue;
+            }
             if conflicted.contains(&op.local_id) || op.in_flight || (!force && op.not_before > now)
             {
                 blocked.insert(op.local_id.clone());
@@ -1131,22 +1157,29 @@ impl Engine {
     // ------------------------------------------------------------ read state
 
     /// The server syncs read state (extension 5, or upstream's read-state
-    /// routes), as of the last reading pull.
-    /// False for the rest of the session once a write was refused with 403
-    /// (`read_denied`): the marks stay here, unsent, and go up from a later
-    /// session that may write (each keeps its `read_at` until confirmed).
+    /// routes), as of the last reading pull. Still true once a write was
+    /// refused with 403 (`read_denied`): marks keep queueing, and wait.
     pub fn read_sync_on(&self) -> bool {
-        self.store.meta(READ_SYNC).as_deref() == Some("1") && !self.state().read_denied
+        self.store.meta(READ_SYNC).as_deref() == Some("1")
     }
 
-    /// A read-state write answered 403: stop sending them this session, and
-    /// say so once. The local marks stay.
-    fn read_denied(&self) -> Result<()> {
+    /// `op` is a read-state op this session's credential may not send.
+    fn read_held(&self, op: &Op) -> bool {
+        self.read_held_locked(&self.state(), op)
+    }
+
+    fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
+        st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread)
+    }
+
+    /// A read-state write answered 403 (`e`, which names the missing scope,
+    /// `reading:state`, when the server says): hold read ops for the rest
+    /// of the session, queued, and say once how to get them sent. No retry
+    /// until a new sign-in (a new session) or the next launch.
+    fn read_denied(&self, e: &CoreError) -> Result<()> {
         let first = !std::mem::replace(&mut self.state().read_denied, true);
         if first {
-            self.emit(CoreEvent::Error(
-                "Read state stays on this Mac: this sign-in can't save it to your blyg".into(),
-            ));
+            self.emit(CoreEvent::Error(read_denied_message(e)));
         }
         Ok(())
     }
@@ -1194,6 +1227,9 @@ impl Engine {
     fn reconcile_reads(&self, pulled: &[ReadingItem]) -> Result<bool> {
         let clear = self.read_clear_on();
         if self.store.meta(READ_SYNC_UPLOADED).is_none() {
+            if self.state().read_denied {
+                return Ok(false);
+            }
             let marks = self.store.read_marks(clear)?;
             for chunk in marks.chunks(crate::api::wire::READ_BATCH_MAX) {
                 match self.api.put_reads(chunk) {
@@ -1202,8 +1238,9 @@ impl Engine {
                         self.set_read_sync(false)?;
                         return Ok(false);
                     }
-                    Err(CoreError::Rejected { status: 403, .. }) => {
-                        self.read_denied()?;
+                    Err(e @ CoreError::Rejected { status: 403, .. }) => {
+                        // Sent whole by a later session that may write.
+                        self.read_denied(&e)?;
                         return Ok(false);
                     }
                     // Refused outright (a row it doesn't like): the rest
@@ -1264,11 +1301,13 @@ impl Engine {
             }
             Ok(())
         };
-        let denied = |this: &Self| -> Result<()> {
-            // Unsent this session; the rows keep their `read_at` / floor,
-            // so a later session that may write sends them.
-            done(this)?;
-            this.read_denied()
+        let denied = |this: &Self, e: &CoreError| -> Result<()> {
+            // Held, not dropped: the batch stays queued for a credential
+            // that may write it (`read_denied`).
+            for o in &batch {
+                this.store.set_in_flight(o.seq, false)?;
+            }
+            this.read_denied(e)
         };
         let gone = |this: &Self| -> Result<()> {
             // The endpoint is gone (a downgraded server).
@@ -1295,7 +1334,7 @@ impl Engine {
                     done(self)
                 }
                 Err(CoreError::NotFound) => gone(self),
-                Err(CoreError::Rejected { status: 403, .. }) => denied(self),
+                Err(e @ CoreError::Rejected { status: 403, .. }) => denied(self, &e),
                 Err(e) => {
                     for o in &batch[1..] {
                         self.store.set_in_flight(o.seq, false)?;
@@ -1340,7 +1379,7 @@ impl Engine {
                 Ok(())
             }
             Err(CoreError::NotFound) => gone(self),
-            Err(CoreError::Rejected { status: 403, .. }) => denied(self),
+            Err(e @ CoreError::Rejected { status: 403, .. }) => denied(self, &e),
             // `read_at` refused (a strict body on a server that said it
             // could clear): stop sending it and retry without.
             Err(CoreError::Rejected {
@@ -1605,3 +1644,6 @@ impl Engine {
         self.pull()
     }
 }
+
+#[cfg(test)]
+mod read_held_tests; // --- read/unread ---

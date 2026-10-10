@@ -44,6 +44,10 @@ if [ -z "${MDBOOK:-}" ]; then
   fi
 fi
 
+# The Community extensions page is made from extensions/community.toml (and
+# fails the build when an entry is malformed); it isn't committed.
+python3 scripts/community-extensions.py render
+
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 "$MDBOOK" build site 2>&1 | tee "$log"

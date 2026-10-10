@@ -22,7 +22,11 @@ pub(crate) enum RowAction {
     /// A granted macro site's `home`, in the browser pane (to sign in).
     OpenSite { ext: String, site: String },
     /// A library's notes, in the notes drawer.
-    Library { ext: String, title: String },
+    Library {
+        ext: String,
+        id: String,
+        title: String,
+    },
     /// The Manage extensions sheet.
     Manage,
 }
@@ -89,6 +93,7 @@ impl MainView {
                 rows.push(Row {
                     action: RowAction::Library {
                         ext: l.ext.clone(),
+                        id: l.library.id.clone(),
                         title: l.library.title.clone(),
                     },
                     label: format!("Browse {}", l.library.title),
@@ -131,6 +136,8 @@ impl MainView {
         if let Some(Overlay::Consent { reply, name, .. }) = self.ext.overlay.take() {
             match reply {
                 Some(r) => r.answer(false),
+                // (The tour's sample question leaves no notice.)
+                None if self.ext_tour_on() => {}
                 None => {
                     self.ext.notices.insert(name, Notice::NeedsPermission);
                 }
@@ -179,7 +186,10 @@ impl MainView {
         self.focus_after_sheet(window, cx);
         match row.action {
             RowAction::Manage => self.ext_open_manage(window, cx),
-            RowAction::Library { .. } => self.ext_lib_show(window, cx),
+            RowAction::Library { id, .. } => {
+                self.ext_lib_show(window, cx);
+                self.ext_lib_choose(Some(id), window, cx);
+            }
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
             RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
             RowAction::OpenSite { ext, site } => self.ext_open_site(&ext, &site, window, cx),
@@ -299,6 +309,16 @@ impl MainView {
         }
         let unticked: Vec<Capability> = caps.iter().filter(|c| !c.1).map(|c| c.0.clone()).collect();
         let name = name.clone();
+        // --- onboarding --- the tour's sample sheet: say so, write nothing.
+        if self.ext_tour_on() {
+            if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                r.answer(false);
+            }
+            self.ext.overlay = None;
+            self.focus_after_sheet(window, cx);
+            self.ext_tour_refuses(format!("{name} would be allowed"), cx);
+            return;
+        }
         if !unticked.is_empty() {
             self.ext.declined.push((name.clone(), unticked));
         }
@@ -334,8 +354,87 @@ impl MainView {
 
     /// Manage › Turn on: enable a disabled extension (consent follows).
     fn ext_turn_on(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ext_tour_refuses(format!("{name} would be turned on"), cx) {
+            return;
+        }
         let changes = super::allow_changes(crate::settings::get(cx).store.config(), name, &[]);
         self.ext_write_config(&changes, window, cx);
+    }
+
+    /// Turn off (Manage, or the consent sheet's ⌘⌫): remove `name`'s
+    /// `extension` lines; the reload stops it. Its grants and settings
+    /// stay, so Turn on brings it back as it was, unless `forget` (Forget
+    /// permissions), which removes its `extension-allow` lines too. Any
+    /// question or notice about it goes away.
+    pub(crate) fn ext_turn_off(
+        &mut self,
+        name: &str,
+        forget: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // --- onboarding --- in the tour: the sheet goes, nothing is written.
+        if self.ext_tour_on() {
+            if matches!(&self.ext.overlay, Some(Overlay::Consent { name: n, .. }) if n == name) {
+                if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                    r.answer(false);
+                }
+                self.ext.overlay = None;
+                self.focus_after_sheet(window, cx);
+            }
+            let what = if forget {
+                format!("{name} would be turned off, its permissions forgotten")
+            } else {
+                format!("{name} would be turned off")
+            };
+            self.ext_tour_refuses(what, cx);
+            return;
+        }
+        let cfg = crate::settings::get(cx).store.config();
+        let was_on = cfg.extensions_enabled().iter().any(|n| n == name);
+        let changes = super::disable_changes(cfg, name, forget);
+        // A consent sheet for it (on screen or queued) is answered no.
+        let consent =
+            matches!(&self.ext.overlay, Some(Overlay::Consent { name: n, .. }) if n == name);
+        if consent {
+            if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                r.answer(false);
+            }
+            self.focus_after_sheet(window, cx);
+        }
+        for a in std::mem::take(&mut self.ext.asks) {
+            if a.name == name {
+                if let Some(r) = a.reply {
+                    r.answer(false);
+                }
+            } else {
+                self.ext.asks.push_back(a);
+            }
+        }
+        self.ext.notices.remove(name);
+        // Turning it on again is a fresh start: ask again.
+        self.ext.asked.retain(|(n, _)| n != name);
+        self.ext.declined.retain(|(n, _)| n != name);
+        if !changes.is_empty() && self.ext_write_config(&changes, window, cx) {
+            let text = match (was_on, forget) {
+                (true, false) => format!("{name} turned off"),
+                (true, true) => format!("{name} turned off, permissions forgotten"),
+                (false, _) => format!("{name}'s permissions forgotten"),
+            };
+            self.show_toast(text, Some("Saved in your config file".into()), cx);
+        }
+        cx.notify();
+        if consent {
+            self.ext_next_ask(window, cx);
+        }
+    }
+
+    /// The consent sheet's Turn off: the extension it asks for.
+    fn ext_consent_turn_off(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(Overlay::Consent { name, .. }) = self.ext.overlay.as_ref() {
+            let name = name.clone();
+            self.ext_turn_off(&name, false, window, cx);
+        }
     }
 
     // ------------------------------------------------------------ render
@@ -574,6 +673,9 @@ impl MainView {
                 match k {
                     "enter" => this.ext_allow(window, cx),
                     "escape" => this.ext_close(window, cx),
+                    "backspace" if ev.keystroke.modifiers.secondary() => {
+                        this.ext_consent_turn_off(window, cx)
+                    }
                     _ => match k.parse::<usize>() {
                         Ok(n) if n >= 1 => this.ext_toggle_cap(n - 1, cx),
                         _ => return,
@@ -611,6 +713,15 @@ impl MainView {
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.ext_close(window, cx)),
                             ),
+                    )
+                    .child(
+                        self.ext_key_hint(crate::keymap::hint("⌘⌫"), "turn off")
+                            .id("ext-turn-off")
+                            .debug_selector(|| "ext-turn-off".into())
+                            .cursor_pointer()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.ext_consent_turn_off(window, cx)
+                            })),
                     )
                     .child(div().child("1–9 tick or untick")),
             )
@@ -651,24 +762,7 @@ impl MainView {
         };
         let cards = status.into_iter().map(|s| {
             let (word, good) = state_word(&s.state);
-            let name = s.name.clone();
-            let n2 = s.name.clone();
-            let action = match s.state {
-                ExtState::Disabled => Some(chip(format!("ext-on-{name}"), "Turn on").on_click(
-                    cx.listener(move |this, _, window, cx| {
-                        this.ext_turn_on(&name, window, cx);
-                    }),
-                )),
-                _ if s.enabled && !s.missing.is_empty() => Some(
-                    chip(format!("ext-allow-{name}"), "Allow…").on_click(cx.listener(
-                        move |this, _, window, cx| {
-                            this.ext.overlay = None;
-                            this.ext_ask_again(&n2, window, cx);
-                        },
-                    )),
-                ),
-                _ => None,
-            };
+            let actions = self.ext_manage_actions(&s, &chip, cx);
             div()
                 .py(px(8.))
                 .border_b_1()
@@ -711,8 +805,7 @@ impl MainView {
                                 .text_size(px(11.5))
                                 .text_color(if good { p.green_text() } else { p.muted })
                                 .child(word),
-                        )
-                        .children(action),
+                        ),
                 )
                 .when(!s.description.is_empty(), |d| {
                     d.child(
@@ -724,6 +817,16 @@ impl MainView {
                 })
                 .children(caps_line("Allowed", &s.granted))
                 .children(caps_line("Not allowed", &s.missing))
+                .when(!actions.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .mt(px(3.))
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(6.))
+                            .children(actions),
+                    )
+                })
         });
         div()
             .track_focus(focus)
@@ -768,6 +871,48 @@ impl MainView {
             )
             .into_any_element()
     }
+
+    /// A Manage card's buttons: Turn on (off), or Allow… (something not
+    /// allowed yet) and Turn off (on, in any state); Forget permissions
+    /// (anything allowed).
+    fn ext_manage_actions(
+        &self,
+        s: &blyg_ext::ExtensionStatus,
+        chip: &dyn Fn(String, &'static str) -> Stateful<Div>,
+        cx: &Context<Self>,
+    ) -> Vec<Stateful<Div>> {
+        let mut actions = vec![];
+        let n = s.name.clone();
+        if !s.enabled {
+            actions.push(chip(format!("ext-on-{n}"), "Turn on").on_click(
+                cx.listener(move |this, _, window, cx| this.ext_turn_on(&n, window, cx)),
+            ));
+        } else {
+            if !s.missing.is_empty() {
+                let n = n.clone();
+                actions.push(
+                    chip(format!("ext-allow-{n}"), "Allow…").on_click(cx.listener(
+                        move |this, _, window, cx| {
+                            this.ext.overlay = None;
+                            this.ext_ask_again(&n, window, cx);
+                        },
+                    )),
+                );
+            }
+            actions.push(chip(format!("ext-off-{n}"), "Turn off").on_click(
+                cx.listener(move |this, _, window, cx| this.ext_turn_off(&n, false, window, cx)),
+            ));
+        }
+        if !s.granted.is_empty() {
+            let n = s.name.clone();
+            actions.push(
+                chip(format!("ext-forget-{n}"), "Forget permissions").on_click(
+                    cx.listener(move |this, _, window, cx| this.ext_turn_off(&n, true, window, cx)),
+                ),
+            );
+        }
+        actions
+    }
 }
 
 /// A state in a word, and whether it's good news.
@@ -785,21 +930,62 @@ pub fn state_word(s: &ExtState) -> (String, bool) {
 }
 
 impl MainView {
-    /// Hook (Settings): "NOTES FOLDER" with the markdown-notes vault, and
-    /// "Markdown notes folder…", which picks a folder, writes
-    /// `extension = markdown-notes` and its `vault` setting, and asks for
-    /// permission to use it.
+    /// Hook (Settings): "NOTES FOLDERS", the markdown-notes vaults, each
+    /// with Remove (the config line only; the folder is never touched),
+    /// and "Add folder…", which picks folders (several at once), writes
+    /// `extension = markdown-notes` and a `vault` / `vault-<label>` setting
+    /// for each, and asks for permission to use them.
     pub(crate) fn render_ext_settings_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let vault = self.ext_vault(cx);
-        let running = self.ext_library().is_some();
-        let now = match &vault {
-            Some(v) if running => format!("{v} · on"),
-            Some(v) => format!("{v} · not running yet"),
-            None => {
-                "Off: a folder of Markdown notes (an Obsidian vault) in the notes drawer".into()
+        let (on, vaults) = self.ext_vaults(cx);
+        let running = self.ext_libraries().iter().any(|l| l.ext == super::NOTES);
+        let now = match (on, vaults.is_empty()) {
+            (false, true) => {
+                "Off: folders of Markdown notes (Obsidian vaults) in the notes drawer".into()
             }
+            (false, false) => "Off: turn on markdown-notes to use them".to_string(),
+            (true, true) => "On, with no folder yet: add one".into(),
+            (true, false) if running => "On · in the notes drawer's Notes tab".into(),
+            (true, false) => "Not running yet: waiting for permission".into(),
         };
+        let rows: Vec<AnyElement> = vaults
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let key = v.key.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .min_w_0()
+                    .text_size(px(12.))
+                    .child(div().flex_none().child(v.title.clone()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.5))
+                            .text_color(p.muted)
+                            .child(v.path.clone()),
+                    )
+                    .child(
+                        div()
+                            .id(("ext-vault-remove", i))
+                            .debug_selector(move || format!("ext-vault-remove-{i}"))
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .text_color(p.muted)
+                            .cursor_pointer()
+                            .hover(|s| s.underline().text_color(p.ink))
+                            .child("Remove")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.ext_remove_vault(&key, window, cx)
+                            })),
+                    )
+                    .into_any_element()
+            })
+            .collect();
         div()
             .flex()
             .gap(px(12.))
@@ -812,7 +998,7 @@ impl MainView {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.muted)
-                    .child("NOTES FOLDER"),
+                    .child("NOTES FOLDERS"),
             )
             .child(
                 div()
@@ -821,6 +1007,7 @@ impl MainView {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
+                    .children(rows)
                     .child(
                         div().flex().child(
                             div()
@@ -831,9 +1018,9 @@ impl MainView {
                                 .map(|d| crate::theme_ext::chip(d, &self.theme, false))
                                 .cursor_pointer()
                                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
-                                .child("Markdown notes folder…")
+                                .child("Add folder…")
                                 .on_click(cx.listener(|this, _, window, cx| {
-                                    this.ext_pick_vault(window, cx)
+                                    this.ext_pick_vaults(window, cx)
                                 })),
                         ),
                     )
@@ -846,28 +1033,5 @@ impl MainView {
                     ),
             )
             .into_any_element()
-    }
-
-    /// The folder picker for the notes folder.
-    fn ext_pick_vault(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rx = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some("Use as notes folder".into()),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else {
-                return;
-            };
-            let Some(dir) = paths.into_iter().next() else {
-                return;
-            };
-            let _ = this.update_in(cx, |v, window, cx| {
-                v.close_sheet(window, cx);
-                v.ext_set_vault(&dir, window, cx);
-            });
-        })
-        .detach();
     }
 }

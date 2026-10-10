@@ -94,6 +94,20 @@ pub fn open_live(
     url: &str,
     tokens: &Arc<dyn TokenStore>,
 ) -> Result<Option<Arc<dyn Backend>>> {
+    Ok(
+        open_live_with(data_dir, url, tokens, blyg_core::SyncOptions::default())?
+            .map(|l| Arc::new(l) as Arc<dyn Backend>),
+    )
+}
+
+/// `open_live` with sync options (`blygger +import-opml` opens it without
+/// the sync worker).
+pub fn open_live_with(
+    data_dir: &Path,
+    url: &str,
+    tokens: &Arc<dyn TokenStore>,
+    opts: blyg_core::SyncOptions,
+) -> Result<Option<LiveBackend>> {
     let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
     };
@@ -113,9 +127,9 @@ pub fn open_live(
             }
         }
     }
-    let live = LiveBackend::open(data_dir, url, cred)?;
+    let live = LiveBackend::open_with(data_dir, url, cred, opts)?;
     std::fs::write(&owner, url).map_err(|e| CoreError::Storage(e.to_string()))?;
-    Ok(Some(Arc::new(live)))
+    Ok(Some(live))
 }
 
 /// Delete the local copy (database, its WAL, cached themes and images).
@@ -626,6 +640,33 @@ impl Backend for SwitchBackend {
     }
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
+    }
+    // --- lineage counts ---
+    fn lineage_summaries(
+        &self,
+        keys: &[String],
+        max_age_ms: i64,
+    ) -> Option<std::collections::HashMap<String, blyg_core::lineage::LineageSummary>> {
+        self.cur().lineage_summaries(keys, max_age_ms)
+    }
+    fn cached_lineage_summaries(
+        &self,
+        keys: &[String],
+    ) -> Option<std::collections::HashMap<String, blyg_core::lineage::LineageSummary>> {
+        self.cur().cached_lineage_summaries(keys)
+    }
+    fn lineage_graph(
+        &self,
+        centre: &blyg_core::lineage::Centre,
+        max_age_ms: i64,
+    ) -> Option<blyg_core::lineage::LineageGraph> {
+        self.cur().lineage_graph(centre, max_age_ms)
+    }
+    fn cached_lineage_graph(
+        &self,
+        centre: &blyg_core::lineage::Centre,
+    ) -> Option<blyg_core::lineage::LineageGraph> {
+        self.cur().cached_lineage_graph(centre)
     }
 }
 

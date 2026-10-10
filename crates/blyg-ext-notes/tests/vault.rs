@@ -402,3 +402,174 @@ fn without_the_folder_grant_it_touches_nothing() {
     assert!(describe(&st.missing[0]).starts_with("read and write files in "));
     assert_eq!(env.files(), before);
 }
+
+// ------------------------------------------------------------ several vaults
+
+/// The extension over `settings`, granted `ui` and `fs` for each of `fs`.
+fn start(
+    dir: &Path,
+    settings: BTreeMap<String, String>,
+    fs: &[&Path],
+) -> (Host, Receiver<ExtEvent>) {
+    let mut c = HostConfig::new(dir.join("data"), "0.0.0-test");
+    c.bundled = vec![bundled(
+        PathBuf::from(env!("CARGO_BIN_EXE_burrow-markdown-notes")),
+        vec![],
+        &settings,
+    )];
+    c.enabled = vec![NAME.into()];
+    let mut lines = vec![format!("{NAME} ui")];
+    for f in fs {
+        lines.push(format!("{NAME} fs:{}", f.to_string_lossy()));
+    }
+    c.grants = Grants::from_allow_lines(&lines).0;
+    c.settings = [(NAME.to_string(), settings)].into();
+    let (tx, events) = channel();
+    let host = Host::new(c, Arc::new(NoBlyg), move |e| {
+        let _ = tx.send(e);
+    });
+    host.start();
+    let deadline = Instant::now() + WAIT;
+    loop {
+        match events.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            Ok(ExtEvent::Started { .. }) => break,
+            Ok(ExtEvent::Failed { message, .. }) => panic!("{message}"),
+            Ok(_) => {}
+            Err(_) => panic!("markdown-notes didn't start"),
+        }
+    }
+    (host, events)
+}
+
+/// Two vaults (`vault=` and `vault-work=`) with a note each.
+fn two_vaults(dir: &Path) -> (PathBuf, PathBuf, BTreeMap<String, String>) {
+    let notes = dir.join("Notes");
+    let work = dir.join("Work").join("Vault");
+    write(&notes.join("Tide tables.md"), "The moon pulls the sea.\n");
+    write(&work.join("Standup.md"), "The moon project ships Friday.\n");
+    let settings: BTreeMap<String, String> = [
+        ("vault".to_string(), notes.to_string_lossy().into_owned()),
+        (
+            "vault-work".to_string(),
+            work.to_string_lossy().into_owned(),
+        ),
+    ]
+    .into();
+    (notes, work, settings)
+}
+
+fn search_in(host: &Host, library: &str, q: &str) -> Result<Vec<String>, ExtError> {
+    let p = LibrarySearchParams {
+        library: Some(library.into()),
+        query: q.into(),
+        limit: 20,
+    };
+    Ok(host
+        .library_search(NAME, &p)?
+        .into_iter()
+        .map(|h| h.id)
+        .collect())
+}
+
+#[test]
+fn each_vault_is_its_own_library() {
+    let dir = tempfile::tempdir().unwrap();
+    let (notes, work, settings) = two_vaults(dir.path());
+    let (host, _events) = start(dir.path(), settings, &[&notes, &work]);
+    let libs: Vec<(String, String)> = host
+        .libraries()
+        .into_iter()
+        .map(|l| (l.library.id, l.library.title))
+        .collect();
+    assert_eq!(
+        libs,
+        [
+            ("notes".to_string(), "Notes".to_string()),
+            ("notes.work".to_string(), "work".to_string())
+        ]
+    );
+    assert_eq!(
+        search_in(&host, "notes", "moon").unwrap(),
+        ["Tide tables.md"]
+    );
+    assert_eq!(
+        search_in(&host, "notes.work", "moon").unwrap(),
+        ["Standup.md"]
+    );
+    assert!(matches!(
+        search_in(&host, "notes.nope", "moon"),
+        Err(ExtError::Rpc(e)) if e.code == codes::INVALID_PARAMS
+    ));
+    // A new note goes to the library it names.
+    let w = host
+        .library_write(
+            NAME,
+            &LibraryWriteParams {
+                library: Some("notes.work".into()),
+                id: None,
+                title: None,
+                folder: None,
+                markdown: "Retro notes\n".into(),
+                base_hash: None,
+            },
+        )
+        .unwrap();
+    assert!(work.join(&w.id).exists());
+    assert!(!notes.join(&w.id).exists());
+    // "Save selection to notes" writes to the first vault.
+    let ctx = CommandContext {
+        selection: Some("Lanterns on the pier".into()),
+        ..Default::default()
+    };
+    host.command(NAME, SAVE_SELECTION, ctx).unwrap();
+    assert!(notes.join("Lanterns on the pier.md").exists());
+}
+
+#[test]
+fn a_vault_without_its_grant_doesnt_break_the_others() {
+    let dir = tempfile::tempdir().unwrap();
+    let (notes, work, settings) = two_vaults(dir.path());
+    // Only the work vault is allowed.
+    let (host, _events) = start(dir.path(), settings, &[&work]);
+    assert!(matches!(
+        search_in(&host, "notes", "moon"),
+        Err(ExtError::Rpc(e)) if e.code == codes::PERMISSION_DENIED
+    ));
+    assert_eq!(
+        search_in(&host, "notes.work", "moon").unwrap(),
+        ["Standup.md"]
+    );
+    let st = &host.status()[0];
+    assert_eq!(
+        st.missing,
+        [Capability::Fs(notes.to_string_lossy().into_owned())],
+        "the consent sheet can offer the other folder"
+    );
+    // Saving a selection falls through to the vault that's open.
+    let ctx = CommandContext {
+        selection: Some("Kept anyway".into()),
+        ..Default::default()
+    };
+    host.command(NAME, SAVE_SELECTION, ctx).unwrap();
+    assert!(work.join("Kept anyway.md").exists());
+    assert!(!notes.join("Kept anyway.md").exists());
+}
+
+#[test]
+fn no_vault_asks_only_for_ui_and_offers_no_library() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _events) = start(dir.path(), BTreeMap::new(), &[]);
+    let st = &host.status()[0];
+    assert_eq!(st.requested, [Capability::Ui]);
+    assert!(host.libraries().is_empty());
+    let r = host.library_list(NAME, &LibraryListParams::default());
+    assert!(
+        matches!(&r, Err(ExtError::Rpc(e)) if e.code == codes::REFUSED && e.message.contains("no notes folder")),
+        "{r:?}"
+    );
+    let ctx = CommandContext {
+        selection: Some("Nowhere to go".into()),
+        ..Default::default()
+    };
+    assert!(host.command(NAME, SAVE_SELECTION, ctx).is_err());
+}

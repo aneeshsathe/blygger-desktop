@@ -11,6 +11,8 @@
 //! `not_before` keeps moving).
 
 mod folders; // --- reader folders ---
+mod lineage; // --- lineage counts ---
+pub use lineage::Served as LineageServed;
 mod pick;
 mod provenance;
 pub use provenance::Tracked;

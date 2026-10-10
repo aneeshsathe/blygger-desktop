@@ -97,6 +97,11 @@ struct Raw {
     sites: Vec<SiteSpec>,
     #[serde(default)]
     macros: Vec<MacroSpec>,
+    // --- reading slots --- (crate::reading; both need `reading.read`)
+    #[serde(default, rename = "entry-byline", alias = "entryByline")]
+    entry_byline: bool,
+    #[serde(default, rename = "entry-actions", alias = "entryActions")]
+    entry_actions: Vec<crate::reading::EntryActionSpec>,
 }
 
 /// A validated manifest.
@@ -119,6 +124,12 @@ pub struct Manifest {
     pub sites: Vec<SiteSpec>,
     /// Browser macros, checked ([`crate::recipe::check_macro`]).
     pub macros: Vec<MacroSpec>,
+    /// --- reading slots --- It answers `extension/entry.byline`
+    /// (`entry-byline = true`); needs `reading.read`.
+    pub entry_byline: bool,
+    /// Its rows in a reading entry's ⋯ sheet (`[[entry-actions]]`); needs
+    /// `reading.read`.
+    pub entry_actions: Vec<crate::reading::EntryActionSpec>,
 }
 
 impl Manifest {
@@ -236,6 +247,21 @@ impl Manifest {
         for m in &raw.macros {
             check_macro(m, &sites).map_err(|e| ManifestError(e.to_string()))?;
         }
+        // --- reading slots ---
+        unique_ids(
+            "entry action",
+            raw.entry_actions.iter().map(|a| a.id.as_str()),
+        )?;
+        for a in &raw.entry_actions {
+            if a.title.trim().is_empty() {
+                return err(format!("entry action {:?} has no title", a.id));
+            }
+        }
+        if (raw.entry_byline || !raw.entry_actions.is_empty())
+            && !capabilities.contains(&Capability::ReadingRead)
+        {
+            return err("entry-byline and entry-actions need \"reading.read\" in capabilities");
+        }
         Ok(Manifest {
             name: raw.name,
             version: raw.version,
@@ -249,6 +275,8 @@ impl Manifest {
             settings: raw.settings,
             sites,
             macros: raw.macros,
+            entry_byline: raw.entry_byline,
+            entry_actions: raw.entry_actions,
         })
     }
 }

@@ -19,7 +19,9 @@
 
 mod library;
 mod macros;
+pub(crate) mod reading_slots; // --- reading slots ---
 mod sheets;
+mod tour; // --- onboarding --- the tour's sample extensions
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -70,6 +72,9 @@ pub struct Launch {
     pub args: Vec<String>,
     /// cross-post: `program crosspost_args…`.
     pub crosspost_args: Vec<String>,
+    /// --- reading slots --- reading-time and inspect: `program args…`.
+    pub reading_time_args: Vec<String>,
+    pub inspect_args: Vec<String>,
     pub data_dir: PathBuf,
     pub timing: Timing,
 }
@@ -83,9 +88,37 @@ impl Launch {
             program: std::env::current_exe().ok()?,
             args: vec!["+ext".into(), NOTES.into()],
             crosspost_args: vec!["+ext".into(), blyg_ext_crosspost::NAME.into()],
+            reading_time_args: vec!["+ext".into(), blyg_ext_reading_time::NAME.into()],
+            inspect_args: vec!["+ext".into(), blyg_ext_inspect::NAME.into()],
             data_dir,
             timing: Timing::default(),
         })
+    }
+}
+
+/// Tests elsewhere (the tour's): every bundled extension, run as this test
+/// binary's child tests (`tests.rs`, `reading_slots_tests.rs`).
+#[cfg(test)]
+pub(crate) fn test_launch(data_dir: PathBuf) -> Launch {
+    let m = module_path!();
+    let m = m.split_once("::").map(|(_, rest)| rest).unwrap_or(m);
+    let args = |t: &str| -> Vec<String> {
+        vec![
+            "--exact".into(),
+            format!("{m}::{t}"),
+            "--ignored".into(),
+            "--quiet".into(),
+            "--test-threads=1".into(),
+        ]
+    };
+    Launch {
+        program: std::env::current_exe().expect("the test binary"),
+        args: args("tests::markdown_notes_child"),
+        crosspost_args: args("tests::cross_post_child"),
+        reading_time_args: args("reading_slots::tests::reading_time_child"),
+        inspect_args: args("reading_slots::tests::inspect_child"),
+        data_dir,
+        timing: Timing::default(),
     }
 }
 
@@ -103,6 +136,7 @@ pub fn host_config(store: &ConfigStore, launch: &Launch) -> HostConfig {
         blyg_ext_notes::bundled(launch.program.clone(), launch.args.clone(), &notes),
         blyg_ext_crosspost::bundled(launch.program.clone(), launch.crosspost_args.clone()),
     ];
+    hc.bundled.extend(reading_slots::bundled(launch)); // --- reading slots ---
     hc.timing = launch.timing.clone();
     hc
 }
@@ -133,25 +167,133 @@ pub fn allow_changes(cfg: &Config, name: &str, caps: &[Capability]) -> Vec<(&'st
     out
 }
 
-/// The config changes that point markdown-notes at `vault` (and enable it):
-/// `extension = markdown-notes`, `extension-setting = markdown-notes
-/// vault=<vault>` replacing an earlier vault line (other settings stay).
-pub fn vault_changes(cfg: &Config, vault: &str) -> Vec<(&'static str, Change)> {
+/// `key`'s values without the ones `drop` picks; `Remove` (no `key =`
+/// line left behind) when none stay.
+fn without_values(
+    cfg: &Config,
+    key: &'static str,
+    drop: impl Fn(&str) -> bool,
+) -> Option<(&'static str, Change)> {
+    let v = cfg.list(key);
+    let kept: Vec<String> = v.iter().filter(|x| !drop(x)).cloned().collect();
+    if kept.len() == v.len() {
+        return None;
+    }
+    Some((
+        key,
+        if kept.is_empty() {
+            Change::Remove
+        } else {
+            Change::List(kept)
+        },
+    ))
+}
+
+/// The config changes that turn `name` off: its `extension` lines go.
+/// Its `extension-allow` and `extension-setting` lines stay, so Turn on
+/// brings it back as it was, unless `forget_grants`, which drops its
+/// `extension-allow` lines too (the next Turn on asks again).
+pub fn disable_changes(
+    cfg: &Config,
+    name: &str,
+    forget_grants: bool,
+) -> Vec<(&'static str, Change)> {
+    let mut out = vec![];
+    out.extend(without_values(cfg, "extension", |v| v.trim() == name));
+    if forget_grants {
+        out.extend(without_values(cfg, "extension-allow", |v| {
+            v.split_whitespace().next() == Some(name)
+        }));
+    }
+    out
+}
+
+/// markdown-notes' settings as the config has them now.
+fn notes_settings(cfg: &Config) -> BTreeMap<String, String> {
+    blyg_ext::settings_from_lines(&cfg.list("extension-setting"))
+        .0
+        .remove(NOTES)
+        .unwrap_or_default()
+}
+
+/// The vaults the config names for markdown-notes (enabled or not).
+pub fn configured_vaults(cfg: &Config) -> Vec<blyg_ext_notes::VaultSpec> {
+    blyg_ext_notes::vaults(&notes_settings(cfg))
+}
+
+/// An `extension-setting` value that sets markdown-notes' `key`.
+fn is_notes_setting(line: &str, key: &str) -> bool {
+    line.trim()
+        .split_once(char::is_whitespace)
+        .is_some_and(|(name, kv)| {
+            name == NOTES && kv.split_once('=').is_some_and(|(k, _)| k.trim() == key)
+        })
+}
+
+/// The config changes that add `folders` to markdown-notes (and enable
+/// it): a `vault=` line for the first vault, `vault-<label>=` for each one
+/// after (label from the folder's name). Folders already there are skipped;
+/// other lines are kept as they are. The new keys come back too.
+pub fn vault_add_changes(
+    cfg: &Config,
+    folders: &[String],
+) -> (Vec<(&'static str, Change)>, Vec<String>) {
     let mut out = vec![];
     out.extend(with_values(cfg, "extension", &[NOTES.to_string()]));
-    let line = format!("{NOTES} vault={vault}");
-    let mut settings: Vec<String> = cfg
+    let mut settings = notes_settings(cfg);
+    let mut lines = cfg.list("extension-setting");
+    let mut keys = vec![];
+    for f in folders {
+        let Some(key) = blyg_ext_notes::new_vault_key(&settings, f) else {
+            continue;
+        };
+        // An empty `vault=` (or a bad one) is replaced, not shadowed.
+        lines.retain(|l| !is_notes_setting(l, &key));
+        lines.push(format!("{NOTES} {key}={f}"));
+        settings.insert(key.clone(), f.clone());
+        keys.push(key);
+    }
+    if !keys.is_empty() {
+        out.push(("extension-setting", Change::List(lines)));
+    }
+    (out, keys)
+}
+
+/// The config changes that drop markdown-notes' vault `key`: its setting
+/// lines, and the `fs:` grant for its folder when no other vault uses it.
+/// The folder and its notes are never touched.
+pub fn vault_remove_changes(cfg: &Config, key: &str) -> Vec<(&'static str, Change)> {
+    let vaults = configured_vaults(cfg);
+    let Some(gone) = vaults.iter().find(|v| v.key == key) else {
+        return vec![];
+    };
+    let mut out = vec![];
+    let lines: Vec<String> = cfg
         .list("extension-setting")
         .into_iter()
-        .filter(|l| {
-            let mut w = l.split_whitespace();
-            !(w.next() == Some(NOTES)
-                && w.next()
-                    .is_some_and(|kv| kv.split('=').next().map(str::trim) == Some("vault")))
-        })
+        .filter(|l| !is_notes_setting(l, key))
         .collect();
-    settings.push(line);
-    out.push(("extension-setting", Change::List(settings)));
+    out.push(("extension-setting", Change::List(lines)));
+    let shared = vaults
+        .iter()
+        .any(|v| v.key != key && blyg_ext_notes::same_folder(&v.path, &gone.path));
+    if !shared {
+        let grant = Capability::Fs(gone.path.clone());
+        let allow = cfg.list("extension-allow");
+        let kept: Vec<String> = allow
+            .iter()
+            .filter(|l| {
+                let mut w = l.split_whitespace();
+                !(w.next() == Some(NOTES)
+                    && w.next().and_then(Capability::parse).as_ref() == Some(&grant)
+                    && w.next().is_none())
+            })
+            .cloned()
+            .collect();
+        if kept.len() != allow.len() {
+            out.push(("extension-allow", Change::List(kept)));
+        }
+    }
     out
 }
 
@@ -210,12 +352,17 @@ pub(crate) struct Extensions {
     pub inbox: Arc<std::sync::Mutex<std::collections::VecDeque<ExtEvent>>>,
     // --- library ---
     pub lib: Library,
+    /// --- reading slots --- byline markers and the ⋯ sheet.
+    pub slots: reading_slots::Slots,
+    /// --- onboarding --- the tour's sample extensions, while it runs.
+    pub tour: Option<tour::Tour>,
 }
 
 impl Extensions {
-    /// A palette, consent or manage sheet is up (web views hide).
+    /// A palette, consent or manage sheet (or a reading entry's ⋯ sheet)
+    /// is up (web views hide).
     pub fn has_overlay(&self) -> bool {
-        self.overlay.is_some()
+        self.overlay.is_some() || self.slots.sheet.is_some()
     }
 }
 
@@ -306,6 +453,9 @@ impl MainView {
         let (Some(host), Some(launch)) = (self.ext.host.clone(), self.ext.launch.clone()) else {
             return;
         };
+        if self.ext_tour_defer_reload() {
+            return; // --- onboarding --- the tour's host isn't the config's
+        }
         if !self.ext.started {
             return; // the first start reads the config itself
         }
@@ -379,12 +529,14 @@ impl MainView {
                 None => break,
             }
         }
+        self.ext_tour_pump(window, cx); // --- onboarding ---
     }
 
     /// What the host says, on the UI thread.
     pub(crate) fn ext_event(&mut self, ev: ExtEvent, window: &mut Window, cx: &mut Context<Self>) {
         match ev {
             ExtEvent::Started { name, .. } => {
+                self.ext.slots.forget(&name); // --- reading slots ---
                 if self.ext.notices.get(&name) != Some(&Notice::NeedsPermission) {
                     self.ext.notices.remove(&name);
                 }
@@ -479,6 +631,10 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // --- onboarding --- the tour writes nothing.
+        if self.ext_tour_refuses("Not during the tour".into(), cx) {
+            return false;
+        }
         if let Err(e) = crate::settings::write(changes, cx) {
             self.show_toast(e, None, cx);
             return false;
@@ -494,37 +650,125 @@ impl MainView {
         true
     }
 
-    /// Settings › Notes folder: point markdown-notes at `folder` (enabling
-    /// it); the consent sheet follows for the new folder.
-    pub(crate) fn ext_set_vault(
+    /// Settings › Notes folders and the drawer's "Add folder…": add
+    /// `folders` to markdown-notes (enabling it); the consent sheet follows
+    /// for the new folders. The drawer then shows the first one added.
+    pub(crate) fn ext_add_vaults(
         &mut self,
-        folder: &std::path::Path,
+        folders: &[std::path::PathBuf],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let text = vault_text(folder);
-        let changes = vault_changes(crate::settings::get(cx).store.config(), &text);
+        let texts: Vec<String> = folders.iter().map(|f| vault_text(f)).collect();
+        let cfg = crate::settings::get(cx).store.config().clone();
+        let (changes, keys) = vault_add_changes(&cfg, &texts);
+        // From Settings: out of the way, so the consent sheet can follow.
+        if self.sheet.is_some() {
+            self.close_sheet(window, cx);
+        }
+        if keys.is_empty() {
+            if changes.is_empty() {
+                return self.show_toast("Already a notes folder", None, cx);
+            }
+            // Only turning it on (the folders were configured already).
+            self.ext_write_config(&changes, window, cx);
+            return;
+        }
         // A new folder is a new question.
         self.ext.asked.retain(|(n, _)| n != NOTES);
+        if !self.ext_write_config(&changes, window, cx) {
+            return;
+        }
+        let now = configured_vaults(crate::settings::get(cx).store.config());
+        if let Some(v) = now.iter().find(|v| v.key == keys[0]) {
+            self.ext_lib_choose(Some(v.library.clone()), window, cx);
+        }
+        let (what, it) = if keys.len() == 1 {
+            let added = now.iter().find(|v| v.key == keys[0]);
+            let path = added.map(|v| v.path.clone()).unwrap_or_default();
+            (format!("Notes folder: {path}"), "it")
+        } else {
+            (format!("{} notes folders added", keys.len()), "them")
+        };
+        self.show_toast(
+            what,
+            Some(format!("{NOTES} reads and writes {it}, once you allow it").into()),
+            cx,
+        );
+    }
+
+    /// "Remove from Burrow": drop vault `key` from the config (its setting
+    /// and folder grant). The folder and its notes stay as they are.
+    pub(crate) fn ext_remove_vault(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cfg = crate::settings::get(cx).store.config().clone();
+        // --- onboarding --- a sample folder stays where it is.
+        if let Some(t) = self.ext.tour.as_ref() {
+            let title = t
+                .vaults
+                .iter()
+                .find(|v| v.key == key)
+                .map_or_else(String::new, |v| v.title.clone());
+            self.ext_tour_refuses(format!("“{title}” would be removed from Burrow"), cx);
+            return;
+        }
+        let Some(gone) = configured_vaults(&cfg).into_iter().find(|v| v.key == key) else {
+            return;
+        };
+        let changes = vault_remove_changes(&cfg, key);
+        if self.ext.lib.vault.as_deref() == Some(gone.library.as_str()) {
+            self.ext_lib_choose(None, window, cx);
+        }
         if self.ext_write_config(&changes, window, cx) {
             self.show_toast(
-                format!("Notes folder: {text}"),
-                Some(format!("{NOTES} reads and writes it, once you allow it").into()),
+                format!("Removed “{}” from Burrow", gone.title),
+                Some(format!("{} and its notes stay as they are", gone.path).into()),
                 cx,
             );
         }
     }
 
-    /// The vault the config names for markdown-notes, when it's enabled.
-    pub(crate) fn ext_vault(&self, cx: &App) -> Option<String> {
-        let cfg = cx
-            .try_global::<crate::settings::AppConfig>()?
-            .store
-            .config();
-        cfg.extensions_enabled()
-            .iter()
-            .any(|n| n == NOTES)
-            .then(|| blyg_ext_notes::vault_setting(&cfg.extension_settings(NOTES)))
+    /// The vaults the config names for markdown-notes, and whether it's on.
+    pub(crate) fn ext_vaults(&self, cx: &App) -> (bool, Vec<blyg_ext_notes::VaultSpec>) {
+        // --- onboarding --- the tour's sample folders.
+        if let Some(t) = self.ext.tour.as_ref() {
+            return (true, t.vaults.clone());
+        }
+        let Some(conf) = cx.try_global::<crate::settings::AppConfig>() else {
+            return (false, vec![]);
+        };
+        let cfg = conf.store.config();
+        let on = cfg.extensions_enabled().iter().any(|n| n == NOTES);
+        (on, configured_vaults(cfg))
+    }
+
+    /// The folder picker for notes folders (several at once); what's
+    /// picked is added.
+    pub(crate) fn ext_pick_vaults(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- onboarding --- no folder picker in the tour.
+        if self.ext_tour_refuses("Add folder… asks for a folder of notes".into(), cx) {
+            return;
+        }
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: true,
+            prompt: Some("Add as notes folder".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            if paths.is_empty() {
+                return;
+            }
+            let _ = this.update_in(cx, |v, window, cx| v.ext_add_vaults(&paths, window, cx));
+        })
+        .detach();
     }
 
     // ------------------------------------------------------------ context
@@ -752,7 +996,7 @@ impl MainView {
         self.sheet.is_some()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
-            || self.ext.overlay.is_some()
+            || self.ext.has_overlay()
             || self.onboarding.flow.is_some()
             || self.onboarding.tutorial.is_some()
     }
@@ -812,6 +1056,7 @@ impl MainView {
     ) {
         match (scenario, n) {
             (_, 0) => self.ext_start(window, cx),
+            (s, n) if s.starts_with("ext-slots") => self.slots_demo(s, n, window, cx), // --- reading slots ---
             ("ext-palette", 1) => self.ext_toggle_palette(window, cx),
             ("ext-manage", 1) => self.ext_open_manage(window, cx),
             ("ext-notes", 1) => self.ext_lib_show(window, cx),

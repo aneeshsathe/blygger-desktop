@@ -8,6 +8,7 @@
 //! - `blygger +list-keybinds`
 //! - `blygger +list-extensions`
 //! - `blygger +ext <bundled extension>` (run by Burrow itself, over stdio)
+//! - `blygger +import-opml <file> [--dry-run]`, `blygger +export-opml <file>`
 //! - `blygger +version`
 //! - `blygger +help`
 
@@ -84,8 +85,16 @@ With no action, Burrow starts. Actions:
   +list-extensions        every extension, bundled and installed: whether it's
                           on, what it's granted, what it still asks for, its
                           sites and macros, and problems with installed ones
-  +ext <name>             run a bundled extension (markdown-notes,
-                          cross-post) over stdin/stdout; Burrow starts it itself
+  +ext <name>             run a bundled extension (markdown-notes, cross-post,
+                          reading-time, inspect) over stdin/stdout; Burrow
+                          starts it itself
+  +import-opml <file> [--dry-run]
+                          subscribe your blyg to every feed in another
+                          reader's OPML export, slowly (about 30 a minute),
+                          into the Reader folder Imported feeds; feeds you
+                          already follow are left alone. --dry-run lists
+                          what would be added
+  +export-opml <file>     save every subscription as an OPML 2.0 file
   +version                print the version
   +help                   this help
 
@@ -136,6 +145,9 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
             o.code = 2;
         }
         "+list-extensions" => o.stdout = list_extensions(&load()),
+        // --- OPML ---
+        "+import-opml" => import_opml(args, &load(), &mut o),
+        "+export-opml" => export_opml(args, &load(), &mut o),
         "+show-config" => match ShowOptions::from_args(args.iter().copied()) {
             Ok(opts) => {
                 let store = load();
@@ -234,6 +246,206 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
     o
 }
 
+// --- OPML ---
+
+/// The configured blyg, opened without the sync worker (nothing pushed),
+/// its subscriptions freshly pulled. `Err` says why not.
+fn opml_backend(store: &ConfigStore) -> Result<blyg_core::LiveBackend, String> {
+    use blyg_core::config::{MemoryTokenStore, TokenStore};
+    let url = store
+        .config()
+        .blyg_url()
+        .ok_or("no blyg is connected (open Burrow and connect one first)")?
+        .to_string();
+    // BLYGGER_TEST_TOKEN: an in-memory token (a local studio), no Keychain.
+    let tokens: std::sync::Arc<dyn TokenStore> = match std::env::var("BLYGGER_TEST_TOKEN") {
+        Ok(t) => {
+            let m = MemoryTokenStore::default();
+            let _ = m.set(&url, t.trim());
+            std::sync::Arc::new(m)
+        }
+        Err(_) => std::sync::Arc::new(blyg_core::config::KeychainTokenStore),
+    };
+    let opts = blyg_core::SyncOptions {
+        start_worker: false,
+        ..Default::default()
+    };
+    let live =
+        crate::connection::open_live_with(&blyg_core::config::data_dir(), &url, &tokens, opts)
+            .map_err(|e| format!("couldn't open the local database: {e}"))?
+            .ok_or_else(|| {
+                format!("no owner credential for {url} in the Keychain; connect again in Burrow")
+            })?;
+    live.pull_now()
+        .map_err(|e| format!("couldn't reach your blyg: {e}"))?;
+    Ok(live)
+}
+
+fn import_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
+    use blyg_core::Backend as _;
+    use blyg_core::opml::{self, Outcome as Got, Pace, Progress, Summary};
+    let dry = args.contains(&"--dry-run");
+    let Some(file) = args.iter().find(|a| !a.starts_with("--")) else {
+        o.stderr = "usage: blygger +import-opml <file> [--dry-run]\n".into();
+        o.code = 2;
+        return;
+    };
+    let parsed = match opml::read_file(std::path::Path::new(file)) {
+        Ok(p) => p,
+        Err(e) => {
+            o.stderr = format!("blygger +import-opml: {e}\n");
+            o.code = 1;
+            return;
+        }
+    };
+    let backend = match opml_backend(store) {
+        Ok(b) => Some(b),
+        Err(e) if dry => {
+            o.stderr = format!(
+                "blygger +import-opml: {e}; listing the file without checking what you follow\n"
+            );
+            None
+        }
+        Err(e) => {
+            o.stderr = format!("blygger +import-opml: {e}\n");
+            o.code = 1;
+            return;
+        }
+    };
+    let subs = backend
+        .as_ref()
+        .map(|b| b.subscriptions())
+        .unwrap_or_default();
+    let (already, new): (Vec<_>, Vec<_>) = parsed
+        .feeds
+        .iter()
+        .partition(|f| opml::followed(f, &subs).is_some());
+    let mut notes = vec![];
+    if parsed.duplicates > 0 {
+        notes.push(format!("{} duplicates collapsed", parsed.duplicates));
+    }
+    if parsed.without_feed > 0 {
+        notes.push(format!(
+            "{} without a feed address skipped",
+            parsed.without_feed
+        ));
+    }
+    let note = if notes.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", notes.join(", "))
+    };
+    let line = |label: &str, f: &opml::OpmlFeed, extra: &str| {
+        let folder = f
+            .folder
+            .as_deref()
+            .map(|d| format!(" [{d}]"))
+            .unwrap_or_default();
+        format!("  {label:<18} {}{folder}  {}{extra}\n", f.title, f.xml_url)
+    };
+    if dry {
+        o.stdout = format!("{} feeds in {file}{note}.\n", parsed.feeds.len());
+        for f in &new {
+            o.stdout.push_str(&line("would add", f, ""));
+        }
+        for f in &already {
+            o.stdout.push_str(&line("already followed", f, ""));
+        }
+        o.stdout.push_str(&format!(
+            "Would add {} (into the Reader folder \"{}\"); {} already followed. Nothing was changed.\n",
+            new.len(),
+            opml::IMPORT_FOLDER,
+            already.len()
+        ));
+        return;
+    }
+    let Some(backend) = backend else { return };
+    let feeds: Vec<opml::OpmlFeed> = new.into_iter().cloned().collect();
+    let pace = Pace::default();
+    eprintln!(
+        "Importing {} of {} feeds from {file}{note}, about 30 a minute (each new subscription fetches its archive). Ctrl-C stops; what's done stays done.",
+        feeds.len(),
+        parsed.feeds.len()
+    );
+    let total = feeds.len();
+    let done = std::sync::atomic::AtomicUsize::new(0);
+    let results = opml::run_import(
+        &backend,
+        &feeds,
+        &pace,
+        &std::sync::atomic::AtomicBool::new(false),
+        &|p| match p {
+            Progress::Waiting { seconds } => {
+                eprintln!("  the blyg asked Burrow to slow down: waiting {seconds} s")
+            }
+            Progress::Done { index, outcome } => {
+                let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                let what = match &outcome {
+                    Got::Added { .. } => "added".to_string(),
+                    Got::AlreadyFollowing => "already followed".to_string(),
+                    Got::Failed { kind, reason } => format!("failed ({}): {reason}", kind.label()),
+                };
+                eprintln!("  {n}/{total} {}: {what}", feeds[index].xml_url);
+            }
+        },
+    );
+    let mut sum = Summary::of(&results);
+    sum.already += already.len();
+    for f in &already {
+        o.stdout.push_str(&line("already followed", f, ""));
+    }
+    for (i, r) in results.iter().enumerate() {
+        match r {
+            Some(Got::Added { .. }) => o.stdout.push_str(&line("added", &feeds[i], "")),
+            Some(Got::AlreadyFollowing) => {
+                o.stdout.push_str(&line("already followed", &feeds[i], ""))
+            }
+            Some(Got::Failed { kind, reason }) => o.stdout.push_str(&line(
+                &format!("failed ({})", kind.label()),
+                &feeds[i],
+                &format!(": {reason}"),
+            )),
+            None => {}
+        }
+    }
+    o.stdout.push_str(&sum.line());
+    if sum.added > 0 {
+        o.stdout
+            .push_str(&format!(". {}", crate::app::reading::opml::WHERE_THEY_GO));
+    }
+    o.stdout.push_str(".\n");
+    if !sum.failed.is_empty() {
+        o.code = 1;
+    }
+}
+
+fn export_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
+    use blyg_core::Backend as _;
+    let Some(file) = args.first() else {
+        o.stderr = format!(
+            "usage: blygger +export-opml <file>   (e.g. {})\n",
+            blyg_core::opml::EXPORT_FILE_NAME
+        );
+        o.code = 2;
+        return;
+    };
+    let subs = match opml_backend(store) {
+        Ok(b) => b.subscriptions(),
+        Err(e) => {
+            o.stderr = format!("blygger +export-opml: {e}\n");
+            o.code = 1;
+            return;
+        }
+    };
+    match std::fs::write(file, blyg_core::opml::export(&subs)) {
+        Ok(()) => o.stdout = format!("Saved {} subscriptions to {file}\n", subs.len()),
+        Err(e) => {
+            o.stderr = format!("blygger +export-opml: couldn't write {file}: {e}\n");
+            o.code = 1;
+        }
+    }
+}
+
 /// The config's problems: the settings' own, then the extensions'.
 fn diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
     let mut out = crate::settings::diagnostics(store.loaded(), &themes_of(store));
@@ -244,13 +456,21 @@ fn diagnostics(store: &ConfigStore) -> Vec<Diagnostic> {
 // --- extensions ---
 
 /// The extensions built into the app, each run as `blygger +ext <name>`.
-const BUNDLED_EXTENSIONS: &[&str] = &[blyg_ext_notes::NAME, blyg_ext_crosspost::NAME];
+const BUNDLED_EXTENSIONS: &[&str] = &[
+    blyg_ext_notes::NAME,
+    blyg_ext_crosspost::NAME,
+    blyg_ext_reading_time::NAME, // --- reading slots ---
+    blyg_ext_inspect::NAME,
+];
 
 /// How to serve a bundled extension over this process's stdin/stdout.
 fn bundled_extension(name: &str) -> Option<fn() -> ExitCode> {
     match name {
         blyg_ext_notes::NAME => Some(blyg_ext_notes::run_stdio),
         blyg_ext_crosspost::NAME => Some(blyg_ext_crosspost::run_stdio),
+        // --- reading slots ---
+        blyg_ext_reading_time::NAME => Some(blyg_ext_reading_time::run_stdio),
+        blyg_ext_inspect::NAME => Some(blyg_ext_inspect::run_stdio),
         _ => None,
     }
 }
@@ -279,7 +499,16 @@ pub(crate) fn host_config(store: &ConfigStore) -> blyg_ext::HostConfig {
             vec!["+ext".into(), blyg_ext_notes::NAME.into()],
             &notes,
         ),
-        blyg_ext_crosspost::bundled(exe, vec!["+ext".into(), blyg_ext_crosspost::NAME.into()]),
+        blyg_ext_crosspost::bundled(
+            exe.clone(),
+            vec!["+ext".into(), blyg_ext_crosspost::NAME.into()],
+        ),
+        // --- reading slots ---
+        blyg_ext_reading_time::bundled(
+            exe.clone(),
+            vec!["+ext".into(), blyg_ext_reading_time::NAME.into()],
+        ),
+        blyg_ext_inspect::bundled(exe, vec!["+ext".into(), blyg_ext_inspect::NAME.into()]),
     ];
     c
 }
@@ -593,6 +822,58 @@ mod tests {
         move || ConfigStore::open(blyg_core::config::ConfigFiles::single(dir.join("config")))
     }
 
+    // --- OPML --- without a connected blyg (the e2e runs the real thing).
+    #[test]
+    fn opml_commands_without_a_blyg() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("feeds.opml");
+        std::fs::write(
+            &file,
+            r#"<opml version="2.0"><body><outline text="Tech">
+              <outline text="Kit" xmlUrl="https://kit.example.org/feed.xml"/>
+              <outline text="Kit again" xmlUrl="https://kit.example.org/feed.xml"/>
+            </outline></body></opml>"#,
+        )
+        .unwrap();
+        let f = file.to_str().unwrap();
+        let o = exec("+import-opml", &[f, "--dry-run"], &mut on_disk(dir.path()));
+        assert_eq!(o.code, 0, "{}", o.stderr);
+        assert!(o.stderr.contains("no blyg is connected"), "{}", o.stderr);
+        assert!(o.stdout.contains("1 feeds in"), "{}", o.stdout);
+        assert!(o.stdout.contains("1 duplicates collapsed"), "{}", o.stdout);
+        assert!(
+            o.stdout
+                .contains("would add          Kit [Tech]  https://kit.example.org/feed.xml"),
+            "{}",
+            o.stdout
+        );
+        assert!(o.stdout.contains("Nothing was changed"), "{}", o.stdout);
+
+        let o = exec("+import-opml", &[f], &mut on_disk(dir.path()));
+        assert_eq!(o.code, 1);
+        assert!(o.stderr.contains("no blyg is connected"), "{}", o.stderr);
+        assert_eq!(exec("+import-opml", &[], &mut on_disk(dir.path())).code, 2);
+        let missing = dir.path().join("nope.opml");
+        let o = exec(
+            "+import-opml",
+            &[missing.to_str().unwrap()],
+            &mut on_disk(dir.path()),
+        );
+        assert!(o.stderr.contains("Couldn't read the file"), "{}", o.stderr);
+
+        let out = dir.path().join("out.opml");
+        let o = exec(
+            "+export-opml",
+            &[out.to_str().unwrap()],
+            &mut on_disk(dir.path()),
+        );
+        assert_eq!(o.code, 1);
+        assert!(!out.exists());
+        assert_eq!(exec("+export-opml", &[], &mut on_disk(dir.path())).code, 2);
+        assert!(HELP.contains("+import-opml <file> [--dry-run]"));
+        assert!(HELP.contains("+export-opml <file>"));
+    }
+
     #[test]
     fn copy_theme_round_trips_every_builtin() {
         use blyg_core::config::theme::{BUILTIN, Registry};
@@ -720,7 +1001,7 @@ mod tests {
         };
         has(
             1,
-            "extension: `markdown-notes` asks for fs:~/Notes, ui; nothing is granted yet",
+            "extension: `markdown-notes` asks for ui; nothing is granted yet",
         );
         has(
             2,

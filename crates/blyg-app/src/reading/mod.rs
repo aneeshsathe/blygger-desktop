@@ -24,6 +24,9 @@ pub(crate) mod lineage_vm;
 mod list;
 mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod opml; // --- OPML import/export ---
+#[cfg(test)]
+mod opml_tests;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
 mod site_settings;
@@ -239,6 +242,8 @@ pub enum RSheet {
     },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
+    /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
+    Opml(Box<opml::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
     /// brackets with `picker_typing = panel`).
     Quote {
@@ -290,12 +295,16 @@ pub struct State {
     /// (a quote's version), when it's current or pinned.
     pub want_version: Option<u32>,
     // --- responses --- (and lineage)
-    /// What draws on each post (`post_key`s), as kinds: the glyph's right
-    /// side, never a count. From the rows, `own_refs` and the mentions.
-    pub down: HashMap<(String, String), lineage_vm::Kinds>,
-    /// What your own published posts point at, and your blyg's origin
-    /// (`MainView::refresh_own_lineage`).
-    pub own_refs: Vec<blyg_core::PostRef>,
+    /// Every post's lineage edges over what this Mac holds (the rows,
+    /// `own_posts` and the mentions): the glyph's two sides, and its counts
+    /// when the node doesn't serve them (`blyg_core::lineage::Local`).
+    pub lineage: blyg_core::lineage::Local,
+    /// The glyph counts the node serves (`lineage-glyph`), by reading entry
+    /// key (`blyg_core::lineage::imported_key`). Empty when it doesn't.
+    pub served: HashMap<String, blyg_core::lineage::LineageSummary>,
+    /// Your own published posts, and your blyg's origin
+    /// (`MainView::own_lineage`).
+    pub own_posts: Vec<blyg_core::Item>,
     pub own_origin: Option<String>,
     // --- reader folders --- the Reader's three panes.
     /// Local folders, in order, and subscription id → folder id.
@@ -354,8 +363,9 @@ impl State {
             ),
             stream: stream::Stream::new(),
             want_version: None,
-            down: HashMap::new(),
-            own_refs: Vec::new(),
+            lineage: Default::default(),
+            served: HashMap::new(),
+            own_posts: Vec::new(),
             own_origin: None,
             folders: backend.folders(),
             filed: backend.subscription_folders(),
@@ -400,11 +410,11 @@ impl State {
             let keys: Vec<vm::Key> = self.shown_rows().map(vm::key).collect();
             self.picked.retain_shown(&keys);
         }
-        self.down = lineage_vm::down_index(
+        self.lineage = blyg_core::lineage::Local::build(
             &self.rows,
-            &self.own_refs,
-            self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
+            &self.own_posts,
             self.own_origin.as_deref(),
+            self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
         );
     }
 
@@ -457,6 +467,7 @@ impl MainView {
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
+        .map(|d| self.opml_actions(d, cx)) // --- OPML ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -487,11 +498,13 @@ impl MainView {
         } else {
             r.rows = vm::order(fresh);
         }
-        let (own_refs, own_origin) = self.own_lineage();
+        let (own_posts, own_origin) = self.own_lineage();
         let r = &mut self.reading;
-        r.own_refs = own_refs;
+        r.own_posts = own_posts;
         r.own_origin = own_origin;
         r.refilter();
+        self.refresh_lineage_counts(cx); // --- lineage counts ---
+        let r = &mut self.reading;
         if let Some(o) = &mut r.opened {
             // Fresh metadata (thumb, state), but keep the read version seen
             // at open time.
@@ -534,8 +547,9 @@ impl MainView {
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
                 self.reading.filed = self.backend.subscription_folders();
-                (self.reading.own_refs, self.reading.own_origin) = self.own_lineage();
+                (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
+                self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);
                 if self.reading.mode == stream_vm::ReadMode::Stream {
                     self.ensure_stream_timer(window, cx);
@@ -801,6 +815,7 @@ impl MainView {
             RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
+            RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
         };
         Some(self.sheet_frame(width, content, cx))
     }

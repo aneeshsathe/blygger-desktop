@@ -5,17 +5,30 @@ separate program that Burrow starts and talks to. **Nothing runs unless your
 config file names it**, and an extension gets only the permissions you grant
 it.
 
-Burrow comes with two extensions, **markdown-notes** and **cross-post**. You
-can also install extensions other people write, or write your own.
+Burrow comes with four extensions, all off until you turn them on:
+**markdown-notes**, **cross-post**, **reading-time** and **inspect**. You can
+also install extensions other people write, or write your own.
+
+**⇧⌘P** (Post › Extensions…) opens the Extensions palette: the commands your
+running extensions offer on this screen, **Browse** for each notes folder,
+and **Manage extensions…** (what's installed, whether it's on, and what it's
+allowed). Manage is also where you turn one on or off; see
+[Turning an extension off](#turning-an-extension-off).
+
+The tour (Help › Burrow Tutorial) shows markdown-notes, reading-time and
+inspect running on sample notes, even when yours are off; nothing it does
+changes your config file.
 
 ## markdown-notes
 
-markdown-notes reads and writes a folder of Markdown notes, such as an
-Obsidian vault. It's kept apart from your blyg, so it works with no blyg
-connected, and it never links notes to posts.
+markdown-notes reads and writes folders of Markdown notes, such as Obsidian
+vaults, as many as you like. It's kept apart from your blyg, so it works with
+no blyg connected, and it never links notes to posts.
 
-- **The notes panel** lists the folder, searches titles and bodies, and opens
-  a note to read or edit.
+- **The notes panel** (the notes drawer's Notes tab) switches between your
+  folders, lists the one you pick, searches titles and bodies, and opens a
+  note to read or edit. **Add folder…** adds more; **Remove from Burrow**
+  forgets a folder (its notes stay where they are).
 - **Copy into post** puts the selection, or the whole note, into your draft at
   the cursor, as a quote or as it is (you pick).
 - **Save selection to notes**, in the Extensions palette (⇧⌘P), makes a new
@@ -27,19 +40,26 @@ it, your save is refused, so it never overwrites the other change.
 
 ### Turning it on
 
-Add these lines to the config file (**Burrow › Open Config File**), then
-reload it (⇧⌘,):
+The easy way: **Settings › Notes folders › Add folder…**, then pick one or
+more folders. Burrow writes the config lines for you and asks for permission
+to use those folders.
+
+Or add the lines to the config file (**Burrow › Open Config File**) yourself,
+then reload it (⇧⌘,):
 
 ```text
 extension = markdown-notes
 extension-setting = markdown-notes vault=~/Notes
+extension-setting = markdown-notes vault-work=~/Work/Vault
 ```
 
-`vault` is the folder of notes (it defaults to `~/Notes`). It has two more
-settings:
+`vault` is your first folder of notes, and each `vault-<label>` adds another
+(the label is lowercase letters, digits and dashes). There's no default: with
+no folder, the Notes tab offers **Choose a folder…**, and Burrow never reads a
+folder you didn't pick. It has two more settings:
 
 ```text
-# where new notes go, inside the vault (default: the top of the vault)
+# where new notes go, inside each folder (default: the top of the folder)
 extension-setting = markdown-notes folder=Inbox
 # how often it looks for changed notes, in milliseconds (default 2000)
 extension-setting = markdown-notes poll-ms=5000
@@ -85,6 +105,15 @@ them:
 2. **Post this to Substack Notes?** You see what the notes box now holds. Post
    clicks Substack's Post button; you can also click Post yourself, or cancel.
 
+The run uses the same side pane as a link you click, with the sheets beside
+it so you can see the page. You can fold the pane (esc, ×, or ⇧⌘B) while it
+runs: the run keeps going, and the status bar shows **macro running · show
+pane**. Click that, or press ⇧⌘B, to bring the pane back. The pane comes back
+by itself before the text goes in, and for the second sheet. Afterwards
+it's folded again if it was folded before, unless you folded or unfolded it
+during the run, or you still need the page (you chose to click Post
+yourself, or the run stopped with a problem).
+
 The note is the post's first paragraph of prose (headings, quotes, images and
 code are skipped, and Markdown marks are taken out), a blank line, and the
 link. The whole note is at most 280 characters, the link included, counted as
@@ -117,12 +146,39 @@ extension-setting = cross-post max-chars=500
   you typed and clicked yourself. If Substack limits or acts on an account
   for automated posting, that's your risk; check its terms.
 
+## reading-time and inspect
+
+Two small extensions for what you read, ports of blygger-studio 0.39's
+extensions of the same names, so the web Studio and Burrow agree:
+
+- **reading-time** ends each post's byline, in the stream and in Reader, with
+  an estimated reading time (**· 4 min**); hover over it for the word count.
+  It describes the text, not its audience.
+- **inspect** adds **⋯** to each post's actions. Click it, then **inspect**:
+  the record Burrow holds for the post (ids, versions, references, hashes),
+  and its JSON with the bodies left out, with a Copy button. It's for people
+  building clients, or checking why a mention or an import looks wrong.
+
+Both need only `reading.read`, fetch nothing and use no network:
+
+```text
+extension = reading-time
+extension-allow = reading-time reading.read
+extension = inspect
+extension-allow = inspect reading.read
+```
+
+Or turn them on in ⇧⌘P › Manage extensions… (Turn on, then Allow).
+
 ## Permissions and consent
 
 The first time Burrow starts an extension, it shows what the extension asks
 for, such as "markdown-notes wants to: read and write files in ~/Notes · show
-messages". You can untick any item. **Allow** writes your answer into the
-config file as `extension-allow` lines, and starts the extension:
+messages". You can untick any item (or press its number). **Allow** (⏎)
+writes your answer into the config file as `extension-allow` lines, and
+starts the extension; **Not now** (esc) leaves it waiting, with a notice in
+the status bar that brings the sheet back; **Turn off** (⌘⌫) says you don't
+want it after all and turns it off:
 
 ```text
 extension-allow = markdown-notes ui
@@ -153,6 +209,22 @@ files or using the network. Only install extensions you trust.
 Whatever it's granted, no extension can publish, withdraw, pin, delete or fork
 a post, change your blyg's settings, or see your sign-in, your Keychain or
 Burrow's database.
+
+## Turning an extension off
+
+In ⇧⌘P › **Manage extensions…**, each extension that's on has:
+
+- **Turn off**: removes its `extension` line, so it stops. Its
+  `extension-allow` and `extension-setting` lines stay, so **Turn on** later
+  brings it back as it was, without asking again.
+- **Forget permissions** (on any extension that's been allowed something,
+  on or off): turns it off and removes its `extension-allow` lines too, so
+  the next Turn on asks again.
+
+Turn off works in any state: running, waiting for permission, or stopped
+after crashing. Any question or notice about the extension goes with it.
+Editing the config file does the same: delete the `extension` line to turn it
+off, or its `extension-allow` lines to take permissions back.
 
 ## Checking your extensions
 
@@ -207,3 +279,59 @@ repository.
 For an extension in Rust, the `blyg-ext` crate has the protocol types and a
 `serve` loop, and markdown-notes (`crates/blyg-ext-notes`) is a worked
 example.
+
+## Submit your extension
+
+Wrote an extension? List it on the
+[Community extensions](generated/community-extensions.md) page. The page is
+made from one file in the repository, `extensions/community.toml`, every time
+the documentation site is built, so a merged entry shows up on its own.
+
+> **Community extensions are used at your own risk.** The Burrow maintainers
+> do not review, verify, audit or endorse them. An extension is a program that
+> runs with your user's rights, and `fs:` and `net` are its own declarations,
+> not something Burrow can enforce. Read the source before you install one. To
+> report a malicious or misleading listing,
+> [open an issue](https://github.com/aneeshsathe/blygger-desktop/issues/new)
+> and it will be removed.
+
+To submit one, open a pull request that adds an `[[extension]]` table to
+`extensions/community.toml`, in alphabetical order by `name`:
+
+```toml
+[[extension]]
+name = "wordcount"                  # the name in your extension.toml
+title = "Word count"
+description = "Shows the word count and reading time of the open draft."
+repo = "https://github.com/example/burrow-ext-wordcount"
+homepage = "https://example.com/wordcount"   # optional
+author = "example"                  # your GitHub handle, not an email
+capabilities = ["items.read", "ui"] # exactly what your manifest asks for
+platforms = ["macos", "windows"]
+added = 2026-10-09                  # a date, without quotes
+```
+
+If you'd rather not open a pull request, fill in the
+[extension submission form](https://github.com/aneeshsathe/blygger-desktop/issues/new?template=extension-submission.yml)
+and a maintainer will add the entry for you.
+
+CI runs `scripts/community-extensions.py check` on the pull request (you can
+run it yourself first). It checks that:
+
+- the file is valid TOML, and every entry has all the fields above and no
+  others (only `homepage` is optional);
+- `name` is lowercase kebab-case (`word-count`), at most 40 characters, not
+  already listed, and not the name of an extension that comes with Burrow;
+- `title` (at most 60 characters) and `description` (one line, at most 160)
+  are plain text, with no HTML or Markdown code;
+- `repo` and `homepage` are `https://` addresses;
+- `author` is a GitHub handle, and no field holds an email address;
+- each capability is one Burrow knows (see
+  [Permissions and consent](#permissions-and-consent)), and `platforms` is
+  `macos`, `windows` or both;
+- the entries are sorted by `name`.
+
+A maintainer merges an entry after a light look at its format, and nothing
+more: the source code isn't read, run or tested. List the source code's
+repository, keep `capabilities` in step with your manifest, and open another
+pull request when the details change, or to take the entry down.
