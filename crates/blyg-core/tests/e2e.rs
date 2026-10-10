@@ -3025,7 +3025,10 @@ fn lineage_conforms(path: &str) -> Value {
 fn lineage_counts_come_from_the_node_when_it_serves_them() {
     use blyg_core::lineage::{Centre, Local, imported_key};
     let e = e2e();
-    if !set_lineage_glyph(false) {
+    // A stock build takes `extensions: []` but refuses to turn on one it
+    // wasn't built with: find out before subscribing to anything, so a skip
+    // leaves nothing behind for the tests after it.
+    if !set_lineage_glyph(true) || !set_lineage_glyph(false) {
         eprintln!("skipped: this studio build doesn't carry lineage-glyph");
         return;
     }
@@ -3121,4 +3124,267 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
     assert_eq!(on.lineage_summaries(&keys, 0), None);
     assert_eq!(on.cached_lineage_summaries(&keys), None);
     off.unsubscribe(&sub.id).unwrap();
+}
+
+// ---------------------------------------------------------------- OPML
+
+/// A tiny static feed server on 127.0.0.1 (never the internet): `path →
+/// body`, 404 for anything else. Lives as long as the test process.
+fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let files = std::sync::Arc::new(files);
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let files = files.clone();
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() {
+                    return;
+                }
+                // Drain the headers.
+                let mut h = String::new();
+                while reader.read_line(&mut h).is_ok_and(|n| n > 2) {
+                    h.clear();
+                }
+                // The path without the query.
+                let target = line.split_whitespace().nth(1).unwrap_or("/");
+                let path = target.split('?').next().unwrap_or("/");
+                let (status, ctype, body) = match files.iter().find(|(p, _)| *p == path) {
+                    Some((p, b)) => (
+                        "200 OK",
+                        if p.ends_with(".atom") {
+                            "application/atom+xml"
+                        } else {
+                            "application/rss+xml"
+                        },
+                        b.clone(),
+                    ),
+                    None => ("404 Not Found", "text/plain", "not here".to_string()),
+                };
+                let mut s = stream;
+                let _ = write!(
+                    s,
+                    "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+            });
+        }
+    });
+    format!("http://{addr}")
+}
+
+fn rss(title: &str, link: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>{title}</title><link>{link}</link><description>Invented sample feed</description><item><title>Hello from {title}</title><link>{link}hello</link><guid>{link}hello</guid><pubDate>Fri, 02 Oct 2026 10:00:00 GMT</pubDate><description>An invented post.</description></item></channel></rss>"#
+    )
+}
+
+fn atom(title: &str, link: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>{title}</title><link href="{link}"/><id>{link}</id><updated>2026-10-02T10:00:00Z</updated><entry><title>Hello from {title}</title><link href="{link}hello"/><id>{link}hello</id><updated>2026-10-02T10:00:00Z</updated><summary>An invented post.</summary></entry></feed>"#
+    )
+}
+
+/// OPML import against the real studio: a mixed file (two new feeds, one
+/// already followed, one dead URL) maps 201 / 409 / 422, files what's added
+/// in the local "Imported feeds" folder (and leaves the followed one where
+/// it was), keeps them out of the public blogroll, and export round-trips.
+/// With `BLYG_E2E_BLYGGER` (a built `blygger`), the CLI does it too.
+#[test]
+#[ignore]
+fn opml_import_and_export() {
+    use blyg_core::opml::{self, FailKind, IMPORT_FOLDER, Outcome, Pace};
+    let e = e2e();
+    let t = tag("opml");
+    let host = serve_feeds(vec![
+        ("/ada.xml", rss("Ada Example", "https://ada.example.com/")),
+        ("/kit.atom", atom("Kit Example", "https://kit.example.org/")),
+        ("/rue.xml", rss("Rue Example", "https://rue.example.net/")),
+        (
+            "/moss.xml",
+            rss("Moss Example", "https://moss.example.org/"),
+        ),
+    ]);
+    // A query makes each run's feeds new to the studio.
+    let (ada, kit, rue, dead) = (
+        format!("{host}/ada.xml?run={t}"),
+        format!("{host}/kit.atom?run={t}"),
+        format!("{host}/rue.xml?run={t}"),
+        format!("{host}/gone.xml"),
+    );
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+
+    // Rue is already followed, and filed by the user.
+    let followed = me.subscribe(&rue, None).expect("subscribe to a local feed");
+    let mine = me.create_folder(&format!("Mine {t}")).unwrap();
+    me.set_subscription_folder(&followed.id, Some(&mine.id))
+        .unwrap();
+
+    let file = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<opml version="2.0"><head><title>Another reader</title></head><body>
+  <outline text="Tech" title="Tech">
+    <outline type="rss" text="Ada &amp; co" xmlUrl="{ada}" htmlUrl="https://ada.example.com/"/>
+    <outline type="atom" text="Kit" xmlUrl="{kit}"/>
+  </outline>
+  <outline text="Rue" xmlUrl="{}"/>
+  <outline text="Gone" xmlUrl="{dead}"/>
+</body></opml>"#,
+        followed.feed_url
+    );
+    let parsed = opml::parse(&file).unwrap();
+    assert_eq!(parsed.feeds.len(), 4);
+    // The preview marks Rue as followed.
+    let subs = me.subscriptions();
+    let marks: Vec<bool> = parsed
+        .feeds
+        .iter()
+        .map(|f| opml::followed(f, &subs).is_some())
+        .collect();
+    assert_eq!(marks, [false, false, true, false], "{subs:?}");
+
+    // Run all four (Rue too) to see each answer.
+    let pace = Pace {
+        concurrency: 2,
+        interval: Duration::from_millis(300),
+        max_waits: 3,
+    };
+    let results = opml::run_import(
+        &me,
+        &parsed.feeds,
+        &pace,
+        &std::sync::atomic::AtomicBool::new(false),
+        &|_| {},
+    );
+    let ids: Vec<String> = results[..2]
+        .iter()
+        .map(|r| match r {
+            Some(Outcome::Added { id, .. }) => id.clone(),
+            other => panic!("201 for a new feed: {other:?}"),
+        })
+        .collect();
+    assert_eq!(results[2], Some(Outcome::AlreadyFollowing), "409");
+    match &results[3] {
+        Some(Outcome::Failed {
+            kind: FailKind::NotAFeed,
+            reason,
+        }) => assert!(
+            reason.contains("could not resolve"),
+            "the server's reason: {reason}"
+        ),
+        other => panic!("422 for a dead URL: {other:?}"),
+    }
+    assert_eq!(
+        opml::Summary::of(&results).line(),
+        "2 added, 1 already followed, 1 failed"
+    );
+
+    // Filed locally; the followed one stays where the user put it.
+    let folder = me
+        .folders()
+        .into_iter()
+        .find(|f| f.name == IMPORT_FOLDER)
+        .expect("the Imported feeds folder");
+    let filed = me.subscription_folders();
+    for id in &ids {
+        assert_eq!(filed.get(id), Some(&folder.id));
+    }
+    assert_eq!(filed.get(&followed.id), Some(&mine.id));
+
+    // Not in the public blogroll: new subscriptions are in_blogroll = 0.
+    let api = Api::new(&e.url, e.cred.clone());
+    let server = api.list_subscriptions().unwrap();
+    for id in &ids {
+        let s = server.iter().find(|s| &s.id == id).expect("on the server");
+        assert!(!s.in_blogroll, "{s:?}");
+    }
+    let (_, roll) = public_get(&format!("{}/blogroll.opml", e.url));
+    assert!(!roll.contains(&host), "{roll}");
+
+    // Export round-trips: every subscription, read back as followed.
+    let all = me.subscriptions();
+    let xml = opml::export(&all);
+    let back = opml::parse(&xml).unwrap();
+    let keys = |v: Vec<String>| {
+        let mut k: Vec<String> = v.iter().map(|u| opml::feed_key(u)).collect();
+        k.sort();
+        k
+    };
+    assert_eq!(
+        keys(back.feeds.iter().map(|f| f.xml_url.clone()).collect()),
+        keys(all.iter().map(|s| s.feed_url.clone()).collect())
+    );
+    for s in all.iter().filter(|s| s.feed_url.starts_with(&host)) {
+        assert!(back.feeds.iter().all(|f| opml::followed(f, &all).is_some()));
+        assert!(xml.contains(&s.feed_url.replace('&', "&amp;")));
+    }
+    assert_eq!(
+        all.iter().filter(|s| s.feed_url.starts_with(&host)).count(),
+        3
+    );
+
+    // The CLI, when a built `blygger` is given.
+    if let (Ok(bin), Credential::Token(token)) = (std::env::var("BLYG_E2E_BLYGGER"), &e.cred) {
+        let moss = format!("{host}/moss.xml?run={t}");
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = dir.path().join("config");
+        std::fs::write(&cfg, format!("blyg-url = {}\n", e.url)).unwrap();
+        let opml_file = dir.path().join("feeds.opml");
+        std::fs::write(
+            &opml_file,
+            format!(
+                "<opml version=\"2.0\"><body><outline text=\"Moss\" xmlUrl=\"{moss}\"/><outline text=\"Ada\" xmlUrl=\"{}\"/></body></opml>",
+                all.iter()
+                    .find(|s| s.id == ids[0])
+                    .map(|s| s.feed_url.clone())
+                    .unwrap()
+            ),
+        )
+        .unwrap();
+        let run = |args: &[&str]| {
+            let out = Command::new(&bin)
+                .args(args)
+                .env("BLYGGER_CONFIG", &cfg)
+                .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+                .env("BLYGGER_TEST_TOKEN", token)
+                .output()
+                .unwrap();
+            let s = String::from_utf8_lossy(&out.stdout).into_owned();
+            let err = String::from_utf8_lossy(&out.stderr).into_owned();
+            assert!(!s.contains(token.as_str()) && !err.contains(token.as_str()));
+            (out.status.code(), s, err)
+        };
+        let f = opml_file.to_str().unwrap();
+        let (code, out, err) = run(&["+import-opml", f, "--dry-run"]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        assert!(out.contains("would add") && out.contains("Moss"), "{out}");
+        assert!(out.contains("already followed"), "{out}");
+        let (code, out, err) = run(&["+import-opml", f]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        assert!(
+            out.contains(
+                "1 added, 1 already followed, 0 failed. Added to the Imported feeds folder in the Reader."
+            ),
+            "{out}{err}"
+        );
+        let exported = dir.path().join("burrow-subscriptions.opml");
+        let (code, out, err) = run(&["+export-opml", exported.to_str().unwrap()]);
+        assert_eq!(code, Some(0), "{out}{err}");
+        let back = opml::read_file(&exported).unwrap();
+        assert!(back.feeds.iter().any(|f| f.xml_url.contains("/moss.xml")));
+        eprintln!("the CLI imported and exported");
+    } else {
+        eprintln!("BLYG_E2E_BLYGGER not set (or a password sign-in): the CLI part skipped");
+    }
+
+    // Leave the studio as it was.
+    for s in api.list_subscriptions().unwrap() {
+        if s.feed_url.starts_with(&host) {
+            api.delete_subscription(&s.id).unwrap();
+        }
+    }
 }

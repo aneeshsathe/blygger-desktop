@@ -161,10 +161,20 @@ impl MainView {
             .chip("subscribe", "+ Subscribe…")
             .on_click(cx.listener(|this, _, window, cx| this.open_subscribe(window, cx)))
             .into_any_element();
+        // --- OPML ---
+        let import = self
+            .chip("opml-import-chip", "Import OPML…")
+            .debug_selector(|| "opml-import-chip".into())
+            .on_click(cx.listener(|this, _, window, cx| this.opml_pick(window, cx)))
+            .into_any_element();
+        let export = self
+            .chip("opml-export-chip", "Export OPML…")
+            .on_click(cx.listener(|this, _, window, cx| this.opml_export(window, cx)))
+            .into_any_element();
         let header = self.screen_header(
             "Subscriptions",
             "following is private to this blyg · esc back".into(),
-            vec![add],
+            vec![import, export, add],
         );
         let rows = self.reading.subs.iter().enumerate().map(|(i, s)| {
             let paused = s.status == "paused";

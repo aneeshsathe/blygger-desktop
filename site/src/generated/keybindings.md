@@ -85,6 +85,8 @@
 | Check for a new release now (whatever auto-update says) | Burrow › Check for Updates… |
 | Quick capture (the global hotkey, capture-hotkey) | Burrow › Quick Capture |
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
+| Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
+| Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |

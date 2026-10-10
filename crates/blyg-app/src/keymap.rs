@@ -41,6 +41,8 @@ use crate::app::reading::{
 use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
+// --- OPML ---
+use crate::app::reading::opml::{ExportOpml, ImportOpml};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -481,6 +483,17 @@ pub fn mac_table() -> Vec<Keybind> {
             SubscribeTo,
             "Subscribe to a blyg or feed",
             "Blyg › Subscribe…"
+        ),
+        // --- OPML --- (no key: an occasional chore)
+        menu_only!(
+            ImportOpml,
+            "Import subscriptions from another reader's OPML file",
+            "Blyg › Import Subscriptions from OPML…"
+        ),
+        menu_only!(
+            ExportOpml,
+            "Save every subscription as an OPML file",
+            "Blyg › Export Subscriptions as OPML…"
         ),
         menu_only!(
             SiteSettings,
@@ -959,6 +972,7 @@ pub fn bind_keys(cx: &mut App) {
     cx.bind_keys(out);
     // Menu-only actions have no keys; keep the compiler honest that they exist.
     let _ = (Disconnect, OpenConfigFile, SiteSettings, SubscribeTo);
+    let _ = (ImportOpml, ExportOpml); // --- OPML ---
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---

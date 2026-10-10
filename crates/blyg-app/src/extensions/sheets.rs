@@ -22,7 +22,11 @@ pub(crate) enum RowAction {
     /// A granted macro site's `home`, in the browser pane (to sign in).
     OpenSite { ext: String, site: String },
     /// A library's notes, in the notes drawer.
-    Library { ext: String, title: String },
+    Library {
+        ext: String,
+        id: String,
+        title: String,
+    },
     /// The Manage extensions sheet.
     Manage,
 }
@@ -89,6 +93,7 @@ impl MainView {
                 rows.push(Row {
                     action: RowAction::Library {
                         ext: l.ext.clone(),
+                        id: l.library.id.clone(),
                         title: l.library.title.clone(),
                     },
                     label: format!("Browse {}", l.library.title),
@@ -181,7 +186,10 @@ impl MainView {
         self.focus_after_sheet(window, cx);
         match row.action {
             RowAction::Manage => self.ext_open_manage(window, cx),
-            RowAction::Library { .. } => self.ext_lib_show(window, cx),
+            RowAction::Library { id, .. } => {
+                self.ext_lib_show(window, cx);
+                self.ext_lib_choose(Some(id), window, cx);
+            }
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
             RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
             RowAction::OpenSite { ext, site } => self.ext_open_site(&ext, &site, window, cx),

@@ -60,6 +60,42 @@ subscription at once.
 |---|---|
 | ![A subscription's menu](screenshots/reader-sub-menu.png) | ![Renaming a subscription](screenshots/reader-sub-rename.png) |
 
+## Import and export subscriptions (OPML)
+
+Moving from another feed reader? Export an OPML file there (Feedly,
+NetNewsWire, Inoreader, Miniflux, Reeder and most others can), then choose
+**Blyg › Import Subscriptions from OPML…**, or **Import OPML…** on the
+Subscriptions screen (⇧⌘S).
+
+- Burrow lists the file's feeds, grouped under the folders they had in the
+  other reader. Feeds you already follow say **already following** and start
+  unticked, and a feed listed twice appears once.
+- 1–9 or Space tick and untick, ⌘A ticks all or none, ⏎ imports the ticked
+  ones, and esc cancels.
+- Every feed is subscribed on your blyg, as if you'd added it by hand. The
+  import goes slowly, about 30 feeds a minute, because each new subscription
+  makes your blyg fetch that feed's archive. Esc stops it after the feed in
+  progress, and what's done stays done.
+- Imported feeds go into a folder named **Imported feeds** in the Reader,
+  made the first time you import (file them elsewhere whenever you like).
+  Feeds you already followed stay where you filed them. The other reader's
+  folders are only shown in the list; they don't become folders here.
+- Imported feeds aren't added to your public blogroll.
+- At the end Burrow says how many were added, already followed, or failed,
+  with each failure's reason: *not a feed* (nothing at that address your blyg
+  could read as a blyg or a feed), *unreachable* (Burrow couldn't reach your
+  blyg), or *refused*. **r** retries the failed ones.
+
+**Blyg › Export Subscriptions as OPML…** (or **Export OPML…** on the
+Subscriptions screen) saves every subscription to an OPML file
+(`burrow-subscriptions.opml`) that other readers can import. Your blyg's
+public `blogroll.opml` lists only the subscriptions you put in your blogroll;
+the export lists them all.
+
+Both need a connected blyg, since your subscriptions live there. From a
+terminal: `blygger +import-opml <file>` (add `--dry-run` to see what would be
+added) and `blygger +export-opml <file>`.
+
 ## Acting on a post
 
 The selected post shows its actions. Each says what it makes:
