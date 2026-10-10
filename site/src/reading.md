@@ -139,14 +139,21 @@ Beside each post's name, in the stream and in Reader, a small **glyph** shows
 its lineage: lines coming in on the left are the kinds of post it draws on,
 lines going out on the right the kinds that draw on it. Each kind has its own
 place (fork at the top, reply in the middle, quote at the bottom) and colour,
-and a dotted line means only a passage. It never says how many; hover for the
-kinds in words.
+and a dotted line means only a passage. Beside it, **2 · 3** says how many:
+the posts it draws on, then the posts known here that draw on it. Hover for
+the counts by kind in words. These are the same numbers the web Studio's
+lineage glyph shows: when your blyg runs blygger-studio with the
+`lineage-glyph` extension turned on, Burrow asks it for them; otherwise it
+counts what this Mac holds, by the same rules. The lineage glyph is the one
+place Burrow shows counts: responses and mentions stay lists.
 
 **⌘J** (Post › Lineage…), or a click on the glyph, opens the lineage view. The
 post sits in a hexagon, what it draws on above it and what draws on it below.
 The arrow keys move between them, ⏎ makes a neighbour the centre so you can
 walk a conversation one step at a time, ⌫ walks back, **o** opens the selected
-post in the reader, and esc closes. Responses are what this Mac holds: posts
+post in the reader (marking it read, as opening it from the list does), and
+esc closes. Beside the hexagon it says how many each way. Responses are what
+your blyg knows when it serves the lineage, else what this Mac holds: posts
 in your reading list, your own posts, and verified mentions of your posts.
 
 ![The lineage view](screenshots/lineage.png)
@@ -156,7 +163,8 @@ actions, always in the same places: **F** fork, **R** reply, **Q** quote,
 **L** link post, **V** versions, **O** open on the web. A letter previews the
 action: a dashed node shows what it would make, and the panel answers the same
 four questions for each (is it a response, is the author told, are their
-words in yours, does it show under their post). ⏎, or the same letter again,
+words in yours, does it show under their post). Fork, reply and quote also
+say how many of that kind are already known (**R · 2**). ⏎, or the same letter again,
 does it; esc backs out. An action that can't be done (a fork of a post with
 no pinned version, say) says why.
 

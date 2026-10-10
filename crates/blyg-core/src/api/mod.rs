@@ -15,6 +15,7 @@
 //! advertised `read_state: true`.
 
 pub mod auth;
+pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
 pub mod public;

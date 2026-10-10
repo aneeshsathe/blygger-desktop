@@ -1,0 +1,729 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "blygger-studio lineage-glyph extension (vendored subset)",
+    "version": "0.39.0+dc632c5",
+    "description": "The two owner reads of the lineage-glyph studio extension, cut from blygger-studio openapi.json at commit dc632c5 (branch ext/lineage-glyph, PR #53). MIT License, Copyright (c) 2026 Venkatesh Rao."
+  },
+  "paths": {
+    "/api/ext/lineage-glyph/lineage": {
+      "get": {
+        "operationId": "extLineageGlyphGetLineage",
+        "tags": [
+          "extension",
+          "extension:lineage-glyph"
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "ownerOAuth": [
+              "owner:read"
+            ]
+          }
+        ],
+        "description": "Extension \"lineage-glyph\". Answers only on a node that compiles the extension in and has enabled it in Settings; otherwise 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "sub",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "origin",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LineageGlyphLineage"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ext/lineage-glyph/summaries": {
+      "get": {
+        "operationId": "extLineageGlyphListSummaries",
+        "tags": [
+          "extension",
+          "extension:lineage-glyph"
+        ],
+        "security": [
+          {
+            "ownerSession": []
+          },
+          {
+            "ownerOAuth": [
+              "owner:read"
+            ]
+          }
+        ],
+        "description": "Extension \"lineage-glyph\". Answers only on a node that compiles the extension in and has enabled it in Settings; otherwise 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 2,
+              "description": "A JSON array of up to 50 reading entry keys."
+            },
+            "required": true,
+            "description": "A JSON array of up to 50 reading entry keys.",
+            "name": "keys",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "summaries": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "$ref": "#/components/schemas/LineageGlyphSummary"
+                      }
+                    }
+                  },
+                  "required": [
+                    "summaries"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Request failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LineageGlyphLineage": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "version": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "held": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "own",
+                  "imported",
+                  null
+                ]
+              },
+              "sub": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kind": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "fragment",
+                  "thread",
+                  null
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "excerpt": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "url": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "origin",
+              "id",
+              "version",
+              "held",
+              "sub",
+              "kind",
+              "title",
+              "excerpt",
+              "source",
+              "url"
+            ]
+          },
+          "ancestors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineageGlyphNode"
+            }
+          },
+          "descendants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LineageGlyphNode"
+            }
+          }
+        },
+        "required": [
+          "node",
+          "ancestors",
+          "descendants"
+        ]
+      },
+      "LineageGlyphNode": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "version": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "held": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "own",
+              "imported",
+              null
+            ]
+          },
+          "sub": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kind": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "fragment",
+              "thread",
+              null
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "excerpt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "stub",
+              "transclusion",
+              "fork"
+            ]
+          },
+          "partial": {
+            "type": "boolean"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "reference",
+              "mention"
+            ]
+          }
+        },
+        "required": [
+          "origin",
+          "id",
+          "version",
+          "held",
+          "sub",
+          "kind",
+          "title",
+          "excerpt",
+          "source",
+          "url",
+          "relation",
+          "partial",
+          "via"
+        ]
+      },
+      "LineageGlyphSummary": {
+        "type": "object",
+        "properties": {
+          "up": {
+            "type": "object",
+            "properties": {
+              "stub": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "transclusion": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "fork": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "stub",
+              "transclusion",
+              "fork"
+            ]
+          },
+          "down": {
+            "type": "object",
+            "properties": {
+              "stub": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "transclusion": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "fork": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "stub",
+              "transclusion",
+              "fork"
+            ]
+          }
+        },
+        "required": [
+          "up",
+          "down"
+        ]
+      },
+      "ApiError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "type": "string"
+                },
+                "at": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "directive": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": {}
+            }
+          },
+          "tried": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "message": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "securitySchemes": {
+      "ownerSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "blyg_session"
+      },
+      "ownerOAuth": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "/studio/auth/oauth2/authorize",
+            "tokenUrl": "/studio/auth/oauth2/token",
+            "scopes": {
+              "owner:read": "Read private drafts, reading material, media, and settings",
+              "owner:draft": "Create and edit drafts, upload media, and use configured AI generation",
+              "owner:publish": "Publish, withdraw, refresh, pin, and change public item responses or media",
+              "owner:manage": "Change settings, subscriptions, signals, collections, and response moderation",
+              "reading:state": "Mark reading entries read or unread"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,15 +2,18 @@
 //! on it below, one step each way. ⏎ on a neighbour makes it the centre (⌫
 //! walks back); Space on the centre opens the ring of the reader's actions
 //! in fixed places (f r q l v o), each previewed before ⏎ does it. The glyph
-//! on stream rows is the same map in miniature: which kinds, never how many
-//! (spec rule 1). Model: `lineage_vm.rs`.
+//! on stream rows is the same map in miniature: which kinds, and how many
+//! ("up · down", as blygger-studio's lineage-glyph counts them; SPEC rule 1's
+//! exception, 2026-10-09). The counts and graph come from the node when it
+//! serves the `lineage-glyph` extension, else from this Mac. Model:
+//! `lineage_vm.rs`.
 
 use blyg_core::profile::Relation;
 use blyg_core::{RemoteRef, SubscriptionKind};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::lineage_vm::{self, Act, Kinds, Mark, Model, Sel};
+use super::lineage_vm::{self, Act, Glyph, Mark, Model, Sel};
 use super::{RSheet, vm};
 use crate::app::MainView;
 use crate::theme::Palette;
@@ -48,6 +51,8 @@ const UP_Y: f32 = 12.;
 const DOWN_Y: f32 = STAGE_H - 12. - CARD_H;
 /// Neighbours shown per row; the side list has them all.
 const ROW_MAX: usize = 5;
+/// At most this many rows' counts are asked of the node per refresh.
+const LINEAGE_KEYS_MAX: usize = 250;
 
 /// The colour of a relation: fork amber, reply the accent, quote green.
 pub(crate) fn rel_color(p: &Palette, rel: Relation) -> Hsla {
@@ -157,24 +162,29 @@ impl MainView {
             .flatten()
     }
 
-    /// Your published posts' references and your blyg's origin, for the
-    /// glyph's "drawn on by" side.
-    pub(super) fn own_lineage(&self) -> (Vec<blyg_core::PostRef>, Option<String>) {
+    /// Your published posts and your blyg's origin, for the glyph's "drawn
+    /// on by" side.
+    pub(super) fn own_lineage(&self) -> (Vec<blyg_core::Item>, Option<String>) {
         let Some(base) = self.base_url.clone() else {
             return (vec![], None);
         };
-        let rows = &self.reading.rows;
-        let refs = self
+        let posts = self
             .backend
             .items()
-            .iter()
+            .into_iter()
             .filter(|i| i.version > 0 && i.status == blyg_core::Status::Public)
-            .flat_map(|i| i.references(&base, rows))
             .collect();
-        (refs, Some(base))
+        (posts, Some(base))
     }
 
-    fn lineage_model(&self, origin: &str, id: &str) -> Model {
+    /// The view of `(origin, id)`: the node's graph when it served one
+    /// (`graph`, else its cached copy), otherwise what this Mac holds.
+    fn lineage_model(
+        &self,
+        origin: &str,
+        id: &str,
+        graph: Option<&blyg_core::lineage::LineageGraph>,
+    ) -> Model {
         let fresh;
         let rows = if self.reading.rows.is_empty() {
             fresh = self.backend.reading();
@@ -189,13 +199,107 @@ impl MainView {
             .ready()
             .map(Vec::as_slice)
             .unwrap_or(&[]);
+        let built;
+        let local = if self.reading.rows.is_empty() {
+            built =
+                blyg_core::lineage::Local::build(rows, &own, self.base_url.as_deref(), mentions);
+            &built
+        } else {
+            &self.reading.lineage
+        };
         let src = lineage_vm::Sources {
             rows,
             own: &own,
             own_origin: self.base_url.as_deref(),
             mentions,
+            local,
         };
-        lineage_vm::build(origin, id, &src, self.backend.responses(origin, id))
+        let local_model = lineage_vm::build(origin, id, &src);
+        let cached;
+        let graph = match graph {
+            Some(g) => Some(g),
+            None => {
+                cached = self
+                    .backend
+                    .cached_lineage_graph(&local_model.centre.query());
+                cached.as_ref()
+            }
+        };
+        match graph {
+            Some(g) => lineage_vm::from_graph(origin, id, &src, g),
+            None => local_model,
+        }
+    }
+
+    // ------------------------------------------------------------ counts from the node
+
+    /// Ask the node for the glyph counts of the rows (cached in the store;
+    /// fresh ones aren't asked again). What's cached shows at once; a node
+    /// that doesn't serve them leaves the counts to this Mac.
+    pub(super) fn refresh_lineage_counts(&mut self, cx: &mut Context<Self>) {
+        let keys: Vec<String> = self
+            .reading
+            .shown_rows()
+            .filter(|r| !r.subscription_id.is_empty())
+            .take(LINEAGE_KEYS_MAX)
+            .map(|r| blyg_core::lineage::imported_key(&r.subscription_id, &r.remote_id))
+            .collect();
+        if keys.is_empty() {
+            return;
+        }
+        if let Some(cached) = self.backend.cached_lineage_summaries(&keys) {
+            self.reading.served.extend(cached);
+        }
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move {
+            backend.lineage_summaries(&keys, blyg_core::lineage::SUMMARY_TTL_MS)
+        });
+        cx.spawn(async move |this, cx| {
+            let got = task.await;
+            let _ = this.update(cx, |v, cx| {
+                match got {
+                    Some(got) => v.reading.served.extend(got),
+                    // Not served (any more): count here.
+                    None => v.reading.served.clear(),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// Ask the node for the open sheet's graph; when it answers, the sheet
+    /// shows the node's neighbours and counts.
+    fn lineage_fetch_graph(&mut self, cx: &mut Context<Self>) {
+        let Some(s) = self.lineage_mut() else { return };
+        let centre = s.model.centre.query();
+        let (origin, id) = (s.model.centre.origin.clone(), s.model.centre.id.clone());
+        let backend = self.backend.clone();
+        let q = centre.clone();
+        let task = cx.background_spawn(async move {
+            backend.lineage_graph(&q, blyg_core::lineage::GRAPH_TTL_MS)
+        });
+        cx.spawn(async move |this, cx| {
+            let Some(graph) = task.await else {
+                return;
+            };
+            let _ = this.update(cx, |v, cx| {
+                let model = v.lineage_model(&origin, &id, Some(&graph));
+                if let Some(s) = v.lineage_mut()
+                    && s.model.centre.query() == centre
+                    && s.model != model
+                {
+                    s.model = model;
+                    s.sel = match s.sel {
+                        Sel::Up(i) if i < s.model.ups.len() => Sel::Up(i),
+                        Sel::Down(i) if i < s.model.downs.len() => Sel::Down(i),
+                        _ => Sel::Centre,
+                    };
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     pub(crate) fn open_lineage(
@@ -207,7 +311,7 @@ impl MainView {
     ) {
         let focus = cx.focus_handle();
         let sheet = Sheet {
-            model: self.lineage_model(&origin, &id),
+            model: self.lineage_model(&origin, &id, None),
             sel: Sel::Centre,
             hist: vec![],
             ring: false,
@@ -217,6 +321,7 @@ impl MainView {
         };
         self.open_reading_sheet(RSheet::Lineage(Box::new(sheet)), cx);
         window.focus(&focus, cx);
+        self.lineage_fetch_graph(cx);
     }
 
     /// The lineage sheet is up (the tutorial watches for it).
@@ -254,8 +359,8 @@ impl MainView {
         }
     }
 
-    fn lineage_recentre(&mut self, origin: String, id: String, back: bool) {
-        let model = self.lineage_model(&origin, &id);
+    fn lineage_recentre(&mut self, origin: String, id: String, back: bool, cx: &mut Context<Self>) {
+        let model = self.lineage_model(&origin, &id, None);
         if let Some(s) = self.lineage_mut() {
             if !back {
                 let c = &s.model.centre;
@@ -267,6 +372,7 @@ impl MainView {
             s.act = None;
             s.pin = Pin::Unknown;
         }
+        self.lineage_fetch_graph(cx);
     }
 
     // ------------------------------------------------------------ keys
@@ -276,7 +382,17 @@ impl MainView {
             return false;
         };
         let (ring, act, sel) = (s.ring, s.act, s.sel);
-        let node = s.model.node(sel).map(|n| (n.origin.clone(), n.id.clone()));
+        // Only a post can be the centre (a `{url}` stub is a page).
+        let node = s
+            .model
+            .node(sel)
+            .filter(|n| n.is_post())
+            .map(|n| (n.origin.clone(), n.id.clone()));
+        let page = s
+            .model
+            .node(sel)
+            .filter(|n| !n.is_post())
+            .map(|n| n.origin.clone());
         let centre = (s.model.centre.origin.clone(), s.model.centre.id.clone());
         if ring {
             match key {
@@ -316,7 +432,8 @@ impl MainView {
                 }
             }
             "enter" | "space" => match node {
-                Some((o, i)) => self.lineage_recentre(o, i, false),
+                Some((o, i)) => self.lineage_recentre(o, i, false, cx),
+                None if page.is_some() => {}
                 None => {
                     if let Some(s) = self.lineage_mut() {
                         s.ring = true;
@@ -328,10 +445,20 @@ impl MainView {
             "backspace" => {
                 let prev = self.lineage_mut().and_then(|s| s.hist.pop());
                 if let Some((o, i)) = prev {
-                    self.lineage_recentre(o, i, true);
+                    self.lineage_recentre(o, i, true, cx);
+                }
+            }
+            "o" if page.is_some() => {
+                if let Some(u) =
+                    page.filter(|u| u.starts_with("https://") || u.starts_with("http://"))
+                {
+                    cx.open_url(&u);
                 }
             }
             "o" => {
+                // Opened in the reader as a click in the list opens it: a
+                // held post is marked read on the way (`open_reading` →
+                // `Backend::mark_read`).
                 let (o, i) = node.unwrap_or(centre);
                 self.close_reading_sheet(window, cx);
                 self.open_original(o, i, None, window, cx);
@@ -523,7 +650,11 @@ impl MainView {
             .text_size(px(11.5))
             .text_color(p.muted)
             .child(div().flex_1().min_w_0().truncate().child(crumb))
-            .child("Responses: what this Mac holds")
+            .child(if s.model.served {
+                "Responses: what your blyg knows"
+            } else {
+                "Responses: what this Mac holds"
+            })
             .child("⌘J / esc closes");
         let body = div()
             .flex()
@@ -903,6 +1034,33 @@ impl MainView {
                     .truncate()
                     .child(c.who.clone()),
             );
+        // How many each way, beside the hexagon ("up · down" in words).
+        let summary = m.summary();
+        let tally = |y: f32, id: &'static str, text: String| {
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .absolute()
+                .left(px(10.))
+                .top(px(y))
+                .w(px(CX - RING_OUT - 16.))
+                .text_size(px(11.))
+                .text_color(p.muted)
+                .when(s.ring, |d| d.opacity(0.28))
+                .child(text)
+        };
+        let tallies = [
+            tally(
+                CY - 22.,
+                "lineage-count-up",
+                lineage_vm::side_words(summary.up, true),
+            ),
+            tally(
+                CY + 6.,
+                "lineage-count-down",
+                lineage_vm::side_words(summary.down, false),
+            ),
+        ];
         let labels: Vec<AnyElement> = if s.ring {
             Act::ALL
                 .iter()
@@ -950,7 +1108,11 @@ impl MainView {
                             div()
                                 .text_size(px(10.))
                                 .text_color(if on { p.bg } else { p.muted })
-                                .child(a.key().to_uppercase()),
+                                // How many already did this, known here.
+                                .child(match a.relation().map(|r| summary.down.get(r)) {
+                                    Some(n) if n > 0 => format!("{} · {n}", a.key().to_uppercase()),
+                                    _ => a.key().to_uppercase(),
+                                }),
                         )
                         .into_any_element()
                 })
@@ -977,6 +1139,7 @@ impl MainView {
             })
             .children(cards)
             .child(hex_text)
+            .children(tallies)
             .children(labels)
             .into_any_element()
     }
@@ -1085,6 +1248,14 @@ impl MainView {
                         }),
                 )
                 .child(div().mt(px(2.)).child(a.one()))
+                .children(a.relation().map(|r| {
+                    div()
+                        .debug_selector(|| "lineage-ring-count".into())
+                        .mt(px(2.))
+                        .text_size(px(12.))
+                        .text_color(p.muted)
+                        .child(lineage_vm::already_words(r, s.model.summary().down.get(r)))
+                }))
                 .child(
                     div()
                         .mt(px(4.))
@@ -1147,6 +1318,15 @@ impl MainView {
                 None,
             ),
         };
+        let summary = m.summary();
+        let heading = |text: String| {
+            div()
+                .mt(px(4.))
+                .text_size(px(11.))
+                .font_weight(FontWeight::SEMIBOLD)
+                .text_color(p.muted)
+                .child(text)
+        };
         let list = (s.sel == Sel::Centre).then(|| {
             div()
                 .mt(px(8.))
@@ -1154,6 +1334,12 @@ impl MainView {
                 .flex_col()
                 .gap(px(2.))
                 .text_size(px(12.))
+                .when(!m.ups.is_empty(), |d| {
+                    d.child(heading(format!(
+                        "Where it came from · {}",
+                        summary.up.total()
+                    )))
+                })
                 .children(m.ups.iter().map(|n| {
                     self.lineage_list_row(
                         &p,
@@ -1166,6 +1352,12 @@ impl MainView {
                         ),
                     )
                 }))
+                .when(!m.downs.is_empty(), |d| {
+                    d.child(heading(format!(
+                        "What came from it, known here · {}",
+                        summary.down.total()
+                    )))
+                })
                 .children(m.downs.iter().map(|n| {
                     self.lineage_list_row(
                         &p,
@@ -1230,24 +1422,34 @@ impl MainView {
 
     // ------------------------------------------------------------ the glyph
 
+    /// The glyph's numbers for `r`: this Mac's edges, with the node's counts
+    /// over them when it serves them.
+    pub(crate) fn lineage_glyph_of(&self, r: &blyg_core::ReadingItem) -> Glyph {
+        let served = (!r.subscription_id.is_empty())
+            .then(|| {
+                self.reading.served.get(&blyg_core::lineage::imported_key(
+                    &r.subscription_id,
+                    &r.remote_id,
+                ))
+            })
+            .flatten();
+        Glyph::of(&self.reading.lineage, &r.origin, &r.remote_id, served)
+    }
+
     /// The glyph for `r`: kinds in from the left (what it draws on), kinds
-    /// out to the right (what draws on it). Fixed slots: fork, reply, quote.
-    /// A click opens the lineage. Nothing when it has neither.
+    /// out to the right (what draws on it), in fixed slots (fork, reply,
+    /// quote), then "up · down": how many, as blygger-studio's lineage-glyph
+    /// counts them. A click opens the lineage. Nothing when it has neither.
     pub(super) fn render_lineage_glyph(
         &self,
         r: &blyg_core::ReadingItem,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
-        let up = Kinds::of(&r.references());
-        let down = self
-            .reading
-            .down
-            .get(&blyg_core::post_key(&r.origin, &r.remote_id))
-            .copied()
-            .unwrap_or_default();
-        if up.is_empty() && down.is_empty() {
+        let glyph = self.lineage_glyph_of(r);
+        if glyph.is_empty() {
             return None;
         }
+        let (up, down) = (glyph.up, glyph.down);
         let p = self.palette.on_page();
         let colors = [
             (Relation::Forks, rel_color(&p, Relation::Forks), 3.),
@@ -1256,19 +1458,7 @@ impl MainView {
         ];
         let ink = p.ink;
         let bg = p.bg;
-        let tip = {
-            let mut lines = Vec::new();
-            let u = up.words(true);
-            if !u.is_empty() {
-                lines.push(format!("This post {}", u.join(", ")));
-            }
-            let d = down.words(false);
-            if !d.is_empty() {
-                lines.push(format!("Others have {} it", d.join(", ")));
-            }
-            lines.push("⌘J or a click: see who".into());
-            lines.join("\n")
-        };
+        let tip = glyph.tip();
         let (origin, id) = (r.origin.clone(), r.remote_id.clone());
         let painter = canvas(
             |_, _, _| (),
@@ -1331,17 +1521,30 @@ impl MainView {
                 }
             },
         )
-        .size_full();
+        .w(px(46.))
+        .h(px(16.))
+        .flex_none();
         Some(
             div()
                 .id("lineage-glyph")
                 .debug_selector(|| "lineage-glyph".into())
-                .w(px(46.))
+                .flex()
+                .items_center()
+                .gap(px(3.))
+                .pr(px(4.))
                 .h(px(16.))
                 .rounded(px(5.))
                 .cursor_pointer()
                 .hover(|s| s.bg(p.sel))
                 .child(painter)
+                .child(
+                    div()
+                        .debug_selector(|| "lineage-glyph-counts".into())
+                        .text_size(px(10.5))
+                        .text_color(p.muted)
+                        .whitespace_nowrap()
+                        .child(glyph.label()),
+                )
                 .tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();

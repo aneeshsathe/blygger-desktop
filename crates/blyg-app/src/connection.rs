@@ -627,6 +627,33 @@ impl Backend for SwitchBackend {
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
     }
+    // --- lineage counts ---
+    fn lineage_summaries(
+        &self,
+        keys: &[String],
+        max_age_ms: i64,
+    ) -> Option<std::collections::HashMap<String, blyg_core::lineage::LineageSummary>> {
+        self.cur().lineage_summaries(keys, max_age_ms)
+    }
+    fn cached_lineage_summaries(
+        &self,
+        keys: &[String],
+    ) -> Option<std::collections::HashMap<String, blyg_core::lineage::LineageSummary>> {
+        self.cur().cached_lineage_summaries(keys)
+    }
+    fn lineage_graph(
+        &self,
+        centre: &blyg_core::lineage::Centre,
+        max_age_ms: i64,
+    ) -> Option<blyg_core::lineage::LineageGraph> {
+        self.cur().lineage_graph(centre, max_age_ms)
+    }
+    fn cached_lineage_graph(
+        &self,
+        centre: &blyg_core::lineage::Centre,
+    ) -> Option<blyg_core::lineage::LineageGraph> {
+        self.cur().cached_lineage_graph(centre)
+    }
 }
 
 #[cfg(test)]

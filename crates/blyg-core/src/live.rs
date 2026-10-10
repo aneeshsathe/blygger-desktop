@@ -1251,4 +1251,36 @@ impl Backend for LiveBackend {
         self.e().store.put_pin(&p)?;
         Ok(p)
     }
+
+    // --- lineage counts --- (`crate::lineage::reads`)
+
+    fn lineage_summaries(
+        &self,
+        keys: &[String],
+        max_age_ms: i64,
+    ) -> Option<std::collections::HashMap<String, crate::lineage::LineageSummary>> {
+        crate::lineage::reads::summaries(self.e(), keys, max_age_ms, crate::util::now_ms())
+    }
+
+    fn cached_lineage_summaries(
+        &self,
+        keys: &[String],
+    ) -> Option<std::collections::HashMap<String, crate::lineage::LineageSummary>> {
+        crate::lineage::reads::cached_summaries(self.e(), keys)
+    }
+
+    fn lineage_graph(
+        &self,
+        centre: &crate::lineage::Centre,
+        max_age_ms: i64,
+    ) -> Option<crate::lineage::LineageGraph> {
+        crate::lineage::reads::graph(self.e(), centre, max_age_ms, crate::util::now_ms())
+    }
+
+    fn cached_lineage_graph(
+        &self,
+        centre: &crate::lineage::Centre,
+    ) -> Option<crate::lineage::LineageGraph> {
+        crate::lineage::reads::cached_graph(self.e(), centre)
+    }
 }

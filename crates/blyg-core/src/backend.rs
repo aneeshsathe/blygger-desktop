@@ -575,4 +575,55 @@ pub trait Backend: Send + Sync {
         let _ = (origin, id, version);
         Err(CoreError::Other("not supported here".into()))
     }
+
+    // --- lineage counts ---
+    // The `lineage-glyph` studio extension's owner reads (`crate::lineage`,
+    // blygger-studio PR #53), cached in the store. `None` from any of these
+    // means the node doesn't serve them (a 404, remembered for
+    // `lineage::OFF_RECHECK_MS`): the UI counts from what this Mac holds
+    // (`lineage::Local`). Additive; the defaults serve nothing.
+
+    /// Glyph counts for reading entry keys (`lineage::imported_key`):
+    /// cached answers younger than `max_age_ms` as they are, the rest
+    /// fetched (blocking, at most `lineage::MAX_SUMMARY_KEYS` a request). A
+    /// key the node didn't know is left out. Offline, the cached answers
+    /// whatever their age.
+    fn lineage_summaries(
+        &self,
+        keys: &[String],
+        max_age_ms: i64,
+    ) -> Option<std::collections::HashMap<String, crate::lineage::LineageSummary>> {
+        let _ = (keys, max_age_ms);
+        None
+    }
+
+    /// The cached glyph counts only, whatever their age. Local, instant.
+    fn cached_lineage_summaries(
+        &self,
+        keys: &[String],
+    ) -> Option<std::collections::HashMap<String, crate::lineage::LineageSummary>> {
+        let _ = keys;
+        None
+    }
+
+    /// One hop of lineage around `centre`, from the node (blocking; a cached
+    /// answer younger than `max_age_ms` is used as it is). `None` when the
+    /// node doesn't serve it or doesn't know the post.
+    fn lineage_graph(
+        &self,
+        centre: &crate::lineage::Centre,
+        max_age_ms: i64,
+    ) -> Option<crate::lineage::LineageGraph> {
+        let _ = (centre, max_age_ms);
+        None
+    }
+
+    /// The cached graph only, whatever its age. Local, instant.
+    fn cached_lineage_graph(
+        &self,
+        centre: &crate::lineage::Centre,
+    ) -> Option<crate::lineage::LineageGraph> {
+        let _ = centre;
+        None
+    }
 }

@@ -27,6 +27,12 @@ pub fn extensions() -> &'static Contract {
     C.get_or_init(|| Contract::load(include_str!("../fixtures/extensions.json")))
 }
 
+/// The `lineage-glyph` studio extension's owner reads (studio dc632c5).
+pub fn lineage_glyph() -> &'static Contract {
+    static C: OnceLock<Contract> = OnceLock::new();
+    C.get_or_init(|| Contract::load(include_str!("../fixtures/lineage-glyph.json")))
+}
+
 impl Contract {
     fn load(text: &str) -> Contract {
         let doc: Value = serde_json::from_str(text).expect("contract JSON");
