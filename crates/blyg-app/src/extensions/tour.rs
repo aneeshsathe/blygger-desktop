@@ -3,7 +3,7 @@
 //! own would show nothing on most Macs. While the tutorial runs, the
 //! window's host is *parked* (like its backend) and a second host runs the
 //! real bundled markdown-notes, reading-time and inspect over invented
-//! notes in a temporary folder: two folders allowed and one not yet (its
+//! notes in `<data dir>/tour-sample/`: two folders allowed and one not yet (its
 //! chip in the warning colour), and the reading slots on the sample
 //! reading list. cross-post isn't run: a macro would load a real website.
 //!
@@ -83,6 +83,9 @@ const VAULTS: &[SampleVault] = &[
         false,
     ),
 ];
+
+/// The sample's folder, in the app's data folder.
+const TOUR_DIR: &str = "tour-sample";
 
 /// What the tour set aside.
 struct Parked {
@@ -173,13 +176,11 @@ impl MainView {
         let Some(launch) = launch else {
             return;
         };
-        let dir = std::env::temp_dir().join(format!(
-            "burrow-tour-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_nanos())
-        ));
+        // In the app's data folder (one app per data folder), cleared first:
+        // a tour that never ended (the app quit during it) leaves nothing
+        // behind past the next one.
+        let dir = launch.data_dir.join(TOUR_DIR);
+        let _ = std::fs::remove_dir_all(&dir);
         let hc = match tour_config(&launch, &dir) {
             Ok(hc) => hc,
             Err(e) => {
