@@ -136,6 +136,8 @@ impl MainView {
         if let Some(Overlay::Consent { reply, name, .. }) = self.ext.overlay.take() {
             match reply {
                 Some(r) => r.answer(false),
+                // (The tour's sample question leaves no notice.)
+                None if self.ext_tour_on() => {}
                 None => {
                     self.ext.notices.insert(name, Notice::NeedsPermission);
                 }
@@ -307,6 +309,16 @@ impl MainView {
         }
         let unticked: Vec<Capability> = caps.iter().filter(|c| !c.1).map(|c| c.0.clone()).collect();
         let name = name.clone();
+        // --- onboarding --- the tour's sample sheet: say so, write nothing.
+        if self.ext_tour_on() {
+            if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                r.answer(false);
+            }
+            self.ext.overlay = None;
+            self.focus_after_sheet(window, cx);
+            self.ext_tour_refuses(format!("{name} would be allowed"), cx);
+            return;
+        }
         if !unticked.is_empty() {
             self.ext.declined.push((name.clone(), unticked));
         }
@@ -342,6 +354,9 @@ impl MainView {
 
     /// Manage › Turn on: enable a disabled extension (consent follows).
     fn ext_turn_on(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.ext_tour_refuses(format!("{name} would be turned on"), cx) {
+            return;
+        }
         let changes = super::allow_changes(crate::settings::get(cx).store.config(), name, &[]);
         self.ext_write_config(&changes, window, cx);
     }
@@ -358,6 +373,23 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // --- onboarding --- in the tour: the sheet goes, nothing is written.
+        if self.ext_tour_on() {
+            if matches!(&self.ext.overlay, Some(Overlay::Consent { name: n, .. }) if n == name) {
+                if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                    r.answer(false);
+                }
+                self.ext.overlay = None;
+                self.focus_after_sheet(window, cx);
+            }
+            let what = if forget {
+                format!("{name} would be turned off, its permissions forgotten")
+            } else {
+                format!("{name} would be turned off")
+            };
+            self.ext_tour_refuses(what, cx);
+            return;
+        }
         let cfg = crate::settings::get(cx).store.config();
         let was_on = cfg.extensions_enabled().iter().any(|n| n == name);
         let changes = super::disable_changes(cfg, name, forget);

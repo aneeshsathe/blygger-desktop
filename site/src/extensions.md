@@ -5,8 +5,19 @@ separate program that Burrow starts and talks to. **Nothing runs unless your
 config file names it**, and an extension gets only the permissions you grant
 it.
 
-Burrow comes with two extensions, **markdown-notes** and **cross-post**. You
-can also install extensions other people write, or write your own.
+Burrow comes with four extensions, all off until you turn them on:
+**markdown-notes**, **cross-post**, **reading-time** and **inspect**. You can
+also install extensions other people write, or write your own.
+
+**⇧⌘P** (Post › Extensions…) opens the Extensions palette: the commands your
+running extensions offer on this screen, **Browse** for each notes folder,
+and **Manage extensions…** (what's installed, whether it's on, and what it's
+allowed). Manage is also where you turn one on or off; see
+[Turning an extension off](#turning-an-extension-off).
+
+The tour (Help › Burrow Tutorial) shows markdown-notes, reading-time and
+inspect running on sample notes, even when yours are off; nothing it does
+changes your config file.
 
 ## markdown-notes
 
@@ -135,12 +146,39 @@ extension-setting = cross-post max-chars=500
   you typed and clicked yourself. If Substack limits or acts on an account
   for automated posting, that's your risk; check its terms.
 
+## reading-time and inspect
+
+Two small extensions for what you read, ports of blygger-studio 0.39's
+extensions of the same names, so the web Studio and Burrow agree:
+
+- **reading-time** ends each post's byline, in the stream and in Reader, with
+  an estimated reading time (**· 4 min**); hover over it for the word count.
+  It describes the text, not its audience.
+- **inspect** adds **⋯** to each post's actions. Click it, then **inspect**:
+  the record Burrow holds for the post (ids, versions, references, hashes),
+  and its JSON with the bodies left out, with a Copy button. It's for people
+  building clients, or checking why a mention or an import looks wrong.
+
+Both need only `reading.read`, fetch nothing and use no network:
+
+```text
+extension = reading-time
+extension-allow = reading-time reading.read
+extension = inspect
+extension-allow = inspect reading.read
+```
+
+Or turn them on in ⇧⌘P › Manage extensions… (Turn on, then Allow).
+
 ## Permissions and consent
 
 The first time Burrow starts an extension, it shows what the extension asks
 for, such as "markdown-notes wants to: read and write files in ~/Notes · show
-messages". You can untick any item. **Allow** writes your answer into the
-config file as `extension-allow` lines, and starts the extension:
+messages". You can untick any item (or press its number). **Allow** (⏎)
+writes your answer into the config file as `extension-allow` lines, and
+starts the extension; **Not now** (esc) leaves it waiting, with a notice in
+the status bar that brings the sheet back; **Turn off** (⌘⌫) says you don't
+want it after all and turns it off:
 
 ```text
 extension-allow = markdown-notes ui
@@ -171,6 +209,22 @@ files or using the network. Only install extensions you trust.
 Whatever it's granted, no extension can publish, withdraw, pin, delete or fork
 a post, change your blyg's settings, or see your sign-in, your Keychain or
 Burrow's database.
+
+## Turning an extension off
+
+In ⇧⌘P › **Manage extensions…**, each extension that's on has:
+
+- **Turn off**: removes its `extension` line, so it stops. Its
+  `extension-allow` and `extension-setting` lines stay, so **Turn on** later
+  brings it back as it was, without asking again.
+- **Forget permissions** (on any extension that's been allowed something,
+  on or off): turns it off and removes its `extension-allow` lines too, so
+  the next Turn on asks again.
+
+Turn off works in any state: running, waiting for permission, or stopped
+after crashing. Any question or notice about the extension goes with it.
+Editing the config file does the same: delete the `extension` line to turn it
+off, or its `extension-allow` lines to take permissions back.
 
 ## Checking your extensions
 

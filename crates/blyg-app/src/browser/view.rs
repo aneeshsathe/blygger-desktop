@@ -47,6 +47,10 @@ const CHROME_H: f32 = 38.;
 /// --- onboarding --- The tutorial's sample page.
 const TOUR_TITLE: &str = "Sample page · a link from a post";
 const TOUR_BODY: &str = "A link you click in a post opens here. (Tour sample: nothing is loaded.)";
+/// What ✂ Clip quotes from the sample page, and its link.
+const TOUR_CLIP: &str = "Tide tables are poems nobody reads aloud. High water at 6:12, low just \
+                         after noon.";
+const TOUR_LINK: &str = "https://blyg.example.com/tide-tables";
 
 /// The web view and where it was last put, shared with the pane's canvas.
 #[derive(Default)]
@@ -418,7 +422,8 @@ impl MainView {
             self.browser.automation.note_user_toggle(); // --- browser macros ---
             let url = self.browser.page.url.clone();
             let mode = self.browser.mode;
-            if self.browser.alive() {
+            // --- onboarding --- the tour's sample page is never loaded.
+            if self.browser.alive() || self.browser_tour_page() {
                 self.browser.open = true;
                 self.browser.shown += 1;
                 self.browser.close_gen += 1;
@@ -941,6 +946,17 @@ impl MainView {
         cx.notify();
     }
 
+    /// --- onboarding --- The pane shows the tutorial's sample page.
+    pub(crate) fn browser_tour_page(&self) -> bool {
+        self.browser.tour.is_some() && self.browser.page.title == TOUR_TITLE
+    }
+
+    /// --- onboarding --- ✂ Clip on the sample page: its text, title and
+    /// link, as a clip of a real page would quote them.
+    pub(crate) fn browser_tour_clip(&self) -> String {
+        crate::app::notes::quote_with_source(TOUR_CLIP, TOUR_TITLE, Some(TOUR_LINK))
+    }
+
     /// --- onboarding --- The tutorial starts: remember the page, mode and
     /// pane (once), and take the pane away.
     pub(crate) fn browser_tour_park(&mut self, cx: &mut Context<Self>) {
@@ -1228,6 +1244,7 @@ impl MainView {
         let loading = pg.loading;
         let shield_on = b.blocking_here();
         let has_page = super::is_web_url(&pg.url);
+        let tour_page = self.browser_tour_page(); // --- onboarding --- ✂ Clip works on it
         let address: AnyElement = match (&b.address, b.editing) {
             (Some(input), true) => div()
                 .flex_1()
@@ -1382,7 +1399,7 @@ impl MainView {
                 button(
                     "browser-clip",
                     "✂ Clip",
-                    has_page,
+                    has_page || tour_page,
                     "Clip the page (or the passage selected on it) into your draft, with its link  ⇧⌘C",
                 )
                 .on_mouse_down(MouseButton::Left, keep_selection())

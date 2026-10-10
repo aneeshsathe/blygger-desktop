@@ -21,6 +21,7 @@ mod library;
 mod macros;
 pub(crate) mod reading_slots; // --- reading slots ---
 mod sheets;
+mod tour; // --- onboarding --- the tour's sample extensions
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -92,6 +93,32 @@ impl Launch {
             data_dir,
             timing: Timing::default(),
         })
+    }
+}
+
+/// Tests elsewhere (the tour's): every bundled extension, run as this test
+/// binary's child tests (`tests.rs`, `reading_slots_tests.rs`).
+#[cfg(test)]
+pub(crate) fn test_launch(data_dir: PathBuf) -> Launch {
+    let m = module_path!();
+    let m = m.split_once("::").map(|(_, rest)| rest).unwrap_or(m);
+    let args = |t: &str| -> Vec<String> {
+        vec![
+            "--exact".into(),
+            format!("{m}::{t}"),
+            "--ignored".into(),
+            "--quiet".into(),
+            "--test-threads=1".into(),
+        ]
+    };
+    Launch {
+        program: std::env::current_exe().expect("the test binary"),
+        args: args("tests::markdown_notes_child"),
+        crosspost_args: args("tests::cross_post_child"),
+        reading_time_args: args("reading_slots::tests::reading_time_child"),
+        inspect_args: args("reading_slots::tests::inspect_child"),
+        data_dir,
+        timing: Timing::default(),
     }
 }
 
@@ -327,6 +354,8 @@ pub(crate) struct Extensions {
     pub lib: Library,
     /// --- reading slots --- byline markers and the ⋯ sheet.
     pub slots: reading_slots::Slots,
+    /// --- onboarding --- the tour's sample extensions, while it runs.
+    pub tour: Option<tour::Tour>,
 }
 
 impl Extensions {
@@ -424,6 +453,9 @@ impl MainView {
         let (Some(host), Some(launch)) = (self.ext.host.clone(), self.ext.launch.clone()) else {
             return;
         };
+        if self.ext_tour_defer_reload() {
+            return; // --- onboarding --- the tour's host isn't the config's
+        }
         if !self.ext.started {
             return; // the first start reads the config itself
         }
@@ -497,6 +529,7 @@ impl MainView {
                 None => break,
             }
         }
+        self.ext_tour_pump(window, cx); // --- onboarding ---
     }
 
     /// What the host says, on the UI thread.
@@ -598,6 +631,10 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        // --- onboarding --- the tour writes nothing.
+        if self.ext_tour_refuses("Not during the tour".into(), cx) {
+            return false;
+        }
         if let Err(e) = crate::settings::write(changes, cx) {
             self.show_toast(e, None, cx);
             return false;
@@ -669,6 +706,16 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         let cfg = crate::settings::get(cx).store.config().clone();
+        // --- onboarding --- a sample folder stays where it is.
+        if let Some(t) = self.ext.tour.as_ref() {
+            let title = t
+                .vaults
+                .iter()
+                .find(|v| v.key == key)
+                .map_or_else(String::new, |v| v.title.clone());
+            self.ext_tour_refuses(format!("“{title}” would be removed from Burrow"), cx);
+            return;
+        }
         let Some(gone) = configured_vaults(&cfg).into_iter().find(|v| v.key == key) else {
             return;
         };
@@ -687,6 +734,10 @@ impl MainView {
 
     /// The vaults the config names for markdown-notes, and whether it's on.
     pub(crate) fn ext_vaults(&self, cx: &App) -> (bool, Vec<blyg_ext_notes::VaultSpec>) {
+        // --- onboarding --- the tour's sample folders.
+        if let Some(t) = self.ext.tour.as_ref() {
+            return (true, t.vaults.clone());
+        }
         let Some(conf) = cx.try_global::<crate::settings::AppConfig>() else {
             return (false, vec![]);
         };
@@ -698,6 +749,10 @@ impl MainView {
     /// The folder picker for notes folders (several at once); what's
     /// picked is added.
     pub(crate) fn ext_pick_vaults(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- onboarding --- no folder picker in the tour.
+        if self.ext_tour_refuses("Add folder… asks for a folder of notes".into(), cx) {
+            return;
+        }
         let rx = cx.prompt_for_paths(PathPromptOptions {
             files: false,
             directories: true,
