@@ -328,8 +328,12 @@ pub const KEYS: &[KeySpec] = &[
     docs(
         list(key("extension-setting", ValueKind::Text, None), &[]),
         "A setting for one extension, as <name> key=value, e.g. extension-setting = \
-         markdown-notes vault=~/Notes. Repeatable; a later line for the same key wins. An \
-         extension sees its own settings and no other part of this file.",
+         markdown-notes vault=~/Notes. Keys are lowercase kebab-case. Repeatable; a later \
+         line for the same key wins. An extension sees its own settings and no other part of \
+         this file. markdown-notes reads one folder of notes per vault key: vault=~/Notes is \
+         the first, and each vault-<label>, e.g. extension-setting = markdown-notes \
+         vault-work=~/Work/Vault, adds another (Settings › Notes folders writes these). With \
+         no vault it uses no folder at all.",
     ),
     // --- end extensions ---
     docs(

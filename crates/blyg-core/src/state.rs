@@ -46,6 +46,10 @@ pub struct AppState {
     /// --- notes --- The scratch note the notes drawer writes to (a local id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_note: Option<String>,
+    /// --- extensions --- The notes drawer's chosen markdown-notes vault
+    /// (a library id: `notes`, `notes.<label>`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_vault: Option<String>,
 }
 
 impl AppState {
