@@ -3025,7 +3025,10 @@ fn lineage_conforms(path: &str) -> Value {
 fn lineage_counts_come_from_the_node_when_it_serves_them() {
     use blyg_core::lineage::{Centre, Local, imported_key};
     let e = e2e();
-    if !set_lineage_glyph(false) {
+    // A stock build takes `extensions: []` but refuses to turn on one it
+    // wasn't built with: find out before subscribing to anything, so a skip
+    // leaves nothing behind for the tests after it.
+    if !set_lineage_glyph(true) || !set_lineage_glyph(false) {
         eprintln!("skipped: this studio build doesn't carry lineage-glyph");
         return;
     }
