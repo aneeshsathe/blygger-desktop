@@ -1175,3 +1175,229 @@ mod macros {
         assert_eq!(got.markdown.trim(), "The tide went out.");
     }
 }
+
+// ---- turn off
+
+#[test]
+fn turning_off_removes_only_the_extension_line() {
+    use super::disable_changes;
+    let store = ConfigStore::in_memory(
+        "# mine\nextension = other\nextension = markdown-notes\n\
+         extension-allow = markdown-notes ui\nextension-allow = other ui\n\
+         extension-allow = markdown-notes fs:~/Notes\n\
+         extension-setting = markdown-notes vault=~/Notes\n",
+    );
+    let mut s = ConfigStore::in_memory(store.text().unwrap());
+    s.set(&disable_changes(store.config(), NOTES, false))
+        .unwrap();
+    let text = s.text().unwrap().to_string();
+    assert!(text.starts_with("# mine\n"), "comments kept: {text}");
+    assert_eq!(s.config().extensions_enabled(), ["other"]);
+    assert!(
+        text.contains("extension-allow = markdown-notes ui"),
+        "{text}"
+    );
+    assert!(text.contains("extension-allow = markdown-notes fs:~/Notes"));
+    assert!(text.contains("extension-setting = markdown-notes vault=~/Notes"));
+    // Already off: nothing to write.
+    assert!(disable_changes(s.config(), NOTES, false).is_empty());
+
+    // Forget permissions: its grants go, the other extension's stay.
+    let changes = disable_changes(s.config(), NOTES, true);
+    s.set(&changes).unwrap();
+    let cfg = s.config();
+    assert_eq!(cfg.list("extension-allow"), ["other ui"]);
+    assert_eq!(cfg.extension_settings(NOTES)["vault"], "~/Notes");
+    assert!(disable_changes(cfg, NOTES, true).is_empty());
+
+    // The last extension line goes without leaving `extension =` behind.
+    let store = ConfigStore::in_memory("extension = markdown-notes\nextension = markdown-notes\n");
+    let mut s = ConfigStore::in_memory(store.text().unwrap());
+    s.set(&disable_changes(store.config(), NOTES, true))
+        .unwrap();
+    let text = s.text().unwrap().to_string();
+    assert!(!text.contains("extension"), "{text}");
+    assert!(s.config().extensions_enabled().is_empty());
+}
+
+/// Click `selector` once the sheet has stopped sliding in (its animation
+/// runs in real time, so the bounds move until it's done).
+fn click(cx: &mut VisualTestContext, selector: &'static str) {
+    let t = Instant::now();
+    let mut last = None;
+    let b = loop {
+        cx.update(|window, _| window.refresh());
+        cx.run_until_parked();
+        let b = cx
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("{selector} isn't drawn"));
+        if last == Some(b) {
+            break b;
+        }
+        assert!(
+            t.elapsed() < Duration::from_secs(5),
+            "{selector} kept moving"
+        );
+        last = Some(b);
+        std::thread::sleep(Duration::from_millis(40));
+    };
+    cx.simulate_click(b.center(), gpui_kit::Modifiers::none());
+    cx.run_until_parked();
+}
+
+fn notes_state(view: &Entity<MainView>, cx: &mut VisualTestContext) -> blyg_ext::ExtState {
+    view.read_with(cx, |v, _| {
+        let st = v.ext.host.as_ref().unwrap().status();
+        st.into_iter().find(|s| s.name == NOTES).unwrap().state
+    })
+}
+
+fn toast_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |v, _| {
+        v.toast
+            .as_ref()
+            .map(|t| t.text.to_string())
+            .unwrap_or_default()
+    })
+}
+
+#[gpui_kit::test]
+fn turn_off_in_manage_stops_it_and_turn_on_brings_it_back(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    let (view, _, cx) = running(cx, &v);
+    view.update_in(cx, |v, window, cx| v.ext_open_manage(window, cx));
+    click(cx, "ext-off-markdown-notes");
+    wait(&view, cx, "it to stop", |cx| {
+        notes_state(&view, cx) == blyg_ext::ExtState::Disabled
+    });
+    view.read_with(cx, |v, _| {
+        assert!(v.ext_library().is_none(), "the child is gone");
+        assert!(v.ext.notices.is_empty());
+        // Manage stays up, showing it off.
+        assert!(matches!(v.ext.overlay, Some(Overlay::Manage { .. })));
+    });
+    assert_eq!(toast_text(&view, cx), "markdown-notes turned off");
+    let text = config_text(cx);
+    assert!(!text.contains("extension = markdown-notes"), "{text}");
+    assert!(text.contains(&format!("extension-allow = markdown-notes fs:{r}")));
+    assert!(text.contains("extension-allow = markdown-notes ui"));
+    assert!(text.contains(&format!("extension-setting = markdown-notes vault={r}")));
+
+    // Turn on: its grants are still there, so it runs without asking.
+    click(cx, "ext-on-markdown-notes");
+    wait(&view, cx, "the library again", |cx| {
+        view.read_with(cx, |v, _| v.ext_library().is_some())
+    });
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.ext.overlay,
+        Some(Overlay::Manage { .. })
+    )));
+}
+
+#[gpui_kit::test]
+fn forget_permissions_turns_it_off_and_turn_on_asks_again(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    let (view, _, cx) = running(cx, &v);
+    view.update_in(cx, |v, window, cx| v.ext_open_manage(window, cx));
+    click(cx, "ext-forget-markdown-notes");
+    wait(&view, cx, "it to stop", |cx| {
+        notes_state(&view, cx) == blyg_ext::ExtState::Disabled
+    });
+    assert_eq!(
+        toast_text(&view, cx),
+        "markdown-notes turned off, permissions forgotten"
+    );
+    let text = config_text(cx);
+    assert!(!text.contains("extension = markdown-notes"), "{text}");
+    assert!(!text.contains("extension-allow"), "{text}");
+    assert!(text.contains(&format!("extension-setting = markdown-notes vault={r}")));
+    // Nothing left to forget: no chip.
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("ext-forget-markdown-notes").is_none());
+
+    // Turn on asks again, once Manage closes.
+    click(cx, "ext-on-markdown-notes");
+    wait(&view, cx, "the question", |cx| {
+        view.read_with(cx, |v, _| {
+            v.ext.notices.get(NOTES) == Some(&Notice::NeedsPermission)
+        })
+    });
+    cx.simulate_keystrokes("escape");
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| {
+            matches!(v.ext.overlay, Some(Overlay::Consent { .. }))
+        })
+    });
+}
+
+#[gpui_kit::test]
+fn the_consent_sheet_can_turn_it_off(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    let config = format!(
+        "# test\nextension = markdown-notes\nextension-setting = markdown-notes vault={r}\n"
+    );
+    let (view, _, cx) = setup(cx, &v, &config);
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| {
+            matches!(v.ext.overlay, Some(Overlay::Consent { .. }))
+        })
+    });
+    assert!(cx.debug_bounds("ext-turn-off").is_some(), "drawn");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-backspace"));
+    cx.run_until_parked();
+    view.read_with(cx, |v, _| {
+        assert!(v.ext.overlay.is_none());
+        assert!(v.ext.notices.is_empty(), "no nagging notice");
+    });
+    assert_eq!(toast_text(&view, cx), "markdown-notes turned off");
+    let text = config_text(cx);
+    assert!(text.contains("# test\n"), "comments kept: {text}");
+    assert!(!text.contains("extension = markdown-notes"), "{text}");
+    assert!(!text.contains("extension-allow"), "{text}");
+    assert!(text.contains(&format!("extension-setting = markdown-notes vault={r}")));
+    wait(&view, cx, "the reload", |cx| {
+        notes_state(&view, cx) == blyg_ext::ExtState::Disabled
+    });
+    view.read_with(cx, |v, _| {
+        assert!(v.ext.overlay.is_none(), "not asked again");
+        assert!(v.ext.notices.is_empty());
+    });
+}
+
+#[gpui_kit::test]
+fn turn_off_after_not_now_clears_the_notice(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    let config =
+        format!("extension = markdown-notes\nextension-setting = markdown-notes vault={r}\n");
+    let (view, _, cx) = setup(cx, &v, &config);
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| v.ext.overlay.is_some())
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |v, _| v.ext.notices.get(NOTES).cloned()),
+        Some(Notice::NeedsPermission)
+    );
+    // The notice reopens the sheet; its Turn off, clicked, backs out.
+    view.update_in(cx, |v, window, cx| v.ext_ask_again(NOTES, window, cx));
+    click(cx, "ext-turn-off");
+    view.read_with(cx, |v, _| {
+        assert!(v.ext.overlay.is_none());
+        assert!(v.ext.notices.is_empty());
+    });
+    assert!(!config_text(cx).contains("extension = markdown-notes"));
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("ext-notice").is_none(),
+        "gone from the status bar"
+    );
+}

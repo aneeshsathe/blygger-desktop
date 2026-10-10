@@ -338,6 +338,65 @@ impl MainView {
         self.ext_write_config(&changes, window, cx);
     }
 
+    /// Turn off (Manage, or the consent sheet's ⌘⌫): remove `name`'s
+    /// `extension` lines; the reload stops it. Its grants and settings
+    /// stay, so Turn on brings it back as it was, unless `forget` (Forget
+    /// permissions), which removes its `extension-allow` lines too. Any
+    /// question or notice about it goes away.
+    pub(crate) fn ext_turn_off(
+        &mut self,
+        name: &str,
+        forget: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cfg = crate::settings::get(cx).store.config();
+        let was_on = cfg.extensions_enabled().iter().any(|n| n == name);
+        let changes = super::disable_changes(cfg, name, forget);
+        // A consent sheet for it (on screen or queued) is answered no.
+        let consent =
+            matches!(&self.ext.overlay, Some(Overlay::Consent { name: n, .. }) if n == name);
+        if consent {
+            if let Some(Overlay::Consent { reply: Some(r), .. }) = self.ext.overlay.take() {
+                r.answer(false);
+            }
+            self.focus_after_sheet(window, cx);
+        }
+        for a in std::mem::take(&mut self.ext.asks) {
+            if a.name == name {
+                if let Some(r) = a.reply {
+                    r.answer(false);
+                }
+            } else {
+                self.ext.asks.push_back(a);
+            }
+        }
+        self.ext.notices.remove(name);
+        // Turning it on again is a fresh start: ask again.
+        self.ext.asked.retain(|(n, _)| n != name);
+        self.ext.declined.retain(|(n, _)| n != name);
+        if !changes.is_empty() && self.ext_write_config(&changes, window, cx) {
+            let text = match (was_on, forget) {
+                (true, false) => format!("{name} turned off"),
+                (true, true) => format!("{name} turned off, permissions forgotten"),
+                (false, _) => format!("{name}'s permissions forgotten"),
+            };
+            self.show_toast(text, Some("Saved in your config file".into()), cx);
+        }
+        cx.notify();
+        if consent {
+            self.ext_next_ask(window, cx);
+        }
+    }
+
+    /// The consent sheet's Turn off: the extension it asks for.
+    fn ext_consent_turn_off(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(Overlay::Consent { name, .. }) = self.ext.overlay.as_ref() {
+            let name = name.clone();
+            self.ext_turn_off(&name, false, window, cx);
+        }
+    }
+
     // ------------------------------------------------------------ render
 
     /// Hook: whichever extension sheet is up.
@@ -574,6 +633,9 @@ impl MainView {
                 match k {
                     "enter" => this.ext_allow(window, cx),
                     "escape" => this.ext_close(window, cx),
+                    "backspace" if ev.keystroke.modifiers.secondary() => {
+                        this.ext_consent_turn_off(window, cx)
+                    }
                     _ => match k.parse::<usize>() {
                         Ok(n) if n >= 1 => this.ext_toggle_cap(n - 1, cx),
                         _ => return,
@@ -611,6 +673,15 @@ impl MainView {
                             .on_click(
                                 cx.listener(|this, _, window, cx| this.ext_close(window, cx)),
                             ),
+                    )
+                    .child(
+                        self.ext_key_hint(crate::keymap::hint("⌘⌫"), "turn off")
+                            .id("ext-turn-off")
+                            .debug_selector(|| "ext-turn-off".into())
+                            .cursor_pointer()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.ext_consent_turn_off(window, cx)
+                            })),
                     )
                     .child(div().child("1–9 tick or untick")),
             )
@@ -651,24 +722,7 @@ impl MainView {
         };
         let cards = status.into_iter().map(|s| {
             let (word, good) = state_word(&s.state);
-            let name = s.name.clone();
-            let n2 = s.name.clone();
-            let action = match s.state {
-                ExtState::Disabled => Some(chip(format!("ext-on-{name}"), "Turn on").on_click(
-                    cx.listener(move |this, _, window, cx| {
-                        this.ext_turn_on(&name, window, cx);
-                    }),
-                )),
-                _ if s.enabled && !s.missing.is_empty() => Some(
-                    chip(format!("ext-allow-{name}"), "Allow…").on_click(cx.listener(
-                        move |this, _, window, cx| {
-                            this.ext.overlay = None;
-                            this.ext_ask_again(&n2, window, cx);
-                        },
-                    )),
-                ),
-                _ => None,
-            };
+            let actions = self.ext_manage_actions(&s, &chip, cx);
             div()
                 .py(px(8.))
                 .border_b_1()
@@ -711,8 +765,7 @@ impl MainView {
                                 .text_size(px(11.5))
                                 .text_color(if good { p.green_text() } else { p.muted })
                                 .child(word),
-                        )
-                        .children(action),
+                        ),
                 )
                 .when(!s.description.is_empty(), |d| {
                     d.child(
@@ -724,6 +777,16 @@ impl MainView {
                 })
                 .children(caps_line("Allowed", &s.granted))
                 .children(caps_line("Not allowed", &s.missing))
+                .when(!actions.is_empty(), |d| {
+                    d.child(
+                        div()
+                            .mt(px(3.))
+                            .flex()
+                            .flex_wrap()
+                            .gap(px(6.))
+                            .children(actions),
+                    )
+                })
         });
         div()
             .track_focus(focus)
@@ -767,6 +830,48 @@ impl MainView {
                 ),
             )
             .into_any_element()
+    }
+
+    /// A Manage card's buttons: Turn on (off), or Allow… (something not
+    /// allowed yet) and Turn off (on, in any state); Forget permissions
+    /// (anything allowed).
+    fn ext_manage_actions(
+        &self,
+        s: &blyg_ext::ExtensionStatus,
+        chip: &dyn Fn(String, &'static str) -> Stateful<Div>,
+        cx: &Context<Self>,
+    ) -> Vec<Stateful<Div>> {
+        let mut actions = vec![];
+        let n = s.name.clone();
+        if !s.enabled {
+            actions.push(chip(format!("ext-on-{n}"), "Turn on").on_click(
+                cx.listener(move |this, _, window, cx| this.ext_turn_on(&n, window, cx)),
+            ));
+        } else {
+            if !s.missing.is_empty() {
+                let n = n.clone();
+                actions.push(
+                    chip(format!("ext-allow-{n}"), "Allow…").on_click(cx.listener(
+                        move |this, _, window, cx| {
+                            this.ext.overlay = None;
+                            this.ext_ask_again(&n, window, cx);
+                        },
+                    )),
+                );
+            }
+            actions.push(chip(format!("ext-off-{n}"), "Turn off").on_click(
+                cx.listener(move |this, _, window, cx| this.ext_turn_off(&n, false, window, cx)),
+            ));
+        }
+        if !s.granted.is_empty() {
+            let n = s.name.clone();
+            actions.push(
+                chip(format!("ext-forget-{n}"), "Forget permissions").on_click(
+                    cx.listener(move |this, _, window, cx| this.ext_turn_off(&n, true, window, cx)),
+                ),
+            );
+        }
+        actions
     }
 }
 
