@@ -1,0 +1,15 @@
+[package]
+name = "blyg-ext-reading-time"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "reading-time: Burrow's bundled extension that shows an estimated reading time at the end of each reading entry's byline"
+
+[dependencies]
+blyg-ext = { path = "../blyg-ext" }
+# An entry held only as Markdown is counted from the HTML its blyg would
+# publish, as Burrow's reader shows it.
+blyg-render = { path = "../blyg-render" }
+serde_json = "1"
+# Unicode classes and scripts, as the Studio's regular expressions use them.
+regex = "1"

@@ -19,6 +19,7 @@
 
 mod library;
 mod macros;
+pub(crate) mod reading_slots; // --- reading slots ---
 mod sheets;
 
 #[cfg(test)]
@@ -70,6 +71,9 @@ pub struct Launch {
     pub args: Vec<String>,
     /// cross-post: `program crosspost_args…`.
     pub crosspost_args: Vec<String>,
+    /// --- reading slots --- reading-time and inspect: `program args…`.
+    pub reading_time_args: Vec<String>,
+    pub inspect_args: Vec<String>,
     pub data_dir: PathBuf,
     pub timing: Timing,
 }
@@ -83,6 +87,8 @@ impl Launch {
             program: std::env::current_exe().ok()?,
             args: vec!["+ext".into(), NOTES.into()],
             crosspost_args: vec!["+ext".into(), blyg_ext_crosspost::NAME.into()],
+            reading_time_args: vec!["+ext".into(), blyg_ext_reading_time::NAME.into()],
+            inspect_args: vec!["+ext".into(), blyg_ext_inspect::NAME.into()],
             data_dir,
             timing: Timing::default(),
         })
@@ -103,6 +109,7 @@ pub fn host_config(store: &ConfigStore, launch: &Launch) -> HostConfig {
         blyg_ext_notes::bundled(launch.program.clone(), launch.args.clone(), &notes),
         blyg_ext_crosspost::bundled(launch.program.clone(), launch.crosspost_args.clone()),
     ];
+    hc.bundled.extend(reading_slots::bundled(launch)); // --- reading slots ---
     hc.timing = launch.timing.clone();
     hc
 }
@@ -318,12 +325,15 @@ pub(crate) struct Extensions {
     pub inbox: Arc<std::sync::Mutex<std::collections::VecDeque<ExtEvent>>>,
     // --- library ---
     pub lib: Library,
+    /// --- reading slots --- byline markers and the ⋯ sheet.
+    pub slots: reading_slots::Slots,
 }
 
 impl Extensions {
-    /// A palette, consent or manage sheet is up (web views hide).
+    /// A palette, consent or manage sheet (or a reading entry's ⋯ sheet)
+    /// is up (web views hide).
     pub fn has_overlay(&self) -> bool {
-        self.overlay.is_some()
+        self.overlay.is_some() || self.slots.sheet.is_some()
     }
 }
 
@@ -493,6 +503,7 @@ impl MainView {
     pub(crate) fn ext_event(&mut self, ev: ExtEvent, window: &mut Window, cx: &mut Context<Self>) {
         match ev {
             ExtEvent::Started { name, .. } => {
+                self.ext.slots.forget(&name); // --- reading slots ---
                 if self.ext.notices.get(&name) != Some(&Notice::NeedsPermission) {
                     self.ext.notices.remove(&name);
                 }
@@ -930,7 +941,7 @@ impl MainView {
         self.sheet.is_some()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
-            || self.ext.overlay.is_some()
+            || self.ext.has_overlay()
             || self.onboarding.flow.is_some()
             || self.onboarding.tutorial.is_some()
     }
@@ -990,6 +1001,7 @@ impl MainView {
     ) {
         match (scenario, n) {
             (_, 0) => self.ext_start(window, cx),
+            (s, n) if s.starts_with("ext-slots") => self.slots_demo(s, n, window, cx), // --- reading slots ---
             ("ext-palette", 1) => self.ext_toggle_palette(window, cx),
             ("ext-manage", 1) => self.ext_open_manage(window, cx),
             ("ext-notes", 1) => self.ext_lib_show(window, cx),

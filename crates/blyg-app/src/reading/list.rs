@@ -989,6 +989,7 @@ impl MainView {
             // --- end profiles ---
             .children(self.render_pill(o, cx))
             .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
+            .children(self.slots_byline(item, cx)) // --- reading slots ---
             .child(div().flex_1())
             .when(!super::original::is_external(&o.key), |d| {
                 d.child(self.render_thumbs(item.thumb, cx))
@@ -1122,7 +1123,8 @@ impl MainView {
                     d.tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                 })
                 .into_any_element()
-            }));
+            }))
+            .children(self.slots_more_chip(item, cx)); // --- reading slots ---
 
         div()
             .id("reading-detail")

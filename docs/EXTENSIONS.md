@@ -3,7 +3,9 @@
 An extension is a separate program that Burrow starts and talks to over its
 stdin/stdout. It can add commands to the Extensions palette (⇧⌘P), offer a
 library of documents to the notes panel (the bundled `markdown-notes` is
-one), and, with the user's permission, read and edit the user's own posts.
+one), add a marker or a ⋯ row to each reading entry (the bundled
+`reading-time` and `inspect`), and, with the user's permission, read and
+edit the user's own posts.
 Code: `crates/blyg-ext` (protocol, manifest, grants, host) and
 `crates/blyg-ext-notes` (the bundled extension).
 
@@ -73,7 +75,7 @@ Unknown keys are ignored. On Windows a bare `command` name also tries the
 |---|---|---|
 | `items.read` | `burrow/listItems`, `getItem`, `searchItems` over your own posts, drafts and scratch notes | yes |
 | `items.write` | `burrow/createDraft` (draft or scratch), `burrow/saveItem` (working copy; never publishes) | yes |
-| `reading.read` | `burrow/listReading`: posts held locally from subscriptions | yes |
+| `reading.read` | `burrow/listReading`: posts held locally from subscriptions; and the reading slots (each entry's data, see Reading slots) | yes |
 | `blyg.identity` | the blyg's origin in `initialize` (never a token) | yes |
 | `ui` | `burrow/toast`, `burrow/openItem` | yes |
 | `hooks:itemPublished`, `hooks:itemSaved`, `hooks:itemCreated` | the matching notifications, with the post's text | yes |
@@ -190,6 +192,75 @@ Substack Notes (`tested = "2026-10-09"`), and a `macro.prepare` that fits
 the opening paragraph and the link into `max-chars` (280) characters,
 counted as grapheme clusters.
 
+## Reading slots
+
+Two contributions put an extension on each reading entry, in the stream
+and in the reader. They mirror the web Studio's extension slots
+(blygger-studio `src/ui/extension-api.ts`) and take their names:
+
+```toml
+capabilities = ["reading.read"]    # both slots need it
+
+entry-byline = true                # entryByline: a marker on each byline
+
+[[entry-actions]]                  # entryActions: rows in an entry's ⋯ sheet
+id = "inspect"
+title = "inspect"
+detail = "ids, versions, references, JSON"   # optional
+icon = "{ }"                                 # optional, a short glyph
+```
+
+The manifest is refused if it declares either without `reading.read`, and
+Burrow only asks extensions that were granted it (`Host::entry_slots`). The
+consent sheet's words for `reading.read` say so: "read the posts held from
+your subscriptions, and add to how each one shows while you read".
+
+- **`extension/entry.byline {entry}`** (2 s) → `{text, tip?}` or `null`.
+  Burrow asks the first time an entry is drawn, off the main thread, one
+  request after another, and caches the answer by (extension, entry,
+  version) until the extension restarts. Drawing never waits: until the
+  answer arrives, and when it is `null`, empty, an error or a timeout, the
+  byline shows nothing. The text is drawn after a "·", on one line, cut at
+  40 characters; `tip` shows on hover.
+- **`extension/entry.action {action, entry, record}`** (5 s) →
+  `{title, description?, text?, fields?: [{label, value}], code?,
+  language?}` (`EntrySheet`). An entry's actions gain a "⋯" chip when any
+  extension adds a row; it opens a sheet listing the rows (↑/↓, 1–9, ⏎).
+  Choosing one sends the request, and Burrow draws the answer natively, in
+  that order: nothing in it is markup. `code` is monospaced, with a Copy
+  button (⌘C; "Copy JSON" when `language` is `json`). An error is shown in
+  the sheet.
+
+`entry` (`ReadingEntry`) is the entry as Burrow holds it:
+`{subscriptionId, remoteId, origin, kind, state, version, title,
+contentHtml, contentMd, contentHash?}`. `contentHtml` is the published HTML
+(`""` for an entry held only as Markdown), and `contentHash` is
+`content_hash(contentMd)`. `record` is Burrow's stored reading row as JSON
+(snake_case, bodies included: `blyg_ext::reading::record_of`). Both methods
+are optional parts of protocol 1: an extension that doesn't declare the
+slots is never asked, and method-not-found on a byline is "nothing".
+Types: `crates/blyg-ext/src/reading.rs`.
+
+Two bundled extensions use them, both off until the config names them
+(`extension = reading-time`, `extension = inspect`) and the user allows
+`reading.read`. They are ports of blygger-studio 0.39.0's extensions of the
+same names, so the two clients agree:
+
+- **reading-time** (`crates/blyg-ext-reading-time`): "· 4 min" on each
+  byline, "920 words" on hover. Words are runs of letters and digits
+  (`[\p{L}\p{N}][\p{L}\p{N}'’-]*`) in the HTML's text (scripts, styles,
+  tags and entities become spaces); Han, kana and Hangul count one by one.
+  Minutes are words ÷ 230 + those characters ÷ 500, shown as "< 1 min"
+  under one and rounded half up otherwise; nothing to read shows nothing.
+  An entry held only as Markdown is counted from the HTML `blyg-render`
+  makes of it.
+- **inspect** (`crates/blyg-ext-inspect`): an "inspect" row. Its sheet
+  summarises id, kind, version, state, content hash, stub of, forked from
+  and the number of transclusions, then shows the record's JSON
+  (two-space indent) with `content_md` and `content_html` elided to
+  "‹N characters, not shown›" (N in UTF-16 units, as the Studio counts) and
+  `*_json` strings parsed. Nothing is fetched.
+
 ## Wire format
 
 JSON-RPC 2.0, one JSON object per line (LF or CRLF), both directions on the
@@ -216,7 +287,8 @@ per capability per session; only capabilities the manifest declares),
 (`browser.automate:` for the URL's origin) → `{url}`.
 
 Host → extension, also: `extension/macro.prepare` (10 s, optional; see
-Browser above).
+Browser above), `extension/entry.byline` (2 s) and `extension/entry.action`
+(5 s) (optional; see Reading slots above).
 
 Errors: `-32000` timeout, `-32001` permission denied
 (`data.capability`), `-32002` stale (`data.currentHash`: the item or

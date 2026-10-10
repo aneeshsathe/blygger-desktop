@@ -16,6 +16,9 @@ blyg-ai = { path = "../blyg-ai" }
 blyg-ext = { path = "../blyg-ext" }
 blyg-ext-notes = { path = "../blyg-ext-notes" }
 blyg-ext-crosspost = { path = "../blyg-ext-crosspost" }
+# --- reading slots --- (reading-time and inspect, `blygger +ext <name>`)
+blyg-ext-reading-time = { path = "../blyg-ext-reading-time" }
+blyg-ext-inspect = { path = "../blyg-ext-inspect" }
 # gpui-kit pins the matching GPUI snapshot (gpui-pre 0.3.6) plus gpui-base /
 # gpui-component 0.6.6. We use gpui-base's unstyled textarea and draw the rest.
 gpui-kit = { version = "=0.6.6", default-features = false }

@@ -2088,6 +2088,7 @@ impl Render for MainView {
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
+            .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())

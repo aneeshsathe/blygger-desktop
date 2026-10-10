@@ -36,6 +36,9 @@ pub mod methods {
     /// Optional: shape a macro's text before the preview sheet
     /// ([`super::MacroPrepareParams`]). Method-not-found = use the template.
     pub const MACRO_PREPARE: &str = "extension/macro.prepare";
+    /// Optional, reading slots ([`crate::reading`]): a reading entry's
+    /// byline marker, and one of its ⋯ rows.
+    pub use crate::reading::{ENTRY_ACTION, ENTRY_BYLINE};
     // host -> extension (notifications)
     pub const ITEM_PUBLISHED: &str = "burrow/itemPublished";
     pub const ITEM_SAVED: &str = "burrow/itemSaved";

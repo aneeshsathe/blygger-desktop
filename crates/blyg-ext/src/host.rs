@@ -785,7 +785,20 @@ impl Host {
         lock(&self.inner.state).running.get(name).cloned()
     }
 
-    fn request<T: DeserializeOwned>(
+    /// --- reading slots --- Running extensions' manifests and grants
+    /// (`crate::reading`).
+    pub(crate) fn running_manifests(
+        &self,
+    ) -> Vec<(String, crate::manifest::Manifest, Vec<Capability>)> {
+        let st = lock(&self.inner.state);
+        st.running
+            .iter()
+            .filter(|(_, e)| *lock(&e.state) == ExtState::Running)
+            .map(|(n, e)| (n.clone(), e.installed.manifest.clone(), e.granted()))
+            .collect()
+    }
+
+    pub(crate) fn request<T: DeserializeOwned>(
         &self,
         name: &str,
         method: &str,
@@ -822,7 +835,7 @@ impl Host {
         }
     }
 
-    fn timing(&self) -> Timing {
+    pub(crate) fn timing(&self) -> Timing {
         lock(&self.inner.state).config.timing.clone()
     }
 

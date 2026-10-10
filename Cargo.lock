@@ -799,7 +799,9 @@ dependencies = [
  "blyg-core",
  "blyg-ext",
  "blyg-ext-crosspost",
+ "blyg-ext-inspect",
  "blyg-ext-notes",
+ "blyg-ext-reading-time",
  "blyg-render",
  "chrono",
  "ed25519-dalek",
@@ -861,6 +863,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "blyg-ext-inspect"
+version = "0.10.0"
+dependencies = [
+ "blyg-core",
+ "blyg-ext",
+ "serde_json",
+]
+
+[[package]]
 name = "blyg-ext-notes"
 version = "0.10.0"
 dependencies = [
@@ -869,6 +880,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "blyg-ext-reading-time"
+version = "0.10.0"
+dependencies = [
+ "blyg-ext",
+ "blyg-render",
+ "regex",
+ "serde_json",
 ]
 
 [[package]]
