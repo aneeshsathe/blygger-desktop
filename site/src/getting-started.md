@@ -41,8 +41,9 @@ in:
   if you revoke it in the studio (**More › Client access**), it asks you to
   sign in again.
 - **API token**: make one in your studio under **More › Client access**
-  (REST API, with all four permissions) and paste it. A server with Burrow's
-  extensions also takes its `BLYG_OWNER_TOKEN` here.
+  (REST API, with every permission, including reading:state on studio 0.39+)
+  and paste it. A server with Burrow's extensions also takes its
+  `BLYG_OWNER_TOKEN` here.
 - **Studio password**, for a studio older than 0.28.
 
 It checks them with the server before saving anything, and says plainly what's

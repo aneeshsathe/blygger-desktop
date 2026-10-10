@@ -3089,12 +3089,13 @@ impl MainView {
                 let explain = match way {
                     ConnectWay::Browser => {
                         "Burrow opens your blyg's studio in your browser. Sign in there and \
-                         allow Burrow; it gets renewable access with all four permissions, \
+                         allow Burrow; it gets renewable access with every permission, \
                          kept in your macOS Keychain. Needs blygger-studio 0.28 or later."
                     }
                     ConnectWay::Token => {
                         "Make a token in your blyg's Studio → More → Client access: choose REST \
-                         API and all four permissions (read, draft, publish, manage). It lasts \
+                         API and every permission (read, draft, publish, manage, and reading:state \
+                         where offered). It lasts \
                          30 days. A server with Burrow's extensions can use its owner token \
                          here instead. Either is kept in your macOS Keychain."
                     }

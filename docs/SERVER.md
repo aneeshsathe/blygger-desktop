@@ -11,8 +11,8 @@ checked against `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`)
 studio's consent page, and keeps the grant (a one-hour access token, renewed with a
 rotating refresh token until the grant ends, at most 30 days after your studio
 sign-in) in your Keychain. Signing out revokes it. Or make an **API token** in Studio →
-More → Client access (REST API, all four permissions: read, draft, publish, manage;
-it lasts 30 days) and paste it. A token missing a permission gets a 403 that names
+More → Client access (REST API, every permission: read, draft, publish, manage, and
+on studio 0.39+ `reading:state`; it lasts 30 days) and paste it. A token missing a permission gets a 403 that names
 it. On an older studio, or as a fallback, sign in with the **studio password**: Burrow
 signs in at `{blyg-url}/studio/login` like the browser does, keeps the session cookie
 in memory only (the password is in your Keychain), and signs in again when the
@@ -91,7 +91,16 @@ is deleted. Upstream's change triggers also advance the `reading` revision of
 The app reads the read version only when `read_state` is `true`. It checks the flags on
 every pull and remembers the last answer.
 
-**Writes** (owner auth, like every `/api` call):
+**Writes** (owner auth, like every `/api` call). **Scope:** since blygger-studio 0.39
+(migration `0026_read_state.sql`) these four writes (`markRead`, `markUnread`,
+`markReadBatch`, `markUnreadBatch`) need the bearer scope **`reading:state`**, and
+`owner:manage` alone is refused with `403 insufficient_scope`. The name is
+**provisional** (upstream may rename it); the app spells it in one place,
+`READ_STATE_SCOPE` in `crates/blyg-core/src/api/oauth.rs`. The browser sign-in asks for
+it when the studio lists it in `scopes_supported` (an older studio would refuse the whole
+request for a scope it doesn't know). A client registered before (Burrow 0.10) is reused;
+the studio grants it the new scope. The wire shapes are unchanged: `version` must be ≥ 1 there, and `read_at` is still
+accepted (for offline queues), though the studio's own client no longer sends it.
 
 | Call | Body | Success | Errors |
 |---|---|---|---|
@@ -136,8 +145,13 @@ endpoints as "this server doesn't keep read state".
   server later gains `read_state_clear`, those local unreads are sent then.
 - The first time a database sees the capability, the app batch-uploads every read version
   it holds (500 per call) and records that in its `meta` table.
-- A `403` on a write (a Worker that keeps these writes to the owner's own token) keeps read
-  state on this Mac for the rest of the session, says so once, and doesn't retry.
+- A `403` on a write (a sign-in or token without `reading:state`, such as one made before
+  studio 0.39, or a Worker that keeps these writes to the owner's own token) holds read
+  state for the rest of the session: the ops stay queued (nothing is dropped), new marks
+  keep queueing, and the rest of the outbox syncs as usual. The app says so once, with the
+  server's reason: sign in with the browser again (or make a new token with
+  `reading:state`). It doesn't retry until the next sign-in or launch, which sends what
+  waited.
 - **Without the capability**, read state stays on this Mac. The app makes no requests to
   these endpoints and shows no errors. A `404` from them turns sync off and drops anything
   queued.
