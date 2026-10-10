@@ -170,6 +170,14 @@ no pinned version, say) says why.
 
 ![The action ring, previewing Reply](screenshots/lineage-ring.png)
 
+## Reading time and inspect
+
+Two bundled [extensions](extensions.md#reading-time-and-inspect), off until
+you turn them on, add to each post: **reading-time** ends its byline with
+**· 4 min** (the word count on hover), and **inspect** adds **⋯** to its
+actions, with the record Burrow holds for it (ids, versions, references,
+hashes, and its JSON).
+
 ## Mentions and responses
 
 **Mentions** (⇧⌘M) lists the verified responses to your own posts: who

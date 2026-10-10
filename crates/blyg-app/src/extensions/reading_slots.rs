@@ -283,7 +283,9 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         let rows = self.slots_rows();
-        if rows.is_empty() || self.ext_blocked() {
+        // (The tour's slots step opens it, so the tutorial doesn't block it.)
+        let blocked = self.ext_blocked() && !self.ext_tour_on();
+        if rows.is_empty() || blocked {
             return;
         }
         let focus = cx.focus_handle();

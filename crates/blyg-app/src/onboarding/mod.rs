@@ -33,6 +33,7 @@ use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
 
+pub(crate) use steps::Key;
 pub use tutorial::Tutorial;
 
 gpui_kit::actions!(
@@ -169,7 +170,8 @@ impl MainView {
             let onboarded = state.onboarded;
             // The first launch of a newer version: what changed, then the
             // tour (or not). A first run learns it all from the tour.
-            let current = env!("CARGO_PKG_VERSION");
+            let current = whats_new::running_version();
+            let current = current.as_str();
             let news = if state.seen_version.as_deref() == Some(current) {
                 vec![]
             } else {
@@ -1023,10 +1025,18 @@ impl MainView {
             ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
             ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
             ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
-            // The first launch after an update.
-            ("ob-news", 0) => {
-                self.start_whats_new(whats_new::RELEASES.iter().collect(), window, cx)
+            // The first launch after an update: every release, or with
+            // `BLYGGER_DEMO_FROM=<version>` what a launch updated from it
+            // shows (up to `whats_new::running_version`).
+            // `ob-news-go`: then "Show me what's new".
+            ("ob-news" | "ob-news-go", 0) => {
+                let news = match std::env::var("BLYGGER_DEMO_FROM") {
+                    Ok(from) => whats_new::since(Some(&from), &whats_new::running_version()),
+                    Err(_) => whats_new::RELEASES.iter().collect(),
+                };
+                self.start_whats_new(news, window, cx)
             }
+            ("ob-news-go", 1) => self.tutorial_next(window, cx),
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
             (s, 0) if s.starts_with("tut-") => {
                 self.start_tutorial(window, cx);

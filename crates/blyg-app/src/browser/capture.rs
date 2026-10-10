@@ -663,6 +663,14 @@ impl MainView {
 
     /// ✂ Clip / ⇧⌘C / Post › Clip Page to Draft.
     pub(crate) fn browser_clip(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // --- onboarding --- the tour's clip step, on its sample page.
+        if self.onboarding.tutorial.is_some() {
+            self.tutorial_key(crate::app::onboarding::Key::Clip, window, cx);
+            if self.browser_tour_page() {
+                let block = self.browser_tour_clip();
+                return self.clip_into_draft(block, window, cx);
+            }
+        }
         let Some(rx) = self.browser_capture(cx) else {
             return self.show_toast("Open a page in the browser pane to clip it", None, cx);
         };

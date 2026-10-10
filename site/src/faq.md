@@ -76,7 +76,30 @@ preview flags one that isn't, and publishing refuses it.
 ### Why doesn't Burrow show follower counts or likes?
 
 Blygger shows responses as a list, never a count, and following is private.
-Burrow follows the protocol's rules: no counts anywhere social.
+Burrow follows the protocol's rules: no counts anywhere social. The one
+exception is the [lineage glyph](reading.md#lineage), which says how many
+posts a post draws on and how many draw on it, the same numbers the web
+Studio shows.
+
+### Do I need to sign in again after updating?
+
+Once, after updating to 0.11 or later, if your blyg runs blygger-studio 0.39
+or later and you read on more than one Mac. Studio 0.39 keeps read state
+behind its own permission (`reading:state`), which a sign-in made before
+then doesn't have. Until you sign in again, posts you read are marked read on
+this Mac and wait to be sent; everything else syncs as usual, and Burrow says
+once that read state is waiting. To sign in again: **Burrow › Disconnect…**
+(keep the local copy), then connect with **Sign in with browser** and allow
+every permission. With an API token, make a new one in the studio's **More ›
+Client access** that includes reading:state.
+
+### Can I bring my feeds from another reader?
+
+Yes. **File › Import Subscriptions from OPML…** reads the OPML file most
+feed readers export: tick the feeds you want, and Burrow subscribes them a
+few at a time, files them in an **Imported feeds** folder in the Reader, and
+keeps them out of your public blogroll. **File › Export Subscriptions as
+OPML…** goes the other way. See [Reading](reading.md).
 
 ### Can I sign in with my Claude Pro/Max subscription?
 

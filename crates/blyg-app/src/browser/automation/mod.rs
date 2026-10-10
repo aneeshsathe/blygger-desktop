@@ -78,6 +78,8 @@ struct Running {
     /// The user folded or unfolded the pane during the run: their choice
     /// stands, the pane isn't put back afterwards.
     touched: bool,
+    /// --- onboarding --- the tour's sample: nothing runs.
+    sample: bool,
 }
 
 impl State {
@@ -102,6 +104,25 @@ impl State {
     pub(crate) fn note_shown(&mut self) {
         if let Some(r) = self.running.as_mut() {
             r.shown = true;
+        }
+    }
+
+    /// --- onboarding --- The tour's cross-post step: a run that has the
+    /// pane (its ■ Stop, and the status bar's mark once folded) with
+    /// nothing running. `false` ends it; a real run is never touched.
+    pub(crate) fn tour_sample(&mut self, on: bool) {
+        if on {
+            if self.running.is_none() {
+                self.running = Some(Running {
+                    stop: Rc::new(Cell::new(false)),
+                    before: (false, super::OpenMode::Slide),
+                    shown: true,
+                    touched: false,
+                    sample: true,
+                });
+            }
+        } else if self.running.as_ref().is_some_and(|r| r.sample) {
+            self.running = None;
         }
     }
 }
@@ -383,6 +404,7 @@ impl MainView {
             before: (self.browser.open, self.browser.mode),
             shown: false,
             touched: false,
+            sample: false,
         });
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
@@ -408,6 +430,7 @@ impl MainView {
         if let Some(r) = &self.browser.automation.running {
             r.stop.set(true);
         }
+        self.browser.automation.tour_sample(false); // --- onboarding ---
         if matches!(
             self.sheet,
             Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))

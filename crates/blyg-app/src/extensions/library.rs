@@ -84,6 +84,15 @@ pub(crate) struct Library {
 }
 
 impl Library {
+    /// --- onboarding --- The tour's panel: the first sample folder, and
+    /// nothing read from (or written to) `state.json`.
+    pub fn for_tour() -> Library {
+        Library {
+            vault_loaded: true,
+            ..Library::default()
+        }
+    }
+
     /// The open note has edits not saved yet.
     pub fn dirty(&self, cx: &App) -> bool {
         match (&self.note, &self.editor) {
@@ -175,7 +184,10 @@ impl MainView {
         self.ext.lib.entries.clear();
         self.ext.lib.hits = None;
         self.ext.lib.status = None;
-        if let Some(d) = self.ext.launch.as_ref().map(|l| &l.data_dir) {
+        // (The tour's sample folders aren't remembered.)
+        if let Some(d) = self.ext.launch.as_ref().map(|l| &l.data_dir)
+            && !self.ext_tour_on()
+        {
             let _ = blyg_core::state::AppState::update(d, |s| s.notes_vault = id);
         }
         self.ext_lib_refresh(window, cx);

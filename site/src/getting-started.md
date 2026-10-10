@@ -8,15 +8,23 @@ on; installed `claude` / `codex` CLIs are detected), and **Buttons or
 keyboard?** (`show-buttons`). esc skips it at any step.
 
 Then comes an optional **interactive tour** of the real window: each step
-highlights a part of it and waits for you to press the key (⌘T, ⌘⏎, ⌘3, ⌘G,
-⌘Y, ⌘R, ⌘K…). The tour runs on sample data, so your own blyg isn't touched,
-and your posts come back when it ends. Replay it from **Help › Burrow
-Tutorial** or **Settings (⌘,) › Help**, or set `tutorial-on-launch = true` to
-see it every time.
+highlights a part of it and waits for you to press the key (⌘N, ⌘T, ⌘⏎, ⌘3,
+⌘G, ⌘Y, ⌘R, ⌘J, ⌘K, ⇧⌘C, ⇧⌘P…). It covers writing, reading, lineage, the
+notes drawer, the browser pane, and extensions: the bundled markdown-notes,
+reading-time and inspect run on sample notes during the tour, even if yours
+are off. The tour runs on sample data, so your own blyg isn't touched, nothing
+it does changes your config file, and your posts come back when it ends.
+Replay it from **Help › Burrow Tutorial** or **Settings (⌘,) › Help**, or set
+`tutorial-on-launch = true` to see it every time.
 
 **After an update**, the first launch opens the tour on a **What's new**
-card: ⏎ starts at the steps that teach the new things, **Take the whole tour**
-starts at the beginning, and esc skips it.
+card: ⏎ starts at the steps that teach the new things (each says **NEW IN**
+its version), **Take the whole tour** starts at the beginning, and esc skips
+it. After updating to 0.11, sign in again once if you read on several Macs
+(see [the FAQ](faq.md#do-i-need-to-sign-in-again-after-updating)).
+
+**Coming from another feed reader?** File › Import Subscriptions from OPML…
+brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-reader)).
 
 ![What's new after an update](screenshots/whats-new.png)
 
