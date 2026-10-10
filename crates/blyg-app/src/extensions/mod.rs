@@ -133,25 +133,92 @@ pub fn allow_changes(cfg: &Config, name: &str, caps: &[Capability]) -> Vec<(&'st
     out
 }
 
-/// The config changes that point markdown-notes at `vault` (and enable it):
-/// `extension = markdown-notes`, `extension-setting = markdown-notes
-/// vault=<vault>` replacing an earlier vault line (other settings stay).
-pub fn vault_changes(cfg: &Config, vault: &str) -> Vec<(&'static str, Change)> {
+/// markdown-notes' settings as the config has them now.
+fn notes_settings(cfg: &Config) -> BTreeMap<String, String> {
+    blyg_ext::settings_from_lines(&cfg.list("extension-setting"))
+        .0
+        .remove(NOTES)
+        .unwrap_or_default()
+}
+
+/// The vaults the config names for markdown-notes (enabled or not).
+pub fn configured_vaults(cfg: &Config) -> Vec<blyg_ext_notes::VaultSpec> {
+    blyg_ext_notes::vaults(&notes_settings(cfg))
+}
+
+/// An `extension-setting` value that sets markdown-notes' `key`.
+fn is_notes_setting(line: &str, key: &str) -> bool {
+    line.trim()
+        .split_once(char::is_whitespace)
+        .is_some_and(|(name, kv)| {
+            name == NOTES && kv.split_once('=').is_some_and(|(k, _)| k.trim() == key)
+        })
+}
+
+/// The config changes that add `folders` to markdown-notes (and enable
+/// it): a `vault=` line for the first vault, `vault-<label>=` for each one
+/// after (label from the folder's name). Folders already there are skipped;
+/// other lines are kept as they are. The new keys come back too.
+pub fn vault_add_changes(
+    cfg: &Config,
+    folders: &[String],
+) -> (Vec<(&'static str, Change)>, Vec<String>) {
     let mut out = vec![];
     out.extend(with_values(cfg, "extension", &[NOTES.to_string()]));
-    let line = format!("{NOTES} vault={vault}");
-    let mut settings: Vec<String> = cfg
+    let mut settings = notes_settings(cfg);
+    let mut lines = cfg.list("extension-setting");
+    let mut keys = vec![];
+    for f in folders {
+        let Some(key) = blyg_ext_notes::new_vault_key(&settings, f) else {
+            continue;
+        };
+        // An empty `vault=` (or a bad one) is replaced, not shadowed.
+        lines.retain(|l| !is_notes_setting(l, &key));
+        lines.push(format!("{NOTES} {key}={f}"));
+        settings.insert(key.clone(), f.clone());
+        keys.push(key);
+    }
+    if !keys.is_empty() {
+        out.push(("extension-setting", Change::List(lines)));
+    }
+    (out, keys)
+}
+
+/// The config changes that drop markdown-notes' vault `key`: its setting
+/// lines, and the `fs:` grant for its folder when no other vault uses it.
+/// The folder and its notes are never touched.
+pub fn vault_remove_changes(cfg: &Config, key: &str) -> Vec<(&'static str, Change)> {
+    let vaults = configured_vaults(cfg);
+    let Some(gone) = vaults.iter().find(|v| v.key == key) else {
+        return vec![];
+    };
+    let mut out = vec![];
+    let lines: Vec<String> = cfg
         .list("extension-setting")
         .into_iter()
-        .filter(|l| {
-            let mut w = l.split_whitespace();
-            !(w.next() == Some(NOTES)
-                && w.next()
-                    .is_some_and(|kv| kv.split('=').next().map(str::trim) == Some("vault")))
-        })
+        .filter(|l| !is_notes_setting(l, key))
         .collect();
-    settings.push(line);
-    out.push(("extension-setting", Change::List(settings)));
+    out.push(("extension-setting", Change::List(lines)));
+    let shared = vaults
+        .iter()
+        .any(|v| v.key != key && blyg_ext_notes::same_folder(&v.path, &gone.path));
+    if !shared {
+        let grant = Capability::Fs(gone.path.clone());
+        let allow = cfg.list("extension-allow");
+        let kept: Vec<String> = allow
+            .iter()
+            .filter(|l| {
+                let mut w = l.split_whitespace();
+                !(w.next() == Some(NOTES)
+                    && w.next().and_then(Capability::parse).as_ref() == Some(&grant)
+                    && w.next().is_none())
+            })
+            .cloned()
+            .collect();
+        if kept.len() != allow.len() {
+            out.push(("extension-allow", Change::List(kept)));
+        }
+    }
     out
 }
 
@@ -494,37 +561,107 @@ impl MainView {
         true
     }
 
-    /// Settings › Notes folder: point markdown-notes at `folder` (enabling
-    /// it); the consent sheet follows for the new folder.
-    pub(crate) fn ext_set_vault(
+    /// Settings › Notes folders and the drawer's "Add folder…": add
+    /// `folders` to markdown-notes (enabling it); the consent sheet follows
+    /// for the new folders. The drawer then shows the first one added.
+    pub(crate) fn ext_add_vaults(
         &mut self,
-        folder: &std::path::Path,
+        folders: &[std::path::PathBuf],
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let text = vault_text(folder);
-        let changes = vault_changes(crate::settings::get(cx).store.config(), &text);
+        let texts: Vec<String> = folders.iter().map(|f| vault_text(f)).collect();
+        let cfg = crate::settings::get(cx).store.config().clone();
+        let (changes, keys) = vault_add_changes(&cfg, &texts);
+        // From Settings: out of the way, so the consent sheet can follow.
+        if self.sheet.is_some() {
+            self.close_sheet(window, cx);
+        }
+        if keys.is_empty() {
+            if changes.is_empty() {
+                return self.show_toast("Already a notes folder", None, cx);
+            }
+            // Only turning it on (the folders were configured already).
+            self.ext_write_config(&changes, window, cx);
+            return;
+        }
         // A new folder is a new question.
         self.ext.asked.retain(|(n, _)| n != NOTES);
+        if !self.ext_write_config(&changes, window, cx) {
+            return;
+        }
+        let now = configured_vaults(crate::settings::get(cx).store.config());
+        if let Some(v) = now.iter().find(|v| v.key == keys[0]) {
+            self.ext_lib_choose(Some(v.library.clone()), window, cx);
+        }
+        let (what, it) = if keys.len() == 1 {
+            let added = now.iter().find(|v| v.key == keys[0]);
+            let path = added.map(|v| v.path.clone()).unwrap_or_default();
+            (format!("Notes folder: {path}"), "it")
+        } else {
+            (format!("{} notes folders added", keys.len()), "them")
+        };
+        self.show_toast(
+            what,
+            Some(format!("{NOTES} reads and writes {it}, once you allow it").into()),
+            cx,
+        );
+    }
+
+    /// "Remove from Burrow": drop vault `key` from the config (its setting
+    /// and folder grant). The folder and its notes stay as they are.
+    pub(crate) fn ext_remove_vault(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let cfg = crate::settings::get(cx).store.config().clone();
+        let Some(gone) = configured_vaults(&cfg).into_iter().find(|v| v.key == key) else {
+            return;
+        };
+        let changes = vault_remove_changes(&cfg, key);
+        if self.ext.lib.vault.as_deref() == Some(gone.library.as_str()) {
+            self.ext_lib_choose(None, window, cx);
+        }
         if self.ext_write_config(&changes, window, cx) {
             self.show_toast(
-                format!("Notes folder: {text}"),
-                Some(format!("{NOTES} reads and writes it, once you allow it").into()),
+                format!("Removed “{}” from Burrow", gone.title),
+                Some(format!("{} and its notes stay as they are", gone.path).into()),
                 cx,
             );
         }
     }
 
-    /// The vault the config names for markdown-notes, when it's enabled.
-    pub(crate) fn ext_vault(&self, cx: &App) -> Option<String> {
-        let cfg = cx
-            .try_global::<crate::settings::AppConfig>()?
-            .store
-            .config();
-        cfg.extensions_enabled()
-            .iter()
-            .any(|n| n == NOTES)
-            .then(|| blyg_ext_notes::vault_setting(&cfg.extension_settings(NOTES)))
+    /// The vaults the config names for markdown-notes, and whether it's on.
+    pub(crate) fn ext_vaults(&self, cx: &App) -> (bool, Vec<blyg_ext_notes::VaultSpec>) {
+        let Some(conf) = cx.try_global::<crate::settings::AppConfig>() else {
+            return (false, vec![]);
+        };
+        let cfg = conf.store.config();
+        let on = cfg.extensions_enabled().iter().any(|n| n == NOTES);
+        (on, configured_vaults(cfg))
+    }
+
+    /// The folder picker for notes folders (several at once); what's
+    /// picked is added.
+    pub(crate) fn ext_pick_vaults(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: false,
+            directories: true,
+            multiple: true,
+            prompt: Some("Add as notes folder".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            if paths.is_empty() {
+                return;
+            }
+            let _ = this.update_in(cx, |v, window, cx| v.ext_add_vaults(&paths, window, cx));
+        })
+        .detach();
     }
 
     // ------------------------------------------------------------ context

@@ -239,8 +239,12 @@ restart it. Its stderr goes to `<data dir>/extensions/<name>/stderr.log`
 ## markdown-notes
 
 Bundled, opt-in (`extension = markdown-notes`), and independent of any
-blyg: it reads and writes a folder of Markdown notes and needs only
-`fs:<vault>` and `ui`. It never adds frontmatter, never links notes to
-posts, and never deletes. An edit is refused if the file changed on disk
-since it was read; a new note never replaces an existing file. Settings:
-`vault` (default `~/Notes`), `folder` (where new notes go), `poll-ms`.
+blyg: it reads and writes folders of Markdown notes ("vaults") and needs
+only `fs:<folder>` for each one and `ui`. It never adds frontmatter, never
+links notes to posts, and never deletes. An edit is refused if the file
+changed on disk since it was read; a new note never replaces an existing
+file. Settings: `vault` (the first folder), `vault-<label>` (one more
+folder each, e.g. `vault-work=~/Work/Vault`), `folder` (where new notes go
+inside each), `poll-ms`. Each vault is its own library (`notes`,
+`notes.<label>`). There's no default folder: with no vault it asks only
+for `ui` and has no library.

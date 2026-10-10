@@ -235,7 +235,7 @@ net and fs: are declarations you agree to, not a sandbox: an extension runs as a
 - **Default:** none
 - **Repeatable:** yes, one value per line
 
-A setting for one extension, as &lt;name> key=value, e.g. extension-setting = markdown-notes vault=~/Notes. Repeatable; a later line for the same key wins. An extension sees its own settings and no other part of this file.
+A setting for one extension, as &lt;name> key=value, e.g. extension-setting = markdown-notes vault=~/Notes. Keys are lowercase kebab-case. Repeatable; a later line for the same key wins. An extension sees its own settings and no other part of this file. markdown-notes reads one folder of notes per vault key: vault=~/Notes is the first, and each vault-&lt;label>, e.g. extension-setting = markdown-notes vault-work=~/Work/Vault, adds another (Settings › Notes folders writes these). With no vault it uses no folder at all.
 
 
 ### `config-file`

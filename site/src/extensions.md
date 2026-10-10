@@ -10,12 +10,14 @@ can also install extensions other people write, or write your own.
 
 ## markdown-notes
 
-markdown-notes reads and writes a folder of Markdown notes, such as an
-Obsidian vault. It's kept apart from your blyg, so it works with no blyg
-connected, and it never links notes to posts.
+markdown-notes reads and writes folders of Markdown notes, such as Obsidian
+vaults, as many as you like. It's kept apart from your blyg, so it works with
+no blyg connected, and it never links notes to posts.
 
-- **The notes panel** lists the folder, searches titles and bodies, and opens
-  a note to read or edit.
+- **The notes panel** (the notes drawer's Notes tab) switches between your
+  folders, lists the one you pick, searches titles and bodies, and opens a
+  note to read or edit. **Add folder…** adds more; **Remove from Burrow**
+  forgets a folder (its notes stay where they are).
 - **Copy into post** puts the selection, or the whole note, into your draft at
   the cursor, as a quote or as it is (you pick).
 - **Save selection to notes**, in the Extensions palette (⇧⌘P), makes a new
@@ -27,19 +29,26 @@ it, your save is refused, so it never overwrites the other change.
 
 ### Turning it on
 
-Add these lines to the config file (**Burrow › Open Config File**), then
-reload it (⇧⌘,):
+The easy way: **Settings › Notes folders › Add folder…**, then pick one or
+more folders. Burrow writes the config lines for you and asks for permission
+to use those folders.
+
+Or add the lines to the config file (**Burrow › Open Config File**) yourself,
+then reload it (⇧⌘,):
 
 ```text
 extension = markdown-notes
 extension-setting = markdown-notes vault=~/Notes
+extension-setting = markdown-notes vault-work=~/Work/Vault
 ```
 
-`vault` is the folder of notes (it defaults to `~/Notes`). It has two more
-settings:
+`vault` is your first folder of notes, and each `vault-<label>` adds another
+(the label is lowercase letters, digits and dashes). There's no default: with
+no folder, the Notes tab offers **Choose a folder…**, and Burrow never reads a
+folder you didn't pick. It has two more settings:
 
 ```text
-# where new notes go, inside the vault (default: the top of the vault)
+# where new notes go, inside each folder (default: the top of the folder)
 extension-setting = markdown-notes folder=Inbox
 # how often it looks for changed notes, in milliseconds (default 2000)
 extension-setting = markdown-notes poll-ms=5000

@@ -193,6 +193,7 @@ fn list_extensions_shows_bundled_installed_and_broken() {
         &dir.path().join("config"),
         "extension = markdown-notes\n\
          extension-allow = markdown-notes ui\n\
+         extension-setting = markdown-notes vault=~/Notes\n\
          extension = hello\n\
          extension = ghost\n",
     );

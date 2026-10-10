@@ -22,7 +22,10 @@ use blyg_ext::Capability;
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::sheets::Overlay;
-use super::{Launch, NOTES, Notice, allow_changes, host_config, vault_changes, vault_text};
+use super::{
+    Launch, NOTES, Notice, allow_changes, configured_vaults, host_config, vault_add_changes,
+    vault_remove_changes, vault_text,
+};
 use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
@@ -105,18 +108,20 @@ fn consent_and_settings_write_the_extension_lines() {
         "already there"
     );
 
-    // A new vault replaces the vault line and keeps the others.
-    let changes = vault_changes(s.config(), "~/Vault");
+    // A new folder is one more vault; the first stays, as do the others.
+    let (changes, keys) = vault_add_changes(s.config(), &["~/Vault".to_string()]);
+    assert_eq!(keys, ["vault-vault"]);
     s.set(&changes).unwrap();
     let cfg = s.config();
-    assert_eq!(cfg.extension_settings(NOTES)["vault"], "~/Vault");
+    assert_eq!(cfg.extension_settings(NOTES)["vault"], "~/Old");
+    assert_eq!(cfg.extension_settings(NOTES)["vault-vault"], "~/Vault");
     assert_eq!(cfg.extension_settings(NOTES)["folder"], "Inbox");
     assert_eq!(
         cfg.list("extension-setting")
             .iter()
-            .filter(|l| l.contains("vault="))
+            .filter(|l| l.contains("vault"))
             .count(),
-        1
+        2
     );
     assert_eq!(cfg.extensions_enabled(), ["other", "markdown-notes"]);
 }
@@ -396,7 +401,7 @@ fn the_palette_lists_commands_libraries_and_manage(cx: &mut TestAppContext) {
         labels,
         [
             "Save selection to notes",
-            "Browse Notes",
+            "Browse Vault",
             "Manage extensions…"
         ]
     );
@@ -691,7 +696,9 @@ fn settings_point_markdown_notes_at_a_folder_and_ask(cx: &mut TestAppContext) {
     let v = vault();
     let (view, _, cx) = setup(cx, &v, "# test\n");
     view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
-    view.update_in(cx, |m, window, cx| m.ext_set_vault(&v.root, window, cx));
+    view.update_in(cx, |m, window, cx| {
+        m.ext_add_vaults(std::slice::from_ref(&v.root), window, cx)
+    });
     let text = config_text(cx);
     let r = vault_text(&v.root);
     assert!(text.contains("extension = markdown-notes"), "{text}");
@@ -1174,4 +1181,338 @@ mod macros {
         assert_eq!(got.selection, "low water");
         assert_eq!(got.markdown.trim(), "The tide went out.");
     }
+}
+
+// ---- multiple vaults
+
+#[test]
+fn vaults_are_added_and_removed_as_config_lines() {
+    let mut s = ConfigStore::in_memory(
+        "# mine\nextension-setting = markdown-notes folder=Inbox\n\
+         extension-allow = markdown-notes ui\n",
+    );
+    // The first folder is `vault=`, so a config that names one still reads.
+    let (changes, keys) = vault_add_changes(s.config(), &["~/Notes".to_string()]);
+    assert_eq!(keys, ["vault"]);
+    s.set(&changes).unwrap();
+    // Several at once; one already there is skipped.
+    let (changes, keys) = vault_add_changes(
+        s.config(),
+        &[
+            "~/Work/Vault".to_string(),
+            "~/Notes/".to_string(),
+            "~/Work/Notes".to_string(),
+        ],
+    );
+    assert_eq!(keys, ["vault-vault", "vault-work-notes"]);
+    s.set(&changes).unwrap();
+    let text = s.text().unwrap().to_string();
+    assert!(text.starts_with("# mine\n"), "comments kept: {text}");
+    assert!(text.contains("extension = markdown-notes"), "{text}");
+    assert!(text.contains("extension-setting = markdown-notes vault=~/Notes"));
+    assert!(text.contains("extension-setting = markdown-notes vault-vault=~/Work/Vault"));
+    let titles: Vec<String> = configured_vaults(s.config())
+        .into_iter()
+        .map(|v| v.title)
+        .collect();
+    assert_eq!(titles, ["Notes", "Vault", "work notes"]);
+    assert!(
+        vault_add_changes(s.config(), &["~/Notes".to_string()])
+            .1
+            .is_empty()
+    );
+
+    // Allowed, then removed: the line and its grant go, nothing else.
+    s.set(&allow_changes(
+        s.config(),
+        NOTES,
+        &[Capability::Fs("~/Work/Vault".into())],
+    ))
+    .unwrap();
+    s.set(&vault_remove_changes(s.config(), "vault-vault"))
+        .unwrap();
+    let text = s.text().unwrap().to_string();
+    assert!(!text.contains("~/Work/Vault"), "{text}");
+    assert!(
+        text.contains("extension-allow = markdown-notes ui"),
+        "{text}"
+    );
+    assert!(text.contains("folder=Inbox"), "{text}");
+    // Removing the first leaves the others; a new one becomes the first.
+    s.set(&vault_remove_changes(s.config(), "vault")).unwrap();
+    let keys: Vec<String> = configured_vaults(s.config())
+        .into_iter()
+        .map(|v| v.key)
+        .collect();
+    assert_eq!(keys, ["vault-work-notes"]);
+    let (_, keys) = vault_add_changes(s.config(), &["~/Garden".to_string()]);
+    assert_eq!(keys, ["vault"]);
+    assert!(vault_remove_changes(s.config(), "vault.nope").is_empty());
+}
+
+#[test]
+fn the_host_config_asks_for_each_vault_and_none_by_default() {
+    let l = launch(PathBuf::from("/data"));
+    let none = ConfigStore::in_memory("extension = markdown-notes\n");
+    let m = &host_config(&none, &l).bundled[0].manifest;
+    assert_eq!(m.capabilities, [Capability::Ui], "no silent ~/Notes");
+    assert!(m.libraries.is_empty());
+    let two = ConfigStore::in_memory(
+        "extension = markdown-notes\nextension-setting = markdown-notes vault=~/Notes\n\
+         extension-setting = markdown-notes vault-work=~/Work/Vault\n",
+    );
+    let m = &host_config(&two, &l).bundled[0].manifest;
+    assert_eq!(
+        m.capabilities,
+        [
+            Capability::Fs("~/Notes".into()),
+            Capability::Fs("~/Work/Vault".into()),
+            Capability::Ui
+        ]
+    );
+    let ids: Vec<&str> = m.libraries.iter().map(|l| l.id.as_str()).collect();
+    assert_eq!(ids, ["notes", "notes.work"]);
+}
+
+/// A second vault beside [`vault`]'s, under the same temporary folder.
+fn work_vault(v: &Vault) -> PathBuf {
+    let root = v.root.parent().unwrap().join("Work").join("Vault");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join("Standup.md"),
+        "# Standup\n\nThe bench repair ships Friday.\n",
+    )
+    .unwrap();
+    root
+}
+
+/// Two vaults (the first `vault=`, the second `vault-work=`), both
+/// allowed unless `allow_work` is false.
+fn two_running<'a>(
+    cx: &'a mut TestAppContext,
+    v: &Vault,
+    work: &Path,
+    allow_work: bool,
+) -> (
+    Entity<MainView>,
+    Arc<FakeBackend>,
+    &'a mut VisualTestContext,
+) {
+    let r = root_text(v);
+    let w = work.to_string_lossy().into_owned();
+    let mut config = format!(
+        "extension = markdown-notes\nextension-allow = markdown-notes fs:{r}\n\
+         extension-allow = markdown-notes ui\nextension-setting = markdown-notes vault={r}\n\
+         extension-setting = markdown-notes vault-work={w}\n"
+    );
+    if allow_work {
+        config.push_str(&format!("extension-allow = markdown-notes fs:{w}\n"));
+    }
+    let (view, fake, cx) = setup(cx, v, &config);
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "both libraries", |cx| {
+        view.read_with(cx, |v, _| v.ext_libraries().len() == 2)
+    });
+    (view, fake, cx)
+}
+
+#[gpui_kit::test]
+fn the_drawer_switches_vaults_and_remembers(cx: &mut TestAppContext) {
+    let v = vault();
+    let work = work_vault(&v);
+    let (view, fake, cx) = two_running(cx, &v, &work, true);
+    view.update_in(cx, |v, window, cx| v.ext_lib_show(window, cx));
+    wait(&view, cx, "the first vault", |cx| {
+        view.read_with(cx, |v, _| v.ext.lib.entries.len() == 2)
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("lib-vault-0").is_some(), "the switcher");
+    assert!(cx.debug_bounds("lib-vault-1").is_some());
+    assert!(cx.debug_bounds("lib-vault-add").is_some());
+    assert!(cx.debug_bounds("lib-vault-remove").is_some());
+
+    // The work vault: its notes, its search.
+    view.update_in(cx, |v, window, cx| {
+        v.ext_lib_choose(Some("notes.work".into()), window, cx)
+    });
+    wait(&view, cx, "the work vault", |cx| {
+        view.read_with(cx, |v, _| {
+            v.ext.lib.entries.len() == 1 && v.ext.lib.entries[0].title == "Standup"
+        })
+    });
+    cx.simulate_input("bench");
+    wait(&view, cx, "a work hit", |cx| {
+        view.read_with(cx, |v, _| {
+            v.ext.lib.hits.as_ref().is_some_and(|h| h.len() == 1)
+        })
+    });
+    let id = view.read_with(cx, |v, _| v.ext.lib.hits.as_ref().unwrap()[0].id.clone());
+    assert_eq!(id, "Standup.md", "only the chosen vault is searched");
+
+    // Quote into post from it.
+    let draft = fake.create_draft(Kind::Fragment, "My take.").unwrap();
+    view.update_in(cx, |v, window, cx| {
+        v.open(&draft, window, cx);
+        v.ext_lib_open(id.clone(), window, cx);
+    });
+    wait(&view, cx, "the note", |cx| {
+        view.read_with(cx, |v, _| v.ext.lib.note.is_some())
+    });
+    view.update_in(cx, |v, window, cx| v.ext_lib_copy(true, window, cx));
+    cx.run_until_parked();
+    let text = fake.item(&draft).unwrap().content_md;
+    assert!(text.contains("> The bench repair ships Friday."), "{text}");
+    assert!(text.contains("> — Standup"), "{text}");
+
+    // A new note lands in the chosen vault.
+    view.update_in(cx, |v, window, cx| {
+        v.ext.lib.note = None;
+        v.ext_lib_new(window, cx);
+        v.ext
+            .lib
+            .editor
+            .as_ref()
+            .unwrap()
+            .update(cx, |s, cx| s.set_value("Retro\n\nWent well.\n", window, cx));
+        v.ext_lib_save(window, cx);
+    });
+    let new = work.join("Retro.md");
+    wait(&view, cx, "the new note", |_| new.exists());
+    assert!(!v.root.join("Retro.md").exists());
+
+    // Remembered in state.json.
+    let st = blyg_core::state::AppState::load(&v.data);
+    assert_eq!(st.notes_vault.as_deref(), Some("notes.work"));
+
+    // Remove from Burrow: the config lines go, the folder stays.
+    view.update_in(cx, |v, window, cx| {
+        v.ext_remove_vault("vault-work", window, cx)
+    });
+    let text = config_text(cx);
+    assert!(!text.contains("vault-work"), "{text}");
+    assert!(
+        !text.contains(&format!("fs:{}", work.to_string_lossy())),
+        "{text}"
+    );
+    assert!(work.join("Standup.md").exists() && new.exists());
+    assert_eq!(view.read_with(cx, |v, _| v.ext.lib.vault.clone()), None);
+    wait(&view, cx, "one library", |cx| {
+        view.read_with(cx, |v, _| v.ext_libraries().len() == 1)
+    });
+}
+
+#[gpui_kit::test]
+fn the_quote_picker_searches_every_vault(cx: &mut TestAppContext) {
+    let v = vault();
+    let work = work_vault(&v);
+    let (view, _, cx) = two_running(cx, &v, &work, true);
+    view.update_in(cx, |v, _, cx| {
+        v.ext.lib.picker = true;
+        v.ext_picker_search("bench".into(), cx);
+    });
+    wait(&view, cx, "hits from both", |cx| {
+        view.read_with(cx, |v, _| v.ext.lib.picker_hits.len() == 3)
+    });
+    view.read_with(cx, |v, _| {
+        let from: Vec<(&str, &str)> = v
+            .ext
+            .lib
+            .picker_hits
+            .iter()
+            .map(|h| (h.lib.library.id.as_str(), h.hit.id.as_str()))
+            .collect();
+        assert!(from.contains(&("notes.work", "Standup.md")), "{from:?}");
+        assert!(from.contains(&("notes", "Garden/Benches.md")), "{from:?}");
+        assert!(from.contains(&("notes", "Tide tables.md")), "{from:?}");
+    });
+}
+
+#[gpui_kit::test]
+fn a_vault_without_permission_says_so_and_the_other_works(cx: &mut TestAppContext) {
+    let v = vault();
+    let work = work_vault(&v);
+    let (view, _, cx) = two_running(cx, &v, &work, false);
+    view.update_in(cx, |v, window, cx| {
+        // The consent sheet came up for the missing folder: not now.
+        v.ext.overlay = None;
+        v.ext_lib_show(window, cx);
+        v.ext_lib_choose(Some("notes.work".into()), window, cx);
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("lib-vault-allow").is_some(),
+        "needs permission"
+    );
+    view.update_in(cx, |v, window, cx| {
+        v.ext_lib_choose(Some("notes".into()), window, cx)
+    });
+    wait(&view, cx, "the first vault", |cx| {
+        view.read_with(cx, |v, _| v.ext.lib.entries.len() == 2)
+    });
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("lib-vault-allow").is_none());
+}
+
+#[gpui_kit::test]
+fn no_folder_offers_to_choose_one_and_adding_asks(cx: &mut TestAppContext) {
+    let v = vault();
+    let (view, _, cx) = setup(
+        cx,
+        &v,
+        "extension = markdown-notes\nextension-allow = markdown-notes ui\n",
+    );
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "markdown-notes running", |cx| {
+        view.read_with(cx, |v, _| {
+            v.ext
+                .host
+                .as_ref()
+                .unwrap()
+                .status()
+                .iter()
+                .any(|s| s.name == NOTES && s.state == blyg_ext::ExtState::Running)
+        })
+    });
+    view.read_with(cx, |v, _| {
+        assert!(v.ext_libraries().is_empty(), "no silent default folder");
+        assert!(v.ext.overlay.is_none(), "nothing more to ask");
+    });
+    view.update_in(cx, |v, window, cx| v.ext_lib_show(window, cx));
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("notes-tab-library").is_some(), "the tab");
+    assert!(cx.debug_bounds("lib-choose").is_some(), "Choose a folder…");
+
+    // Two folders picked at once: two vault lines, and consent for both.
+    let work = work_vault(&v);
+    view.update_in(cx, |m, window, cx| {
+        m.ext_add_vaults(&[v.root.clone(), work.clone()], window, cx)
+    });
+    let text = config_text(cx);
+    let (r, w) = (vault_text(&v.root), vault_text(&work));
+    assert!(
+        text.contains(&format!("extension-setting = markdown-notes vault={r}")),
+        "{text}"
+    );
+    assert!(
+        text.contains(&format!(
+            "extension-setting = markdown-notes vault-work-vault={w}"
+        )),
+        "{text}"
+    );
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| {
+            matches!(v.ext.overlay, Some(Overlay::Consent { .. }))
+        })
+    });
+    view.read_with(cx, |v, _| {
+        let Some(Overlay::Consent { caps, .. }) = &v.ext.overlay else {
+            unreachable!()
+        };
+        let caps: Vec<&Capability> = caps.iter().map(|c| &c.0).collect();
+        assert_eq!(caps, [&Capability::Fs(r), &Capability::Fs(w)]);
+    });
 }

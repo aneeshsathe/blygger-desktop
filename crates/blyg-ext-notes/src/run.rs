@@ -1,7 +1,9 @@
-//! The BXP extension around [`Vault`]: the `notes` library
-//! (`extension/library.*`) and the "Save selection to notes" command. It
-//! never calls a `burrow/*` item method; the folder is the only thing it
-//! touches, and only once the user has granted `fs:<vault>`.
+//! The BXP extension around [`Vault`]: one library per configured vault
+//! (`extension/library.*`: `notes` for `vault=`, `notes.<label>` for
+//! `vault-<label>=`) and the "Save selection to notes" command. It never
+//! calls a `burrow/*` item method; the folders are the only thing it
+//! touches, each only once the user has granted its `fs:<folder>`. A vault
+//! without its grant refuses with "permission denied"; the others work.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -16,26 +18,37 @@ use blyg_ext::rpc::{params, to_value};
 use serde_json::{Value, json};
 
 use crate::vault::{Hit, Vault, VaultError};
-use crate::{LIBRARY, SAVE_SELECTION, vault_setting};
+use crate::{SAVE_SELECTION, VaultSpec, vaults};
 
-/// How often the vault is re-scanned when `poll-ms` isn't set.
+/// How often the vaults are re-scanned when `poll-ms` isn't set.
 pub const DEFAULT_POLL: Duration = Duration::from_secs(2);
+
+/// One configured vault: open, or why not (no grant, not a folder).
+struct Slot {
+    spec: VaultSpec,
+    vault: Result<Vault, RpcError>,
+}
 
 /// The extension's state.
 #[derive(Default)]
 pub struct NotesExt {
-    vault: Option<Vault>,
-    /// Why there's no vault (no grant, not a folder).
-    problem: Option<RpcError>,
+    slots: Vec<Slot>,
     folder: Option<String>,
     poll: Option<Duration>,
     granted: Vec<Capability>,
     home: Option<PathBuf>,
 }
 
+/// Why there's nothing to use.
+fn no_folder() -> RpcError {
+    RpcError::new(
+        codes::REFUSED,
+        "no notes folder: choose one in Settings › Notes folders",
+    )
+}
+
 impl NotesExt {
     fn configure(&mut self, settings: &BTreeMap<String, String>) {
-        let vault = vault_setting(settings);
         self.folder = settings
             .get("folder")
             .map(|f| f.trim().to_string())
@@ -47,39 +60,50 @@ impl NotesExt {
                 .map(|ms| Duration::from_millis(ms.max(50)))
                 .unwrap_or(DEFAULT_POLL),
         );
-        let want = Capability::Fs(vault.clone());
-        self.vault = None;
-        self.problem = None;
-        if !self.granted.iter().any(|g| want.covered_by(g)) {
-            self.problem = Some(RpcError::permission_denied(&want.as_string()));
-            return;
-        }
-        match Vault::open(expand_home(&vault, self.home.as_deref())) {
-            Ok(v) => self.vault = Some(v),
-            Err(e) => {
-                self.problem = Some(RpcError::new(
-                    codes::REFUSED,
-                    format!("notes folder {vault}: {e}"),
-                ))
-            }
+        // A vault already open on the same folder, still granted, is kept
+        // (no re-scan).
+        let mut old = std::mem::take(&mut self.slots);
+        for spec in vaults(settings) {
+            let want = Capability::Fs(spec.path.clone());
+            let vault = if !self.granted.iter().any(|g| want.covered_by(g)) {
+                Err(RpcError::permission_denied(&want.as_string()))
+            } else if let Some(i) = old
+                .iter()
+                .position(|s| s.spec.path == spec.path && s.vault.is_ok())
+            {
+                old.swap_remove(i).vault
+            } else {
+                Vault::open(expand_home(&spec.path, self.home.as_deref())).map_err(|e| {
+                    RpcError::new(codes::REFUSED, format!("notes folder {}: {e}", spec.path))
+                })
+            };
+            self.slots.push(Slot { spec, vault });
         }
     }
 
-    fn vault(&mut self) -> Result<&mut Vault, RpcError> {
-        match &mut self.vault {
-            Some(v) => Ok(v),
-            None => Err(self
-                .problem
-                .clone()
-                .unwrap_or_else(|| RpcError::new(codes::REFUSED, "no notes folder"))),
-        }
+    /// Library `id`'s vault (`None`: the first).
+    fn vault(&mut self, id: &Option<String>) -> Result<&mut Vault, RpcError> {
+        let slot = match id.as_deref() {
+            None => self.slots.first_mut().ok_or_else(no_folder)?,
+            Some(id) => self
+                .slots
+                .iter_mut()
+                .find(|s| s.spec.library == id)
+                .ok_or_else(|| RpcError::invalid_params(format!("no library {id:?}")))?,
+        };
+        slot.vault.as_mut().map_err(|e| e.clone())
     }
-}
 
-fn check_library(l: &Option<String>) -> Result<(), RpcError> {
-    match l.as_deref() {
-        None | Some(LIBRARY) => Ok(()),
-        Some(other) => Err(RpcError::invalid_params(format!("no library {other:?}"))),
+    /// Where "Save selection to notes" writes: the first vault that's open.
+    fn first_open(&mut self) -> Result<&mut Vault, RpcError> {
+        let problem = match self.slots.first() {
+            None => return Err(no_folder()),
+            Some(s) => s.vault.as_ref().err().cloned(),
+        };
+        self.slots
+            .iter_mut()
+            .find_map(|s| s.vault.as_mut().ok())
+            .ok_or_else(|| problem.unwrap_or_else(no_folder))
     }
 }
 
@@ -132,8 +156,10 @@ impl Extension for NotesExt {
         match method {
             methods::LIBRARY_LIST => {
                 let p: LibraryListParams = params(p)?;
-                check_library(&p.library)?;
-                let entries = self.vault()?.list(p.path.as_deref()).map_err(err)?;
+                let entries = self
+                    .vault(&p.library)?
+                    .list(p.path.as_deref())
+                    .map_err(err)?;
                 let out: Vec<LibraryEntry> = entries
                     .into_iter()
                     .map(|e| LibraryEntry {
@@ -148,9 +174,8 @@ impl Extension for NotesExt {
             }
             methods::LIBRARY_SEARCH => {
                 let p: LibrarySearchParams = params(p)?;
-                check_library(&p.library)?;
                 let hits: Vec<SourceEntry> = self
-                    .vault()?
+                    .vault(&p.library)?
                     .search(&p.query, p.limit)
                     .into_iter()
                     .map(entry)
@@ -159,8 +184,7 @@ impl Extension for NotesExt {
             }
             methods::LIBRARY_READ => {
                 let p: LibraryReadParams = params(p)?;
-                check_library(&p.library)?;
-                let n = self.vault()?.read(&p.id).map_err(err)?;
+                let n = self.vault(&p.library)?.read(&p.id).map_err(err)?;
                 to_value(&LibraryDocument {
                     id: n.id,
                     title: n.title,
@@ -171,9 +195,8 @@ impl Extension for NotesExt {
             }
             methods::LIBRARY_WRITE => {
                 let p: LibraryWriteParams = params(p)?;
-                check_library(&p.library)?;
                 let folder = p.folder.clone().or_else(|| self.folder.clone());
-                let v = self.vault()?;
+                let v = self.vault(&p.library)?;
                 let n = match &p.id {
                     Some(id) => {
                         let base = p.base_hash.as_deref().ok_or_else(|| {
@@ -200,7 +223,7 @@ impl Extension for NotesExt {
                 }
                 let folder = self.folder.clone();
                 let n = self
-                    .vault()?
+                    .first_open()?
                     .create(folder.as_deref(), None, &text)
                     .map_err(err)?;
                 to_value(&CommandResult {
@@ -228,8 +251,10 @@ impl Extension for NotesExt {
     }
 
     fn tick(&mut self, _host: &HostClient) {
-        if let Some(v) = &mut self.vault {
-            v.refresh();
+        for s in &mut self.slots {
+            if let Ok(v) = &mut s.vault {
+                v.refresh();
+            }
         }
     }
 

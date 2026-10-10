@@ -785,21 +785,62 @@ pub fn state_word(s: &ExtState) -> (String, bool) {
 }
 
 impl MainView {
-    /// Hook (Settings): "NOTES FOLDER" with the markdown-notes vault, and
-    /// "Markdown notes folder…", which picks a folder, writes
-    /// `extension = markdown-notes` and its `vault` setting, and asks for
-    /// permission to use it.
+    /// Hook (Settings): "NOTES FOLDERS", the markdown-notes vaults, each
+    /// with Remove (the config line only; the folder is never touched),
+    /// and "Add folder…", which picks folders (several at once), writes
+    /// `extension = markdown-notes` and a `vault` / `vault-<label>` setting
+    /// for each, and asks for permission to use them.
     pub(crate) fn render_ext_settings_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
-        let vault = self.ext_vault(cx);
-        let running = self.ext_library().is_some();
-        let now = match &vault {
-            Some(v) if running => format!("{v} · on"),
-            Some(v) => format!("{v} · not running yet"),
-            None => {
-                "Off: a folder of Markdown notes (an Obsidian vault) in the notes drawer".into()
+        let (on, vaults) = self.ext_vaults(cx);
+        let running = self.ext_libraries().iter().any(|l| l.ext == super::NOTES);
+        let now = match (on, vaults.is_empty()) {
+            (false, true) => {
+                "Off: folders of Markdown notes (Obsidian vaults) in the notes drawer".into()
             }
+            (false, false) => "Off: turn on markdown-notes to use them".to_string(),
+            (true, true) => "On, with no folder yet: add one".into(),
+            (true, false) if running => "On · in the notes drawer's Notes tab".into(),
+            (true, false) => "Not running yet: waiting for permission".into(),
         };
+        let rows: Vec<AnyElement> = vaults
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let key = v.key.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .min_w_0()
+                    .text_size(px(12.))
+                    .child(div().flex_none().child(v.title.clone()))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.5))
+                            .text_color(p.muted)
+                            .child(v.path.clone()),
+                    )
+                    .child(
+                        div()
+                            .id(("ext-vault-remove", i))
+                            .debug_selector(move || format!("ext-vault-remove-{i}"))
+                            .flex_none()
+                            .text_size(px(11.5))
+                            .text_color(p.muted)
+                            .cursor_pointer()
+                            .hover(|s| s.underline().text_color(p.ink))
+                            .child("Remove")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.ext_remove_vault(&key, window, cx)
+                            })),
+                    )
+                    .into_any_element()
+            })
+            .collect();
         div()
             .flex()
             .gap(px(12.))
@@ -812,7 +853,7 @@ impl MainView {
                     .text_size(px(10.5))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.muted)
-                    .child("NOTES FOLDER"),
+                    .child("NOTES FOLDERS"),
             )
             .child(
                 div()
@@ -821,6 +862,7 @@ impl MainView {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
+                    .children(rows)
                     .child(
                         div().flex().child(
                             div()
@@ -831,9 +873,9 @@ impl MainView {
                                 .map(|d| crate::theme_ext::chip(d, &self.theme, false))
                                 .cursor_pointer()
                                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
-                                .child("Markdown notes folder…")
+                                .child("Add folder…")
                                 .on_click(cx.listener(|this, _, window, cx| {
-                                    this.ext_pick_vault(window, cx)
+                                    this.ext_pick_vaults(window, cx)
                                 })),
                         ),
                     )
@@ -846,28 +888,5 @@ impl MainView {
                     ),
             )
             .into_any_element()
-    }
-
-    /// The folder picker for the notes folder.
-    fn ext_pick_vault(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let rx = cx.prompt_for_paths(PathPromptOptions {
-            files: false,
-            directories: true,
-            multiple: false,
-            prompt: Some("Use as notes folder".into()),
-        });
-        cx.spawn_in(window, async move |this, cx| {
-            let Ok(Ok(Some(paths))) = rx.await else {
-                return;
-            };
-            let Some(dir) = paths.into_iter().next() else {
-                return;
-            };
-            let _ = this.update_in(cx, |v, window, cx| {
-                v.close_sheet(window, cx);
-                v.ext_set_vault(&dir, window, cx);
-            });
-        })
-        .detach();
     }
 }

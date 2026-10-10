@@ -720,7 +720,7 @@ mod tests {
         };
         has(
             1,
-            "extension: `markdown-notes` asks for fs:~/Notes, ui; nothing is granted yet",
+            "extension: `markdown-notes` asks for ui; nothing is granted yet",
         );
         has(
             2,
