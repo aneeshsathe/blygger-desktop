@@ -59,6 +59,11 @@ struct Placed {
     /// --- notes --- The notes drawer's left edge while it's out: the view
     /// is cut off there (a native view would cover the drawer).
     clip_right: Option<Pixels>,
+    /// --- browser macros --- Folded while a macro runs: the view is shown
+    /// but placed off the window's right edge, so the page stays live (a
+    /// hidden web view may have its timers throttled) and nothing of it is
+    /// seen. It never keeps the keyboard there.
+    parked: bool,
 }
 
 impl Placed {
@@ -66,6 +71,7 @@ impl Placed {
         let Some(s) = self.surface.as_mut() else {
             return;
         };
+        self.parked = false;
         // --- notes ---
         let mut bounds = bounds;
         if let Some(edge) = self.clip_right {
@@ -89,10 +95,34 @@ impl Placed {
     }
 
     fn hide(&mut self) {
+        self.parked = false;
         if let (Some(s), true) = (self.surface.as_mut(), self.visible) {
             s.set_visible(false);
             self.visible = false;
         }
+    }
+
+    /// --- browser macros --- See `parked`. `viewport` is the window's size.
+    fn park(&mut self, viewport: Size<Pixels>) {
+        let Some(s) = self.surface.as_mut() else {
+            return;
+        };
+        if self.parked {
+            return;
+        }
+        s.focus_parent();
+        let size = self
+            .frame
+            .map(|f| f.size)
+            .unwrap_or_else(|| size(viewport.width * SLIDE_WIDTH, viewport.height));
+        let off = Bounds::new(point(viewport.width + px(64.), px(0.)), size);
+        s.set_frame(off);
+        self.frame = Some(off);
+        if !self.visible {
+            s.set_visible(true);
+            self.visible = true;
+        }
+        self.parked = true;
     }
 
     fn with<R>(&mut self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
@@ -203,9 +233,23 @@ impl Browser {
         self.placed.borrow().surface.is_some()
     }
 
+    /// On screen (shown, and not parked off the window's edge).
     #[cfg(test)]
     pub fn visible(&self) -> bool {
-        self.placed.borrow().visible
+        let p = self.placed.borrow();
+        p.visible && !p.parked
+    }
+
+    /// --- browser macros --- Folded under a running macro: shown, off the
+    /// window's edge (see `Placed::parked`).
+    #[cfg(test)]
+    pub fn parked(&self) -> bool {
+        self.placed.borrow().parked
+    }
+
+    /// The window's width, as of the last frame.
+    pub fn viewport_width(&self) -> Pixels {
+        self.viewport_w
     }
 
     /// Blocking applies to the current page.
@@ -371,6 +415,7 @@ impl MainView {
         if self.browser.open {
             self.close_browser(window, cx);
         } else if !self.browser.page.url.is_empty() {
+            self.browser.automation.note_user_toggle(); // --- browser macros ---
             let url = self.browser.page.url.clone();
             let mode = self.browser.mode;
             if self.browser.alive() {
@@ -397,15 +442,10 @@ impl MainView {
         if !b.open {
             return;
         }
-        // --- browser macros --- the pane stays while a macro runs in it.
-        if b.automation.running() {
-            self.show_toast(
-                "A macro is running in the browser pane",
-                Some("■ Stop in the pane's bar stops it".into()),
-                cx,
-            );
-            return;
-        }
+        // --- browser macros --- folding the pane doesn't stop a macro: its
+        // web view stays (parked off-screen by `browser_frame`, never torn
+        // down while it runs) and the status bar says it's running.
+        b.automation.note_user_toggle();
         b.open = false;
         b.editing = false;
         {
@@ -812,8 +852,11 @@ impl MainView {
 
     // ------------------------------------------------------ browser macros
 
-    /// --- browser macros --- A run's `open`: the pane full width and
-    /// visible on `url`, loaded even if it's the page already showing.
+    /// --- browser macros --- A run's `open`: `url` in the browser pane,
+    /// loaded even if it's the page already showing. The pane is the
+    /// ordinary side pane (from the right, `SLIDE_WIDTH` of the window); an
+    /// open pane is reused as it is (full width after a ⌘-click), and one
+    /// the user folded during the run stays folded (the page loads parked).
     pub(crate) fn browser_run_open(
         &mut self,
         url: &str,
@@ -823,12 +866,14 @@ impl MainView {
         if !super::is_web_url(url) {
             return;
         }
+        let first = !self.browser.automation.folded_run(false);
+        self.browser.automation.note_shown();
         let b = &mut self.browser;
-        if !b.open || b.mode != OpenMode::Full {
+        if first && !b.open {
             b.shown += 1;
+            b.open = true;
+            b.mode = OpenMode::Slide;
         }
-        b.open = true;
-        b.mode = OpenMode::Full;
         b.editing = false;
         b.close_gen += 1;
         b.teardown = None;
@@ -836,6 +881,21 @@ impl MainView {
         self.browser.page.url = url.to_string();
         self.browser.page.title.clear();
         self.browser_load(url.to_string(), cx);
+        cx.notify();
+    }
+
+    /// --- browser macros --- Unfold the pane on its page (as ⇧⌘B does,
+    /// without taking the keyboard).
+    pub(crate) fn browser_reveal(&mut self, cx: &mut Context<Self>) {
+        let b = &mut self.browser;
+        if b.open {
+            return;
+        }
+        b.open = true;
+        b.shown += 1;
+        b.editing = false;
+        b.close_gen += 1;
+        b.teardown = None;
         cx.notify();
     }
 
@@ -940,7 +1000,10 @@ impl MainView {
     /// when the pane is closed or covered, and keep the reader's and the
     /// preview's web views out from under the pane.
     pub(crate) fn browser_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let covered = self.sheet.is_some()
+        // --- browser macros --- a macro's sheet beside the side pane
+        // leaves the page in view.
+        let sheet_covers = self.sheet.is_some() && self.macro_sheet_right().is_none();
+        let covered = sheet_covers
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()
@@ -948,10 +1011,14 @@ impl MainView {
             || self.onboarding.tutorial.is_some()
             || self.profile_sheet_open();
         let showing = self.browser.open && !covered;
+        // --- browser macros --- folded while a macro runs: parked.
+        let park = !self.browser.open && self.browser.automation.running();
         {
             let mut p = self.browser.placed.borrow_mut();
             p.suppressed = !showing;
-            if !showing {
+            if park {
+                p.park(window.viewport_size());
+            } else if !showing {
                 p.hide();
             }
         }

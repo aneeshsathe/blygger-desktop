@@ -913,7 +913,7 @@ mod macros {
         assert_eq!(*url.borrow(), "https://substack.com/home");
         view.read_with(cx, |v, _| {
             assert!(v.browser.open);
-            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
+            assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Slide);
         });
     }
 

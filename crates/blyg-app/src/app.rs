@@ -2659,6 +2659,7 @@ impl MainView {
             .children(screen.to_read.map(|t| div().id("to-read").child(t)))
             .children(self.render_server_notice())
             .children(self.render_ext_notice(cx)) // --- extensions ---
+            .children(self.render_macro_status(cx)) // --- browser macros ---
             .children(self.render_update_notice(cx)) // --- auto-update ---
             .children(self.render_ai_status()) // --- AI ---
             .child(
@@ -3289,7 +3290,8 @@ impl MainView {
                 .absolute()
                 .top(px(TITLEBAR_H))
                 .left_0()
-                .right_0()
+                // --- browser macros --- beside the side pane, not over it
+                .right(self.macro_sheet_right().unwrap_or(px(0.)))
                 .flex()
                 .justify_center()
                 .child(
