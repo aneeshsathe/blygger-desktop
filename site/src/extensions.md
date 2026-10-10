@@ -94,6 +94,15 @@ them:
 2. **Post this to Substack Notes?** You see what the notes box now holds. Post
    clicks Substack's Post button; you can also click Post yourself, or cancel.
 
+The run uses the same side pane as a link you click, with the sheets beside
+it so you can see the page. You can fold the pane (esc, ×, or ⇧⌘B) while it
+runs: the run keeps going, and the status bar shows **macro running · show
+pane**. Click that, or press ⇧⌘B, to bring the pane back. The pane comes back
+by itself before the text goes in, and for the second sheet. Afterwards
+it's folded again if it was folded before, unless you folded or unfolded it
+during the run, or you still need the page (you chose to click Post
+yourself, or the run stopped with a problem).
+
 The note is the post's first paragraph of prose (headings, quotes, images and
 code are skipped, and Markdown marks are taken out), a blank line, and the
 link. The whole note is at most 280 characters, the link included, counted as

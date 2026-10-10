@@ -143,7 +143,7 @@ impl MainView {
             );
         }
         let home = entry.site.home.clone();
-        self.open_url_in_app(&home, crate::app::browser::OpenMode::Full, window, cx);
+        self.open_url_in_app(&home, crate::app::browser::OpenMode::Slide, window, cx);
     }
 
     /// A macro row was chosen: check, fill in, prepare, run.

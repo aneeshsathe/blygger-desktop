@@ -70,12 +70,39 @@ pub struct State {
 
 struct Running {
     stop: Rc<Cell<bool>>,
+    /// The pane before the run: open or folded, and in which mode. When the
+    /// run ends it goes back to that (see [`MainView::macro_restore_pane`]).
+    before: (bool, super::OpenMode),
+    /// The run has opened (or reused) the pane: from its first `open`.
+    shown: bool,
+    /// The user folded or unfolded the pane during the run: their choice
+    /// stands, the pane isn't put back afterwards.
+    touched: bool,
 }
 
 impl State {
-    /// A macro is running (the pane is held open, and not torn down).
+    /// A macro is running (its web view is kept alive, folded or not).
     pub fn running(&self) -> bool {
         self.running.is_some()
+    }
+
+    /// A run has the pane, and the user folded it: the status bar says so.
+    pub fn folded_run(&self, open: bool) -> bool {
+        !open && self.running.as_ref().is_some_and(|r| r.shown)
+    }
+
+    /// The user folded or unfolded the pane while a macro runs.
+    pub(crate) fn note_user_toggle(&mut self) {
+        if let Some(r) = self.running.as_mut() {
+            r.touched = true;
+        }
+    }
+
+    /// The run's `open` showed the pane.
+    pub(crate) fn note_shown(&mut self) {
+        if let Some(r) = self.running.as_mut() {
+            r.shown = true;
+        }
     }
 }
 
@@ -148,9 +175,17 @@ impl Page for UiPage<'_> {
     async fn eval(&mut self, op: &Op) -> Option<Reply> {
         let (tx, rx) = async_channel::bounded::<String>(2);
         let js = js::call(op);
+        // Typing (or getting ready to type) in the page: never folded.
+        let types = matches!(
+            op,
+            Op::Focus { .. } | Op::Prep { .. } | Op::Exec { .. } | Op::Synth { .. }
+        );
         let sent = self
             .this
-            .update(self.cx, |v, _| {
+            .update(self.cx, |v, cx| {
+                if types {
+                    v.macro_unfold(cx);
+                }
                 v.browser.with(|s| s.eval_json(&js, tx.clone())).is_some()
             })
             .unwrap_or(false);
@@ -188,15 +223,17 @@ impl Page for UiPage<'_> {
     }
 
     fn focus_page(&mut self) {
-        let _ = self
-            .this
-            .update(self.cx, |v, _| v.browser.with(|s| s.focus_page()));
+        let _ = self.this.update(self.cx, |v, cx| {
+            v.macro_unfold(cx);
+            v.browser.with(|s| s.focus_page())
+        });
     }
 
     fn paste(&mut self) {
-        let _ = self
-            .this
-            .update(self.cx, |v, _| v.browser.with(|s| s.edit_command("paste:")));
+        let _ = self.this.update(self.cx, |v, cx| {
+            v.macro_unfold(cx);
+            v.browser.with(|s| s.edit_command("paste:"))
+        });
     }
 
     fn has_edit_commands(&self) -> bool {
@@ -341,7 +378,12 @@ impl MainView {
             self.browser.with(|s| s.refresh_blocking());
         }
         let stop = Rc::new(Cell::new(false));
-        self.browser.automation.running = Some(Running { stop: stop.clone() });
+        self.browser.automation.running = Some(Running {
+            stop: stop.clone(),
+            before: (self.browser.open, self.browser.mode),
+            shown: false,
+            touched: false,
+        });
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let mut page = UiPage {
@@ -381,7 +423,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.browser.automation.running = None;
+        let ran = self.browser.automation.running.take();
         if matches!(
             self.sheet,
             Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
@@ -443,7 +485,44 @@ impl MainView {
             }
         };
         self.show_toast(text, sub.map(Into::into), cx);
+        if let Some(r) = ran {
+            self.macro_restore_pane(&r, &out, window, cx);
+        }
         cx.notify();
+    }
+
+    /// The run is over: the pane goes back to how the user had it (folded
+    /// again if it was folded), unless they folded or unfolded it during the
+    /// run, or the outcome needs the page: the text is waiting for them to
+    /// click Post themselves, the run failed (signed out, a step missed), or
+    /// it stopped after Post was clicked (check whether it posted).
+    fn macro_restore_pane(
+        &mut self,
+        r: &Running,
+        out: &Outcome,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (was_open, mode) = r.before;
+        let needs_page = matches!(
+            out,
+            Outcome::Handed { .. } | Outcome::Failed(_) | Outcome::Cancelled { after_submit: true }
+        );
+        if r.touched || needs_page || was_open || !self.browser.open {
+            return;
+        }
+        self.close_browser(window, cx);
+        self.browser.mode = mode;
+    }
+
+    /// The run is about to type in the page, or asks the user to check it
+    /// (the Post sheet): a folded pane comes back, because a macro only
+    /// fills in the pane the user watches. Navigating and waiting go on
+    /// folded.
+    pub(crate) fn macro_unfold(&mut self, cx: &mut Context<Self>) {
+        if self.browser.automation.folded_run(self.browser.open) {
+            self.browser_reveal(cx);
+        }
     }
 
     fn macro_show_preview(
@@ -471,6 +550,8 @@ impl MainView {
                 }
             },
         ));
+        // The sheet's keys, not the page's (it may sit beside the pane).
+        self.browser.with(|s| s.focus_parent());
         editor.update(cx, |s, cx| s.focus(window, cx));
         self.sheet_gen += 1;
         self.sheet = Some(Sheet::MacroPreview(PreviewSheet {
@@ -507,6 +588,10 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        // The user checks the page beside this sheet: a folded pane comes
+        // back. ⏎ and esc are the sheet's, not the composer's.
+        self.macro_unfold(cx);
+        self.browser.with(|s| s.focus_parent());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         self.sheet_gen += 1;
@@ -548,6 +633,41 @@ impl MainView {
             cx.background_executor()
                 .timer(Duration::from_millis(700))
                 .await;
+            // `BLYGGER_DEMO_HOLD_MS`: the sheet stays up longer (a window
+            // screenshot); with `BLYGGER_DEMO_FOLD=1`, the Post sheet's pane
+            // is folded for that time and unfolded again (⇧⌘B both ways).
+            let hold = std::env::var("BLYGGER_DEMO_HOLD_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let fold = which == "post" && std::env::var_os("BLYGGER_DEMO_FOLD").is_some();
+            if hold > 0 {
+                println!("macro-hold {which}");
+                cx.background_executor()
+                    .timer(Duration::from_millis(hold))
+                    .await;
+            }
+            if fold {
+                let _ = this.update_in(cx, |v, window, cx| {
+                    v.toggle_browser(&super::ToggleBrowser, window, cx);
+                    println!(
+                        "macro-folded open={} running={} alive={}",
+                        v.browser.open,
+                        v.browser.automation.running(),
+                        v.browser.alive()
+                    );
+                });
+                cx.background_executor()
+                    .timer(Duration::from_millis(hold.max(500)))
+                    .await;
+                let _ = this.update_in(cx, |v, window, cx| {
+                    v.toggle_browser(&super::ToggleBrowser, window, cx);
+                    println!("macro-unfolded open={}", v.browser.open);
+                });
+                cx.background_executor()
+                    .timer(Duration::from_millis(500))
+                    .await;
+            }
             if let Some(dir) = dir {
                 for _ in 0..2 {
                     let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -803,6 +923,67 @@ impl MainView {
     }
 }
 
+/// The narrowest room left of the pane that a macro sheet sits in; with
+/// less, it drops over the pane as other sheets do.
+pub const SHEET_ROOM_MIN: f32 = 360.;
+
+impl MainView {
+    /// Where the Preview or Post sheet sits: beside the open side pane, over
+    /// the app's content, so the page stays in view (`Some(the pane's
+    /// width)`, the sheet's right margin). `None`: centred over the window
+    /// as other sheets are (the pane full width, folded, or the window too
+    /// narrow); the web view then hides under it.
+    pub(crate) fn macro_sheet_right(&self) -> Option<Pixels> {
+        if !matches!(
+            self.sheet,
+            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
+        ) {
+            return None;
+        }
+        let b = &self.browser;
+        if !b.open || b.mode != super::OpenMode::Slide {
+            return None;
+        }
+        let width = b.viewport_width();
+        let left = b.left_edge(width - self.notes.room());
+        (f32::from(left) >= SHEET_ROOM_MIN).then(|| width - left)
+    }
+
+    /// The status bar's "macro running" mark while the user has the pane
+    /// folded: a click (or ⇧⌘B) unfolds it.
+    pub(crate) fn render_macro_status(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.browser.automation.folded_run(self.browser.open) {
+            return None;
+        }
+        let p = self.palette.on_status();
+        Some(
+            div()
+                .id("macro-folded")
+                .debug_selector(|| "macro-folded".into())
+                .flex()
+                .items_center()
+                .gap(px(5.))
+                .cursor_pointer()
+                .text_color(self.palette.on_status_text(p.accent))
+                .hover(|s| s.text_color(p.ink))
+                .tooltip(|_, cx| {
+                    cx.new(|_| {
+                        crate::app::reading::Tip(
+                            "A macro is running in the folded browser pane: show it  ⇧⌘B".into(),
+                        )
+                    })
+                    .into()
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.toggle_browser(&super::ToggleBrowser, window, cx)
+                }))
+                .child(div().size(px(6.)).rounded_full().bg(p.accent))
+                .child("macro running · show pane")
+                .into_any_element(),
+        )
+    }
+}
+
 /// A key and what it does, as the other sheets show them.
 fn sheet_key(theme: &crate::theme::Theme, k: &'static str, label: &'static str) -> Div {
     div()
@@ -865,7 +1046,7 @@ impl MainView {
                     // The fixture's own sign-in button (a session cookie).
                     let url = format!("{base}/login.html");
                     let _ = this.update_in(cx, |v, window, cx| {
-                        v.open_url_in_app(&url, super::OpenMode::Full, window, cx)
+                        v.open_url_in_app(&url, super::OpenMode::Slide, window, cx)
                     });
                     pause(1500).await;
                     let _ = this.update(cx, |v, _| {
