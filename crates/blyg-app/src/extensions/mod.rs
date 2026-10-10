@@ -133,6 +133,47 @@ pub fn allow_changes(cfg: &Config, name: &str, caps: &[Capability]) -> Vec<(&'st
     out
 }
 
+/// `key`'s values without the ones `drop` picks; `Remove` (no `key =`
+/// line left behind) when none stay.
+fn without_values(
+    cfg: &Config,
+    key: &'static str,
+    drop: impl Fn(&str) -> bool,
+) -> Option<(&'static str, Change)> {
+    let v = cfg.list(key);
+    let kept: Vec<String> = v.iter().filter(|x| !drop(x)).cloned().collect();
+    if kept.len() == v.len() {
+        return None;
+    }
+    Some((
+        key,
+        if kept.is_empty() {
+            Change::Remove
+        } else {
+            Change::List(kept)
+        },
+    ))
+}
+
+/// The config changes that turn `name` off: its `extension` lines go.
+/// Its `extension-allow` and `extension-setting` lines stay, so Turn on
+/// brings it back as it was, unless `forget_grants`, which drops its
+/// `extension-allow` lines too (the next Turn on asks again).
+pub fn disable_changes(
+    cfg: &Config,
+    name: &str,
+    forget_grants: bool,
+) -> Vec<(&'static str, Change)> {
+    let mut out = vec![];
+    out.extend(without_values(cfg, "extension", |v| v.trim() == name));
+    if forget_grants {
+        out.extend(without_values(cfg, "extension-allow", |v| {
+            v.split_whitespace().next() == Some(name)
+        }));
+    }
+    out
+}
+
 /// markdown-notes' settings as the config has them now.
 fn notes_settings(cfg: &Config) -> BTreeMap<String, String> {
     blyg_ext::settings_from_lines(&cfg.list("extension-setting"))
