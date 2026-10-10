@@ -14,7 +14,8 @@
 //!    owner signs in to the studio there and allows Burrow. The code comes
 //!    back to a listener on 127.0.0.1 ([`Loopback`]).
 //! 4. **Exchange** the code for a one-hour access token and a rotating
-//!    refresh token, bound to the API resource, with all four owner scopes.
+//!    refresh token, bound to the API resource, with every owner scope the
+//!    server knows ([`SCOPE`]).
 //!
 //! The grant ([`OAuthGrant`]) is kept as JSON under `<host> oauth`. An
 //! [`OAuthSession`] renews it shortly before it expires and after a 401,
@@ -41,10 +42,34 @@ use sha2::{Digest, Sha256};
 use crate::backend::{CoreError, Result};
 use crate::config::{TokenStore, token_account};
 
-/// The owner scopes (upstream `src/permissions.ts` `OWNER_SCOPES`).
-pub const OWNER_SCOPES: [&str; 4] = ["owner:read", "owner:draft", "owner:publish", "owner:manage"];
-/// What Burrow asks for: every owner scope, and a refresh token.
-pub const SCOPE: &str = "owner:read owner:draft owner:publish owner:manage offline_access";
+/// The read-state scope's name, the one place it's spelled (`READ_STATE_SCOPE`,
+/// `SCOPE` and `MANUAL_TOKEN_PERMISSIONS` all expand it). Studio 0.39 moved
+/// markRead, markUnread and both batch ops from `owner:manage` to it.
+/// PROVISIONAL: upstream may rename it; change it here.
+macro_rules! read_state_scope {
+    () => {
+        "reading:state"
+    };
+}
+/// The scope read-state writes need (studio 0.39+). Provisional name.
+pub const READ_STATE_SCOPE: &str = read_state_scope!();
+/// The owner scopes (upstream `src/auth-scopes.ts` `OWNER_SCOPES`, in its
+/// order, which is also the consent page's).
+pub const OWNER_SCOPES: [&str; 5] = [
+    "owner:read",
+    "owner:draft",
+    "owner:publish",
+    "owner:manage",
+    READ_STATE_SCOPE,
+];
+/// What Burrow asks for: every owner scope, and a refresh token. A studio
+/// that doesn't know one of them (`reading:state` before 0.39) refuses the
+/// lot, so `discover` keeps only those the server lists (`Discovery::scope`).
+pub const SCOPE: &str = concat!(
+    "owner:read owner:draft owner:publish owner:manage ",
+    read_state_scope!(),
+    " offline_access"
+);
 /// The name the studio's consent page shows (self-asserted).
 pub const CLIENT_NAME: &str = "Burrow";
 /// The loopback callback's path.
@@ -151,6 +176,14 @@ fn auth_param(header: &str, name: &str) -> Option<String> {
     None
 }
 
+/// The permissions a manual token needs, as Studio → More → Client access
+/// words them (`reading:state` is studio 0.39+; an older studio doesn't offer it).
+pub const MANUAL_TOKEN_PERMISSIONS: &str = concat!(
+    "every permission (read, draft, publish, manage, and ",
+    read_state_scope!(),
+    " where offered)"
+);
+
 /// What to say when the blyg answered 403 "insufficient scope". `granted`
 /// is the grant's scopes when known (browser sign-in); a manual token's
 /// aren't, so it names everything the call needed.
@@ -171,10 +204,10 @@ pub fn missing_scope_message(required: &[String], granted: Option<&str>) -> Stri
     };
     match granted {
         Some(_) => format!(
-            "The blyg refused: Burrow's sign-in lacks {named}. Sign in with the browser again and allow all four permissions."
+            "The blyg refused: Burrow's sign-in lacks {named}. Sign in with the browser again and allow every permission."
         ),
         None => format!(
-            "The blyg refused: this token lacks {named}. Make a new one in Studio → More → Client access, for the REST API, with all four permissions (read, draft, publish, manage)."
+            "The blyg refused: this token lacks {named}. Make a new one in Studio → More → Client access, for the REST API, with {MANUAL_TOKEN_PERMISSIONS}."
         ),
     }
 }
@@ -191,6 +224,22 @@ pub struct Discovery {
     pub revocation_endpoint: Option<String>,
     /// The REST API's resource identifier (`{origin}/api`).
     pub resource: String,
+    /// The `scope` Burrow asks this server for: [`SCOPE`], less any scope its
+    /// `scopes_supported` leaves out (an unknown one is `invalid_scope`).
+    pub scope: String,
+}
+
+/// [`SCOPE`] less what a server's `scopes_supported` leaves out; all of it
+/// when the server doesn't list them.
+pub fn scope_for(supported: Option<&[Value]>) -> String {
+    match supported {
+        None => SCOPE.to_string(),
+        Some(list) => SCOPE
+            .split(' ')
+            .filter(|s| list.iter().any(|x| x == s))
+            .collect::<Vec<_>>()
+            .join(" "),
+    }
 }
 
 /// `{blyg-url}/studio/auth/.well-known/openid-configuration`.
@@ -240,6 +289,11 @@ pub fn discover(base_url: &str) -> Result<Option<Discovery>> {
                 .map(str::to_string)
         })
         .unwrap_or_else(|| format!("{}/api", super::api_root(base_url)));
+    let scope = scope_for(
+        doc.get("scopes_supported")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice),
+    );
     Ok(Some(Discovery {
         issuer,
         authorization_endpoint,
@@ -247,6 +301,7 @@ pub fn discover(base_url: &str) -> Result<Option<Discovery>> {
         registration_endpoint: registration,
         revocation_endpoint: s("revocation_endpoint"),
         resource,
+        scope,
     }))
 }
 
@@ -270,7 +325,7 @@ pub fn register(d: &Discovery) -> Result<Client> {
         "token_endpoint_auth_method": "none",
         "grant_types": ["authorization_code", "refresh_token"],
         "response_types": ["code"],
-        "scope": SCOPE,
+        "scope": d.scope,
     });
     let v: Value = match agent().post(&d.registration_endpoint).send_json(body) {
         Ok(r) => r
@@ -365,7 +420,7 @@ pub fn authorize_url(
         q.append_pair("response_type", "code")
             .append_pair("client_id", client_id)
             .append_pair("redirect_uri", redirect)
-            .append_pair("scope", SCOPE)
+            .append_pair("scope", &d.scope)
             .append_pair("state", state)
             .append_pair("code_challenge", challenge)
             .append_pair("code_challenge_method", "S256")
@@ -902,6 +957,7 @@ mod tests {
             registration_endpoint: "https://blyg.example.com/studio/auth/oauth2/register".into(),
             revocation_endpoint: None,
             resource: "https://blyg.example.com/api".into(),
+            scope: SCOPE.into(),
         };
         let u = authorize_url(&d, "cid", &redirect_uri(47811), "chal", "st", None).unwrap();
         let u = url::Url::parse(&u).unwrap();
@@ -916,13 +972,42 @@ mod tests {
         assert_eq!(q["resource"], "https://blyg.example.com/api");
         assert_eq!(
             q["scope"],
-            "owner:read owner:draft owner:publish owner:manage offline_access"
+            "owner:read owner:draft owner:publish owner:manage reading:state offline_access"
         );
         assert!(!q.contains_key("prompt"));
         assert_eq!(
             discovery_url("https://blyg.example.com/blyg/"),
             "https://blyg.example.com/blyg/studio/auth/.well-known/openid-configuration"
         );
+    }
+
+    #[test]
+    fn scope_lists_every_owner_scope_once() {
+        assert_eq!(READ_STATE_SCOPE, "reading:state");
+        assert_eq!(SCOPE, format!("{} offline_access", OWNER_SCOPES.join(" ")));
+        assert!(MANUAL_TOKEN_PERMISSIONS.contains(READ_STATE_SCOPE));
+    }
+
+    #[test]
+    fn asks_only_for_the_scopes_a_server_knows() {
+        // Studio 0.39+ lists reading:state; an older one doesn't, and would
+        // refuse an authorize or registration that asks for it.
+        let new: Vec<Value> = ["openid", "offline_access"]
+            .iter()
+            .chain(OWNER_SCOPES.iter())
+            .map(|s| json!(s))
+            .collect();
+        assert_eq!(scope_for(Some(&new)), SCOPE);
+        let old: Vec<Value> = new
+            .iter()
+            .filter(|v| *v != READ_STATE_SCOPE)
+            .cloned()
+            .collect();
+        assert_eq!(
+            scope_for(Some(&old)),
+            "owner:read owner:draft owner:publish owner:manage offline_access"
+        );
+        assert_eq!(scope_for(None), SCOPE);
     }
 
     #[test]
@@ -945,6 +1030,15 @@ mod tests {
         let m = missing_scope_message(&["owner:publish".into()], None);
         assert!(m.contains("Studio → More → Client access"), "{m}");
         assert!(m.contains("owner:publish"), "{m}");
+        // An older browser sign-in, without the read-state scope.
+        let m = missing_scope_message(
+            &[READ_STATE_SCOPE.into()],
+            Some("owner:read owner:draft owner:publish owner:manage offline_access"),
+        );
+        assert!(m.contains("lacks the reading:state permission"), "{m}");
+        assert!(m.contains("Sign in with the browser again"), "{m}");
+        let m = missing_scope_message(&[READ_STATE_SCOPE.into()], None);
+        assert!(m.contains("reading:state where offered"), "{m}");
     }
 
     #[test]

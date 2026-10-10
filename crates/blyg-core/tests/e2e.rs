@@ -5,7 +5,7 @@
 //!
 //! - `BLYG_E2E_URL`   the Worker under test (e.g. `http://127.0.0.1:18787`)
 //! - `BLYG_E2E_TOKEN` its `BLYG_OWNER_TOKEN`, or on studio 0.28+ a manual
-//!   token minted with all four owner scopes
+//!   token minted with every owner scope (`reading:state` too, on 0.39+)
 //! - `BLYG_E2E_TOKEN_B` the same for `BLYG_E2E_URL_B` (studio 0.28+ only;
 //!   without it, `b` takes `a`'s credential)
 //! - `BLYG_E2E_OWNER_PASSWORD` its studio password, always: the browser
@@ -2105,7 +2105,7 @@ fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
     assert_eq!(
         scopes,
         blyg_core::api::oauth::OWNER_SCOPES,
-        "all four offered"
+        "every owner scope offered (reading:state: studio 0.39+)"
     );
     let mut form: Vec<(&str, &str)> = vec![("handle", &handle), ("decision", "allow")];
     form.extend(scopes.iter().map(|s| ("scope", s.as_str())));
@@ -2391,6 +2391,205 @@ fn a_token_without_a_scope_says_which() {
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
     assert_eq!(server_item(&sid)["content_md"], text);
+}
+
+/// A manual token with `scope`, minted as Studio → More → Client access
+/// does; `None` (skipped) on a studio without manual tokens.
+fn minted_token(scope: &[&str]) -> Option<String> {
+    let e = e2e();
+    let password = owner_password()?;
+    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let minted = match agent()
+        .post(&format!("{}/api/authorizations", e.url))
+        .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
+        .send_json(json!({"name": "burrow-e2e-scoped", "scope": scope, "resource": "api"}))
+    {
+        Ok(r) => r.into_json::<Value>().unwrap(),
+        Err(ureq::Error::Status(404, _)) => return None,
+        Err(e) => panic!("minting a token: {e}"),
+    };
+    Some(
+        minted["access_token"]
+            .as_str()
+            .expect("a token")
+            .to_string(),
+    )
+}
+
+/// The read/unread ops waiting in a closed backend's outbox.
+fn queued_reads(dir: &Path) -> usize {
+    let store = blyg_core::store::Store::open(&dir.join(blyg_core::live::DB_FILE)).unwrap();
+    store
+        .ops()
+        .unwrap()
+        .iter()
+        .filter(|o| {
+            matches!(
+                o.kind,
+                blyg_core::store::OpKind::Read | blyg_core::store::OpKind::Unread
+            )
+        })
+        .count()
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn read_state_needs_its_own_scope() {
+    // Studio 0.39 moved the read-state writes from owner:manage to
+    // reading:state (provisional name). A sign-in from before then holds
+    // the four owner scopes only: its reads are refused, stay queued, and
+    // go once a credential with the scope arrives; the rest still syncs.
+    use blyg_core::api::oauth::READ_STATE_SCOPE;
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let Some(page) = api.stock_reading(0).unwrap() else {
+        eprintln!("SKIP: no GET /api/reading");
+        return;
+    };
+    if !e.stock || !page.read_sync() {
+        eprintln!("SKIP: needs a stock studio that keeps read state (0.39+)");
+        return;
+    }
+    let old_four = ["owner:read", "owner:draft", "owner:publish", "owner:manage"];
+    let Some(old) = minted_token(&old_four) else {
+        eprintln!("SKIP: no manual tokens here");
+        return;
+    };
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let source = backend_at(d3.path(), &src_url, cred_b(), false);
+    let t = tag("scope");
+    let (_, a) = published(&source, Kind::Fragment, &format!("{t} A"), None);
+    let owner_mac = manual(d2.path());
+    let sub = owner_mac.subscribe(&src_url, Some("Scope")).unwrap();
+    let _unsub = Unsub(&owner_mac, sub.id.clone());
+    sync_until_held(&owner_mac, &[&a]);
+
+    // The API names the missing scope, never the token.
+    let scoped = Api::new(&e.url, Credential::Token(old.clone()));
+    match scoped.put_read(&sub.id, &a, 1, None) {
+        Err(CoreError::Rejected {
+            status: 403,
+            message,
+            ..
+        }) => {
+            assert!(message.contains(READ_STATE_SCOPE), "{message}");
+            assert!(!message.contains(&old), "never the token");
+        }
+        other => panic!("expected a 403 naming {READ_STATE_SCOPE}, got {other:?}"),
+    }
+    assert_eq!(server_read_version(&a), Some(Value::Null));
+
+    // The app on that token: the read is held, the draft still goes.
+    let b = backend_at(d1.path(), &e.url, Credential::Token(old), false);
+    let (tx, rx) = std::sync::mpsc::channel();
+    b.set_event_sink(Box::new(move |ev| {
+        if let CoreEvent::Error(m) = ev {
+            let _ = tx.send(m);
+        }
+    }));
+    sync_until_held(&b, &[&a]);
+    assert_eq!(b.set_read(&[(sub.id.clone(), a.clone())], true).unwrap(), 1);
+    let text = tag("goes-anyway");
+    let id = b.create_draft(Kind::Fragment, &text).unwrap();
+    b.sync_now().expect("other sync keeps working");
+    assert_eq!(server_item(&sid_of(&b, &id))["content_md"], text);
+    assert_eq!(server_read_version(&a), Some(Value::Null), "refused");
+    assert!(!reading_item(&b, &a).unwrap().is_unread(), "read here");
+    b.sync_now().unwrap();
+    b.sync_now().unwrap();
+    let notices: Vec<String> = rx.try_iter().collect();
+    let about_reads: Vec<&String> = notices
+        .iter()
+        .filter(|m| m.contains("Read state"))
+        .collect();
+    assert_eq!(about_reads.len(), 1, "said once: {notices:?}");
+    assert!(
+        about_reads[0].contains(READ_STATE_SCOPE),
+        "{}",
+        about_reads[0]
+    );
+    assert!(
+        about_reads[0].contains("Client access"),
+        "a manual token: make a new one: {}",
+        about_reads[0]
+    );
+    drop(b);
+    assert_eq!(queued_reads(d1.path()), 1, "the read is still queued");
+
+    // A credential with reading:state (a new sign-in) sends it.
+    let b = manual(d1.path());
+    b.sync_now().unwrap();
+    assert_eq!(server_read_version(&a), Some(json!(1)));
+    drop(b);
+    assert_eq!(queued_reads(d1.path()), 0);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn signing_in_again_with_a_kept_client_adds_reading_state() {
+    // An existing user's fix for held read state: sign in again. Burrow 0.10
+    // registered (and kept) its client asking for the four owner scopes;
+    // the studio doesn't hold a client to its registered scope, so the kept
+    // client is reused and the new grant has reading:state.
+    use blyg_core::api::oauth::{self, READ_STATE_SCOPE, client_key};
+    let e = e2e();
+    let Some(d) = oauth::discover(&e.url).unwrap() else {
+        eprintln!("skipped: this studio has no browser sign-in (older than 0.28)");
+        return;
+    };
+    if !d.scope.split(' ').any(|s| s == READ_STATE_SCOPE) {
+        eprintln!("skipped: this studio has no {READ_STATE_SCOPE} (older than 0.39)");
+        return;
+    }
+    let r: Value = agent()
+        .post(&d.registration_endpoint)
+        .send_json(json!({
+            "client_name": oauth::CLIENT_NAME,
+            "application_type": "native",
+            "redirect_uris": oauth::registered_redirect_uris(),
+            "token_endpoint_auth_method": "none",
+            "grant_types": ["authorization_code", "refresh_token"],
+            "response_types": ["code"],
+            "scope": "owner:read owner:draft owner:publish owner:manage offline_access",
+        }))
+        .expect("register a 0.10-style client")
+        .into_json()
+        .unwrap();
+    let old_id = r["client_id"].as_str().unwrap().to_string();
+    let mem = config::MemoryTokenStore::default();
+    let store: &dyn config::TokenStore = &mem;
+    store
+        .set(
+            &client_key(&e.url),
+            &json!({"issuer": d.issuer, "client_id": old_id,
+                    "redirect_uris": oauth::registered_redirect_uris()})
+            .to_string(),
+        )
+        .unwrap();
+    let Some(grant) = signed_in_with_browser(store) else {
+        return;
+    };
+    assert_eq!(grant.client_id, old_id, "the kept client is reused");
+    assert!(
+        grant.scope.split(' ').any(|s| s == READ_STATE_SCOPE),
+        "{}",
+        grant.scope
+    );
+    // And it may write read state (refused for a reading row it doesn't
+    // know only as `stored: false`, never 403).
+    let api = Api::new(
+        &e.url,
+        Credential::OAuth(oauth::OAuthSession::new(grant.clone())),
+    );
+    match api.put_read("no-such-sub", "no-such-item", 1, None) {
+        Ok(_) => {}
+        Err(e) => panic!("a reading:state grant may write read state: {e:?}"),
+    }
 }
 
 // ------------------------------------------------- studio 0.30–0.33 reading
