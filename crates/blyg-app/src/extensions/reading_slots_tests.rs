@@ -322,7 +322,24 @@ fn the_more_chip_opens_inspect_and_copies_the_json(cx: &mut TestAppContext) {
     env.cx.run_until_parked();
     assert!(env.cx.debug_bounds("slot-fields").is_some());
     assert!(env.cx.debug_bounds("slot-code").is_some());
-    let copy = env.cx.debug_bounds("slot-copy").expect("Copy JSON");
+    // The sheet slides in in real time: click Copy once it has stopped
+    // moving, or the click can land where it was (seen on Windows CI).
+    let started = std::time::Instant::now();
+    let mut last = None;
+    let copy = loop {
+        env.cx.update(|window, _| window.refresh());
+        env.cx.run_until_parked();
+        let b = env.cx.debug_bounds("slot-copy").expect("Copy JSON");
+        if last == Some(b) {
+            break b;
+        }
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "Copy JSON kept moving"
+        );
+        last = Some(b);
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    };
     env.cx
         .simulate_click(copy.center(), gpui_kit::Modifiers::none());
     env.cx.run_until_parked();
