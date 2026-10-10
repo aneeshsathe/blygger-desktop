@@ -663,7 +663,7 @@ impl MainView {
             .child(vm::when_label(r, self.now))
             .child("·")
             .child(stream_vm::kind_word(r.kind))
-            // --- lineage --- which kinds of relation, never how many.
+            // --- lineage --- which kinds of relation, and how many.
             .children(self.render_lineage_glyph(r, cx))
             .when(edited, |d| {
                 d.child(badge(p, format!("edited · v{}", r.version)))

@@ -892,7 +892,7 @@ impl MainView {
                                 .child(b),
                         )
                     })
-                    // --- lineage --- which kinds, never how many.
+                    // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
                     .child(when),

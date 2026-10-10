@@ -45,7 +45,7 @@ pub const RELEASES: &[Release] = &[
         version: "0.8.0",
         items: &[
             "Lineage: a glyph beside each post's name shows which kinds of post it draws on and \
-         which draw on it (fork, reply, quote), never how many.",
+         which draw on it (fork, reply, quote), and how many.",
             "⌘J opens a post's lineage: what it draws on above, its responses below. Walk it one \
          step at a time with ⏎ and ⌫.",
             "Space on the post in the middle opens its actions on a ring: fork, reply, quote, link \

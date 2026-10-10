@@ -155,9 +155,7 @@ impl MainView {
     /// This post has responses in your network (the glyph's right side).
     #[cfg(test)]
     pub(crate) fn has_responses(&self, origin: &str, id: &str) -> bool {
-        self.reading
-            .down
-            .contains_key(&blyg_core::post_key(origin, id))
+        !self.reading.lineage.down(origin, id).is_empty()
     }
 
     /// The responses list for `(origin, id)`; `None` when there are none.

@@ -4,6 +4,7 @@
 pub mod api;
 pub mod backend;
 pub mod config;
+pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod model;
 pub mod pick;

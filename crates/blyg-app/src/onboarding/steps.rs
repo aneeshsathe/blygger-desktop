@@ -396,7 +396,7 @@ pub const STEPS: &[Step] = &[
         id: "lineage",
         title: "Lineage: where a post comes from",
         caption: "The glyph beside a post's name shows which kinds of post it draws on (left) \
-                  and which draw on it (right): fork, reply, quote, never how many. ⌘J, or a \
+                  and which draw on it (right): fork, reply, quote, then how many each way. ⌘J, or a \
                   click on it, opens the map: arrows move, ⏎ makes a neighbour the centre, \
                   ⌫ walks back.",
         keys: &[Key::Lineage],
