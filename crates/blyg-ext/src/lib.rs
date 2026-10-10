@@ -22,6 +22,7 @@ pub mod grants;
 pub mod host;
 pub mod manifest;
 pub mod protocol;
+pub mod reading; // --- reading slots ---
 pub mod recipe;
 pub mod rpc;
 pub mod spawn;

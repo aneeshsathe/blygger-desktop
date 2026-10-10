@@ -22,3 +22,10 @@ name = "bxp-test-ext"
 path = "src/bin/bxp-test-ext.rs"
 test = false
 doc = false
+
+# --- reading slots --- The test extension `tests/reading.rs` spawns.
+[[bin]]
+name = "bxp-slots-ext"
+path = "src/bin/bxp-slots-ext.rs"
+test = false
+doc = false

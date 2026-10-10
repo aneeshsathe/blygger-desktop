@@ -120,7 +120,8 @@ fn ext_with_an_unknown_name_exits_2() {
     let err = String::from_utf8_lossy(&o.stderr);
     assert!(
         err.contains(
-            "`no-such-thing` isn't a bundled extension (bundled: markdown-notes, cross-post)"
+            "`no-such-thing` isn't a bundled extension \
+             (bundled: markdown-notes, cross-post, reading-time, inspect)"
         ),
         "{err}"
     );

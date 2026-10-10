@@ -77,6 +77,9 @@ fn launch(data_dir: PathBuf) -> Launch {
         program: std::env::current_exe().expect("the test binary"),
         args: child_args(child_name()),
         crosspost_args: child_args(child_test("cross_post_child")),
+        // --- reading slots --- never enabled here (reading_slots_tests.rs).
+        reading_time_args: vec![],
+        inspect_args: vec![],
         data_dir,
         timing: blyg_ext::Timing::default(),
     }
