@@ -415,6 +415,15 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),
                 MenuItem::action("Subscribe…", app::reading::SubscribeTo),
+                // --- OPML ---
+                MenuItem::action(
+                    "Import Subscriptions from OPML…",
+                    app::reading::opml::ImportOpml,
+                ),
+                MenuItem::action(
+                    "Export Subscriptions as OPML…",
+                    app::reading::opml::ExportOpml,
+                ),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
                 // --- profiles ---
                 MenuItem::separator(),

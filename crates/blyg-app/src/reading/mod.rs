@@ -24,6 +24,9 @@ pub(crate) mod lineage_vm;
 mod list;
 mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod opml; // --- OPML import/export ---
+#[cfg(test)]
+mod opml_tests;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
 mod site_settings;
@@ -239,6 +242,8 @@ pub enum RSheet {
     },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
+    /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
+    Opml(Box<opml::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
     /// brackets with `picker_typing = panel`).
     Quote {
@@ -462,6 +467,7 @@ impl MainView {
         .on_action(cx.listener(|this, _: &SubscribeTo, window, cx| this.open_subscribe(window, cx)))
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
+        .map(|d| self.opml_actions(d, cx)) // --- OPML ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -809,6 +815,7 @@ impl MainView {
             RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
+            RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
         };
         Some(self.sheet_frame(width, content, cx))
     }

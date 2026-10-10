@@ -1186,6 +1186,14 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
             if let Some(issues) = body.get("issues").and_then(Value::as_array) {
                 details.extend(issues.iter().map(issue));
             }
+            // An unresolvable subscribe (422): `tried: [url, …]`.
+            if let Some(tried) = body.get("tried").and_then(Value::as_array) {
+                let n = tried.len();
+                details.push(format!(
+                    "tried {n} address{}",
+                    if n == 1 { "" } else { "es" }
+                ));
+            }
             Err(CoreError::Rejected {
                 status: code,
                 message,
