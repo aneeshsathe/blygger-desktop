@@ -163,7 +163,8 @@ It downloads the pinned mdBook release into `target/` the first time
 (checksum-verified), and fails on an mdBook error (such as a missing
 `\{{#include}}` file) or a broken internal link. CI runs it on every pull request. With mdBook installed
 yourself, `mdbook serve site` serves the site at `http://localhost:3000` and
-rebuilds it as you edit.
+rebuilds it as you edit. Run `python3 scripts/community-extensions.py render`
+once first: the Community extensions page is generated, not committed.
 
 `.github/workflows/pages.yml` publishes the site to GitHub Pages on every push
 to `main` that touches the site, `docs/`, the config keys, the keymap or the
