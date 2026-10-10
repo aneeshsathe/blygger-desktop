@@ -15,6 +15,25 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-09
+
+### Added
+
+- **Turn an extension off.** Manage extensions (⇧⌘P › Manage extensions…) has **Turn off** for any extension that's on, whatever state it's in. It stops the extension and keeps what you allowed, so Turn on brings it back as it was. **Forget permissions** turns it off and clears what you allowed, so the next Turn on asks again. The consent sheet gains **⌘⌫ turn off**, so you can back out the moment you see what an extension asks for.
+- **Several notes folders.** markdown-notes can open any number of folders (Obsidian vaults, say). The Notes tab in the notes drawer has a chip for each folder, plus **Add folder…** and **Remove from Burrow** (which only removes the folder from Burrow and never touches your files), and remembers the folder you were in. Settings › Notes folders lists them, and you can add several at once. ⌘K's notes chip searches every folder. In the config they are `vault=` for the first and `vault-<label>=` for each one after.
+- **Reading time and Inspect**, two bundled extensions ported from Blygger Studio 0.39, both off until you turn them on. **reading-time** puts an estimated reading time at the end of each post's byline in the Stream and the Reader ("· 4 min"; hover for the word count), counted the way the studio counts. **inspect** adds a ⋯ chip to each post you read, with an Inspect sheet showing the record Burrow holds (ids, versions, references, hashes) and its JSON with the bodies left out, with Copy JSON.
+- **Extensions can add to what you read.** Two new slots in the extension protocol, behind the `reading.read` permission: a short marker at the end of each post's byline, and rows in a post's ⋯ sheet. See [Extensions](https://aneeshsathe.github.io/blygger-desktop/extensions.html).
+- **Import and export subscriptions as OPML.** Blyg › Import Subscriptions from OPML… (or Import OPML… on the Subscriptions screen) reads an export from another feed reader, lists its feeds with the ones you already follow marked, and subscribes your blyg to the ones you tick, at a steady pace, filing them in an **Imported feeds** folder in the Reader, with a summary and Retry for any that fail. Imported feeds stay out of your public blogroll. Blyg › Export Subscriptions as OPML… saves all of them. `blygger +import-opml` and `+export-opml` do the same from a terminal.
+- **Community extensions.** The docs now list extensions other people have made, from `extensions/community.toml`; submit yours with a pull request or the issue form. Burrow's maintainers don't review or vouch for them: an extension runs with your user's rights, so read its source and use it at your own risk.
+
+### Changed
+
+- **The lineage glyph shows counts.** Beside the kinds, the glyph shows how many posts a post draws on and how many known here draw on it ("2 · 3"). The ⌘J view and the action ring show the same numbers, by kind. On a blyg that runs the studio's lineage-glyph extension, Burrow uses the blyg's own counts; elsewhere it works them out from what it holds, using the same rules. Opening a post from ⌘J marks it read, as opening it from the list does.
+- **Read state needs the `reading:state` permission** (Blygger Studio 0.39 moved marking posts read and unread there). Burrow now asks for it. **After updating, sign in again once** (Burrow › Disconnect…, then Sign in with browser, and allow every permission) so read marks sync between your Macs. Until then they're kept on this Mac and wait to be sent, and everything else syncs as usual. Studios before 0.39 are unaffected.
+- **Cross-posting stays beside your work.** A cross-post run opens the browser in the usual foldable side pane, not over the whole window, and its Preview and Post sheets sit beside the page so you can see it. Fold the pane mid-run and the run carries on ("macro running · show pane" in the status bar). The pane unfolds itself before Burrow types into the page.
+- **The tour teaches what's new.** After an update, "Show me what's new" starts at the first step for that release (NEW IN 0.11.0), and the tour now walks through extensions, Turn off, notes folders, reading time and inspect, OPML import, ⌘N, ✂ Clip and cross-post, on sample data, without changing your config. It also covers what 0.10.0 added, which its tour skipped.
+- **markdown-notes no longer assumes `~/Notes`.** With no folder chosen it asks only to show messages, and the Notes tab offers **Choose a folder…**, so the consent sheet only ever names folders you picked. A config with `vault=` works as before.
+
 ## [0.10.0] - 2026-10-09
 
 ### Added
