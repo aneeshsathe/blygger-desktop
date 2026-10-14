@@ -645,6 +645,16 @@ impl MainView {
                     self.open(&id, window, cx);
                 }
             }
+            Setup::EchoedQuote => {
+                self.tutorial_tidy(window, cx);
+                let md = crate::fake::echoed_quote_sample();
+                if let Ok(id) = self.backend.create_draft(Kind::Thread, &md) {
+                    self.set_query_text("", window, cx);
+                    self.current = None;
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(ViewMode::Studio, cx);
+            }
             Setup::Tk(instruction) => {
                 self.tutorial_tidy(window, cx);
                 self.studio_set_view(ViewMode::Write, cx);
@@ -706,6 +716,17 @@ impl MainView {
                     .reading
                     .shown_rows()
                     .position(|r| r.remote_id == steps::QUOTING);
+                match ix {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
+            Setup::StreamGenerated => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == steps::GENERATED);
                 match ix {
                     Some(ix) => self.stream_select(ix, window, cx),
                     None => self.stream_move(1, window, cx),
@@ -773,7 +794,8 @@ impl MainView {
             t.hold = true;
         }
         match id {
-            "stream" => self.stream_open_selected(window, cx),
+            "stream" | "generated" => self.stream_open_selected(window, cx),
+            "echoed-quote" => self.publish(window, cx),
             "original" => {
                 let origin = self
                     .reading
@@ -963,6 +985,30 @@ impl MainView {
         }
     }
 
+    /// Whether the tour hides the reading pane's WebView. A native view
+    /// draws over everything GPUI draws, so it stays hidden unless the post
+    /// it shows is clear of the tour card (bottom left): the stream's side
+    /// pane or the Reader's post pane on the Reading screen, in a window
+    /// wide enough. Never under the what's-new card or beside the lineage
+    /// sheet (the card moves right for it).
+    pub(crate) fn tutorial_hides_reader(&self, window: &Window) -> bool {
+        let Some(t) = self.onboarding.tutorial.as_ref() else {
+            return false;
+        };
+        if !t.news.is_empty() || self.lineage_open() || self.reading.view != View::Reading {
+            return true;
+        }
+        let vp = window.viewport_size();
+        let (w, h) = (f32::from(vp.width), f32::from(vp.height));
+        let left = match self.reading.mode {
+            ReadMode::Stream => Some(w - stream_pane_w(w)),
+            ReadMode::Reader => self
+                .tutorial_reading_region(Region::ReaderPost, w, h)
+                .map(|r| r.0),
+        };
+        left.is_none_or(|x| x < CARD_LEFT + CARD_W + 8.)
+    }
+
     /// What covers the panes right now: the browser pane, the notes drawer
     /// and the stream's side pane (a ring around a pane under one of them
     /// would draw over it).
@@ -1138,13 +1184,13 @@ impl MainView {
             // Clear of the lineage sheet's responses row.
             .map(|d| {
                 if self.lineage_open() {
-                    d.right(px(14.))
+                    d.right(px(CARD_LEFT))
                 } else {
-                    d.left(px(14.))
+                    d.left(px(CARD_LEFT))
                 }
             })
             .bottom(px(STATUS_H + 14.))
-            .w(px(380.))
+            .w(px(CARD_W))
             .max_w(relative(0.9))
             // --- themes --- the theme's card.
             .map(|d| crate::theme_ext::card(d, &self.theme))
@@ -1400,6 +1446,10 @@ impl MainView {
 
 /// (x, y, w, h) in window pixels.
 type Rect = (f32, f32, f32, f32);
+
+/// The tour card's margin from the window's left edge, and its width.
+const CARD_LEFT: f32 = 14.;
+const CARD_W: f32 = 380.;
 
 /// The Stream | Reader toggle's width (two segments, 11.5 px Inter).
 const TOGGLE_W: f32 = 124.;

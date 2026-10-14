@@ -21,6 +21,25 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.12.0",
+        items: &[
+            "Burrow works with a stock blyg: an unmodified blygger-studio 0.40 or later, no \
+             server patches. Reading, read marks, lineage and citations all sync.",
+            "Sign in with browser, or with a token from Studio › More › Client access (allow \
+             reading:state so read marks sync). The old server owner token is gone from \
+             sign-in.",
+            "If your blyg refuses Burrow's sign-in, Burrow stops syncing, keeps every change \
+             waiting, and opens the sign-in sheet to say why.",
+            "Publishing warns when generated text left a ![[…]] on its own line that its \
+             instruction didn't ask for: it would quote that post and notify its author. \
+             The preview shows the quote.",
+            "In the Reader, text a blyg marks as generated says, on hover and at the end of \
+             the post, that the mark is the publisher's own disclosure, not verified.",
+            "A post that drew on yours for generated text is listed as “drew on this”.",
+        ],
+        first_step: Some("echoed-quote"),
+    },
+    Release {
         version: "0.11.0",
         items: &[
             "reading-time and inspect, two bundled extensions (off until you turn them on): \
@@ -226,6 +245,19 @@ mod tests {
                 env!("CARGO_PKG_VERSION")
             );
         }
+    }
+
+    #[test]
+    fn a_launch_after_0_11_shows_0_12() {
+        let news = since(Some("0.11.0"), "0.12.0");
+        assert_eq!(news.len(), 1);
+        assert_eq!(news[0].version, "0.12.0");
+        assert_eq!(news[0].first_step, Some("echoed-quote"));
+        let from_0_10: Vec<_> = since(Some("0.10.0"), "0.12.0")
+            .iter()
+            .map(|r| r.first_step)
+            .collect();
+        assert_eq!(from_0_10, [Some("echoed-quote"), Some("slots")]);
     }
 
     #[test]

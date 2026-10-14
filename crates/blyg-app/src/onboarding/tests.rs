@@ -2,6 +2,8 @@
 //! the test platform, the app's `SwitchBackend` in place, and a recording
 //! backend standing in for the user's real blyg.
 
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -11,6 +13,7 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::FlowStep;
 use super::steps::{self, Region, STEPS};
+use crate::app::studio::webview::{FactoryGlobal, PreviewSurface};
 use crate::app::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::{FakeBackend, Timing};
@@ -635,7 +638,8 @@ fn do_step(e: &mut Env, id: &str) {
         "versions" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
         "quotes" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-k")),
         "mentions" => e.cx.simulate_input("@"),
-        "stream" => e.cx.simulate_keystrokes("enter"),
+        "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
+        "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
         "original" => e.view.update_in(e.cx, |v, window, cx| {
             let origin = v
                 .reading
@@ -1287,4 +1291,114 @@ fn a_launch_after_updating_from_0_10_starts_at_0_11s_first_step(cx: &mut TestApp
     let first_new = STEPS.iter().find(|s| s.since == "0.11.0").map(|s| s.id);
     assert_eq!(tour_step(&mut e), first_new);
     assert_eq!(tour_step(&mut e), Some("slots"));
+}
+
+/// The first launch after updating from 0.11.0 to 0.12.0: "Show me what's
+/// new" lands on the publish warning's step.
+#[gpui_kit::test]
+fn a_launch_after_updating_from_0_11_starts_at_0_12s_first_step(cx: &mut TestAppContext) {
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = Some("0.12.0"));
+    let mut e = setup_full(cx, CONNECTED, Some("0.11.0"), Mode::Fake, false);
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = None);
+    assert!(news_up(&e), "the card is up");
+    let versions: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().unwrap();
+        t.news.iter().map(|r| r.version).collect()
+    });
+    assert_eq!(versions, ["0.12.0"]);
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(!news_up(&e));
+    let first_new = STEPS.iter().find(|s| s.since == "0.12.0").map(|s| s.id);
+    assert_eq!(tour_step(&mut e), first_new);
+    assert_eq!(tour_step(&mut e), Some("echoed-quote"));
+}
+
+/// 0.12.0's steps land on what they teach: the publish sheet warns about
+/// the quote generated text echoed, and the post opened in the stream ends
+/// with the note that its generated mark is the publisher's own.
+#[gpui_kit::test]
+fn the_0_12_steps_show_the_warning_and_the_note(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let surfaces = Rc::new(RefCell::new(0usize));
+    let (l2, n2) = (log.clone(), surfaces.clone());
+    e.cx.update(|_, cx| {
+        cx.set_global(FactoryGlobal(Rc::new(move |_, _| {
+            let id = {
+                let mut n = n2.borrow_mut();
+                *n += 1;
+                *n - 1
+            };
+            Ok(Box::new(Surface(id, l2.clone())) as Box<dyn PreviewSurface>)
+        })))
+    });
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.real.take();
+
+    enter(&mut e, "echoed-quote");
+    let preview_view = e.view.read_with(e.cx, |v, _| v.studio.view);
+    assert_eq!(preview_view, crate::app::studio::ViewMode::Studio);
+    do_step(&mut e, "echoed-quote");
+    assert!(tour_done(&mut e));
+    let warning = e.view.update_in(e.cx, |v, _, cx| {
+        assert!(
+            matches!(v.sheet, Some(Sheet::Publish { .. })),
+            "the sheet is up"
+        );
+        v.studio_publish_warning(cx)
+    });
+    let warning = warning.expect("the sheet warns");
+    assert!(
+        warning.contains(&format!("![[{}]]", crate::fake::SAMPLE_QUOTE_ID)),
+        "{warning}"
+    );
+    assert!(warning.contains("notifies the author"), "{warning}");
+
+    enter(&mut e, "generated");
+    let selected = e.view.read_with(e.cx, |v, _| v.reading.sel.clone());
+    assert_eq!(selected.map(|k| k.1).as_deref(), Some(steps::GENERATED));
+    do_step(&mut e, "generated");
+    settle(&mut e);
+    assert!(tour_done(&mut e));
+    let page = e.view.read_with(e.cx, |v, _| {
+        v.studio.reader.pages.last().cloned().unwrap_or_default()
+    });
+    let note = crate::app::studio::reader::GENERATED_NOTE;
+    assert!(page.contains(&format!("title=\"{note}\"")), "{page}");
+    assert!(page.contains("class=\"blyg-gen-note\""), "{page}");
+    // The side pane is clear of the tour card: the post shows.
+    let log = log.borrow();
+    let reader = log
+        .iter()
+        .find_map(|(i, c)| matches!(c, Shown::Load(h) if h.contains("blyg-gen-note")).then_some(*i))
+        .expect("the reader loaded the post");
+    let visible = log.iter().rev().find_map(|(i, c)| match c {
+        Shown::Visible(v) if *i == reader => Some(*v),
+        _ => None,
+    });
+    assert_eq!(visible, Some(true), "the tour shows the post");
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+}
+
+enum Shown {
+    Load(String),
+    Visible(bool),
+}
+
+/// A WebView stand-in that logs what it was asked to show.
+struct Surface(usize, Rc<RefCell<Vec<(usize, Shown)>>>);
+
+impl PreviewSurface for Surface {
+    fn set_frame(&mut self, _: gpui_kit::Bounds<gpui_kit::Pixels>) {}
+    fn set_visible(&mut self, v: bool) {
+        self.1.borrow_mut().push((self.0, Shown::Visible(v)));
+    }
+    fn load(&mut self, html: &str) {
+        self.1.borrow_mut().push((self.0, Shown::Load(html.into())));
+    }
+    fn eval(&mut self, _: &str) {}
+    fn focus_parent(&mut self) {}
+    fn set_dark(&mut self, _: bool) {}
 }

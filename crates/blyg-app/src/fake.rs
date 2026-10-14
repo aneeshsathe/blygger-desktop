@@ -66,6 +66,18 @@ fn sample_reading() -> ReadingItem {
     }
 }
 
+/// The tour's thread whose generated text echoed a quote its instruction
+/// never asked for (decision #60): the publish sheet warns about it, and
+/// the preview shows the quote publishing would make.
+pub fn echoed_quote_sample() -> String {
+    format!(
+        "Rock pools at dusk\n\n\
+         The light leaves the shelf before the water does.\n\n\
+         [TK]a closing line about the tide coming back[=]The tide comes back for everything it lent.\n\n\
+         ![[{SAMPLE_QUOTE_ID}]][/TK]\n"
+    )
+}
+
 /// The full editor's sample thread (`BLYGGER_DEMO=studio`): a quote, a
 /// generated TK span, a YouTube link and a quote that can't be resolved.
 pub fn studio_sample() -> String {

@@ -658,7 +658,8 @@ impl MainView {
             || self.reading.sheet.is_some()
             || dropdown
             || self.onboarding.flow.is_some()
-            || self.onboarding.tutorial.is_some()
+            // The tour shows the post only where its card isn't.
+            || self.tutorial_hides_reader(window)
             // Every GPUI overlay that can sit over the body belongs here (and
             // in `studio_frame`): a native view draws above all GPUI content.
             || self.profile_sheet_open()

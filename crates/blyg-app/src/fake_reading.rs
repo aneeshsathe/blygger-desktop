@@ -26,6 +26,9 @@ pub const ADA_TIDES: &str = "01K2ADA0TIDES0000000000001";
 pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
 /// Lin's thread forked from Ada's pinned first draft of the tides post.
 pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
+/// The sentence of Lin's fork that Lin's blyg marks as generated.
+pub const LIN_FORK_GENERATED: &str =
+    "And yet we plan the day around them, as if the moon owed us something.";
 /// A fragment of Lin's with emphasis, code and a bare link.
 pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
 pub const LIN_REREAD: &str = "01K2LIN0REREAD000000000001";
@@ -343,6 +346,13 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         cited: None,
         selector: None,
     }];
+    // Lin's blyg marks one sentence as generated (spec §5.7): the Reader
+    // tints it and notes that the mark is Lin's own, unverified disclosure.
+    fork.content_html = fork.content_html.replacen(
+        LIN_FORK_GENERATED,
+        &format!("<span class=\"blyg-tk-gen\">{LIN_FORK_GENERATED}</span>"),
+        1,
+    );
     reading.push(fork);
     reading.push(post(
         &lin,
