@@ -273,8 +273,10 @@ pub fn text_font_css(font: Option<FontChoice>) -> String {
 
 /// The reader's additions on top of the app theme (`BUILTIN_CSS`, the Tufte
 /// palette in light and dark): the fonts, the text size, a left-aligned
-/// column under the native header, and generated spans left unstyled as the
-/// public page leaves them (the tint is a studio authoring aid). Quote
+/// column under the native header, and generated spans. Their reset here
+/// is overridden by the shell's `studio_css`, which comes later, so the
+/// reader shows the studio tint; [`generated_note`] says the mark is the
+/// publisher's own. Quote
 /// boxes, selection, highlights and diff marks take the theme's colours
 /// (`theme::reader_vars`), with the plain look's as fallbacks.
 pub fn reader_css(font_px: f32) -> String {
@@ -289,7 +291,11 @@ ins {{ background: var(--ins, rgba(58, 166, 85, 0.18)); text-decoration: none; }
 del {{ background: var(--del, rgba(210, 60, 42, 0.16)); text-decoration-color: var(--over, #d23c2a); }}
 hr {{ border-top-color: var(--rule); }}
 article {{ max-width: 38em; margin: 0; }}
-.blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; }}
+.blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; cursor: help; }}
+.blyg-gen-note {{
+  margin-top: 1.6em; color: var(--muted, #888);
+  font: 11.5px Inter, -apple-system, system-ui, sans-serif;
+}}
 blockquote.blyg-transclusion {{ font-family: inherit; }}
 blockquote.blyg-transclusion[data-blyg-id] {{ cursor: pointer; }}
 .blyg-qfoot {{
@@ -331,6 +337,7 @@ pub fn reader_page_named(
         Some(o) => quote_footers(&clean, &o, name_of),
         None => clean,
     };
+    let clean = generated_note(&clean);
     let body = blyg_render::article_html(doc.kind, &clean, None, None);
     // --- themes --- the theme's colours over the fallback stylesheet, and
     // its quote-box shape last, so it wins over the reader's defaults.
@@ -348,6 +355,24 @@ pub fn reader_page_named(
             reader: true,
         },
     )
+}
+
+/// What the reader says about text a post marks as generated.
+pub const GENERATED_NOTE: &str =
+    "Some text here is marked as generated. That is the publisher's own disclosure, not verified.";
+
+/// Spec §5.7 (decision #59): `blyg-tk-gen` is the publisher's own claim, and
+/// a client that points it out says so. The reader tints marked text (see
+/// [`reader_css`]); each marked span or block gets the note as a tooltip,
+/// and the post ends with it in the quote footers' small type. `html` is
+/// already sanitized, so the class is written exactly this way.
+pub fn generated_note(html: &str) -> String {
+    const MARK: &str = "class=\"blyg-tk-gen\"";
+    if !html.contains(MARK) {
+        return html.to_string();
+    }
+    let titled = html.replace(MARK, &format!("{MARK} title=\"{GENERATED_NOTE}\""));
+    format!("{titled}<p class=\"blyg-gen-note\">{GENERATED_NOTE}</p>\n")
 }
 
 // --- quote targets ---
@@ -793,6 +818,25 @@ mod tests {
             quote_footers("<p>x</p>", "https://a.example/", &|_| None),
             "<p>x</p>"
         );
+    }
+
+    /// Spec §5.7 (#59): marked text says the mark is the publisher's own.
+    #[test]
+    fn generated_text_says_the_mark_is_unverified() {
+        let html = "<p>Mine, <span class=\"blyg-tk-gen\">theirs</span>.</p>\n\
+                    <div class=\"blyg-tk-gen\"><p>More.</p></div>";
+        let page = reader_page(html, &doc(html, vec![]), 16.);
+        assert_eq!(
+            page.matches(&format!("title=\"{}\"", super::GENERATED_NOTE))
+                .count(),
+            2,
+            "{page}"
+        );
+        assert_eq!(page.matches("class=\"blyg-gen-note\"").count(), 1);
+        assert!(super::GENERATED_NOTE.contains("not verified"));
+        // No marked text: no note.
+        let page = reader_page("<p>x</p>", &doc("<p>x</p>", vec![]), 16.);
+        assert!(!page.contains("class=\"blyg-gen-note\""));
     }
 
     fn doc(html: &str, media: Vec<RemoteMedia>) -> Doc {

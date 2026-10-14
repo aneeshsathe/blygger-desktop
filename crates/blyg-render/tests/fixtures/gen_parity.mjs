@@ -9,7 +9,9 @@
 //   node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/worker
 //
 // where /path/to/worker is the Worker package directory (the one holding
-// package.json, src/ and node_modules/; run `npm ci` there first). Nothing in
+// package.json, src/ and node_modules/; run `npm ci` there first): a clone
+// of stock blygger-studio at a release tag, checked out in a scratch
+// directory rather than built where you work on it. Nothing in
 // the Worker directory is modified: gen_parity_worker.js and the Worker's
 // modules are bundled with the Worker's own esbuild into a temporary file,
 // which runs inside workerd through the Worker's own Miniflare. (workerd,
@@ -81,6 +83,11 @@ const input = {
   vectors: read("linkify_vectors_input.json"),
   media: read("media_input.json"),
 };
+// Miniflare keeps scratch state in ./.wrangler: run it from a temporary
+// directory so nothing lands in the caller's working tree.
+const cwd = process.cwd();
+const runDir = mkdtempSync(join(tmpdir(), "blyg-parity-run-"));
+process.chdir(runDir);
 const mf = new Miniflare({
   modules: true,
   script,
@@ -94,6 +101,8 @@ try {
   out = await res.json();
 } finally {
   await mf.dispose();
+  process.chdir(cwd);
+  rmSync(runDir, { recursive: true, force: true });
 }
 
 // --- 3. Write fixtures --------------------------------------------------------------

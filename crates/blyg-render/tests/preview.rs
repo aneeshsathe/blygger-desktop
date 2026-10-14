@@ -60,12 +60,13 @@ fn data_line_through_quotes_and_tk_blocks() {
         "{h}"
     );
     assert!(h.contains("<blockquote class=\"blyg-transclusion unresolved\" data-line=\"8\"><p>⚠ unresolvable: unknown item</p></blockquote>"));
-    // The thread preview is sanitized, as the public thread page is: the
-    // facade keeps its class and poster link, not `data-ytid`.
+    // A bare video link stays a link (stock studio upgrades it on screen,
+    // never in the HTML), and still counts as a video.
     assert!(
-        h.contains("<figure class=\"blyg-yt\" data-line=\"10\">"),
+        h.contains("<p data-line=\"10\"><a href=\"https://youtu.be/Qa1b2C3d4E5\">"),
         "{h}"
     );
+    assert_eq!(out.stats.videos, 1);
     assert!(h.contains("<p data-line=\"12\">End</p>"));
     assert_eq!(
         out.line_map,
@@ -320,4 +321,81 @@ fn fuzz_no_panics() {
             );
         }
     }
+}
+
+/// Decision #60: an own-line directive left in a block scope's output is a
+/// quote, as publish makes it; the prose around it stays disclosed as
+/// generated, and the quote sits between the generated blocks.
+#[test]
+fn directive_in_block_output_is_a_quote() {
+    let store = FakeStore::load();
+    let md = format!("Intro.\n\n[TK]write a bridge[=]bridge line\n\n![[{A}]]\n\nafter[/TK]\n\nEnd");
+    let out = render_preview(&md, Kind::Thread, &store, &opts());
+    let h = strip_lines(&out.html);
+    let quote = format!(
+        "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"{A}\" data-blyg-version=\"3\">"
+    );
+    let gen1 = h.find("<div class=\"blyg-tk-gen\"><p>bridge line</p>\n</div>");
+    let q = h.find(&quote);
+    let gen2 = h.find("<div class=\"blyg-tk-gen\"><p>after</p>\n</div>");
+    assert!(gen1.is_some() && gen1 < q && q < gen2, "{h}");
+    assert!(!h.contains("![["), "{h}");
+    assert_eq!(out.stats.transclusions.len(), 1);
+    assert_eq!(out.stats.ai_spans, 1);
+    // Every top-level block keeps its source line.
+    for at in [
+        "<div class=\"blyg-tk-gen\" data-line=\"2\">",
+        "data-blyg-version=\"3\" data-line=\"4\">",
+        "<div class=\"blyg-tk-gen\" data-line=\"6\">",
+    ] {
+        assert!(out.html.contains(at), "{at}: {}", out.html);
+    }
+
+    // An output that is only the directive leaves no empty generated block.
+    let md = format!("Text.\n\n[TK]summarise ![[{A}]][=]![[{A}]][/TK]");
+    let h = render_preview(&md, Kind::Thread, &store, &opts()).html;
+    assert!(!h.contains("blyg-tk-gen"), "{h}");
+    assert!(h.contains("data-blyg-version=\"3\""), "{h}");
+
+    // An attached `>` run is a partial quote, as anywhere else in a thread.
+    let md = format!("[TK]bridge[=]One.\n![[{A}]]\n> Small tools\n\nTwo.[/TK]");
+    let out = render_preview(&md, Kind::Thread, &store, &opts());
+    assert!(out.html.contains("blyg-partial"), "{}", out.html);
+    assert!(out.stats.transclusions[0].selector.is_some());
+
+    // In code it stays text, and a fragment never quotes.
+    let md = format!("[TK]x[=]Look:\n\n```\n![[{A}]]\n```[/TK]");
+    let out = render_preview(&md, Kind::Thread, &store, &opts());
+    assert!(out.stats.transclusions.is_empty());
+    let md = format!("[TK]x[=]bridge\n\n![[{A}]][/TK]");
+    let out = render_preview(&md, Kind::Fragment, &store, &opts());
+    assert!(
+        out.html.contains(&format!("<p>![[{A}]]</p>")),
+        "{}",
+        out.html
+    );
+}
+
+#[test]
+fn unrequested_output_directives_are_named() {
+    use blyg_render::unrequested_output_directives as unrequested;
+    // Echoed by the output, not named by the instruction.
+    assert_eq!(
+        unrequested(&format!(
+            "Intro.\n\n[TK]write a bridge[=]line\n![[{A}]]\nafter[/TK]"
+        )),
+        vec![A.to_string()]
+    );
+    // Named by the instruction: a source, no warning.
+    assert!(unrequested(&format!("[TK]open with ![[{A}]][=]x\n![[{A}]]\ny[/TK]")).is_empty());
+    // Inside a sentence, in code, ungenerated or impyrt: never a quote.
+    assert!(unrequested(&format!("[TK]x[=]see ![[{A}]] here[/TK]")).is_empty());
+    assert!(unrequested(&format!("[TK]x[=]```\n![[{A}]]\n```[/TK]")).is_empty());
+    assert!(unrequested(&format!("[TK]x ![[{U}]][/TK]")).is_empty());
+    assert!(unrequested(&format!("[TK]impyrt=a\n![[{A}]]\nb[/TK]")).is_empty());
+    // Each id once, in order.
+    assert_eq!(
+        unrequested(&format!("[TK]x[=]![[{U}]]\n![[{A}]]\n![[{U}]][/TK]")),
+        vec![U.to_string(), A.to_string()]
+    );
 }

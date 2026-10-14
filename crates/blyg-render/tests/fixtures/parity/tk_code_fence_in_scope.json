@@ -1,0 +1,19 @@
+{
+  "name": "tk_code_fence_in_scope",
+  "kind": "thread",
+  "md": "Intro\n\n[TK]impyrt=Example:\n\n```\n[TK]a[=]b[/TK]\n```\n[/TK]\n\nEnd",
+  "html": "<p>Intro</p>\n<div class=\"blyg-tk-gen\"><p>Example:</p>\n<pre><code>[TK]a[=]b[/TK]\n</code></pre>\n</div>\n<p>End</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

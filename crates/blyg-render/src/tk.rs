@@ -121,8 +121,8 @@ fn impyrt_instruction() -> &'static Regex {
 
 /// Linear token scan, exactly as tk.ts `parseScopes`: no bracket balancing,
 /// no nesting (a nested `[TK]` skips the whole outer scope), and an
-/// unterminated scope stops the scan. A `[TK]` inside code is an example of
-/// the grammar, not a scope (studio#3). `[TK]impyrt=…[/TK]` and
+/// unterminated scope stops the scan. A `[TK]`, `[=]` or `[/TK]` inside
+/// code is an example of the grammar, not a token (studio#3, #68). `[TK]impyrt=…[/TK]` and
 /// `[TK]impyrt <model>=…[/TK]` (or the same with `[=]`) mark pasted
 /// generated text (decision #37): its instruction reads `impyrt`, and it
 /// declares no sources.
@@ -134,20 +134,29 @@ pub fn parse_scopes(md: &str) -> (Vec<TkScope>, Vec<TkError>) {
     } else {
         Vec::new()
     };
-    let mut i = 0;
-    while let Some(tk) = md[i..].find("[TK]").map(|p| p + i) {
-        if markdown::in_ranges(&code, tk) {
-            i = tk + 4;
-            continue;
+    // Every token is looked for outside code, not only the opening one: a
+    // `[TK]` or `[/TK]` quoted in code inside a scope is text, not a nested
+    // scope or an early close (studio 0.41.1, #68).
+    let find = |token: &str, from: usize| -> Option<usize> {
+        let mut from = from;
+        loop {
+            let at = md[from..].find(token).map(|p| p + from)?;
+            if !markdown::in_ranges(&code, at) {
+                return Some(at);
+            }
+            from = at + token.len();
         }
-        let Some(close) = md[tk + 4..].find("[/TK]").map(|p| p + tk + 4) else {
+    };
+    let mut i = 0;
+    while let Some(tk) = find("[TK]", i) {
+        let Some(close) = find("[/TK]", tk + 4) else {
             errors.push(TkError {
                 at: tk,
                 reason: "unterminated scope (missing [/TK])".into(),
             });
             break;
         };
-        if let Some(nested) = md[tk + 4..].find("[TK]").map(|p| p + tk + 4)
+        if let Some(nested) = find("[TK]", tk + 4)
             && nested < close
         {
             errors.push(TkError {
@@ -157,10 +166,7 @@ pub fn parse_scopes(md: &str) -> (Vec<TkScope>, Vec<TkError>) {
             i = close + 5;
             continue;
         }
-        let eq = md[tk + 4..]
-            .find("[=]")
-            .map(|p| p + tk + 4)
-            .filter(|&e| e < close);
+        let eq = find("[=]", tk + 4).filter(|&e| e < close);
         let instr_end = eq.unwrap_or(close);
         let end = close + 5;
         let mut instruction = js_trim(&md[tk + 4..instr_end]).to_string();
@@ -272,7 +278,64 @@ pub(crate) struct Annotated {
     pub has_inline: bool,
 }
 
-pub(crate) fn annotate(stripped: &Mapped, spans: &[Span]) -> Annotated {
+/// A piece of a block span's text: generated prose, or an own-line
+/// directive (with its attached `>` run) that publish bakes as a quote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Piece {
+    Generated(std::ops::Range<usize>),
+    Directive(std::ops::Range<usize>),
+}
+
+/// Decision #60: an own-line `![[id]]` left in TK output is a transclusion
+/// directive once publish consumes the scope. Split a block span's text at
+/// such lines (outside code), so the thread walk bakes them as quotes and
+/// only the prose around them is disclosed as generated. Whitespace-only
+/// prose is dropped. A span with no directive is one `Generated` piece.
+pub(crate) fn split_directives(text: &str) -> Vec<Piece> {
+    if !text.contains("![[") {
+        return vec![Piece::Generated(0..text.len())];
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let literal = crate::transclusion::literal_lines(text, &lines);
+    let mut starts = Vec::with_capacity(lines.len());
+    let mut at = 0;
+    for l in &lines {
+        starts.push(at);
+        at += l.len() + 1;
+    }
+    let push_prose = |from: Option<usize>, to: usize, pieces: &mut Vec<Piece>| {
+        if let Some(from) = from
+            && !text[from..to].chars().all(is_js_ws)
+        {
+            pieces.push(Piece::Generated(from..to));
+        }
+    };
+    let mut pieces = Vec::new();
+    let mut prose: Option<usize> = None;
+    let mut k = 0;
+    while k < lines.len() {
+        if literal[k] || !crate::transclusion::is_directive_line(lines[k]) {
+            prose.get_or_insert(starts[k]);
+            k += 1;
+            continue;
+        }
+        push_prose(prose.take(), starts[k], &mut pieces);
+        let (_, next) = crate::transclusion::attached_quote(&lines, k);
+        pieces.push(Piece::Directive(
+            starts[k]..starts[next - 1] + lines[next - 1].len(),
+        ));
+        k = next;
+    }
+    push_prose(prose.take(), text.len(), &mut pieces);
+    pieces
+}
+
+/// With `quotes` (threads), a block span's own-line directives stay in the
+/// document as directives ([`split_directives`]), and each run of prose
+/// around them becomes a generated block of its own. The studio's preview
+/// shows such a directive as literal text inside the block; publish, by
+/// decision #60, bakes it (see docs/RENDER.md).
+pub(crate) fn annotate(stripped: &Mapped, spans: &[Span], quotes: bool) -> Annotated {
     let mut b = MapBuilder::new(stripped);
     let mut blocks = Vec::new();
     let mut has_inline = false;
@@ -280,10 +343,37 @@ pub(crate) fn annotate(stripped: &Mapped, spans: &[Span]) -> Annotated {
     for (i, span) in spans.iter().enumerate() {
         b.copy(last, span.start);
         let line = stripped.line_at(span.start);
-        if span.block {
+        let text = &stripped.text[span.start..span.end];
+        let whole = [Piece::Generated(0..text.len())];
+        let pieces = if span.block && quotes {
+            split_directives(text)
+        } else {
+            whole.to_vec()
+        };
+        if span.block && pieces != whole {
+            for (k, piece) in pieces.iter().enumerate() {
+                let (Piece::Directive(r) | Piece::Generated(r)) = piece;
+                // Prose after a directive starts on the blank line below it.
+                let lead =
+                    text[r.clone()].len() - text[r.clone()].trim_start_matches(is_js_ws).len();
+                let at = stripped.line_at(span.start + r.start + lead);
+                if k > 0 {
+                    // The line the separator opens is the next piece's.
+                    b.insert("\n\n", at);
+                }
+                match piece {
+                    Piece::Directive(r) => b.copy(span.start + r.start, span.start + r.end),
+                    Piece::Generated(r) => {
+                        let token = format!("{BLOCK_SENTINEL}{i}.{k}{BLOCK_SENTINEL}");
+                        b.insert(&token, at);
+                        blocks.push((token, js_trim(&text[r.clone()]).to_string(), at));
+                    }
+                }
+            }
+        } else if span.block {
             let token = format!("{BLOCK_SENTINEL}{i}{BLOCK_SENTINEL}");
             b.insert(&token, line);
-            blocks.push((token, stripped.text[span.start..span.end].to_string(), line));
+            blocks.push((token, text.to_string(), line));
         } else {
             has_inline = true;
             b.insert(&INLINE_OPEN.to_string(), line);
@@ -298,6 +388,34 @@ pub(crate) fn annotate(stripped: &Mapped, spans: &[Span]) -> Annotated {
         blocks,
         has_inline,
     }
+}
+
+/// Ids an own-line `![[id]]` in a scope's output names without its
+/// instruction naming them (studio tk.ts `unrequestedOutputDirectives`,
+/// decision #60). Publishing a thread bakes each as a quote and notifies its
+/// origin, which is a surprise when a model echoed the directive, so a
+/// client warns first. `impyrt` and ungenerated scopes are skipped, and so
+/// is a line inside code, which never bakes (the studio does not skip it).
+pub fn unrequested_output_directives(md: &str) -> Vec<String> {
+    let (scopes, _) = parse_scopes(md);
+    let mut found: Vec<String> = Vec::new();
+    for s in &scopes {
+        if s.imported.is_some() {
+            continue;
+        }
+        let Some(out) = &s.output else { continue };
+        for piece in split_directives(out) {
+            let Piece::Directive(r) = piece else { continue };
+            let line = out[r].split('\n').next().unwrap_or_default();
+            let Some(id) = crate::transclusion::directive_id(line) else {
+                continue;
+            };
+            if !s.source_ids.iter().any(|x| x == id) && !found.iter().any(|x| x == id) {
+                found.push(id.to_string());
+            }
+        }
+    }
+    found
 }
 
 /// A rendered block span, for [`apply_wrappers`].
