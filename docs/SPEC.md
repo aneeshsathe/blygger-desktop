@@ -18,7 +18,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 | UI | **GPUI** (Zed's framework) + `gpui-component` where it helps (text input/editor). |
 | Local data | **SQLite** via `rusqlite` (`bundled`, FTS5). Local-first: UI reads only from SQLite. DuckDB was considered and declined because this is an OLTP/tiny-write workload, and DuckDB can read the SQLite file later for analytics. |
 | Network | Blocking HTTP (`ureq`, rustls) on background threads. No tokio in the app. |
-| Auth | Base URL + a bearer: **Sign in with browser** (OAuth, PKCE, loopback redirect; studio 0.28+; the default), else an API token (Studio → More → Client access, or a fork's `BLYG_OWNER_TOKEN`), else the studio password. Credentials live in the **macOS Keychain** (Windows Credential Manager on Windows; `keyring` crate), never in a file. See `crates/blyg-core/src/api/oauth.rs`. |
+| Auth | Base URL + a bearer: **Sign in with browser** (OAuth, PKCE, loopback redirect; studio 0.28+; the default), else an API token (Studio → More → Client access; an old Worker fork's `BLYG_OWNER_TOKEN` also works there, a stock studio has none), else the studio password. Credentials live in the **macOS Keychain** (Windows Credential Manager on Windows; `keyring` crate), never in a file. See `crates/blyg-core/src/api/oauth.rs`. |
 | Platform | macOS first; Windows (x64) is supported too, from the same code: platform code sits behind `cfg(target_os = …)`, mostly in `crates/blyg-app/src/platform.rs`, and the Windows build must keep building and passing CI (see `site/src/dev/building.md`, "Keeping Windows building"). |
 | Layout | **Side by side**: item list on the left (~38%), editor on the right. |
 | Theme | **Tufte colours** (paper `#fffff8`, ink `#111`, accent `#a4271b`; dark: `#161513` / `#e4dfd3` / `#e0775a`), follows system light/dark. Default in the mock was dark. |
@@ -147,7 +147,7 @@ media) lives in `~/Library/Application Support/org.blygger.desktop/`.
 
 Base: the configured `blyg-url` for public pages and the studio; `/api` is host-rooted (a
 blyg at `https://host/blyg` has its API at `https://host/api`). Every `/api` call carries
-either `Authorization: Bearer <token>` (a browser sign-in's access token, a manual API token, or a fork's extension-1 owner token) or the studio session
+either `Authorization: Bearer <token>` (a browser sign-in's access token, a manual API token, or an old fork's extension-1 owner token) or the studio session
 cookie `blyg_session`, from `POST {blyg-url}/studio/login` (form field `password`; a 302
 with `Set-Cookie`; 30 days). JSON bodies are sent with `content-type: application/json`.
 Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issues?}`
@@ -182,25 +182,38 @@ uses are in `docs/SERVER.md`. The key points:
 - `GET /api/mentions?direction=inbound` (`source_author_json` is a JSON string)
 - `GET /api/hoppers/:id?preview=true` → `{hopper, memberships, items, total, source_count}`
 
-**Reading** (extension 3, see `docs/SERVER.md`; not upstream):
+**Reading** (studio 0.40+ `listImportedReading`; see `docs/SERVER.md`):
 
-- `GET /api/reading/imported?limit=N&before=<cursor>` → `{items: ReadingItem[], next: string|null, read_state}`,
-  imported items newest `observed_at` first; the default limit is 100 and the max is 500. `next` is an **opaque cursor**:
-  pass it back as `before` verbatim. Pages are ≤ limit. `page` is origin-relative (resolve it against `origin`).
-  ReadingItem =
-  `{subscription_id, remote_id, subscription_title, origin, kind, state, version,
-  created, updated, observed_at, content_md, content_html, author: {name,url}|null,
-  page, thumb: 1|-1|null, hoppers: string[], read_version, pinned_version_retained,
-  transclusions}`. `content_html` is raw: sanitize before display. Upstream's own
-  `/api/reading` returns rendered `ReadingEntry` rows with `offset`/`limit` paging
-  (at most 50) instead.
+- `GET /api/reading/imported?limit=1..100&cursor=<opaque>` → `{items, next, limit}`:
+  every imported item, newest `observedAt` first (then subscription and remote id), no
+  drops or repeats across pages. `next` is passed back as `cursor` verbatim; a bad cursor
+  or a limit out of range is 400. Rows are camelCase (`subscriptionId`, `remoteId`,
+  `subscriptionTitle`, `origin`, `kind`, `withdrawn`, `l0`, `version`, `readVersion`,
+  `created`, `updated`, `observedAt`, `contentMd`, `contentHtml` (sanitized), `author`,
+  `page` (origin-relative), `sourceUrl`, `thumb`, `hoppers`, `pinnedVersionRetained`,
+  `transclusions`, `stubOf`, `forkedFrom`, `generated`); `wire::upstream_row` maps
+  them onto `ReadingItem` (`withdrawn` → `state: "tombstone"`). Each row's lineage is
+  the origin's own, so it is known for every row but an L0 or withdrawn one. No page
+  flags: read state is advertised on `GET /api/reading` (`read_state`,
+  `read_state_clear`), read once a session.
+- The old Worker fork's extension 3 serves the same path with snake_case rows,
+  `before=<cursor>` paging (≤ 500) and page flags (`read_state`, `read_state_clear`,
+  `lineage`). The walk's first page sends only `limit=100`, which both take; a page
+  carrying `read_state` is the fork's.
+- A studio older than 0.40 (404 here): upstream's `GET /api/reading` (offset-paged,
+  ≤ 50) lists the posts and `GET /api/imports/{sub}/{id}` reads each new or changed one.
 
-**Read-state sync** (optional extension 5, see `docs/SERVER.md`): `GET /api/reading/imported` adds
-`read_state: true` and a per-item `read_version: number|null`;
-`PUT /api/reading/:sub/:remoteId/read {version}` and
-`POST /api/reading/read {items: [{sub, remote_id, version}]}` (≤ 500) store
-`max(existing, version)`. On blygger-studio 0.39+ the read-state writes need the scope
-`reading:state` (a provisional name; `oauth::READ_STATE_SCOPE`), not `owner:manage`.
+**Read-state sync** (studio 0.39+, see `docs/SERVER.md`): each row's
+`readVersion` (`read_version` on the fork); `PUT /api/reading/:sub/:remoteId/read
+{version, read_at?}`, `POST /api/reading/read {items: [{sub, remote_id, version,
+read_at?}]}` (≤ 500), `DELETE …/read` and `POST /api/reading/unread {items: [{sub,
+remote_id}]}`. Reads store `max(existing, version)`. The writes need the scope
+`reading:state` (`oauth::READ_STATE_SCOPE`), not `owner:manage`.
+
+**A refused credential.** A `401` the credential can't recover from (after the
+password sign-in or the browser grant's renewal is retried once) stops the sync worker:
+no retries until a new sign-in or a manual sync, queued ops stay queued, and
+`CoreEvent::SignedOut` (once a session) makes the app open the sign-in sheet.
 
 Transclusion syntax is `![[<26-char id>]]` alone on its own line, and is only
 valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolve
@@ -231,7 +244,7 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 
 **Posts are dated by their author, not by the import.** The list sorts newest first by the post's own `updated` (else `created`), so an author's edit moves the post up; a row says "edited 3d ago" when `updated` is more than ten minutes after `created`, else shows when it was published. `observed_at` (when your blyg imported it) is only the fallback for a post with no usable date. Dates parse as RFC 3339 or RFC 2822 (`ReadingItem::post_time`); the store keeps the normalized sort key in `reading.sort_at` (indexed).
 
-**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (extension 5, `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI. The writes need the bearer scope `reading:state` (studio 0.39+; the name is provisional, kept in `oauth::READ_STATE_SCOPE`), which the browser sign-in asks for. A sign-in or token without it (one made before 0.39) gets a 403: the read ops stay queued, the rest of the outbox syncs, and Burrow says once that read state is waiting and to sign in again; the next sign-in sends what waited.
+**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (studio 0.39+, or the old fork's extension 5; `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI. The writes need the bearer scope `reading:state` (studio 0.39+; kept in `oauth::READ_STATE_SCOPE`), which the browser sign-in asks for. A sign-in or token without it (one made before 0.39) gets a 403: the read ops stay queued, the rest of the outbox syncs, and Burrow says once that read state is waiting and to sign in again; the next sign-in sends what waited.
 
 **Search, Notational Velocity style.** A search field sits above the reading list (the Posts omnibar isn't on this screen). ⌘F or `/` (with the list focused) puts the caret in it; typing filters the list live: a case-insensitive substring over the title, the author and blyg (subscription, origin) names, and the post's text (`content_md`, or the published HTML's text when an item has no Markdown), over posts **already held locally**. Nothing is fetched to search. Title matches are highlighted as in the Posts list. ↑/↓ move through the matches from the field, ⏎ goes to the list (opening the first match when nothing is open), and esc clears the search (esc on an empty field returns to the list; esc in the list with a search clears it before it leaves the screen). An empty result shows "No posts match “…”". The open post stays open while it still matches; otherwise the selection and the reader clear, so typing never opens (or marks read) anything.
 

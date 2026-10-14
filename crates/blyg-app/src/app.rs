@@ -761,10 +761,9 @@ impl MainView {
             };
             match (secret.is_empty(), by_password) {
                 (true, true) => Err("Type your blyg's studio password".to_string()),
-                (true, false) => Err(
-                    "Paste an API token: make one in Studio → More → Client access, or use your server's owner token"
-                        .to_string(),
-                ),
+                (true, false) => {
+                    Err("Paste an API token: make one in Studio → More → Client access".to_string())
+                }
                 (false, true) => Ok((u, Credential::Password(secret))),
                 (false, false) => Ok((u, Credential::Token(secret))),
             }
@@ -844,7 +843,7 @@ impl MainView {
                             Ok(_) => {
                                 // A studio older than 0.28: the password works.
                                 v.set_connect_way(ConnectWay::Password, window, cx);
-                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password, or an owner token.".to_string()
+                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password.".to_string()
                             }
                             Err(CoreError::Offline) => {
                                 "Couldn't reach that address. Check the URL and your connection."
@@ -3121,8 +3120,7 @@ impl MainView {
                         "Make a token in your blyg's Studio → More → Client access: choose REST \
                          API and every permission (read, draft, publish, manage, and reading:state \
                          where offered). It lasts \
-                         30 days. A server with Burrow's extensions can use its owner token \
-                         here instead. Either is kept in your macOS Keychain."
+                         30 days. It is kept in your macOS Keychain."
                     }
                     ConnectWay::Password => {
                         "The password you sign in to the studio with. It works with any \

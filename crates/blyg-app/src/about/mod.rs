@@ -496,7 +496,7 @@ impl Render for AboutView {
                     .child(section("CONNECTION"))
                     .child(row("Blyg", text(r.connection.summary())))
                     .children(caps)
-                    // A stock server: what that limits (as the sheet said).
+                    // A studio older than 0.40: what that limits (as the sheet said).
                     .when(r.connection.limited(), |d| {
                         d.child(
                             div()
@@ -504,7 +504,7 @@ impl Render for AboutView {
                                 .pt(px(4.))
                                 .text_color(p.muted)
                                 .line_height(relative(1.4))
-                                .child("Stock blygger-studio. Limited here:")
+                                .child("Older blygger-studio. Limited here:")
                                 .children(
                                     crate::app::server_notice::LIMITS
                                         .iter()

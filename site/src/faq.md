@@ -19,13 +19,13 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes, if it runs blygger-studio 0.9 or later. On 0.28 or later, sign in with
-your browser (or an API token from the studio's Client access page); on an
-older one, with your studio password. On a current studio only one thing
-needs an extension upstream doesn't have yet: read state across your Macs.
-An older studio limits a little more (AI disclosure for text generated in
-Burrow, removing images you pasted and then deleted), and Burrow tells you
-which the first time it connects. See [Server requirements](server.md).
+Yes. A stock blygger-studio 0.40 or later is fully supported: nothing
+needs a patched server. On 0.28 or later, sign in with your browser (or an
+API token from the studio's Client access page); on an older one, with your
+studio password. Burrow works with any studio from 0.9, but an older one
+limits a little (read state across your Macs before 0.39, AI disclosure for
+text generated in Burrow before 0.28), and Burrow tells you which the first
+time it connects. See [Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 

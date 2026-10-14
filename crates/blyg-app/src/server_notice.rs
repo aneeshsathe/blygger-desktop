@@ -5,9 +5,11 @@
 //! (see `CoreError::ServerOutdated`). A toast when sync first notices, then a
 //! status-bar notice for as long as it stays true.
 //!
-//! The "this blyg runs stock blygger-studio" sheet: once per local database,
-//! when a reading pull first finds a server without the extensions in
-//! docs/SERVER.md. It says what works and what's limited, and why.
+//! The "this blyg's studio is older than 0.40" sheet: once per local
+//! database, when a reading pull first finds a server without
+//! `GET /api/reading/imported` (studio 0.40+, or the old Worker fork's
+//! extension 3). It says what works and what's limited, and why. A stock
+//! studio 0.40 or later is fully supported and never sees it.
 //!
 //! A child module of `app` (like the update notice) so it can use
 //! `MainView`'s toast and sheet.
@@ -29,12 +31,13 @@ pub const OUTDATED_TOAST_SUB: &str =
 pub const OUTDATED_NOTICE: &str = "Server needs updating · nothing syncs";
 
 /// The stock-server sheet.
-pub const LIMITS_TITLE: &str = "Your blyg runs stock blygger-studio";
+pub const LIMITS_TITLE: &str = "Your blyg runs an older blygger-studio";
 pub const LIMITS_INTRO: &str = "Writing, publishing, versions, subscriptions and your reading \
-     list all work. A few things need a newer studio, or extensions this server doesn't have:";
+     list all work. A few things need a newer studio (0.40 or later has them all):";
 /// What's limited, and how Burrow copes. Also in the About window.
 pub const LIMITS: [&str; 4] = [
-    "Read state stays on this Mac. Posts you read here still show as unread on your other Macs.",
+    "Before studio 0.39: read state stays on this Mac. Posts you read here still show as \
+     unread on your other Macs.",
     "Before studio 0.28: AI disclosure for text generated in Burrow. Before you publish such \
      text, Burrow says it will go out without the disclosure, and lets you cancel.",
     "Before studio 0.26: an image you paste into a draft and then delete stays on the server.",
