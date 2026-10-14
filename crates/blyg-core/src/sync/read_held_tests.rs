@@ -32,6 +32,8 @@ fn row(rid: &str) -> ReadingItem {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 

@@ -612,6 +612,7 @@ fn fork_and_show_responses() {
         origin: "https://else.example/".into(),
         id: "X".repeat(26),
         version: 2,
+        cited: None,
     };
     let id = b.fork(&of).unwrap();
     let it = b.item(&id).unwrap();
@@ -641,6 +642,7 @@ fn responses_follow_the_site_default() {
             origin: "https://else.example/".into(),
             id: "X".repeat(26),
             version: 1,
+            cited: None,
         })
         .unwrap();
     let sid = b.item(&id).unwrap().server_id.unwrap().0;
@@ -682,6 +684,7 @@ fn a_site_default_change_reaches_items_on_the_next_pull() {
             origin: "https://else.example/".into(),
             id: "X".repeat(26),
             version: 1,
+            cited: None,
         })
         .unwrap();
     assert!(!b.item(&id).unwrap().show_responses);

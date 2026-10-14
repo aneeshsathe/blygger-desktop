@@ -49,6 +49,7 @@ fn sample_reading() -> ReadingItem {
         content_html: "<p>A tide pool is a small ocean that forgets, twice a day, that it belongs to a larger one.</p>\n".into(),
         author: Some(Author {
             name: Some("Shoreline Notes".into()),
+            extra: Default::default(),
             url: None,
         }),
         page: None,
@@ -60,7 +61,21 @@ fn sample_reading() -> ReadingItem {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
+}
+
+/// The tour's thread whose generated text echoed a quote its instruction
+/// never asked for (decision #60): the publish sheet warns about it, and
+/// the preview shows the quote publishing would make.
+pub fn echoed_quote_sample() -> String {
+    format!(
+        "Rock pools at dusk\n\n\
+         The light leaves the shelf before the water does.\n\n\
+         [TK]a closing line about the tide coming back[=]The tide comes back for everything it lent.\n\n\
+         ![[{SAMPLE_QUOTE_ID}]][/TK]\n"
+    )
 }
 
 /// The full editor's sample thread (`BLYGGER_DEMO=studio`): a quote, a

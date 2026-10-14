@@ -4,8 +4,9 @@
 //!   access token and a rotating refresh token, sent as
 //!   `Authorization: Bearer` and renewed as it goes (see `oauth`).
 //! - **API token**: a manual token the owner makes in Studio → More →
-//!   Client access (studio 0.28+; 30 days, not renewable), or an older
-//!   Worker fork's `BLYG_OWNER_TOKEN`. Sent as `Authorization: Bearer`.
+//!   Client access (studio 0.28+; 30 days, not renewable), or an old
+//!   Worker fork's `BLYG_OWNER_TOKEN` (a stock studio has none, and answers
+//!   such a token with 401). Sent as `Authorization: Bearer`.
 //! - **Password**, which works on any blygger-studio: the studio's own
 //!   sign-in, `POST {blyg-url}/studio/login` with the form field `password`,
 //!   answers with a `blyg_session` cookie (valid 30 days, not renewed). The

@@ -11,6 +11,8 @@ what readers get.
 working copy ─┬─ parse TK scopes (tk.rs, as tk.ts parseScopes), except inside code
               ├─ preview strip: scope → output, or "⚠ ungenerated — <instruction>"
               ├─ annotate: block spans → one-line placeholder token (rendered on its own),
+              │            except, in a thread, an own-line ![[id]] in the output stays a
+              │            directive between tokens (decision #60);
               │            inline spans → U+E001…U+E002 sentinels (Markdown parses across them)
               ├─ [[id]] links → U+E003 tokens, except in code (links.rs)
               ├─ fragment: Markdown                     thread: line walker (transclusion.rs)
@@ -36,12 +38,34 @@ spliced in literally (a `$&` in generated text stays `$&`).
 "Code" is the Worker's `codeRanges` (`markdown::code_ranges`): code blocks
 (fenced or indented, at any depth) as markdown-it's block parser maps them,
 plus code spans (a run of N backticks to the next run of exactly N, never
-across a blank line). Inside code, `[TK]`, `![[id]]` and `[[id]]` are
-inert text (studio#3, #4). The thread walker leaves a line as prose when
-its start lies in code. A directive on its own line inside TK output is a
-real quote: upstream took that reading provisionally (v0.4-plan §9.2), so a
-multi-line inline scope holding `![[id]]` splits its `span` around the
-quote, as the Worker's does (`tr_inline_tk_multiline_directive`).
+across a blank line). Inside code, `[TK]`, `[=]`, `[/TK]`, `![[id]]` and
+`[[id]]` are inert text (studio#3, #4; since studio 0.41.1, #68, a `[/TK]`
+or `[TK]` quoted in code *inside* a scope no longer closes or nests it:
+`tk_code_*`). The thread walker leaves a line as prose when its start lies
+in code.
+
+**Directives in TK output** (decision #60, ruled 2026-10-06). A scope's
+sources are the `![[id]]`s in its instruction only. Its output is content:
+once publish consumes the scope, an own-line `![[id]]` left there is an
+ordinary transclusion directive, which bakes a quote and notifies the
+quoted blyg. A multi-line inline scope holding one splits its `span` around
+the quote, as the Worker's does (`tr_inline_tk_multiline_directive`). A
+block scope is rendered on its own, so here the preview splits its output
+at each such line (outside code, with any attached `>` run): the prose on
+either side becomes its own `div.blyg-tk-gen`, the directive stays in the
+document for the thread walk, and whitespace-only prose is dropped. That
+is what the decision says publish produces. The studio's preview does not
+do it (it shows the directive as text inside the block, and so does its
+publish for a scope with recorded provenance, an upstream inconsistency),
+so four fixtures are known divergences (see "Parity"). Fragments never
+quote, so there the directive stays text.
+
+`unrequested_output_directives(md)` (tk.ts `unrequestedOutputDirectives`)
+lists the ids such a line names when the scope's instruction does not,
+skipping `impyrt` and ungenerated scopes. The app warns in the publish
+sheet before publishing a thread that has any; the studio's publish
+returns the same warning afterwards. Unlike the studio's, it skips a line
+inside code, which never bakes.
 
 A scope is a **block** (its output, or the ungenerated marker, renders as a
 `div` of its own) when a blank line, or the document's edge, sits on both
@@ -66,9 +90,8 @@ scope datetime open dir lang`), `data-blyg-*`, an `<a href>` that is
 http(s), mailto or tel, and an `<img src>` that is http(s). Scripts,
 styles, iframes, SVG, forms and the like go with their content; other
 unknown tags are unwrapped. So a thread preview loses table alignment,
-`<ol start>`, `referrerpolicy`/`loading` on images, and the YouTube
-facade's `data-ytid` and `aria-label` (the poster link still works).
-Fragments are not sanitized, in the Worker or here.
+`<ol start>` and `loading` on images. Fragments are not sanitized, in the
+Worker or here.
 
 **Partial quotes** (spec §16.4, ported from blygger-studio 0.8.3's
 `transclusion.ts`). A `![[id]]` line followed directly (no blank line) by a
@@ -126,7 +149,8 @@ carry `data-line="N"` (0-based source line) for source ↔ preview jumping.
 ## Markdown engine: markdown-it.rs, not comrak or pulldown-cmark
 
 The Worker runs markdown-it 14 with `{ html: false, linkify: true,
-typographer: false }` plus its embeds plugin. I rendered the first corpus
+typographer: false }` (and, until the stock studio replaced it in 0.40, an
+embeds plugin). I rendered the first corpus
 (56 plain-Markdown cases) through each candidate, stock:
 
 | crate | matches the Worker | why it misses |
@@ -151,8 +175,13 @@ replaced to match the JavaScript library exactly:
   text, escapes, entities and inline code), line
   breaks around code blocks, list items and empty blockquotes, and no final
   `\n` in a fence left open at the end of a document without one.
-- **Embeds**: the YouTube facade (`figure.blyg-yt`, byte-identical to
-  embeds.ts) and `referrerpolicy="no-referrer"` on off-origin images.
+- **Embeds**: none in the HTML. Stock studio (0.40, embeds.ts) keeps
+  embeds out of `content_html` and upgrades a bare YouTube link to the
+  click-to-play facade with a page script; the preview's own script
+  (`preview_script`) does the same, so the preview looks as before. A
+  bare video link still counts in `Stats::videos`. (The facade and
+  `referrerpolicy` used to be baked, emulating the maintainer's patched
+  Worker; both are gone.)
 
 Raw HTML is never passed through: `html: false` escapes it.
 
@@ -176,6 +205,7 @@ pub fn selection_from_quote(quote_md: &str) -> String; // transclusion.ts select
 pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteSelector>;
 
 pub fn render_markdown(md: &str) -> String;           // the Worker's renderMarkdown
+pub fn unrequested_output_directives(md: &str) -> Vec<String>; // tk.ts unrequestedOutputDirectives (#60)
 pub fn studio_css() -> String;                         // tint, unresolved marker, facade styles
 pub fn article_html(kind, content_html, stub, fork) -> String;  // pages.ts <article> + citations
 pub struct Attachment { key: String /* media r2_key */, alt: Option<String>, inline: bool }
@@ -226,16 +256,17 @@ nothing is written unless every case rendered.
 
 ```sh
 # after editing corpus.json, fake_store.json or media_input.json, or when
-# the Worker changes (the Worker package needs `npm ci` first)
-node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/worker/package
+# the studio changes: clone stock blygger-studio into a scratch directory,
+# check out the release tag and `npm ci` there, then
+node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/studio/clone
 cargo test -p blyg-render
 ```
 
-**Reference version.** The fixtures come from the reference Worker on
-blygger-studio 0.36.1, re-generated 2026-10-08
+**Reference version.** The fixtures come from stock blygger-studio
+0.46.1 (tag `v0.46.1`, unpatched), re-generated 2026-10-13
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
-versions). From 0.32.2 to 0.36.1, `markdown.ts`, `preview.ts`, `embeds.ts`
-and `authoring.ts` are unchanged; see "Studio 0.36.1" below for the rest. The Worker's preview helpers moved again in 0.32
+versions). Earlier fixtures came from the maintainer's patched Worker; see
+"Studio 0.46.1" below for what changed. The Worker's preview helpers moved again in 0.32
 (`previewLinkDocs`/`spliceLinkDocs` became `previewInternalLinks`,
 `resolveBlockLinks` and `applyInternalLinks`), so the generator now calls the
 handler's own sequence instead of a copy of it.
@@ -265,11 +296,17 @@ attributes, a sanitized TK block) and TK or links in code, plus a media
 case for placed and `inline` attachments.
 
 Results. Tests compare after collapsing whitespace between tags, but every
-case is also byte-identical:
+matching case is also byte-identical. The four known divergences are the
+block-scope directive cases of decision #60 (`tr_in_tk_block`,
+`tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
+`tr_block_tk_directive_attached`); `tests/preview.rs` pins this crate's
+output for them. The split shape (generated | quote | generated, and how
+`generated[]` pairs with the pieces) is not ruled yet, so these four are
+provisional: revisit them when upstream fixes its preview and publish.
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, sanitizing) | 212 | 212 | 212 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, sanitizing) | 219 | 215 + 4 known | 215 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`) | 4 | 4 | 4 |
@@ -278,6 +315,27 @@ case is also byte-identical:
 instruction only: a `![[id]]` that only the output names is not a source.
 Both `blyg-render`'s `parse_scopes` and `blyg-core`'s `tk::parse` follow it,
 and the regenerated fixtures (two `tr_inline_tk_*` cases changed) match.
+
+**Studio 0.46.1** (re-synced 2026-10-13 from 0.36.1). Between the two,
+`markdown.ts` is unchanged; `tk.ts`, `authoring.ts`, `transclusion.ts`
+and `pages.ts` changed, and `embeds.ts` became presentation only. Against
+stock 0.46.1 the old fixtures matched 197 of 212: all 15 misses were the
+baked YouTube facade and image `referrerpolicy`, which came from the
+patched Worker, not the studio. This crate no longer bakes either, and
+matches all 212. Seven cases were added:
+
+- `[TK]`, `[=]` and `[/TK]` quoted in code inside a scope are text
+  (0.41.1, #68: `tk_code_close_in_scope`, `tk_code_open_in_scope`,
+  `tk_code_eq_in_scope`, `tk_code_fence_in_scope`). `parse_scopes` now
+  looks for every token outside code, not only the opening one.
+- Own-line directives in block TK output (decision #60:
+  `tr_block_tk_directive_split`, `_attached`, `_in_code`); the first two
+  are known divergences, as above.
+
+Remote generation sources (0.41, `GenerationSource {id, version, origin?,
+cited?}`) and the preview's per-scope `sources` live in the studio's
+authoring API, not in the rendered HTML, so nothing here changed for them;
+`blyg-core` owns the wire side.
 
 **Studio 0.36.1** changed three things the preview shows, and this crate
 follows each. None of the 202 existing cases changed; 10 were added, with
@@ -352,6 +410,8 @@ them too:
   also punycodes the host, which this crate does not.
 - **Citation dates.** They use the ISO date part, where the Worker uses
   `toLocaleDateString` in the server's time zone.
+- **Unrequested output directives.** `unrequested_output_directives`
+  skips a directive line inside code; the studio's warns about it too.
 - **Preview script.** It gives the iframe a `referrerpolicy`, since YouTube
   embeds need a referrer. It resolves image URLs against `document.baseURI`,
   so the fallback works on a non-http preview origin. It also re-checks

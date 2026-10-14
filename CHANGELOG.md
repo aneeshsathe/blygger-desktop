@@ -15,6 +15,26 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-13
+
+### Changed
+
+- **Works with a stock blyg.** Burrow now runs fully against an unmodified Blygger Studio (0.40 and later, checked against 0.46.1), with no server patches. Reading syncs from the studio's own imported feed (`GET /api/reading/imported`, paged by cursor), read marks sync through its read-state routes, and lineage, citations, the full author and disclosed generation sources come with each post. Servers running the older owner-API extensions keep working. [Server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html) and `docs/SERVER.md` describe what's needed.
+- **Sign in with a studio token or the browser.** The server owner token from the old extensions is gone from sign-in. Use Sign in with browser, or a token from Studio → More → Client access (allow `reading:state` so read marks sync). If your blyg dropped the old owner token, Burrow opens the sign-in sheet after updating; sign in once and everything queued is sent.
+- **Preview matches the studio 0.46.1 renderer.** Embeds are no longer baked into the HTML (the poster still shows), and `[TK]`, `[=]` and `[/TK]` inside code anywhere in a scope are plain text (studio 0.41.1).
+- **"Drew on this".** A mention whose relation is `source` (a post that used yours as a generation source) shows as "drew on this".
+
+### Added
+
+- **Publish warns about quotes in generated text.** If a TK block's output holds an own-line `![[id]]` that its instruction didn't name, the publish sheet says so before you publish: publishing turns it into a quote and notifies that blyg. Preview now shows it as the quote publish will make (decision #60).
+- **Generated text is marked as the publisher's own claim.** In the Reader, text a blyg marks as generated gets a tooltip, and the post ends with a short note that the disclosure is the publisher's own and isn't verified.
+
+### Fixed
+
+- **Reading sync against studio 0.40 and later.** Burrow asked for 500 rows a page in the old shape, which a stock studio refuses, so reading never synced there.
+- **A refused sign-in stops syncing cleanly.** When the blyg rejects Burrow's token (for example after a server change), Burrow stops sending and pulling, keeps every queued change, and opens the sign-in sheet with an explanation, instead of retrying.
+- **Authors and citations come through whole.** The full author object is kept, and `cited` survives on replies (`stub_of`) and remote references.
+
 ## [0.11.0] - 2026-10-09
 
 ### Added

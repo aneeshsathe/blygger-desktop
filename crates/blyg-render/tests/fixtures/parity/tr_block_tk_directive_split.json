@@ -1,0 +1,19 @@
+{
+  "name": "tr_block_tk_directive_split",
+  "kind": "thread",
+  "md": "Intro.\n\n[TK]write a bridge[=]bridge line\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\nafter[/TK]\n\nEnd",
+  "html": "<p>Intro.</p>\n<div class=\"blyg-tk-gen\"><p>bridge line</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n<p>after</p>\n</div>\n<p>End</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write a bridge",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

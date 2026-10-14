@@ -258,9 +258,10 @@ fn renders_the_thread_and_patches_after_a_pause(cx: &mut TestAppContext) {
     );
     assert!(page.contains("A tide pool is a small ocean"));
     assert!(page.contains("class=\"blyg-tk-gen\""), "the TK tint");
+    // A bare video link, which the page script shows as the facade.
     assert!(
-        page.contains("figure class=\"blyg-yt\""),
-        "the YouTube facade"
+        page.contains("\"><a href=\"https://www.youtube.com/watch?v=Qa1b2C3d4E5\">"),
+        "the YouTube link: {page}"
     );
     assert!(page.contains("blyg-transclusion unresolved"));
     assert!(page.contains("<article class=\"thread\">"));
@@ -433,6 +434,31 @@ fn publish_warns_about_unresolved_quotes(cx: &mut TestAppContext) {
     // With only the resolvable quote left, no warning.
     view.update_in(cx, |v, window, cx| {
         let text = format!("Tides\n\n![[{SAMPLE_QUOTE_ID}]]\n");
+        v.editor.update(cx, |s, cx| s.set_value(text, window, cx));
+    });
+    let w = view.read_with(cx, |v, cx| v.studio_publish_warning(cx));
+    assert_eq!(w, None);
+}
+
+#[gpui_kit::test]
+fn publish_warns_about_a_quote_generated_text_echoed(cx: &mut TestAppContext) {
+    let (view, fake, _, cx) = setup(cx, true);
+    open_sample(&view, &fake, cx);
+    // Decision #60: the output's own-line directive is a quote at publish.
+    view.update_in(cx, |v, window, cx| {
+        let text =
+            format!("Tides\n\n[TK]write a bridge[=]A bridge.\n\n![[{SAMPLE_QUOTE_ID}]][/TK]\n");
+        v.editor.update(cx, |s, cx| s.set_value(text, window, cx));
+    });
+    let w = view.read_with(cx, |v, cx| v.studio_publish_warning(cx));
+    let w = w.expect("a warning");
+    assert!(w.contains(&format!("![[{SAMPLE_QUOTE_ID}]]")), "{w}");
+    assert!(w.contains("notifies the author"), "{w}");
+    // Named by the instruction, it is a source the author asked for.
+    view.update_in(cx, |v, window, cx| {
+        let text = format!(
+            "Tides\n\n[TK]open with ![[{SAMPLE_QUOTE_ID}]][=]A bridge.\n\n![[{SAMPLE_QUOTE_ID}]][/TK]\n"
+        );
         v.editor.update(cx, |s, cx| s.set_value(text, window, cx));
     });
     let w = view.read_with(cx, |v, cx| v.studio_publish_warning(cx));

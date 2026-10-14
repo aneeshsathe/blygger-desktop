@@ -541,14 +541,18 @@ mod tests {
                 id: Some("A".into()),
                 version: Some(1),
                 url: None,
+                cited: None,
             }),
             forked_from: Some(blyg_core::RemoteRef {
                 origin: "https://rue.example.com/".into(),
                 id: "R".into(),
                 version: 3,
+                cited: None,
             }),
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         };
         let mut held = item.clone();
         held.origin = "https://ada.example.net/".into();
@@ -575,6 +579,7 @@ mod tests {
                 origin: "https://lin.example.org/".into(),
                 id: "L".into(),
                 version: 2,
+                cited: None,
             }),
             transclusions: vec![],
         };

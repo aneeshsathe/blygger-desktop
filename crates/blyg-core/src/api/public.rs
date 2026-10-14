@@ -186,6 +186,8 @@ impl ItemDoc {
             transclusions: self.transclusions.clone(),
             // The post's own document: what it lacks, it doesn't have.
             lineage_known: true,
+            source_url: None,
+            generated: None,
         }
     }
 

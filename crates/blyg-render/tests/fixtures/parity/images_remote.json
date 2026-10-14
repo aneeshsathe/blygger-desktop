@@ -2,7 +2,7 @@
   "name": "images_remote",
   "kind": "fragment",
   "md": "![remote](https://images.example.org/p.jpg) ![proto](//cdn.example.com/x.png) ![http](http://images.example.org/q.png \"Q\")",
-  "html": "<p><img src=\"https://images.example.org/p.jpg\" alt=\"remote\" referrerpolicy=\"no-referrer\"> <img src=\"//cdn.example.com/x.png\" alt=\"proto\" referrerpolicy=\"no-referrer\"> <img src=\"http://images.example.org/q.png\" alt=\"http\" title=\"Q\" referrerpolicy=\"no-referrer\"></p>\n",
+  "html": "<p><img src=\"https://images.example.org/p.jpg\" alt=\"remote\"> <img src=\"//cdn.example.com/x.png\" alt=\"proto\"> <img src=\"http://images.example.org/q.png\" alt=\"http\" title=\"Q\"></p>\n",
   "tk": {
     "scopes": [],
     "errors": []

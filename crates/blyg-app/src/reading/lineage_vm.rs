@@ -877,12 +877,14 @@ mod tests {
             id: Some("T".into()),
             version: Some(1),
             url: None,
+            cited: None,
         });
         let mut fork = mine("F1", "Forked");
         fork.forked_from = Some(RemoteRef {
             origin: ADA.into(),
             id: "T".into(),
             version: 1,
+            cited: None,
         });
         let m = Mention {
             id: "m".into(),
@@ -921,6 +923,7 @@ mod tests {
             origin: BO.into(),
             id: "K".into(),
             version: 2,
+            cited: None,
         });
         centre.transclusions = vec![TransclusionRef {
             id: "Z".into(),

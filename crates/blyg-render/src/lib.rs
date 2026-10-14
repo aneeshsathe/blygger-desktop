@@ -39,7 +39,7 @@ pub use shell::{
     Attachment, Citation, ShellOpts, article_html, csp, fork_lineage_html, media_html, page_shell,
     page_shell_with, preview_media, stub_citation_html, studio_css,
 };
-pub use tk::{TkError, TkScope, parse_scopes};
+pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
     Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
     Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
@@ -48,6 +48,13 @@ pub use util::escape_html;
 
 /// Crockford base32 as blyg ids use it: lowercase, no i/l/o/u.
 pub const ID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
+
+/// The studio's `codeRanges`: `[start, end)` byte offsets of `text` that are
+/// code (fenced, indented or inline), where `![[id]]`, `[[id]]` and the TK
+/// tokens are inert text.
+pub fn code_ranges(text: &str) -> Vec<(usize, usize)> {
+    markdown::code_ranges(text)
+}
 
 /// The kind of item being rendered. Only threads resolve quotes; in a
 /// fragment a `![[id]]` line is literal text, as the Worker publishes it.
@@ -155,7 +162,7 @@ pub fn render_preview(
     let (scopes, tk_errors) = tk::parse_scopes(md);
     let src = linemap::Mapped::identity(md);
     let (stripped, spans) = tk::preview_strip(&src, &scopes);
-    let annotated = tk::annotate(&stripped, &spans);
+    let annotated = tk::annotate(&stripped, &spans, kind == Kind::Thread);
 
     let mut stats = Stats {
         ai_spans: scopes.iter().filter(|s| s.output.is_some()).count(),

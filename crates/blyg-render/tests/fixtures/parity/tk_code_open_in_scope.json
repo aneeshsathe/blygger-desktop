@@ -1,0 +1,19 @@
+{
+  "name": "tk_code_open_in_scope",
+  "kind": "fragment",
+  "md": "[TK]impyrt=Write `[TK]x[/TK]` in a post.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>Write <code>[TK]x[/TK]</code> in a post.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -61,6 +61,8 @@ fn mention_what(rel: Option<&str>) -> &'static str {
         Some("stub") => "stubbed this",
         Some("fork") => "forked this",
         Some("transclusion") => "quoted this",
+        // Studio 0.41+: generated text drew on this post.
+        Some("source") => "drew on this",
         _ => "mentioned this",
     }
 }
@@ -258,6 +260,7 @@ mod tests {
             source_version: Some(1),
             source_author: Some(blyg_core::Author {
                 name: Some("Rue".into()),
+                extra: Default::default(),
                 url: None,
             }),
             first_seen: t.clone(),

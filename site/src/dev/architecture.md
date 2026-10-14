@@ -23,7 +23,7 @@ crates/blyg-app     the GPUI app. It talks only to Arc<dyn Backend>, and has a
   typing stops, and pulls the server's changes periodically.
 - **No async runtime in the app.** Network calls are blocking `ureq` (rustls)
   on background threads.
-- **Secrets** (the owner token, AI keys) live in the macOS Keychain, never in
+- **Secrets** (the blyg sign-in, AI keys) live in the macOS Keychain, never in
   a file and never in logs.
 - **One table each** for configuration keys (`blyg-core/src/config/keys.rs`)
   and keyboard shortcuts (`blyg-app/src/keymap.rs`). Defaults, validation,
@@ -45,8 +45,8 @@ crates/blyg-app     the GPUI app. It talks only to Arc<dyn Backend>, and has a
   parts of the Blygger protocol a desktop client needs.
 - [Extensions (BXP)](extensions.md) (`docs/EXTENSIONS.md`): the extension
   protocol, manifests, capabilities and the host's lifecycle.
-- [Server requirements](../server.md) (`docs/SERVER.md`): the owner-API
-  extensions the app needs.
+- [Server requirements](../server.md) (`docs/SERVER.md`): what each
+  blygger-studio version brings, and the old fork's legacy extensions.
 
 These pages include the files in `docs/` directly, so the repository and this
 site never disagree.

@@ -121,6 +121,9 @@ pub enum Setup {
     StudioSample,
     /// The draft with a TK scope appended, caret inside it.
     Tk(&'static str),
+    /// A thread draft whose generated text echoed a quote its instruction
+    /// didn't name, in the full editor (⌘3).
+    EchoedQuote,
     /// The draft pushed over 1000 characters.
     Long(&'static str),
     /// A published post with a few versions, opened.
@@ -137,6 +140,9 @@ pub enum Setup {
     Stream,
     /// Reading, in the Stream, the post with a quote selected.
     StreamQuote,
+    /// Reading, in the Stream, the post with text marked as generated
+    /// selected, the side pane closed.
+    StreamGenerated,
     /// Reading, in the Stream, the quoting post's lineage open (⌘J).
     Lineage,
     /// Reading, in Reader mode, a post open.
@@ -201,6 +207,8 @@ pub const THREAD: &str = "01J9H4C";
 pub const QUOTING: &str = crate::fake::reading_seed::ADA_REPLY;
 /// The post it quotes (it lists the quoting post as a response).
 pub const QUOTED: &str = crate::fake::reading_seed::LIN_BENCH;
+/// The sample reading post with a sentence its blyg marks as generated.
+pub const GENERATED: &str = crate::fake::reading_seed::LIN_FORK;
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -421,6 +429,24 @@ pub const STEPS: &[Step] = &[
         stay: false,
     },
     Step {
+        id: "echoed-quote",
+        since: "0.12.0",
+        title: "A quote the AI added",
+        caption: "This gap's text ends with ![[…]] on its own line, which its instruction \
+                  never asked for. Publishing makes that a real quote and notifies its \
+                  author, so the preview already shows the quote, and ⌘⏎'s sheet warns \
+                  before you publish. Delete the line, or name the post in the \
+                  instruction.",
+        keys: &[Key::Publish],
+        key_label: "⌘⏎",
+        region: Region::Whole,
+        button: Some("Publish"),
+        setup: Setup::EchoedQuote,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
         id: "mentions",
         since: "0.4.0",
         title: "Mentions and spelling",
@@ -465,6 +491,22 @@ pub const STEPS: &[Step] = &[
         region: Region::StreamPost,
         button: None,
         setup: Setup::Stream,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "generated",
+        since: "0.12.0",
+        title: "“Generated” is the publisher's word",
+        caption: "Lin's blyg marks a sentence of this post as AI-generated. Open it (⏎): \
+                  the marked text is tinted, hovering it says so, and the post ends with a \
+                  note that the mark is the publisher's own disclosure, not verified.",
+        keys: &[Key::ReadMore],
+        key_label: "⏎",
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::StreamGenerated,
         pause_ms: 1800,
         settle: false,
         stay: true,

@@ -1,0 +1,19 @@
+{
+  "name": "tk_code_close_in_scope",
+  "kind": "fragment",
+  "md": "Changelog: [TK]impyrt=close a scope with `[/TK]` now[/TK], done.",
+  "html": "<p>Changelog: <span class=\"blyg-tk-gen\">close a scope with <code>[/TK]</code> now</span>, done.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "impyrt",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -45,9 +45,9 @@ written in Rust with [GPUI](https://www.gpui.rs), the UI framework behind Zed.
 - **Configure** it in one plain-text file, Ghostty-style. See
   [Configuration](config.md).
 
-Burrow needs a blyg with a few owner-API extensions that aren't in upstream
-Blygger yet (see [Server requirements](server.md)). You can try it without
-one: the first launch offers sample data.
+Burrow works with a stock blyg: an unmodified blygger-studio 0.40 or later
+needs no server patches (see [Server requirements](server.md)). You can try
+it without one: the first launch offers sample data.
 
 ## Disclaimer
 

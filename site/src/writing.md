@@ -189,6 +189,14 @@ regenerates. The preview tints generated text, and it's always disclosed as
 generated when you publish; an unfilled gap shows as `⚠ ungenerated` in the
 preview. See [AI helpers](ai.md).
 
+**A quote the AI added.** In a thread, a `![[id]]` on its own line inside a
+gap's generated text is a real quote once you publish: it's baked into the
+post and notifies that post's author. If the gap's instruction didn't name
+that post (a model sometimes echoes a quote it saw), the preview shows it as
+the quote publishing will make, and the publish sheet warns before you
+publish. Delete the line, or name the post in the instruction if you meant
+it.
+
 **Highlighting generated text** (studio 0.27 or later): the blyg's public
 pages can tint generated passages and mark them with a small robot that says
 what you disclosed. Your blyg's settings (in the Reader's site settings) set

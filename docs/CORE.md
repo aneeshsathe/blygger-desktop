@@ -7,9 +7,9 @@ How `crates/blyg-core` works, for whoever touches it next. The spec is
 
 | Module | Role |
 |---|---|
-| `api/` | Blocking `ureq` 2 (rustls) client, one method per owner endpoint. Errors: transport → `Offline`, 401 → `Unauthorized`, 404 → `NotFound`, other non-2xx → `Rejected{status, error, errors}` (5xx too; `api::is_transient` treats ≥ 500 as retryable). Patch-3 reads return `Ok(None)` on 404. `Debug` redacts the token. |
+| `api/` | Blocking `ureq` 2 (rustls) client, one method per owner endpoint. Errors: transport → `Offline`, 401 → `Unauthorized`, 404 → `NotFound`, other non-2xx → `Rejected{status, error, errors}` (5xx too; `api::is_transient` treats ≥ 500 as retryable). Optional reads (`/api/reading/imported` on a studio before 0.40, …) return `Ok(None)` on 404. `Debug` redacts the token. |
 | `store/` | One `rusqlite` connection behind a mutex, WAL, `user_version` migrations (`schema.rs`, append-only). Items + FTS5 trigram index, outbox, versions cache, reading list, subscriptions. |
-| `sync/` | `Engine` (flush, pull, health/status, events) plus the worker thread. |
+| `sync/` | `Engine` (flush, pull, health/status, events) plus the worker thread. A `401` the credential can't recover from stops the worker (no retry loop) and emits `SignedOut` once; queued ops stay. |
 | `live.rs` | `LiveBackend: Backend`. |
 | `tk.rs` | The Worker's TK scope grammar, and provenance validation/remapping (see § Provenance). |
 | `config/` | the Ghostty-style config file (`keys.rs` is the single key table; `parse`, `edit` preserves comments on write-back, `paths` XDG → Application Support, `migrate` from the old TOML files, `show` for `+show-config`); `tokens.rs`: `TokenStore` trait (`KeychainTokenStore` behind the default `keychain` feature, `MemoryTokenStore` for tests). |
@@ -149,8 +149,8 @@ cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
 BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
 ```
 
-The Worker must be blygger-studio 0.9 or later with docs/SERVER.md's
-extensions. The script derives a local-only wrangler config (no routes, no
+The Worker is a stock blygger-studio 0.9 or later (set `BLYG_E2E_STOCK=1`; the
+few tests of the old fork's extensions then skip), or a fork carrying them. The script derives a local-only wrangler config (no routes, no
 Workers AI binding, so nothing billed), random dev secrets including a
 throwaway `BLYG_OWNER_TOKEN`, and scratch D1/R2 state. It starts two instances
 (the second is a blyg to subscribe to) and stops only what it started. The
@@ -159,7 +159,8 @@ connect, reads, autosave, publish, withdraw, pin and restore, kind changes,
 uploads and their dedupe and removal, a 409 conflict from a direct API edit,
 offline queueing, subscriptions and reading, read-state sync between two
 clients, and AI provenance disclosure. Raw replies are checked against
-`openapi.json`. Last green: 22/22 against the fork on studio 0.10 (2026-10-02).
+`openapi.json`. Last green: 44/44 (plus the markdown-notes extension's 2) against
+stock studio 0.46.1 (2026-10-13).
 
 ## Reading list
 

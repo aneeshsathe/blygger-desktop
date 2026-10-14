@@ -905,6 +905,7 @@ mod tests {
             origin: "https://rue.blyg.example.com/".into(),
             id: id.into(),
             version: 2,
+            cited: None,
         });
         assert_eq!(item_title(&it), "In response to rue.blyg.example.com");
     }

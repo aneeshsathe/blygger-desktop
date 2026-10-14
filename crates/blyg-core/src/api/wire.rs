@@ -317,31 +317,177 @@ pub struct Media {
     pub duplicate: bool,
 }
 
-/// `GET /api/reading/imported` (patch 3) → `{items, next}`, plus `read_state: true`
-/// from a server that stores read state (extension 5; each item then carries
-/// its `read_version`), and `lineage: true` from one whose rows carry their
-/// `stub_of` and `forked_from` (null when none).
-#[derive(Debug, Clone, Deserialize)]
+/// `GET /api/reading/imported`, one page, in either of two shapes:
+///
+/// - upstream's `listImportedReading` (studio 0.40+): `{items, next, limit}`,
+///   camelCase rows (`subscriptionId`, `readVersion`, `stubOf`, …), paged by
+///   `cursor`, at most 100 a page. No page-level flags: read state is
+///   advertised on `GET /api/reading`, and every row carries the origin's own
+///   lineage (null when none).
+/// - the maintainer's old Worker patch 3: `{items, next}` with snake_case rows,
+///   paged by `before`, plus `read_state: true` from a server that stores read
+///   state (each item then carries its `read_version`), `read_state_clear`, and
+///   `lineage: true` from one whose rows carry `stub_of` and `forked_from`.
+///
+/// `upstream` says which: a page without the patch's `read_state` flag, whose
+/// rows are camelCase (or that echoes `limit`), is upstream's.
+#[derive(Debug, Clone)]
 pub struct ReadingPage {
     pub items: Vec<ReadingItem>,
-    #[serde(default)]
     pub next: Option<String>,
-    #[serde(default, deserialize_with = "crate::model::lenient")]
     pub read_state: Option<bool>,
-    #[serde(default, deserialize_with = "crate::model::lenient")]
     pub lineage: Option<bool>,
     /// Read state can be cleared (mark unread, `read_at` on reads).
-    #[serde(default, deserialize_with = "crate::model::lenient")]
     pub read_state_clear: Option<bool>,
+    /// Upstream's shape (see above).
+    pub upstream: bool,
+}
+
+impl<'de> Deserialize<'de> for ReadingPage {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            items: Vec<Value>,
+            #[serde(default)]
+            next: Option<Value>,
+            #[serde(default)]
+            read_state: Option<Value>,
+            #[serde(default)]
+            read_state_clear: Option<Value>,
+            #[serde(default)]
+            lineage: Option<Value>,
+            #[serde(default)]
+            limit: Option<Value>,
+        }
+        let raw = Raw::deserialize(d)?;
+        let flag = |v: &Option<Value>| v.as_ref().and_then(Value::as_bool);
+        let camel = raw
+            .items
+            .first()
+            .is_some_and(|i| i.get("subscriptionId").is_some());
+        let upstream = raw.read_state.is_none() && (camel || raw.limit.is_some());
+        let mut items = Vec::with_capacity(raw.items.len());
+        for row in raw.items {
+            let it = if row.get("subscriptionId").is_some() {
+                upstream_row(&row)
+            } else {
+                serde_json::from_value(row).map_err(|e| e.to_string())
+            };
+            items.push(it.map_err(serde::de::Error::custom)?);
+        }
+        Ok(ReadingPage {
+            items,
+            next: raw
+                .next
+                .as_ref()
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            read_state: flag(&raw.read_state),
+            lineage: flag(&raw.lineage),
+            read_state_clear: flag(&raw.read_state_clear),
+            upstream,
+        })
+    }
 }
 
 impl ReadingPage {
-    /// The server advertises read-state sync (extension 5).
+    /// The server advertises read-state sync (the patch's page flag).
     pub fn read_sync(&self) -> bool {
         self.read_state == Some(true)
     }
 
     /// The server can clear read state (`read_state_clear: true`).
+    pub fn read_clear(&self) -> bool {
+        self.read_sync() && self.read_state_clear == Some(true)
+    }
+}
+
+/// Upstream's `listImportedReading` serves at most this many rows a page.
+pub const UPSTREAM_READING_MAX: u32 = 100;
+
+/// One upstream `ImportedReadingEntry` (camelCase) in the app's shape.
+/// Tolerant: only `subscriptionId` and `remoteId` are required; anything
+/// else odd reads as absent. `withdrawn` is the old `state: "tombstone"`.
+/// The row's lineage is the origin's own (null when none), so it is known
+/// for every row but an L0 one or a withdrawn one.
+pub fn upstream_row(row: &Value) -> Result<ReadingItem, String> {
+    let o = row
+        .as_object()
+        .ok_or("a reading row that isn't an object")?;
+    let s = |k: &str| o.get(k).and_then(Value::as_str).map(str::to_string);
+    let b = |k: &str| o.get(k).and_then(Value::as_bool).unwrap_or(false);
+    let n = |k: &str| {
+        o.get(k)
+            .and_then(Value::as_u64)
+            .and_then(|v| u32::try_from(v).ok())
+    };
+    let sub = s("subscriptionId").ok_or("a reading row without subscriptionId")?;
+    let rid = s("remoteId").ok_or("a reading row without remoteId")?;
+    let withdrawn = b("withdrawn");
+    let l0 = b("l0");
+    let kind = if s("kind").as_deref() == Some("thread") {
+        "thread"
+    } else {
+        "fragment"
+    };
+    let thumb = o
+        .get("thumb")
+        .and_then(Value::as_i64)
+        .filter(|t| *t == 1 || *t == -1);
+    let hoppers: Vec<String> = o
+        .get("hoppers")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|h| h.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let obj = |k: &str| o.get(k).filter(|v| v.is_object()).cloned();
+    let v = serde_json::json!({
+        "subscription_id": sub,
+        "remote_id": rid,
+        "subscription_title": s("subscriptionTitle").unwrap_or_default(),
+        "origin": s("origin").unwrap_or_default(),
+        "kind": kind,
+        "state": if withdrawn { "tombstone" } else { "current" },
+        "version": n("version").unwrap_or(0),
+        "created": s("created"),
+        "updated": s("updated"),
+        "observed_at": s("observedAt").unwrap_or_default(),
+        "content_md": s("contentMd").unwrap_or_default(),
+        "content_html": s("contentHtml").unwrap_or_default(),
+        "author": obj("author"),
+        "page": s("page"),
+        "thumb": thumb,
+        "hoppers": hoppers,
+        "pinned_version_retained": n("pinnedVersionRetained"),
+        "read_version": n("readVersion"),
+        "stub_of": obj("stubOf"),
+        "forked_from": obj("forkedFrom"),
+        "transclusions": o.get("transclusions").filter(|v| v.is_array()),
+        "lineage_known": !l0 && !withdrawn,
+        "source_url": s("sourceUrl"),
+        "generated": o.get("generated").filter(|v| v.is_array()),
+    });
+    serde_json::from_value(v).map_err(|e| e.to_string())
+}
+
+/// `GET /api/reading`'s read-state flags (studio 0.39+): the server stores
+/// read state, and can clear it. Only the flags are read.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct ReadingFlags {
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state: Option<bool>,
+    #[serde(default, deserialize_with = "crate::model::lenient")]
+    pub read_state_clear: Option<bool>,
+}
+
+impl ReadingFlags {
+    pub fn read_sync(&self) -> bool {
+        self.read_state == Some(true)
+    }
+
     pub fn read_clear(&self) -> bool {
         self.read_sync() && self.read_state_clear == Some(true)
     }
@@ -484,7 +630,8 @@ pub fn stock_row(
             .unwrap_or(Value::Null)
     };
     let author = match parse("author_json") {
-        a @ Value::Object(_) => serde_json::json!({ "name": a.get("name"), "url": a.get("url") }),
+        // The whole object (protocol §5.5): `Author` keeps what it doesn't name.
+        a @ Value::Object(_) => a,
         _ => Value::Null,
     };
     let transclusions = match parse("transclusions_json") {
@@ -629,5 +776,138 @@ mod stock_row_tests {
             "{:?}",
             serde_json::from_value::<ReadingItem>(raw.clone()).err()
         );
+    }
+}
+
+#[cfg(test)]
+mod reading_page_tests {
+    use super::*;
+
+    /// A page as blygger-studio 0.46.1's `listImportedReading` serves it
+    /// (src/imported-reading.ts `entry`), with invented content.
+    const UPSTREAM: &str = r#"{"items":[
+      {"subscriptionId":"S1","subscriptionTitle":"Ada","origin":"https://ada.example.com/",
+       "remoteId":"R2","kind":"thread","withdrawn":false,"l0":false,"version":3,"readVersion":2,
+       "created":"2030-01-01T00:00:00Z","updated":"2030-01-02T00:00:00Z","observedAt":"2030-01-02T00:00:05Z",
+       "contentMd":"Re: ![[X]]","contentHtml":"<p>Re</p>","author":{"name":"Ada","url":"https://ada.example.com/"},
+       "page":"t/R2/","sourceUrl":"https://ada.example.com/t/R2/","pinnedVersionRetained":null,"thumb":1,
+       "hoppers":["H1"],"transclusions":[{"id":"X","version":2,"origin":"https://bo.example.com/",
+       "cited":{"author":"Bo","source":"Bo's blyg"}}],
+       "stubOf":{"origin":"https://bo.example.com/","id":"X","version":2,"cited":{"author":"Bo"}},
+       "forkedFrom":null,"generated":[{"sources":[],"model":"m","at":"2030-01-01T00:00:00Z"}]},
+      {"subscriptionId":"S1","subscriptionTitle":"Ada","origin":"https://ada.example.com/",
+       "remoteId":"R1","kind":"fragment","withdrawn":true,"l0":false,"version":2,"readVersion":null,
+       "created":null,"updated":null,"observedAt":"2030-01-01T00:00:05Z","contentMd":"","contentHtml":"",
+       "author":null,"page":null,"sourceUrl":null,"pinnedVersionRetained":1,"thumb":null,"hoppers":[],
+       "transclusions":null,"stubOf":null,"forkedFrom":null,"generated":null}
+    ],"next":"WyIyMDMwIiwiUzEiLCJSMSJd","limit":2}"#;
+
+    #[test]
+    fn an_upstream_page_reads_in_the_apps_shape() {
+        let p: ReadingPage = serde_json::from_str(UPSTREAM).unwrap();
+        assert!(p.upstream);
+        assert!(!p.read_sync(), "upstream says so on GET /api/reading");
+        assert_eq!(p.next.as_deref(), Some("WyIyMDMwIiwiUzEiLCJSMSJd"));
+        let a = &p.items[0];
+        assert_eq!(
+            (a.subscription_id.as_str(), a.remote_id.as_str()),
+            ("S1", "R2")
+        );
+        assert_eq!(a.kind, Kind::Thread);
+        assert_eq!(a.state, "current");
+        assert_eq!(a.read_version, Some(2));
+        assert_eq!(a.thumb, Some(1));
+        assert_eq!(a.hoppers, vec!["H1".to_string()]);
+        assert_eq!(a.author.as_ref().unwrap().name.as_deref(), Some("Ada"));
+        assert_eq!(a.stub_of.as_ref().unwrap().id.as_deref(), Some("X"));
+        assert_eq!(a.transclusions.len(), 1);
+        assert!(a.lineage_known);
+        assert_eq!(
+            a.source_url.as_deref(),
+            Some("https://ada.example.com/t/R2/")
+        );
+        assert_eq!(a.generated.as_ref().map(Vec::len), Some(1));
+        let w = &p.items[1];
+        assert_eq!(w.state, "tombstone");
+        assert_eq!(w.pinned_version_retained, Some(1));
+        assert_eq!(w.read_version, None);
+        assert!(!w.lineage_known, "a withdrawn row says nothing of lineage");
+    }
+
+    #[test]
+    fn an_empty_upstream_page_is_upstream() {
+        let p: ReadingPage =
+            serde_json::from_str(r#"{"items":[],"next":null,"limit":100}"#).unwrap();
+        assert!(p.upstream && p.items.is_empty() && p.next.is_none());
+    }
+
+    #[test]
+    fn the_old_patch_page_still_reads() {
+        let p: ReadingPage = serde_json::from_str(
+            r#"{"items":[{"subscription_id":"S","remote_id":"R","subscription_title":"N",
+            "origin":"https://ada.example.com/","kind":"fragment","state":"current","version":1,
+            "created":null,"updated":null,"observed_at":"2030-01-01T00:00:00Z","content_md":"x",
+            "content_html":"<p>x</p>","author":null,"page":null,"thumb":null,"hoppers":[],
+            "read_version":1,"stub_of":null,"forked_from":null}],
+            "next":null,"read_state":true,"read_state_clear":true,"lineage":true}"#,
+        )
+        .unwrap();
+        assert!(!p.upstream);
+        assert!(p.read_sync() && p.read_clear());
+        assert_eq!(p.items[0].read_version, Some(1));
+        let empty: ReadingPage =
+            serde_json::from_str(r#"{"items":[],"next":null,"read_state":false}"#).unwrap();
+        assert!(!empty.upstream);
+    }
+
+    #[test]
+    fn a_row_without_its_identity_fails_the_page() {
+        let r = serde_json::from_str::<ReadingPage>(
+            r#"{"items":[{"subscriptionId":"S"}],"next":null,"limit":1}"#,
+        );
+        assert!(r.is_err());
+    }
+}
+
+#[cfg(test)]
+mod author_tests {
+    use super::*;
+
+    #[test]
+    fn a_stock_row_keeps_the_whole_author() {
+        let raw = serde_json::json!({
+            "subscription_id": "S", "remote_id": "R", "kind": "fragment", "state": "current",
+            "version": 1, "created": null, "updated": null, "observed_at": "2030-01-01T00:00:00Z",
+            "content_md": "x", "content_html": "<p>x</p>",
+            "author_json": r#"{"name":"Ada","url":"https://ada.example.com/","avatar":"https://ada.example.com/a.png","bio":"Writes."}"#,
+            "transclusions_json": null, "l0": false, "pinned_version_retained": null, "page": null,
+        });
+        let r = stock_row(&raw, "N", "https://ada.example.com/", None, &[], None).unwrap();
+        let a = r.author.unwrap();
+        assert_eq!(a.name.as_deref(), Some("Ada"));
+        assert_eq!(a.extra["avatar"], "https://ada.example.com/a.png");
+        assert_eq!(a.extra["bio"], "Writes.");
+        // …and it survives the store's JSON round trip.
+        let back: Author = serde_json::from_value(serde_json::to_value(&a).unwrap()).unwrap();
+        assert_eq!(back, a);
+    }
+
+    #[test]
+    fn a_stub_of_keeps_its_citation() {
+        let p: ReadingPage = serde_json::from_str(
+            r#"{"items":[{"subscriptionId":"S","remoteId":"R","kind":"thread",
+            "stubOf":{"origin":"https://bo.example.com/","id":"X","version":2,
+              "cited":{"source":"Bo","url":"https://bo.example.com/t/X/","retrieved":"2030-01-01T00:00:00Z"}},
+            "forkedFrom":{"origin":"https://bo.example.com/","id":"Y","version":1,
+              "cited":{"source":"Bo","url":"https://bo.example.com/f/Y/","retrieved":"2030-01-01T00:00:00Z"}}}],
+            "next":null,"limit":1}"#,
+        )
+        .unwrap();
+        let it = &p.items[0];
+        let c = it.stub_of.as_ref().unwrap().cited.as_ref().unwrap();
+        assert!(c.complete());
+        assert_eq!(c.source.as_deref(), Some("Bo"));
+        let f = it.forked_from.as_ref().unwrap().cited.as_ref().unwrap();
+        assert_eq!(f.url.as_deref(), Some("https://bo.example.com/f/Y/"));
     }
 }

@@ -309,6 +309,7 @@ fn a_stub_is_a_draft_thread_with_stub_of() {
         origin: "https://rue.blyg.example.com/".into(),
         id: "01K2RUE0TRUST0000000000001".into(),
         version: 5,
+        cited: None,
     };
     let id = s
         .create_stub(&of, "![[01K2RUE0TRUST0000000000001]]\n\n", 0)

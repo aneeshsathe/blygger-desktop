@@ -224,6 +224,7 @@ fn continue_outline_and_reply_are_tk_scopes() {
         content_html: String::new(),
         author: Some(Author {
             name: Some("Sam".into()),
+            extra: Default::default(),
             url: None,
         }),
         page: Some("https://them.example/f/R1/".into()),
@@ -235,6 +236,8 @@ fn continue_outline_and_reply_are_tk_scopes() {
         transclusions: vec![],
         pinned_version_retained: None,
         lineage_known: false,
+        source_url: None,
+        generated: None,
     };
     let p = Scripted::new(&["Agreed, and…"]);
     let out = reply_draft(&p, &item, None, &CancelFlag::new(), &mut |_| {}).unwrap();

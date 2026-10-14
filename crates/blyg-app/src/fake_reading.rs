@@ -26,6 +26,9 @@ pub const ADA_TIDES: &str = "01K2ADA0TIDES0000000000001";
 pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
 /// Lin's thread forked from Ada's pinned first draft of the tides post.
 pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
+/// The sentence of Lin's fork that Lin's blyg marks as generated.
+pub const LIN_FORK_GENERATED: &str =
+    "And yet we plan the day around them, as if the moon owed us something.";
 /// A fragment of Lin's with emphasis, code and a bare link.
 pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
 pub const LIN_REREAD: &str = "01K2LIN0REREAD000000000001";
@@ -122,6 +125,7 @@ fn post(
         content_html: blyg_render::render_markdown(content),
         author: Some(Author {
             name: Some(author.into()),
+            extra: Default::default(),
             url: Some(sub.origin.clone()),
         }),
         page: Some(format!(
@@ -136,6 +140,8 @@ fn post(
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 
@@ -279,6 +285,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         id: Some(LIN_BENCH.into()),
         version: Some(1),
         url: None,
+        cited: None,
     });
     reply.transclusions = vec![TransclusionRef {
         id: LIN_BENCH.into(),
@@ -324,12 +331,20 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         "Lin",
         "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01K2KIT0T1DES0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
     );
+    // An origin serves its HTML baked: the directive's line is gone and the
+    // attached excerpt is the quote.
+    fork.content_html = blyg_render::render_markdown(
+        &fork
+            .content_md
+            .replace(&format!("![[{KIT_TIDES}]]\n\n"), ""),
+    );
     fork.created = Some((now - d(2)).to_rfc3339());
     fork.updated = Some((now - h(30)).to_rfc3339());
     fork.forked_from = Some(RemoteRef {
         origin: ADA.into(),
         id: ADA_TIDES.into(),
         version: 1,
+        cited: None,
     });
     fork.transclusions = vec![TransclusionRef {
         id: KIT_TIDES.into(),
@@ -338,6 +353,13 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         cited: None,
         selector: None,
     }];
+    // Lin's blyg marks one sentence as generated (spec §5.7): the Reader
+    // tints it and notes that the mark is Lin's own, unverified disclosure.
+    fork.content_html = fork.content_html.replacen(
+        LIN_FORK_GENERATED,
+        &format!("<span class=\"blyg-tk-gen\">{LIN_FORK_GENERATED}</span>"),
+        1,
+    );
     reading.push(fork);
     reading.push(post(
         &lin,
@@ -412,11 +434,13 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
                         id: Some(ADA_TIDES.into()),
                         version: Some(2),
                         url: None,
+                        cited: None,
                     }),
                     forked_from: Some(RemoteRef {
                         origin: RUE.into(),
                         id: RUE_TRUST.into(),
                         version: 3,
+                        cited: None,
                     }),
                     transclusions: vec![TransclusionRef {
                         id: ADA_TIDES.into(),
@@ -498,6 +522,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         source_version: Some(1),
         source_author: Some(Author {
             name: Some(name.into()),
+            extra: Default::default(),
             url: Some(origin.into()),
         }),
         first_seen: (now - ago).to_rfc3339(),
@@ -585,6 +610,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         content_html: blyg_render::render_markdown(kit_text),
         author: Some(Author {
             name: Some("Kit".into()),
+            extra: Default::default(),
             url: Some(KIT.into()),
         }),
         page: Some(format!("f/{KIT_TIDES}")),
@@ -596,6 +622,8 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     };
     let public = vec![PublicItem {
         item: kit_item,

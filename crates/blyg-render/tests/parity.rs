@@ -10,7 +10,29 @@ use serde_json::Value;
 
 /// Fixtures whose output is known to differ, with the reason. Keep this
 /// list honest and short; `docs/RENDER.md` explains each entry.
-const KNOWN_DIVERGENCES: &[(&str, &str)] = &[];
+const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
+    // Decision #60: an own-line `![[id]]` in a block scope's output is a
+    // quote at publish. The studio's preview (and its publish, for a scope
+    // with recorded provenance) renders the block on its own and shows the
+    // directive as text; this preview bakes it, as the decision says publish
+    // does. `tests/preview.rs` pins the output.
+    (
+        "tr_block_tk_directive_output",
+        "decision #60: directive in block TK output is a quote",
+    ),
+    (
+        "tr_block_tk_directive_split",
+        "decision #60: directive in block TK output is a quote",
+    ),
+    (
+        "tr_block_tk_directive_attached",
+        "decision #60: directive in block TK output is a quote",
+    ),
+    (
+        "tr_in_tk_block",
+        "decision #60: directive in block TK output is a quote",
+    ),
+];
 
 fn load_fixtures() -> Vec<Value> {
     let dir = fixtures_dir().join("parity");
@@ -96,7 +118,7 @@ fn parity_with_worker() {
                 "--- {name}: unresolved\n  expected: {errors:?}\n  got:      {got_errors:?}"
             ));
         }
-        if kind == Kind::Thread {
+        if kind == Kind::Thread && !known {
             let ids: Vec<String> = f["transclusions"]
                 .as_array()
                 .unwrap()

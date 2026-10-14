@@ -31,6 +31,18 @@ pub(crate) fn spawn(engine: Arc<Engine>, rx: Receiver<Msg>) -> JoinHandle<()> {
 fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
     let mut next_pull = Instant::now();
     loop {
+        // The blyg refused the credential (401): no retry loop. Sleep until
+        // told something; a manual sync (`Engine::sync_now`) that gets
+        // through, or a new sign-in (a new engine), ends it.
+        if engine.signed_out() {
+            match rx.recv() {
+                Ok(Msg::Shutdown) | Err(_) => return,
+                Ok(_) => {
+                    next_pull = Instant::now();
+                    continue;
+                }
+            }
+        }
         let now = Instant::now();
         let mut deadline = next_pull;
         if let Some(due) = engine.store.earliest_due() {

@@ -6,8 +6,9 @@ optional. Most options can also be changed in Settings (⌘,), which writes
 them back to the file and keeps your comments. **Burrow › Open Config File**
 opens it, and ⇧⌘, reloads it after you edit it by hand.
 
-**Secrets never go in this file.** The blyg owner token and AI API keys are
-stored in the macOS Keychain, and the app never logs them.
+**Secrets never go in this file.** Your blyg sign-in (browser grant, API
+token or password) and AI API keys are stored in the macOS Keychain, and the
+app never logs them.
 
 ## The file format
 

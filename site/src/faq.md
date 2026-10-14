@@ -19,13 +19,13 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes, if it runs blygger-studio 0.9 or later. On 0.28 or later, sign in with
-your browser (or an API token from the studio's Client access page); on an
-older one, with your studio password. On a current studio only one thing
-needs an extension upstream doesn't have yet: read state across your Macs.
-An older studio limits a little more (AI disclosure for text generated in
-Burrow, removing images you pasted and then deleted), and Burrow tells you
-which the first time it connects. See [Server requirements](server.md).
+Yes. A stock blygger-studio 0.40 or later is fully supported: nothing
+needs a patched server. On 0.28 or later, sign in with your browser (or an
+API token from the studio's Client access page); on an older one, with your
+studio password. Burrow works with any studio from 0.9, but an older one
+limits a little (read state across your Macs before 0.39, AI disclosure for
+text generated in Burrow before 0.28), and Burrow tells you which the first
+time it connects. See [Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 
@@ -42,7 +42,7 @@ your blyg.
 
 Only what a feature needs, when you use it:
 
-- your blyg, with your owner token;
+- your blyg, with your sign-in;
 - other blygs' **public** files, without your token, when you open a profile
   or a quoted post you don't hold;
 - GitHub, about once a day, to check for updates (`auto-update = off` stops
@@ -83,15 +83,24 @@ Studio shows.
 
 ### Do I need to sign in again after updating?
 
-Once, after updating to 0.11 or later, if your blyg runs blygger-studio 0.39
-or later and you read on more than one Mac. Studio 0.39 keeps read state
-behind its own permission (`reading:state`), which a sign-in made before
-then doesn't have. Until you sign in again, posts you read are marked read on
+Usually not. Only if your sign-in was made before your blyg ran
+blygger-studio 0.39, and you read on more than one Mac: studio 0.39 keeps read
+state behind its own permission (`reading:state`), which an older sign-in
+doesn't have. Until you sign in again, posts you read are marked read on
 this Mac and wait to be sent; everything else syncs as usual, and Burrow says
 once that read state is waiting. To sign in again: **Burrow › Disconnect…**
 (keep the local copy), then connect with **Sign in with browser** and allow
 every permission. With an API token, make a new one in the studio's **More ›
 Client access** that includes reading:state.
+
+### Why did Burrow open the sign-in sheet by itself?
+
+Your blyg refused Burrow's sign-in: an API token expired (they last 30 days)
+or was revoked, a browser sign-in ended, or the server changed (a blyg that
+moved from the old patched Worker to a stock studio no longer takes the
+old owner token). Burrow stops syncing rather than retrying, keeps every
+change on your Mac, and says why. Sign in with your browser, or paste a new
+token from the studio's **More › Client access**, and what waited is sent.
 
 ### Can I bring my feeds from another reader?
 

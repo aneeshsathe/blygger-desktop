@@ -39,6 +39,8 @@ fn ri(
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 
@@ -663,12 +665,14 @@ fn responses_are_found_by_origin_and_id() {
         id: Some("T1".into()),
         version: Some(1),
         url: None,
+        cited: None,
     });
     let mut fork = responder("sc", "F1", "https://cy.example/", "2030-01-02T00:00:00Z");
     fork.forked_from = Some(RemoteRef {
         origin: "https://ada.example/".into(),
         id: "T1".into(),
         version: 1,
+        cited: None,
     });
     // Same id on another origin: not a response.
     let mut other = responder("sd", "O1", "https://dee.example/", "2030-01-05T00:00:00Z");
@@ -677,6 +681,7 @@ fn responses_are_found_by_origin_and_id() {
         id: Some("T1".into()),
         version: None,
         url: None,
+        cited: None,
     });
     // A quote without an origin is from its own blyg.
     let mut own = responder("sa", "A2", "https://ada.example/", "2030-01-06T00:00:00Z");

@@ -1,6 +1,8 @@
 //! Markdown → HTML with the reference Worker's markdown-it semantics:
-//! `new MarkdownIt({ html: false, linkify: true, typographer: false })` plus
-//! its `embedsPlugin` (YouTube facade, `referrerpolicy` on off-origin images).
+//! `new MarkdownIt({ html: false, linkify: true, typographer: false })`.
+//! Since studio 0.40 embeds are presentation only (embeds.ts): nothing is
+//! baked into the HTML, and a page script upgrades a bare YouTube link on
+//! screen ([`crate::preview_script`] here).
 //!
 //! Built on `markdown-it` (the Rust port of markdown-it.js), with these pieces
 //! replaced to match the JS library exactly:
@@ -98,15 +100,10 @@ pub(crate) fn render(src: &str, line_of: Option<&dyn Fn(usize) -> usize>) -> (St
     let mut root = engine().parse(src);
     let mut stats = MdStats::default();
     linkify_core(&mut root);
-    youtube_facades(&mut root);
+    stats.videos = count_videos(&root);
     rewrite_images(&mut root, &mut stats);
     rewrite_code(&mut root, src);
     rewrite_containers(&mut root);
-    root.walk(|n, _| {
-        if n.is::<YtFacade>() {
-            stats.videos += 1;
-        }
-    });
     if let Some(line_of) = line_of {
         let starts = line_starts(src);
         for node in root.children.iter_mut() {
@@ -523,9 +520,10 @@ fn split_links(
 }
 
 // ---------------------------------------------------------------------------
-// Embeds (the Worker's embeds.ts `embedsPlugin`)
+// Embeds (the studio's embeds.ts rules, applied on screen, never baked)
 
-/// The YouTube click-to-load facade, replacing a paragraph.
+/// The YouTube click-to-load facade, replacing a paragraph in the tree
+/// `native.rs` reads. The HTML render leaves the paragraph as it is.
 #[derive(Debug)]
 pub struct YtFacade {
     pub id: String,
@@ -575,54 +573,67 @@ fn bare_link(node: &Node) -> Option<(&str, String)> {
         .map(|t| (t.content.as_str(), url))
 }
 
+/// The video a paragraph shows on screen: its only content is one link whose
+/// text is its own URL, pointing at a YouTube video (embeds.ts).
+fn facade_of(para: &Node) -> Option<YtFacade> {
+    if !para.is::<Paragraph>() {
+        return None;
+    }
+    let kids: Vec<&Node> = para
+        .children
+        .iter()
+        .filter(|k| {
+            !k.cast::<Text>()
+                .is_some_and(|t| js_trim(&t.content).is_empty())
+        })
+        .collect();
+    if kids.len() != 1 {
+        return None;
+    }
+    let (text, href) = bare_link(kids[0])?;
+    if js_trim(text) != js_trim(&href) {
+        return None;
+    }
+    let id = youtube_id(&href)?;
+    Some(YtFacade { id, href })
+}
+
 fn youtube_facades(node: &mut Node) {
     for child in node.children.iter_mut() {
-        if child.is::<Paragraph>() {
-            let kids: Vec<&Node> = child
-                .children
-                .iter()
-                .filter(|k| {
-                    !k.cast::<Text>()
-                        .is_some_and(|t| js_trim(&t.content).is_empty())
-                })
-                .collect();
-            if kids.len() == 1
-                && let Some((text, href)) = bare_link(kids[0])
-                && js_trim(text) == js_trim(&href)
-                && let Some(id) = youtube_id(&href)
-            {
-                let srcmap = child.srcmap;
-                *child = Node::new(YtFacade { id, href });
-                child.srcmap = srcmap;
-            }
-        } else {
+        if let Some(facade) = facade_of(child) {
+            let srcmap = child.srcmap;
+            *child = Node::new(facade);
+            child.srcmap = srcmap;
+        } else if !child.is::<Paragraph>() {
             youtube_facades(child);
         }
     }
 }
 
+fn count_videos(node: &Node) -> usize {
+    node.children
+        .iter()
+        .map(|child| {
+            if facade_of(child).is_some() {
+                1
+            } else if child.is::<Paragraph>() {
+                0
+            } else {
+                count_videos(child)
+            }
+        })
+        .sum()
+}
+
 // ---------------------------------------------------------------------------
 // Images
 
-/// markdown-it's image token, rendered with its default rule plus the
-/// embeds plugin's `referrerpolicy="no-referrer"` for off-origin sources.
+/// markdown-it's image token, rendered with its default rule (and the
+/// Worker's `altText`). Stock studio bakes no `referrerpolicy`.
 #[derive(Debug)]
 pub struct BlygImage {
     pub url: String,
     pub title: Option<String>,
-}
-
-fn is_remote(src: &str) -> bool {
-    // /^(?:https?:)?\/\//i
-    let lower = src.get(..8).unwrap_or(src).to_ascii_lowercase();
-    let rest = if lower.starts_with("https:") {
-        &src[6..]
-    } else if lower.starts_with("http:") {
-        &src[5..]
-    } else {
-        src
-    };
-    rest.starts_with("//")
 }
 
 /// The Worker's image `altText` (studio#6): `text`, `text_special` (escapes
@@ -652,9 +663,6 @@ impl NodeValue for BlygImage {
         attrs.push(("alt", alt));
         if let Some(title) = &self.title {
             attrs.push(("title", title.clone()));
-        }
-        if is_remote(&self.url) {
-            attrs.push(("referrerpolicy", "no-referrer".to_string()));
         }
         fmt.self_close("img", &attrs);
     }

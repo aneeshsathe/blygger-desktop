@@ -1,0 +1,17 @@
+{
+  "name": "tr_block_tk_directive_in_code",
+  "kind": "thread",
+  "md": "[TK]x[=]Look:\n\n```\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n```[/TK]",
+  "html": "<p>[TK]x[=]Look:</p>\n<pre><code>![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n```[/TK]</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": [
+      {
+        "at": 0,
+        "reason": "unterminated scope (missing [/TK])"
+      }
+    ]
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -26,25 +26,40 @@ pub struct Scope {
 }
 
 /// The scopes of `md`, or `None` when the grammar is malformed (unterminated
-/// or nested), exactly where the Worker's `tk.ts::parseScopes` reports errors.
+/// or nested), exactly where the studio's `tk.ts::parseScopes` reports errors.
+/// Every token (`[TK]`, `[=]`, `[/TK]`) is looked for outside code (studio
+/// 0.41.1, #68): one written in code, inline or fenced, is an example of the
+/// grammar, not grammar, wherever it sits, inside a scope included.
 pub fn parse(md: &str) -> Option<Vec<Scope>> {
+    let code = if md.contains("[TK]") {
+        blyg_render::code_ranges(md)
+    } else {
+        Vec::new()
+    };
+    let in_code = |at: usize| code.iter().any(|&(s, e)| at >= s && at < e);
+    let find = |token: &str, from: usize| -> Option<usize> {
+        let mut from = from;
+        loop {
+            let at = from + md.get(from..)?.find(token)?;
+            if !in_code(at) {
+                return Some(at);
+            }
+            from = at + token.len();
+        }
+    };
     let mut scopes = Vec::new();
     let mut i = 0;
     let mut ok = true;
-    while let Some(rel) = md[i..].find("[TK]") {
-        let tk = i + rel;
-        let close_rel = md[tk + 4..].find("[/TK]")?; // unterminated
-        let close = tk + 4 + close_rel;
-        if md[tk + 4..close].contains("[TK]") {
+    while let Some(tk) = find("[TK]", i) {
+        let close = find("[/TK]", tk + 4)?; // unterminated
+        if find("[TK]", tk + 4).is_some_and(|n| n < close) {
             ok = false;
             i = close + 5;
             continue;
         }
-        let body = &md[tk + 4..close];
-        let (instruction, output) = match body.find("[=]") {
-            Some(eq) => (&body[..eq], Some(body[eq + 3..].to_string())),
-            None => (body, None),
-        };
+        let eq = find("[=]", tk + 4).filter(|&e| e < close);
+        let instruction = &md[tk + 4..eq.unwrap_or(close)];
+        let output = eq.map(|e| md[e + 3..close].to_string());
         let end = close + 5;
         scopes.push(Scope {
             start: tk,
@@ -189,6 +204,25 @@ fn shares_a_word(a: &str, b: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn tokens_in_code_are_text_even_inside_a_scope() {
+        // Studio 0.41.1 (#68): `[TK]`, `[=]` and `[/TK]` in code are text.
+        let s = parse("[TK]explain `[/TK]` and `[=]`[=]out `[TK]` here[/TK]").unwrap();
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].instruction, "explain `[/TK]` and `[=]`");
+        assert_eq!(s[0].output.as_deref(), Some("out `[TK]` here"));
+        // A fenced block inside a scope, holding a whole example scope.
+        let md = "[TK]summarise\n\n```\n[TK]x[=]y[/TK]\n```\n\n[=]done[/TK]";
+        let s = parse(md).unwrap();
+        assert_eq!(s.len(), 1);
+        assert_eq!(s[0].output.as_deref(), Some("done"));
+        // Outside any scope, an inline example is no scope at all.
+        assert_eq!(parse("write `[TK]…[/TK]` to ask").unwrap().len(), 0);
+        // Still malformed outside code.
+        assert!(parse("[TK]a [TK]b[/TK]").is_none(), "nested");
+        assert!(parse("[TK]open `[/TK]`").is_none(), "unterminated");
+    }
+
     fn p(model: &str) -> Option<ScopeProvenance> {
         Some(ScopeProvenance {
             model: model.into(),
@@ -266,6 +300,7 @@ mod tests {
             sources: vec![ProvenanceSource {
                 id: "0123456789abcdefghjkmnpqrs".into(),
                 version: None,
+                origin: None,
             }],
             at: None,
         });

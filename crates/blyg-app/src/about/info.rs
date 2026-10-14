@@ -158,18 +158,18 @@ impl ConnectionInfo {
         }
     }
 
-    /// Connected to a server without Burrow's extensions (a stock
-    /// blygger-studio): the About window says what that limits.
+    /// Connected to a server without `GET /api/reading/imported` (a studio
+    /// older than 0.40): the About window says what that limits.
     pub fn limited(&self) -> bool {
         matches!(self, ConnectionInfo::Live { caps, .. }
             if caps.iter().any(|c| c.label == EXTENSIONS && !c.on))
     }
 }
 
-const EXTENSIONS: &str = "Server extensions";
+const EXTENSIONS: &str = "Full reading feed";
 
 /// The capabilities, in display order, from what the backend recorded:
-/// the docs/SERVER.md extensions at all, read state across Macs, and AI
+/// the full reading feed (studio 0.40+, or the old fork), read state across Macs, and AI
 /// disclosure for text generated in the app.
 pub fn capabilities(extensions: bool, read_sync: bool, provenance: bool) -> Vec<Capability> {
     vec![
@@ -363,7 +363,7 @@ Auto-update:       notify
 Last check:        2026-09-21 15:13 UTC
 Update:            up to date
 Blyg:              blyg.example.com
-Server extensions: yes
+Full reading feed: yes
 Read-state sync:   no
 AI disclosure:     yes
 ";

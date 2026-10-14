@@ -51,7 +51,7 @@ macro_rules! read_state_scope {
         "reading:state"
     };
 }
-/// The scope read-state writes need (studio 0.39+). Provisional name.
+/// The scope read-state writes need (studio 0.39+).
 pub const READ_STATE_SCOPE: &str = read_state_scope!();
 /// The owner scopes (upstream `src/auth-scopes.ts` `OWNER_SCOPES`, in its
 /// order, which is also the consent page's).

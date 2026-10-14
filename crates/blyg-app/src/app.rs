@@ -487,12 +487,7 @@ impl MainView {
                     // An ended browser sign-in: ask for a new one (the
                     // sheet says why) rather than retrying.
                     (Err(CoreError::Unauthorized), _) if v.sheet.is_none() => {
-                        v.show_toast(
-                            "Your blyg signed Burrow out",
-                            Some("Sign in again to sync".into()),
-                            cx,
-                        );
-                        v.open_connect(window, cx);
+                        v.signed_out(window, cx);
                     }
                     (Err(e), _) => {
                         v.show_toast(format!("Couldn't load from the blyg: {e}"), None, cx)
@@ -766,10 +761,9 @@ impl MainView {
             };
             match (secret.is_empty(), by_password) {
                 (true, true) => Err("Type your blyg's studio password".to_string()),
-                (true, false) => Err(
-                    "Paste an API token: make one in Studio → More → Client access, or use your server's owner token"
-                        .to_string(),
-                ),
+                (true, false) => {
+                    Err("Paste an API token: make one in Studio → More → Client access".to_string())
+                }
                 (false, true) => Ok((u, Credential::Password(secret))),
                 (false, false) => Ok((u, Credential::Token(secret))),
             }
@@ -849,7 +843,7 @@ impl MainView {
                             Ok(_) => {
                                 // A studio older than 0.28: the password works.
                                 v.set_connect_way(ConnectWay::Password, window, cx);
-                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password, or an owner token.".to_string()
+                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password.".to_string()
                             }
                             Err(CoreError::Offline) => {
                                 "Couldn't reach that address. Check the URL and your connection."
@@ -1309,6 +1303,34 @@ impl MainView {
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
             CoreEvent::ServerLimited => self.server_limited(window, cx),
+            CoreEvent::SignedOut => {
+                if self.sheet.is_none() {
+                    self.signed_out(window, cx);
+                }
+            }
+        }
+    }
+
+    /// The blyg refused the stored credential (401): a revoked or expired
+    /// token, an ended browser sign-in, or an owner token a blyg no longer
+    /// takes. Sync has stopped (no retries) and changes wait in the outbox;
+    /// ask for a new sign-in, browser first.
+    fn signed_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_toast(
+            "Your blyg signed Burrow out",
+            Some("Sign in again to sync; your changes wait on this Mac".into()),
+            cx,
+        );
+        self.open_connect(window, cx);
+        if let Some(Sheet::Connect { error, .. }) = self.sheet.as_mut()
+            && error.is_none()
+        {
+            *error = Some(
+                "Your blyg no longer accepts Burrow's saved sign-in. Sign in with the \
+                 browser, or paste a new API token from Studio → Access, or use the \
+                 Studio password. Changes made meanwhile are kept and sync after."
+                    .into(),
+            );
         }
     }
 
@@ -3098,8 +3120,7 @@ impl MainView {
                         "Make a token in your blyg's Studio → More → Client access: choose REST \
                          API and every permission (read, draft, publish, manage, and reading:state \
                          where offered). It lasts \
-                         30 days. A server with Burrow's extensions can use its owner token \
-                         here instead. Either is kept in your macOS Keychain."
+                         30 days. It is kept in your macOS Keychain."
                     }
                     ConnectWay::Password => {
                         "The password you sign in to the studio with. It works with any \
