@@ -22,8 +22,8 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 toml = "1"
 url = "2"
 keyring = { version = "3.6", features = ["apple-native", "windows-native"], optional = true }
+# The studio's code ranges (`tk::parse`: TK tokens in code are text).
+blyg-render = { path = "../blyg-render" }
 
 [dev-dependencies]
 tempfile = "3"
-# The stub e2e builds its quotes with the stub editor's own functions.
-blyg-render = { path = "../blyg-render" }
