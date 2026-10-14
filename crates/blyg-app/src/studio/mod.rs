@@ -407,6 +407,24 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
     (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")))
 }
 
+/// Decision #60: an own-line `![[id]]` left in generated text is a real
+/// quote once published, and notifies the quoted blyg. Say so before
+/// publishing when the scope's instruction never named it (usually a model
+/// echoing a directive).
+pub fn echoed_quote_warning(md: &str) -> Option<String> {
+    let ids = blyg_render::unrequested_output_directives(md);
+    let n = ids.len();
+    (n > 0).then(|| {
+        let list: Vec<String> = ids.iter().map(|id| format!("![[{id}]]")).collect();
+        format!(
+            "⚠ Generated text has {} on its own line, which its instruction didn't ask for. \
+             Publishing quotes {} and notifies the author.",
+            list.join(", "),
+            if n == 1 { "it" } else { "them" }
+        )
+    })
+}
+
 fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
     RenderOpts {
         mount: base_url
@@ -841,14 +859,22 @@ impl MainView {
         )
     }
 
-    /// The publish sheet's warning about quotes and links publish would refuse.
+    /// The publish sheet's warning about quotes and links publish would
+    /// refuse, and about quotes generated text would add (decision #60).
     pub(super) fn studio_publish_warning(&self, cx: &App) -> Option<String> {
         let item = self.current.as_ref()?;
         let md = self.editor.read(cx).value();
         if !md.contains("[[") {
             return None;
         }
-        unresolved_warning(&render_doc(&*self.backend, Some(item), &md).stats)
+        let unresolved = unresolved_warning(&render_doc(&*self.backend, Some(item), &md).stats);
+        let echoed = (item.kind == blyg_core::Kind::Thread)
+            .then(|| echoed_quote_warning(&md))
+            .flatten();
+        match (unresolved, echoed) {
+            (Some(a), Some(b)) => Some(format!("{a}\n{b}")),
+            (a, b) => a.or(b),
+        }
     }
 
     /// `BLYGGER_DEMO=studio`: the sample thread in the full editor.
