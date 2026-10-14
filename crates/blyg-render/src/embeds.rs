@@ -1,10 +1,13 @@
-//! The embeds extension (the Worker's `embeds.ts`, "local patch 6"): the
-//! YouTube click-to-load facade and the off-origin image fallback.
+//! Embeds (the studio's `embeds.ts`, studio 0.40): the YouTube click-to-load
+//! facade and the off-origin image fallback.
 //!
-//! The baked facade needs no script: it is a poster image linked to the video
-//! plus a caption holding the original link. The preview page's own script
-//! ([`preview_script`]) swaps the poster for a `youtube-nocookie.com` iframe on
-//! click and replaces a failed off-origin image with a visible link.
+//! Presentation only, as in the studio: nothing is baked into the HTML. The
+//! preview page's own script ([`preview_script`]) turns a bare video link
+//! into the facade (a poster image linked to the video plus a caption
+//! holding the original link), swaps the poster for a
+//! `youtube-nocookie.com` iframe on click, and replaces a failed off-origin
+//! image with a visible link. [`youtube_facade_html`] is the same markup,
+//! for hosts that show someone else's HTML without the script.
 
 use regex::Regex;
 use std::sync::OnceLock;
@@ -120,8 +123,8 @@ const PREVIEW_SCRIPT: &str = r#"
     return fig;
   }
 
-  // Quoted snapshots baked before the facade existed hold a bare <p><a>url</a></p>;
-  // the public page upgrades them in the browser, so the preview does too.
+  // A bare <p><a>url</a></p> to a video becomes the facade on screen, as
+  // the public page's script does (studio 0.40: never baked into the HTML).
   function upgrade(root) {
     if (!root.querySelectorAll) return;
     var ps = root.querySelectorAll("article p");

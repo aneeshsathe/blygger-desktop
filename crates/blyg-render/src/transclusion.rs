@@ -286,6 +286,12 @@ pub(crate) fn directive_id(line: &str) -> Option<&str> {
         .map(|m| m.as_str())
 }
 
+/// Whether the walk would take `line` as a directive (resolved, or refused
+/// as a reserved `@vN` form) rather than prose.
+pub(crate) fn is_directive_line(line: &str) -> bool {
+    directive_re().is_match(line) || reserved_re().is_match(line)
+}
+
 fn reserved_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {

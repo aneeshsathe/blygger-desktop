@@ -210,5 +210,12 @@
   {"name": "tk_doc_edge_ungenerated", "kind": "fragment", "md": "Intro.\n\n[TK]write the ending[/TK]\n"},
   {"name": "tk_doc_edge_one_newline_inside", "kind": "fragment", "md": "Intro.\n[TK]a[=]stays inline[/TK]\n\n[TK]b[=]block at the end[/TK]\n"},
   {"name": "tk_doc_edge_text_after", "kind": "fragment", "md": "\n[TK]a[=]inline, text follows[/TK]\nmore text"},
-  {"name": "tk_doc_edge_thread", "kind": "thread", "md": "[TK]open[=]Generated opening.[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]close[=]Generated closing.[/TK]\n"}
+  {"name": "tk_doc_edge_thread", "kind": "thread", "md": "[TK]open[=]Generated opening.[/TK]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\n[TK]close[=]Generated closing.[/TK]\n"},
+  {"name": "tk_code_close_in_scope", "kind": "fragment", "md": "Changelog: [TK]impyrt=close a scope with `[/TK]` now[/TK], done."},
+  {"name": "tk_code_open_in_scope", "kind": "fragment", "md": "[TK]impyrt=Write `[TK]x[/TK]` in a post.[/TK]"},
+  {"name": "tk_code_eq_in_scope", "kind": "fragment", "md": "A [TK]explain `[=]`[=]It splits instruction from output.[/TK] B"},
+  {"name": "tk_code_fence_in_scope", "kind": "thread", "md": "Intro\n\n[TK]impyrt=Example:\n\n```\n[TK]a[=]b[/TK]\n```\n[/TK]\n\nEnd"},
+  {"name": "tr_block_tk_directive_split", "kind": "thread", "md": "Intro.\n\n[TK]write a bridge[=]bridge line\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n\nafter[/TK]\n\nEnd"},
+  {"name": "tr_block_tk_directive_attached", "kind": "thread", "md": "[TK]bridge[=]One.\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> Small tools\n\nTwo.[/TK]"},
+  {"name": "tr_block_tk_directive_in_code", "kind": "thread", "md": "[TK]x[=]Look:\n\n```\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n```[/TK]"}
 ]

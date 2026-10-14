@@ -1,0 +1,19 @@
+{
+  "name": "tk_code_eq_in_scope",
+  "kind": "fragment",
+  "md": "A [TK]explain `[=]`[=]It splits instruction from output.[/TK] B",
+  "html": "<p>A <span class=\"blyg-tk-gen\">It splits instruction from output.</span> B</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "explain `[=]`",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
