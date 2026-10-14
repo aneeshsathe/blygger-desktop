@@ -167,6 +167,14 @@ struct NetState {
     /// session (a new sign-in is a new session), and the rest of the outbox
     /// goes on without them.
     read_denied: bool,
+    /// `GET /api/reading/imported` answered in upstream's shape (studio
+    /// 0.40+): `Some(true)`; the old Worker patch 3's: `Some(false)`.
+    upstream_feed: Option<bool>,
+    /// Upstream's read-state flags (`GET /api/reading`), once read.
+    read_flags: Option<crate::api::wire::ReadingFlags>,
+    /// The blyg refused the stored credential (401): nothing is sent or
+    /// pulled on its own until a new sign-in, or a manual sync.
+    signed_out: bool,
 }
 
 /// What to say, once a session, when the blyg refuses a read-state write.
@@ -242,6 +250,9 @@ impl Engine {
                 pushed: HashMap::new(),
                 paced_until: None,
                 read_denied: false,
+                upstream_feed: None,
+                read_flags: None,
+                signed_out: false,
             }),
             opts,
             scratch_dir: None,
@@ -361,6 +372,7 @@ impl Engine {
         st.retry_at = None;
         st.rate_limited = false;
         st.scope_blocked = false;
+        st.signed_out = false;
     }
 
     /// Record a failed network call. Transient failures and auth failures
@@ -397,22 +409,27 @@ impl Engine {
             e if is_transient(e) => Health::Error,
             _ => return,
         };
-        // Windows: say why, once, when the blyg starts refusing the token;
-        // the status bar alone only says "sync error".
-        let newly_refused = cfg!(target_os = "windows")
-            && matches!(e, CoreError::Unauthorized)
-            && st.health != Health::Error;
         st.health = health;
         st.retry_at = Some(Instant::now() + st.backoff);
         st.backoff = (st.backoff * 2).min(self.opts.backoff_max);
+        // A 401 the credential can't recover from (`Api::exec` already
+        // renewed a browser sign-in, or signed in again with the password):
+        // the stored token is revoked, expired, or one the server no longer
+        // takes (an owner token on a blyg that went stock). No retry loop:
+        // the worker stops sending and pulling until a new sign-in (a new
+        // session) or a manual sync, queued changes stay queued, and the UI
+        // is told once, to ask for a sign-in.
+        let newly_signed_out =
+            matches!(e, CoreError::Unauthorized) && !std::mem::replace(&mut st.signed_out, true);
         drop(st);
-        if newly_refused {
-            self.emit(CoreEvent::Error(
-                "Your blyg refused the owner token (401). If the token changed, use \
-                 Disconnect… from the Menu and connect again with the new one."
-                    .into(),
-            ));
+        if newly_signed_out {
+            self.emit(CoreEvent::SignedOut);
         }
+    }
+
+    /// The blyg refused the stored credential (401) this session.
+    pub fn signed_out(&self) -> bool {
+        self.state().signed_out
     }
 
     pub fn retry_at(&self) -> Option<Instant> {
@@ -1053,7 +1070,10 @@ impl Engine {
         // don't watch: with it on, the reading list is always read.
         // Upstream's own read state (studio's read-state routes, on a stock
         // server) advances the `reading` revision, so it needs no exception.
-        let ext5_reads = self.read_sync_on() && self.state().stock_reading != Some(true);
+        let ext5_reads = {
+            let st = self.state();
+            self.read_sync_on() && st.stock_reading == Some(false) && st.upstream_feed != Some(true)
+        };
         if stale("reading", READING_DEPS) || ext5_reads {
             self.state().stock_deferred = false;
             let fetched = self.fetch_reading()?;
@@ -1406,12 +1426,25 @@ impl Engine {
 
     /// `None` when the server doesn't have `/api/reading` yet. The flag is
     /// true when the last page had `next: null` (the list is complete).
+    ///
+    /// `GET /api/reading/imported` is upstream's `listImportedReading` on a
+    /// studio 0.40+ (cursor-paged, 100 a page) or the old Worker patch 3
+    /// (`before`-paged, 500 a page); the first page tells which. Upstream
+    /// pages carry no read-state flags: those come from `GET /api/reading`.
     fn fetch_reading(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
         let mut all = Vec::new();
         let mut cursor: Option<String> = None;
-        for i in 0..self.opts.reading_pages.max(1) {
-            match self.api.reading(500, cursor.as_deref())? {
-                // No fork extension: upstream's own reading routes.
+        let mut upstream: Option<bool> = None;
+        let mut pages = self.opts.reading_pages.max(1);
+        let mut i = 0;
+        while i < pages {
+            let limit = if upstream == Some(false) {
+                500
+            } else {
+                crate::api::wire::UPSTREAM_READING_MAX
+            };
+            match self.api.reading(limit, cursor.as_deref(), upstream)? {
+                // No such route: upstream's older reading routes.
                 None if i == 0 => return self.fetch_reading_stock(),
                 None => {
                     self.state().reading_unavailable = true;
@@ -1423,21 +1456,50 @@ impl Engine {
                         let mut st = self.state();
                         st.reading_unavailable = false;
                         st.stock_reading = Some(false);
+                        st.upstream_feed = Some(page.upstream);
                     }
                     if i == 0 {
-                        self.set_read_sync(page.read_sync())?;
-                        self.set_read_clear(page.read_clear())?;
+                        upstream = Some(page.upstream);
+                        if page.upstream {
+                            // A fifth of the patch's page: as many rows.
+                            pages = pages.saturating_mul(5);
+                            let flags = self.upstream_read_flags()?;
+                            self.set_read_sync(flags.read_sync())?;
+                            self.set_read_clear(flags.read_clear())?;
+                        } else {
+                            self.set_read_sync(page.read_sync())?;
+                            self.set_read_clear(page.read_clear())?;
+                        }
                     }
-                    all.extend(page.items);
+                    // Only a server that advertises read state means it.
+                    let keep = self.read_sync_on();
+                    all.extend(page.items.into_iter().map(|mut it| {
+                        if !keep {
+                            it.read_version = None;
+                        }
+                        it
+                    }));
                     match page.next {
-                        // Opaque cursor: passed back verbatim as `before`.
+                        // Opaque cursor: passed back verbatim.
                         Some(n) => cursor = Some(n),
                         None => return Ok(Some((all, true))),
                     }
                 }
             }
+            i += 1;
         }
         Ok(Some((all, false)))
+    }
+
+    /// Upstream's read-state flags (`GET /api/reading`), read once a session.
+    /// A server without the route keeps no read state.
+    fn upstream_read_flags(&self) -> Result<crate::api::wire::ReadingFlags> {
+        if let Some(f) = self.state().read_flags.clone() {
+            return Ok(f);
+        }
+        let f = self.api.reading_flags()?.unwrap_or_default();
+        self.state().read_flags = Some(f.clone());
+        Ok(f)
     }
 
     /// The reading list from a stock server: upstream's `GET /api/reading`

@@ -799,30 +799,49 @@ impl Api {
 
     // ---------- reads (404 → None) ----------
 
-    /// `GET /api/reading/imported` (extension 3): imported rows in the app's
-    /// shape, keyset-paged. Upstream's own `/api/reading` is a different,
-    /// rendered resource. `content_html` comes back raw, as stored: the UI
-    /// sanitizes it before display.
-    pub fn reading(&self, limit: u32, before: Option<&str>) -> Result<Option<ReadingPage>> {
+    /// `GET /api/reading/imported`: imported rows in the app's shape,
+    /// keyset-paged. Upstream's `listImportedReading` (studio 0.40+) pages by
+    /// `cursor`, at most 100 a page; the old Worker patch 3 by `before`.
+    /// `upstream` is which the server turned out to be on the walk's first
+    /// page (`None` before then: that page sends only `limit`, which both
+    /// take, and `ReadingPage::upstream` says which answered). Upstream's
+    /// own `/api/reading` is a different, rendered resource. `content_html`
+    /// is kept as served: the UI sanitizes it before display.
+    pub fn reading(
+        &self,
+        limit: u32,
+        cursor: Option<&str>,
+        upstream: Option<bool>,
+    ) -> Result<Option<ReadingPage>> {
+        let old = upstream == Some(false);
+        let limit = if old {
+            limit.max(1)
+        } else {
+            limit.clamp(1, UPSTREAM_READING_MAX)
+        };
         let mut path = format!("/api/reading/imported?limit={limit}");
-        if let Some(b) = before {
-            path.push_str("&before=");
-            path.push_str(&enc(b));
+        if let Some(c) = cursor {
+            path.push_str(if old { "&before=" } else { "&cursor=" });
+            path.push_str(&enc(c));
         }
         let page: Option<ReadingPage> = Self::optional(self.call_as("GET", &path, None))?;
         Ok(page.map(|mut p| {
-            let read_sync = p.read_sync();
+            // Upstream rows say per row; the patch says per page.
             let lineage = p.lineage == Some(true);
             for it in &mut p.items {
                 it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
-                it.lineage_known = lineage;
-                if !read_sync {
-                    // Only a server that advertises read state means it.
-                    it.read_version = None;
+                if !p.upstream {
+                    it.lineage_known = lineage;
                 }
             }
             p
         }))
+    }
+
+    /// `GET /api/reading?limit=1`, for its read-state flags only (studio
+    /// 0.39+). `None` on 404.
+    pub fn reading_flags(&self) -> Result<Option<ReadingFlags>> {
+        Self::optional(self.call_as("GET", "/api/reading?limit=1", None))
     }
 
     // ---------- reading on a stock server (no `/reading/imported`) ----------

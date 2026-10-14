@@ -487,12 +487,7 @@ impl MainView {
                     // An ended browser sign-in: ask for a new one (the
                     // sheet says why) rather than retrying.
                     (Err(CoreError::Unauthorized), _) if v.sheet.is_none() => {
-                        v.show_toast(
-                            "Your blyg signed Burrow out",
-                            Some("Sign in again to sync".into()),
-                            cx,
-                        );
-                        v.open_connect(window, cx);
+                        v.signed_out(window, cx);
                     }
                     (Err(e), _) => {
                         v.show_toast(format!("Couldn't load from the blyg: {e}"), None, cx)
@@ -1309,6 +1304,34 @@ impl MainView {
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
             CoreEvent::ServerLimited => self.server_limited(window, cx),
+            CoreEvent::SignedOut => {
+                if self.sheet.is_none() {
+                    self.signed_out(window, cx);
+                }
+            }
+        }
+    }
+
+    /// The blyg refused the stored credential (401): a revoked or expired
+    /// token, an ended browser sign-in, or an owner token a blyg no longer
+    /// takes. Sync has stopped (no retries) and changes wait in the outbox;
+    /// ask for a new sign-in, browser first.
+    fn signed_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_toast(
+            "Your blyg signed Burrow out",
+            Some("Sign in again to sync; your changes wait on this Mac".into()),
+            cx,
+        );
+        self.open_connect(window, cx);
+        if let Some(Sheet::Connect { error, .. }) = self.sheet.as_mut()
+            && error.is_none()
+        {
+            *error = Some(
+                "Your blyg no longer accepts Burrow's saved sign-in. Sign in with the \
+                 browser, or paste a new API token from Studio → Access, or use the \
+                 Studio password. Changes made meanwhile are kept and sync after."
+                    .into(),
+            );
         }
     }
 

@@ -1639,15 +1639,16 @@ fn reading_items_carry_the_published_html() {
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn read_state_syncs_between_two_macs() {
-    if !needs_extensions("read-state sync") {
-        return;
-    }
-    // Extension 5: a post read on one Mac reads as read on another Mac
-    // signed in to the same blyg, and the server never lowers it.
+    // Read state (studio 0.39+, or the old extension 5): a post read on one
+    // Mac reads as read on another Mac signed in to the same blyg, and the
+    // server never lowers it.
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
-    if !api.reading(1, None).unwrap().is_some_and(|p| p.read_sync()) {
-        eprintln!("SKIP: this Worker doesn't advertise read_state (extension 5)");
+    let advertised = api.reading(1, None, None).unwrap().is_some_and(|p| {
+        p.read_sync() || (p.upstream && api.reading_flags().unwrap().is_some_and(|f| f.read_sync()))
+    });
+    if !advertised {
+        eprintln!("SKIP: this server doesn't advertise read_state");
         return;
     }
     let src_url = url_b();
@@ -1662,8 +1663,8 @@ fn read_state_syncs_between_two_macs() {
     let t = tag("read");
     let (sid, rid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
     let sub = mac1.subscribe(&src_url, Some("Read sync")).unwrap();
-    mac1.sync_now().unwrap();
-    mac2.sync_now().unwrap();
+    sync_until_held(&mac1, &[&rid]);
+    sync_until_held(&mac2, &[&rid]);
     assert!(reading_item(&mac1, &rid).unwrap().is_unread());
     assert!(reading_item(&mac2, &rid).unwrap().is_unread());
 
@@ -1683,7 +1684,7 @@ fn read_state_syncs_between_two_macs() {
     api.put_read(&sub.id, &rid, 1, None).unwrap();
     mac1.sync_now().unwrap();
     assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
-    let page = api.reading(500, None).unwrap().unwrap();
+    let page = api.reading(100, None, None).unwrap().unwrap();
     let row = page.items.iter().find(|i| i.remote_id == rid).unwrap();
     assert_eq!(row.read_version, Some(2), "the server kept the max");
 
@@ -1694,7 +1695,7 @@ fn read_state_syncs_between_two_macs() {
     assert_eq!(reading_item(&mac3, &rid).unwrap().read_version, Some(2));
 
     mac1.unsubscribe(&sub.id).unwrap();
-    let page = api.reading(500, None).unwrap().unwrap();
+    let page = api.reading(100, None, None).unwrap().unwrap();
     assert!(!page.items.iter().any(|i| i.remote_id == rid));
 }
 
@@ -3387,4 +3388,186 @@ fn opml_import_and_export() {
             api.delete_subscription(&s.id).unwrap();
         }
     }
+}
+
+// ------------------------------- a stock studio's imported feed (0.40+)
+
+/// Every row of `GET /api/reading/imported`, walked `limit` at a time with
+/// the server's own cursor: (sub, remote id) in the order served.
+fn walk_feed(api: &Api, limit: u32) -> (bool, Vec<(String, String)>) {
+    let mut out = Vec::new();
+    let mut cursor: Option<String> = None;
+    let mut upstream = None;
+    loop {
+        let page = api
+            .reading(limit, cursor.as_deref(), upstream)
+            .unwrap()
+            .expect("the server has /api/reading/imported");
+        upstream.get_or_insert(page.upstream);
+        out.extend(
+            page.items
+                .iter()
+                .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
+        );
+        match page.next {
+            Some(n) => cursor = Some(n),
+            None => return (upstream.unwrap_or(false), out),
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn the_imported_feed_pages_by_cursor_without_repeats() {
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("paging");
+    let rids: Vec<String> = (0..5)
+        .map(|i| published(&source, Kind::Fragment, &format!("{t} {i}"), None).1)
+        .collect();
+    let sub = me.subscribe(&src_url, Some("Paged")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    let want: Vec<&str> = rids.iter().map(String::as_str).collect();
+    sync_until_held(&me, &want);
+
+    let api = Api::new(&e.url, e.cred.clone());
+    let (upstream, whole) = walk_feed(&api, 100);
+    if e.stock {
+        assert!(
+            upstream,
+            "a stock studio serves upstream's listImportedReading"
+        );
+    }
+    // One poll stamps one observed_at on the whole backfill: the cursor
+    // must resume inside that tie.
+    let (_, small) = walk_feed(&api, 2);
+    let unique: std::collections::HashSet<_> = small.iter().collect();
+    assert_eq!(unique.len(), small.len(), "no repeats across pages");
+    assert_eq!(small, whole, "the same rows, in the same order");
+    for rid in &rids {
+        assert!(small.iter().any(|(s, r)| *s == sub.id && r == rid), "{rid}");
+    }
+    if upstream {
+        // Upstream's bounds: 1..=100, else 400 (never silently clamped).
+        let (st, _) = owner("GET", &e.url, "/api/reading/imported?limit=101", None);
+        assert_eq!(st, 400);
+    }
+    // The app holds every row, read the same way.
+    for rid in &rids {
+        let r = reading_item(&me, rid).unwrap();
+        assert_eq!(r.subscription_id, sub.id);
+        assert_eq!(r.state, "current");
+        assert!(r.content_html.contains(&t), "{}", r.content_html);
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_stubs_lineage_comes_with_its_feed_row() {
+    // `b` replies (a stub) to a post on `a`; `a` subscribes to `b` and holds
+    // the reply with its stub_of from the feed row itself.
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let other = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("lineage");
+    let (_, mine) = published(&me, Kind::Fragment, &format!("{t} the original"), None);
+    let back = other.subscribe(&e.url, Some("Back")).unwrap();
+    let _unsub_back = Unsub(&other, back.id.clone());
+    sync_until_held(&other, &[&mine]);
+    let held = reading_item(&other, &mine).unwrap();
+    let of = RemoteRef {
+        origin: held.origin.clone(),
+        id: mine.clone(),
+        version: held.version,
+    };
+    let stub = other
+        .create_stub(&of, &format!("![[{mine}]]\n\n{t} a reply."))
+        .unwrap();
+    other.sync_now().unwrap();
+    other.publish(&stub, None).expect("publish the stub");
+    let reply = sid_of(&other, &stub);
+
+    let sub = me.subscribe(&src_url, Some("Replies")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&reply]);
+    let r = reading_item(&me, &reply).unwrap();
+    let s = r.stub_of.as_ref().expect("the reply's stub_of");
+    assert_eq!(s.id.as_deref(), Some(mine.as_str()));
+    assert_eq!(
+        s.origin.as_deref().map(|o| o.trim_end_matches('/')),
+        Some(e.url.as_str())
+    );
+    assert!(r.lineage_known, "lineage came with the row");
+    assert_eq!(r.kind, Kind::Thread);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_refused_token_stops_sync_and_keeps_the_change() {
+    // An owner token the blyg no longer takes (e.g. the old Worker's
+    // BLYG_OWNER_TOKEN once the blyg runs stock) is a 401 on everything:
+    // Burrow says so once (SignedOut), stops sending (no retry loop), and
+    // keeps the change queued for the next sign-in.
+    let e = e2e();
+    let proxy = Proxy::start(&e.url);
+    let dir = tempfile::tempdir().unwrap();
+    let bad = "blyg_not-a-token-this-blyg-issued";
+    let b = backend_at(
+        dir.path(),
+        &proxy.url,
+        Credential::Token(bad.to_string()),
+        true,
+    );
+    let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let ev = events.clone();
+        b.set_event_sink(Box::new(move |e| ev.lock().unwrap().push(e)));
+    }
+    let t = tag("refused");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    let signed_out = || {
+        events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|e| matches!(e, CoreEvent::SignedOut))
+            .count()
+    };
+    wait_until("the sign-out notice", Duration::from_secs(20), || {
+        signed_out() > 0
+    });
+    let _ = proxy.take();
+    // The worker's backoff here is 200–800 ms: a retry loop would show.
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(
+        proxy.take(),
+        Vec::<String>::new(),
+        "nothing sent after the 401"
+    );
+    assert_eq!(signed_out(), 1, "said once");
+    let item = b.item(&id).unwrap();
+    assert!(item.pending_sync, "the change stays queued");
+    assert!(
+        !events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|e| format!("{e:?}").contains(bad)),
+        "the token is never echoed"
+    );
+    drop(b);
+
+    // Signed in again (a new session over the same data): the change lands.
+    let again = backend_at(dir.path(), &e.url, e.cred.clone(), false);
+    again.sync_now().unwrap();
+    let item = again.item(&id).unwrap();
+    assert!(!item.pending_sync, "sent after the new sign-in");
+    assert_eq!(server_item(&sid_of(&again, &id))["content_md"], t.as_str());
+    again.delete_draft(&id).ok();
+    again.sync_now().ok();
 }

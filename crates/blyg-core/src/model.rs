@@ -1093,6 +1093,11 @@ pub enum CoreEvent {
     /// extensions in docs/SERVER.md (sent once per local database). See
     /// `Backend::server_extensions`.
     ServerLimited,
+    /// The blyg refused the stored credential with a 401 (a revoked or
+    /// expired token, an ended sign-in, or an owner token the server no
+    /// longer takes). Sent once per session; nothing syncs on its own until
+    /// a new sign-in (queued changes stay queued). The UI asks to sign in.
+    SignedOut,
 }
 
 #[cfg(test)]
