@@ -72,5 +72,14 @@ your blyg's studio is older, Burrow warns you before publishing generated
 text, and Cancel is the default. Proofreading isn't generated prose and isn't
 disclosed.
 
+If generated text in a thread holds a quote (`![[id]]` on its own line) that
+the gap's instruction didn't ask for, the publish sheet warns you: publishing
+would quote that post and notify its author (see
+[TK: gaps for later](writing.md#tk-gaps-for-later)).
+
+When you read other blygs, text they mark as generated is the publisher's own
+disclosure: Burrow shows it, and says it isn't verified (see
+[Generated text](reading.md#generated-text)).
+
 How the providers, sign-in, prompts and provenance work inside is in
 [blyg-ai](dev/ai.md).

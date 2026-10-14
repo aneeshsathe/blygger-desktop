@@ -113,7 +113,7 @@ pub const KEYS: &[KeySpec] = &[
         key("blyg-url", ValueKind::Url, None),
         "The blyg this app writes to, e.g. https://blyg.example.com. There is no default: \
          with no blyg-url the app starts by asking you to connect one.\n\
-         The owner token for this blyg is kept in the macOS Keychain, never in this file.",
+         Your sign-in for this blyg is kept in the macOS Keychain, never in this file.",
     ),
     docs(
         key("theme", ValueKind::ThemeName, Some("system")),
@@ -302,7 +302,7 @@ pub const KEYS: &[KeySpec] = &[
          you name it here. Extensions are the bundled markdown-notes and folders in \
          ~/.config/blygger/extensions/; `blygger +list-extensions` lists them.\n\
          An extension is a separate program that talks to Burrow over its standard input \
-         and output. It never sees your owner token, API keys or the database: Burrow makes \
+         and output. It never sees your blyg sign-in, API keys or the database: Burrow makes \
          every call for it, and only the ones extension-allow grants.",
     ),
     docs(

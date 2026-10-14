@@ -45,9 +45,9 @@ Unread*).
 
 ![Picking posts in the Reader](screenshots/reader-picks.png)
 
-**Read state syncs** between your Macs through your blyg when its server keeps
-read state (see [Server requirements](server.md)), and marking unread syncs
-when it also supports clearing it. Otherwise it stays on this Mac, and a
+**Read state syncs** between your Macs through your blyg on blygger-studio
+0.39 or later, when your sign-in allows **reading:state** (see
+[Server requirements](server.md)), and marking unread syncs too. Otherwise it stays on this Mac, and a
 post you marked unread stays unread here until you read it again.
 
 **Subscriptions** take their name from the blyg or feed, and follow it when
@@ -167,7 +167,16 @@ lines under a post work the same way.
 Each post lists who quoted, stubbed or forked it, from the blygs you follow
 and your own published posts: a list, never a count. A post that both stubs
 and quotes another is one response, listed as the stub, and a reply to a
-passage says so.
+passage says so. A post whose generated text used this one as a source is
+listed as **drew on this**.
+
+## Generated text
+
+A blyg can mark text in its posts as AI-generated. In the stream's side pane
+and the Reader, marked text is tinted, hovering it says it's marked as
+generated, and the post ends with a short note: the mark is the publisher's
+own disclosure, and Burrow can't verify it. Text without a mark may have been
+generated too; a mark only says what the publisher chose to disclose.
 
 ## Lineage
 

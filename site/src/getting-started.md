@@ -20,8 +20,8 @@ Replay it from **Help › Burrow Tutorial** or **Settings (⌘,) › Help**, or 
 **After an update**, the first launch opens the tour on a **What's new**
 card: ⏎ starts at the steps that teach the new things (each says **NEW IN**
 its version), **Take the whole tour** starts at the beginning, and esc skips
-it. After updating to 0.11, sign in again once if you read on several Macs
-(see [the FAQ](faq.md#do-i-need-to-sign-in-again-after-updating)).
+it. If your read marks stop syncing between Macs after an update, see
+[the FAQ](faq.md#do-i-need-to-sign-in-again-after-updating).
 
 **Coming from another feed reader?** Blyg › Import Subscriptions from OPML…
 brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-reader)).
@@ -34,10 +34,10 @@ brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-r
 
 ## Connecting your blyg
 
-Burrow works with any blyg running blygger-studio 0.9 or later (0.32 is current).
-A server with the extensions in [Server requirements](server.md) gets a few
-more features; without them, Burrow tells you what's limited. No blyg yet? Try
-the app on the sample data.
+Burrow works with any blyg running blygger-studio 0.9 or later, and fully with
+a stock, unmodified studio 0.40 or later: no server patches. An older studio
+limits a few things, and Burrow tells you which (see
+[Server requirements](server.md)). No blyg yet? Try the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
 `https://blyg.example.com`, including any path it lives under) and how to sign
@@ -49,9 +49,8 @@ in:
   if you revoke it in the studio (**More › Client access**), it asks you to
   sign in again.
 - **API token**: make one in your studio under **More › Client access**
-  (REST API, with every permission, including reading:state on studio 0.39+)
-  and paste it. A server with Burrow's extensions also takes its
-  `BLYG_OWNER_TOKEN` here.
+  (REST API, with every permission; allow **reading:state**, on studio 0.39+,
+  so read marks sync) and paste it. It lasts 30 days.
 - **Studio password**, for a studio older than 0.28.
 
 It checks them with the server before saving anything, and says plainly what's
@@ -68,6 +67,11 @@ config file as `blyg-url`, and the app loads your posts. If the server is
 older than 0.9, Burrow says so when it starts and pushes nothing until it's
 updated. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
+
+If your blyg later refuses Burrow's sign-in (a token expired or was revoked,
+or the server changed), Burrow stops syncing instead of retrying, keeps every
+change waiting on your Mac, and opens the sign-in sheet to say why. Signing in
+again sends what waited.
 
 | | |
 |---|---|
