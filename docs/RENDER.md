@@ -300,7 +300,9 @@ matching case is also byte-identical. The four known divergences are the
 block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
 `tr_block_tk_directive_attached`); `tests/preview.rs` pins this crate's
-output for them:
+output for them. The split shape (generated | quote | generated, and how
+`generated[]` pairs with the pieces) is not ruled yet, so these four are
+provisional: revisit them when upstream fixes its preview and publish.
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|

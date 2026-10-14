@@ -325,7 +325,8 @@ fn fuzz_no_panics() {
 
 /// Decision #60: an own-line directive left in a block scope's output is a
 /// quote, as publish makes it; the prose around it stays disclosed as
-/// generated, and the quote sits between the generated blocks.
+/// generated, and the quote sits between the generated blocks. Provisional:
+/// the exact split shape isn't ruled yet (see docs/RENDER.md, "Parity").
 #[test]
 fn directive_in_block_output_is_a_quote() {
     let store = FakeStore::load();
