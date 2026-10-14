@@ -331,6 +331,13 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         "Lin",
         "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01K2KIT0T1DES0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
     );
+    // An origin serves its HTML baked: the directive's line is gone and the
+    // attached excerpt is the quote.
+    fork.content_html = blyg_render::render_markdown(
+        &fork
+            .content_md
+            .replace(&format!("![[{KIT_TIDES}]]\n\n"), ""),
+    );
     fork.created = Some((now - d(2)).to_rfc3339());
     fork.updated = Some((now - h(30)).to_rfc3339());
     fork.forked_from = Some(RemoteRef {

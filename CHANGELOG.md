@@ -20,7 +20,7 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Changed
 
 - **Works with a stock blyg.** Burrow now runs fully against an unmodified Blygger Studio (0.40 and later, checked against 0.46.1), with no server patches. Reading syncs from the studio's own imported feed (`GET /api/reading/imported`, paged by cursor), read marks sync through its read-state routes, and lineage, citations, the full author and disclosed generation sources come with each post. Servers running the older owner-API extensions keep working. [Server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html) and `docs/SERVER.md` describe what's needed.
-- **Sign in with a studio token or the browser.** The server owner token from the old extensions is gone from sign-in. Use Sign in with browser, or a token made in Studio › Access (allow `reading:state` so read marks sync).
+- **Sign in with a studio token or the browser.** The server owner token from the old extensions is gone from sign-in. Use Sign in with browser, or a token from Studio → More → Client access (allow `reading:state` so read marks sync). If your blyg dropped the old owner token, Burrow opens the sign-in sheet after updating; sign in once and everything queued is sent.
 - **Preview matches the studio 0.46.1 renderer.** Embeds are no longer baked into the HTML (the poster still shows), and `[TK]`, `[=]` and `[/TK]` inside code anywhere in a scope are plain text (studio 0.41.1).
 - **"Drew on this".** A mention whose relation is `source` (a post that used yours as a generation source) shows as "drew on this".
 
