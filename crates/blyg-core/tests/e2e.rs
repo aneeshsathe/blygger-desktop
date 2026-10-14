@@ -1262,6 +1262,7 @@ fn prov(model: &str, sources: &[&str]) -> Option<ScopeProvenance> {
             .map(|s| ProvenanceSource {
                 id: s.to_string(),
                 version: None,
+                origin: None,
             })
             .collect(),
         at: None,
@@ -2787,6 +2788,7 @@ fn a_stub_made_in_the_app_publishes_with_the_right_quote() {
         origin: it.origin.clone(),
         id: rid.clone(),
         version: it.version,
+        cited: None,
     };
 
     // Whole post, as Reply opens it (the server's own prefill since 0.31).
@@ -3484,6 +3486,7 @@ fn a_stubs_lineage_comes_with_its_feed_row() {
         origin: held.origin.clone(),
         id: mine.clone(),
         version: held.version,
+        cited: None,
     };
     let stub = other
         .create_stub(&of, &format!("![[{mine}]]\n\n{t} a reply."))
@@ -3570,4 +3573,98 @@ fn a_refused_token_stops_sync_and_keeps_the_change() {
     assert_eq!(server_item(&sid_of(&again, &id))["content_md"], t.as_str());
     again.delete_draft(&id).ok();
     again.sync_now().ok();
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn saving_settings_leaves_the_keys_burrow_doesnt_own() {
+    // A studio 0.46 has many settings Burrow doesn't know (links_*, font,
+    // feed_order, …). Burrow's PATCH sends only its own, so the rest stay.
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let before = b.settings().unwrap();
+    let _restore = RestoreSettings(&b, before.clone());
+    let (st, raw0) = owner("GET", &e.url, "/api/settings", None);
+    assert_eq!(st, 200, "{raw0}");
+    // Set a few of them the way the web studio would, where the server has them.
+    let mut theirs = serde_json::Map::new();
+    if raw0.get("links_position").is_some() {
+        let flip = if raw0["links_position"] == "right" {
+            "bottom"
+        } else {
+            "right"
+        };
+        theirs.insert("links_position".into(), json!(flip));
+    }
+    if let Some(on) = raw0.get("links_blygger_org").and_then(Value::as_bool) {
+        theirs.insert("links_blygger_org".into(), json!(!on));
+    }
+    if let Some(on) = raw0.get("auto_change_notes").and_then(Value::as_bool) {
+        theirs.insert("auto_change_notes".into(), json!(!on));
+    }
+    if theirs.is_empty() {
+        eprintln!("skipped: this server has no settings beyond Burrow's");
+        return;
+    }
+    let (st, v) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(Value::Object(theirs.clone())),
+    );
+    assert_eq!(st, 200, "{v}");
+    let (_, raw1) = owner("GET", &e.url, "/api/settings", None);
+
+    // Parsing tolerates every extra key, and a save changes only its own.
+    let mine = b.settings().unwrap();
+    b.save_settings(&Settings {
+        highlight_generated_default: Some(!mine.highlight_generated_default.unwrap_or(false)),
+        ..mine.clone()
+    })
+    .unwrap();
+    let (_, raw2) = owner("GET", &e.url, "/api/settings", None);
+    for (k, v) in raw1.as_object().unwrap() {
+        if k == "highlight_generated_default" {
+            continue;
+        }
+        assert_eq!(&raw2[k], v, "{k} was clobbered");
+    }
+    assert_ne!(
+        raw2["highlight_generated_default"],
+        raw1["highlight_generated_default"]
+    );
+    // Put the server's own keys back.
+    let undo: serde_json::Map<String, Value> = theirs
+        .keys()
+        .map(|k| (k.clone(), raw0[k].clone()))
+        .collect();
+    let (st, v) = owner("PATCH", &e.url, "/api/settings", Some(Value::Object(undo)));
+    assert_eq!(st, 200, "{v}");
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_feed_rows_author_comes_through() {
+    // The author the source blyg names reaches the reading row.
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let was = source.settings().unwrap();
+    let _restore = RestoreSettings(&source, was.clone());
+    let t = tag("author");
+    source
+        .save_settings(&Settings {
+            author_name: Some(format!("Writer {t}")),
+            ..was.clone()
+        })
+        .unwrap();
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} by me"), None);
+    let sub = me.subscribe(&src_url, Some("Authored")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let r = reading_item(&me, &rid).unwrap();
+    let a = r.author.expect("the row's author");
+    assert_eq!(a.name.as_deref(), Some(format!("Writer {t}").as_str()));
 }

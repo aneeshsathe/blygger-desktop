@@ -73,6 +73,14 @@ pub struct RemoteRef {
     pub origin: String,
     pub id: String,
     pub version: u32,
+    /// The citation frozen with the reference (protocol 0.3 §16.1; remote
+    /// references only, studio 0.41+). Remote data: shown as plain text.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cited: Option<Cited>,
 }
 
 /// What the UI renders. Content is the local working copy.
@@ -250,10 +258,17 @@ pub struct SubscribePreview {
     pub site_mismatch: Option<bool>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// A post's `author` object (protocol §5.5). `name` and `url` are what the
+/// app reads; every other member (`avatar`, `bio`, `links`, …) is kept as
+/// served in `extra`, so nothing the origin said is lost on the way through.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Author {
+    #[serde(default)]
     pub name: Option<String>,
+    #[serde(default)]
     pub url: Option<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
 }
 
 /// One item from a subscription (imported_items), for the reading view.
@@ -325,6 +340,22 @@ pub struct ReadingItem {
     /// for them (`Engine::fill_lineage`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub lineage_known: bool,
+    /// The page the post came from, as the server resolved it (`sourceUrl`,
+    /// studio 0.40+): the canonical page, else the item's own URL.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub source_url: Option<String>,
+    /// The origin's generation provenance (`generated`, studio 0.40+): one
+    /// `{sources, model, at}` per generated scope. Remote data, kept as served.
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub generated: Option<Vec<serde_json::Value>>,
 }
 
 // --- profiles ---
@@ -342,6 +373,13 @@ pub struct StubOf {
     pub version: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// The citation frozen with the reply (protocol 0.3 §16.1).
+    #[serde(
+        default,
+        deserialize_with = "lenient",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cited: Option<Cited>,
 }
 
 impl StubOf {
@@ -420,6 +458,11 @@ impl Cited {
             .flatten()
             .map(|s| s.trim())
             .find(|s| !s.is_empty())
+    }
+
+    /// Has what upstream's strict `Citation` requires: source, url, retrieved.
+    pub fn complete(&self) -> bool {
+        self.source.is_some() && self.url.is_some() && self.retrieved.is_some()
     }
 }
 
@@ -785,6 +828,8 @@ pub fn own_responses(items: &[Item], own_origin: &str, origin: &str, id: &str) -
             forked_from: it.forked_from.clone(),
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         };
         out.push((
             it.updated.clone(),
@@ -1028,12 +1073,16 @@ pub struct Folder {
 // --- end reader folders ---
 
 /// A published fragment a generated TK scope drew on (`![[id]]` inside it).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct ProvenanceSource {
     pub id: String,
     /// The version used; `None` lets the server record the current one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub version: Option<u32>,
+    /// The source's blyg, for a remote source (an imported post; studio
+    /// 0.41+, protocol §16.3). `None` for this blyg's own.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// Who generated one TK scope's output, recorded when the app generates it
@@ -1390,6 +1439,7 @@ mod lineage_tests {
             origin: "https://ada.example/".into(),
             id: target.into(),
             version: 4,
+            cited: None,
         });
         let draft = item("D", &format!("![[{target}]]"), Status::Draft, 0);
         let other = item("O", "nothing here", Status::Public, 3);

@@ -618,6 +618,8 @@ pub fn relation_label(r: Option<&str>) -> &'static str {
         Some("stub") => "replied",
         Some("transclusion") => "quoted",
         Some("fork") => "forked",
+        // Studio 0.41+: the post drew on yours for generated text.
+        Some("source") => "drew on it",
         _ => "mentioned",
     }
 }
@@ -1017,6 +1019,7 @@ mod tests {
             content_html: "<h1>On kites</h1><p class=\"lede\">Wind &amp; string.</p>".into(),
             author: Some(blyg_core::Author {
                 name: Some("Kit Moreno".into()),
+                extra: Default::default(),
                 url: None,
             }),
             page: None,
@@ -1028,6 +1031,8 @@ mod tests {
             forked_from: None,
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         };
         for q in [
             "",
@@ -1087,6 +1092,8 @@ mod tests {
             forked_from: None,
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         };
         let all = blyg_core::PickQuery::default();
         let q = blyg_core::pick::search_in(
@@ -1183,6 +1190,7 @@ mod tests {
             id: Some(ID.into()),
             version: Some(1),
             url: None,
+            cited: None,
         });
         assert_eq!(post_title(&r), "In response to rue.blyg.example.com");
         r.stub_of = None;

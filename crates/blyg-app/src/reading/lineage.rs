@@ -561,6 +561,7 @@ impl MainView {
                     origin: item.origin.clone(),
                     id: item.remote_id.clone(),
                     version,
+                    cited: None,
                 };
                 let backend = self.backend.clone();
                 let task = cx.background_spawn(async move { backend.fork(&of) });

@@ -457,6 +457,7 @@ impl MainView {
                     origin: item.origin.clone(),
                     id: item.remote_id.clone(),
                     version: v.version,
+                    cited: None,
                 };
                 let backend = self.backend.clone();
                 let task = cx.background_spawn(async move { backend.fork(&of) });
@@ -562,6 +563,7 @@ impl MainView {
             origin: item.origin.clone(),
             id: item.remote_id.clone(),
             version: item.version,
+            cited: None,
         };
         match self.backend.create_stub(&of, &body) {
             Ok(id) => {

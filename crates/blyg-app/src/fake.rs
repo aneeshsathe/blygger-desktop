@@ -49,6 +49,7 @@ fn sample_reading() -> ReadingItem {
         content_html: "<p>A tide pool is a small ocean that forgets, twice a day, that it belongs to a larger one.</p>\n".into(),
         author: Some(Author {
             name: Some("Shoreline Notes".into()),
+            extra: Default::default(),
             url: None,
         }),
         page: None,
@@ -60,6 +61,8 @@ fn sample_reading() -> ReadingItem {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 

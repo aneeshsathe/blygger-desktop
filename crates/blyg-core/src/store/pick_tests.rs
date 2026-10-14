@@ -48,6 +48,8 @@ fn ri(sub: &str, rid: &str, updated: &str, body: &str) -> ReadingItem {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 

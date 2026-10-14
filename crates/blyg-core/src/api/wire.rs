@@ -630,7 +630,8 @@ pub fn stock_row(
             .unwrap_or(Value::Null)
     };
     let author = match parse("author_json") {
-        a @ Value::Object(_) => serde_json::json!({ "name": a.get("name"), "url": a.get("url") }),
+        // The whole object (protocol §5.5): `Author` keeps what it doesn't name.
+        a @ Value::Object(_) => a,
         _ => Value::Null,
     };
     let transclusions = match parse("transclusions_json") {
@@ -821,6 +822,11 @@ mod reading_page_tests {
         assert_eq!(a.stub_of.as_ref().unwrap().id.as_deref(), Some("X"));
         assert_eq!(a.transclusions.len(), 1);
         assert!(a.lineage_known);
+        assert_eq!(
+            a.source_url.as_deref(),
+            Some("https://ada.example.com/t/R2/")
+        );
+        assert_eq!(a.generated.as_ref().map(Vec::len), Some(1));
         let w = &p.items[1];
         assert_eq!(w.state, "tombstone");
         assert_eq!(w.pinned_version_retained, Some(1));
@@ -860,5 +866,48 @@ mod reading_page_tests {
             r#"{"items":[{"subscriptionId":"S"}],"next":null,"limit":1}"#,
         );
         assert!(r.is_err());
+    }
+}
+
+#[cfg(test)]
+mod author_tests {
+    use super::*;
+
+    #[test]
+    fn a_stock_row_keeps_the_whole_author() {
+        let raw = serde_json::json!({
+            "subscription_id": "S", "remote_id": "R", "kind": "fragment", "state": "current",
+            "version": 1, "created": null, "updated": null, "observed_at": "2030-01-01T00:00:00Z",
+            "content_md": "x", "content_html": "<p>x</p>",
+            "author_json": r#"{"name":"Ada","url":"https://ada.example.com/","avatar":"https://ada.example.com/a.png","bio":"Writes."}"#,
+            "transclusions_json": null, "l0": false, "pinned_version_retained": null, "page": null,
+        });
+        let r = stock_row(&raw, "N", "https://ada.example.com/", None, &[], None).unwrap();
+        let a = r.author.unwrap();
+        assert_eq!(a.name.as_deref(), Some("Ada"));
+        assert_eq!(a.extra["avatar"], "https://ada.example.com/a.png");
+        assert_eq!(a.extra["bio"], "Writes.");
+        // …and it survives the store's JSON round trip.
+        let back: Author = serde_json::from_value(serde_json::to_value(&a).unwrap()).unwrap();
+        assert_eq!(back, a);
+    }
+
+    #[test]
+    fn a_stub_of_keeps_its_citation() {
+        let p: ReadingPage = serde_json::from_str(
+            r#"{"items":[{"subscriptionId":"S","remoteId":"R","kind":"thread",
+            "stubOf":{"origin":"https://bo.example.com/","id":"X","version":2,
+              "cited":{"source":"Bo","url":"https://bo.example.com/t/X/","retrieved":"2030-01-01T00:00:00Z"}},
+            "forkedFrom":{"origin":"https://bo.example.com/","id":"Y","version":1,
+              "cited":{"source":"Bo","url":"https://bo.example.com/f/Y/","retrieved":"2030-01-01T00:00:00Z"}}}],
+            "next":null,"limit":1}"#,
+        )
+        .unwrap();
+        let it = &p.items[0];
+        let c = it.stub_of.as_ref().unwrap().cited.as_ref().unwrap();
+        assert!(c.complete());
+        assert_eq!(c.source.as_deref(), Some("Bo"));
+        let f = it.forked_from.as_ref().unwrap().cited.as_ref().unwrap();
+        assert_eq!(f.url.as_deref(), Some("https://bo.example.com/f/Y/"));
     }
 }

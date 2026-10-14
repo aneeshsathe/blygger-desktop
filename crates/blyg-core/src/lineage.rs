@@ -603,6 +603,7 @@ mod tests {
             id: Some(FRAG.into()),
             version: Some(1),
             url: None,
+            cited: None,
         });
         a.transclusions = vec![quote(FRAG, Some(OURS), true)];
         let own = [mine(FRAG, "Answer me this.")];
@@ -632,6 +633,7 @@ mod tests {
             origin: OURS.into(),
             id: FRAG.into(),
             version: 1,
+            cited: None,
         });
         d.transclusions = vec![quote(FRAG, Some(OURS), false)];
         d.stub_of = Some(StubOf {
@@ -656,6 +658,7 @@ mod tests {
             id: Some(FRAG.into()),
             version: Some(1),
             url: None,
+            cited: None,
         });
         let mentions = [
             mention(THEM, E, "verified", false),

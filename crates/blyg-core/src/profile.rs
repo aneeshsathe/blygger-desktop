@@ -1105,6 +1105,7 @@ mod tests {
             origin: "https://rue.example.com/".into(),
             id: "R".into(),
             version: 3,
+            cited: None,
         });
         // Someone else's post: not theirs, not counted.
         let mut c = held("C", "https://other.example.com/");
@@ -1155,12 +1156,14 @@ mod tests {
             origin: "https://ada.example.net/".into(),
             id: q.into(),
             version: 1,
+            cited: None,
         });
         let mut b = item("b", Status::Public, "fork");
         b.forked_from = Some(RemoteRef {
             origin: "https://rue.example.com/".into(),
             id: "R".into(),
             version: 3,
+            cited: None,
         });
         let mut c = item("c", Status::Draft, &format!("![[{q}]]"));
         c.stub_of = a.stub_of.clone();

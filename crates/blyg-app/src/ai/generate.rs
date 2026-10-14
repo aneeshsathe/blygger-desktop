@@ -73,6 +73,23 @@ pub fn resolve_source(
         })
 }
 
+/// A source's blyg when it is someone else's post (an imported one, not
+/// this blyg's own): upstream records remote sources with their origin
+/// (studio 0.41+). The same lookup order as `resolve_source`.
+fn remote_origin(items: &[Item], reading: &[ReadingItem], id: &str) -> Option<String> {
+    if items
+        .iter()
+        .any(|i| i.server_id.as_ref().is_some_and(|s| s.0 == id))
+    {
+        return None;
+    }
+    reading
+        .iter()
+        .find(|r| r.remote_id == id)
+        .map(|r| r.origin.clone())
+        .filter(|o| !o.is_empty())
+}
+
 /// A fill/regenerate request, built on the UI thread and run elsewhere.
 #[derive(Debug, Clone)]
 pub struct FillJob {
@@ -107,6 +124,7 @@ pub fn prepare_fill(
         .map(|id| ProvenanceSource {
             id: id.clone(),
             version: versions.iter().find(|(v, _)| v == id).and_then(|(_, v)| *v),
+            origin: remote_origin(items, reading, id),
         })
         .collect();
     Ok(FillJob {
@@ -301,10 +319,12 @@ mod tests {
                 ProvenanceSource {
                     id: ID.into(),
                     version: Some(2),
+                    origin: None,
                 },
                 ProvenanceSource {
                     id: "zzzzzzzzzzzzzzzzzzzzzzzzzz".into(),
                     version: None,
+                    origin: None,
                 },
             ],
             ..prov("m2")

@@ -549,6 +549,7 @@ mod tests {
             content_html: String::new(),
             author: Some(Author {
                 name: Some(author.into()),
+                extra: Default::default(),
                 url: None,
             }),
             page: None,
@@ -560,6 +561,8 @@ mod tests {
             forked_from: None,
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         }
     }
 
@@ -705,6 +708,7 @@ mod tests {
             origin: ADA.into(),
             id: "a1".into(),
             version: 1,
+            cited: None,
         });
         let linked = own("As [Rue](https://rue.blyg.example.org/f/x) said.");
         let items = vec![reply, linked];

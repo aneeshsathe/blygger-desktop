@@ -258,6 +258,7 @@ mod tests {
             content_html: "<p>Tides keep time.</p>\n".into(),
             author: Some(Author {
                 name: Some("Field Notes".into()),
+                extra: Default::default(),
                 url: None,
             }),
             page: None,
@@ -269,6 +270,8 @@ mod tests {
             forked_from: None,
             transclusions: vec![],
             lineage_known: false,
+            source_url: None,
+            generated: None,
         }
     }
 

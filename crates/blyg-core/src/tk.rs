@@ -266,6 +266,7 @@ mod tests {
             sources: vec![ProvenanceSource {
                 id: "0123456789abcdefghjkmnpqrs".into(),
                 version: None,
+                origin: None,
             }],
             at: None,
         });

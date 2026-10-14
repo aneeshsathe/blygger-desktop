@@ -319,7 +319,12 @@ impl Api {
     ) -> Result<String> {
         let mut body = json!({ "mode": "blank", "content_md": content_md, "kind": kind_str(kind) });
         if let Some(s) = stub_of {
-            body["stub_of"] = serde_json::to_value(s).unwrap_or(Value::Null);
+            let mut s = s.clone();
+            // Upstream's `Citation` needs source, url and retrieved (strict).
+            if s.cited.as_ref().is_some_and(|c| !c.complete()) {
+                s.cited = None;
+            }
+            body["stub_of"] = serde_json::to_value(&s).unwrap_or(Value::Null);
         }
         if let Some(p) = provenance {
             body["provenance"] = provenance_body(p);

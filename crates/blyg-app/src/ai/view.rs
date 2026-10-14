@@ -320,6 +320,7 @@ impl MainView {
             origin: item.origin.clone(),
             id: item.remote_id.clone(),
             version: item.version,
+            cited: None,
         };
         let body = super::reading::vm::stub_body(&item.remote_id);
         let stub = match self.backend.create_stub(&of, &body) {

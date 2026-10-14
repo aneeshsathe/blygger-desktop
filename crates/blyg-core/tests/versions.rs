@@ -297,7 +297,8 @@ fn lineage_comes_from_the_item_document_leniently() {
         Some(RemoteRef {
             origin: "https://rue.example.com/".into(),
             id: "R".into(),
-            version: 3
+            version: 3,
+            cited: None,
         })
     );
     let ids: Vec<(&str, Option<&str>)> = l

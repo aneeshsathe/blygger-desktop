@@ -122,6 +122,7 @@ fn post(
         content_html: blyg_render::render_markdown(content),
         author: Some(Author {
             name: Some(author.into()),
+            extra: Default::default(),
             url: Some(sub.origin.clone()),
         }),
         page: Some(format!(
@@ -136,6 +137,8 @@ fn post(
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     }
 }
 
@@ -279,6 +282,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         id: Some(LIN_BENCH.into()),
         version: Some(1),
         url: None,
+        cited: None,
     });
     reply.transclusions = vec![TransclusionRef {
         id: LIN_BENCH.into(),
@@ -330,6 +334,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         origin: ADA.into(),
         id: ADA_TIDES.into(),
         version: 1,
+        cited: None,
     });
     fork.transclusions = vec![TransclusionRef {
         id: KIT_TIDES.into(),
@@ -412,11 +417,13 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
                         id: Some(ADA_TIDES.into()),
                         version: Some(2),
                         url: None,
+                        cited: None,
                     }),
                     forked_from: Some(RemoteRef {
                         origin: RUE.into(),
                         id: RUE_TRUST.into(),
                         version: 3,
+                        cited: None,
                     }),
                     transclusions: vec![TransclusionRef {
                         id: ADA_TIDES.into(),
@@ -498,6 +505,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         source_version: Some(1),
         source_author: Some(Author {
             name: Some(name.into()),
+            extra: Default::default(),
             url: Some(origin.into()),
         }),
         first_seen: (now - ago).to_rfc3339(),
@@ -585,6 +593,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         content_html: blyg_render::render_markdown(kit_text),
         author: Some(Author {
             name: Some("Kit".into()),
+            extra: Default::default(),
             url: Some(KIT.into()),
         }),
         page: Some(format!("f/{KIT_TIDES}")),
@@ -596,6 +605,8 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         forked_from: None,
         transclusions: vec![],
         lineage_known: false,
+        source_url: None,
+        generated: None,
     };
     let public = vec![PublicItem {
         item: kit_item,
