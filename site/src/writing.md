@@ -165,7 +165,10 @@ quotes, linked. Links inside code stay as text. A link that can't be resolved
 is flagged in the preview, the status bar and the publish sheet, as quotes
 are; publishing refuses it ("one or more references do not resolve").
 
-Typing `[[` opens the same picker, and ⏎ inserts the link.
+Typing `[[` opens the same picker, and ⏎ inserts the link with a label:
+`[[id | Gardens, not streams]]`. The label is what the link says on the
+published page, so edit the words after `|` to rename it. A quote picked the
+same way carries a note, `![[id | note]]`, which only you see.
 
 | | |
 |---|---|

@@ -21,9 +21,9 @@ use crate::theme::Palette;
 /// What the picker inserts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickKind {
-    /// `[[id]]`, inline: a link that declares nothing on the wire.
+    /// `[[id | label]]`, inline: a link that declares nothing on the wire.
     Link,
-    /// `![[id]]` on its own line: a transclusion (threads only).
+    /// `![[id | note]]` on its own line: a transclusion (threads only).
     Quote,
 }
 
@@ -44,8 +44,8 @@ impl PickKind {
 
     pub fn enter_hint(self) -> &'static str {
         match self {
-            PickKind::Link => "inserts [[…]]",
-            PickKind::Quote => "inserts ![[…]] on its own line",
+            PickKind::Link => "inserts [[… | label]]",
+            PickKind::Quote => "inserts ![[… | note]] on its own line",
         }
     }
 }
@@ -451,6 +451,16 @@ mod tests {
         assert_eq!(t, "One.\n![[01Q | “Two lines ] ] here”]]\n");
         let (t, _) = insert("[[", 0, 2, PickKind::Link, "01ABC", Some("  "));
         assert_eq!(t, "[[01ABC]]", "an empty label is no label");
+    }
+
+    /// The footer names the labelled form a pick writes (studio 0.47).
+    #[test]
+    fn the_footer_says_what_a_pick_writes() {
+        assert_eq!(PickKind::Link.enter_hint(), "inserts [[… | label]]");
+        assert_eq!(
+            PickKind::Quote.enter_hint(),
+            "inserts ![[… | note]] on its own line"
+        );
     }
 
     #[test]
