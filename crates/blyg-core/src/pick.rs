@@ -93,8 +93,10 @@ pub struct Pickable {
     pub title: String,
     /// Plain text, at most [`EXCERPT_CHARS`].
     pub excerpt: String,
-    /// The text a `[[id]]` link to this post shows (studio 0.47's search-hit
-    /// `label`, see [`link_label`]): what the picker writes as the label.
+    /// What the picker writes as the label ([`pick_label`]): the text a bare
+    /// `[[id]]` to this post shows (studio 0.47's search-hit `label`, see
+    /// [`link_label`]), except that a post with no heading is labelled with
+    /// its title rather than a quoted excerpt.
     pub label: String,
     /// `Mine` or `Imported` (never `All`).
     pub source: PickSource,
@@ -160,6 +162,31 @@ pub fn link_label_md(md: &str, kind: Kind) -> String {
     link_label(&blyg_render::render_markdown(&kept), kind)
 }
 
+/// The longest title [`pick_label`] writes as a label (the studio's cap on
+/// a heading label, `anchorText`'s 80).
+pub const TITLE_LABEL_CHARS: usize = 80;
+
+/// What the picker writes as a pick's label, from the post's `title` and
+/// the text a bare `[[id]]` to it `shows` ([`link_label`]).
+///
+/// A deliberate difference from the studio (docs/SPEC.md rule 3), whose
+/// `paletteInsert` writes the search hit's label as it is: when the post
+/// has no heading, that label is its first 60 characters in quotes, the
+/// title and the body run together ("“Gardens, not streams A note on…”").
+/// Burrow writes the title instead (`[[id | Gardens, not streams]]`), which
+/// is what a reader of the link wants to see. A heading's label is kept, and
+/// so is the quoted excerpt when the title is too long to be one (a post
+/// that is a single paragraph) or there's no text at all ("a thread").
+pub fn pick_label(title: Option<&str>, shows: String) -> String {
+    let excerpt = shows.starts_with('“') && shows.ends_with('”');
+    match title.map(str::trim) {
+        Some(t) if excerpt && !t.is_empty() && t.chars().count() <= TITLE_LABEL_CHARS => {
+            t.to_string()
+        }
+        _ => shows,
+    }
+}
+
 /// The first [`EXCERPT_CHARS`] characters of the plain text, `…` when cut.
 pub fn excerpt(md: &str) -> String {
     let t = plain_text(md);
@@ -190,7 +217,10 @@ pub fn mine(it: &Item, q: &PickQuery, words: &[String]) -> Option<Pickable> {
         id: sid.0.clone(),
         title: it.title(),
         excerpt: excerpt(&it.content_md),
-        label: link_label_md(&it.content_md, it.kind),
+        label: pick_label(
+            crate::model::plain_title(&it.content_md).as_deref(),
+            link_label_md(&it.content_md, it.kind),
+        ),
         source: PickSource::Mine,
         kind: it.kind,
         version: it.version,
@@ -221,11 +251,14 @@ pub fn imported(r: &ReadingItem, blyg: bool, q: &PickQuery, words: &[String]) ->
         id: r.remote_id.clone(),
         title: crate::model::plain_title(&r.content_md).unwrap_or_else(|| "…".into()),
         excerpt: excerpt(&r.content_md),
-        label: if r.content_html.trim().is_empty() {
-            link_label_md(&r.content_md, r.kind)
-        } else {
-            link_label(&r.content_html, r.kind)
-        },
+        label: pick_label(
+            crate::model::plain_title(&r.content_md).as_deref(),
+            if r.content_html.trim().is_empty() {
+                link_label_md(&r.content_md, r.kind)
+            } else {
+                link_label(&r.content_html, r.kind)
+            },
+        ),
         source: PickSource::Imported,
         kind: r.kind,
         version,
@@ -337,5 +370,24 @@ mod tests {
             link_label_md("[TK]an opener[=]Generated words[/TK]", Kind::Fragment),
             "“Generated words”"
         );
+    }
+
+    /// Burrow's difference from the studio: no heading, so the title.
+    #[test]
+    fn a_pick_is_labelled_with_the_title_when_there_is_no_heading() {
+        let label = |md: &str| {
+            pick_label(
+                crate::model::plain_title(md).as_deref(),
+                link_label_md(md, Kind::Thread),
+            )
+        };
+        assert_eq!(
+            label("Gardens, not streams\n\nA note on how I write in public."),
+            "Gardens, not streams"
+        );
+        assert_eq!(label("# A heading\n\nBody."), "A heading");
+        assert_eq!(label(""), "a thread");
+        let para = "word ".repeat(30);
+        assert!(label(&para).starts_with('“'), "too long to be a title");
     }
 }

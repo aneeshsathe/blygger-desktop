@@ -2485,21 +2485,30 @@ impl MainView {
                     .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .when(vm::has_unpublished_edits(item), |d| {
+                    // Unpublished edits in their own colour (`color-edited`)
+                    // and slot (`marker.edited`, Fortress's Δ), so they don't
+                    // read as unread (`marker.new`, the accent dot).
+                    .when_some(vm::edits_tip(item), |d, tip| {
+                        let tip = format!("Unpublished edits: {tip}");
                         d.child(
-                            crate::ornament::marker(
-                                &self.theme,
-                                blyg_core::config::theme::Slot::MarkerNew,
-                                p.accent,
-                                chrome,
-                            )
-                            .unwrap_or_else(|| {
-                                div()
-                                    .size(px(6.))
-                                    .rounded_full()
-                                    .bg(p.accent)
-                                    .into_any_element()
-                            }),
+                            div()
+                                .id(("row-edited", ix))
+                                .tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                                .child(
+                                    crate::ornament::marker(
+                                        &self.theme,
+                                        blyg_core::config::theme::Slot::MarkerEdited,
+                                        p.edited,
+                                        chrome,
+                                    )
+                                    .unwrap_or_else(|| {
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(p.edited)
+                                            .into_any_element()
+                                    }),
+                                ),
                         )
                     })
                     .child(vm::kind_label(item.kind))
@@ -2511,6 +2520,12 @@ impl MainView {
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
+                            .when(pill_pub && !self.labels_held(&item.content_md), |d| {
+                                let tip = vm::published_tip(item);
+                                d.text_color(p.accent).tooltip(move |_, cx| {
+                                    cx.new(|_| reading::Tip(tip.clone())).into()
+                                })
+                            })
                             .when(pill_pub, |d| d.text_color(p.accent))
                             .child(pill_text)
                             // Below studio 0.47: this post waits for its labels.
@@ -2529,12 +2544,23 @@ impl MainView {
                             }),
                     )
                     .when(pill_pub, |d| {
-                        d.children(crate::ornament::marker(
-                            &self.theme,
-                            blyg_core::config::theme::Slot::MarkerPinned,
-                            p.accent,
-                            chrome,
-                        ))
+                        let tip = vm::published_tip(item);
+                        d.children(
+                            crate::ornament::marker(
+                                &self.theme,
+                                blyg_core::config::theme::Slot::MarkerPinned,
+                                p.accent,
+                                chrome,
+                            )
+                            .map(|m| {
+                                div()
+                                    .id(("row-published", ix))
+                                    .tooltip(move |_, cx| {
+                                        cx.new(|_| reading::Tip(tip.clone())).into()
+                                    })
+                                    .child(m)
+                            }),
+                        )
                     })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
@@ -2792,11 +2818,21 @@ impl MainView {
                     .child(sync_text),
             )
             // --- new post --- "New note · saved locally · …" while in it.
-            .children(
-                self.new_post_label()
-                    .map(str::to_string)
-                    .or_else(|| item.map(vm::version_label)),
-            )
+            .children(match self.new_post_label() {
+                Some(l) => Some(div().child(l.to_string()).into_any_element()),
+                // "public vN · unpublished edits" says how to publish or
+                // discard them on hover.
+                None => item.map(|item| {
+                    let tip = vm::edits_tip(item);
+                    div()
+                        .id("version")
+                        .child(vm::version_label(item))
+                        .when_some(tip, |d, tip| {
+                            d.tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                        })
+                        .into_any_element()
+                }),
+            })
             // --- themes ---
             .children(crate::ornament::status(
                 &self.theme,
@@ -2817,7 +2853,7 @@ impl MainView {
     }
 
     /// --- themes --- What the status ornaments show: posts touched per day
-    /// over the last two weeks, and the selected post's depth in the list.
+    /// over the last two weeks (the tide and block sparklines).
     fn status_data(&self) -> crate::ornament::StatusData {
         if !self
             .theme
@@ -2825,7 +2861,6 @@ impl MainView {
         {
             return crate::ornament::StatusData {
                 activity: Vec::new(),
-                depth: None,
             };
         }
         let mut activity = vec![0u32; 14];
@@ -2837,14 +2872,7 @@ impl MainView {
                 }
             }
         }
-        let depth = self.list.selected().and_then(|id| {
-            self.list
-                .results()
-                .iter()
-                .position(|i| &i.local_id == id)
-                .map(|i| i + 1)
-        });
-        crate::ornament::StatusData { activity, depth }
+        crate::ornament::StatusData { activity }
     }
 
     fn render_toast(&self) -> Option<AnyElement> {

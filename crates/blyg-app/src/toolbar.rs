@@ -48,7 +48,7 @@ pub const ICONS: &[(&str, &[u8])] = &[
     ("sticky-note", icon!("sticky-note")),
     ("trash-2", icon!("trash-2")),
     ("archive-x", icon!("archive-x")),
-    ("undo-2", icon!("undo-2")), // --- discard changes ---
+    ("eraser", icon!("eraser")), // --- discard changes ---
 ];
 
 pub fn icon_svg(name: &str) -> Option<&'static [u8]> {

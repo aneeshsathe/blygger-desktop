@@ -362,7 +362,7 @@ impl MainView {
                                 "Nothing held matches. Links and quotes come from your published posts and your blyg subscriptions.",
                             ))
                         })
-                        .children(picker::rows(p, &cands, sel, pick))
+                        .children(picker::rows(p, kind, &cands, sel, pick))
                     }),
             )
             .child(self.keys_row(vec![

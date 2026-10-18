@@ -201,7 +201,7 @@ fn the_body_is_the_published_html_in_the_webview(cx: &mut TestAppContext) {
     // them (not `![[…]]` as literal text).
     assert!(
         page.contains(
-            "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01K2ADA0TIDES0000000000001\""
+            "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01k2ada0t1des0000000000001\""
         ),
         "{page}"
     );

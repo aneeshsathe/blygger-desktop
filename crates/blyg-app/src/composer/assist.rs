@@ -917,7 +917,7 @@ impl Assist {
                     .max_h(px(300.))
                     .overflow_y_scroll()
                     .track_scroll(&pk.scroll)
-                    .children(picker::rows(p, &pk.rows, pk.sel, pick)),
+                    .children(picker::rows(p, pk.kind, &pk.rows, pk.sel, pick)),
             )
             .when(empty, |d| {
                 d.child(

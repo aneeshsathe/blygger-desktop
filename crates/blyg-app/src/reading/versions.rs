@@ -389,12 +389,23 @@ impl MainView {
                             // --- themes --- `marker.pinned` beside a pin, as
                             // on the posts list (Fortress's ☼).
                             .when(pinned, |d| {
-                                d.children(crate::ornament::marker(
-                                    &self.theme,
-                                    blyg_core::config::theme::Slot::MarkerPinned,
-                                    p.accent,
-                                    self.chrome(),
-                                ))
+                                d.children(
+                                    crate::ornament::marker(
+                                        &self.theme,
+                                        blyg_core::config::theme::Slot::MarkerPinned,
+                                        p.accent,
+                                        self.chrome(),
+                                    )
+                                    .map(|m| {
+                                        div()
+                                            .id(("own-v-pin", v as usize))
+                                            .tooltip(|_, cx| {
+                                                cx.new(|_| super::Tip(crate::vm::PINNED_TIP.into()))
+                                                    .into()
+                                            })
+                                            .child(m)
+                                    }),
+                                )
                             })
                     }))
                     .when_some(actions, |d, (v, a)| {

@@ -88,7 +88,9 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   posts stay listed as withdrawn. You can't undo this."), then calls
   `withdraw(id, note)`. Withdraw has no key on purpose, since it's permanent.
   (`⌘⌫` stays delete-to-line-start in the editor.)
-- **Discard changes** (`⌥⌘Z`, Post › Discard Changes…, the toolbar's Discard,
+- **Discard changes** (`⌥⌘Z` on macOS, and no key on Windows, where Ctrl+Alt+Z
+  is AltGr+Z and types a letter on some layouts; `keymap::WINDOWS_KEYLESS`.
+  Post › Discard Changes…, the toolbar's Discard,
   and "Discard changes…" on the current version in ⌘Y): a published post with
   unpublished edits goes back to the version it has published. A sheet asks
   first ("Discard unpublished changes? “…” The editor goes back to vN as
@@ -100,7 +102,12 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   can't carry back, so the blyg keeps it marked unpublished (the toast says
   so, and the list's dot stays). It's disabled, with the reason as its tooltip
   or toast, for a draft or scratch note (Delete covers those), a withdrawn
-  post, a post with no edits, and offline ("Discard needs the blyg").
+  post, a post with no edits, and offline ("Discard needs the blyg"). The
+  places that say a post has edits name both ways out on hover: the status
+  bar's "public vN · unpublished edits" and the list row's edit marker show
+  "⌘⏎ publishes them as vN+1 · ⌥⌘Z discards them" (`vm::edits_tip`, through
+  `keymap::hint`; on Windows, "Ctrl+Enter … · Discard Changes in the Post
+  menu"). The toolbar's Discard is an eraser, so it doesn't read as Undo.
   Local-first: core's `restore` holds the sync lock, so no push of the old
   text runs during it, and drops the item's waiting outbox ops when it reloads
   the item; while the restore is on its way the editor doesn't save
@@ -154,7 +161,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 Writing: fragments & threads, autosave, publish with note, paste/drop images,
 quick capture, markdown preview, withdraw, version history + restore, pin
 (irrevocable, so it confirms), delete drafts, quote another blyg (picker, ⌘K or typing `![[`, that
-inserts `![[<id>]]`), fork.
+inserts `![[<id> | note]]`; typing `[[` links, `[[<id> | label]]`), fork.
 Reading & managing: open on the web, read subscriptions (reading list), subscribe
 and unsubscribe, blogroll flag, blyg settings (title, bio, links), mentions &
 responses.
@@ -330,7 +337,7 @@ Core principle: *"anything the protocol can't verify, it declines to represent."
 1. **No counts, anywhere social.** Responses and mentions are shown as *a list, never a count*: who, origin, relation, when. Mentions and responses never get numeric badges; use a dot for "something new". There are no follower lists or follower counts: following is client-local and invisible. (A reader-local unread count for *your own* reading list is fine; it's private state, not a social metric. So are a post's word count and reading time, which describe the text, not its audience: the opt-in `reading-time` extension.)
    **One exception, the lineage glyph (2026-10-09, the user's decision).** The lineage glyph beside a post, the ⌘J lineage view and its action ring show *how many* posts a post draws on and how many known here draw on it, by kind (stub, quote, fork), next to the kinds, because the web Studio's `lineage-glyph` extension shows the same numbers and the data is there. The numbers are blygger-studio's, counted by its rules (from the node when it serves the extension, else from this Mac). The exception covers those three surfaces only: responses lists, mentions, profiles and everything else social stay lists without counts.
 2. **Generation happens in the studio, at authoring time, with review.** Publishing never generates. The TK tint is an authoring aid: published bytes are identical, apart from the `generated` metadata and the `blyg-tk-gen` class. Provenance is self-asserted, so the app always records it (studio 0.28+'s `tk-provenance` route), and the reading pane, which tints someone else's marked text, says the mark is the publisher's own and unverified.
-3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL. The picker opens with ⌘K, or by typing `![[` at the start of a line in a thread (after optional indent, outside a fenced code block): the typed `![[` comes out, what you type next filters the picker, ⏎ inserts the whole `![[id]]` line, and esc puts the `![[` back so it can be typed literally. Only typing triggers it, never a paste. In a fragment it shows the "Quotes go in threads" toast and leaves the text alone.
+3. **Transclusion is quoting, and it's snapshotted at publish.** Later edits to the source never rewrite the quote. The picker offers only what's already held (your own posts plus imported items from blyg subscriptions). It never fetches by URL. The picker opens with ⌘K, or by typing `![[` at the start of a line in a thread (after optional indent, outside a fenced code block): the typed `![[` comes out, what you type next filters the picker, ⏎ inserts the whole line in its labelled form, `![[id | note]]`, and esc puts the `![[` back so it can be typed literally. Typing `[[` anywhere outside code opens the same picker for a link, and ⏎ inserts `[[id | label]]` (studio 0.47). The label is the link's text on the published page, so editing the words after `|` renames the link; a quote's note is only for you (the published quote ignores it). The footer says so: "⏎ inserts [[… | label]]" / "⏎ inserts ![[… | note]] on its own line". Only typing triggers it, never a paste. In a fragment it shows the "Quotes go in threads" toast and leaves the text alone. Each row leads with the post's title; a link's row adds a muted *links as “…”* line when the label it writes isn't that title. **A deliberate difference from the studio:** for a post with no heading, the studio's `paletteInsert` writes the search hit's label, the post's first 60 characters in quotes with the first line and the body run together (`[[id | “Gardens, not streams A note on how I…”]]`); Burrow writes the post's title instead (`[[id | Gardens, not streams]]`, `blyg_core::pick::pick_label`), because that is what the reader of the link should see and what the writer was searching for. A heading's label is the same in both, and the quoted excerpt stays when the title is longer than 80 characters (a one-paragraph post) or the post has no text. The published page is unaffected either way: a label is the author's text, whatever wrote it.
 4. **Forking descends from pins only.** Pins are the costly, irrevocable signal: confirm with plain words ("This version will be served forever. You can't undo this.").
 5. **No deletes of published work. Withdraw instead**: permanent, visible, and irreversible. Only drafts can be discarded. The UI says "Withdraw", never "Delete", for published items.
 6. **No identity layer.** No @handles or accounts. The origin (domain) is the name, and author names are optional decoration.
