@@ -568,7 +568,7 @@ pub fn mac_table() -> Vec<Keybind> {
                 "Discard unpublished changes: back to the published version (asks first)",
                 Some("Post › Discard Changes…")
             ),
-            "undo-2",
+            "eraser",
             "Discard"
         ),
         button!(
@@ -775,7 +775,6 @@ pub const WINDOWS_KEYLESS: &[&str] = &["DiscardChanges"];
 
 /// `action` has no key on this platform although the table gives it one
 /// (`WINDOWS_KEYLESS`).
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn keyless_here(action: &str) -> bool {
     cfg!(target_os = "windows") && WINDOWS_KEYLESS.contains(&action)
 }

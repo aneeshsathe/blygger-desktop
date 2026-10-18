@@ -2425,21 +2425,27 @@ impl MainView {
                     .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .when(vm::has_unpublished_edits(item), |d| {
+                    .when_some(vm::edits_tip(item), |d, tip| {
+                        let tip = format!("Unpublished edits: {tip}");
                         d.child(
-                            crate::ornament::marker(
-                                &self.theme,
-                                blyg_core::config::theme::Slot::MarkerNew,
-                                p.accent,
-                                chrome,
-                            )
-                            .unwrap_or_else(|| {
-                                div()
-                                    .size(px(6.))
-                                    .rounded_full()
-                                    .bg(p.accent)
-                                    .into_any_element()
-                            }),
+                            div()
+                                .id(("row-edited", ix))
+                                .tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                                .child(
+                                    crate::ornament::marker(
+                                        &self.theme,
+                                        blyg_core::config::theme::Slot::MarkerNew,
+                                        p.accent,
+                                        chrome,
+                                    )
+                                    .unwrap_or_else(|| {
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(p.accent)
+                                            .into_any_element()
+                                    }),
+                                ),
                         )
                     })
                     .child(vm::kind_label(item.kind))
@@ -2715,11 +2721,21 @@ impl MainView {
                     .child(sync_text),
             )
             // --- new post --- "New note · saved locally · …" while in it.
-            .children(
-                self.new_post_label()
-                    .map(str::to_string)
-                    .or_else(|| item.map(vm::version_label)),
-            )
+            .children(match self.new_post_label() {
+                Some(l) => Some(div().child(l.to_string()).into_any_element()),
+                // "public vN · unpublished edits" says how to publish or
+                // discard them on hover.
+                None => item.map(|item| {
+                    let tip = vm::edits_tip(item);
+                    div()
+                        .id("version")
+                        .child(vm::version_label(item))
+                        .when_some(tip, |d, tip| {
+                            d.tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                        })
+                        .into_any_element()
+                }),
+            })
             // --- themes ---
             .children(crate::ornament::status(
                 &self.theme,

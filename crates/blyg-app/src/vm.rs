@@ -217,6 +217,24 @@ pub fn has_unpublished_edits(item: &Item) -> bool {
     item.status == Status::Public && item.dirty
 }
 
+/// The two ways out of "unpublished edits", for the status bar's version
+/// and the row's edit marker: "⌘⏎ publishes them as v2 · ⌥⌘Z discards
+/// them". On Windows Discard has no key (`keymap::WINDOWS_KEYLESS`), so it
+/// names the menu item. `None` without unpublished edits.
+pub fn edits_tip(item: &Item) -> Option<String> {
+    has_unpublished_edits(item).then(|| {
+        let discard = if crate::keymap::keyless_here("DiscardChanges") {
+            "Discard Changes in the Post menu"
+        } else {
+            "⌥⌘Z discards them"
+        };
+        crate::keymap::hint_owned(format!(
+            "⌘⏎ publishes them as v{} · {discard}",
+            item.version + 1
+        ))
+    })
+}
+
 pub fn version_label(item: &Item) -> String {
     match item.status {
         Status::Public => {
@@ -1029,6 +1047,23 @@ mod tests {
         assert_eq!(discard(&it), Discard::Withdraw);
         it.status = Status::Withdrawn;
         assert_eq!(discard(&it), Discard::AlreadyWithdrawn);
+    }
+
+    /// "unpublished edits" names both ways out, through `keymap::hint`.
+    #[test]
+    fn unpublished_edits_say_how_to_publish_or_discard_them() {
+        let mut it = item("a", "x");
+        assert_eq!(edits_tip(&it), None, "a draft");
+        it.status = Status::Public;
+        it.version = 1;
+        assert_eq!(edits_tip(&it), None, "clean");
+        it.dirty = true;
+        let want = if cfg!(target_os = "windows") {
+            "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
+        } else {
+            "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"
+        };
+        assert_eq!(edits_tip(&it).as_deref(), Some(want));
     }
 
     /// Discard changes: only a published post with unpublished edits, and

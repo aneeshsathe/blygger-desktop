@@ -83,7 +83,12 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   can't carry back, so the blyg keeps it marked unpublished (the toast says
   so, and the list's dot stays). It's disabled, with the reason as its tooltip
   or toast, for a draft or scratch note (Delete covers those), a withdrawn
-  post, a post with no edits, and offline ("Discard needs the blyg").
+  post, a post with no edits, and offline ("Discard needs the blyg"). The
+  places that say a post has edits name both ways out on hover: the status
+  bar's "public vN · unpublished edits" and the list row's edit marker show
+  "⌘⏎ publishes them as vN+1 · ⌥⌘Z discards them" (`vm::edits_tip`, through
+  `keymap::hint`; on Windows, "Ctrl+Enter … · Discard Changes in the Post
+  menu"). The toolbar's Discard is an eraser, so it doesn't read as Undo.
   Local-first: core's `restore` holds the sync lock, so no push of the old
   text runs during it, and drops the item's waiting outbox ops when it reloads
   the item; while the restore is on its way the editor doesn't save
