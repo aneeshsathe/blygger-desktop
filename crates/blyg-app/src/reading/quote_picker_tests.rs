@@ -106,7 +106,9 @@ fn typing_bang_brackets_opens_the_picker_and_picking_inserts(cx: &mut TestAppCon
         before.matches("![[").count() + 1
     );
     assert!(
-        text.lines().any(|l| l == format!("![[{RUE_TRUST}]]")),
+        // The long form, labelled as the link would read (studio 0.47).
+        text.lines()
+            .any(|l| l.starts_with(&format!("![[{RUE_TRUST} | ")) && l.ends_with("]]")),
         "{text}"
     );
 }

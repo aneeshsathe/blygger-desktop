@@ -1101,11 +1101,16 @@ impl MainView {
         let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
         for s in spans {
             let start = text.len();
-            // An `[[id]]` link reads as the target's excerpt when it's held.
+            // An `[[id]]` link reads as its own label, else as the target's
+            // excerpt when it's held.
             let label = s.item.as_deref().map(|id| {
                 let held = stream_vm::quoted(&self.reading.rows, post, id);
                 let (origin, _) = stream_vm::quote_ref(post, id, held);
-                (stream_vm::link_label(held), origin, id.to_string())
+                (
+                    stream_vm::span_link_text(&s.text, held),
+                    origin,
+                    id.to_string(),
+                )
             });
             match &label {
                 Some((l, ..)) => text.push_str(l),

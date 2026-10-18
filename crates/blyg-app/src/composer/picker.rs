@@ -127,14 +127,27 @@ pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&st
 
 /// Replace the typed brackets and query (`at..cursor`, plus a `]]` the
 /// editor may already hold after it) with the pick. A link goes inline; a
-/// quote takes its line. Returns the new text and the caret.
-pub fn insert(text: &str, at: usize, cursor: usize, kind: PickKind, id: &str) -> (String, usize) {
+/// quote takes its line. With a label (studio 0.47, #70) the pick is
+/// written long, `[[id | label]]` / `![[id | label]]`: the picker passes
+/// the text the link would show anyway, so nothing changes until it's
+/// edited. Returns the new text and the caret.
+pub fn insert(
+    text: &str,
+    at: usize,
+    cursor: usize,
+    kind: PickKind,
+    id: &str,
+    label: Option<&str>,
+) -> (String, usize) {
     let at = at.min(text.len());
     let mut end = cursor.min(text.len()).max(at);
     if text[end..].starts_with("]]") {
         end += 2;
     }
-    let directive = format!("{}{id}]]", kind.open());
+    let directive = match kind {
+        PickKind::Link => blyg_core::grammar::link_source(id, label),
+        PickKind::Quote => blyg_core::grammar::directive_source(id, label),
+    };
     let mut out = String::with_capacity(text.len() + directive.len() + 1);
     out.push_str(&text[..at]);
     out.push_str(&directive);
@@ -266,20 +279,32 @@ pub fn filter_row(p: Palette, f: &Filters, subs: &[(String, String)], set: OnFil
     )
 }
 
-/// The result rows: title, excerpt, and where it's from.
+/// A row's first two lines: the label a link to it would show (what a pick
+/// writes, studio 0.47), then the excerpt after the title (it usually
+/// starts with it), unless that is all the label already says.
+pub fn row_text(r: &Pickable) -> (String, Option<String>) {
+    let rest = r
+        .excerpt
+        .strip_prefix(r.title.as_str())
+        .unwrap_or(&r.excerpt)
+        .trim();
+    let quoted = r.label.strip_prefix('“').and_then(|l| l.strip_suffix('”'));
+    let said = quoted.is_some_and(|q| {
+        let q = q.trim_end_matches('…');
+        r.excerpt.starts_with(q) && r.excerpt.chars().count() <= q.chars().count() + 1
+    });
+    let excerpt = (!rest.is_empty() && !said).then(|| rest.to_string());
+    (r.label.clone(), excerpt)
+}
+
+/// The result rows: label, excerpt, and where it's from.
 pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyElement> {
     let now = chrono::Utc::now();
     rows.iter()
         .enumerate()
         .map(|(i, r)| {
             let pick = pick.clone();
-            // The excerpt after the title (it usually starts with it).
-            let rest = r
-                .excerpt
-                .strip_prefix(r.title.as_str())
-                .unwrap_or(&r.excerpt)
-                .trim();
-            let excerpt = (!rest.is_empty()).then(|| rest.to_string());
+            let (label, excerpt) = row_text(r);
             div()
                 .id(("pick-row", i))
                 .px(px(8.))
@@ -289,7 +314,7 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
                 .when(i == sel, |d| d.bg(p.pick()))
                 .when(i != sel, |d| d.hover(|s| s.bg(p.hover())))
                 .on_click(move |_, window, cx| pick(i, window, cx))
-                .child(div().truncate().child(r.title.clone()))
+                .child(div().truncate().child(label))
                 .children(excerpt.map(|e| {
                     div()
                         .text_size(px(11.5))
@@ -311,7 +336,7 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
 
 #[cfg(test)]
 mod tests {
-    use super::{Filters, PickKind, insert, link_trigger, query};
+    use super::{Filters, PickKind, insert, link_trigger, query, row_text};
     use blyg_core::{PickSort, PickSource};
 
     fn typed(before: &str, after: &str) -> Option<usize> {
@@ -347,17 +372,79 @@ mod tests {
 
     #[test]
     fn a_pick_replaces_the_typed_text() {
-        let (t, c) = insert("see [[gar more", 4, 9, PickKind::Link, "01ABC");
+        let (t, c) = insert("see [[gar more", 4, 9, PickKind::Link, "01ABC", None);
         assert_eq!(t, "see [[01ABC]] more");
         assert_eq!(&t[..c], "see [[01ABC]]");
-        let (t, _) = insert("see [[gar]] more", 4, 9, PickKind::Link, "01ABC");
+        let (t, _) = insert("see [[gar]] more", 4, 9, PickKind::Link, "01ABC", None);
         assert_eq!(t, "see [[01ABC]] more", "a closing ]] isn't doubled");
-        let (t, c) = insert("One.\n![[tid", 5, 11, PickKind::Quote, "01Q");
+        let (t, c) = insert("One.\n![[tid", 5, 11, PickKind::Quote, "01Q", None);
         assert_eq!(t, "One.\n![[01Q]]\n");
         assert_eq!(c, t.len());
-        let (t, c) = insert("One.\n![[t\nTwo.", 5, 9, PickKind::Quote, "01Q");
+        let (t, c) = insert("One.\n![[t\nTwo.", 5, 9, PickKind::Quote, "01Q", None);
         assert_eq!(t, "One.\n![[01Q]]\nTwo.");
         assert_eq!(&t[..c], "One.\n![[01Q]]\n");
+    }
+
+    #[test]
+    fn a_pick_writes_the_long_form_with_its_label() {
+        let (t, c) = insert(
+            "see [[gar]] more",
+            4,
+            9,
+            PickKind::Link,
+            "01ABC",
+            Some("Garden beds"),
+        );
+        assert_eq!(t, "see [[01ABC | Garden beds]] more");
+        assert_eq!(&t[..c], "see [[01ABC | Garden beds]]");
+        let (t, _) = insert(
+            "One.\n![[t",
+            5,
+            9,
+            PickKind::Quote,
+            "01Q",
+            Some("“Two\nlines ]] here”"),
+        );
+        assert_eq!(t, "One.\n![[01Q | “Two lines ] ] here”]]\n");
+        let (t, _) = insert("[[", 0, 2, PickKind::Link, "01ABC", Some("  "));
+        assert_eq!(t, "[[01ABC]]", "an empty label is no label");
+    }
+
+    #[test]
+    fn a_row_leads_with_its_label() {
+        let row = |label: &str, title: &str, excerpt: &str| {
+            row_text(&blyg_core::Pickable {
+                id: "x".into(),
+                title: title.into(),
+                excerpt: excerpt.into(),
+                label: label.into(),
+                source: PickSource::Mine,
+                kind: blyg_core::Kind::Fragment,
+                version: 1,
+                at: String::new(),
+                subscription_id: None,
+                source_title: None,
+            })
+        };
+        assert_eq!(
+            row(
+                "Garden beds",
+                "Garden beds",
+                "Garden beds Raised, this year."
+            ),
+            (
+                "Garden beds".to_string(),
+                Some("Raised, this year.".to_string())
+            )
+        );
+        assert_eq!(
+            row(
+                "“Raised beds, this year.”",
+                "Raised beds, this year.",
+                "Raised beds, this year."
+            ),
+            ("“Raised beds, this year.”".to_string(), None)
+        );
     }
 
     #[test]

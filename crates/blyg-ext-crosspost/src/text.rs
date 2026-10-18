@@ -68,11 +68,13 @@ fn link(s: &str) -> Option<(&str, &str)> {
 }
 
 /// A paragraph of Markdown as plain text: `![[id]]` embeds and `![…](…)`
-/// images dropped, `[text](url)` as its text, `**`, `__`, `~~` and
-/// backticks removed, whitespace runs as one space.
+/// images dropped, `[text](url)` as its text, a labelled `[[id | text]]`
+/// link as its label (studio 0.47), `**`, `__`, `~~` and backticks removed,
+/// whitespace runs as one space.
 pub fn plain(s: &str) -> String {
+    let s = &blyg_ext::grammar::with_link_labels(s);
     let mut out = String::with_capacity(s.len());
-    let mut rest = s;
+    let mut rest = s.as_str();
     'scan: while let Some(c) = rest.chars().next() {
         if let Some(r) = rest.strip_prefix("![[")
             && let Some(end) = r.find("]]")
@@ -262,6 +264,21 @@ mod tests {
             "Read this and that on the shore with no marks left."
         );
         assert_eq!(plain("a [b] c [d](e"), "a [b] c [d](e");
+    }
+
+    #[test]
+    fn a_labelled_link_reads_as_its_label() {
+        let id = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+        assert_eq!(
+            plain(&format!("As in [[{id} | the **earlier** post]], yes.")),
+            "As in the earlier post, yes."
+        );
+        assert_eq!(
+            plain(&format!("Quoting ![[{id} | a note]] here")),
+            "Quoting here"
+        );
+        // No label: left as written, as before.
+        assert_eq!(plain(&format!("See [[{id}]].")), format!("See [[{id}]]."));
     }
 
     #[test]

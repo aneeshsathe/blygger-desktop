@@ -259,11 +259,17 @@ impl MainView {
             (s.value().to_string(), s.cursor())
         };
         let (new_text, caret) = match kind {
-            PickKind::Quote => vm::insert_transclusion(&text, cursor, &pick.id),
+            // The long form, labelled with the text the link would show
+            // anyway (studio 0.47's picker, #70).
+            PickKind::Quote => vm::insert_directive(
+                &text,
+                cursor,
+                &blyg_core::grammar::directive_source(&pick.id, Some(&pick.label)),
+            ),
             // Where the typed `[[` was (it came out when the panel opened).
             PickKind::Link => {
                 let at = typed_at.unwrap_or(cursor).min(text.len());
-                picker::insert(&text, at, at, PickKind::Link, &pick.id)
+                picker::insert(&text, at, at, PickKind::Link, &pick.id, Some(&pick.label))
             }
         };
         self.splice_editor(&text, &new_text, Some(caret), window, cx);

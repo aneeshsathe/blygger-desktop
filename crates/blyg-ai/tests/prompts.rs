@@ -15,7 +15,7 @@ use serde_json::Value;
 const PARITY: &str = include_str!("fixtures/provider_ts_parity.json");
 
 /// provider.ts SYSTEM_PROMPT, copied verbatim (the JS concatenation, joined).
-const PROVIDER_TS_SYSTEM_PROMPT: &str = "You are the generation engine behind a TK (\"to come\") instructed-generation feature in a writing tool. The author has marked a span of their draft with an instruction; you write the prose that replaces it. Output ONLY the replacement text: no preamble, no meta-commentary, no code fences, no explanation of what you did. The output becomes the literal body of the author's document, so match the voice, register, and formatting conventions of the surrounding context.";
+const PROVIDER_TS_SYSTEM_PROMPT: &str = "You are the generation engine behind a TK (\"to come\") instructed-generation feature in a writing tool. The author has marked a span of their draft with an instruction; you write the prose that replaces it. Output ONLY the replacement text: no preamble, no meta-commentary, no code fences, no explanation of what you did. The output becomes the literal body of the author's document, so match the voice, register, and formatting conventions of the surrounding context. Never write the document's bracket syntax — `[[…]]` or `![[…]]` — and never write an item id: refer to sources and other items in words. The one exception is when the instruction explicitly asks you to quote a source: then put `![[id]]` alone on its own line.";
 
 #[test]
 fn system_prompt_and_markers_match_provider_ts() {

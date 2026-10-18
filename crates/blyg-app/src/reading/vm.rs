@@ -703,14 +703,20 @@ pub fn can_quote_into(item: Option<&Item>) -> bool {
 /// Insert `![[id]]` on its own line at byte `cursor`. Returns the new text
 /// and the caret after the inserted line.
 pub fn insert_transclusion(text: &str, cursor: usize, id: &str) -> (String, usize) {
+    insert_directive(text, cursor, &format!("![[{id}]]"))
+}
+
+/// Insert a directive (`![[id]]` or `![[id | label]]`) on its own line at
+/// byte `cursor`. Returns the new text and the caret after the inserted line.
+pub fn insert_directive(text: &str, cursor: usize, directive: &str) -> (String, usize) {
     let cursor = floor_boundary(text, cursor.min(text.len()));
     let (before, after) = text.split_at(cursor);
-    let mut out = String::with_capacity(text.len() + id.len() + 8);
+    let mut out = String::with_capacity(text.len() + directive.len() + 2);
     out.push_str(before);
     if !before.is_empty() && !before.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(&format!("![[{id}]]"));
+    out.push_str(directive);
     let caret_line_end = out.len();
     if !after.starts_with('\n') {
         out.push('\n');
@@ -920,6 +926,9 @@ mod tests {
         assert_eq!(t, "Hello\n![[X]]\n world");
         assert_eq!(&t[c..], " world");
         assert_eq!(insert_transclusion("a\n", 2, "X").0, "a\n![[X]]\n");
+        let (t, c) = insert_directive("Hello world", 5, "![[X | a note]]");
+        assert_eq!(t, "Hello\n![[X | a note]]\n world");
+        assert_eq!(&t[..c], "Hello\n![[X | a note]]\n");
     }
 
     #[test]
