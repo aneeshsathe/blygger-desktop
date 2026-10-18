@@ -868,7 +868,9 @@ impl MainView {
                 "New Folder"
             }))
             .child(div().mb(px(8.)).text_color(p.muted).child(
-                "Folders are on this Mac only: they group your subscriptions in the Reader.",
+                crate::keymap::hint(
+                    "Folders are on this Mac only: they group your subscriptions in the Reader.",
+                ),
             ))
             .child(self.input_box(
                 gpui_kit::base::input::Input::new(input).into_any_element(),

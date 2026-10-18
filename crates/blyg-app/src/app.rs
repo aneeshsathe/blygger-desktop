@@ -1318,7 +1318,9 @@ impl MainView {
     fn signed_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_toast(
             "Your blyg signed Burrow out",
-            Some("Sign in again to sync; your changes wait on this Mac".into()),
+            Some(
+                crate::keymap::hint("Sign in again to sync; your changes wait on this Mac").into(),
+            ),
             cx,
         );
         self.open_connect(window, cx);
@@ -3045,7 +3047,7 @@ impl MainView {
                             .gap(px(6.))
                             .line_height(relative(1.45))
                             .child(div().text_color(p.muted).child("•"))
-                            .child(div().flex_1().child(*l))
+                            .child(div().flex_1().child(crate::keymap::hint(l)))
                     }))
                     .child(
                         div()
@@ -3164,7 +3166,7 @@ impl MainView {
                                     ConnectWay::Password,
                                 )),
                         )
-                        .child(note(explain))
+                        .child(note(crate::keymap::hint(explain)))
                         .when(way != ConnectWay::Browser, |d| {
                             d.child(label(if way == ConnectWay::Password {
                                 "STUDIO PASSWORD"
@@ -3469,7 +3471,9 @@ impl MainView {
             div()
                 .text_size(px(11.))
                 .text_color(p.muted)
-                .child(format!("theme-dark = {d} is used while macOS is dark"))
+                .child(crate::keymap::hint_owned(format!(
+                    "theme-dark = {d} is used while macOS is dark"
+                )))
         });
         let layouts = LayoutPref::ALL.iter().map(|l| {
             let l = *l;

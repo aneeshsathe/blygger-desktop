@@ -654,9 +654,9 @@ impl MainView {
             .child(if s.model.served {
                 "Responses: what your blyg knows"
             } else {
-                "Responses: what this Mac holds"
+                crate::keymap::hint("Responses: what this Mac holds")
             })
-            .child("⌘J / esc closes");
+            .child(crate::keymap::hint("⌘J / esc closes"));
         let body = div()
             .flex()
             .gap(px(14.))
@@ -1136,7 +1136,10 @@ impl MainView {
                 d.child(empty(UP_Y, "draws on nothing: an original"))
             })
             .when(m.downs.is_empty() && ghost.is_none(), |d| {
-                d.child(empty(DOWN_Y, "no responses this Mac has seen"))
+                d.child(empty(
+                    DOWN_Y,
+                    crate::keymap::hint("no responses this Mac has seen"),
+                ))
             })
             .children(cards)
             .child(hex_text)

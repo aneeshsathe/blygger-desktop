@@ -236,9 +236,9 @@ impl MainView {
                     None => div()
                         .italic()
                         .text_color(p.muted)
-                        .child(
+                        .child(crate::keymap::hint(
                             "The post isn't held on this Mac, so there's nothing to choose from.",
-                        )
+                        ))
                         .into_any_element(),
                 })
                 .when(chosen, |d| {

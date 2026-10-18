@@ -908,6 +908,8 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
     ("the Keychain", "Credential Manager"),
     ("Keychain", "Credential Manager"),
     ("follow macOS", "follow Windows"),
+    ("while macOS is dark", "while Windows is dark"),
+    ("your other Macs", "your other PCs"),
     ("this Mac", "this PC"),
     ("your Mac", "your PC"),
     ("another Mac", "another PC"),
@@ -1442,6 +1444,10 @@ mod tests {
         assert_eq!(
             windows_hint("scratch · only on this Mac"),
             "scratch · only on this PC"
+        );
+        assert_eq!(
+            windows_hint("Posts you read here still show as unread on your other Macs."),
+            "Posts you read here still show as unread on your other PCs."
         );
         assert_eq!(windows_hint("Macintosh"), "Macintosh");
         // macOS text is untouched.

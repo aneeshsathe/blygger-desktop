@@ -45,9 +45,9 @@ pub(crate) fn label(flavor: NewNote) -> &'static str {
 /// The empty editor's placeholder.
 fn placeholder(flavor: NewNote) -> &'static str {
     match flavor {
-        NewNote::Scratch => {
-            "New note. Start typing; it stays on this Mac until you make it a draft."
-        }
+        NewNote::Scratch => crate::keymap::hint(
+            "New note. Start typing; it stays on this Mac until you make it a draft.",
+        ),
         NewNote::Draft => "New draft. Start typing.",
     }
 }

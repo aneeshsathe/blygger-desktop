@@ -178,7 +178,11 @@ WebView2 download page.
   app says so once, rather than only "sync error".
 - **Fonts.** The macOS system fonts become their nearest Windows ones: New
   York → Georgia, Charter → Cambria, SF Pro → Segoe UI, Menlo → Consolas.
-  The bundled fonts, including the defaults, are the same everywhere.
+  A theme or config file that names a macOS font gets its Windows equivalent
+  too, so Fortress uses Consolas. The bundled fonts, including the defaults,
+  are the same everywhere.
+- **About.** Menu › About Burrow names Windows as the system, and opens
+  Explorer where the Mac app opens Finder.
 - **The browser pane** is macOS only for now: links open in your default
   browser.
 - **Updates.** The Windows build doesn't update itself yet. Download new
