@@ -10,7 +10,7 @@
 use std::ops::Range;
 
 pub use blyg_render::{
-    DirectiveRef, LinkRef, directive_ref, label_text, link_refs, link_source,
+    DirectiveRef, LinkRef, directive_ref, is_js_ws, label_text, link_refs, link_source,
     strip_generated_grammar,
 };
 
@@ -75,21 +75,6 @@ pub fn replace_links(text: &str, f: impl Fn(&LinkRef) -> Option<String>) -> Stri
 /// left as written.
 pub fn with_link_labels(text: &str) -> String {
     replace_links(text, |r| r.label.clone())
-}
-
-/// JavaScript's WhiteSpace + LineTerminator set (`\s`, `String#trim`).
-pub fn is_js_ws(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r' | ' ' | '\u{A0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200A}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202F}'
-                | '\u{205F}'
-                | '\u{3000}'
-                | '\u{FEFF}'
-    )
 }
 
 #[cfg(test)]

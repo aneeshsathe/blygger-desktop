@@ -50,7 +50,7 @@ pub use transclusion::{
     Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
     Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
-pub use util::escape_html;
+pub use util::{escape_html, is_js_ws};
 
 /// Crockford base32 as blyg ids use it: lowercase, no i/l/o/u.
 pub const ID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";

@@ -804,9 +804,14 @@ pub fn quote_label(r: &ReadingItem) -> String {
     }
 }
 
-/// `![[id | label]]` for `r` ([`quote_label`]).
-pub fn quote_directive(r: &ReadingItem) -> String {
-    blyg_core::grammar::directive_source(&r.remote_id, Some(&quote_label(r)))
+/// `![[id | label]]` for `r` ([`quote_label`]); bare `![[id]]` when the
+/// blyg is below studio 0.47 (`below`), so the post doesn't wait.
+pub fn quote_directive(r: &ReadingItem, below: bool) -> String {
+    let label = quote_label(r);
+    blyg_core::grammar::directive_source(
+        &r.remote_id,
+        blyg_core::floor::picker_label(below, &label),
+    )
 }
 
 /// A link post: a new fragment holding `[[id]]`, a plain link that declares

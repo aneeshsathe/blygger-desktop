@@ -516,7 +516,7 @@ impl MainView {
             "Quote" => {
                 let snippet = if blyg {
                     // --- quote labels --- `![[id | label]]`, as the picker writes.
-                    vm::quote_directive(&item)
+                    vm::quote_directive(&item, self.backend.server_outdated())
                 } else {
                     // RSS items aren't transcludable: quote with a link.
                     let text = vm::title(&item.content_md);

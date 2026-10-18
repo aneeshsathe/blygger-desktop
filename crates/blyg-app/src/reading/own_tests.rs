@@ -369,8 +369,13 @@ fn a_quote_is_labelled_with_the_heading_else_the_title() {
     r.content_md = "Just a first line, no heading.\n\nMore.".into();
     assert_eq!(super::vm::quote_label(&r), "Just a first line, no heading.");
     assert_eq!(
-        super::vm::quote_directive(&r),
+        super::vm::quote_directive(&r, false),
         format!("![[{} | Just a first line, no heading.]]", r.remote_id)
+    );
+    // Below studio 0.47 the quote is bare, so the post doesn't wait.
+    assert_eq!(
+        super::vm::quote_directive(&r, true),
+        format!("![[{}]]", r.remote_id)
     );
 }
 
