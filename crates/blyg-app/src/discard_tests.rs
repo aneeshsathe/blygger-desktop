@@ -526,3 +526,16 @@ fn the_version_browser_discards_changes_on_the_current_version(cx: &mut TestAppC
         "the history closes"
     );
 }
+
+/// The "still marked unpublished" line reads as one sentence: no run of
+/// spaces from a string literal wrapped without its `\`.
+#[test]
+fn the_still_unpublished_line_has_no_runs_of_spaces() {
+    let line = super::still_unpublished(1, 2);
+    assert_eq!(
+        line,
+        "Still marked unpublished: v1 has generated text. ⌘⏎ publishes it as v2"
+    );
+    assert!(!line.contains("  "), "{line}");
+    assert!(!crate::keymap::hint_owned(line).contains("  "));
+}

@@ -326,11 +326,8 @@ impl MainView {
                             // disclosed generated text: a restore can't
                             // carry its provenance back.
                             let sub = fresh.filter(|i| i.dirty).map(|i| {
-                                crate::keymap::hint_owned(format!(
-                                    "Your blyg still marks it unpublished, as it does when                                      v{version} has generated text. ⌘⏎ publishes it as v{}",
-                                    i.version + 1
-                                ))
-                                .into()
+                                crate::keymap::hint_owned(still_unpublished(version, i.version + 1))
+                                    .into()
                             });
                             v.show_toast(format!("Back to v{version} as published"), sub, cx);
                         } else {
@@ -355,11 +352,9 @@ impl MainView {
                         v.focus_after_sheet(window, cx);
                         let what = if discard { "Discard" } else { "Restore" };
                         match e {
-                            CoreError::Offline => v.show_toast(
-                                format!("Offline. {what} needs the blyg."),
-                                None,
-                                cx,
-                            ),
+                            CoreError::Offline => {
+                                v.show_toast(format!("Offline. {what} needs the blyg."), None, cx)
+                            }
                             e => v.show_toast(
                                 format!("Couldn't {}: {e}", what.to_lowercase()),
                                 None,
@@ -404,6 +399,12 @@ impl MainView {
             _ => {}
         }
     }
+}
+
+/// The toast's second line when the blyg keeps a discarded post marked
+/// unpublished, as upstream does when v`version` disclosed generated text.
+pub(crate) fn still_unpublished(version: u32, next: u32) -> String {
+    format!("Still marked unpublished: v{version} has generated text. ⌘⏎ publishes it as v{next}")
 }
 
 #[cfg(test)]
