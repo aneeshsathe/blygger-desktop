@@ -3,9 +3,10 @@
 //! The "your blyg needs updating" notice: Burrow needs blygger-studio 0.47
 //! or later (`blyg_core::floor`), because its `[[` picker writes labelled
 //! links, `[[id | label]]`, that an older studio doesn't understand. On an
-//! older blyg nothing about a post is sent (see `CoreError::ServerOutdated`);
-//! reading and local writing go on. A toast when sync first notices (and on
-//! connecting to such a blyg), then a status-bar notice for as long as it
+//! older blyg a post holding them waits (`blyg_core::floor::has_labels`):
+//! its sync and its publish, which offers to write the links bare
+//! (`HELD_*`). Everything else syncs. A toast when sync first notices (and
+//! on connecting to such a blyg), then a status-bar notice for as long as it
 //! stays true. The About window says the same.
 //!
 //! There used to be a second notice here, a sheet listing what a studio
@@ -25,17 +26,25 @@ pub const SERVER_HELP_URL: &str = "https://aneeshsathe.github.io/blygger-desktop
 
 /// The toast, once per session (and on connecting to an older blyg).
 pub const OUTDATED_TOAST: &str = "Your blyg needs updating";
-/// Through `keymap::hint` ("this Mac" on Windows).
-pub const OUTDATED_TOAST_SUB: &str = "Burrow needs blygger-studio 0.47 or later. Your changes stay \
-     on this Mac until it's updated.";
+pub const OUTDATED_TOAST_SUB: &str =
+    "Posts with labelled links wait until it's on blygger-studio 0.47 or later.";
 
 /// The status bar's text while the server is outdated, and its link.
-pub const OUTDATED_NOTICE: &str = "Your blyg needs updating · changes stay on this Mac";
+pub const OUTDATED_NOTICE: &str =
+    "Your blyg needs updating · posts with labelled links wait until it's on studio 0.47";
 pub const OUTDATED_LINK: &str = "Update your blyg";
 
 /// The About window's line, under the connection.
-pub const OUTDATED_ABOUT: &str = "Needs blygger-studio 0.47 or later. Your changes stay on this \
-     Mac until it's updated.";
+pub const OUTDATED_ABOUT: &str = "Posts with labelled links wait until it's on blygger-studio \
+     0.47 or later. Everything else syncs.";
+
+/// The publish sheet on a post held for its labelled links.
+pub const HELD_SHEET: &str =
+    "This post has labelled links, which your blyg can't show until it's updated to studio 0.47.";
+pub const HELD_FIX: &str = "write them as [[id]] and publish";
+
+/// The list row's tooltip on a post that waits for them.
+pub const HELD_TIP: &str = "Waiting: labelled links need studio 0.47";
 
 impl MainView {
     /// Sync just found an outdated server (or a connect did).
@@ -47,8 +56,8 @@ impl MainView {
         );
     }
 
-    /// "Your blyg needs updating · changes stay on this Mac · Update your
-    /// blyg", while true.
+    /// "Your blyg needs updating · posts with labelled links wait … ·
+    /// Update your blyg", while true.
     pub(super) fn render_server_notice(&self) -> Option<AnyElement> {
         if !self.backend.server_outdated() {
             return None;

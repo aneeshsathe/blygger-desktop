@@ -143,6 +143,12 @@ enum Sheet {
         next_version: u32,
         note: Entity<InputState>,
     },
+    /// Publishing a post with labelled links to a blyg below studio 0.47
+    /// (`server_notice::HELD_*`): `⏎` writes them bare and publishes.
+    HeldLabels {
+        id: LocalId,
+        focus: FocusHandle,
+    },
     Conflict {
         id: LocalId,
         mine: Vec<(DiffOp, String)>,
@@ -1426,6 +1432,17 @@ impl MainView {
             PublishDecision::AlreadyPublished(v) => {
                 self.show_toast(format!("Already published as v{v}"), None, cx)
             }
+            // Below studio 0.47 a post with labelled links can't go as it is.
+            PublishDecision::Sheet { .. } if self.labels_held(&item.content_md) => {
+                let focus = cx.focus_handle();
+                window.focus(&focus, cx);
+                self.sheet_gen += 1;
+                self.sheet = Some(Sheet::HeldLabels {
+                    id: item.local_id,
+                    focus,
+                });
+                cx.notify();
+            }
             PublishDecision::Sheet {
                 title,
                 next_version,
@@ -1454,15 +1471,48 @@ impl MainView {
         }
     }
 
+    /// The blyg is below studio 0.47 and `text` has labelled links: it
+    /// waits (`blyg_core::floor`).
+    pub(crate) fn labels_held(&self, text: &str) -> bool {
+        self.backend.server_outdated() && blyg_core::floor::has_labels(text)
+    }
+
+    /// The held-labels sheet's `⏎`: write the open post's labelled links
+    /// bare (`[[id]]`, `![[id]]`), then publish it.
+    fn publish_without_labels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Sheet::HeldLabels { id, .. }) = self.sheet.take() else {
+            return;
+        };
+        if self.current.as_ref().map(|c| &c.local_id) == Some(&id) {
+            let text = self.editor.read(cx).value().to_string();
+            let bare = blyg_core::floor::strip_labels(&text);
+            if bare != text {
+                self.splice_editor(&text, &bare, None, window, cx);
+            }
+        }
+        self.focus_after_sheet(window, cx);
+        self.start_publish(id, None, window, cx);
+    }
+
     fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
         let Some(Sheet::Publish { id, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
+        let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
+        self.start_publish(id, note_opt, window, cx);
+    }
+
+    fn start_publish(
+        &mut self,
+        id: LocalId,
+        note_opt: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.publishing = true;
         cx.notify();
         let backend = self.backend.clone();
-        let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
         let task = cx.background_spawn({
             let id = id.clone();
             let note = note_opt.clone();
@@ -2451,13 +2501,28 @@ impl MainView {
                     .child(vm::kind_label(item.kind))
                     .child(
                         div()
+                            .id(("row-pill", ix))
                             .px(px(6.))
                             .rounded(px(self.theme.chip_radius))
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
                             .when(pill_pub, |d| d.text_color(p.accent))
-                            .child(pill_text),
+                            .child(pill_text)
+                            // Below studio 0.47: this post waits for its labels.
+                            .when(self.labels_held(&item.content_md), |d| {
+                                let (bg, ink) = self.palette.tip();
+                                d.tooltip(move |_, cx| {
+                                    cx.new(|_| toolbar::ButtonTip {
+                                        text: crate::keymap::hint(server_notice::HELD_TIP).into(),
+                                        reason: None,
+                                        bg,
+                                        ink,
+                                        font: chrome,
+                                    })
+                                    .into()
+                                })
+                            }),
                     )
                     .when(pill_pub, |d| {
                         d.children(crate::ornament::marker(
@@ -2896,6 +2961,42 @@ impl MainView {
                         key_hint("⏎", "publish"),
                         key_hint("esc", "cancel"),
                     ]))
+                    .into_any_element(),
+            ),
+            Sheet::HeldLabels { focus, .. } => (
+                460.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" => this.publish_without_labels(window, cx),
+                            "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading("Labelled links".into()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(crate::keymap::hint(server_notice::HELD_SHEET)),
+                    )
+                    .child(
+                        keys_row(vec![])
+                            .child(crate::platform::key_button(
+                                key_hint("⏎", server_notice::HELD_FIX),
+                                "held-fix",
+                                cx.listener(|this, _, window, cx| {
+                                    this.publish_without_labels(window, cx)
+                                }),
+                            ))
+                            .child(crate::platform::key_button(
+                                key_hint("esc", "cancel"),
+                                "held-cancel",
+                                cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                            )),
+                    )
                     .into_any_element(),
             ),
             Sheet::Conflict {

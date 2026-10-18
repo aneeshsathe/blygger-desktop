@@ -3,17 +3,17 @@
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). Burrow 0.13 and later need
-**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.47.0**.
+**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.47.0** (and 0.46.1, below the floor).
 Every route the app shares with upstream is checked against `openapi.json` in its tests
 (`crates/blyg-core/tests/fixtures/`).
 
 **Why 0.47.** Burrow's `[[` picker writes labelled links, `[[id | label]]`, and a studio
 older than 0.47 doesn't understand the label: published there, the link would come out
-as literal text or broken. On an older blyg Burrow keeps reading (on studio 0.9 or later)
-and lets you write, but sends nothing about a post (no edit, publish, withdraw, pin,
-restore or image) until the blyg is updated. It says so once, keeps a status-bar notice
-with an **Update your blyg** link, and shows the same in the About window. See
-[Updating an older server](#updating-an-older-server).
+as literal text or broken. On an older blyg (studio 0.9 or later) everything syncs as
+usual except **posts with labelled links**, which wait until the blyg is updated. It says
+so once, keeps a status-bar notice with an **Update your blyg** link, and shows the same
+in the About window. See [Labelled links on an older blyg](#labelled-links-on-an-older-blyg)
+and [Updating an older server](#updating-an-older-server).
 
 **A stock blygger-studio is fully supported.** Nothing in this app needs a patched
 server: writing, publishing, versions, pins, subscriptions, mentions, settings, the
@@ -36,6 +36,32 @@ while the blyg is too old):
    doesn't lock the blyg out on a guess. It is treated as new enough.
 
 A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
+
+## Labelled links on an older blyg
+
+Below 0.47 a post waits when its text holds a labelled link or quote, `[[id | label]]`
+or `![[id | label]]`, with a label that isn't empty and outside code (inline, fenced or
+indented code is text to the studio too). Burrow reads that with the studio's own
+grammar (`blyg_core::floor::has_labels`).
+
+- **What waits:** that post's edits (its creation and saves stay in the outbox) and its
+  publish. The list shows it with a tooltip on its pill, "Waiting: labelled links need
+  studio 0.47". Publishing it opens a sheet: "This post has labelled links, which your
+  blyg can't show until it's updated to studio 0.47." **⏎** writes them as bare `[[id]]`
+  / `![[id]]` (which every studio understands; code is left alone) and publishes.
+  **esc** leaves the post as it is.
+- **What goes:** every other post, as usual. Withdraw and pin of any post go too: they
+  don't send the text. So do restore, image uploads (into a post that hasn't reached
+  the blyg yet, unattached), forks (the blyg copies the source itself; the fork then
+  waits like any post if its text has labels), subscriptions, read marks and settings.
+- **Generated text:** a `[TK]` scope's output is part of the post and the studio renders
+  it like the rest, so a labelled link there holds the post too. So does a labelled
+  source in a `[TK]` instruction.
+- **Checked on every flush, from the text as it is now:** removing the labels releases
+  the post, and the next sync sends it. When the blyg is updated, Burrow notices within
+  a minute (or at once on a manual sync) and sends what waited.
+- **New links:** on such a blyg the `[[` picker and ⌘K write the bare form, so nothing new
+  waits.
 
 ## Signing in
 
@@ -68,9 +94,9 @@ sends what waited.
 | Removing an image you pasted, then deleted | **0.26+.** Older: it stays on the server. |
 | Syncing every 15 s on change counters | **0.32+** (`GET /api/changes`). Older: read whole every 60 s. |
 
-The "Older" columns matter only for reading now: below 0.47 Burrow sends nothing about a
-post. Burrow 0.12 and earlier also showed a sheet listing a pre-0.40 studio's limits;
-0.13's floor replaced it with the update notice.
+Below 0.47 the "Older" columns still apply to what syncs. Burrow 0.12 and earlier also
+showed a sheet listing a pre-0.40 studio's limits; 0.13's floor replaced it with the
+update notice.
 
 ### Shapes worth knowing (studio 0.40+)
 
@@ -226,9 +252,9 @@ mattered here:
   changes stay queued, and the sign-in sheet opens once, browser first.
 - **Older than studio 0.47:** Burrow says "Your blyg needs updating" once (on
   connecting, or when Burrow starts), with a status-bar notice and an **Update your
-  blyg** link while it lasts, and the same in the About window. Nothing about a post is
-  sent: your edits wait in the outbox and go up once the blyg is updated. Reading goes
-  on. See [How Burrow checks the version](#how-burrow-checks-the-version).
+  blyg** link while it lasts, and the same in the About window. Posts with labelled
+  links wait in the outbox; everything else syncs. See
+  [Labelled links on an older blyg](#labelled-links-on-an-older-blyg).
 - **A server older than studio 0.9:** the connect sheet refuses it, and a blyg already
   connected isn't read from either: on such a server a new route's 404 would read as
   "deleted" and duplicate your posts. Burrow recognises it by `GET /api/items`

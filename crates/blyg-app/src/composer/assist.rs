@@ -410,7 +410,9 @@ impl Assist {
         if picker::query(&text, pk.at, pk.kind, cursor).is_none() {
             return;
         }
-        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id, Some(&row.label));
+        // Below studio 0.47 the bare form, so the post doesn't wait (`blyg_core::floor`).
+        let label = blyg_core::floor::picker_label(self.backend.server_outdated(), &row.label);
+        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id, label);
         self.splice(&text, &new, caret, window, cx);
     }
 

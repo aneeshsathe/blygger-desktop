@@ -205,8 +205,8 @@ pub struct Report {
     pub macos: String,
     pub update: UpdateInfo,
     pub connection: ConnectionInfo,
-    /// The blyg is older than blygger-studio 0.47: nothing about a post is
-    /// sent to it (`server_notice`).
+    /// The blyg is older than blygger-studio 0.47: posts with labelled
+    /// links wait (`server_notice`).
     pub server_outdated: bool,
 }
 

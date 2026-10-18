@@ -39,7 +39,8 @@ in the docs for what differs from the Mac.
 
 Burrow works with any blyg on blygger-studio 0.47 or later, stock and unpatched:
 sign in with your browser, an API token, or your studio password. On an older
-blyg it still reads, but sends nothing until the blyg is updated
+blyg everything syncs except posts with labelled links (`[[id | label]]`),
+which wait until the blyg is updated
 ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
 No blyg? Try it on the built-in sample data.
 
