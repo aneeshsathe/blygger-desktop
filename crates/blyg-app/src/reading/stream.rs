@@ -651,7 +651,10 @@ impl MainView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.ink)
                     .hover(|s| s.text_color(p.accent))
-                    .tooltip(|_, cx| cx.new(|_| super::Tip("Profile · ⌘I".into())).into())
+                    .tooltip(|_, cx| {
+                        cx.new(|_| super::Tip(crate::keymap::hint("Profile · ⌘I").into()))
+                            .into()
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
                         this.open_profile(origin.clone(), window, cx)
@@ -1223,7 +1226,9 @@ impl MainView {
                     _ => div()
                         .italic()
                         .text_color(p.muted)
-                        .child("The quoted post isn't held on this Mac.")
+                        .child(crate::keymap::hint(
+                            "The quoted post isn't held on this Mac.",
+                        ))
                         .into_any_element(),
                 },
             ],

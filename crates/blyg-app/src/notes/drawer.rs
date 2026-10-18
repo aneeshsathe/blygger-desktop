@@ -806,7 +806,7 @@ impl MainView {
                         div()
                             .text_size(px(10.5))
                             .text_color(p.muted)
-                            .child("only on this Mac"),
+                            .child(crate::keymap::hint("only on this Mac")),
                     ),
             )
             .when(n.menu, |d| {
@@ -857,7 +857,9 @@ impl MainView {
             .text_color(p.muted)
             .map(|d| {
                 if !selected {
-                    return d.child("→ Notes on a post or page adds it · esc or ⇧⌘N closes");
+                    return d.child(crate::keymap::hint(
+                        "→ Notes on a post or page adds it · esc or ⇧⌘N closes",
+                    ));
                 }
                 d.child(
                     div()

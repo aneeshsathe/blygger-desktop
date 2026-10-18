@@ -257,7 +257,12 @@ impl MainView {
                     .when(folder.is_none(), |d| d.text_color(p.muted))
                     .tooltip(|_, cx| {
                         cx.new(|_| {
-                            super::Tip("The Reader's folder for it (on this Mac only)".into())
+                            super::Tip(
+                                crate::keymap::hint(
+                                    "The Reader's folder for it (on this Mac only)",
+                                )
+                                .into(),
+                            )
                         })
                         .into()
                     })

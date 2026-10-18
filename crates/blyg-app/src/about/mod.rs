@@ -505,11 +505,11 @@ impl Render for AboutView {
                                 .text_color(p.muted)
                                 .line_height(relative(1.4))
                                 .child("Older blygger-studio. Limited here:")
-                                .children(
-                                    crate::app::server_notice::LIMITS
-                                        .iter()
-                                        .map(|l| div().mt(px(3.)).child(format!("• {l}"))),
-                                ),
+                                .children(crate::app::server_notice::LIMITS.iter().map(|l| {
+                                    div()
+                                        .mt(px(3.))
+                                        .child(format!("• {}", crate::keymap::hint(l)))
+                                })),
                         )
                     })
                     .child(section("FILES"))
