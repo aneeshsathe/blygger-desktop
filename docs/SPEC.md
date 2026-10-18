@@ -60,7 +60,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 - **Keys**: `⌘L` focus omnibar · `⌘N` new post · `esc` (in editor) back to omnibar ·
   `⌘⏎` publish · `⌘T` fragment⇄thread · `⌘E` preview (see § Full editor) · `⌘O` open
   permalink in browser · `⌘,` settings · `⌘+/⌘−` font size · `⇧⌘⌫` delete a
-  draft or scratch note.
+  draft or scratch note · `⌥⌘Z` discard a published post's unpublished changes.
 - **Delete / Withdraw** (rule 5 below): `⇧⌘⌫` (Post › Delete Draft…) on a draft
   or scratch note drops a sheet: "Delete this draft? … This can't be undone."
   `⏎` deletes, `esc` cancels; the list moves on to the next post and a toast
@@ -69,6 +69,27 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   posts stay listed as withdrawn. You can't undo this."), then calls
   `withdraw(id, note)`. Withdraw has no key on purpose, since it's permanent.
   (`⌘⌫` stays delete-to-line-start in the editor.)
+- **Discard changes** (`⌥⌘Z`, Post › Discard Changes…, the toolbar's Discard,
+  and "Discard changes…" on the current version in ⌘Y): a published post with
+  unpublished edits goes back to the version it has published. A sheet asks
+  first ("Discard unpublished changes? “…” The editor goes back to vN as
+  published. You can't undo this."), `⏎` discards and `esc` keeps the edits;
+  then `restore(id, item.version)` and a toast "Back to vN as published". This
+  is upstream's "discard changes" (blygger-studio `restoreVersion` on the
+  current version): the public post doesn't change, and the copy is clean
+  again, except when vN disclosed generated text, whose provenance a restore
+  can't carry back, so the blyg keeps it marked unpublished (the toast says
+  so, and the list's dot stays). It's disabled, with the reason as its tooltip
+  or toast, for a draft or scratch note (Delete covers those), a withdrawn
+  post, a post with no edits, and offline ("Discard needs the blyg").
+  Local-first: core's `restore` holds the sync lock, so no push of the old
+  text runs during it, and drops the item's waiting outbox ops when it reloads
+  the item; while the restore is on its way the editor doesn't save
+  (`MainView::restoring`, checked in `after_edit`), so keystrokes typed
+  meanwhile can't land on top of the restored copy; then the editor gets the
+  restored text without saving. If the restore fails nothing was replaced, and
+  what was typed meanwhile is saved then. Every restore (⌘Y's Restore vN… too)
+  goes through this path, `discard::restore_working_copy`.
 - **Publish** (`⌘⏎`): a sheet drops from the title bar: "Publish "…" as vN+1",
   with an optional version note input. `⏎` publishes and `esc` cancels. If the
   item is a fragment over 1000 chars, don't open the sheet: shake the status bar
@@ -308,7 +329,7 @@ Core principle: *"anything the protocol can't verify, it declines to represent."
 - **Other people's posts:** the version UI shows **only the current version and pinned versions**. Unpinned versions don't appear at all, in any form (§8.4, and a deliberate product decision). The pinned list comes from the public item document's `changelog` (`pinned: true`) and each pinned body from `{origin}items/{id}/v{n}.json`. **Compact control:** there's no sidebar. The version pill in the post header is a `‹ vN ▾ ›` control: the arrows step through current + pinned versions, and the pill opens a small dropdown list. Actions are shown inline, labelled with what they create: **Quote into a thread** / **Reply · new stub** / **AI reply · new stub** / **Fork** / **Link post · new fragment** / **Open on web** for the current version; **Quote this version** / **Fork this pin** / **Diff vs now** / **Back to current** for a pinned one. Fork is available only on pinned versions: on the current version it's shown **greyed out**, and its tooltip says why and where to go ("Fork needs a pinned version: pick 📌 vN in ‹ vM ▾ › (or press [), then Fork this pin", or that the post has no pins). Every action chip has a one-sentence tooltip saying what gets made (a stub thread, `![[id]]` in a thread, a quoted pin with a link, a forked thread draft).
 - **"Edited since you read it":** store only `read_version` (a number). Show the author's changelog notes for the versions in between. A **text diff only when the version you read was pinned** (both sides public). Never retain the unpinned text of past versions of other people's posts.
 - **Withdrawal of others' posts:** drop the content locally (*"Local hoarding past withdrawal is nonconforming"*), except pinned versions, which may be retained with attribution linking the pin.
-- **Own posts:** your history is private to you. Every version can be opened and restored (a restore loads it into the editor; publishing makes vN+1, and versions never go backwards). Pinning uses a type-to-confirm sheet ("You can't undo this").
+- **Own posts:** your history is private to you. Every version can be opened and restored (a restore loads it into the editor; publishing makes vN+1, and versions never go backwards). The current version has no Restore, but while the post has unpublished edits it offers **Discard changes…**, which restores it: the same sheet and code path as ⌥⌘Z (see Discard changes above). Pinning uses a type-to-confirm sheet ("You can't undo this").
 - Public fetches to other origins are **unauthenticated**: never send the owner token anywhere but the user's own blyg.
 
 ## Profiles (mock: `docs/prototype/profiles.html`, agreed as-is)
@@ -364,11 +385,11 @@ A scratchpad for running notes while reading (issue: "notes while I browse"). Co
 ## Buttons (optional toolbar)
 
 Keyboard-first, but not keyboard-only. Config `show-buttons = true|false` (**default true** for new installs; the maintainer sets `false`). It's toggled in Settings (⌘,) and offered in the first-run tutorial ("Buttons or keyboard?").
-- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (⌘N: a scratch note, or a draft with `new-note = draft`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
+- A quiet toolbar in the title-bar row, with icons plus short labels: **New** (⌘N: a scratch note, or a draft with `new-note = draft`), **Make draft**, **Publish**, **View: Write / Preview / Full editor**, **Versions**, **Generate (AI)**, **Discard** (Discard changes, ⌥⌘Z), **Delete** / **Withdraw** (one slot: Delete on a draft or scratch note, Withdraw on a published post; never Delete for published work), **Quick capture**. The quick-capture panel gets the same row: **Scratch · Draft · Publish**.
 - **Generated from the single keymap table** (action, key, context, menu label, icon, button label), so buttons, menus and shortcuts can't drift. Every tooltip shows the shortcut, so the buttons teach the keys.
 - Buttons are disabled with a reason in the tooltip when unavailable (e.g. Publish on an over-limit fragment: "Too long for a fragment. ⌘T makes it a thread").
 - With `show-buttons = false`, the window is exactly the minimalist layout in the mocks.
-- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Delete and Withdraw share a slot (`toolbar::visible`, `vm::discard`); Withdraw is the one button without a key, so its tooltip is just "Withdraw…". Icons: twelve Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, `discard_tests`, capture tests.
+- As built (`crates/blyg-app/src/toolbar.rs`): the rows live in `keymap::table()` (`icon`, `button`), the order in `keymap::TOOLBAR` and `keymap::CAPTURE_ROW`; a click dispatches the row's action. The row sits between the traffic lights and the view switcher; the centred title shows only when there's room, and a narrow window gets icons only. Buttons other than Quick capture work on the Posts screen and wait for an open sheet. Disabled reasons reuse `vm::publish_decision` / `vm::make_draft_blocked`. In quick capture the row replaces the key hints (each button shows its key); with `capture-default = draft` there's no Scratch button. Reading (⌘R) and Quote (⌘K) have no button: the view switcher already is Reading, and Quote is thread-only. Delete and Withdraw share a slot (`toolbar::visible`, `vm::discard`), with Discard just before them (`vm::discard_changes` gives its disabled reason); Withdraw is the one button without a key, so its tooltip is just "Withdraw…". Icons: thirteen Lucide icons (ISC). Tests: `keymap` (every button bound, key in tooltip), `menu_tests` (menus = table), `toolbar_tests`, `discard_tests` (Discard changes too, with typing during the restore), capture tests.
 
 ## Updates (in-app, signed)
 

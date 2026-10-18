@@ -805,6 +805,11 @@ impl Backend for FakeBackend {
             if it.content_md == content_md {
                 return Ok(());
             }
+            // The first edit of a clean published post: what it replaces is
+            // that version's text (so a restore of it, Discard changes,
+            // brings it back).
+            let published = (it.status == Status::Public && !it.dirty)
+                .then(|| (it.version, it.content_md.clone()));
             it.content_md = content_md.to_string();
             it.updated = Utc::now().to_rfc3339();
             let scratch = it.status == Status::Scratch;
@@ -817,6 +822,9 @@ impl Backend for FakeBackend {
                 && let Some(new) = blyg_core::tk::remap(&old_md, &old, content_md)
             {
                 st.prov.insert(id.clone(), (content_md.to_string(), new));
+            }
+            if let Some((v, md)) = published {
+                st.rd.own_texts.entry((id.clone(), v)).or_insert(md);
             }
             scratch
         };
@@ -1153,7 +1161,10 @@ impl Backend for FakeBackend {
                 .iter_mut()
                 .find(|i| &i.local_id == id)
                 .ok_or(CoreError::NotFound)?;
+            // Restoring the published version is "discard changes": clean,
+            // and the edits waiting to sync are gone (like blyg-core).
             it.dirty = it.version != version;
+            it.pending_sync = false;
             it.content_md = text;
             it.updated = Utc::now().to_rfc3339();
             st.sink.clone()

@@ -47,7 +47,7 @@ use crate::app::reading::opml::{ExportOpml, ImportOpml};
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
-use crate::app::discard::{DeleteDraft, Withdraw};
+use crate::app::discard::{DeleteDraft, DiscardChanges, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
 // --- about ---
@@ -556,6 +556,20 @@ pub fn mac_table() -> Vec<Keybind> {
             ),
             "trash-2",
             "Delete"
+        ),
+        // --- discard changes --- (upstream's "discard changes": the
+        // current published version back into the working copy). ⌥⌘Z, next
+        // to ⌘Z / ⇧⌘Z; gpui-base's inputs don't bind it.
+        button!(
+            kb!(
+                "alt-cmd-z",
+                Main,
+                DiscardChanges,
+                "Discard unpublished changes: back to the published version (asks first)",
+                Some("Post › Discard Changes…")
+            ),
+            "undo-2",
+            "Discard"
         ),
         button!(
             menu_only!(
@@ -1077,8 +1091,9 @@ pub const TOOLBAR: &[&[&str]] = &[
     &["ViewWrite", "ViewSplit", "ViewStudio"],
     &["ShowVersions", "AiGenerate"],
     // One slot: Delete for a draft or scratch note, Withdraw for a published
-    // post (`toolbar::visible`).
-    &["DeleteDraft", "Withdraw"],
+    // post (`toolbar::visible`). Discard changes sits beside it: it drops
+    // edits, where Delete and Withdraw drop the post.
+    &["DiscardChanges", "DeleteDraft", "Withdraw"],
     &["ShowCapture"],
 ];
 
@@ -1556,7 +1571,7 @@ mod tests {
                     k.key
                 );
             }
-            assert_eq!(seen, 14);
+            assert_eq!(seen, 15);
             // Only listed buttons exist (no orphan labels in the table).
             for k in table().iter().filter(|k| k.button.is_some()) {
                 assert!(

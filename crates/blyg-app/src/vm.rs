@@ -352,6 +352,34 @@ pub fn discard_noun(item: &Item) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------- discard changes
+
+/// Why Discard changes can't run, when it can't. In the order checked, so
+/// the reason names what's actually in the way.
+pub const DISCARD_NOT_PUBLISHED: &str =
+    "Not published, so there's no version to go back to. ⇧⌘⌫ deletes a draft";
+pub const DISCARD_WITHDRAWN: &str = "Withdrawn, so there's no published version to go back to";
+pub const DISCARD_CLEAN: &str = "No unpublished changes to discard";
+pub const DISCARD_OFFLINE: &str = "Discard needs the blyg";
+
+/// Discard changes (upstream's "discard changes", blygger-studio
+/// `restoreVersion`): restore the *current* published version into the
+/// working copy. Only a published post with unpublished edits has any;
+/// drafts and scratch notes are deleted instead (`discard`). `Ok` is the
+/// version the editor goes back to.
+pub fn discard_changes(item: &Item, offline: bool) -> std::result::Result<u32, &'static str> {
+    match item.status {
+        Status::Scratch | Status::Draft => Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED)),
+        Status::Withdrawn => Err(DISCARD_WITHDRAWN),
+        Status::Public if item.version == 0 || item.server_id.is_none() => {
+            Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED))
+        }
+        Status::Public if !item.dirty => Err(DISCARD_CLEAN),
+        Status::Public if offline => Err(DISCARD_OFFLINE),
+        Status::Public => Ok(item.version),
+    }
+}
+
 pub fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -1001,6 +1029,48 @@ mod tests {
         assert_eq!(discard(&it), Discard::Withdraw);
         it.status = Status::Withdrawn;
         assert_eq!(discard(&it), Discard::AlreadyWithdrawn);
+    }
+
+    /// Discard changes: only a published post with unpublished edits, and
+    /// only online; drafts and scratch notes are Delete's.
+    #[test]
+    fn discard_changes_needs_a_published_post_with_edits() {
+        let hint = crate::keymap::hint;
+        let mut it = item("a", "x");
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
+        it.status = Status::Scratch;
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
+        it.status = Status::Public;
+        it.version = 3;
+        it.server_id = Some(blyg_core::ServerId("s".into()));
+        it.dirty = false;
+        assert_eq!(discard_changes(&it, false), Err(DISCARD_CLEAN));
+        assert_eq!(
+            discard_changes(&it, true),
+            Err(DISCARD_CLEAN),
+            "nothing to do anyway"
+        );
+        it.dirty = true;
+        assert_eq!(
+            discard_changes(&it, false),
+            Ok(3),
+            "back to the current version"
+        );
+        assert_eq!(discard_changes(&it, true), Err(DISCARD_OFFLINE));
+        it.status = Status::Withdrawn;
+        assert_eq!(discard_changes(&it, false), Err(DISCARD_WITHDRAWN));
+        // A draft with history is still Withdraw's, not Discard's.
+        it.status = Status::Draft;
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
     }
 
     #[test]

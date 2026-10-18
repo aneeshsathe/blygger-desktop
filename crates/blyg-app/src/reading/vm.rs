@@ -543,6 +543,9 @@ pub struct OwnActions {
     pub can_pin: bool,
     pub already_pinned: bool,
     pub can_restore: bool,
+    /// The current version, while the post has unpublished edits: restoring
+    /// it is Discard changes.
+    pub can_discard: bool,
 }
 
 /// One control on your own version. There's deliberately no fork: forking
@@ -554,6 +557,8 @@ pub enum OwnAction {
     Pinned,
     Pin,
     Restore,
+    /// Restore the current version: "Discard changes…".
+    Discard,
 }
 
 impl OwnAction {
@@ -562,6 +567,7 @@ impl OwnAction {
             OwnAction::Pinned => "Pinned ✓".into(),
             OwnAction::Pin => format!("📌 Pin v{v}…"),
             OwnAction::Restore => format!("Restore v{v}…"),
+            OwnAction::Discard => "Discard changes…".into(),
         }
     }
 }
@@ -579,15 +585,20 @@ impl OwnActions {
         if self.can_restore {
             out.push(OwnAction::Restore);
         }
+        if self.can_discard {
+            out.push(OwnAction::Discard);
+        }
         out
     }
 }
 
-pub fn own_actions(v: &Version, current: u32) -> OwnActions {
+/// `dirty`: the post has unpublished edits (`vm::has_unpublished_edits`).
+pub fn own_actions(v: &Version, current: u32, dirty: bool) -> OwnActions {
     OwnActions {
         can_pin: !v.pinned && !v.endcap,
         already_pinned: v.pinned,
         can_restore: !v.endcap && v.version != current,
+        can_discard: !v.endcap && v.version == current && dirty,
     }
 }
 
@@ -999,7 +1010,7 @@ mod tests {
                 pinned,
                 endcap,
             };
-            let a = own_actions(&v, 5);
+            let a = own_actions(&v, 5, false);
             for act in a.list() {
                 assert!(!act.label(version).to_lowercase().contains("fork"));
             }
@@ -1007,6 +1018,31 @@ mod tests {
                 assert_eq!(a.list(), [OwnAction::Pin, OwnAction::Restore]);
             }
         }
+    }
+
+    /// The current version offers no Restore, but with unpublished edits
+    /// it offers Discard changes (the same path as ⌥⌘Z).
+    #[test]
+    fn the_current_version_discards_changes_when_dirty() {
+        let v = |version, endcap| Version {
+            version,
+            published_at: "2026-09-20T10:00:00Z".into(),
+            note: None,
+            pinned: false,
+            endcap,
+        };
+        assert_eq!(own_actions(&v(5, false), 5, false).list(), [OwnAction::Pin]);
+        assert_eq!(
+            own_actions(&v(5, false), 5, true).list(),
+            [OwnAction::Pin, OwnAction::Discard]
+        );
+        assert_eq!(OwnAction::Discard.label(5), "Discard changes…");
+        // A past version restores, edits or not; an endcap does neither.
+        assert_eq!(
+            own_actions(&v(4, false), 5, true).list(),
+            [OwnAction::Pin, OwnAction::Restore]
+        );
+        assert!(own_actions(&v(5, true), 5, true).list().is_empty());
     }
 
     /// The reading search: title, author, origin and text, any case; an

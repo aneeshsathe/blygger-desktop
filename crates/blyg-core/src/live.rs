@@ -787,6 +787,14 @@ impl Backend for LiveBackend {
         }
     }
 
+    /// Restoring the published version is Discard changes. The sync lock is
+    /// held throughout, so no push of the old text runs during it (an
+    /// in-flight one finishes first); `replace_from_server` then drops every
+    /// edit op still waiting, so none runs after it either. A save made
+    /// after the reload is a new edit: the app holds the editor's saves
+    /// while a restore is on its way (blyg-app `discard.rs`). If the reload
+    /// fails, the waiting ops stay and the edits sync back: the user is
+    /// told the restore failed, and the text they see is what syncs.
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();

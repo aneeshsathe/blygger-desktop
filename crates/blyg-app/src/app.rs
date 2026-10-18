@@ -192,6 +192,14 @@ enum Sheet {
         title: String,
         note: Entity<InputState>,
     },
+    /// ⌥⌘Z on a published post with unpublished edits: `⏎` restores the
+    /// published `version`, `esc` keeps the edits.
+    DiscardChanges {
+        id: LocalId,
+        title: String,
+        version: u32,
+        focus: FocusHandle,
+    },
     // --- browser macros --- (browser/automation): the text before a run,
     // and what the composer holds before its `submit`.
     MacroPreview(browser::automation::PreviewSheet),
@@ -218,6 +226,9 @@ pub struct MainView {
     current: Option<Item>,
     mode: Mode,
     loading_editor: bool,
+    /// --- discard changes --- A restore of this post is on its way: the
+    /// editor doesn't save it meanwhile (`discard::restore_working_copy`).
+    restoring: Option<LocalId>,
     /// The full editor: view mode and the live preview (studio/mod.rs).
     studio: studio::Studio,
     sheet: Option<Sheet>,
@@ -382,6 +393,7 @@ impl MainView {
             current: None,
             mode: Mode::Search,
             loading_editor: false,
+            restoring: None,
             studio: studio::Studio::new(
                 cx.try_global::<crate::connection::Connection>()
                     .map(|c| c.data_dir.clone()),
@@ -1816,7 +1828,7 @@ impl MainView {
                 if let Some(new_text) = replaced {
                     if editing_same {
                         v.splice_editor(&text, &new_text, None, window, cx);
-                    } else {
+                    } else if v.restoring.as_ref() != Some(&id) {
                         let _ = v.backend.save(&id, &new_text);
                     }
                 }
@@ -1860,6 +1872,13 @@ impl MainView {
         let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
             return;
         };
+        // --- discard changes --- the blyg is replacing this text: saving
+        // it now could put the old text back after the restore.
+        if self.restoring.as_ref() == Some(&id) {
+            self.refresh_preview(false, cx);
+            cx.notify();
+            return;
+        }
         let text = self.editor.read(cx).value();
         if let Err(e) = self.ai_save_edit(&id, &text) {
             self.show_toast(format!("Couldn't save: {e}"), None, cx);
@@ -3251,6 +3270,59 @@ impl MainView {
                             )
                             .child(
                                 key_hint("esc", "cancel")
+                                    .id("sheet-cancel")
+                                    .debug_selector(|| "sheet-cancel".into())
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.close_sheet(window, cx)
+                                    })),
+                            ),
+                    )
+                    .into_any_element(),
+            ),
+            // --- discard changes ---
+            Sheet::DiscardChanges {
+                title,
+                version,
+                focus,
+                ..
+            } => (
+                440.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" => this.confirm_discard_changes(window, cx),
+                            "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading("Discard unpublished changes?".to_string()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(div().text_color(p.ink).child(format!("“{title}”")))
+                            .child(format!(
+                                "The editor goes back to v{version} as published. {}",
+                                discard::DISCARD_NOTE
+                            )),
+                    )
+                    .child(
+                        keys_row(vec![])
+                            .child(
+                                key_hint("⏎", "discard changes")
+                                    .id("sheet-discard")
+                                    .debug_selector(|| "sheet-discard".into())
+                                    .cursor_pointer()
+                                    .text_color(p.over_text())
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.confirm_discard_changes(window, cx)
+                                    })),
+                            )
+                            .child(
+                                key_hint("esc", "keep them")
                                     .id("sheet-cancel")
                                     .debug_selector(|| "sheet-cancel".into())
                                     .cursor_pointer()
