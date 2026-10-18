@@ -185,13 +185,14 @@ impl MainView {
         id: &str,
         graph: Option<&blyg_core::lineage::LineageGraph>,
     ) -> Model {
-        let fresh;
-        let rows = if self.reading.rows.is_empty() {
-            fresh = self.backend.reading();
-            &fresh
+        // --- own posts --- your rows aren't reading rows here: your posts
+        // count as your posts (`own`), as they always have.
+        let fresh = if self.reading.rows.is_empty() {
+            self.backend.reading()
         } else {
-            &self.reading.rows
+            super::own::without_own(&self.reading.rows)
         };
+        let rows = &fresh;
         let own = self.backend.items();
         let mentions = self
             .reading
@@ -240,7 +241,7 @@ impl MainView {
         let keys: Vec<String> = self
             .reading
             .shown_rows()
-            .filter(|r| !r.subscription_id.is_empty())
+            .filter(|r| !r.subscription_id.is_empty() && !super::own::is_own_row(r))
             .take(LINEAGE_KEYS_MAX)
             .map(|r| blyg_core::lineage::imported_key(&r.subscription_id, &r.remote_id))
             .collect();
@@ -476,24 +477,39 @@ impl MainView {
         if s.pin != Pin::Unknown {
             return;
         }
-        let Some(item) = s.model.centre.held.clone() else {
-            s.pin = Pin::None;
-            return;
+        // --- own posts --- your own pins come from your history.
+        let own_id = s.model.centre.own.then(|| s.model.centre.id.clone());
+        let held = s.model.centre.held.clone();
+        let own_local = own_id.and_then(|id| self.own_local_id(&id));
+        let Some(s) = self.lineage_mut() else { return };
+        let item = match (held, own_local) {
+            (Some(item), _) => Ok(item),
+            (None, Some(local)) => Err(local),
+            (None, None) => {
+                s.pin = Pin::None;
+                return;
+            }
         };
         s.pin = Pin::Looking;
+        let centre_id = s.model.centre.id.clone();
         let backend = self.backend.clone();
-        let (sub, rid) = (item.subscription_id.clone(), item.remote_id.clone());
-        let task = cx.background_spawn(async move { backend.remote_versions(&sub, &rid) });
+        let task = cx.background_spawn(async move {
+            match item {
+                Ok(item) => backend
+                    .remote_versions(&item.subscription_id, &item.remote_id)
+                    .map(|vs| vs.iter().filter(|v| v.pinned).map(|v| v.version).max()),
+                Err(local) => backend
+                    .versions(&local)
+                    .map(|vs| super::own::newest_pin(&vs)),
+            }
+        });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 if let Some(s) = v.lineage_mut()
-                    && s.model.centre.id == item.remote_id
+                    && s.model.centre.id == centre_id
                 {
-                    s.pin = r
-                        .ok()
-                        .and_then(|vs| vs.iter().filter(|v| v.pinned).map(|v| v.version).max())
-                        .map_or(Pin::None, Pin::Found);
+                    s.pin = r.ok().flatten().map_or(Pin::None, Pin::Found);
                 }
                 cx.notify();
             });
@@ -519,18 +535,25 @@ impl MainView {
                 _ => Some("Not in your reading list. Open ↗ shows it in the reader first."),
             };
         }
+        // --- own posts --- a stub or a fork of your own post is yours to
+        // make (protocol 0.4: the reference names your origin; a fork
+        // descends from one of your pins).
+        let blyg = blyg || c.own;
         match act {
-            Act::Fork if c.own => Some("It's yours: edit it instead."),
+            Act::Fork if c.own && !super::own::FORK_OWN => Some("It's yours: edit it instead."),
             Act::Fork if !blyg => Some("Feed posts can't be forked."),
             Act::Fork => match s.pin {
                 Pin::Unknown | Pin::Looking => Some("Looking for a pinned version…"),
+                Pin::None if c.own => Some(
+                    "There's no pinned version to fork. Pin one in ⌘Y first: forks descend \
+                     from pins.",
+                ),
                 Pin::None => Some(
                     "There's no pinned version to fork. The author pins the versions others \
                      may fork.",
                 ),
                 Pin::Found(_) => None,
             },
-            Act::Reply if c.own => Some("It's yours: publish a new version, or quote it (Q)."),
             Act::Link if !c.own && !blyg => Some("Feed posts can't be linked with [[…]]."),
             _ => None,
         }
@@ -544,9 +567,17 @@ impl MainView {
             self.show_toast(why, None, cx);
             return;
         }
-        let c = s.model.centre.clone();
+        let mut c = s.model.centre.clone();
         let pin = s.pin;
         self.close_reading_sheet(window, cx);
+        // --- own posts --- your post acts as its reading row (Reply, Quote,
+        // Fork, Link post and Open take the reading pane's own code).
+        if c.held.is_none() && c.own && !matches!(act, Act::Versions) {
+            c.held = self
+                .own_rows()
+                .into_iter()
+                .find(|r| r.remote_id.eq_ignore_ascii_case(&c.id));
+        }
         let own_item = || {
             self.backend.items().into_iter().find(|i| {
                 i.server_id
@@ -563,19 +594,7 @@ impl MainView {
                     version,
                     cited: None,
                 };
-                let backend = self.backend.clone();
-                let task = cx.background_spawn(async move { backend.fork(&of) });
-                cx.spawn_in(window, async move |this, cx| {
-                    let r = task.await;
-                    let _ = this.update_in(cx, |this, window, cx| match r {
-                        Ok(id) => {
-                            this.open_new_draft(&id, window, cx);
-                            this.show_toast(format!("Forked 📌 v{version}"), None, cx);
-                        }
-                        Err(e) => this.show_toast(format!("Couldn't fork: {e}"), None, cx),
-                    });
-                })
-                .detach();
+                self.fork_pin(of, window, cx);
             }
             (Act::Reply, Some(item)) => self.item_action(item.clone(), "Reply", window, cx),
             (Act::Quote, Some(item)) => self.item_action(item.clone(), "Quote", window, cx),
@@ -1426,7 +1445,7 @@ impl MainView {
     /// The glyph's numbers for `r`: this Mac's edges, with the node's counts
     /// over them when it serves them.
     pub(crate) fn lineage_glyph_of(&self, r: &blyg_core::ReadingItem) -> Glyph {
-        let served = (!r.subscription_id.is_empty())
+        let served = (!r.subscription_id.is_empty() && !super::own::is_own_row(r))
             .then(|| {
                 self.reading.served.get(&blyg_core::lineage::imported_key(
                     &r.subscription_id,

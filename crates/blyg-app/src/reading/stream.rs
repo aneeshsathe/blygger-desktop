@@ -515,7 +515,8 @@ impl MainView {
             }
         }
         let due = self.reading.stream.tracker.observe(&on_screen, now);
-        for (sub, rid) in due {
+        // --- own posts --- never unread, and never marked.
+        for (sub, rid) in due.into_iter().filter(|k| !super::own::is_own(k)) {
             let backend = self.backend.clone();
             cx.background_spawn(async move {
                 let _ = backend.mark_read(&sub, &rid);
@@ -893,6 +894,10 @@ impl MainView {
                 if id == "Link post" && !blyg {
                     continue; // a feed post has no id to link
                 }
+                // --- own posts --- no AI reply to yourself.
+                if id == "AI reply" && super::own::is_own(&key) {
+                    continue;
+                }
                 let chip = vm::action_chip(id, &ctx);
                 let tip = chip.tip.clone();
                 let k = key.clone();
@@ -932,15 +937,18 @@ impl MainView {
         };
         row.push(div().flex_1().into_any_element());
         // --- notes --- the thumbs wrap together (the row grew a chip).
-        row.push(
-            div()
-                .flex_none()
-                .flex()
-                .gap(px(6.))
-                .child(t("stream-thumb-up", "👍", 1))
-                .child(t("stream-thumb-down", "👎", -1))
-                .into_any_element(),
-        );
+        // --- own posts --- no thumbs on yours (no signals about them).
+        if !super::own::is_own(&key) {
+            row.push(
+                div()
+                    .flex_none()
+                    .flex()
+                    .gap(px(6.))
+                    .child(t("stream-thumb-up", "👍", 1))
+                    .child(t("stream-thumb-down", "👎", -1))
+                    .into_any_element(),
+            );
+        }
         div()
             .id("stream-actions")
             .debug_selector(|| "stream-actions".into())

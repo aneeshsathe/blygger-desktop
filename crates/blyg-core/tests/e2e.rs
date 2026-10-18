@@ -3668,3 +3668,83 @@ fn a_feed_rows_author_comes_through() {
     let a = r.author.expect("the row's author");
     assert_eq!(a.name.as_deref(), Some(format!("Writer {t}").as_str()));
 }
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_self_stub_and_a_self_fork_cite_your_own_origin() {
+    // The reading actions on your own post (Burrow's "Your blyg" and the
+    // Posts view's Reply / Fork). Protocol 0.4: `stub_of` and `forked_from`
+    // name the origin even when it's the publisher's own (§5.6 rule 1,
+    // §10.6), a fork descends from a pin only (§5.6 rule 2), and the quote's
+    // `transclusions[]` entry leaves `origin` out (§10.3).
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let me = manual(dir.path());
+    let t = tag("self");
+    let v1 = format!("{t} first thoughts on harbours.");
+    let (id, sid) = published(&me, Kind::Thread, &v1, None);
+    me.pin(&id, 1).unwrap();
+    me.save(&id, &format!("{t} second thoughts on harbours."))
+        .unwrap();
+    assert_eq!(me.publish(&id, None).unwrap().version, 2);
+    // As the app's own row spells it: the base origin with a slash.
+    let origin = format!("{}/", me.base_url().unwrap().trim_end_matches('/'));
+    assert_eq!(origin.trim_end_matches('/'), e.url);
+
+    // Reply · new stub: the whole post quoted, stub_of naming your origin.
+    let of = RemoteRef {
+        origin: origin.clone(),
+        id: sid.clone(),
+        version: 2,
+        cited: None,
+    };
+    let body = blyg_render::stub_quote::stub_body(&sid);
+    let stub = me
+        .create_stub(&of, &format!("{body}A note to myself."))
+        .unwrap();
+    me.sync_now().unwrap();
+    let out = me.publish(&stub, None).expect("publish the self-stub");
+    let stub_sid = sid_of(&me, &stub);
+    let wire = server_item(&stub_sid);
+    assert_eq!(wire["stub_of"]["origin"], origin.as_str(), "{wire}");
+    assert_eq!(wire["stub_of"]["id"], sid.as_str());
+    assert_eq!(wire["stub_of"]["version"], 2, "agrees with the quote baked");
+    let doc = public_json(&format!("{}/items/{stub_sid}.json", e.url));
+    assert_eq!(doc["stub_of"]["origin"], origin.as_str(), "{doc}");
+    let tr = &doc["transclusions"][0];
+    assert_eq!(tr["id"], sid.as_str(), "{doc}");
+    assert!(tr.get("origin").is_none(), "own quote, no origin: {doc}");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    assert!(
+        baked_quotes(&page)
+            .iter()
+            .any(|q| q.contains("second thoughts on harbours.")),
+        "{page}"
+    );
+
+    // Fork this pin: from your 📌 v1, forked_from naming your origin.
+    let fork = me
+        .fork(&RemoteRef {
+            origin: origin.clone(),
+            id: sid.clone(),
+            version: 1,
+            cited: None,
+        })
+        .expect("fork your own pin");
+    let it = me.item(&fork).unwrap();
+    assert_eq!(it.content_md.trim(), v1);
+    let f = it.forked_from.as_ref().expect("forked_from");
+    assert_eq!((f.id.as_str(), f.version), (sid.as_str(), 1));
+    let wire = server_item(&sid_of(&me, &fork));
+    assert_eq!(wire["forked_from"]["origin"], origin.as_str(), "{wire}");
+    assert_eq!(wire["forked_from"]["version"], 1);
+    // An unpinned version of your own can't be forked.
+    let unpinned = RemoteRef {
+        origin,
+        id: sid,
+        version: 2,
+        cited: None,
+    };
+    assert!(me.fork(&unpinned).is_err(), "forks descend from pins only");
+}

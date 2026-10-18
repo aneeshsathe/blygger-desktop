@@ -545,9 +545,9 @@ pub struct OwnActions {
     pub can_restore: bool,
 }
 
-/// One control on your own version. There's deliberately no fork: forking
-/// descends from someone else's pin (`PINNED_ACTIONS`), never from your
-/// own history.
+/// One control on your own version. Forking your own pin is the reading
+/// pane's (your post under "Your blyg", or the Posts view's Fork), since a
+/// fork descends from a pin, yours or anyone's (protocol 0.4 §5.6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnAction {
     /// "Pinned ✓" (a label, not a button).
@@ -741,7 +741,7 @@ pub fn stub_body(remote_id: &str) -> String {
 /// A link post: a new fragment holding `[[id]]`, a plain link that declares
 /// nothing on the wire (no `stub_of`, no mention). Not a reply: that's a stub.
 pub fn link_post_body(remote_id: &str) -> String {
-    format!("[[{remote_id}]]\n\n")
+    format!("{}\n\n", blyg_core::grammar::link_source(remote_id, None))
 }
 
 /// A partial transclusion: the directive with the (normalized) passage

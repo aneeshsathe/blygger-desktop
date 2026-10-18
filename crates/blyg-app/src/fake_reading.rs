@@ -14,6 +14,13 @@ pub const LIN: &str = "https://lin.blyg.example.com/";
 pub const OMAR: &str = "https://omar.example.com/";
 
 /// Remote ids of the sample posts (26-char, base32-looking, invented).
+/// --- own posts --- your published "Notes on The Field Guide to Small
+/// Gardens" (the Posts seed's `01J9K7T`), as a reading row's remote id.
+#[cfg(test)]
+pub const OWN_GARDENS: &str = "01J9K7TABCDEFGHJKMNPQRS";
+/// Your "On friction": v2 pinned, v3 current.
+#[cfg(test)]
+pub const OWN_FRICTION: &str = "01J9M2AABCDEFGHJKMNPQRS";
 pub const RUE_TRUST: &str = "01K2RUE0TRUST0000000000001";
 pub const ADA_FINISHED: &str = "01K2ADA0FINISHED0000000001";
 pub const LIN_GARDENS: &str = "01K2LIN0GARDENS00000000001";
