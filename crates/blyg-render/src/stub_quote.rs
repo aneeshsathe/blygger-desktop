@@ -54,7 +54,10 @@ fn line_offsets(lines: &[&str]) -> Vec<usize> {
 /// the blyg alphabet (the sample data's) matches its own line too: no real
 /// target has one, so publish's rule is unchanged for every real stub.
 fn directive_of(line: &str, id: &str) -> bool {
-    directive_id(line) == Some(id) || crate::util::js_trim(line) == format!("![[{id}]]")
+    directive_id(line) == Some(id)
+        || crate::util::js_trim(line) == format!("![[{id}]]")
+        || crate::grammar::directive_line(line, crate::grammar::Ids::Loose)
+            .is_some_and(|b| &line[b.id] == id)
 }
 
 /// Every own-line directive of `id` outside code: (line, attached quote?, next line).
@@ -189,6 +192,20 @@ mod tests {
         );
         assert_eq!(stub_quote_form(&partial, ID), Some(StubQuoteForm::Passage));
         assert_eq!(with_stub_quote(&partial, ID, None), whole);
+    }
+
+    #[test]
+    fn a_labelled_directive_is_the_quote_too() {
+        // Studio 0.47 (#70): `![[id | note]]` is the same directive. Choosing
+        // a passage rewrites the directive line, as the studio's does, so the
+        // note goes with it.
+        let md = format!("![[{ID} | the source]]\n> old\n\nMy reply.");
+        assert_eq!(stub_quote_form(&md, ID), Some(StubQuoteForm::Passage));
+        assert_eq!(passage_count(&md, ID), 1);
+        assert_eq!(
+            with_stub_quote(&md, ID, None),
+            format!("![[{ID}]]\n\nMy reply.")
+        );
     }
 
     #[test]

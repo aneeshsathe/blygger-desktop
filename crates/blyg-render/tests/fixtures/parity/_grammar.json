@@ -1,0 +1,584 @@
+{
+ "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+ "texts": [
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": ""
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | the opening fragment]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | the opening fragment]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "the opening fragment"
+    }
+   ],
+   "directive": null,
+   "stripped": "the opening fragment"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke|tight]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke|tight]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "tight"
+    }
+   ],
+   "directive": null,
+   "stripped": "tight"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke   |   padded   ]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke   |   padded   ]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "padded"
+    }
+   ],
+   "directive": null,
+   "stripped": "padded"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | either | or]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | either | or]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "either | or"
+    }
+   ],
+   "directive": null,
+   "stripped": "either | or"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a ] single bracket]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a ] single bracket]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "a ] single bracket"
+    }
+   ],
+   "directive": null,
+   "stripped": "a ] single bracket"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [nested] brackets]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [nested] brackets]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "[nested] brackets"
+    }
+   ],
+   "directive": null,
+   "stripped": "[nested] brackets"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": ""
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |   ]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |   ]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": ""
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | cut]] here]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | cut]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "cut"
+    }
+   ],
+   "directive": null,
+   "stripped": "cut here]]"
+  },
+  {
+   "text": "see [[7c9wk2n4h6q1x8v0z3m5rjy2ke | one]] and [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] too",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | one]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "one"
+    },
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "see one and too"
+  },
+  {
+   "text": "[[a label | 7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[a label | 7c9wk2n4h6q1x8v0z3m5rjy2ke]]"
+  },
+  {
+   "text": "[[c9wk2n4h6q1x8v0z3m5rjy2ke | short id]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[c9wk2n4h6q1x8v0z3m5rjy2ke | short id]]"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2kex]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[7c9wk2n4h6q1x8v0z3m5rjy2kex]]"
+  },
+  {
+   "text": "[[just words]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[just words]]"
+  },
+  {
+   "text": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | a quote]]",
+   "links": [],
+   "directive": {
+    "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+    "label": "a quote"
+   },
+   "stripped": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | a quote]]"
+  },
+  {
+   "text": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | the source]]",
+   "links": [],
+   "directive": {
+    "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+    "label": "the source"
+   },
+   "stripped": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | the source]]"
+  },
+  {
+   "text": "  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]  ",
+   "links": [],
+   "directive": {
+    "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+    "label": null
+   },
+   "stripped": "  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]  "
+  },
+  {
+   "text": "text ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | inline]]",
+   "links": [],
+   "directive": null,
+   "stripped": "text inline"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ends ] ] early]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ends ] ] early]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "ends ] ] early"
+    }
+   ],
+   "directive": null,
+   "stripped": "ends ] ] early"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke ]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke ]]"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke\t|\ttabbed\t]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke\t|\ttabbed\t]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "tabbed"
+    }
+   ],
+   "directive": null,
+   "stripped": "tabbed"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | two\nlines]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | two\nlines]]"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a]]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "a"
+    }
+   ],
+   "directive": null,
+   "stripped": "a]"
+  },
+  {
+   "text": "[[[7c9wk2n4h6q1x8v0z3m5rjy2ke | triple]]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | triple]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "triple"
+    }
+   ],
+   "directive": null,
+   "stripped": "[triple]"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | see [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] inside]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | see [[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "see [[7c9wk2n4h6q1x8v0z3m5rjy2ke"
+    }
+   ],
+   "directive": null,
+   "stripped": "see [[7c9wk2n4h6q1x8v0z3m5rjy2ke inside]]"
+  },
+  {
+   "text": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | a]] b]]",
+   "links": [],
+   "directive": null,
+   "stripped": "a b]]"
+  },
+  {
+   "text": " ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | nbsp]] ",
+   "links": [],
+   "directive": {
+    "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+    "label": "nbsp"
+   },
+   "stripped": " ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | nbsp]] "
+  },
+  {
+   "text": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke@v2 | pinned]]",
+   "links": [],
+   "directive": null,
+   "stripped": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke@v2 | pinned]]"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | café — “quoted”]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | café — “quoted”]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "café — “quoted”"
+    }
+   ],
+   "directive": null,
+   "stripped": "café — “quoted”"
+  },
+  {
+   "text": "[[7C9WK2N4H6Q1X8V0Z3M5RJY2KE | caps]]",
+   "links": [],
+   "directive": null,
+   "stripped": "[[7C9WK2N4H6Q1X8V0Z3M5RJY2KE | caps]]"
+  },
+  {
+   "text": "![[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "!["
+  },
+  {
+   "text": "!![[7c9wk2n4h6q1x8v0z3m5rjy2ke | double bang]]",
+   "links": [],
+   "directive": null,
+   "stripped": "!double bang"
+  },
+  {
+   "text": "It is worth reading in full ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+   "links": [],
+   "directive": null,
+   "stripped": "It is worth reading in full"
+  },
+  {
+   "text": "As argued in [[7c9wk2n4h6q1x8v0z3m5rjy2ke]], the order matters.",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "As argued in, the order matters."
+  },
+  {
+   "text": "As argued in [[7c9wk2n4h6q1x8v0z3m5rjy2ke | the earlier post]], yes.",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | the earlier post]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "the earlier post"
+    }
+   ],
+   "directive": null,
+   "stripped": "As argued in the earlier post, yes."
+  },
+  {
+   "text": "see (![[7c9wk2n4h6q1x8v0z3m5rjy2ke | that]]) here",
+   "links": [],
+   "directive": null,
+   "stripped": "see (that) here"
+  },
+  {
+   "text": "No grammar here at all.",
+   "links": [],
+   "directive": null,
+   "stripped": "No grammar here at all."
+  },
+  {
+   "text": "Above.\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nBelow.",
+   "links": [],
+   "directive": null,
+   "stripped": "Above.\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nBelow."
+  },
+  {
+   "text": "Above.\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke | kept as a quote]]\nBelow.",
+   "links": [],
+   "directive": null,
+   "stripped": "Above.\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke | kept as a quote]]\nBelow."
+  },
+  {
+   "text": "Two  spaces  stay [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] here  and\tthere",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "Two spaces stay here and\tthere"
+  },
+  {
+   "text": "End with a link [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] .",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "End with a link."
+  },
+  {
+   "text": "( [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] ) and [[7c9wk2n4h6q1x8v0z3m5rjy2ke]]!",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    },
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "() and!"
+  },
+  {
+   "text": "tab\t[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\t, then",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "tab, then"
+  },
+  {
+   "text": "Only [[7c9wk2n4h6q1x8v0z3m5rjy2ke]]   ",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": "Only"
+  },
+  {
+   "text": "`[[7c9wk2n4h6q1x8v0z3m5rjy2ke | in code]]` is stripped too",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | in code]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "in code"
+    }
+   ],
+   "directive": null,
+   "stripped": "`in code` is stripped too"
+  },
+  {
+   "text": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": null
+    }
+   ],
+   "directive": null,
+   "stripped": ""
+  },
+  {
+   "text": "  [[7c9wk2n4h6q1x8v0z3m5rjy2ke | indented label]]",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | indented label]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "indented label"
+    }
+   ],
+   "directive": null,
+   "stripped": " indented label"
+  },
+  {
+   "text": "a [[7c9wk2n4h6q1x8v0z3m5rjy2ke|x]][[7c9wk2n4h6q1x8v0z3m5rjy2ke|y]] b",
+   "links": [
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke|x]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "x"
+    },
+    {
+     "match": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke|y]]",
+     "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+     "label": "y"
+    }
+   ],
+   "directive": null,
+   "stripped": "a xy b"
+  }
+ ],
+ "labels": [
+  {
+   "text": "A title",
+   "label_text": "A title",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | A title]]"
+  },
+  {
+   "text": "  ",
+   "label_text": "",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]"
+  },
+  {
+   "text": "",
+   "label_text": "",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]"
+  },
+  {
+   "text": "two\nlines",
+   "label_text": "two lines",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | two lines]]"
+  },
+  {
+   "text": "ends ]] early",
+   "label_text": "ends ] ] early",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ends ] ] early]]"
+  },
+  {
+   "text": "a]]]b",
+   "label_text": "a] ]]b",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] ]]b]]"
+  },
+  {
+   "text": "  pad\t\tme  ",
+   "label_text": "pad me",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | pad me]]"
+  },
+  {
+   "text": "[[nested]]",
+   "label_text": "[[nested] ]",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [[nested] ]]]"
+  },
+  {
+   "text": " nbsp ",
+   "label_text": "nbsp",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | nbsp]]"
+  },
+  {
+   "text": "line\r\nbreak",
+   "label_text": "line break",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | line break]]"
+  },
+  {
+   "text": "pipe | inside",
+   "label_text": "pipe | inside",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | pipe | inside]]"
+  }
+ ],
+ "link_labels": [
+  {
+   "content_html": "<h1>Labeltoken heading</h1>\n<p>Body text.</p>\n",
+   "kind": "fragment",
+   "label": "Labeltoken heading"
+  },
+  {
+   "content_html": "<p>labeltoken with no heading at all</p>\n",
+   "kind": "fragment",
+   "label": "“labeltoken with no heading at all”"
+  },
+  {
+   "content_html": "",
+   "kind": "thread",
+   "label": "a thread"
+  },
+  {
+   "content_html": "",
+   "kind": "fragment",
+   "label": "a fragment"
+  },
+  {
+   "content_html": "<h2></h2>\n",
+   "kind": "thread",
+   "label": "a thread"
+  }
+ ]
+}

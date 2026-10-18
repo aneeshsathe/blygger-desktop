@@ -13,6 +13,8 @@ import { parseScopes } from "worker-src/tk.ts";
 import { annotateTkPreview } from "worker-src/authoring.ts";
 import { applyInternalLinks, previewInternalLinks, previewTransclusions, resolveBlockLinks } from "worker-src/transclusion.ts";
 import { injectProvenance, transclusionProvenance, mediaHtml } from "worker-src/pages.ts";
+import { DIRECTIVE_LINE, label, labelText, linkInline, linkSource, stripGeneratedGrammar } from "worker-src/grammar.ts";
+import { linkLabel } from "worker-src/link-label.ts";
 
 // --- A fake D1 over fake_store.json ----------------------------------------------
 // Answers exactly the queries resolveTarget() and transclusionProvenance() issue.
@@ -88,7 +90,7 @@ async function render(store, c) {
 
 export default {
   async fetch(req) {
-    const { store, corpus, spec, vectors, media } = await req.json();
+    const { store, corpus, spec, vectors, media, grammar } = await req.json();
     const cases = [];
     for (const c of corpus) cases.push({ name: c.name, kind: c.kind, md: c.md, ...(await render(store, c)) });
     return Response.json({
@@ -100,6 +102,21 @@ export default {
       // Attachments: the public pages' mediaHtml, which appends what the
       // content does not already show.
       media: media.cases.map((c) => ({ ...c, media_html: mediaHtml(c.media, media.mount, c.content_html ?? "") })),
+      // The bracket grammar (grammar.ts, link-label.ts): how each text's links
+      // and directive read, what generated text keeps, and the long form.
+      grammar: {
+        texts: grammar.texts.map((text) => {
+          const d = DIRECTIVE_LINE.exec(text);
+          return {
+            text,
+            links: [...text.matchAll(linkInline())].map((m) => ({ match: m[0], id: m[1], label: label(m[2]) ?? null })),
+            directive: d ? { id: d[1], label: label(d[2]) ?? null } : null,
+            stripped: stripGeneratedGrammar(text),
+          };
+        }),
+        labels: grammar.labels.map((text) => ({ text, label_text: labelText(text), link_source: linkSource(grammar.id, text) })),
+        link_labels: grammar.html.map((h) => ({ ...h, label: linkLabel(h.content_html, h.kind) })),
+      },
     });
   },
 };

@@ -1,0 +1,12 @@
+{
+  "name": "label_link_in_code",
+  "kind": "fragment",
+  "md": "Write `[[01j9zq3k4m5n6p7q8r9s0t1v2w | a label]]` to label a link.\n\n```\n[[0zzzzzzzzzzzzzzzzzzzzzzzzz | in a fence]]\n```\n\n    [[0zzzzzzzzzzzzzzzzzzzzzzzzz | indented]]\n\nreal [[01j9zq3k4m5n6p7q8r9s0t1v2w | outside]]",
+  "html": "<p>Write <code>[[01j9zq3k4m5n6p7q8r9s0t1v2w | a label]]</code> to label a link.</p>\n<pre><code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz | in a fence]]\n</code></pre>\n<pre><code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz | indented]]\n</code></pre>\n<p>real <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">outside</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

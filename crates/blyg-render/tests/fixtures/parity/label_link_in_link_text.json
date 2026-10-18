@@ -1,0 +1,17 @@
+{
+  "name": "label_link_in_link_text",
+  "kind": "fragment",
+  "md": "[see [[0zzzzzzzzzzzzzzzzzzzzzzzzz | a label]] here](https://x.test/) and [**bold [[01j9zq3k4m5n6p7q8r9s0t1v2w | inner label]]**](/p)",
+  "html": "<p><a href=\"https://x.test/\">see [[0zzzzzzzzzzzzzzzzzzzzzzzzz | a label]] here</a> and <a href=\"/p\"><strong>bold inner label</strong></a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz | a label]]",
+      "reason": "unknown item"
+    }
+  ]
+}

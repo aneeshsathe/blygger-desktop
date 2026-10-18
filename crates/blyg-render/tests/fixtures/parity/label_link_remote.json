@@ -1,0 +1,12 @@
+{
+  "name": "label_link_remote",
+  "kind": "fragment",
+  "md": "[[02abcdefghjkmnpqrstvwxyz06 | their post]] and [[02abcdefghjkmnpqrstvwxyz01|a pencil]] and [[02abcdefghjkmnpqrstvwxyz06]]",
+  "html": "<p><a href=\"https://cms.example.net/2026/10/templated-post/\">their post</a> and <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">a pencil</a> and <a href=\"https://cms.example.net/2026/10/templated-post/\">A templated post</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -10,7 +10,6 @@
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::ID_ALPHABET;
 use crate::linemap::{MapBuilder, Mapped};
 use crate::markdown;
 use crate::util::{escape_html, is_js_ws, js_trim};
@@ -50,17 +49,12 @@ pub struct TkError {
     pub reason: String,
 }
 
-fn source_ref_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(&format!(r"!\[\[([{ID_ALPHABET}]{{26}})\]\]")).expect("source ref re")
-    })
-}
-
+/// Every `![[id]]` or `![[id | label]]` in the instruction, inline or on its
+/// own line (`SOURCE_REF = directiveInline()`), deduplicated in order.
 fn extract_source_ids(scope_text: &str) -> Vec<String> {
     let mut ids: Vec<String> = Vec::new();
-    for c in source_ref_re().captures_iter(scope_text) {
-        let id = &c[1];
+    for (_, b) in crate::grammar::directive_bodies(scope_text) {
+        let id = &scope_text[b.id];
         if !ids.iter().any(|x| x == id) {
             ids.push(id.to_string());
         }

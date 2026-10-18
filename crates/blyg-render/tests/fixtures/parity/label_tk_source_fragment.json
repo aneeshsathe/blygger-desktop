@@ -1,0 +1,21 @@
+{
+  "name": "label_tk_source_fragment",
+  "kind": "fragment",
+  "md": "[TK]sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | a source]] and [[02abcdefghjkmnpqrstvwxyz01 | a link]][=]Out [[02abcdefghjkmnpqrstvwxyz01 | a link]].[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>Out <a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">a link</a>.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | a source]] and [[02abcdefghjkmnpqrstvwxyz01 | a link]]",
+        "generated": true,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
