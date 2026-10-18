@@ -35,8 +35,9 @@ brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-r
 ## Connecting your blyg
 
 Burrow works with any blyg running blygger-studio 0.47 or later, stock and
-unmodified: no server patches. On an older blyg it reads but sends nothing until
-the blyg is updated, and tells you so (see [Server requirements](server.md)).
+unmodified: no server patches. On an older blyg everything syncs except posts
+with labelled links, which wait until the blyg is updated, and Burrow tells you
+so (see [Server requirements](server.md)).
 No blyg yet? Try the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
@@ -66,7 +67,7 @@ The sign-in, token or password then goes in your Keychain and the address into t
 config file as `blyg-url`, and the app loads your posts. If the blyg runs a
 studio older than 0.47, Burrow says "Your blyg needs updating" as it connects
 (and when it starts), keeps a notice in the status bar with an **Update your
-blyg** link, and sends nothing until it's updated; reading goes on. **Burrow › Disconnect…** forgets
+blyg** link, and holds back only posts with labelled links until it's updated. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
 
 If your blyg later refuses Burrow's sign-in (a token expired or was revoked,

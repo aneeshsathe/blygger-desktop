@@ -222,6 +222,42 @@ fn publish_sheet_enter_publishes_with_note(cx: &mut TestAppContext) {
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
 }
 
+/// Below studio 0.47 a post with labelled links gets the held sheet: ⏎
+/// writes them bare and publishes; esc leaves it as it was.
+#[gpui_kit::test]
+fn publishing_labelled_links_to_an_old_blyg_offers_the_bare_form(cx: &mut TestAppContext) {
+    const LID: &str = "7c9wk2n4h6q1x8v0z3m5rjy2ke";
+    let (view, fake, cx) = setup(cx);
+    let id = LocalId("01J9QK3".into());
+    let text = format!("A lighthouse, see [[{LID} | that post]]");
+    fake.save(&id, &text).unwrap();
+    fake.trigger_server_outdated();
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::HeldLabels { .. }))));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert_eq!(fake.item(&id).unwrap().content_md, text, "left as it was");
+
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if fake.item(&id).unwrap().status == Status::Public {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let item = fake.item(&id).unwrap();
+    assert_eq!(item.status, Status::Public);
+    assert_eq!(item.content_md, format!("A lighthouse, see [[{LID}]]"));
+}
+
 #[gpui_kit::test]
 fn publish_sheet_escape_cancels(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);

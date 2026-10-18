@@ -343,20 +343,17 @@ impl Engine {
     }
 
     pub fn status(&self) -> SyncStatus {
-        let (health, pushing, outdated) = {
+        let (health, pushing) = {
             let st = self.state();
-            (st.health, st.pushing, st.outdated)
+            (st.health, st.pushing)
         };
-        if outdated {
-            return SyncStatus::Error;
-        }
         match health {
             Health::Offline => SyncStatus::Offline {
                 pending: self.store.pending_count(),
             },
             Health::Error => SyncStatus::Error,
             Health::Ok if pushing => SyncStatus::Syncing,
-            Health::Ok if self.store.earliest_due().is_some() => SyncStatus::Saving,
+            Health::Ok if self.earliest_due().is_some() => SyncStatus::Saving,
             Health::Ok => SyncStatus::Synced,
         }
     }
@@ -489,14 +486,14 @@ impl Engine {
                 Err(e) => break Err(e),
             };
             if let Err(e) = self.check_server(true) {
-                // Nothing is pushed; the op stays queued for a server that can
-                // take it. Below the studio floor that's no network failure:
-                // no backoff, and pulls go on (the worker waits for the next
-                // one rather than retrying the outbox).
-                if !self.floor_held(&e) {
-                    self.note_err(&e);
-                }
+                // Nothing is pushed; the op stays queued for a server that can take it.
+                self.note_err(&e);
                 break Err(e);
+            }
+            // The check may just have found the blyg below the studio floor:
+            // this op waits then, and `next_op` now passes over it.
+            if self.labels_held(&op) {
+                continue;
             }
             self.set_pushing(true);
             let ran = self.run_op(&op);
@@ -545,26 +542,56 @@ impl Engine {
     }
 
     /// Whether the server proved older than Burrow's floor, blygger-studio
-    /// 0.47 (as of the last check). Nothing is sent meanwhile.
+    /// 0.47 (or 0.9, when nothing syncs), as of the last check.
     pub fn server_outdated(&self) -> bool {
         self.state().outdated
     }
 
-    /// Nothing may be sent right now (the outbox waits; see `worker`).
-    pub fn push_held(&self) -> bool {
-        self.state().outdated
+    /// The blyg is below the studio floor (0.47): posts with labelled links
+    /// wait (`crate::floor`).
+    pub fn floor_below(&self) -> bool {
+        matches!(self.state().floor, Some((true, _)))
     }
 
-    /// `e` is the studio floor holding a push back, on a server that can
-    /// still be read from (0.9+).
-    fn floor_held(&self, e: &CoreError) -> bool {
-        matches!(e, CoreError::ServerOutdated) && self.state().compatible
+    /// `op` sends a post's text, the text holds labelled links, and the blyg
+    /// is below the floor: it waits in the outbox. Read from the text as it
+    /// is now, so taking the labels out releases it on the next flush.
+    fn labels_held(&self, op: &Op) -> bool {
+        self.floor_below() && self.op_has_labels(op)
     }
 
-    /// Before anything is sent without the outbox (a publish, any other
-    /// write): the same checks a push makes, below.
-    pub fn check_push(&self) -> Result<()> {
-        self.check_server(true)
+    fn op_has_labels(&self, op: &Op) -> bool {
+        matches!(op.kind, OpKind::Create | OpKind::Save | OpKind::Recreate)
+            && self
+                .store
+                .row(&op.local_id)
+                .is_some_and(|r| crate::floor::has_labels(&r.item.content_md))
+    }
+
+    /// When the next op is due, passing over the ones held for labels (so
+    /// the worker doesn't wake for them).
+    pub fn earliest_due(&self) -> Option<i64> {
+        if !self.floor_below() {
+            return self.store.earliest_due();
+        }
+        let conflicted = self.store.conflicted().unwrap_or_default();
+        self.store
+            .ops()
+            .ok()?
+            .into_iter()
+            .filter(|o| !conflicted.contains(&o.local_id) && !self.op_has_labels(o))
+            .map(|o| o.not_before)
+            .min()
+    }
+
+    /// Before a post is published (`content`, its working copy): the checks
+    /// a push makes, and below the studio floor, no labelled links.
+    pub fn check_publish(&self, content: &str) -> Result<()> {
+        self.check_server(true)?;
+        if self.floor_below() && crate::floor::has_labels(content) {
+            return Err(CoreError::ServerOutdated);
+        }
+        Ok(())
     }
 
     /// Make sure the server can take what Burrow sends. Two checks, each
@@ -573,8 +600,9 @@ impl Engine {
     /// - studio 0.9+'s API, before anything is pushed or pulled: on an
     ///   older one a new route's 404 reads as "item deleted", and the push
     ///   would re-create it;
-    /// - studio 0.47+ (`crate::floor`), before anything is pushed (`push`):
-    ///   an older one doesn't understand labelled links. Pulls go on.
+    /// - studio 0.47+ (`crate::floor`): an older one doesn't understand
+    ///   labelled links, so posts holding them wait (`labels_held`). Only a
+    ///   push (`push`) waits for this check's verdict.
     fn check_server(&self, push: bool) -> Result<()> {
         if !self.state().compatible {
             match self.api.count_items() {
@@ -601,7 +629,7 @@ impl Engine {
         if due {
             match self.api.studio_floor() {
                 Ok(f) => {
-                    let below = !f.allows_push();
+                    let below = !f.meets();
                     let mut st = self.state();
                     st.floor = Some((below, Instant::now()));
                     if below {
@@ -615,10 +643,7 @@ impl Engine {
                 Err(_) => {}
             }
         }
-        match self.state().floor {
-            Some((true, _)) if push => Err(CoreError::ServerOutdated),
-            _ => Ok(()),
-        }
+        Ok(())
     }
 
     /// The server is below a floor: say so once (until it isn't).
@@ -642,6 +667,7 @@ impl Engine {
         let conflicted = self.store.conflicted()?;
         let now = now_ms();
         let mut blocked: HashSet<LocalId> = HashSet::new();
+        let below = self.floor_below();
         let mut st = self.state();
         st.paced_until = None;
         for op in ops {
@@ -653,6 +679,12 @@ impl Engine {
             // Read state the credential can't write waits, queued, for one
             // that can; it holds nothing else up.
             if self.read_held_locked(&st, &op) {
+                continue;
+            }
+            // Below the studio floor a post with labelled links waits; the
+            // item's later ops wait behind it.
+            if below && self.op_has_labels(&op) {
+                blocked.insert(op.local_id.clone());
                 continue;
             }
             if conflicted.contains(&op.local_id) || op.in_flight || (!force && op.not_before > now)
@@ -1768,8 +1800,7 @@ impl Engine {
     }
 
     /// Push everything (ignoring the debounce), then pull. Bypasses backoff.
-    /// Below the studio floor it checks again first, then pulls, and says
-    /// `ServerOutdated` while nothing could be sent.
+    /// Below the studio floor it checks the version again first.
     pub fn sync_now(&self) -> Result<()> {
         {
             let mut st = self.state();
@@ -1778,16 +1809,8 @@ impl Engine {
                 st.floor = None;
             }
         }
-        match self.flush(None, true) {
-            Err(e) if self.floor_held(&e) => {
-                self.pull()?;
-                Err(e)
-            }
-            r => {
-                r?;
-                self.pull()
-            }
-        }
+        self.flush(None, true)?;
+        self.pull()
     }
 }
 

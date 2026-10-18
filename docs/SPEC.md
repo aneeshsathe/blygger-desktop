@@ -2,9 +2,13 @@
 
 Burrow is a blygger client (called Blygger Desktop up to 0.6.0; only the
 displayed name changed, see "Naming" below). A native macOS client for a Blygger blog ("blyg") running the Blygger reference
-Worker (blygger-studio) 0.47 or later, stock and fully supported; on an older
-blyg Burrow reads but sends nothing about a post (`blyg_core::floor`), and
-`docs/SERVER.md` says why and what each version brings. Goal: **zero
+Worker (blygger-studio) 0.47 or later, stock and fully supported. On an older
+blyg everything syncs except posts whose text holds a labelled link or quote
+(`[[id | label]]`, `![[id | label]]`, outside code): their outbox ops and publish
+wait until the blyg is updated or the labels go (the publish sheet offers to
+write them bare; the pickers write bare there), and withdraw and pin go since
+they send no text (`blyg_core::floor`). `docs/SERVER.md` says why and what each
+version brings. Goal: **zero
 friction between a thought and a published post.** The feel target is
 Notational Velocity: one window, type to search, ⏎ to create, nothing ever
 waits on the network.

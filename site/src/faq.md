@@ -21,9 +21,10 @@ rename it while it isn't running. See
 
 Yes. Burrow 0.13 needs blygger-studio 0.47 or later, stock and unpatched.
 Sign in with your browser, an API token from the studio's Client access page,
-or your studio password. On an older blyg Burrow still reads, but sends
-nothing until the blyg is updated, and says so: its `[[` picker writes
-labelled links that an older studio doesn't understand. See
+or your studio password. On an older blyg everything syncs except posts with
+labelled links (`[[id | label]]`), which an older studio doesn't understand:
+they wait until the blyg is updated, and publishing one offers to write the
+links bare. See
 [Server requirements](server.md).
 
 ### Is my data safe? Where is it?

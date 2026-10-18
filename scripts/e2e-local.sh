@@ -5,9 +5,8 @@
 #
 # BLYG_WORKER_DIR is the Worker's directory (the one with wrangler.jsonc and
 # node_modules; run `npm install && npm run build` there first): a
-# blygger-studio 0.47 or later (Burrow's floor). Against an older studio only
-# the floor test means anything: `BLYG_E2E_SKIP_NOTES=1 scripts/e2e-local.sh
-# studio_floor`.
+# blygger-studio 0.47 or later (Burrow's floor). The suite passes against
+# 0.46.1 too, where the floor test checks that only labelled posts wait.
 #
 #   BLYG_E2E_AUTH=password   sign in with the studio password, not the token
 #   BLYG_E2E_STOCK=1         a stock blygger-studio, without the extensions in

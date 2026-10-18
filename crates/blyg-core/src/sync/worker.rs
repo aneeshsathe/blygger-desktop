@@ -45,9 +45,8 @@ fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
         }
         let now = Instant::now();
         let mut deadline = next_pull;
-        // Below the studio floor the outbox waits for the next pull's
-        // check rather than retrying at once.
-        if let Some(due) = engine.store.earliest_due().filter(|_| !engine.push_held()) {
+        // Ops held for labelled links (below the studio floor) don't count.
+        if let Some(due) = engine.earliest_due() {
             let mut d = now + Duration::from_millis((due - now_ms()).max(0) as u64);
             // An autosave held back by `SAVE_GAP` (it keeps coalescing).
             if let Some(p) = engine.paced_until() {

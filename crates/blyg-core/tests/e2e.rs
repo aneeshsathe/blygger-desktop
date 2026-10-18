@@ -1937,7 +1937,13 @@ fn an_unchanged_pull_reads_only_the_change_counters() {
     b.pull_now().unwrap();
     assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged pull");
     b.sync_now().unwrap();
-    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged sync");
+    // Below studio 0.47 a manual sync checks the version again first.
+    let synced: Vec<String> = proxy
+        .take()
+        .into_iter()
+        .filter(|r| !(b.server_outdated() && r == "GET /blyg.json"))
+        .collect();
+    assert_eq!(synced, vec!["GET /api/changes"], "an unchanged sync");
 
     // An edit made elsewhere (the web studio, another Mac) moves `items`
     // only: the items are read again, the reading list isn't.
@@ -3772,14 +3778,13 @@ fn a_feed_rows_author_comes_through() {
 
 // ----------------------------------------------- the studio floor (0.47)
 
-/// Burrow 0.13 sends nothing to a studio older than 0.47 (it doesn't
-/// understand `[[id | label]]`), and reads from it as usual. Runs against
-/// either side of the floor: the manifest's `generator` says which this is.
-/// Below it, run this test alone (`BLYG_E2E_SKIP_NOTES=1
-/// scripts/e2e-local.sh studio_floor`): the rest of the suite pushes.
+/// A studio older than 0.47 doesn't understand `[[id | label]]`: there a
+/// post with labelled links waits (its push and its publish) until the
+/// labels go, and everything else syncs as usual. Runs against either side
+/// of the floor; the manifest's `generator` says which this is.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
-fn studio_floor_holds_pushes_below_0_47() {
+fn studio_floor_holds_labelled_posts_below_0_47() {
     use blyg_core::floor::{self, Floor};
     let e = e2e();
     let manifest = public_json(&format!("{}/blyg.json", e.url));
@@ -3792,11 +3797,10 @@ fn studio_floor_holds_pushes_below_0_47() {
         expected,
         "{generator}"
     );
-    // Connecting is allowed on both sides: reading still works below.
     verify_connection(&e.url, e.cred.clone()).expect("connects");
 
     // The capability probe agrees with the manifest, given a public item
-    // (made as the web studio would, so it works below the floor too).
+    // (made as the web studio would).
     let t = tag("floor");
     let (st, made) = owner(
         "POST",
@@ -3821,55 +3825,75 @@ fn studio_floor_holds_pushes_below_0_47() {
     assert_eq!(st, 200, "{hits}");
     let probed = floor::from_search(&hits);
     assert_ne!(probed, Floor::Unknown, "{hits}");
-    assert_eq!(probed.allows_push(), expected.allows_push(), "{hits}");
+    assert_eq!(probed.meets(), expected.meets(), "{hits}");
 
     let dir = tempfile::tempdir().unwrap();
     let b = manual(dir.path());
-    let id = b
-        .create_draft(
-            Kind::Fragment,
-            &format!("{t} see [[{made_id} | the studio's]]"),
-        )
+    // One post with a bare link, one with a labelled one.
+    let plain = b
+        .create_draft(Kind::Fragment, &format!("{t} plain, see [[{made_id}]]"))
         .unwrap();
-    let synced = b.sync_now();
-    if expected.allows_push() {
-        synced.expect("sync");
-        assert!(!b.server_outdated());
-        let sid = sid_of(&b, &id);
-        let out = b.publish(&id, None).expect("publish");
-        assert_eq!(out.version, 1);
+    let labelled_text = format!("{t} labelled, see [[{made_id} | the studio's]]");
+    let labelled = b.create_draft(Kind::Fragment, &labelled_text).unwrap();
+    b.sync_now().expect("sync");
+    assert_eq!(b.server_outdated(), !expected.meets());
+
+    // The bare one goes either way, publish included.
+    let plain_sid = sid_of(&b, &plain);
+    assert_eq!(b.publish(&plain, None).expect("publish").version, 1);
+    assert!(
+        server_item(&plain_sid)["content_md"]
+            .as_str()
+            .is_some_and(|c| c.contains("plain, see"))
+    );
+
+    if expected.meets() {
+        let sid = sid_of(&b, &labelled);
+        assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
         assert!(
             server_item(&sid)["content_md"]
                 .as_str()
                 .is_some_and(|c| c.contains("| the studio's]]"))
         );
-    } else {
-        assert!(
-            matches!(synced, Err(CoreError::ServerOutdated)),
-            "{synced:?}"
-        );
-        assert!(b.server_outdated(), "the notice stays up");
-        let item = b.item(&id).unwrap();
-        assert!(item.server_id.is_none(), "nothing pushed");
-        assert!(matches!(
-            b.publish(&id, None),
-            Err(CoreError::ServerOutdated)
-        ));
-        let all = conforms("GET", &e.url, "/api/items?limit=100");
-        assert!(
-            !all.to_string().contains("| the studio's]]"),
-            "no labelled link reached the server"
-        );
-        // Reading goes on: the studio's own post was pulled.
-        assert!(
-            b.items()
-                .iter()
-                .any(|i| i.content_md.contains(&format!("{t} from the studio"))),
-            "pulled below the floor"
-        );
-        // A manual sync checks again, and still holds.
-        assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
+        return;
     }
+
+    // Below the floor the labelled one waits, its publish too.
+    assert!(b.item(&labelled).unwrap().server_id.is_none(), "held");
+    assert!(b.item(&labelled).unwrap().pending_sync, "the edit waits");
+    assert!(matches!(
+        b.publish(&labelled, None),
+        Err(CoreError::ServerOutdated)
+    ));
+    let all = conforms("GET", &e.url, "/api/items?limit=100");
+    assert!(
+        !all.to_string().contains("| the studio's]]"),
+        "no labelled link reached the server"
+    );
+    // Reading goes on: the studio's own post was pulled.
+    assert!(
+        b.items()
+            .iter()
+            .any(|i| i.content_md.contains(&format!("{t} from the studio"))),
+        "pulled below the floor"
+    );
+    // Withdraw and pin don't send the text: they go.
+    b.withdraw(&plain, None).expect("withdraw");
+
+    // Written bare (the publish sheet's fix), it syncs and publishes.
+    b.save(&labelled, &floor::strip_labels(&labelled_text))
+        .unwrap();
+    b.sync_now().expect("sync");
+    let sid = sid_of(&b, &labelled);
+    assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
+    let content = server_item(&sid)["content_md"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content.contains(&format!("labelled, see [[{made_id}]]")),
+        "{content}"
+    );
 }
 
 #[test]
