@@ -277,6 +277,12 @@ impl MainView {
             diff_vs_now: false,
         });
         cx.notify();
+        // --- own posts --- your history, never a read mark.
+        if super::own::is_own(&key) {
+            self.reading.want_version = want;
+            self.load_own_opened(key, window, cx);
+            return;
+        }
         let backend = self.backend.clone();
         let (sub, rid) = key.clone();
         let task = cx.background_spawn(async move {
@@ -348,7 +354,9 @@ impl MainView {
             let version = v.version;
             // --- quote targets --- a post fetched without a subscription
             // reads its pins straight from its origin.
-            let origin = super::original::is_external(&key).then(|| o.item.origin.clone());
+            // --- own posts --- yours from your public pin files.
+            let origin = (super::original::is_external(&key) || super::own::is_own(&key))
+                .then(|| o.item.origin.clone());
             let task = cx.background_spawn(async move {
                 match origin {
                     Some(origin) => backend.public_pinned(&origin, &rid, version),
@@ -384,6 +392,10 @@ impl MainView {
         up: bool,
         cx: &mut Context<Self>,
     ) {
+        // --- own posts --- no signals about your own posts.
+        if super::own::is_own(&key) {
+            return;
+        }
         let want = if up { 1 } else { -1 };
         let thumb = if current == Some(want) {
             None
@@ -432,7 +444,10 @@ impl MainView {
             "Quote" | "Reply" | "Link post" | "Open on web" => {
                 self.item_action(item, action, window, cx)
             }
-            "AI reply" if pinned.is_none() => self.item_action(item, action, window, cx),
+            // --- own posts --- no AI reply to yourself.
+            "AI reply" if pinned.is_none() && !super::own::is_own_row(&item) => {
+                self.item_action(item, action, window, cx)
+            }
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
             "Quote this version" => {
                 let Some(v) = pinned else { return };
@@ -453,25 +468,17 @@ impl MainView {
             "Fork this pin" => {
                 // Forking descends from pins only.
                 let Some(v) = pinned else { return };
+                // --- own fork --- yours forks from ⌘Y only.
+                if super::own::is_own_row(&item) {
+                    return;
+                }
                 let of = RemoteRef {
                     origin: item.origin.clone(),
                     id: item.remote_id.clone(),
                     version: v.version,
                     cited: None,
                 };
-                let backend = self.backend.clone();
-                let task = cx.background_spawn(async move { backend.fork(&of) });
-                cx.spawn_in(window, async move |this, cx| {
-                    let r = task.await;
-                    let _ = this.update_in(cx, |this, window, cx| match r {
-                        Ok(id) => {
-                            this.open_new_draft(&id, window, cx);
-                            this.show_toast(format!("Forked 📌 v{}", v.version), None, cx);
-                        }
-                        Err(e) => this.show_toast(format!("Couldn't fork: {e}"), None, cx),
-                    });
-                })
-                .detach();
+                self.fork_pin(of, window, cx);
             }
             "Subscribe" => self.follow_url(item.origin.clone(), cx),
             "Diff vs now" => {
@@ -508,7 +515,8 @@ impl MainView {
         match action {
             "Quote" => {
                 let snippet = if blyg {
-                    format!("![[{}]]", item.remote_id)
+                    // --- quote labels --- `![[id | label]]`, as the picker writes.
+                    vm::quote_directive(&item)
                 } else {
                     // RSS items aren't transcludable: quote with a link.
                     let text = vm::title(&item.content_md);
@@ -535,7 +543,7 @@ impl MainView {
             },
             "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
             // --- follow-ups --- a stub with a generated reply, for review.
-            "AI reply" => self.ai_reply_to(item, window, cx),
+            "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
             "Open on web" => match vm::web_url(&item) {
                 Some(u) => {
@@ -568,8 +576,15 @@ impl MainView {
         match self.backend.create_stub(&of, &body) {
             Ok(id) => {
                 self.open_new_draft(&id, window, cx);
+                // --- own posts --- a stub of your own post (stub_of names
+                // your origin: a citation is absolute).
+                let whom = if super::own::is_own_row(item) {
+                    "your post".to_string()
+                } else {
+                    vm::host(&item.origin)
+                };
                 self.show_toast(
-                    format!("Reply to {} · a stub thread", vm::host(&item.origin)),
+                    format!("Reply to {whom} · a stub thread"),
                     Some("Quoting the whole post · choose a passage above the editor".into()),
                     cx,
                 );
@@ -622,6 +637,12 @@ impl MainView {
                 .filter(|v| !v.current && v.pinned)
                 .map(|v| v.version)
                 .collect(),
+        };
+        // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).
+        let ids = if super::own::is_own(&o.key) {
+            super::own::own_action_ids(ids)
+        } else {
+            ids
         };
         ids.into_iter()
             // A feed post has no id to link.
@@ -993,9 +1014,10 @@ impl MainView {
             .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
             .children(self.slots_byline(item, cx)) // --- reading slots ---
             .child(div().flex_1())
-            .when(!super::original::is_external(&o.key), |d| {
-                d.child(self.render_thumbs(item.thumb, cx))
-            })
+            .when(
+                !super::original::is_external(&o.key) && !super::own::is_own(&o.key),
+                |d| d.child(self.render_thumbs(item.thumb, cx)),
+            )
             // --- profiles --- "↳ stub of …" / "⑂ forked from …" on its own line
             .children(
                 self.render_lineage(

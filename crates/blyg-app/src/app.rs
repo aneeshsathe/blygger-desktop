@@ -1282,6 +1282,10 @@ impl MainView {
                 if let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) {
                     self.scratch_sync_editor(&id, window, cx);
                 }
+                // --- own posts --- your published posts are reading rows too.
+                if self.reading.view == reading::View::Reading {
+                    self.reading_changed(cx);
+                }
                 self.requery(window, cx)
             }
             CoreEvent::SyncStatus(s) => {
@@ -2511,6 +2515,8 @@ impl MainView {
                     },
                 ])
             })
+            // --- own posts --- Reply, Quote, Fork, Link on your published post.
+            .children(self.render_own_post_bar(cx))
             // --- stub quotes --- a stub's hint line and passage chooser.
             .children(self.render_stub_bar(cx))
             .child(

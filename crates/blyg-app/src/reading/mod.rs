@@ -25,8 +25,11 @@ mod list;
 mod marks; // --- read/unread ---
 mod mentions;
 pub(crate) mod opml; // --- OPML import/export ---
+// --- own posts --- your published posts as a reading source, and the
+// reading actions on them from the Posts view.
 #[cfg(test)]
 mod opml_tests;
+pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
 mod site_settings;
@@ -46,6 +49,8 @@ pub(crate) mod sources;
 pub(crate) mod sources_vm;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod sources_tests; // --- reader folders ---
 #[cfg(test)]
@@ -410,8 +415,9 @@ impl State {
             let keys: Vec<vm::Key> = self.shown_rows().map(vm::key).collect();
             self.picked.retain_shown(&keys);
         }
+        // --- own posts --- your rows are counted from the posts themselves.
         self.lineage = blyg_core::lineage::Local::build(
-            &self.rows,
+            &own::without_own(&self.rows),
             &self.own_posts,
             self.own_origin.as_deref(),
             self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
@@ -468,10 +474,13 @@ impl MainView {
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
+        .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
     pub(super) fn reading_changed(&mut self, cx: &mut Context<Self>) {
+        // --- own posts --- your published posts among the rows.
+        let fresh = own::merge(self.backend.reading(), self.own_rows());
         let r = &mut self.reading;
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
@@ -479,7 +488,6 @@ impl MainView {
         r.folders = self.backend.folders();
         r.filed = self.backend.subscription_folders();
         r.avatars = sources::avatars(self.backend.as_ref());
-        let fresh = self.backend.reading();
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
@@ -542,7 +550,7 @@ impl MainView {
             }
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
-                self.reading.rows = vm::order(self.backend.reading());
+                self.reading.rows = self.reading_with_own(); // --- own posts ---
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
@@ -1172,8 +1180,8 @@ impl MainView {
 /// text and the caret after the block.
 pub(crate) fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
     if block.starts_with("![[") && !block.contains('\n') {
-        let id = block.trim_start_matches("![[").trim_end_matches("]]");
-        return vm::insert_transclusion(text, cursor, id);
+        // `![[id]]` or `![[id | label]]`, on its own line.
+        return vm::insert_directive(text, cursor, block);
     }
     let mut c = cursor.min(text.len());
     while c > 0 && !text.is_char_boundary(c) {

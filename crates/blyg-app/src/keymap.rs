@@ -43,6 +43,8 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- own posts ---
+use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -479,6 +481,30 @@ pub fn mac_table() -> Vec<Keybind> {
             "Quote a post in this thread",
             Some("Post › Quote…")
         ),
+        // --- own posts --- the reading actions on the post in front of you:
+        // your published post in Posts, the open (or selected) post in Reading.
+        kb!(
+            "alt-cmd-r",
+            Main,
+            ReplyToPost,
+            "Reply · new stub: a thread of yours that's a stub of this post (yours too)",
+            Some("Post › Reply · New Stub")
+        ),
+        kb!(
+            "alt-cmd-q",
+            Main,
+            QuotePost,
+            "Quote this post into a thread (![[…]]; the draft open, or a new one)",
+            Some("Post › Quote into a Thread")
+        ),
+        kb!(
+            "alt-cmd-l",
+            Main,
+            LinkToPost,
+            "Link post · new fragment: [[…]] to this post, no stub_of",
+            Some("Post › Link Post · New Fragment")
+        ),
+        // --- end own posts ---
         menu_only!(
             SubscribeTo,
             "Subscribe to a blyg or feed",

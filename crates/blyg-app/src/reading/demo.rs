@@ -297,6 +297,31 @@ impl MainView {
                 self.reading.subs.clear();
             }
             ("rd-site", 0) => self.open_site_settings(window, cx),
+            // --- own posts --- "Your blyg" in the Reader, your "On friction"
+            // open with the reading actions; and the same post in Posts with
+            // its chips above the editor.
+            ("rd-own", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-own", 1) => {
+                self.select_source(super::sources_vm::Source::Own, cx);
+                if let Some(k) = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id.starts_with("01J9M2A"))
+                    .map(super::vm::key)
+                {
+                    self.open_reading(k, window, cx);
+                }
+            }
+            ("rd-own-post" | "rd-own-fork", 0) => self.open(&LocalId("01J9M2A".into()), window, cx),
+            // ⌘Y on your post, its 📌 v2 picked: "Fork this pin".
+            ("rd-own-fork", 1) => self.toggle_versions(window, cx),
+            ("rd-own-fork", 2) => {
+                if let Some(own) = self.reading.own.as_mut() {
+                    own.sel = Some(2);
+                }
+                cx.notify();
+            }
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),
             _ => {}
