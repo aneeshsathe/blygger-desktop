@@ -1107,7 +1107,7 @@ impl MainView {
                 let held = stream_vm::quoted(&self.reading.rows, post, id);
                 let (origin, _) = stream_vm::quote_ref(post, id, held);
                 (
-                    stream_vm::span_link_text(&s.text, held),
+                    stream_vm::span_link_text(s.label.as_deref(), held),
                     origin,
                     id.to_string(),
                 )

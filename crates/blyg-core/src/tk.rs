@@ -76,13 +76,7 @@ pub fn parse(md: &str) -> Option<Vec<Scope>> {
 /// Deduplicated `![[id]]` / `![[id | label]]` refs anywhere in a scope,
 /// first-occurrence order (`tk.ts` `SOURCE_REF`).
 fn source_ids(scope: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for r in crate::grammar::source_refs(scope) {
-        if !out.iter().any(|o| o == r.id) {
-            out.push(r.id.to_string());
-        }
-    }
-    out
+    crate::grammar::source_ids(scope)
 }
 
 /// Scope count, the number of provenance entries the Worker expects.

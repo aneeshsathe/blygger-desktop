@@ -131,13 +131,7 @@ pub struct TkParseError {
 /// `tk.ts` `extractSourceIds`: every `![[id]]` / `![[id | label]]` in the
 /// scope (studio 0.47 `directiveInline`), deduplicated in order.
 fn extract_source_ids(scope_text: &str) -> Vec<String> {
-    let mut ids: Vec<String> = vec![];
-    for r in blyg_core::grammar::source_refs(scope_text) {
-        if !ids.iter().any(|i| i == r.id) {
-            ids.push(r.id.to_string());
-        }
-    }
-    ids
+    blyg_core::grammar::source_ids(scope_text)
 }
 
 fn blank_before(s: &str) -> bool {

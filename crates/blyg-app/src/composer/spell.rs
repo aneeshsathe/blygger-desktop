@@ -116,9 +116,13 @@ fn mask_line(b: &mut [u8], off: usize, line: &str) {
         // `[[id | label]]`: the label is the link's text, so it's checked;
         // the rest of the link isn't prose.
         if rest.starts_with("[[")
-            && let Some(r) = blyg_core::grammar::parse_at(rest, 0)
+            && let Some(r) =
+                blyg_core::grammar::link_refs(&rest[..rest.find('\n').unwrap_or(rest.len())])
+                    .into_iter()
+                    .next()
+                    .filter(|r| r.range.start == 0)
         {
-            match r.label_range {
+            match blyg_core::grammar::label_range(rest, &r) {
                 Some(l) => {
                     spans.push(i..i + l.start);
                     spans.push(i + l.end..i + r.range.end);

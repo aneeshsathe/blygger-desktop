@@ -133,13 +133,11 @@ pub fn matches(words: &[String], text: &str, id: &str) -> bool {
 /// (studio 0.47 `link-label.ts`): the post's opening heading as plain text,
 /// else a short excerpt in curly quotes, else "a thread" / "a fragment".
 pub fn link_label(content_html: &str, kind: Kind) -> String {
-    blyg_render::anchor_label(content_html).unwrap_or_else(|| {
-        match kind {
-            Kind::Thread => "a thread",
-            Kind::Fragment => "a fragment",
-        }
-        .to_string()
-    })
+    let kind = match kind {
+        Kind::Thread => blyg_render::ItemKind::Thread,
+        Kind::Fragment => blyg_render::ItemKind::Fragment,
+    };
+    blyg_render::link_label(content_html, kind)
 }
 
 /// [`link_label`] for a post known only by its Markdown (your own, or an
@@ -151,16 +149,12 @@ pub fn link_label_md(md: &str, kind: Kind) -> String {
     let md = strip_tk(md);
     let mut kept = String::with_capacity(md.len());
     for line in md.split('\n') {
-        if grammar::directive_line(line).is_some() {
+        if grammar::directive_ref(line).is_some() {
             continue;
         }
-        let mut last = 0;
-        for r in grammar::links(line) {
-            kept.push_str(&line[last..r.range.start]);
-            kept.push_str(r.label.unwrap_or("↗"));
-            last = r.range.end;
-        }
-        kept.push_str(&line[last..]);
+        kept.push_str(&grammar::replace_links(line, |r| {
+            Some(r.label.clone().unwrap_or_else(|| "↗".into()))
+        }));
         kept.push('\n');
     }
     link_label(&blyg_render::render_markdown(&kept), kind)

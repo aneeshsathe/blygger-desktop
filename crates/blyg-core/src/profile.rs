@@ -882,8 +882,10 @@ pub fn transclusion_ids(md: &str) -> Vec<String> {
                 .chars()
                 .map(|c| if c.is_ascii_alphanumeric() { '0' } else { c })
                 .collect();
-            let r = crate::grammar::directive_line(&shape)?;
-            Some(l[r.id_range].to_string())
+            crate::grammar::directive_ref(&shape)?;
+            // The id is right after the line's leading `![[`.
+            let at = l.len() - l.trim_start_matches(crate::grammar::is_js_ws).len() + 3;
+            Some(l[at..at + 26].to_string())
         })
         .collect()
 }

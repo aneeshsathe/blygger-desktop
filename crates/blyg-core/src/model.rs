@@ -1241,9 +1241,8 @@ fn plain_line(line: &str) -> String {
     // A labelled link reads as its label, as upstream's plain text has it
     // (studio 0.47, #70); the label's own Markdown goes like the rest.
     // An unlabelled one is an arrow, as the list has no titles.
-    let t = crate::grammar::replace_links(t, |r| {
-        Some(r.label.map_or_else(|| "↗".to_string(), str::to_string))
-    });
+    let t =
+        crate::grammar::replace_links(t, |r| Some(r.label.clone().unwrap_or_else(|| "↗".into())));
     let c: Vec<char> = t.chars().collect();
     let mut i = 0;
     while i < c.len() {
