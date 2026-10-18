@@ -174,10 +174,6 @@ enum Sheet {
         host: String,
         focus: FocusHandle,
     },
-    /// What's limited on a stock blygger-studio (`server_notice`).
-    ServerLimits {
-        focus: FocusHandle,
-    },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -479,6 +475,11 @@ impl MainView {
                     println!("initial-sync items={n} ok={}", result.is_ok());
                 }
                 match (result, connected_to) {
+                    // Connected to a blyg below the studio floor: say that,
+                    // not "connected" (the status bar keeps saying it).
+                    (Ok(()) | Err(CoreError::ServerOutdated), _) if v.backend.server_outdated() => {
+                        v.server_outdated(cx)
+                    }
                     (Ok(()), Some(host)) => v.show_toast(
                         format!("Connected to {host}"),
                         Some(
@@ -944,6 +945,9 @@ impl MainView {
                 self.sheet = None;
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
+                if self.backend.server_outdated() {
+                    return self.server_outdated(cx);
+                }
                 self.show_toast(
                     format!("Connected to {host}"),
                     Some(
@@ -1314,7 +1318,9 @@ impl MainView {
             }
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
-            CoreEvent::ServerLimited => self.server_limited(window, cx),
+            // The "older than 0.40" sheet is gone: below the 0.47 floor the
+            // outdated notice already says it all (`server_notice`).
+            CoreEvent::ServerLimited => {}
             CoreEvent::SignedOut => {
                 if self.sheet.is_none() {
                     self.signed_out(window, cx);
@@ -3039,53 +3045,6 @@ impl MainView {
                         "disconnect-cancel",
                         cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
                     )))
-                    .into_any_element(),
-            ),
-            Sheet::ServerLimits { focus } => (
-                500.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "enter" | "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading(server_notice::LIMITS_TITLE.into()))
-                    .child(
-                        div()
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(server_notice::LIMITS_INTRO),
-                    )
-                    .children(server_notice::LIMITS.iter().map(|l| {
-                        div()
-                            .mt(px(6.))
-                            .flex()
-                            .gap(px(6.))
-                            .line_height(relative(1.45))
-                            .child(div().text_color(p.muted).child("•"))
-                            .child(div().flex_1().child(crate::keymap::hint(l)))
-                    }))
-                    .child(
-                        div()
-                            .mt(px(8.))
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(server_notice::LIMITS_OUTRO),
-                    )
-                    .child(
-                        div()
-                            .id("limits-help")
-                            .mt(px(8.))
-                            .cursor_pointer()
-                            .text_color(p.accent)
-                            .hover(|s| s.underline())
-                            .child("What a server needs for everything")
-                            .on_click(|_, _, cx| cx.open_url(server_notice::SERVER_HELP_URL)),
-                    )
-                    .child(keys_row(vec![key_hint("⏎", "OK")]))
                     .into_any_element(),
             ),
             Sheet::Connect {

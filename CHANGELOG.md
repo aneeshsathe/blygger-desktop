@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Changed
+
+- **Needs Blygger Studio 0.47 or later.** The `[[` picker writes labelled links, `[[id | label]]`, which an older studio shows as literal text or a broken link. On an older blyg Burrow keeps reading and lets you write, but sends nothing about a post (edits, publish, withdraw, pin, restore, images) until the blyg is updated. It says "Your blyg needs updating" once, on connecting or at launch, keeps a status-bar notice with an **Update your blyg** link, and shows the same in About. Burrow reads the version from the blyg's `blyg.json` `generator`. For another server it checks whether search results carry a `label`, and when it can't tell, it doesn't lock the blyg out. The "older than 0.40" limits sheet and its About section are gone, since every blyg that would have seen them now gets this notice. [Server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html).
+
 ## [0.12.0] - 2026-10-13
 
 ### Changed

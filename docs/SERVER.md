@@ -2,15 +2,40 @@
 
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
-(`openapi.json`; route guide in its `docs/api.md`). The app follows that contract and
-needs **0.9 or later**; it is tested end to end against **studio 0.46.1**. Every route
-the app shares with upstream is checked against `openapi.json` in its tests
+(`openapi.json`; route guide in its `docs/api.md`). Burrow 0.13 and later need
+**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.47.0**.
+Every route the app shares with upstream is checked against `openapi.json` in its tests
 (`crates/blyg-core/tests/fixtures/`).
 
-**A stock blygger-studio is fully supported.** On studio 0.40 or later nothing in this
-app needs a patched server: writing, publishing, versions, pins, subscriptions, mentions,
-settings, the reading list, read state across Macs, lineage and AI disclosure all run on
-upstream's own routes.
+**Why 0.47.** Burrow's `[[` picker writes labelled links, `[[id | label]]`, and a studio
+older than 0.47 doesn't understand the label: published there, the link would come out
+as literal text or broken. On an older blyg Burrow keeps reading (on studio 0.9 or later)
+and lets you write, but sends nothing about a post (no edit, publish, withdraw, pin,
+restore or image) until the blyg is updated. It says so once, keeps a status-bar notice
+with an **Update your blyg** link, and shows the same in the About window. See
+[Updating an older server](#updating-an-older-server).
+
+**A stock blygger-studio is fully supported.** Nothing in this app needs a patched
+server: writing, publishing, versions, pins, subscriptions, mentions, settings, the
+reading list, read state across Macs, lineage and AI disclosure all run on upstream's
+own routes.
+
+## How Burrow checks the version
+
+When it connects, and once a session after that (then every minute, or on a manual sync,
+while the blyg is too old):
+
+1. `GET {blyg-url}/blyg.json`, the public manifest. A studio's says
+   `generator: "blygger-studio/<version>"`; Burrow compares that version with 0.47.0. It
+   is the only manifest key that tells 0.46 from 0.47: both send `blyg: "0.4"`. Upstream
+   says the same: "Your running version is the `generator` in `blyg.json`".
+2. Another implementation's generator, a version Burrow can't read, or no manifest:
+   one `GET /api/search?limit=1`. Since 0.47 each hit carries a `label` (the text the
+   picker writes); a hit without one is an older studio.
+3. No hit to look at (an empty blyg), or no search route: Burrow can't tell, and
+   doesn't lock the blyg out on a guess. It is treated as new enough.
+
+A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
 
 ## Signing in
 
@@ -43,8 +68,9 @@ sends what waited.
 | Removing an image you pasted, then deleted | **0.26+.** Older: it stays on the server. |
 | Syncing every 15 s on change counters | **0.32+** (`GET /api/changes`). Older: read whole every 60 s. |
 
-On a studio older than 0.40 Burrow says once that the server is limited, and lists the
-limits in the About window.
+The "Older" columns matter only for reading now: below 0.47 Burrow sends nothing about a
+post. Burrow 0.12 and earlier also showed a sheet listing a pre-0.40 studio's limits;
+0.13's floor replaced it with the update notice.
 
 ### Shapes worth knowing (studio 0.40+)
 
@@ -198,13 +224,15 @@ mattered here:
 
 - **A saved credential the blyg refuses (`401`):** sync stops (no retries), queued
   changes stay queued, and the sign-in sheet opens once, browser first.
-- **A server older than studio 0.9:** the connect sheet says it needs updating. A
-  blyg already connected gets a notice when Burrow starts (and a status-bar
-  notice with a **How to update** link), and Burrow pushes nothing to it: on an
-  old server a new route's 404 would read as "deleted" and duplicate your posts.
-  Your edits wait in the outbox and go up once the server is updated. Burrow
-  recognises an old server by `GET /api/items` answering without `total` (or
-  404).
+- **Older than studio 0.47:** Burrow says "Your blyg needs updating" once (on
+  connecting, or when Burrow starts), with a status-bar notice and an **Update your
+  blyg** link while it lasts, and the same in the About window. Nothing about a post is
+  sent: your edits wait in the outbox and go up once the blyg is updated. Reading goes
+  on. See [How Burrow checks the version](#how-burrow-checks-the-version).
+- **A server older than studio 0.9:** the connect sheet refuses it, and a blyg already
+  connected isn't read from either: on such a server a new route's 404 would read as
+  "deleted" and duplicate your posts. Burrow recognises it by `GET /api/items`
+  answering without `total` (or 404).
 - **Studio older than 0.40:** the reading list is built from upstream's older routes
   (see above).
 - **Older than studio 0.28:** before publishing text that was generated
@@ -219,12 +247,16 @@ mattered here:
 
 ## Updating an older server
 
-Follow upstream's guide,
-[Upgrading to Blygger Studio 0.11](https://github.com/blygger/blygger-studio/blob/main/docs/upgrading-to-0.11.md).
-It covers source and Worker-archive installs, the one database migration, and
-path-mounted blygs. A fork that carries the legacy extensions doesn't need
-them on studio 0.40 or later: a stock studio is fully supported. Once it's updated, Burrow picks it up on its next sync; there's
-nothing to do in the app.
+Follow upstream's
+[Releases and upgrading](https://github.com/blygger/blygger-studio#releases-and-upgrading):
+read the changelog entries between your version and 0.47 (or later), each with its
+**Migrations:** line. Coming from 0.8 or earlier, start with
+[Upgrading to Blygger Studio 0.11](https://github.com/blygger/blygger-studio/blob/main/docs/upgrading-to-0.11.md),
+which covers source and Worker-archive installs, the database migration, and
+path-mounted blygs. A fork that carries the legacy extensions doesn't need them: a
+stock studio is fully supported. Once the blyg is updated, Burrow notices within a
+minute (or at once on a manual sync) and sends what waited; there's nothing else to do
+in the app.
 
 ## Optional: server-side generation with Gemma 4
 

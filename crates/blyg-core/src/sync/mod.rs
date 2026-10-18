@@ -133,8 +133,12 @@ struct NetState {
     pushing: bool,
     /// The server proved to speak studio 0.9+'s API this session.
     compatible: bool,
-    /// The server proved older than studio 0.9; cleared once it isn't.
+    /// The server proved older than Burrow's floor (studio 0.47, or 0.9 for
+    /// the API itself); cleared once it isn't.
     outdated: bool,
+    /// The last studio-floor check (`crate::floor`): whether the blyg was
+    /// below it, and when. `None` before one this session.
+    floor: Option<(bool, Instant)>,
     /// Reading comes from upstream's own routes (no `/reading/imported`):
     /// `Some(true)`; `Some(false)` from the fork's; `None` not yet known.
     stock_reading: Option<bool>,
@@ -191,6 +195,10 @@ fn read_denied_message(e: &CoreError) -> String {
     )
 }
 
+/// While a blyg is below the studio floor, how often the worker checks
+/// again (a manual sync checks at once).
+const FLOOR_RECHECK: Duration = Duration::from_secs(60);
+
 /// The time allowed per pull for fetching item documents (lineage).
 const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
 
@@ -238,6 +246,7 @@ impl Engine {
                 pushing: false,
                 compatible: false,
                 outdated: false,
+                floor: None,
                 stock_reading: None,
                 stock_swept: None,
                 stock_seen: Default::default(),
@@ -334,10 +343,13 @@ impl Engine {
     }
 
     pub fn status(&self) -> SyncStatus {
-        let (health, pushing) = {
+        let (health, pushing, outdated) = {
             let st = self.state();
-            (st.health, st.pushing)
+            (st.health, st.pushing, st.outdated)
         };
+        if outdated {
+            return SyncStatus::Error;
+        }
         match health {
             Health::Offline => SyncStatus::Offline {
                 pending: self.store.pending_count(),
@@ -476,9 +488,14 @@ impl Engine {
                 Ok(None) => break Ok(()),
                 Err(e) => break Err(e),
             };
-            if let Err(e) = self.check_server() {
-                // Nothing is pushed; the op stays queued for a server that can take it.
-                self.note_err(&e);
+            if let Err(e) = self.check_server(true) {
+                // Nothing is pushed; the op stays queued for a server that can
+                // take it. Below the studio floor that's no network failure:
+                // no backoff, and pulls go on (the worker waits for the next
+                // one rather than retrying the outbox).
+                if !self.floor_held(&e) {
+                    self.note_err(&e);
+                }
                 break Err(e);
             }
             self.set_pushing(true);
@@ -527,34 +544,88 @@ impl Engine {
         result
     }
 
-    /// Whether the server proved older than studio 0.9 (as of the last check).
+    /// Whether the server proved older than Burrow's floor, blygger-studio
+    /// 0.47 (as of the last check). Nothing is sent meanwhile.
     pub fn server_outdated(&self) -> bool {
         self.state().outdated
     }
 
-    /// Make sure the server speaks studio 0.9+'s API before anything is
-    /// pushed or pulled: on an older one a new route's 404 reads as "item
-    /// deleted", and the push would re-create it. Checked once per session
-    /// (one small read), and again while the answer is "outdated".
-    fn check_server(&self) -> Result<()> {
-        if self.state().compatible {
-            return Ok(());
-        }
-        match self.api.count_items() {
-            Ok(_) => {
-                let mut st = self.state();
-                st.compatible = true;
-                st.outdated = false;
-                Ok(())
-            }
-            Err(CoreError::ServerOutdated) => {
-                let first = !std::mem::replace(&mut self.state().outdated, true);
-                if first {
-                    self.emit(CoreEvent::ServerOutdated);
+    /// Nothing may be sent right now (the outbox waits; see `worker`).
+    pub fn push_held(&self) -> bool {
+        self.state().outdated
+    }
+
+    /// `e` is the studio floor holding a push back, on a server that can
+    /// still be read from (0.9+).
+    fn floor_held(&self, e: &CoreError) -> bool {
+        matches!(e, CoreError::ServerOutdated) && self.state().compatible
+    }
+
+    /// Before anything is sent without the outbox (a publish, any other
+    /// write): the same checks a push makes, below.
+    pub fn check_push(&self) -> Result<()> {
+        self.check_server(true)
+    }
+
+    /// Make sure the server can take what Burrow sends. Two checks, each
+    /// once per session (one small read each) and again while it fails:
+    ///
+    /// - studio 0.9+'s API, before anything is pushed or pulled: on an
+    ///   older one a new route's 404 reads as "item deleted", and the push
+    ///   would re-create it;
+    /// - studio 0.47+ (`crate::floor`), before anything is pushed (`push`):
+    ///   an older one doesn't understand labelled links. Pulls go on.
+    fn check_server(&self, push: bool) -> Result<()> {
+        if !self.state().compatible {
+            match self.api.count_items() {
+                Ok(_) => self.state().compatible = true,
+                Err(CoreError::ServerOutdated) => {
+                    self.mark_outdated();
+                    return Err(CoreError::ServerOutdated);
                 }
-                Err(CoreError::ServerOutdated)
+                Err(e) => return Err(e),
             }
-            Err(e) => Err(e),
+        }
+        self.check_floor(push)
+    }
+
+    /// The studio floor: checked when not yet known this session, and while
+    /// the blyg is below it at most every `FLOOR_RECHECK` (a manual sync
+    /// checks at once). A failed check decides nothing: a push waits for a
+    /// verdict, a pull goes on.
+    fn check_floor(&self, push: bool) -> Result<()> {
+        let due = match self.state().floor {
+            None => true,
+            Some((below, at)) => below && at.elapsed() >= FLOOR_RECHECK,
+        };
+        if due {
+            match self.api.studio_floor() {
+                Ok(f) => {
+                    let below = !f.allows_push();
+                    let mut st = self.state();
+                    st.floor = Some((below, Instant::now()));
+                    if below {
+                        drop(st);
+                        self.mark_outdated();
+                    } else {
+                        st.outdated = false;
+                    }
+                }
+                Err(e) if push && self.state().floor.is_none() => return Err(e),
+                Err(_) => {}
+            }
+        }
+        match self.state().floor {
+            Some((true, _)) if push => Err(CoreError::ServerOutdated),
+            _ => Ok(()),
+        }
+    }
+
+    /// The server is below a floor: say so once (until it isn't).
+    fn mark_outdated(&self) {
+        let first = !std::mem::replace(&mut self.state().outdated, true);
+        if first {
+            self.emit(CoreEvent::ServerOutdated);
         }
     }
 
@@ -1030,7 +1101,7 @@ impl Engine {
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self) -> Result<()> {
-        self.check_server()?;
+        self.check_server(false)?;
         let rev = self.revisions()?;
         let full = rev.is_none()
             || self
@@ -1697,13 +1768,26 @@ impl Engine {
     }
 
     /// Push everything (ignoring the debounce), then pull. Bypasses backoff.
+    /// Below the studio floor it checks again first, then pulls, and says
+    /// `ServerOutdated` while nothing could be sent.
     pub fn sync_now(&self) -> Result<()> {
         {
             let mut st = self.state();
             st.retry_at = None;
+            if let Some((true, _)) = st.floor {
+                st.floor = None;
+            }
         }
-        self.flush(None, true)?;
-        self.pull()
+        match self.flush(None, true) {
+            Err(e) if self.floor_held(&e) => {
+                self.pull()?;
+                Err(e)
+            }
+            r => {
+                r?;
+                self.pull()
+            }
+        }
     }
 }
 

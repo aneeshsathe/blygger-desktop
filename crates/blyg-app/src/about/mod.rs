@@ -155,6 +155,9 @@ pub fn report(cx: &App) -> Report {
             status: crate::update::status_text(cx),
         },
         connection: connection_info(cx),
+        server_outdated: cx
+            .try_global::<connection::Connection>()
+            .is_some_and(|c| blyg_core::Backend::server_outdated(&*c.switch)),
     }
 }
 
@@ -496,20 +499,33 @@ impl Render for AboutView {
                     .child(section("CONNECTION"))
                     .child(row("Blyg", text(r.connection.summary())))
                     .children(caps)
-                    // A studio older than 0.40: what that limits (as the sheet said).
-                    .when(r.connection.limited(), |d| {
+                    // Older than studio 0.47: as the status bar says.
+                    .when(r.server_outdated, |d| {
                         d.child(
                             div()
                                 .pl(px(114.))
                                 .pt(px(4.))
-                                .text_color(p.muted)
                                 .line_height(relative(1.4))
-                                .child("Older blygger-studio. Limited here:")
-                                .children(crate::app::server_notice::LIMITS.iter().map(|l| {
+                                .child(
                                     div()
+                                        .text_color(p.warn)
+                                        .child(crate::app::server_notice::OUTDATED_TOAST),
+                                )
+                                .child(div().text_color(p.muted).child(crate::keymap::hint(
+                                    crate::app::server_notice::OUTDATED_ABOUT,
+                                )))
+                                .child(
+                                    div()
+                                        .id("about-server-help")
                                         .mt(px(3.))
-                                        .child(format!("• {}", crate::keymap::hint(l)))
-                                })),
+                                        .cursor_pointer()
+                                        .text_color(p.accent)
+                                        .hover(|s| s.underline())
+                                        .child(crate::app::server_notice::OUTDATED_LINK)
+                                        .on_click(|_, _, cx| {
+                                            cx.open_url(crate::app::server_notice::SERVER_HELP_URL)
+                                        }),
+                                ),
                         )
                     })
                     .child(section("FILES"))

@@ -118,7 +118,11 @@ span. Core therefore:
 `api::verify_connection(url, token)` is the Connect sheet's check:
 `GET /api/items` with the token. It maps a transport failure to
 `ConnectError::Unreachable`, 401 to `WrongToken`, 404 to `MissingExtensions`
-(a server older than blygger-studio 0.9) and anything else to `Other`.
+(a server older than blygger-studio 0.9), a pre-0.9 answer to `Outdated`, and
+anything else to `Other`. A studio 0.9 or later but older than 0.47 connects:
+the sync engine's studio-floor check (`floor.rs`, `Api::studio_floor`: the
+manifest's `generator`, else a `/api/search` probe for `label`) then holds
+every push and publish (`CoreError::ServerOutdated`) while pulls go on.
 
 ## Extension keys
 
@@ -149,8 +153,11 @@ cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
 BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
 ```
 
-The Worker is a stock blygger-studio 0.9 or later (set `BLYG_E2E_STOCK=1`; the
-few tests of the old fork's extensions then skip), or a fork carrying them. The script derives a local-only wrangler config (no routes, no
+The Worker is a stock blygger-studio 0.47 or later (set `BLYG_E2E_STOCK=1`; the
+few tests of the old fork's extensions then skip), or a fork carrying them. Against
+an older studio only `studio_floor_holds_pushes_below_0_47` is meaningful (it checks
+that nothing is sent); run it alone with `BLYG_E2E_SKIP_NOTES=1 scripts/e2e-local.sh
+studio_floor`. The script derives a local-only wrangler config (no routes, no
 Workers AI binding, so nothing billed), random dev secrets including a
 throwaway `BLYG_OWNER_TOKEN`, and scratch D1/R2 state. It starts two instances
 (the second is a blyg to subscribe to) and stops only what it started. The

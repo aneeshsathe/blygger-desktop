@@ -697,6 +697,8 @@ impl Backend for LiveBackend {
     // --------------------------------------------------------------- remote
 
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         if self.row(id)?.item.status == Status::Scratch {
             // A scratch note publishes by being promoted first.
             let note = note.map(str::to_string);
@@ -730,6 +732,8 @@ impl Backend for LiveBackend {
     }
 
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
         let v = self.e().track(self.e().api.withdraw(&sid, note))?;
@@ -743,6 +747,8 @@ impl Backend for LiveBackend {
     }
 
     fn pin(&self, id: &LocalId, version: u32) -> Result<()> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
         // Endcaps can't be pinned (§8; the server says 409 too). Refuse
@@ -796,6 +802,8 @@ impl Backend for LiveBackend {
     /// fails, the waiting ops stay and the edits sync back: the user is
     /// told the restore failed, and the text they see is what syncs.
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
         self.e().track(self.e().api.restore(&sid, version))?;
@@ -835,6 +843,7 @@ impl Backend for LiveBackend {
         item: Option<&LocalId>,
         alt: Option<&str>,
     ) -> Result<MediaRef> {
+        self.e().check_push()?;
         let sid = match item {
             Some(id) => Some(self.ensure_on_server(id)?),
             None => None,
@@ -858,6 +867,8 @@ impl Backend for LiveBackend {
     }
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let _net = self.e().net_lock();
         // `POST /api/items {mode: "fork"}` answers with the new draft.
         let w = self.e().track(self.e().api.fork(of))?;
@@ -867,6 +878,8 @@ impl Backend for LiveBackend {
     }
 
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let sid = self.server_id(id)?;
         let (showing, got) = self.e().track(self.e().api.set_responses(&sid, mode))?;
         self.e().store.set_responses(id, showing, got)?;
@@ -875,6 +888,8 @@ impl Backend for LiveBackend {
     }
 
     fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
+        // Below the studio floor nothing about a post is sent (`crate::floor`).
+        self.e().check_push()?;
         let sid = self.server_id(id)?;
         let (on, got) = self.e().track(self.e().api.set_highlight(&sid, mode))?;
         self.e().store.set_highlight(id, on, got)?;

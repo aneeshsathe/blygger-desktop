@@ -19,13 +19,12 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes. A stock blygger-studio 0.40 or later is fully supported: nothing
-needs a patched server. On 0.28 or later, sign in with your browser (or an
-API token from the studio's Client access page); on an older one, with your
-studio password. Burrow works with any studio from 0.9, but an older one
-limits a little (read state across your Macs before 0.39, AI disclosure for
-text generated in Burrow before 0.28), and Burrow tells you which the first
-time it connects. See [Server requirements](server.md).
+Yes. Burrow 0.13 needs blygger-studio 0.47 or later, stock and unpatched.
+Sign in with your browser, an API token from the studio's Client access page,
+or your studio password. On an older blyg Burrow still reads, but sends
+nothing until the blyg is updated, and says so: its `[[` picker writes
+labelled links that an older studio doesn't understand. See
+[Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 

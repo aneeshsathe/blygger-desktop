@@ -456,10 +456,17 @@ fn the_owner_token_never_reaches_a_foreign_origin() {
         st.public_auth
     );
     drop(st);
-    // …while the owner's own blyg still got it on every API call.
+    // …while the owner's own blyg still got it on every API call. Its one
+    // public read is the manifest (the studio-floor check), sent without.
     let own = env.mock.state();
-    assert!(own.public_auth.is_empty());
-    assert!(own.log.iter().all(|l| l.contains(" /api/")));
+    assert!(own.public_auth.iter().all(Option::is_none));
+    assert!(
+        own.log
+            .iter()
+            .all(|l| l.contains(" /api/") || l == "GET /blyg.json"),
+        "{:?}",
+        own.log
+    );
 }
 
 #[test]
