@@ -313,7 +313,15 @@ impl MainView {
                     self.open_reading(k, window, cx);
                 }
             }
-            ("rd-own-post", 0) => self.open(&LocalId("01J9M2A".into()), window, cx),
+            ("rd-own-post" | "rd-own-fork", 0) => self.open(&LocalId("01J9M2A".into()), window, cx),
+            // ⌘Y on your post, its 📌 v2 picked: "Fork this pin".
+            ("rd-own-fork", 1) => self.toggle_versions(window, cx),
+            ("rd-own-fork", 2) => {
+                if let Some(own) = self.reading.own.as_mut() {
+                    own.sel = Some(2);
+                }
+                cx.notify();
+            }
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),
             _ => {}

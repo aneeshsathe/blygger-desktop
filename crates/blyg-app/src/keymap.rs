@@ -44,7 +44,7 @@ use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
 // --- own posts ---
-use crate::app::reading::own::{ForkPost, LinkToPost, QuotePost, ReplyToPost};
+use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -496,13 +496,6 @@ pub fn mac_table() -> Vec<Keybind> {
             QuotePost,
             "Quote this post into a thread (![[…]]; the draft open, or a new one)",
             Some("Post › Quote into a Thread")
-        ),
-        kb!(
-            "alt-cmd-f",
-            Main,
-            ForkPost,
-            "Fork: a new draft from this post's pinned version (the pin on screen, or yours newest)",
-            Some("Post › Fork a Pin")
         ),
         kb!(
             "alt-cmd-l",

@@ -13,17 +13,22 @@
 //! pinned only, as for anyone's post) and its pins are read from your public
 //! pin files.
 //!
-//! The Posts view reaches the same actions (Reply · new stub, Quote into a
-//! thread, Fork, Link post) through `ReplyToPost`, `QuotePost`, `ForkPost`
-//! and `LinkToPost`: menu items with keys, and a row of chips above the
-//! editor on a published post. They run the Reading view's own code
-//! (`item_action`, `fork_pin`) on the post's row, so the drafts carry the
-//! same references a reply to anyone else's post carries. Protocol 0.4 for
-//! an own-origin source: `stub_of` and `forked_from` name the origin even
-//! when it is the publisher's own (§5.6 rule 1, §5.9, §10.6: "a citation is
-//! absolute"), a fork descends from a pinned version only (§5.6 rule 2), and
-//! a quote's `transclusions[]` entry omits `origin` (§10.3), which the
+//! The Posts view reaches Reply · new stub, Quote into a thread and Link
+//! post through `ReplyToPost`, `QuotePost` and `LinkToPost`: menu items with
+//! keys, and a row of chips above the editor on a published post. They run
+//! the Reading view's own code (`item_action`) on the post's row, so the
+//! drafts carry the same references a reply to anyone else's post carries.
+//! Protocol 0.4 for an own-origin source: `stub_of` names the origin even
+//! when it is the publisher's own (§5.9, §10.6: "a citation is absolute"),
+//! and a quote's `transclusions[]` entry omits `origin` (§10.3), which the
 //! server writes at publish.
+//!
+//! Forking your own post is offered in one place only, "Fork this pin" in
+//! the ⌘Y version browser on a pinned version (`vm::OwnAction::Fork`, the
+//! switch `FORK_OWN`): §5.6 lets `forked_from` name a pin of your own, with
+//! your origin ("REQUIRED, even when it is the publisher's own"), and
+//! blygger-studio's version history offers the same. Your rows here and the
+//! Posts view's chips have no Fork.
 
 use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Status, StubOf, Version};
 use gpui_kit::*;
@@ -32,7 +37,7 @@ use super::vm::{self, Key};
 use super::{Load, View};
 use crate::app::MainView;
 
-gpui_kit::actions!(blygger, [ReplyToPost, QuotePost, ForkPost, LinkToPost]);
+gpui_kit::actions!(blygger, [ReplyToPost, QuotePost, LinkToPost]);
 
 /// The subscription id of your own rows: studio 0.45's marker for own items
 /// in `hopper_items`. Never a real subscription id (those are server ids).
@@ -151,73 +156,35 @@ pub fn changelog(own: &[Version], current: u32) -> Vec<RemoteVersion> {
         .collect()
 }
 
-/// The newest pinned version, what Fork on a post descends from.
-pub fn newest_pin(own: &[Version]) -> Option<u32> {
-    own.iter()
-        .filter(|v| v.pinned && !v.endcap)
-        .map(|v| v.version)
-        .max()
-}
-
-/// --- own fork --- Forking one of your own pins (`ForkPost`, "Fork this
-/// pin" on your row, the lineage ring's Fork on your post): the one switch.
-/// Protocol 0.4 allows it (§5.6: `forked_from` names a pinned version,
-/// `origin` required "even when it is the publisher's own") and
-/// blygger-studio offers it beside each pinned version in your history;
-/// off, every one of those places hides or refuses it and nothing else
-/// changes.
+/// --- own fork --- The one switch for forking your own post: "Fork this
+/// pin" on a pinned version in the ⌘Y version browser
+/// (`vm::own_actions`). Off, that chip goes and nothing else changes.
 pub const FORK_OWN: bool = true;
 
 /// The reading pane's actions on your own row: no AI reply to yourself, and
-/// no Fork when `FORK_OWN` is off.
+/// no Fork (yours is forked from ⌘Y).
 pub fn own_action_ids(ids: Vec<&'static str>) -> Vec<&'static str> {
     ids.into_iter()
-        .filter(|id| *id != "AI reply" && (FORK_OWN || !matches!(*id, "Fork" | "Fork this pin")))
-        .collect()
-}
-
-/// The Posts view's actions (`POST_ACTIONS`, Fork only when `FORK_OWN`).
-pub fn post_actions() -> Vec<(&'static str, &'static str)> {
-    POST_ACTIONS
-        .into_iter()
-        .filter(|(id, _)| FORK_OWN || *id != "Fork")
+        .filter(|id| !matches!(*id, "AI reply" | "Fork" | "Fork this pin"))
         .collect()
 }
 
 /// The actions the Posts view's chips and keys offer, in order, with the
 /// key action each runs.
-pub const POST_ACTIONS: [(&str, &str); 4] = [
+pub const POST_ACTIONS: [(&str, &str); 3] = [
     ("Reply", "ReplyToPost"),
     ("Quote", "QuotePost"),
-    ("Fork", "ForkPost"),
     ("Link post", "LinkToPost"),
 ];
 
 /// A Posts-view chip: the Reading view's label and sentence for the same
-/// action, Fork named for the pin it takes.
-pub fn post_chip(id: &'static str, pin: Option<u32>) -> vm::ActionChip {
+/// action.
+pub fn post_chip(id: &'static str) -> vm::ActionChip {
     let ctx = vm::ActionCtx {
         blyg: true,
         ..Default::default()
     };
-    match id {
-        "Fork" => vm::ActionChip {
-            id,
-            label: "Fork a pin".into(),
-            tip: match pin {
-                Some(v) => format!(
-                    "Makes a new draft of yours from 📌 v{v}'s text, recorded as forked from \
-                     it (forked_from): forks descend from pins only."
-                ),
-                None => "Makes a new draft of yours from this post's newest pinned version, \
-                         recorded as forked from it (forked_from). Forks descend from pins \
-                         only: pin a version in ⌘Y first."
-                    .into(),
-            },
-            enabled: true,
-        },
-        other => vm::action_chip(other, &ctx),
-    }
+    vm::action_chip(id, &ctx)
 }
 
 impl MainView {
@@ -315,8 +282,8 @@ impl MainView {
     }
 
     /// Fork `of` (a pinned version) into a new draft and open it: the
-    /// Reading view's "Fork this pin", the lineage ring's Fork and the Posts
-    /// view's Fork all come here.
+    /// Reading view's "Fork this pin", the lineage ring's Fork and ⌘Y's
+    /// "Fork this pin" on your own pin all come here.
     pub(super) fn fork_pin(&mut self, of: RemoteRef, window: &mut Window, cx: &mut Context<Self>) {
         let version = of.version;
         let backend = self.backend.clone();
@@ -334,44 +301,39 @@ impl MainView {
         .detach();
     }
 
-    /// Fork your post `row` from its newest pinned version (your history,
-    /// read first), or say there's none to fork.
-    pub(super) fn fork_own_newest_pin(
+    /// --- own fork --- ⌘Y's "Fork this pin" on your pinned `version` of the
+    /// post whose history is open: `forked_from` names your origin (§5.6).
+    pub(super) fn fork_own_pin(
         &mut self,
-        row: ReadingItem,
+        version: u32,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if !FORK_OWN {
-            return self.show_toast("Your own posts aren't forked here", None, cx);
+            return;
         }
-        let Some(local) = self.own_local_id(&row.remote_id) else {
+        let Some(item) = self
+            .reading
+            .own
+            .as_ref()
+            .and_then(|o| self.backend.item(&o.id))
+        else {
             return;
         };
-        let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.versions(&local) });
-        cx.spawn_in(window, async move |this, cx| {
-            let r = task.await;
-            let _ = this.update_in(cx, |this, window, cx| match r.map(|vs| newest_pin(&vs)) {
-                Ok(Some(version)) => this.fork_pin(
-                    RemoteRef {
-                        origin: row.origin.clone(),
-                        id: row.remote_id.clone(),
-                        version,
-                        cited: None,
-                    },
-                    window,
-                    cx,
-                ),
-                Ok(None) => this.show_toast(
-                    "No pinned version to fork",
-                    Some("Forks descend from pins only: pin a version in ⌘Y first".into()),
-                    cx,
-                ),
-                Err(e) => this.show_toast(format!("Couldn't read the versions: {e}"), None, cx),
-            });
-        })
-        .detach();
+        let (Some(sid), Some(origin)) = (item.server_id, self.backend.base_url()) else {
+            return;
+        };
+        self.reading.own = None;
+        self.fork_pin(
+            RemoteRef {
+                origin: citation_origin(&origin),
+                id: sid.0,
+                version,
+                cited: None,
+            },
+            window,
+            cx,
+        );
     }
 
     // ------------------------------------------------------------ Posts view
@@ -396,16 +358,13 @@ impl MainView {
             cx.listener(|this, _: &QuotePost, window, cx| this.post_action("Quote", window, cx)),
         )
         .on_action(
-            cx.listener(|this, _: &ForkPost, window, cx| this.post_action("Fork", window, cx)),
-        )
-        .on_action(
             cx.listener(|this, _: &LinkToPost, window, cx| {
                 this.post_action("Link post", window, cx)
             }),
         )
     }
 
-    /// Reply · new stub, Quote into a thread, Fork or Link post on the post
+    /// Reply · new stub, Quote into a thread or Link post on the post
     /// in front of you: in the Reading view the open post (else the
     /// stream's selected one), in the Posts view your published post.
     pub(crate) fn post_action(
@@ -420,15 +379,12 @@ impl MainView {
                 let Some(row) = self.current_own_row() else {
                     self.show_toast(
                         "Open one of your published posts first",
-                        Some("Drafts can't be replied to, quoted, forked or linked yet".into()),
+                        Some("Drafts can't be replied to, quoted or linked yet".into()),
                         cx,
                     );
                     return;
                 };
-                match action {
-                    "Fork" => self.fork_own_newest_pin(row, window, cx),
-                    _ => self.item_action(row, action, window, cx),
-                }
+                self.item_action(row, action, window, cx)
             }
             _ => {}
         }
@@ -440,26 +396,8 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(o) = self.reading.opened.as_ref() {
-            let pinned = o.pinned_on_screen().is_some();
-            let own = is_own(&o.key);
-            match action {
-                "Fork" if pinned => self.reading_action("Fork this pin", window, cx),
-                "Fork" if own => {
-                    let row = o.item.clone();
-                    self.fork_own_newest_pin(row, window, cx)
-                }
-                "Fork" => {
-                    let tip = self
-                        .reading_action_chips()
-                        .into_iter()
-                        .find(|c| c.id == "Fork")
-                        .map(|c| c.tip)
-                        .unwrap_or_default();
-                    self.show_toast("Fork needs a pinned version", Some(tip.into()), cx)
-                }
-                _ => self.reading_action(action, window, cx),
-            }
+        if self.reading.opened.is_some() {
+            self.reading_action(action, window, cx);
             return;
         }
         let row = self
@@ -467,15 +405,9 @@ impl MainView {
             .sel
             .clone()
             .and_then(|k| self.reading.rows.iter().find(|r| vm::key(r) == k).cloned());
-        match (row, action) {
-            (Some(r), "Fork") if is_own_row(&r) => self.fork_own_newest_pin(r, window, cx),
-            (Some(_), "Fork") => self.show_toast(
-                "Fork needs a pinned version",
-                Some("Open the post (⏎) and pick 📌 vN in its ‹ vM ▾ ›".into()),
-                cx,
-            ),
-            (Some(r), _) => self.item_action(r, action, window, cx),
-            (None, _) => self.show_toast("Pick a post first", None, cx),
+        match row {
+            Some(r) => self.item_action(r, action, window, cx),
+            None => self.show_toast("Pick a post first", None, cx),
         }
     }
 
@@ -485,8 +417,8 @@ impl MainView {
     pub(crate) fn render_own_post_bar(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let row = self.current_own_row()?;
         let p = self.palette.on_page();
-        let chips = post_actions().into_iter().map(|(id, action)| {
-            let chip = post_chip(id, None);
+        let chips = POST_ACTIONS.into_iter().map(|(id, action)| {
+            let chip = post_chip(id);
             let key = crate::keymap::table()
                 .into_iter()
                 .find(|k| k.action == action && !k.key.is_empty())
@@ -530,8 +462,8 @@ impl MainView {
 mod tests {
     // Not `super::*`: that would bring gpui's `test` attribute in.
     use super::{
-        FORK_OWN, OWN, POST_ACTIONS, changelog, citation_origin, is_own, is_own_row, merge,
-        newest_pin, own_action_ids, post_actions, post_chip, row, vm,
+        OWN, POST_ACTIONS, changelog, citation_origin, is_own, is_own_row, merge, own_action_ids,
+        post_chip, row, vm,
     };
     use blyg_core::{
         Item, Kind, LocalId, ReadingItem, RemoteRef, ResponsesMode, ServerId, Status, Version,
@@ -638,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn own_history_shows_current_and_pins_and_forks_the_newest_pin() {
+    fn own_history_shows_current_and_pins_only() {
         let v = |n: u32, pinned: bool| Version {
             version: n,
             published_at: format!("2026-10-0{n}T10:00:00Z"),
@@ -652,31 +584,26 @@ mod tests {
         assert!(log[3].current && !log[2].current);
         let shown: Vec<u32> = vm::shown(&log).iter().map(|v| v.version).collect();
         assert_eq!(shown, [1, 3, 4], "unpinned history never shows");
-        assert_eq!(newest_pin(&own), Some(3));
-        assert_eq!(newest_pin(&own[1..2]), None);
     }
 
     #[test]
-    fn post_chips_name_what_they_make() {
+    fn post_chips_name_what_they_make_and_none_forks() {
         let labels: Vec<String> = POST_ACTIONS
             .iter()
-            .map(|(id, _)| post_chip(id, None).label)
+            .map(|(id, _)| post_chip(id).label)
             .collect();
         assert_eq!(
             labels,
             [
                 "Reply · new stub",
                 "Quote into a thread",
-                "Fork a pin",
                 "Link post · new fragment"
             ]
         );
         for (id, _) in POST_ACTIONS {
-            let c = post_chip(id, Some(2));
+            let c = post_chip(id);
             assert!(c.enabled && !c.tip.is_empty(), "{id}");
         }
-        assert!(post_chip("Fork", Some(2)).tip.contains("📌 v2"));
-        assert!(post_chip("Fork", None).tip.contains("pins only"));
     }
 
     #[test]
@@ -693,14 +620,13 @@ mod tests {
     }
 
     #[test]
-    fn your_row_offers_no_ai_reply_and_fork_follows_its_switch() {
+    fn your_row_offers_no_ai_reply_and_no_fork() {
         let ids = own_action_ids(vm::CURRENT_ACTIONS.to_vec());
-        assert!(!ids.contains(&"AI reply"));
+        assert!(!ids.contains(&"AI reply") && !ids.contains(&"Fork"));
         assert!(ids.contains(&"Reply") && ids.contains(&"Quote") && ids.contains(&"Link post"));
         let pinned = own_action_ids(vm::PINNED_ACTIONS.to_vec());
-        assert_eq!(ids.contains(&"Fork"), FORK_OWN);
-        assert_eq!(pinned.contains(&"Fork this pin"), FORK_OWN);
-        assert_eq!(post_actions().iter().any(|(id, _)| *id == "Fork"), FORK_OWN);
+        assert!(!pinned.contains(&"Fork this pin"), "yours fork from ⌘Y");
+        assert!(pinned.contains(&"Quote this version"));
     }
 
     #[test]

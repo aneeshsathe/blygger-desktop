@@ -1180,8 +1180,8 @@ impl MainView {
 /// text and the caret after the block.
 pub(crate) fn insert_block(text: &str, cursor: usize, block: &str) -> (String, usize) {
     if block.starts_with("![[") && !block.contains('\n') {
-        let id = block.trim_start_matches("![[").trim_end_matches("]]");
-        return vm::insert_transclusion(text, cursor, id);
+        // `![[id]]` or `![[id | label]]`, on its own line.
+        return vm::insert_directive(text, cursor, block);
     }
     let mut c = cursor.min(text.len());
     while c > 0 && !text.is_char_boundary(c) {

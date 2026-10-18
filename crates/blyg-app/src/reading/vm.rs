@@ -543,25 +543,52 @@ pub struct OwnActions {
     pub can_pin: bool,
     pub already_pinned: bool,
     pub can_restore: bool,
+    /// --- own fork --- "Fork this pin" is live (a pin of yours), or shown
+    /// greyed ("Pin one in ⌘Y to fork it"); `None`: not offered at all
+    /// (`own::FORK_OWN` off, or a withdrawal marker).
+    pub fork: Option<bool>,
 }
 
-/// One control on your own version. Forking your own pin is the reading
-/// pane's (your post under "Your blyg", or the Posts view's Fork), since a
-/// fork descends from a pin, yours or anyone's (protocol 0.4 §5.6).
+/// One control on your own version. Forking your own post is offered here
+/// only, as "Fork this pin" on a pinned version (blygger-studio's version
+/// history offers the same): protocol 0.4 §5.6 lets a fork descend from a
+/// pin of yours, `forked_from` naming your own origin ("REQUIRED, even when
+/// it is the publisher's own"). The reading pane and the Posts view offer
+/// no Fork on your own posts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnAction {
     /// "Pinned ✓" (a label, not a button).
     Pinned,
     Pin,
+    /// --- own fork --- a new draft from this pin (`forked_from`).
+    Fork,
+    /// --- own fork --- greyed on an unpinned version.
+    ForkNeedsPin,
     Restore,
 }
+
+/// The tooltip on a greyed "Fork this pin" of your own.
+pub const OWN_FORK_NEEDS_PIN: &str = "Pin one in ⌘Y to fork it";
 
 impl OwnAction {
     pub fn label(self, v: u32) -> String {
         match self {
             OwnAction::Pinned => "Pinned ✓".into(),
             OwnAction::Pin => format!("📌 Pin v{v}…"),
+            OwnAction::Fork | OwnAction::ForkNeedsPin => "Fork this pin".into(),
             OwnAction::Restore => format!("Restore v{v}…"),
+        }
+    }
+
+    /// The control's one-sentence tooltip (empty: none).
+    pub fn tip(self, v: u32) -> String {
+        match self {
+            OwnAction::Fork => format!(
+                "Makes a new draft of yours from 📌 v{v}'s text, recorded as forked from it \
+                 (forked_from, naming your own blyg)."
+            ),
+            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.into(),
+            _ => String::new(),
         }
     }
 }
@@ -576,6 +603,11 @@ impl OwnActions {
         if self.can_pin {
             out.push(OwnAction::Pin);
         }
+        match self.fork {
+            Some(true) => out.push(OwnAction::Fork),
+            Some(false) => out.push(OwnAction::ForkNeedsPin),
+            None => {}
+        }
         if self.can_restore {
             out.push(OwnAction::Restore);
         }
@@ -588,6 +620,7 @@ pub fn own_actions(v: &Version, current: u32) -> OwnActions {
         can_pin: !v.pinned && !v.endcap,
         already_pinned: v.pinned,
         can_restore: !v.endcap && v.version != current,
+        fork: (super::own::FORK_OWN && !v.endcap).then_some(v.pinned),
     }
 }
 
@@ -702,6 +735,7 @@ pub fn can_quote_into(item: Option<&Item>) -> bool {
 
 /// Insert `![[id]]` on its own line at byte `cursor`. Returns the new text
 /// and the caret after the inserted line.
+#[cfg(test)]
 pub fn insert_transclusion(text: &str, cursor: usize, id: &str) -> (String, usize) {
     insert_directive(text, cursor, &format!("![[{id}]]"))
 }
@@ -736,6 +770,32 @@ fn floor_boundary(s: &str, mut i: usize) -> usize {
 /// (studio 0.31; the stub editor then offers a passage instead).
 pub fn stub_body(remote_id: &str) -> String {
     blyg_render::stub_quote::stub_body(remote_id)
+}
+
+/// --- quote labels --- The label a quote of `r` is written with
+/// (`![[id | label]]`, studio 0.47): the post's opening heading (the label
+/// a bare link would show), else its title.
+// TODO(merge with usability-fixes): use the picker's title-as-label helper
+// once it exposes one, so the two can't drift.
+pub fn quote_label(r: &ReadingItem) -> String {
+    let html = if r.content_html.trim().is_empty() {
+        blyg_render::render_markdown(&r.content_md)
+    } else {
+        r.content_html.clone()
+    };
+    match blyg_render::anchor_label(&html) {
+        // A heading reads as itself; an excerpt comes back in quotes.
+        Some(heading) if !heading.starts_with('“') => heading,
+        _ => match post_title(r) {
+            t if t == "…" => blyg_core::pick::link_label(&html, r.kind),
+            t => t,
+        },
+    }
+}
+
+/// `![[id | label]]` for `r` ([`quote_label`]).
+pub fn quote_directive(r: &ReadingItem) -> String {
+    blyg_core::grammar::directive_source(&r.remote_id, Some(&quote_label(r)))
 }
 
 /// A link post: a new fragment holding `[[id]]`, a plain link that declares
@@ -981,10 +1041,12 @@ mod tests {
         assert!(!PINNED_ACTIONS.contains(&"AI reply"));
     }
 
-    /// Your own history: every version can be restored or pinned, but no
-    /// version, pinned or not, offers Fork.
+    /// Your own history: every version can be restored or pinned; a pin
+    /// offers "Fork this pin" (protocol 0.4 §5.6), an unpinned version shows
+    /// it greyed with "Pin one in ⌘Y to fork it", a withdrawal marker not at
+    /// all. This is the only Fork your own posts get.
     #[test]
-    fn own_versions_never_offer_fork() {
+    fn own_versions_fork_from_pins_only() {
         for (pinned, endcap, version) in [
             (false, false, 1),
             (true, false, 2),
@@ -1000,11 +1062,23 @@ mod tests {
                 endcap,
             };
             let a = own_actions(&v, 5);
-            for act in a.list() {
-                assert!(!act.label(version).to_lowercase().contains("fork"));
+            let list = a.list();
+            match (pinned, endcap) {
+                (true, _) => {
+                    assert!(list.contains(&OwnAction::Fork));
+                    assert!(!list.contains(&OwnAction::ForkNeedsPin));
+                }
+                (false, false) => {
+                    assert!(list.contains(&OwnAction::ForkNeedsPin));
+                    assert_eq!(OwnAction::ForkNeedsPin.tip(version), OWN_FORK_NEEDS_PIN);
+                }
+                (false, true) => assert!(list.is_empty(), "{list:?}"),
             }
             if !pinned && !endcap && version != 5 {
-                assert_eq!(a.list(), [OwnAction::Pin, OwnAction::Restore]);
+                assert_eq!(
+                    list,
+                    [OwnAction::Pin, OwnAction::ForkNeedsPin, OwnAction::Restore]
+                );
             }
         }
     }

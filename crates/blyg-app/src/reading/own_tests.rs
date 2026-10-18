@@ -9,7 +9,7 @@ use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, Kind, LocalId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use super::own::{ForkPost, LinkToPost, OWN, QuotePost, ReplyToPost};
+use super::own::{LinkToPost, OWN, QuotePost, ReplyToPost};
 use super::sources_vm::{Smart, Source};
 use super::{Load, View};
 use crate::app::MainView;
@@ -185,18 +185,22 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
 }
 
 #[gpui_kit::test]
-fn reading_actions_on_your_post_carry_your_origin(cx: &mut TestAppContext) {
+fn reading_actions_on_your_post_carry_your_origin_and_never_fork(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     open_row(&view, OWN_FRICTION, cx);
-    // The chips are the reading pane's own, Fork greyed on the current one.
-    let chips = view.read_with(cx, |v, _| v.reading_action_chips());
-    let ids: Vec<&str> = chips.iter().map(|c| c.id).collect();
-    for want in ["Quote", "Reply", "Fork", "Link post", "Open on web"] {
+    // The reading pane's chips, without AI reply or Fork (yours fork in ⌘Y).
+    let ids: Vec<&str> = view.read_with(cx, |v, _| {
+        v.reading_action_chips().iter().map(|c| c.id).collect()
+    });
+    for want in ["Quote", "Reply", "Link post", "Open on web"] {
         assert!(ids.contains(&want), "{ids:?}");
     }
-    assert!(!chips.iter().find(|c| c.id == "Fork").unwrap().enabled);
+    assert!(
+        !ids.contains(&"Fork") && !ids.contains(&"AI reply"),
+        "{ids:?}"
+    );
 
     // Reply · new stub: stub_of names your origin (a citation is absolute).
     let before = fake.items();
@@ -218,7 +222,7 @@ fn reading_actions_on_your_post_carry_your_origin(cx: &mut TestAppContext) {
             .starts_with(&format!("![[{OWN_FRICTION}]]"))
     );
 
-    // Fork this pin, from your 📌 v2: its text, forked_from naming you.
+    // On your 📌 v2: Quote this version, but no Fork this pin.
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
     settle(cx);
     open_row(&view, OWN_FRICTION, cx);
@@ -228,11 +232,43 @@ fn reading_actions_on_your_post_carry_your_origin(cx: &mut TestAppContext) {
         let o = v.reading.opened.as_ref().unwrap();
         assert_eq!(o.pinned_on_screen().map(|p| p.version), Some(2));
         assert!(matches!(o.pins.get(&2), Some(Load::Ready(p)) if p.content_md == FRICTION_V2));
+        let ids: Vec<&str> = v.reading_action_chips().iter().map(|c| c.id).collect();
+        assert!(ids.contains(&"Quote this version"), "{ids:?}");
+        assert!(!ids.contains(&"Fork this pin"), "{ids:?}");
     });
-    let before = fake.items();
+    let before = fake.items().len();
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Fork this pin", window, cx)
     });
+    settle(cx);
+    assert_eq!(fake.items().len(), before, "no fork from the reading pane");
+    no_own_sends(&fake);
+}
+
+/// Your own post forks in one place: ⌘Y, "Fork this pin" on a pin.
+#[gpui_kit::test]
+fn cmd_y_forks_your_pin_and_greys_fork_on_an_unpinned_version(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    open_post(&view, FRICTION, cx);
+    cx.dispatch_action(super::ShowVersions);
+    settle(cx);
+    let list = view.read_with(cx, |v, _| {
+        v.reading.own.as_ref().and_then(|o| o.list.ready().cloned())
+    });
+    let list = list.expect("the history loaded");
+    let acts = |n: u32| {
+        let ver = list.iter().find(|v| v.version == n).unwrap();
+        super::vm::own_actions(ver, 3).list()
+    };
+    assert!(acts(2).contains(&super::vm::OwnAction::Fork), "a pin forks");
+    let unpinned = acts(1);
+    assert!(unpinned.contains(&super::vm::OwnAction::ForkNeedsPin));
+    assert_eq!(
+        super::vm::OwnAction::ForkNeedsPin.tip(1),
+        "Pin one in ⌘Y to fork it"
+    );
+    let before = fake.items();
+    view.update_in(cx, |v, window, cx| v.fork_own_pin(2, window, cx));
     settle(cx);
     let made = new_items(&fake, &before);
     assert_eq!(made.len(), 1);
@@ -243,14 +279,18 @@ fn reading_actions_on_your_post_carry_your_origin(cx: &mut TestAppContext) {
     );
     assert_eq!(made[0].content_md, FRICTION_V2);
     assert_eq!(made[0].kind, Kind::Fragment, "a fork keeps the pin's kind");
-    no_own_sends(&fake);
+    assert!(
+        view.read_with(cx, |v, _| v.reading.own.is_none()),
+        "⌘Y closes"
+    );
 }
 
 #[gpui_kit::test]
-fn the_posts_view_replies_quotes_forks_and_links_your_post(cx: &mut TestAppContext) {
+fn the_posts_view_replies_quotes_and_links_your_post(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     open_post(&view, FRICTION, cx);
-    assert!(view.read_with(cx, |v, _| v.current_own_row().is_some()));
+    let own_row = view.read_with(cx, |v, _| v.current_own_row());
+    let own_row = own_row.expect("your published post is a row");
 
     // ⌥⌘R with the caret in the editor: a stub of your post.
     view.update_in(cx, |v, window, cx| {
@@ -270,16 +310,6 @@ fn the_posts_view_replies_quotes_forks_and_links_your_post(cx: &mut TestAppConte
     );
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
 
-    // Fork: the newest pin (📌 v2).
-    open_post(&view, FRICTION, cx);
-    let before = fake.items();
-    cx.dispatch_action(ForkPost);
-    settle(cx);
-    let made = new_items(&fake, &before);
-    let f = made[0].forked_from.as_ref().unwrap();
-    assert_eq!((f.origin.as_str(), f.version), (ME, 2));
-    assert_eq!(made[0].content_md, FRICTION_V2);
-
     // Link post · new fragment: [[id]], no stub_of.
     open_post(&view, FRICTION, cx);
     let before = fake.items();
@@ -290,26 +320,21 @@ fn the_posts_view_replies_quotes_forks_and_links_your_post(cx: &mut TestAppConte
     assert_eq!(made[0].kind, Kind::Fragment);
     assert!(made[0].stub_of.is_none() && made[0].forked_from.is_none());
 
-    // Quote into a thread: a new thread quoting it (the open post isn't a
-    // draft thread); the transclusion's origin is left out, as own.
+    // Quote into a thread: a new thread quoting it, labelled as the picker
+    // writes it (no heading: its title); the transclusion's origin is left
+    // out at publish, as own.
     open_post(&view, FRICTION, cx);
     let before = fake.items();
     cx.dispatch_action(QuotePost);
     settle(cx);
     let made = new_items(&fake, &before);
     assert_eq!(made[0].kind, Kind::Thread);
-    assert_eq!(made[0].content_md, format!("![[{OWN_FRICTION}]]\n\n"));
-
-    // A post with no pin: Fork says so, and makes nothing.
-    let gardens = LocalId("01J9K7T".into());
-    open_post(&view, &gardens.0, cx);
-    let before = fake.items().len();
-    cx.dispatch_action(ForkPost);
-    settle(cx);
-    assert_eq!(fake.items().len(), before);
-    assert!(view.read_with(cx, |v, _| {
-        v.toast.as_ref().is_some_and(|t| t.text.contains("pinned"))
-    }));
+    let label = super::vm::quote_label(&own_row);
+    assert!(label.starts_with("On friction"), "{label}");
+    assert_eq!(
+        made[0].content_md,
+        format!("![[{OWN_FRICTION} | {label}]]\n\n")
+    );
 
     // A draft: nothing to reply to yet.
     open_post(&view, DRAFT, cx);
@@ -332,17 +357,21 @@ fn the_keys_act_on_the_open_reading_post_too(cx: &mut TestAppContext) {
     settle(cx);
     let made = new_items(&fake, &before);
     assert_eq!(made[0].stub_of.as_ref().unwrap().id, RUE_TRUST);
-    // Fork on someone's current version says where the pins are.
-    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
-    settle(cx);
-    open_row(&view, RUE_TRUST, cx);
-    let before = fake.items().len();
-    cx.dispatch_action(ForkPost);
-    settle(cx);
-    assert_eq!(fake.items().len(), before);
-    assert!(view.read_with(cx, |v, _| {
-        v.toast.as_ref().is_some_and(|t| t.text.contains("pinned"))
-    }));
+}
+
+/// "Quote into a thread" writes the labelled form: a heading as itself.
+#[test]
+fn a_quote_is_labelled_with_the_heading_else_the_title() {
+    let mut r = crate::fake::reading_seed::seed(chrono::Utc::now()).reading[0].clone();
+    r.content_html = String::new();
+    r.content_md = "# A heading\n\nBody words.".into();
+    assert_eq!(super::vm::quote_label(&r), "A heading");
+    r.content_md = "Just a first line, no heading.\n\nMore.".into();
+    assert_eq!(super::vm::quote_label(&r), "Just a first line, no heading.");
+    assert_eq!(
+        super::vm::quote_directive(&r),
+        format!("![[{} | Just a first line, no heading.]]", r.remote_id)
+    );
 }
 
 /// A stub of your own post can choose a passage of it.

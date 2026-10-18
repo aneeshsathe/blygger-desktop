@@ -391,7 +391,6 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- own posts ---
                 MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
                 MenuItem::action("Quote into a Thread", app::reading::own::QuotePost),
-                MenuItem::action("Fork a Pin", app::reading::own::ForkPost),
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---

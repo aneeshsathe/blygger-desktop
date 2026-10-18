@@ -477,39 +477,24 @@ impl MainView {
         if s.pin != Pin::Unknown {
             return;
         }
-        // --- own posts --- your own pins come from your history.
-        let own_id = s.model.centre.own.then(|| s.model.centre.id.clone());
-        let held = s.model.centre.held.clone();
-        let own_local = own_id.and_then(|id| self.own_local_id(&id));
-        let Some(s) = self.lineage_mut() else { return };
-        let item = match (held, own_local) {
-            (Some(item), _) => Ok(item),
-            (None, Some(local)) => Err(local),
-            (None, None) => {
-                s.pin = Pin::None;
-                return;
-            }
+        let Some(item) = s.model.centre.held.clone() else {
+            s.pin = Pin::None;
+            return;
         };
         s.pin = Pin::Looking;
-        let centre_id = s.model.centre.id.clone();
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move {
-            match item {
-                Ok(item) => backend
-                    .remote_versions(&item.subscription_id, &item.remote_id)
-                    .map(|vs| vs.iter().filter(|v| v.pinned).map(|v| v.version).max()),
-                Err(local) => backend
-                    .versions(&local)
-                    .map(|vs| super::own::newest_pin(&vs)),
-            }
-        });
+        let (sub, rid) = (item.subscription_id.clone(), item.remote_id.clone());
+        let task = cx.background_spawn(async move { backend.remote_versions(&sub, &rid) });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 if let Some(s) = v.lineage_mut()
-                    && s.model.centre.id == centre_id
+                    && s.model.centre.id == item.remote_id
                 {
-                    s.pin = r.ok().flatten().map_or(Pin::None, Pin::Found);
+                    s.pin = r
+                        .ok()
+                        .and_then(|vs| vs.iter().filter(|v| v.pinned).map(|v| v.version).max())
+                        .map_or(Pin::None, Pin::Found);
                 }
                 cx.notify();
             });
@@ -535,19 +520,14 @@ impl MainView {
                 _ => Some("Not in your reading list. Open ↗ shows it in the reader first."),
             };
         }
-        // --- own posts --- a stub or a fork of your own post is yours to
-        // make (protocol 0.4: the reference names your origin; a fork
-        // descends from one of your pins).
+        // --- own posts --- a stub of your own post is yours to make (its
+        // stub_of names your origin); your own pins fork from ⌘Y.
         let blyg = blyg || c.own;
         match act {
-            Act::Fork if c.own && !super::own::FORK_OWN => Some("It's yours: edit it instead."),
+            Act::Fork if c.own => Some("Yours forks from ⌘Y: Fork this pin, on a pinned version."),
             Act::Fork if !blyg => Some("Feed posts can't be forked."),
             Act::Fork => match s.pin {
                 Pin::Unknown | Pin::Looking => Some("Looking for a pinned version…"),
-                Pin::None if c.own => Some(
-                    "There's no pinned version to fork. Pin one in ⌘Y first: forks descend \
-                     from pins.",
-                ),
                 Pin::None => Some(
                     "There's no pinned version to fork. The author pins the versions others \
                      may fork.",
@@ -572,7 +552,7 @@ impl MainView {
         self.close_reading_sheet(window, cx);
         // --- own posts --- your post acts as its reading row (Reply, Quote,
         // Fork, Link post and Open take the reading pane's own code).
-        if c.held.is_none() && c.own && !matches!(act, Act::Versions) {
+        if c.held.is_none() && c.own && !matches!(act, Act::Versions | Act::Fork) {
             c.held = self
                 .own_rows()
                 .into_iter()
@@ -606,7 +586,12 @@ impl MainView {
                     o.dropdown = true;
                 }
             }
-            (Act::Quote, None) => self.quote_into_thread(format!("![[{}]]", c.id), window, cx),
+            // --- quote labels --- a post not held here: no text to label.
+            (Act::Quote, None) => self.quote_into_thread(
+                blyg_core::grammar::directive_source(&c.id, None),
+                window,
+                cx,
+            ),
             (Act::Link, None) => match self
                 .backend
                 .create_draft(blyg_core::Kind::Fragment, &vm::link_post_body(&c.id))

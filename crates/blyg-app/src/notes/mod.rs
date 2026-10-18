@@ -180,6 +180,8 @@ pub struct PostRef {
     /// Its first line of text (quoted under the link when there's no `![[…]]`).
     pub first_line: String,
     pub url: Option<String>,
+    /// --- quote labels --- the label its `![[id | label]]` carries.
+    pub label: Option<String>,
 }
 
 /// The block for a post: `![[id]]` for a blyg post when the note may hold
@@ -187,7 +189,7 @@ pub struct PostRef {
 /// line as a `>` quote. RSS posts get the link.
 pub fn post_block(post: &PostRef, note_takes_quotes: bool) -> String {
     if let (Some(id), true) = (&post.blyg_id, note_takes_quotes) {
-        return format!("![[{id}]]");
+        return blyg_core::grammar::directive_source(id, post.label.as_deref());
     }
     let head = match &post.url {
         Some(u) => link(&post.title, u),

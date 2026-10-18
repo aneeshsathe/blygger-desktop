@@ -1154,5 +1154,6 @@ pub(crate) fn post_ref(r: &ReadingItem, blyg: bool) -> PostRef {
         title: post_title(r),
         first_line,
         url: crate::app::reading::vm::web_url(r),
+        label: blyg.then(|| crate::app::reading::vm::quote_label(r)),
     }
 }

@@ -468,7 +468,8 @@ impl MainView {
             "Fork this pin" => {
                 // Forking descends from pins only.
                 let Some(v) = pinned else { return };
-                if super::own::is_own_row(&item) && !super::own::FORK_OWN {
+                // --- own fork --- yours forks from ⌘Y only.
+                if super::own::is_own_row(&item) {
                     return;
                 }
                 let of = RemoteRef {
@@ -514,7 +515,8 @@ impl MainView {
         match action {
             "Quote" => {
                 let snippet = if blyg {
-                    blyg_core::grammar::directive_source(&item.remote_id, None)
+                    // --- quote labels --- `![[id | label]]`, as the picker writes.
+                    vm::quote_directive(&item)
                 } else {
                     // RSS items aren't transcludable: quote with a link.
                     let text = vm::title(&item.content_md);

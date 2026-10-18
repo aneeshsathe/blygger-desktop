@@ -431,8 +431,8 @@ impl MainView {
                                 .flex_wrap()
                                 .gap(px(6.))
                                 // --- follow-ups --- the chips come from
-                                // `OwnAction` only (no fork: forking is for
-                                // other people's pins).
+                                // `OwnAction` only (--- own fork --- "Fork
+                                // this pin" on a pin of yours is one of them).
                                 .children(a.list().into_iter().map(|act| {
                                     match act {
                                         vm::OwnAction::Pinned => div()
@@ -448,6 +448,28 @@ impl MainView {
                                                 this.ask_pin(window, cx)
                                             }))
                                             .into_any_element(),
+                                        // --- own fork ---
+                                        vm::OwnAction::Fork => {
+                                            let tip = act.tip(v);
+                                            self.chip("own-fork", act.label(v))
+                                                .tooltip(move |_, cx| {
+                                                    cx.new(|_| super::Tip(tip.clone())).into()
+                                                })
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.fork_own_pin(v, window, cx)
+                                                    },
+                                                ))
+                                                .into_any_element()
+                                        }
+                                        vm::OwnAction::ForkNeedsPin => {
+                                            let tip = act.tip(v);
+                                            self.chip_disabled("own-fork", act.label(v))
+                                                .tooltip(move |_, cx| {
+                                                    cx.new(|_| super::Tip(tip.clone())).into()
+                                                })
+                                                .into_any_element()
+                                        }
                                         vm::OwnAction::Restore => self
                                             .chip("own-restore", act.label(v))
                                             .on_click(cx.listener(|this, _, window, cx| {
