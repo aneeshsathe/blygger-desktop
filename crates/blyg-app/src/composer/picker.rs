@@ -279,32 +279,67 @@ pub fn filter_row(p: Palette, f: &Filters, subs: &[(String, String)], set: OnFil
     )
 }
 
-/// A row's first two lines: the label a link to it would show (what a pick
-/// writes, studio 0.47), then the excerpt after the title (it usually
-/// starts with it), unless that is all the label already says.
-pub fn row_text(r: &Pickable) -> (String, Option<String>) {
+/// What a result row says above its meta line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowText {
+    /// The post's title, what people scan for.
+    pub title: String,
+    /// A link's `links as “…”`: the label a pick writes, when it isn't the
+    /// title. A quote has none (its label is a note readers never see).
+    pub links_as: Option<String>,
+    /// The excerpt after the title (it usually starts with it), unless the
+    /// label already says it.
+    pub excerpt: Option<String>,
+}
+
+/// A row's text: title first, then what the link will show, then the
+/// excerpt.
+pub fn row_text(r: &Pickable, kind: PickKind) -> RowText {
+    let title = match r.title.trim() {
+        "" | "…" => r.label.clone(),
+        t => t.to_string(),
+    };
+    let links_as =
+        (kind == PickKind::Link && r.label != title).then(|| format!("links as {}", r.label));
     let rest = r
         .excerpt
         .strip_prefix(r.title.as_str())
         .unwrap_or(&r.excerpt)
         .trim();
-    let quoted = r.label.strip_prefix('“').and_then(|l| l.strip_suffix('”'));
-    let said = quoted.is_some_and(|q| {
-        let q = q.trim_end_matches('…');
-        r.excerpt.starts_with(q) && r.excerpt.chars().count() <= q.chars().count() + 1
-    });
-    let excerpt = (!rest.is_empty() && !said).then(|| rest.to_string());
-    (r.label.clone(), excerpt)
+    // The label's own words, quotes and ellipsis off.
+    let said = r
+        .label
+        .trim_start_matches('“')
+        .trim_end_matches('”')
+        .trim_end_matches('…');
+    let probe: String = rest.trim_end_matches('…').chars().take(24).collect();
+    let repeats = links_as.is_some() && said.contains(probe.as_str());
+    let excerpt = (!rest.is_empty() && !repeats).then(|| rest.to_string());
+    RowText {
+        title,
+        links_as,
+        excerpt,
+    }
 }
 
-/// The result rows: label, excerpt, and where it's from.
-pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyElement> {
+/// The result rows: title, what a link shows, excerpt, and where it's from.
+pub fn rows(
+    p: Palette,
+    kind: PickKind,
+    rows: &[Pickable],
+    sel: usize,
+    pick: OnPick,
+) -> Vec<AnyElement> {
     let now = chrono::Utc::now();
     rows.iter()
         .enumerate()
         .map(|(i, r)| {
             let pick = pick.clone();
-            let (label, excerpt) = row_text(r);
+            let RowText {
+                title,
+                links_as,
+                excerpt,
+            } = row_text(r, kind);
             div()
                 .id(("pick-row", i))
                 .px(px(8.))
@@ -314,7 +349,15 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
                 .when(i == sel, |d| d.bg(p.pick()))
                 .when(i != sel, |d| d.hover(|s| s.bg(p.hover())))
                 .on_click(move |_, window, cx| pick(i, window, cx))
-                .child(div().truncate().child(label))
+                .child(div().truncate().child(title))
+                .children(links_as.map(|l| {
+                    div()
+                        .text_size(px(11.5))
+                        .text_color(p.muted)
+                        .italic()
+                        .truncate()
+                        .child(l)
+                }))
                 .children(excerpt.map(|e| {
                     div()
                         .text_size(px(11.5))
@@ -411,39 +454,61 @@ mod tests {
     }
 
     #[test]
-    fn a_row_leads_with_its_label() {
-        let row = |label: &str, title: &str, excerpt: &str| {
-            row_text(&blyg_core::Pickable {
-                id: "x".into(),
-                title: title.into(),
-                excerpt: excerpt.into(),
-                label: label.into(),
-                source: PickSource::Mine,
-                kind: blyg_core::Kind::Fragment,
-                version: 1,
-                at: String::new(),
-                subscription_id: None,
-                source_title: None,
-            })
+    fn a_row_leads_with_its_title() {
+        let row = |kind: PickKind, label: &str, title: &str, excerpt: &str| {
+            let t = row_text(
+                &blyg_core::Pickable {
+                    id: "x".into(),
+                    title: title.into(),
+                    excerpt: excerpt.into(),
+                    label: label.into(),
+                    source: PickSource::Mine,
+                    kind: blyg_core::Kind::Fragment,
+                    version: 1,
+                    at: String::new(),
+                    subscription_id: None,
+                    source_title: None,
+                },
+                kind,
+            );
+            (t.title, t.links_as, t.excerpt)
         };
+        let s = |t: &str| Some(t.to_string());
+        // Labelled with its title: no "links as" line, then the body.
         assert_eq!(
             row(
+                PickKind::Link,
                 "Garden beds",
                 "Garden beds",
                 "Garden beds Raised, this year."
             ),
+            ("Garden beds".into(), None, s("Raised, this year."))
+        );
+        // A quoted excerpt as the label: the title first, then "links as",
+        // and the excerpt isn't said twice.
+        let label = "“Gardens, not streams A note on how I write in public: slowly…”";
+        let excerpt = "Gardens, not streams A note on how I write in public: slowly, in beds";
+        assert_eq!(
+            row(PickKind::Link, label, "Gardens, not streams", excerpt),
             (
-                "Garden beds".to_string(),
-                Some("Raised, this year.".to_string())
+                "Gardens, not streams".into(),
+                s(&format!("links as {label}")),
+                None
             )
         );
+        // A quote: title, then the excerpt (its label is only a note).
         assert_eq!(
-            row(
-                "“Raised beds, this year.”",
-                "Raised beds, this year.",
-                "Raised beds, this year."
-            ),
-            ("“Raised beds, this year.”".to_string(), None)
+            row(PickKind::Quote, label, "Gardens, not streams", excerpt),
+            (
+                "Gardens, not streams".into(),
+                None,
+                s("A note on how I write in public: slowly, in beds")
+            )
+        );
+        // No title of its own: the label stands in.
+        assert_eq!(
+            row(PickKind::Link, "a thread", "…", ""),
+            ("a thread".into(), None, None)
         );
     }
 

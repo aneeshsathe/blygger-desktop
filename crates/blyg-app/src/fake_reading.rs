@@ -14,28 +14,28 @@ pub const LIN: &str = "https://lin.blyg.example.com/";
 pub const OMAR: &str = "https://omar.example.com/";
 
 /// Remote ids of the sample posts (26-char, base32-looking, invented).
-pub const RUE_TRUST: &str = "01K2RUE0TRUST0000000000001";
-pub const ADA_FINISHED: &str = "01K2ADA0FINISHED0000000001";
-pub const LIN_GARDENS: &str = "01K2LIN0GARDENS00000000001";
-pub const OMAR_YEAR: &str = "01K2OMAR0YEAR0000000000001";
-pub const ADA_GONE: &str = "01K2ADA0GONE00000000000001";
-pub const RUE_KEPT: &str = "01K2RUE0KEPT00000000000001";
-pub const ADA_TIDES: &str = "01K2ADA0TIDES0000000000001";
+pub const RUE_TRUST: &str = "01k2rve0trvst0000000000001";
+pub const ADA_FINISHED: &str = "01k2ada0f1n1shed0000000001";
+pub const LIN_GARDENS: &str = "01k211n0gardens00000000001";
+pub const OMAR_YEAR: &str = "01k20mar0year0000000000001";
+pub const ADA_GONE: &str = "01k2ada0g0ne00000000000001";
+pub const RUE_KEPT: &str = "01k2rve0kept00000000000001";
+pub const ADA_TIDES: &str = "01k2ada0t1des0000000000001";
 // --- stream --- posts that stub, fork and quote each other (issue #1).
 /// Ada's reply to Lin's bench note: a stub thread that quotes it.
-pub const ADA_REPLY: &str = "01K2ADA0REPLY0000000000001";
+pub const ADA_REPLY: &str = "01k2ada0rep1y0000000000001";
 /// Lin's thread forked from Ada's pinned first draft of the tides post.
-pub const LIN_FORK: &str = "01K2LIN0FORK00000000000001";
+pub const LIN_FORK: &str = "01k211n0f0rk00000000000001";
 /// The sentence of Lin's fork that Lin's blyg marks as generated.
 pub const LIN_FORK_GENERATED: &str =
     "And yet we plan the day around them, as if the moon owed us something.";
 /// A fragment of Lin's with emphasis, code and a bare link.
-pub const LIN_BENCH: &str = "01K2LIN0BENCH0000000000001";
-pub const LIN_REREAD: &str = "01K2LIN0REREAD000000000001";
+pub const LIN_BENCH: &str = "01k211n0bench0000000000001";
+pub const LIN_REREAD: &str = "01k211n0reread000000000001";
 /// A blyg nobody here follows, and the post of Kit's that Lin's fork quotes:
 /// opening it fetches it "publicly" (`Backend::public_item`).
 pub const KIT: &str = "https://kit.blyg.example.net/";
-pub const KIT_TIDES: &str = "01K2KIT0T1DES0000000000001";
+pub const KIT_TIDES: &str = "01k2k1t0t1des0000000000001";
 // --- reader folders ---
 pub const FOLDER_FRIENDS: &str = "fld-friends";
 pub const FOLDER_GARDENS: &str = "fld-gardens";
@@ -45,7 +45,7 @@ pub const FOLDER_GARDENS: &str = "fld-gardens";
 /// URL. Its `content_md` keeps the directive, as the protocol does.
 pub const LIN_GARDENS_HTML: &str = "<p>Gardens, not streams</p>
 <p>A note on how I write in public: slowly, in beds that get turned over each season.</p>
-<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01K2ADA0TIDES0000000000001\" data-blyg-version=\"2\" data-blyg-origin=\"https://ada.blyg.example.com/\">
+<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01k2ada0t1des0000000000001\" data-blyg-version=\"2\" data-blyg-origin=\"https://ada.blyg.example.com/\">
 <p>Tide tables are a kind of promise the sea never signed.</p>
 </blockquote>
 <p><img src=\"media/raised-beds.jpg\" alt=\"Raised beds in October\"></p>
@@ -234,7 +234,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
             Some(2),
             now - d(1),
             "Lin",
-            "Gardens, not streams\n\nA note on how I write in public: slowly, in beds that get turned over each season.\n\n![[01K2ADA0TIDES0000000000001]]\n\n![Raised beds in October](media/raised-beds.jpg)\n\n## Pruning\n\nCutting back is how a garden keeps its shape.",
+            "Gardens, not streams\n\nA note on how I write in public: slowly, in beds that get turned over each season.\n\n![[01k2ada0t1des0000000000001]]\n\n![Raised beds in October](media/raised-beds.jpg)\n\n## Pruning\n\nCutting back is how a garden keeps its shape.",
         ),
         post(
             &ada,
@@ -278,7 +278,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         None,
         now - h(2),
         "Ada",
-        "On turning beds over\n\nLin's bench note made me think about how often I tear a post down to the studs.\n\n![[01K2LIN0BENCH0000000000001]]\n\nMy rule of thumb: *keep the first line*, rewrite the rest, and say what changed in the version note. A few things I have learned:\n\n- Short notes age better than long ones.\n- A pin is a promise; an edit is a conversation.\n- Links rot, quotes don't.\n\nMore on this [in the protocol notes](https://blyg.example.org/notes).",
+        "On turning beds over\n\nLin's bench note made me think about how often I tear a post down to the studs.\n\n![[01k211n0bench0000000000001]]\n\nMy rule of thumb: *keep the first line*, rewrite the rest, and say what changed in the version note. A few things I have learned:\n\n- Short notes age better than long ones.\n- A pin is a promise; an edit is a conversation.\n- Links rot, quotes don't.\n\nMore on this [in the protocol notes](https://blyg.example.org/notes).",
     );
     reply.stub_of = Some(StubOf {
         origin: Some(LIN.into()),
@@ -305,10 +305,10 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         Some(1),
         now - h(4),
         "Lin",
-        "Worth rereading\n\n![[01K2RUE0W0RN00000000000001]]\n\nIt sits well next to my [[01K2LIN0BENCH0000000000001]] note.",
+        "Worth rereading\n\n![[01k2rve0w0rn00000000000001]]\n\nIt sits well next to my [[01k211n0bench0000000000001]] note.",
     );
     reread.transclusions = vec![TransclusionRef {
-        id: "01K2RUE0W0RN00000000000001".into(),
+        id: "01k2rve0w0rn00000000000001".into(),
         version: Some(2),
         origin: Some(RUE.into()),
         cited: Some(blyg_core::Cited {
@@ -329,7 +329,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         None,
         now - d(2),
         "Lin",
-        "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01K2KIT0T1DES0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
+        "Tides, revised\n\nForked from Ada's pinned first draft. Kit put it best:\n\n![[01k2k1t0t1des0000000000001]]\n\n> A promise the sea never signed.\n\nAnd yet we plan the day around them, as if the moon owed us something.\n\n```\nhigh  06:12  4.1m\nlow   12:30  0.6m\n```",
     );
     // An origin serves its HTML baked: the directive's line is gone and the
     // attached excerpt is the quote.
