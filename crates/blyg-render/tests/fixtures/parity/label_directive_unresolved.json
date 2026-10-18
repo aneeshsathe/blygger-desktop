@@ -1,0 +1,21 @@
+{
+  "name": "label_directive_unresolved",
+  "kind": "thread",
+  "md": "![[0zzzzzzzzzzzzzzzzzzzzzzzzz | missing]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v4y | a draft]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: item is a draft, not published</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[0zzzzzzzzzzzzzzzzzzzzzzzzz | missing]]",
+      "reason": "unknown item"
+    },
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1v4y | a draft]]",
+      "reason": "item is a draft, not published"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "label_directive_fragment",
+  "kind": "fragment",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w | note]]\n\nText.",
+  "html": "<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w | note]]</p>\n<p>Text.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

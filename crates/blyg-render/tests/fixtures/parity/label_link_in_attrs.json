@@ -1,0 +1,12 @@
+{
+  "name": "label_link_in_attrs",
+  "kind": "fragment",
+  "md": "![alt [[01j9zq3k4m5n6p7q8r9s0t1v2w | an alt]]](/x.png) and [text [[01j9zq3k4m5n6p7q8r9s0t1v2w | inner]]](https://x.test/) and https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w | two words]] and <https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]> and https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]",
+  "html": "<p><img src=\"/x.png\" alt=\"alt [[01j9zq3k4m5n6p7q8r9s0t1v2w | an alt]]\"> and <a href=\"https://x.test/\">text inner</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%20%7C%20two%20words%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w | two words]]</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7Ctight%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7Ctight%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

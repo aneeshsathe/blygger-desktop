@@ -1,0 +1,12 @@
+{
+  "name": "label_link_markup",
+  "kind": "fragment",
+  "md": "[[01j9zq3k4m5n6p7q8r9s0t1v2w | *not emphasis*]] and **[[01j9zq3k4m5n6p7q8r9s0t1v2w | bold label]]** and [[01j9zq3k4m5n6p7q8r9s0t1v2w | [a](https://x.test/)]] and [[01j9zq3k4m5n6p7q8r9s0t1v2w | `tick`]]",
+  "html": "<p><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">*not emphasis*</a> and <strong><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">bold label</a></strong> and <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">[a](https://x.test/)</a> and <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">`tick`</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

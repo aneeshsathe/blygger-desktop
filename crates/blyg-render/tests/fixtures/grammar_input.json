@@ -1,0 +1,90 @@
+{
+ "comment": "Bracket grammar vectors (studio grammar.ts, link-label.ts; labels.test.ts and tk-generate.test.ts cases plus edges). gen_parity.mjs runs them through the studio and writes parity/_grammar.json.",
+ "id": "7c9wk2n4h6q1x8v0z3m5rjy2ke",
+ "texts": [
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | the opening fragment]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke|tight]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke   |   padded   ]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | either | or]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a ] single bracket]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [nested] brackets]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke |   ]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | cut]] here]]",
+  "see [[7c9wk2n4h6q1x8v0z3m5rjy2ke | one]] and [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] too",
+  "[[a label | 7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+  "[[c9wk2n4h6q1x8v0z3m5rjy2ke | short id]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2kex]]",
+  "[[just words]]",
+  "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | a quote]]",
+  "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | the source]]",
+  "  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]  ",
+  "text ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | inline]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ends ] ] early]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke ]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke\t|\ttabbed\t]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | two\nlines]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a]]]",
+  "[[[7c9wk2n4h6q1x8v0z3m5rjy2ke | triple]]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | see [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] inside]]",
+  "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | a]] b]]",
+  " ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | nbsp]] ",
+  "![[7c9wk2n4h6q1x8v0z3m5rjy2ke@v2 | pinned]]",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | café — “quoted”]]",
+  "[[7C9WK2N4H6Q1X8V0Z3M5RJY2KE | caps]]",
+  "![[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+  "!![[7c9wk2n4h6q1x8v0z3m5rjy2ke | double bang]]",
+  "It is worth reading in full ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+  "As argued in [[7c9wk2n4h6q1x8v0z3m5rjy2ke]], the order matters.",
+  "As argued in [[7c9wk2n4h6q1x8v0z3m5rjy2ke | the earlier post]], yes.",
+  "see (![[7c9wk2n4h6q1x8v0z3m5rjy2ke | that]]) here",
+  "No grammar here at all.",
+  "Above.\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nBelow.",
+  "Above.\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke | kept as a quote]]\nBelow.",
+  "Two  spaces  stay [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] here  and\tthere",
+  "End with a link [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] .",
+  "( [[7c9wk2n4h6q1x8v0z3m5rjy2ke]] ) and [[7c9wk2n4h6q1x8v0z3m5rjy2ke]]!",
+  "tab\t[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\t, then",
+  "Only [[7c9wk2n4h6q1x8v0z3m5rjy2ke]]   ",
+  "`[[7c9wk2n4h6q1x8v0z3m5rjy2ke | in code]]` is stripped too",
+  "[[7c9wk2n4h6q1x8v0z3m5rjy2ke]]",
+  "  [[7c9wk2n4h6q1x8v0z3m5rjy2ke | indented label]]",
+  "a [[7c9wk2n4h6q1x8v0z3m5rjy2ke|x]][[7c9wk2n4h6q1x8v0z3m5rjy2ke|y]] b"
+ ],
+ "labels": [
+  "A title",
+  "  ",
+  "",
+  "two\nlines",
+  "ends ]] early",
+  "a]]]b",
+  "  pad\t\tme  ",
+  "[[nested]]",
+  " nbsp ",
+  "line\r\nbreak",
+  "pipe | inside"
+ ],
+ "html": [
+  {
+   "content_html": "<h1>Labeltoken heading</h1>\n<p>Body text.</p>\n",
+   "kind": "fragment"
+  },
+  {
+   "content_html": "<p>labeltoken with no heading at all</p>\n",
+   "kind": "fragment"
+  },
+  {
+   "content_html": "",
+   "kind": "thread"
+  },
+  {
+   "content_html": "",
+   "kind": "fragment"
+  },
+  {
+   "content_html": "<h2></h2>\n",
+   "kind": "thread"
+  }
+ ]
+}

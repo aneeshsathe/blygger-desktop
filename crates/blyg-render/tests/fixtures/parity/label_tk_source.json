@@ -1,0 +1,30 @@
+{
+  "name": "label_tk_source",
+  "kind": "thread",
+  "md": "[TK]summarise ![[01j9zq3k4m5n6p7q8r9s0t1v2w | their post]] briefly[=]Done.[/TK]\n\n[TK]compare ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] and ![[02abcdefghjkmnpqrstvwxyz01 | theirs]][/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>Done.</p>\n</div>\n<div class=\"blyg-tk-gen\"><p>⚠ ungenerated — compare ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] and ![[02abcdefghjkmnpqrstvwxyz01 | theirs]]</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "summarise ![[01j9zq3k4m5n6p7q8r9s0t1v2w | their post]] briefly",
+        "generated": true,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w"
+        ]
+      },
+      {
+        "instruction": "compare ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] and ![[02abcdefghjkmnpqrstvwxyz01 | theirs]]",
+        "generated": false,
+        "block": true,
+        "source_ids": [
+          "01j9zq3k4m5n6p7q8r9s0t1v2w",
+          "02abcdefghjkmnpqrstvwxyz01"
+        ]
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
