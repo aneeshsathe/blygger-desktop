@@ -69,7 +69,9 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   posts stay listed as withdrawn. You can't undo this."), then calls
   `withdraw(id, note)`. Withdraw has no key on purpose, since it's permanent.
   (`⌘⌫` stays delete-to-line-start in the editor.)
-- **Discard changes** (`⌥⌘Z`, Post › Discard Changes…, the toolbar's Discard,
+- **Discard changes** (`⌥⌘Z` on macOS, and no key on Windows, where Ctrl+Alt+Z
+  is AltGr+Z and types a letter on some layouts; `keymap::WINDOWS_KEYLESS`.
+  Post › Discard Changes…, the toolbar's Discard,
   and "Discard changes…" on the current version in ⌘Y): a published post with
   unpublished edits goes back to the version it has published. A sheet asks
   first ("Discard unpublished changes? “…” The editor goes back to vN as

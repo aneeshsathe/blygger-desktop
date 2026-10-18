@@ -92,7 +92,7 @@ crates with C code (the bundled SQLite) need a Windows C toolchain such as
 | Area | Windows |
 |---|---|
 | Preview and editor | A WebView2 surface through `wry` (`studio/webview.rs`), with the macOS page script, IPC and navigation guard. GPUI's topmost DirectComposition layer is turned off at startup (`GPUI_DISABLE_DIRECT_COMPOSITION`), because it would cover the child webview. Creating a WebView2 runs a nested message loop, which crashed the app when GPUI asked for one mid-frame, so `DeferredSurface` builds it from a thread timer in GPUI's top-level loop and replays what it was asked meanwhile. |
-| Keys | `keymap::platform_keys` respells `cmd` as `ctrl` (and ⌘Y as Ctrl+Shift+Y); `glyphs` and `hotkey_glyphs` write `Ctrl+Shift+X`; the clash tests use a Windows list of system shortcuts. |
+| Keys | `keymap::platform_keys` respells `cmd` as `ctrl` (and ⌘Y as Ctrl+Shift+Y), and `WINDOWS_KEYLESS` leaves Discard changes without a key (⌥⌘Z would be Ctrl+Alt+Z, which is AltGr+Z); `glyphs` and `hotkey_glyphs` write `Ctrl+Shift+X`; the clash tests use a Windows list of system shortcuts. |
 | Window and menu | The native title bar, and `windows_menu.rs`: a Menu button that lists `cx.get_menus()`. The toolbar strip isn't a window drag area on Windows, because GPUI answers `HTCAPTION` for it and clicks on the buttons drawn over it would move the window. |
 | Secrets | `KeychainTokenStore` is Windows Credential Manager (`keyring`'s `windows-native`), and splits secrets longer than one entry holds (1,280 UTF-16 units, less than a ChatGPT sign-in) across `account#1`, `account#2`… (`config/tokens.rs`). |
 | Paths | `%USERPROFILE%` for `~`, `%APPDATA%\Blygger` for the second config file and `%LOCALAPPDATA%\Blygger` for app state (`blyg-core/src/config/paths.rs`). |

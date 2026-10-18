@@ -329,7 +329,12 @@ fn discard_changes_asks_then_goes_back_to_the_published_version(cx: &mut TestApp
     let it = fake.item(&id(PUBLIC)).unwrap();
     assert!(it.dirty, "an unpublished edit");
     assert!(it.content_md.ends_with("Then the rain came."));
-    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-z"));
+    if crate::keymap::keyless_here("DiscardChanges") {
+        // Windows: no key (Ctrl+Alt+Z is AltGr+Z); the menu dispatches it.
+        cx.dispatch_action(super::DiscardChanges);
+    } else {
+        cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-z"));
+    }
     cx.run_until_parked();
     view.read_with(cx, |v, _| match &v.sheet {
         Some(Sheet::DiscardChanges {
@@ -422,8 +427,15 @@ fn discard_changes_says_why_not(cx: &mut TestAppContext) {
     cx.run_until_parked();
     let b = button(&view, cx);
     assert_eq!(b.reason, None);
-    let key = crate::keymap::glyphs(&crate::keymap::keys("alt-cmd-z"));
-    assert_eq!(b.tooltip, format!("Discard unpublished changes…  {key}"));
+    if crate::keymap::keyless_here("DiscardChanges") {
+        assert_eq!(
+            b.tooltip, "Discard unpublished changes…",
+            "no key on Windows"
+        );
+    } else {
+        let key = crate::keymap::glyphs(&crate::keymap::keys("alt-cmd-z"));
+        assert_eq!(b.tooltip, format!("Discard unpublished changes…  {key}"));
+    }
     // Offline: the published version is on the blyg.
     fake.set_offline(true);
     cx.run_until_parked();

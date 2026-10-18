@@ -42,7 +42,7 @@
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
-| ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) | Post › Discard Changes… |
+| ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |
 | ⌘I | Profile of this post's author (yours on your own post); again closes it | Blyg › Profile |
 | ⇧⌘O | Open a profile: paste a blyg, a post or a feed | Blyg › Open Profile… |
 | ⌥⌘→ | Tutorial: next step |  |

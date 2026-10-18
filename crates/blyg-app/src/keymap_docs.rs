@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use crate::keymap::{Scope, mac_glyphs, mac_table};
+use crate::keymap::{Scope, WINDOWS_KEYLESS, mac_glyphs, mac_table};
 
 fn doc_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../site/src/generated/keybindings.md")
@@ -60,10 +60,16 @@ fn render() -> String {
             "\n### {heading}\n\n| Key | What it does | Menu |\n|---|---|---|\n"
         ));
         for k in keyed {
+            // `keymap::WINDOWS_KEYLESS`: bound on macOS only.
+            let label = if WINDOWS_KEYLESS.contains(&k.action) {
+                format!("{} (no key on Windows, where it would be AltGr+Z)", k.label)
+            } else {
+                k.label.to_string()
+            };
             out.push_str(&format!(
                 "| {} | {} | {} |\n",
                 cell(&key(k.key)),
-                cell(k.label),
+                cell(&label),
                 cell(k.menu.unwrap_or(""))
             ));
         }
