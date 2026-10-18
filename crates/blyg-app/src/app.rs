@@ -2425,6 +2425,9 @@ impl MainView {
                     .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
+                    // Unpublished edits in their own colour (`color-edited`)
+                    // and slot (`marker.edited`, Fortress's Δ), so they don't
+                    // read as unread (`marker.new`, the accent dot).
                     .when_some(vm::edits_tip(item), |d, tip| {
                         let tip = format!("Unpublished edits: {tip}");
                         d.child(
@@ -2434,15 +2437,15 @@ impl MainView {
                                 .child(
                                     crate::ornament::marker(
                                         &self.theme,
-                                        blyg_core::config::theme::Slot::MarkerNew,
-                                        p.accent,
+                                        blyg_core::config::theme::Slot::MarkerEdited,
+                                        p.edited,
                                         chrome,
                                     )
                                     .unwrap_or_else(|| {
                                         div()
                                             .size(px(6.))
                                             .rounded_full()
-                                            .bg(p.accent)
+                                            .bg(p.edited)
                                             .into_any_element()
                                     }),
                                 ),
@@ -2451,21 +2454,38 @@ impl MainView {
                     .child(vm::kind_label(item.kind))
                     .child(
                         div()
+                            .id(("row-pill", ix))
                             .px(px(6.))
                             .rounded(px(self.theme.chip_radius))
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
-                            .when(pill_pub, |d| d.text_color(p.accent))
+                            .when(pill_pub, |d| {
+                                let tip = vm::published_tip(item);
+                                d.text_color(p.accent).tooltip(move |_, cx| {
+                                    cx.new(|_| reading::Tip(tip.clone())).into()
+                                })
+                            })
                             .child(pill_text),
                     )
                     .when(pill_pub, |d| {
-                        d.children(crate::ornament::marker(
-                            &self.theme,
-                            blyg_core::config::theme::Slot::MarkerPinned,
-                            p.accent,
-                            chrome,
-                        ))
+                        let tip = vm::published_tip(item);
+                        d.children(
+                            crate::ornament::marker(
+                                &self.theme,
+                                blyg_core::config::theme::Slot::MarkerPinned,
+                                p.accent,
+                                chrome,
+                            )
+                            .map(|m| {
+                                div()
+                                    .id(("row-published", ix))
+                                    .tooltip(move |_, cx| {
+                                        cx.new(|_| reading::Tip(tip.clone())).into()
+                                    })
+                                    .child(m)
+                            }),
+                        )
                     })
                     .child(vm::relative_time(&item.updated, self.now)),
             )

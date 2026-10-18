@@ -50,7 +50,7 @@ for one run without saving it.
 | `cutaway` | woody | a meadow-green title bar; a soil cross-section behind the posts list (a grass band, then earth strata with pebbles) with root hairlines along its top; the selected post is a lit burrow room with a warm glow; arched quote boxes; a root line under the editor |
 | `kumiko` | woody | an asanoha lattice in the title bar; hinoki woodgrain on the posts list; a shoji grid in the editor's margins; hairline-boxed rows and quotes; a gold kintsugi crack under the editor; Source Serif 4 for writing |
 | `shola` | woody | soft moss cushions on a forest-green posts list, with mist at its foot; moss-cushion rows and quotes; laterite pitting in the editor's margins; a laterite status bar |
-| `fortress` | woody | a dark stone floor; `☼` on published posts and `*` on unpublished edits; a `≈≈≈` water line under the editor; box-drawing corners `╔ ╝` on quotes; the selected post's depth as a z-level in the status bar; Menlo for the interface, Literata for writing |
+| `fortress` | woody | a dark stone floor; `☼` on published posts, `Δ` on unpublished edits and `*` on unread posts; a `≈≈≈` water line under the editor; box-drawing corners `╔ ╝` on quotes; the selected post's depth as a z-level in the status bar; Menlo for the interface, Literata for writing |
 | `portolan` | oceanic | a chart's paper; compass roses with rhumb lines and depth soundings in the editor's margins; double-ruled quotes and sheets; ET Book throughout |
 | `aizome` | oceanic | an indigo-dyed title bar and status bar; seigaiha waves on the posts list and under the editor; sashiko-stitched quotes |
 | `saltspace` | oceanic | corrosive greys, never pure black or white; a horizon line through the title bar; salt grain on the posts list and the editor's margins; tide lines under the editor; squared quotes with a buoy-orange top edge |
@@ -149,7 +149,7 @@ Colours are `#rgb`, `#rrggbb` or `#rrggbbaa`.
 | `color-bar` | the title bar | (base) |
 | `color-warn`, `color-over`, `color-green`, `color-amber`, `color-grey` | the length counter and the sync dot | (base) |
 | `color-shadow` | sheet and toast shadows | (base) |
-| `color-edited`, `color-edited-bg` | the "edited" badge in the reading list | (base) |
+| `color-edited`, `color-edited-bg` | the "edited" badge in the reading list (and `color-edited` the unpublished-edits mark in the posts list) | (base) |
 | `color-notice`, `color-notice-bg` | notices in the reader (a withdrawn post) | (base) |
 | `color-edited-rule` | the rule beside an author's edit notes | `edited` |
 | `color-editor` | the editor's paper | `bg` |
@@ -193,7 +193,8 @@ spaces both separate arguments, and double quotes keep a glyph together.
 | `divider` | the band under the editor and between posts in the stream |
 | `status.ornament` | a mark at the right of the status bar |
 | `marker.pinned` | the mark after a published post's version, and beside a pinned version in ⌘Y |
-| `marker.new` | the mark on a post with unpublished edits, an unread post in the stream, an unread subscription and a new mention |
+| `marker.new` | the mark on an unread post in the stream, an unread subscription and a new mention |
+| `marker.edited` | the mark on a post with unpublished edits in the posts list (unset: a dot in `color-edited`); its tooltip says how to publish or discard them |
 | `texture` | a faint texture on the posts list, the Reader's subscriptions column and the editor's margins |
 | `scroll.edge` | a fade at the bottom of the posts list and the Reader's subscriptions column |
 | `empty.art` | a small picture above an empty posts list, and above the reading side's empty states (nothing to read, all read, no subscriptions, no mentions) |
@@ -233,8 +234,8 @@ are clipped to its margins, and the divider takes its own row under the text.
 | `harbour-glow` | editor.frame | 2 | the editor as lit paper in a sea (sea, glow) |
 | `tide-sparkline` | status.ornament | 1 to 2 | your writing over the last two weeks (line, buoy) |
 | `z-level` | status.ornament | 1 | the selected post's depth |
-| `glyph` | marker.pinned, marker.new, empty.art | 0 to 1 | one glyph: `glyph(#e0a33a, "☼")` |
-| `dot` | marker.pinned, marker.new | 0 to 1 | a small dot |
+| `glyph` | marker.pinned, marker.new, marker.edited, empty.art | 0 to 1 | one glyph: `glyph(#e0a33a, "☼")` |
+| `dot` | marker.pinned, marker.new, marker.edited | 0 to 1 | a small dot |
 | `arch` | quote.frame | 1 | an arched room |
 | `cushion` | row.selected, quote.frame | 1 | a moss-cushion shape |
 | `outline` | row.selected, quote.frame | 1 | a hairline box |

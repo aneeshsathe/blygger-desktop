@@ -326,13 +326,14 @@ pub enum Slot {
     StatusOrnament,
     MarkerPinned,
     MarkerNew,
+    MarkerEdited,
     Texture,
     ScrollEdge,
     EmptyArt,
 }
 
 impl Slot {
-    pub const ALL: [Slot; 13] = [
+    pub const ALL: [Slot; 14] = [
         Slot::TitlebarBand,
         Slot::SidebarGround,
         Slot::SidebarTop,
@@ -343,6 +344,7 @@ impl Slot {
         Slot::StatusOrnament,
         Slot::MarkerPinned,
         Slot::MarkerNew,
+        Slot::MarkerEdited,
         Slot::Texture,
         Slot::ScrollEdge,
         Slot::EmptyArt,
@@ -360,6 +362,7 @@ impl Slot {
             Slot::StatusOrnament => "status.ornament",
             Slot::MarkerPinned => "marker.pinned",
             Slot::MarkerNew => "marker.new",
+            Slot::MarkerEdited => "marker.edited",
             Slot::Texture => "texture",
             Slot::ScrollEdge => "scroll.edge",
             Slot::EmptyArt => "empty.art",
@@ -377,7 +380,10 @@ impl Slot {
             Slot::Divider => "The rule under the editor and between posts in the stream.",
             Slot::StatusOrnament => "A mark at the right of the status bar.",
             Slot::MarkerPinned => "The mark on a published post in the list.",
-            Slot::MarkerNew => "The mark on a post with unpublished edits.",
+            Slot::MarkerNew => {
+                "The mark on something new: an unread post, subscription or mention."
+            }
+            Slot::MarkerEdited => "The mark on a post with unpublished edits in the posts list.",
             Slot::Texture => "A faint texture on the sidebar and the editor's margins.",
             Slot::ScrollEdge => "A fade at the bottom of the posts list.",
             Slot::EmptyArt => "A small picture above an empty list.",
@@ -681,7 +687,7 @@ const KINDS: &[KindSpec] = &[
         ..k(
             Kind::Glyph,
             "glyph",
-            &[S::MarkerPinned, S::MarkerNew, S::EmptyArt],
+            &[S::MarkerPinned, S::MarkerNew, S::MarkerEdited, S::EmptyArt],
             (0, 1),
             "One glyph, e.g. glyph(\"☼\").",
         )
@@ -689,7 +695,7 @@ const KINDS: &[KindSpec] = &[
     k(
         Kind::Dot,
         "dot",
-        &[S::MarkerPinned, S::MarkerNew],
+        &[S::MarkerPinned, S::MarkerNew, S::MarkerEdited],
         (0, 1),
         "A small dot.",
     ),
@@ -1605,6 +1611,20 @@ mod tests {
         assert_eq!(fam("konkan"), Family::Oceanic);
         assert!(r.resolve("fortress").unwrap().is_dark());
         assert_eq!(r.resolve("konkan").unwrap().name, "Konkan harbour");
+    }
+
+    /// Unpublished edits have their own mark, so Fortress's Δ (in
+    /// `color-edited`: no colour of its own) never reads as unread's `*`.
+    #[test]
+    fn fortress_marks_edits_apart_from_unread() {
+        let r = Registry::builtin();
+        let f = r.resolve("fortress").unwrap();
+        let edited = f.slot(Slot::MarkerEdited);
+        assert_eq!(edited.kind, Kind::Glyph);
+        assert_eq!(edited.text.as_deref(), Some("Δ"));
+        assert!(edited.colors.is_empty(), "drawn in color-edited");
+        assert_eq!(f.slot(Slot::MarkerNew).text.as_deref(), Some("*"));
+        assert_eq!(Slot::from_key("marker.edited"), Some(Slot::MarkerEdited));
     }
 
     #[test]

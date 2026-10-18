@@ -235,6 +235,15 @@ pub fn edits_tip(item: &Item) -> Option<String> {
     })
 }
 
+/// The published marks in a Posts row (the `vN` pill and `marker.pinned`,
+/// Fortress's ☼): "Published: v2 is public on your blyg".
+pub fn published_tip(item: &Item) -> String {
+    format!("Published: v{} is public on your blyg", item.version)
+}
+
+/// `marker.pinned` beside a pinned version in ⌘Y.
+pub const PINNED_TIP: &str = "Pinned: this version stays public, for others to quote or fork";
+
 pub fn version_label(item: &Item) -> String {
     match item.status {
         Status::Public => {
