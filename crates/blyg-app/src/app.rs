@@ -2776,7 +2776,7 @@ impl MainView {
     }
 
     /// --- themes --- What the status ornaments show: posts touched per day
-    /// over the last two weeks, and the selected post's depth in the list.
+    /// over the last two weeks (the tide and block sparklines).
     fn status_data(&self) -> crate::ornament::StatusData {
         if !self
             .theme
@@ -2784,7 +2784,6 @@ impl MainView {
         {
             return crate::ornament::StatusData {
                 activity: Vec::new(),
-                depth: None,
             };
         }
         let mut activity = vec![0u32; 14];
@@ -2796,14 +2795,7 @@ impl MainView {
                 }
             }
         }
-        let depth = self.list.selected().and_then(|id| {
-            self.list
-                .results()
-                .iter()
-                .position(|i| &i.local_id == id)
-                .map(|i| i + 1)
-        });
-        crate::ornament::StatusData { activity, depth }
+        crate::ornament::StatusData { activity }
     }
 
     fn render_toast(&self) -> Option<AnyElement> {

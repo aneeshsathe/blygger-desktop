@@ -427,7 +427,7 @@ pub enum Kind {
     Contours,
     HarbourGlow,
     TideSparkline,
-    ZLevel,
+    BlockSparkline,
     Glyph,
     Dot,
     Arch,
@@ -676,11 +676,11 @@ const KINDS: &[KindSpec] = &[
         "A tide sparkline of your writing over the last two weeks.",
     ),
     k(
-        Kind::ZLevel,
-        "z-level",
+        Kind::BlockSparkline,
+        "block-sparkline",
         &[S::StatusOrnament],
         (1, 1),
-        "The selected post's depth, as a z-level.",
+        "Your posts over the last two weeks in block characters ▁▂▃▅▇█.",
     ),
     KindSpec {
         text: true,
@@ -933,6 +933,19 @@ fn tokens(s: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Ornaments that were renamed or replaced: (old name, its successor). A
+/// theme naming the old one still loads, with the successor and a warning.
+/// `z-level` (the selected post's depth) became `block-sparkline` in 0.13.
+const RENAMED_KINDS: &[(&str, &str)] = &[("z-level", "block-sparkline")];
+
+/// The renamed ornament a slot value names, if it names one.
+fn renamed_kind(name: &str) -> Option<(&'static str, &'static str)> {
+    RENAMED_KINDS
+        .iter()
+        .copied()
+        .find(|(old, _)| old.eq_ignore_ascii_case(name.trim()))
+}
+
 /// Parse a slot value such as `roots(#d9b98a, opacity=0.55)` for `slot`.
 /// `dir` resolves a relative `svg(…)` path.
 pub fn parse_ornament(value: &str, slot: Slot, dir: &Path) -> Result<Ornament, String> {
@@ -947,6 +960,7 @@ pub fn parse_ornament(value: &str, slot: Slot, dir: &Path) -> Result<Ornament, S
         None => (v, ""),
     };
     let name = name.to_ascii_lowercase();
+    let name = renamed_kind(&name).map_or(name, |(_, new)| new.to_string());
     let spec = kind_spec(&name).ok_or_else(|| {
         let known: Vec<&str> = KINDS
             .iter()
@@ -1252,7 +1266,17 @@ pub fn parse_theme(
             KeyKind::Border => Border::parse(&raw.to_ascii_lowercase())
                 .map(Value::Border)
                 .ok_or_else(|| format!("`{raw}` must be solid, dashed, double or none")),
-            KeyKind::Slot(slot) => parse_ornament(raw, slot, dir).map(Value::Ornament),
+            KeyKind::Slot(slot) => {
+                let name = raw.split('(').next().unwrap_or(raw);
+                if let Some((old, new)) = renamed_kind(name) {
+                    diags.push(diag(
+                        e.line,
+                        Severity::Warning,
+                        format!("{key}: `{old}` is now `{new}`; using `{new}`"),
+                    ));
+                }
+                parse_ornament(raw, slot, dir).map(Value::Ornament)
+            }
         };
         match v {
             Ok(v) => {
@@ -1705,6 +1729,30 @@ mod tests {
         let (_, d) = user("inherit = nope\n");
         assert_eq!(d.len(), 1);
         assert!(d[0].message.contains("isn't a built-in theme"), "{d:?}");
+    }
+
+    /// A user theme written for Fortress's old `z-level` still loads: the
+    /// block sparkline takes its place, with a warning, not an error.
+    #[test]
+    fn a_theme_naming_z_level_gets_the_block_sparkline() {
+        let (r, d) = user("inherit = fortress\nstatus.ornament = z-level(#e0a33a)\n");
+        assert_eq!(d.len(), 1, "{d:#?}");
+        assert_eq!((d[0].line, d[0].severity), (2, Severity::Warning));
+        assert!(
+            d[0].message.contains("`z-level` is now `block-sparkline`"),
+            "{}",
+            d[0].message
+        );
+        let t = r.resolve("mine").unwrap();
+        assert_eq!(t.slot(Slot::StatusOrnament).kind, Kind::BlockSparkline);
+        assert_eq!(
+            r.resolve("fortress")
+                .unwrap()
+                .slot(Slot::StatusOrnament)
+                .kind,
+            Kind::BlockSparkline
+        );
+        assert!(kind_spec("z-level").is_none(), "only an alias now");
     }
 
     #[test]

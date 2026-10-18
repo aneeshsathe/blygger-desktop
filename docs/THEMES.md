@@ -50,7 +50,7 @@ for one run without saving it.
 | `cutaway` | woody | a meadow-green title bar; a soil cross-section behind the posts list (a grass band, then earth strata with pebbles) with root hairlines along its top; the selected post is a lit burrow room with a warm glow; arched quote boxes; a root line under the editor |
 | `kumiko` | woody | an asanoha lattice in the title bar; hinoki woodgrain on the posts list; a shoji grid in the editor's margins; hairline-boxed rows and quotes; a gold kintsugi crack under the editor; Source Serif 4 for writing |
 | `shola` | woody | soft moss cushions on a forest-green posts list, with mist at its foot; moss-cushion rows and quotes; laterite pitting in the editor's margins; a laterite status bar |
-| `fortress` | woody | a dark stone floor; `☼` on published posts, `Δ` on unpublished edits and `*` on unread posts; a `≈≈≈` water line under the editor; box-drawing corners `╔ ╝` on quotes; the selected post's depth as a z-level in the status bar; Menlo for the interface, Literata for writing |
+| `fortress` | woody | a dark stone floor; `☼` on published posts, `Δ` on unpublished edits and `*` on unread posts; a `≈≈≈` water line under the editor; box-drawing corners `╔ ╝` on quotes; your last two weeks of posts as a block-character strip `▁▃·█` in the status bar; Menlo for the interface, Literata for writing |
 | `portolan` | oceanic | a chart's paper; compass roses with rhumb lines and depth soundings in the editor's margins; double-ruled quotes and sheets; ET Book throughout |
 | `aizome` | oceanic | an indigo-dyed title bar and status bar; seigaiha waves on the posts list and under the editor; sashiko-stitched quotes |
 | `saltspace` | oceanic | corrosive greys, never pure black or white; a horizon line through the title bar; salt grain on the posts list and the editor's margins; tide lines under the editor; squared quotes with a buoy-orange top edge |
@@ -233,7 +233,7 @@ are clipped to its margins, and the divider takes its own row under the text.
 | `contours` | sidebar.ground, empty.art | 1 to 3 | sea contours with soundings; colours 2 and 3 are the ground |
 | `harbour-glow` | editor.frame | 2 | the editor as lit paper in a sea (sea, glow) |
 | `tide-sparkline` | status.ornament | 1 to 2 | your writing over the last two weeks (line, buoy) |
-| `z-level` | status.ornament | 1 | the selected post's depth |
+| `block-sparkline` | status.ornament | 1 | your writing over the last two weeks as block characters `▁▂▃▅▇█` (`·` for a day with none); `z-level`, its predecessor, still loads as this, with a warning |
 | `glyph` | marker.pinned, marker.new, marker.edited, empty.art | 0 to 1 | one glyph: `glyph(#e0a33a, "☼")` |
 | `dot` | marker.pinned, marker.new, marker.edited | 0 to 1 | a small dot |
 | `arch` | quote.frame | 1 | an arched room |
