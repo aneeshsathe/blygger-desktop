@@ -301,3 +301,228 @@ fn the_toolbar_slot_deletes_or_withdraws(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Withdraw { .. }))));
 }
+
+// ------------------------------------------------------------ discard changes
+
+/// The public post's text as published (v1).
+const BAND: &str =
+    "Band on Harbour Road: the trombone came in half a beat late and the tune was better for it.";
+
+fn editor_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string())
+}
+
+/// Open the public post in the editor and type an edit.
+fn edit_public(cx: &mut VisualTestContext) {
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.simulate_input(" Then the rain came.");
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn discard_changes_asks_then_goes_back_to_the_published_version(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    edit_public(cx);
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert!(it.dirty, "an unpublished edit");
+    assert!(it.content_md.ends_with("Then the rain came."));
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-z"));
+    cx.run_until_parked();
+    view.read_with(cx, |v, _| match &v.sheet {
+        Some(Sheet::DiscardChanges {
+            id: sid,
+            version,
+            title,
+            ..
+        }) => {
+            assert_eq!(sid, &id(PUBLIC));
+            assert_eq!(*version, 1);
+            assert!(title.starts_with("Band on"), "{title}");
+        }
+        _ => panic!("no discard sheet"),
+    });
+    assert!(fake.item(&id(PUBLIC)).unwrap().dirty, "nothing before ⏎");
+    cx.simulate_keystrokes("enter");
+    settle(cx, || !fake.item(&id(PUBLIC)).unwrap().dirty);
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert_eq!(it.content_md, BAND);
+    assert!(!it.dirty && !it.pending_sync);
+    assert_eq!(it.version, 1, "nothing published");
+    assert_eq!(editor_text(&view, cx), BAND, "the editor holds v1");
+    assert_eq!(toast(&view, cx), "Back to v1 as published");
+    view.read_with(cx, |v, _| {
+        assert!(v.sheet.is_none());
+        assert!(v.restoring.is_none());
+        assert_eq!(v.mode, Mode::Edit, "still writing");
+    });
+    // Typing on is an ordinary edit again.
+    cx.simulate_input(" Encore.");
+    cx.run_until_parked();
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert_eq!(it.content_md, format!("{BAND} Encore."));
+    assert!(it.dirty);
+}
+
+#[gpui_kit::test]
+fn discard_changes_esc_keeps_the_edits(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    edit_public(cx);
+    cx.dispatch_action(super::DiscardChanges);
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.sheet,
+        Some(Sheet::DiscardChanges { .. })
+    )));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert!(it.dirty && it.content_md.ends_with("Then the rain came."));
+    assert!(editor_text(&view, cx).ends_with("Then the rain came."));
+}
+
+/// Nothing to discard: a draft (Delete's), a clean published post, and an
+/// edited one while offline. The toolbar button says the same.
+#[gpui_kit::test]
+fn discard_changes_says_why_not(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    let button = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, cx| {
+            v.toolbar_buttons(cx)
+                .into_iter()
+                .find(|b| b.action == "DiscardChanges")
+                .expect("the Discard button")
+        })
+    };
+    // The draft.
+    cx.dispatch_action(super::DiscardChanges);
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    let not_published = crate::keymap::hint(crate::vm::DISCARD_NOT_PUBLISHED);
+    assert_eq!(toast(&view, cx), not_published);
+    assert_eq!(button(&view, cx).reason.as_deref(), Some(not_published));
+    // The published post, clean.
+    cx.simulate_keystrokes("down");
+    cx.run_until_parked();
+    cx.dispatch_action(super::DiscardChanges);
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert_eq!(toast(&view, cx), crate::vm::DISCARD_CLEAN);
+    assert_eq!(
+        button(&view, cx).reason.as_deref(),
+        Some(crate::vm::DISCARD_CLEAN)
+    );
+    // Edited: enabled, with its key in the tooltip.
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.simulate_input(" More.");
+    cx.run_until_parked();
+    let b = button(&view, cx);
+    assert_eq!(b.reason, None);
+    let key = crate::keymap::glyphs(&crate::keymap::keys("alt-cmd-z"));
+    assert_eq!(b.tooltip, format!("Discard unpublished changes…  {key}"));
+    // Offline: the published version is on the blyg.
+    fake.set_offline(true);
+    cx.run_until_parked();
+    assert_eq!(
+        button(&view, cx).reason.as_deref(),
+        Some(crate::vm::DISCARD_OFFLINE)
+    );
+    cx.dispatch_action(super::DiscardChanges);
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert_eq!(toast(&view, cx), "Offline. Discard needs the blyg.");
+    assert!(fake.item(&id(PUBLIC)).unwrap().dirty, "the edit stays");
+}
+
+/// Typing while the restore is on its way: those keystrokes aren't saved,
+/// so the old text can't land on top of the restored copy, and the editor
+/// ends up holding exactly what the blyg restored.
+#[gpui_kit::test]
+fn typing_during_a_discard_is_not_saved_back(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    edit_public(cx);
+    let edited = fake.item(&id(PUBLIC)).unwrap().content_md;
+    view.update_in(cx, |v, window, cx| {
+        v.restore_working_copy(id(PUBLIC), 1, true, window, cx);
+        // The restore hasn't run yet (nothing has parked): type on.
+        v.editor
+            .update(cx, |s, cx| s.insert(" Typed meanwhile.", window, cx));
+        v.after_edit(cx);
+    });
+    assert_eq!(
+        fake.item(&id(PUBLIC)).unwrap().content_md,
+        edited,
+        "the keystrokes during the discard weren't saved"
+    );
+    settle(cx, || !fake.item(&id(PUBLIC)).unwrap().dirty);
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert_eq!(it.content_md, BAND);
+    assert!(!it.dirty);
+    assert_eq!(editor_text(&view, cx), BAND);
+    // And nothing saves the old text afterwards.
+    cx.run_until_parked();
+    assert_eq!(fake.item(&id(PUBLIC)).unwrap().content_md, BAND);
+}
+
+/// A discard that fails (offline by the time it runs) replaces nothing, so
+/// what was typed meanwhile is saved after all.
+#[gpui_kit::test]
+fn a_failed_discard_keeps_what_was_typed(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    edit_public(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.restore_working_copy(id(PUBLIC), 1, true, window, cx);
+        v.editor
+            .update(cx, |s, cx| s.insert(" Typed meanwhile.", window, cx));
+        v.after_edit(cx);
+    });
+    fake.set_offline(true);
+    settle(cx, || {
+        fake.item(&id(PUBLIC))
+            .unwrap()
+            .content_md
+            .ends_with("Typed meanwhile.")
+    });
+    let it = fake.item(&id(PUBLIC)).unwrap();
+    assert!(
+        it.content_md
+            .ends_with("Then the rain came. Typed meanwhile."),
+        "{}",
+        it.content_md
+    );
+    assert!(it.dirty);
+    assert_eq!(toast(&view, cx), "Offline. Discard needs the blyg.");
+    assert!(view.read_with(cx, |v, _| v.restoring.is_none()));
+}
+
+/// ⌘Y on an edited post: the current version offers "Discard changes…",
+/// the same sheet and path as ⌥⌘Z.
+#[gpui_kit::test]
+fn the_version_browser_discards_changes_on_the_current_version(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    edit_public(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
+    settle(cx, || false);
+    view.update_in(cx, |v, window, cx| {
+        let own = v.reading.own.as_mut().expect("the history is open");
+        own.sel = Some(1);
+        v.ask_restore(window, cx);
+    });
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.sheet,
+        Some(Sheet::DiscardChanges { version: 1, .. })
+    )));
+    cx.simulate_keystrokes("enter");
+    settle(cx, || !fake.item(&id(PUBLIC)).unwrap().dirty);
+    assert_eq!(fake.item(&id(PUBLIC)).unwrap().content_md, BAND);
+    assert_eq!(editor_text(&view, cx), BAND);
+    assert!(
+        view.read_with(cx, |v, _| v.reading.own.is_none()),
+        "the history closes"
+    );
+}

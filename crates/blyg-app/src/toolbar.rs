@@ -48,6 +48,7 @@ pub const ICONS: &[(&str, &[u8])] = &[
     ("sticky-note", icon!("sticky-note")),
     ("trash-2", icon!("trash-2")),
     ("archive-x", icon!("archive-x")),
+    ("undo-2", icon!("undo-2")), // --- discard changes ---
 ];
 
 pub fn icon_svg(name: &str) -> Option<&'static [u8]> {
@@ -103,6 +104,11 @@ pub struct Facts<'a> {
     /// A sheet (publish, settings, connect, …) is up.
     pub sheet_open: bool,
     pub new_note: NewNote,
+    /// --- discard changes --- The sync status says offline.
+    pub offline: bool,
+    /// --- discard changes --- A restore (or discard) of the current post
+    /// is on its way.
+    pub restoring: bool,
 }
 
 pub const NEED_POSTS: &str = "Back to Posts first (⌘L)";
@@ -207,6 +213,16 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
             })),
             false,
         ),
+        // --- discard changes ---
+        "DiscardChanges" => (
+            gate(need_item(&|i| {
+                if f.restoring {
+                    return Some("Discarding…".into());
+                }
+                vm::discard_changes(i, f.offline).err().map(str::to_string)
+            })),
+            false,
+        ),
         "AiGenerate" => (
             gate(if !f.ai_enabled {
                 Some(NEED_AI.into())
@@ -232,6 +248,7 @@ fn tip_label(k: &Keybind, new_note: NewNote) -> &'static str {
         ("ShowCapture", _) => "Quick capture",
         ("DeleteDraft", _) => "Delete draft or scratch note…",
         ("Withdraw", _) => "Withdraw…",
+        ("DiscardChanges", _) => "Discard unpublished changes…",
         _ => k.button.unwrap_or(k.label),
     }
 }
@@ -438,6 +455,11 @@ impl MainView {
             publishing: self.publishing,
             sheet_open: self.sheet.is_some() || self.reading.sheet.is_some(),
             new_note: self.prefs.new_post,
+            offline: matches!(self.sync, blyg_core::SyncStatus::Offline { .. }),
+            restoring: self
+                .restoring
+                .as_ref()
+                .is_some_and(|r| self.current.as_ref().is_some_and(|c| &c.local_id == r)),
         }
     }
 
@@ -704,7 +726,9 @@ impl MainView {
             }
             ("tb-settings", 0) => self.open_settings(&OpenSettings, window, cx),
             // --- delete & withdraw --- the confirmation sheets (discard.rs)
-            ("tb-delete" | "tb-withdraw", 0) => self.discard_demo(scenario, window, cx),
+            ("tb-delete" | "tb-withdraw" | "tb-discard", 0) => {
+                self.discard_demo(scenario, window, cx)
+            }
             ("tb-capture", 0) => crate::capture::toggle(cx),
             ("tb-capture", 1) => crate::capture::demo_fill(
                 "An idea on the stairs: tide tables as a writing prompt.",

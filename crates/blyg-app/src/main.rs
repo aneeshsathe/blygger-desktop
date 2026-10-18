@@ -394,6 +394,7 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
                 MenuItem::separator(),
+                MenuItem::action("Discard Changes…", app::discard::DiscardChanges),
                 MenuItem::action("Delete Draft…", app::discard::DeleteDraft),
                 MenuItem::action("Withdraw…", app::discard::Withdraw),
             ],

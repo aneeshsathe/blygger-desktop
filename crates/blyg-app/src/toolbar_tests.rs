@@ -35,6 +35,8 @@ fn facts(current: Option<&Item>) -> Facts<'_> {
         publishing: false,
         sheet_open: false,
         new_note: NewNote::Draft,
+        offline: false,
+        restoring: false,
     }
 }
 
@@ -234,6 +236,7 @@ fn buttons_come_from_the_keymap_with_keys_in_tooltips() {
             "Full editor",
             "Versions",
             "Generate",
+            "Discard",
             "Delete",
             "Capture"
         ]

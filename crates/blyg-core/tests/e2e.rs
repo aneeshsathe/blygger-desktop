@@ -367,6 +367,107 @@ fn publish_edit_pin_restore() {
     assert_eq!(it.content_md, v1_text);
 }
 
+/// The server's `dirty` for an item (a boolean, or 0/1).
+fn server_dirty(v: &Value) -> bool {
+    v["dirty"] == json!(true) || v["dirty"] == json!(1)
+}
+
+/// Discard changes: `restore` of the version the post has published
+/// (upstream's "discard changes"), with the sync worker running. An edit
+/// already on the blyg and one still waiting in the outbox both go; nothing
+/// pushes the old text back afterwards, and the public post never moves.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discard_changes_goes_back_to_the_published_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
+    let t = tag("discard");
+    let v1_text = format!("{t} as published");
+    let (id, sid) = published(&b, Kind::Fragment, &v1_text, None);
+
+    // An edit that reached the blyg…
+    let pushed = format!("{t} an edit on the blyg");
+    b.save(&id, &pushed).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], pushed);
+    assert!(server_dirty(&server_item(&sid)));
+    // …then one still waiting for its push.
+    b.save(&id, &format!("{t} an edit still on this Mac"))
+        .unwrap();
+    assert!(b.item(&id).unwrap().pending_sync);
+
+    b.restore(&id, 1).unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, v1_text, "the editor holds v1 again");
+    assert_eq!(it.version, 1, "nothing published");
+    assert!(!it.pending_sync, "the waiting save went with the edits");
+    let server = server_item(&sid);
+    assert_eq!(server["content_md"], v1_text);
+    assert_eq!(
+        it.dirty,
+        server_dirty(&server),
+        "local agrees with the blyg"
+    );
+    if e.stock {
+        // Studio 0.42+: discarding leaves the copy clean.
+        assert!(!it.dirty, "clean again");
+    }
+
+    // Past the debounce and a pull: the old text never comes back.
+    std::thread::sleep(Duration::from_millis(600));
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], v1_text);
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, v1_text);
+    assert!(!it.conflict && !it.pending_sync);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["version"], 1);
+    assert_eq!(doc["content_md"], v1_text);
+
+    // Typing again after the discard is an ordinary edit.
+    let again = format!("{v1_text}, and a second thought");
+    b.save(&id, &again).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], again);
+    assert!(b.item(&id).unwrap().dirty);
+}
+
+/// Discard changes on a version that disclosed generated text: the words
+/// come back, but upstream leaves `dirty` set (a restore can't carry the
+/// provenance back), and the local copy says so too.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discard_changes_on_a_generated_version_stays_unpublished() {
+    if !provenance_recordable() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("discard-gen");
+    let (_, src) = published(&b, Kind::Fragment, &format!("{t} a source"), None);
+    let text = format!("{t}\n\n[TK]sum up ![[{src}]][=]A short summary.[/TK]");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.save_with_provenance(&id, &text, &[prov("test-model-1", &[&src])])
+        .unwrap();
+    b.sync_now().unwrap();
+    let out = b.publish(&id, None).unwrap();
+    assert_eq!(out.version, 1);
+    let sid = sid_of(&b, &id);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["generated"].as_array().map(Vec::len), Some(1), "{doc}");
+    let published_md = doc["content_md"].as_str().unwrap().to_string();
+
+    b.save(&id, &format!("{t} rewritten by hand")).unwrap();
+    b.restore(&id, 1).unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, published_md, "the published words");
+    assert!(!it.pending_sync);
+    assert!(server_dirty(&server_item(&sid)));
+    assert!(it.dirty, "still unpublished: v1 had generated text");
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn set_kind_before_first_publish() {
