@@ -33,6 +33,7 @@ use markdown_it::plugins::extra::strikethrough::Strikethrough;
 use markdown_it::plugins::extra::tables::Table;
 
 use crate::Kind;
+use crate::links::NativeLink;
 use crate::markdown::{Linkified, YtFacade};
 
 /// A run of inline text with one style.
@@ -45,10 +46,15 @@ pub struct Span {
     pub strike: bool,
     /// The link target, when this run is (inside) a link.
     pub link: Option<String>,
-    /// An `[[id]]` internal link: the target's id. `text` is a neutral
-    /// label ([`LINK_LABEL`]) for the caller to replace with the target's
-    /// excerpt when it holds the target.
+    /// An `[[id]]` internal link: the target's id. `text` is the author's
+    /// label when the link has one (`[[id | text]]`, [`Span::label`]), else
+    /// a neutral label ([`LINK_LABEL`]) for the caller to replace with the
+    /// target's excerpt when it holds the target.
     pub item: Option<String>,
+    /// The author's label of an `[[id | text]]` link (decision #70), which
+    /// the published anchor shows instead of the target's text. A caller
+    /// that labels links itself keeps this one when it is set.
+    pub label: Option<String>,
 }
 
 /// The text of an `[[id]]` span before the caller labels it.
@@ -124,12 +130,12 @@ pub fn native_blocks(md: &str, kind: Kind) -> Vec<Block> {
 
 /// Turn link tokens back into `[[id]]` spans (or, where only plain text
 /// fits, the label).
-fn untoken_block(b: Block, ids: &[String]) -> Block {
+fn untoken_block(b: Block, ids: &[NativeLink]) -> Block {
     let spans = |v: Vec<Span>| merge(v.into_iter().flat_map(|s| untoken_span(s, ids)).collect());
     let text = |t: String| {
         crate::links::split_tokens(&t, ids)
             .into_iter()
-            .map(|p| p.unwrap_or(LINK_LABEL))
+            .map(|p| p.unwrap_or_else(|l| l.label.as_deref().unwrap_or(LINK_LABEL)))
             .collect::<String>()
     };
     match b {
@@ -153,7 +159,7 @@ fn untoken_block(b: Block, ids: &[String]) -> Block {
     }
 }
 
-fn untoken_span(s: Span, ids: &[String]) -> Vec<Span> {
+fn untoken_span(s: Span, ids: &[NativeLink]) -> Vec<Span> {
     if !s.text.contains(crate::links::NATIVE_SENTINEL) {
         return vec![s];
     }
@@ -164,9 +170,10 @@ fn untoken_span(s: Span, ids: &[String]) -> Vec<Span> {
                 text: t.to_string(),
                 ..s.clone()
             },
-            Err(id) => Span {
-                text: LINK_LABEL.to_string(),
-                item: Some(id.to_string()),
+            Err(link) => Span {
+                text: link.label.as_deref().unwrap_or(LINK_LABEL).to_string(),
+                item: Some(link.id.clone()),
+                label: link.label.clone(),
                 ..s.clone()
             },
         })
@@ -213,14 +220,11 @@ fn blocks_of(text: &str, kind: Kind) -> Vec<Block> {
     out
 }
 
-/// The id of a `![[id]]` line. Looser than the publishing grammar (any case,
-/// any letters): this only decides where a quote box goes on screen.
+/// The id of a `![[id]]` or `![[id | note]]` line. Looser than the
+/// publishing grammar (any case, any letters): this only decides where a
+/// quote box goes on screen.
 fn directive_id(line: &str) -> Option<String> {
-    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = RE.get_or_init(|| {
-        regex::Regex::new(r"^\s*!\[\[([0-9A-Za-z]{26})\]\]\s*$").expect("directive re")
-    });
-    re.captures(line).map(|c| c[1].to_string())
+    crate::grammar::directive_line(line, crate::grammar::Ids::Loose).map(|b| line[b.id].to_string())
 }
 
 /// `[TK]instruction[=]output[/TK]` → `output` (an ungenerated scope shows
@@ -612,5 +616,29 @@ mod tests {
             panic!("{b:?}")
         };
         assert!(s.iter().all(|s| s.item.is_none()), "{s:?}");
+    }
+
+    #[test]
+    fn labelled_links_and_quotes() {
+        let id = "01j9zq3k4m5n6p7q8r9s0t1v2w";
+        let md = format!("See [[{id} | my name for it]] and [[{id} |  ]].\n\n![[{id} | a note]]");
+        let b = native_blocks(&md, Kind::Thread);
+        let Block::Para(s) = &b[0] else {
+            panic!("{b:?}")
+        };
+        let items: Vec<_> = s.iter().filter(|s| s.item.is_some()).collect();
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].text, "my name for it");
+        assert_eq!(items[0].label.as_deref(), Some("my name for it"));
+        assert_eq!(items[1].text, LINK_LABEL);
+        assert_eq!(items[1].label, None);
+        // The directive's label is the author's note: the quote ignores it.
+        assert_eq!(
+            b[1],
+            Block::Transclusion {
+                id: id.to_string(),
+                excerpt: None
+            }
+        );
     }
 }

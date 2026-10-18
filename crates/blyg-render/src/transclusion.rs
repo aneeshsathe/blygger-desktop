@@ -9,6 +9,7 @@ use std::fmt;
 use std::sync::OnceLock;
 
 use crate::embeds::JS_WS;
+use crate::grammar::{self, Ids};
 use crate::linemap::Mapped;
 use crate::markdown::{self, MdStats};
 use crate::util::{blyg_item_url, escape_html, is_js_ws, js_trim};
@@ -268,28 +269,17 @@ pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteS
     })
 }
 
-fn directive_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(&format!(
-            r"^[{JS_WS}]*!\[\[([{ID_ALPHABET}]{{26}})\]\][{JS_WS}]*$"
-        ))
-        .expect("directive re")
-    })
-}
-
-/// The id of an own-line `![[id]]` directive (`DIRECTIVE_LINE`), if `line` is one.
+/// The id of an own-line `![[id]]` or `![[id | label]]` directive
+/// (`DIRECTIVE_LINE`), if `line` is one. The label is the author's note and
+/// never reaches the bake (decision #70).
 pub(crate) fn directive_id(line: &str) -> Option<&str> {
-    directive_re()
-        .captures(line)
-        .and_then(|c| c.get(1))
-        .map(|m| m.as_str())
+    grammar::directive_line(line, Ids::Strict).map(|b| &line[b.id])
 }
 
 /// Whether the walk would take `line` as a directive (resolved, or refused
 /// as a reserved `@vN` form) rather than prose.
 pub(crate) fn is_directive_line(line: &str) -> bool {
-    directive_re().is_match(line) || reserved_re().is_match(line)
+    directive_id(line).is_some() || reserved_re().is_match(line)
 }
 
 fn reserved_re() -> &'static Regex {
@@ -412,12 +402,11 @@ pub(crate) fn walk(
             );
             continue;
         }
-        let Some(c) = directive_re().captures(line) else {
+        let Some(id) = directive_id(line) else {
             prose_start.get_or_insert(k);
             continue;
         };
         flush(prose_start.take(), k, &mut parts, &mut md, &mut block_lines);
-        let id = &c[1];
         // The attached quote (§16.4) is part of the directive whether or not
         // the target resolves, so a failure still consumes it rather than
         // leaving it to render as the author's own quotation.
@@ -610,9 +599,14 @@ mod tests {
 
     #[test]
     fn grammar() {
-        assert!(directive_re().is_match("  ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\u{A0}"));
-        assert!(!directive_re().is_match("![[01J9ZQ3K4M5N6P7Q8R9S0T1V2W]]"));
-        assert!(!directive_re().is_match("see ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"));
+        assert!(directive_id("  ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\u{A0}").is_some());
+        assert!(directive_id("![[01J9ZQ3K4M5N6P7Q8R9S0T1V2W]]").is_none());
+        assert!(directive_id("see ![[01j9zq3k4m5n6p7q8r9s0t1v2w]]").is_none());
+        assert_eq!(
+            directive_id("\u{A0}![[01j9zq3k4m5n6p7q8r9s0t1v2w | a | note]] "),
+            Some("01j9zq3k4m5n6p7q8r9s0t1v2w")
+        );
+        assert!(directive_id("![[01j9zq3k4m5n6p7q8r9s0t1v2w | a]] b]]").is_none());
         assert!(reserved_re().is_match("![[01j9zq3k4m5n6p7q8r9s0t1v2w@v12]]"));
         assert_eq!(
             host_of("https://Blyg.Example.com:443/x/"),

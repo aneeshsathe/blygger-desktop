@@ -17,6 +17,7 @@
 
 mod embeds;
 mod emph;
+mod grammar;
 mod linemap;
 mod linkify;
 mod links;
@@ -31,8 +32,13 @@ mod transclusion;
 mod util;
 
 pub use embeds::{embed_css, preview_script, youtube_facade_html, youtube_id};
+pub use grammar::{
+    DirectiveRef, LinkRef, directive_ref, label_text, link_refs, link_source,
+    strip_generated_grammar,
+};
 pub use links::{
-    anchor_label, excerpt_from_html, normalize_selection, plain_text_from_html, selection_text,
+    anchor_label, excerpt_from_html, link_label, normalize_selection, plain_text_from_html,
+    selection_text,
 };
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
