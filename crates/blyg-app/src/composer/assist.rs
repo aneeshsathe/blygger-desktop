@@ -461,6 +461,11 @@ impl Assist {
         self.mention.is_some()
     }
 
+    /// The link or quote picker popup is up (the tutorial watches for it).
+    pub fn picker_open(&self) -> bool {
+        self.picker.is_some()
+    }
+
     /// The spelling menu is up (the tutorial watches for it).
     pub fn menu_open(&self) -> bool {
         self.menu.is_some()

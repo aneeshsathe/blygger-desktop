@@ -373,6 +373,16 @@ impl MainView {
         .detach();
     }
 
+    /// A chip on your own post was clicked (the chips call
+    /// `post_action` directly rather than dispatching their action).
+    pub(in crate::app) fn tutorial_own_post_action(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.tutorial_key(Key::OwnPostAction, window, cx);
+    }
+
     /// A sheet, an AI proposal or a generation is still on screen.
     fn tutorial_busy(&self) -> bool {
         self.sheet.is_some()
@@ -419,6 +429,14 @@ impl MainView {
             (Key::Notes, self.notes.open),
             (Key::CloseBrowser, !self.browser.open),
             (Key::Mention, assist.mention_open()),
+            (
+                Key::Picker,
+                assist.picker_open()
+                    || matches!(
+                        self.reading.sheet,
+                        Some(crate::app::reading::RSheet::Quote { .. })
+                    ),
+            ),
             (Key::SpellMenu, assist.menu_open()),
             (Key::Lineage, self.lineage_open()),
             (Key::LineageRing, self.lineage_ring_open()),
@@ -517,6 +535,10 @@ impl MainView {
         let d = on!(d, crate::ai::AiShorten, Key::AiShorten);
         let d = on!(d, crate::app::reading::ShowVersions, Key::ShowVersions);
         let d = on!(d, crate::app::NewDraft, Key::NewPost);
+        let d = on!(d, crate::app::discard::DiscardChanges, Key::DiscardChanges);
+        let d = on!(d, crate::app::reading::own::ReplyToPost, Key::OwnPostAction);
+        let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
+        let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -685,6 +707,17 @@ impl MainView {
                 self.tutorial_tidy(window, cx);
                 self.tutorial_open(steps::VERSIONED, window, cx);
             }
+            Setup::Edited(sentence) => {
+                self.tutorial_tidy(window, cx);
+                self.studio_set_view(ViewMode::Write, cx);
+                self.tutorial_open(steps::VERSIONED, window, cx);
+                let old = self.editor.read(cx).value().to_string();
+                if !old.contains(sentence) {
+                    let new = format!("{} {sentence}", old.trim_end());
+                    let end = new.len();
+                    self.splice_editor(&old, &new, Some(end), window, cx);
+                }
+            }
             Setup::Posts => {
                 self.tutorial_tidy(window, cx);
                 self.back_to_search(window, cx);
@@ -812,6 +845,8 @@ impl MainView {
             "browser" => self.close_browser(window, cx),
             "mentions" => self.demo_type("@", window, cx),
             "quotes" => self.open_quote_picker(window, cx),
+            "discard" => window.dispatch_action(Box::new(crate::app::discard::DiscardChanges), cx),
+            "own-post" => self.post_action("Reply", window, cx),
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
             "new" => self.start_new_post(window, cx),

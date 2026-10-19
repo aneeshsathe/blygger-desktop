@@ -25,6 +25,12 @@ pub enum Key {
     AiShorten,
     ShowVersions,
     QuotePicker,
+    /// Discard Changes (⌥⌘Z, Post › Discard Changes…, the toolbar's
+    /// eraser).
+    DiscardChanges,
+    /// Reply · new stub, Quote into a thread or Link post on your own
+    /// published post (its chips, ⌥⌘R / ⌥⌘Q / ⌥⌘L, or the Post menu).
+    OwnPostAction,
     // Seen on screen rather than as an action (`tutorial_observed`): each
     // counts when it becomes true after the step began.
     /// The stream's side pane opened (⏎, Space or "Read more").
@@ -66,6 +72,8 @@ pub enum Key {
     /// Import OPML… (the Subscriptions screen's chip, or Blyg › Import
     /// Subscriptions from OPML…).
     OpmlImport,
+    /// The link or quote picker is open (typed `[[` or `![[`, or ⌘K).
+    Picker,
 }
 
 /// The part of the window a step highlights.
@@ -128,6 +136,9 @@ pub enum Setup {
     Long(&'static str),
     /// A published post with a few versions, opened.
     Versioned,
+    /// The published post with this sentence appended, so it has
+    /// unpublished edits.
+    Edited(&'static str),
     /// Back to Posts.
     Posts,
     /// A thread draft opened (quotes go in threads).
@@ -414,12 +425,58 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     Step {
+        id: "discard",
+        since: "0.13.0",
+        title: "Changed your mind? Discard",
+        caption: if cfg!(target_os = "windows") {
+            "This published post has unpublished edits: hover “unpublished edits” below. \
+             ⌘⏎ would publish them as v4. Post › Discard Changes… or the toolbar's eraser \
+             goes back to v3 as published, after asking. The public post never changes."
+        } else {
+            "This published post has unpublished edits: hover “unpublished edits” below. \
+             ⌘⏎ would publish them as v4. ⌥⌘Z (or Post › Discard Changes…, or the \
+             toolbar's eraser) goes back to v3 as published, after asking. The public post \
+             never changes."
+        },
+        keys: &[Key::DiscardChanges],
+        key_label: if cfg!(target_os = "windows") {
+            "click"
+        } else {
+            "⌥⌘Z"
+        },
+        region: Region::Editor,
+        button: Some("Discard"),
+        setup: Setup::Edited("Then I wrote this down, and thought better of it."),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "own-post",
+        since: "0.13.0",
+        title: "Reply to yourself",
+        caption: "Your published post has the Reading view's actions above its text: Reply · \
+                  new stub (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment \
+                  (⌥⌘L). Forking your own post is in ⌘Y: Fork this pin, on a pinned version. \
+                  Try Reply.",
+        keys: &[Key::OwnPostAction],
+        key_label: "⌥⌘R",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Versioned,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
         id: "quotes",
         since: "0.1.0",
-        title: "Quotes",
-        caption: "In a thread, ⌘K (or typing ![[ on a new line) quotes a post you already \
-                  hold. The quote is a snapshot, taken when you publish.",
-        keys: &[Key::QuotePicker],
+        title: "Links and quotes",
+        caption: "Type [[ to link a post you hold; in a thread, ⌘K (or ![[ on a new line) \
+                  quotes one, a snapshot taken when you publish. Rows lead with each post's \
+                  title, and ⏎ writes [[id | label]]: the label is the link's text on the \
+                  page, so edit the words after | to rename it. A quote's note is yours only.",
+        keys: &[Key::QuotePicker, Key::Picker],
         key_label: "⌘K",
         region: Region::Editor,
         button: None,
@@ -566,8 +623,9 @@ pub const STEPS: &[Step] = &[
         since: "0.4.0",
         title: "Reader: sources, posts, post",
         caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All), your folders, which stay on this Mac, and subscriptions. [ and ] step \
-                  through a post's versions; ⌥⌘1 is the Stream again.",
+                  All), Your blyg (your own posts, never unread or counted), your folders, \
+                  which stay on this Mac, and subscriptions. [ and ] step through a post's \
+                  versions; ⌥⌘1 is the Stream again.",
         keys: &[Key::ReaderMode],
         key_label: "⌥⌘2",
         region: Region::Reader,
@@ -794,6 +852,9 @@ mod tests {
             Key::NotesVault,
             Key::MacroFolded,
             Key::OpmlImport,
+            Key::DiscardChanges,
+            Key::OwnPostAction,
+            Key::Picker,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

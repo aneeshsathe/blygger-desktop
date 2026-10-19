@@ -432,6 +432,7 @@ impl MainView {
                 .tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
+                    this.tutorial_own_post_action(window, cx);
                     this.post_action(id, window, cx)
                 }))
                 .into_any_element()

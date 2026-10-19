@@ -21,6 +21,24 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.13.0",
+        items: &[
+            "Links have labels: [[ and ![[ write [[id | label]], the post's title (or its \
+             heading). The label is the link's text on the page, so edit the words after | \
+             to rename it; a quote's note is yours only. Rows lead with the title.",
+            "Discard changes: a published post with unpublished edits goes back to the version \
+             it published with ⌥⌘Z, Post › Discard Changes…, the toolbar's eraser or ⌘Y. It \
+             asks first; the public post never changes.",
+            "Your own posts: Your blyg is a Reading source, never unread or counted. A \
+             published post in Posts offers Reply · new stub, Quote into a thread and Link \
+             post above its text; Fork this pin in ⌘Y forks one.",
+            "Labelled links need blygger-studio 0.47. On an older blyg only posts with them \
+             wait: Burrow says “Your blyg needs updating”, links to how, and publishing offers \
+             to write the links bare.",
+        ],
+        first_step: Some("discard"),
+    },
+    Release {
         version: "0.12.0",
         items: &[
             "Burrow works with a stock blyg: an unmodified blygger-studio 0.40 or later, no \
@@ -245,6 +263,19 @@ mod tests {
                 env!("CARGO_PKG_VERSION")
             );
         }
+    }
+
+    #[test]
+    fn a_launch_after_0_12_shows_0_13() {
+        let news = since(Some("0.12.0"), "0.13.0");
+        assert_eq!(news.len(), 1);
+        assert_eq!(news[0].version, "0.13.0");
+        assert_eq!(news[0].first_step, Some("discard"));
+        let from_0_11: Vec<_> = since(Some("0.11.0"), "0.13.0")
+            .iter()
+            .map(|r| r.first_step)
+            .collect();
+        assert_eq!(from_0_11, [Some("discard"), Some("echoed-quote")]);
     }
 
     #[test]

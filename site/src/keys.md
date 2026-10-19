@@ -10,6 +10,10 @@ a letter on some layouts): use Menu › Post › Discard Changes… or the toolb
 The app's tooltips, menu and `+list-keybinds` show the Windows
 keys.
 
+⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply · new stub, Quote into a thread, Link post) act on
+the post in front of you: in Reading the open post, else the selected one; in
+Posts your own published post.
+
 ## The main table
 
 This part is generated from the app's key table
@@ -30,8 +34,8 @@ These belong to one screen or sheet, so they aren't in the table above.
 | ⏎ | Open the selected post, or start a draft when nothing matches |
 | esc | Clear the search; from the editor, back to the omnibar |
 | ⌃⌥B | Quick capture, from any app (`capture-hotkey`) |
-| ⌘K, or `![[` at the start of a line | Quote a post (threads only) |
-| `[[` | Link a post |
+| ⌘K, or `![[` at the start of a line | Quote a post (threads only); ⏎ inserts `![[… \| note]]` on its own line |
+| `[[` | Link a post; ⏎ inserts `[[… \| label]]` |
 | @ | Mention a blyg |
 
 **Quick capture and the notes drawer**
@@ -59,7 +63,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 
 | Key | What it does |
 |---|---|
-| ⏎ | Confirm (publish, delete, accept) |
+| ⏎ | Confirm (publish, delete, discard changes, accept) |
 | esc | Cancel or close |
 | 1 / 2 / 3 | In a conflict: keep mine, take the server's, keep both |
 | ⇥, F, ← | In a profile: switch tabs, follow the selected entry, go back |
