@@ -15,6 +15,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-18
+
 ### Changed
 
 - **Labelled links need Blygger Studio 0.47.** The `[[` picker writes labelled links, `[[id | label]]`, which an older studio shows as literal text or a broken link. On an older blyg everything syncs as usual except posts whose text has a labelled link or quote (outside code, generated text included): they wait until the blyg is updated or the labels go. Publishing one offers **⏎** to write the links bare (`[[id]]`) and publish. Withdraw and pin always go, since they don't send the text. On such a blyg the pickers write the bare form. Burrow says "Your blyg needs updating" once, on connecting or at launch, keeps a status-bar notice with an **Update your blyg** link, shows the same in About, and a waiting post's pill says why on hover. Burrow reads the version from the blyg's `blyg.json` `generator`. For another server it checks whether search results carry a `label`, and when it can't tell, it doesn't hold anything back. The "older than 0.40" limits sheet and its About section are gone, since every blyg that would have seen them now gets this notice. [Server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html).
@@ -27,7 +29,6 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Added
 
-- **Labelled links.** `[[id | text]]` and `![[id | text]]` are written, previewed and published as blygger-studio 0.47 defines them.
 - **Discard changes.** A published post with unpublished edits can go back to the version it has published: ⌥⌘Z, Post › Discard Changes…, the toolbar's Discard, or "Discard changes…" on the current version in ⌘Y. A sheet asks first, then "Back to vN as published". The public post doesn't change. The toolbar's Discard button is an eraser.
 - **Your own posts in Reading and Posts.** "Your blyg" is a Reading source: your published posts sit in All, Today and the stream by date, and alone under Your blyg, and they are never unread or counted. A published post in Posts has a row of chips above the text: Reply · new stub (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment (⌥⌘L), also in the Post menu. Your own post forks only from ⌘Y, with Fork this pin on a pinned version.
 - **Windows wording in newer app text.** Lineage, the stub bar, the sources pane, Subscriptions, the stream, the notes drawer and About say Windows keys and "this PC" where they said ⌘ or "this Mac".
