@@ -53,17 +53,27 @@ impl MainView {
     /// The held post a stub answers, by origin and id.
     fn stub_post_html(&self, origin: &str, id: &str) -> Option<String> {
         let key = blyg_core::post_key(origin, id);
+        // --- own posts --- a stub of your own post: your post, rendered as
+        // publish renders its text (a row of yours has no served HTML).
+        let html = |r: &blyg_core::ReadingItem| {
+            if r.content_html.trim().is_empty() {
+                blyg_render::render_markdown(&r.content_md)
+            } else {
+                r.content_html.clone()
+            }
+        };
         self.reading
             .rows
             .iter()
             .find(|r| blyg_core::post_key(&r.origin, &r.remote_id) == key)
-            .map(|r| r.content_html.clone())
+            .map(html)
             .or_else(|| {
                 self.backend
                     .reading()
                     .into_iter()
+                    .chain(self.own_rows())
                     .find(|r| blyg_core::post_key(&r.origin, &r.remote_id) == key)
-                    .map(|r| r.content_html)
+                    .map(|r| html(&r))
             })
     }
 
@@ -236,9 +246,9 @@ impl MainView {
                     None => div()
                         .italic()
                         .text_color(p.muted)
-                        .child(
+                        .child(crate::keymap::hint(
                             "The post isn't held on this Mac, so there's nothing to choose from.",
-                        )
+                        ))
                         .into_any_element(),
                 })
                 .when(chosen, |d| {

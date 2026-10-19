@@ -2,7 +2,7 @@
 //! only, spec §8.4), and your own post's full private history (⌘Y) with
 //! restore and a type-to-confirm pin.
 
-use blyg_core::{CoreError, LocalId, Version};
+use blyg_core::{LocalId, Version};
 use gpui_kit::base::input::{Escape, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -267,7 +267,15 @@ impl MainView {
         let Some((id, v, current)) = self.own_selected() else {
             return;
         };
-        if v.endcap || v.version == current {
+        if v.endcap {
+            return;
+        }
+        // --- discard changes --- restoring the current version is
+        // Discard changes: the same sheet and path as ⌥⌘Z.
+        if v.version == current {
+            if let Some(item) = self.backend.item(&id) {
+                self.ask_discard_changes(&item, window, cx);
+            }
             return;
         }
         let dirty = self.backend.item(&id).is_some_and(|i| i.dirty);
@@ -286,47 +294,13 @@ impl MainView {
     }
 
     fn confirm_restore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(RSheet::Restore {
-            id, version, next, ..
-        }) = self.reading.sheet.take()
-        else {
+        let Some(RSheet::Restore { id, version, .. }) = self.reading.sheet.take() else {
             return;
         };
         cx.notify();
-        let backend = self.backend.clone();
-        let id2 = id.clone();
-        let task = cx.background_spawn(async move { backend.restore(&id2, version) });
-        cx.spawn_in(window, async move |this, cx| {
-            let r = task.await;
-            let _ = this.update_in(cx, |v, window, cx| match r {
-                Ok(()) => {
-                    v.reading.own = None;
-                    v.current = v.backend.item(&id);
-                    v.load_current_into_editor(window, cx);
-                    v.requery(window, cx);
-                    v.open(&id, window, cx);
-                    v.show_toast(
-                        format!("v{version} is in the editor"),
-                        Some(
-                            crate::keymap::hint_owned(format!(
-                                "⌘⏎ publishes it as v{next} · versions never go backwards"
-                            ))
-                            .into(),
-                        ),
-                        cx,
-                    );
-                }
-                Err(CoreError::Offline) => {
-                    v.focus_after_sheet(window, cx);
-                    v.show_toast("Offline. Restore needs the blyg.", None, cx)
-                }
-                Err(e) => {
-                    v.focus_after_sheet(window, cx);
-                    v.show_toast(format!("Couldn't restore: {e}"), None, cx)
-                }
-            });
-        })
-        .detach();
+        // The same path as Discard changes (discard.rs), so the editor
+        // can't save the old text back over the restored one.
+        self.restore_working_copy(id, version, false, window, cx);
     }
 
     /// Hook: the editor pane is replaced by the history while ⌘Y is open.
@@ -347,10 +321,10 @@ impl MainView {
             Load::Ready(list) => {
                 let rows = vm::own_rows(list, item.version, self.now);
                 let sel = own.sel;
-                let actions = list
-                    .iter()
-                    .find(|v| Some(v.version) == sel)
-                    .map(|v| (v.version, vm::own_actions(v, item.version)));
+                let actions = list.iter().find(|v| Some(v.version) == sel).map(|v| {
+                    let dirty = crate::vm::has_unpublished_edits(&item);
+                    (v.version, vm::own_actions(v, item.version, dirty))
+                });
                 div()
                     .flex()
                     .flex_col()
@@ -415,12 +389,23 @@ impl MainView {
                             // --- themes --- `marker.pinned` beside a pin, as
                             // on the posts list (Fortress's ☼).
                             .when(pinned, |d| {
-                                d.children(crate::ornament::marker(
-                                    &self.theme,
-                                    blyg_core::config::theme::Slot::MarkerPinned,
-                                    p.accent,
-                                    self.chrome(),
-                                ))
+                                d.children(
+                                    crate::ornament::marker(
+                                        &self.theme,
+                                        blyg_core::config::theme::Slot::MarkerPinned,
+                                        p.accent,
+                                        self.chrome(),
+                                    )
+                                    .map(|m| {
+                                        div()
+                                            .id(("own-v-pin", v as usize))
+                                            .tooltip(|_, cx| {
+                                                cx.new(|_| super::Tip(crate::vm::PINNED_TIP.into()))
+                                                    .into()
+                                            })
+                                            .child(m)
+                                    }),
+                                )
                             })
                     }))
                     .when_some(actions, |d, (v, a)| {
@@ -431,8 +416,8 @@ impl MainView {
                                 .flex_wrap()
                                 .gap(px(6.))
                                 // --- follow-ups --- the chips come from
-                                // `OwnAction` only (no fork: forking is for
-                                // other people's pins).
+                                // `OwnAction` only (--- own fork --- "Fork
+                                // this pin" on a pin of yours is one of them).
                                 .children(a.list().into_iter().map(|act| {
                                     match act {
                                         vm::OwnAction::Pinned => div()
@@ -448,8 +433,38 @@ impl MainView {
                                                 this.ask_pin(window, cx)
                                             }))
                                             .into_any_element(),
+                                        // --- own fork ---
+                                        vm::OwnAction::Fork => {
+                                            let tip = act.tip(v);
+                                            self.chip("own-fork", act.label(v))
+                                                .tooltip(move |_, cx| {
+                                                    cx.new(|_| super::Tip(tip.clone())).into()
+                                                })
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        this.fork_own_pin(v, window, cx)
+                                                    },
+                                                ))
+                                                .into_any_element()
+                                        }
+                                        vm::OwnAction::ForkNeedsPin => {
+                                            let tip = act.tip(v);
+                                            self.chip_disabled("own-fork", act.label(v))
+                                                .tooltip(move |_, cx| {
+                                                    cx.new(|_| super::Tip(tip.clone())).into()
+                                                })
+                                                .into_any_element()
+                                        }
                                         vm::OwnAction::Restore => self
                                             .chip("own-restore", act.label(v))
+                                            .on_click(cx.listener(|this, _, window, cx| {
+                                                this.ask_restore(window, cx)
+                                            }))
+                                            .into_any_element(),
+                                        // --- discard changes --- the current
+                                        // version, while the post has edits.
+                                        vm::OwnAction::Discard => self
+                                            .chip("own-discard", act.label(v))
                                             .on_click(cx.listener(|this, _, window, cx| {
                                                 this.ask_restore(window, cx)
                                             }))

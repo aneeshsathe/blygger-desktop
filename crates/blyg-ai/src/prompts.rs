@@ -31,7 +31,10 @@ pub const SYSTEM_PROMPT: &str = concat!(
     "instruction; you write the prose that replaces it. Output ONLY the replacement ",
     "text: no preamble, no meta-commentary, no code fences, no explanation of what ",
     "you did. The output becomes the literal body of the author's document, so match ",
-    "the voice, register, and formatting conventions of the surrounding context."
+    "the voice, register, and formatting conventions of the surrounding context. ",
+    "Never write the document's bracket syntax — `[[…]]` or `![[…]]` — and never write an ",
+    "item id: refer to sources and other items in words. The one exception is when the ",
+    "instruction explicitly asks you to quote a source: then put `![[id]]` alone on its own line."
 );
 
 /// `util.ts::ID_ALPHABET` (Crockford-ish base32, lowercase).
@@ -125,21 +128,10 @@ pub struct TkParseError {
     pub reason: String,
 }
 
+/// `tk.ts` `extractSourceIds`: every `![[id]]` / `![[id | label]]` in the
+/// scope (studio 0.47 `directiveInline`), deduplicated in order.
 fn extract_source_ids(scope_text: &str) -> Vec<String> {
-    let mut ids: Vec<String> = vec![];
-    let mut rest = scope_text;
-    while let Some(i) = rest.find("![[") {
-        let after = &rest[i + 3..];
-        let candidate: String = after.chars().take(26).collect();
-        let valid = candidate.chars().count() == 26
-            && candidate.chars().all(|c| ID_ALPHABET.contains(c))
-            && after[candidate.len()..].starts_with("]]");
-        if valid && !ids.contains(&candidate) {
-            ids.push(candidate);
-        }
-        rest = &rest[i + 3..];
-    }
-    ids
+    blyg_core::grammar::source_ids(scope_text)
 }
 
 fn blank_before(s: &str) -> bool {
@@ -385,7 +377,10 @@ pub struct HelperOutput {
 
 impl HelperOutput {
     fn new(instruction: String, r: GenResult) -> Self {
-        let output = r.text.trim_end().to_string();
+        // Generated text is not grammar (studio 0.47, `stripGeneratedGrammar`).
+        let output = blyg_core::grammar::strip_generated_grammar(&r.text)
+            .trim_end()
+            .to_string();
         HelperOutput {
             insert: wrap_tk(&instruction, &output),
             instruction,
@@ -709,6 +704,11 @@ mod tests {
         assert_eq!(s[0].output, None);
         assert_eq!(s[0].source_ids, vec![ID.to_string()]);
         assert!(!s[0].block);
+        let labelled = format!("[TK]use ![[{ID} | their post]] and ![[{ID}]] ![[{ID} nope]][/TK]");
+        assert_eq!(
+            parse_scopes(&labelled).0[0].source_ids,
+            vec![ID.to_string()]
+        );
         assert_eq!(s[1].output.as_deref(), Some("out"));
         assert!(s[1].block);
         assert_eq!(&md[s[1].start..s[1].end], "[TK]x[=]out[/TK]");

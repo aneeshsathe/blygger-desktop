@@ -281,6 +281,13 @@ pub fn link_label(held: Option<&ReadingItem>) -> String {
     blyg_render::anchor_label(&html).unwrap_or_else(|| blyg_render::LINK_LABEL.to_string())
 }
 
+/// The text an `[[id]]` span shows: the author's own label when the link
+/// has one (`[[id | text]]`, studio 0.47: `Span::label`), else
+/// [`link_label`] for the held target.
+pub fn span_link_text(label: Option<&str>, held: Option<&ReadingItem>) -> String {
+    label.map_or_else(|| link_label(held), str::to_string)
+}
+
 /// The origin and version a quote box names: the `transclusions[]` entry
 /// when there is one, else the held post, else the quoting post's origin.
 pub fn quote_ref(
@@ -508,6 +515,11 @@ mod tests {
     #[test]
     fn links_are_labelled_by_the_held_target() {
         assert_eq!(link_label(None), blyg_render::LINK_LABEL);
+        assert_eq!(
+            span_link_text(Some("my name for it"), None),
+            "my name for it"
+        );
+        assert_eq!(span_link_text(None, None), blyg_render::LINK_LABEL);
         let mut held = item("sub", "https://b.example", "01AAAAAAAAAAAAAAAAAAAAAAAA");
         held.content_md = "Tides keep *time*.".into();
         held.content_html = String::new();

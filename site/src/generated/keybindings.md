@@ -37,11 +37,15 @@
 | ⌘Y | Versions of this post | Post › Versions… |
 | ⌘J | Lineage: what this post draws on and what draws on it | Post › Lineage… |
 | ⌘K | Quote a post in this thread | Post › Quote… |
+| ⌥⌘R | Reply · new stub: a thread of yours that's a stub of this post (yours too) | Post › Reply · New Stub |
+| ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
+| ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
+| ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |
 | ⌘I | Profile of this post's author (yours on your own post); again closes it | Blyg › Profile |
 | ⇧⌘O | Open a profile: paste a blyg, a post or a feed | Blyg › Open Profile… |
 | ⌥⌘→ | Tutorial: next step |  |

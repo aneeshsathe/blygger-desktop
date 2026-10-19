@@ -5,13 +5,15 @@
 #
 # BLYG_WORKER_DIR is the Worker's directory (the one with wrangler.jsonc and
 # node_modules; run `npm install && npm run build` there first): a
-# blygger-studio 0.9 or later.
+# blygger-studio 0.47 or later (Burrow's floor). The suite passes against
+# 0.46.1 too, where the floor test checks that only labelled posts wait.
 #
 #   BLYG_E2E_AUTH=password   sign in with the studio password, not the token
 #   BLYG_E2E_STOCK=1         a stock blygger-studio, without the extensions in
 #                            docs/SERVER.md: the tests of fork-only features
 #                            skip. Studio 0.28+ gets a minted manual token;
 #                            an older one, the password
+#   BLYG_E2E_SKIP_NOTES=1    skip the markdown-notes extension's e2e
 #
 # What it does:
 #   1. derives a local-only wrangler config and random dev secrets in a
@@ -83,5 +85,6 @@ export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"
 cargo test -p blyg-core --test e2e -- --ignored --test-threads=1 "$@"
+[ -z "${BLYG_E2E_SKIP_NOTES:-}" ] || exit 0
 printf 'e2e-local: the markdown-notes extension…\n' >&2
 cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1

@@ -1,0 +1,19 @@
+{
+  "name": "label_link_tk_inline",
+  "kind": "fragment",
+  "md": "a [TK]x[=]see [[01j9zq3k4m5n6p7q8r9s0t1v2w | gen label]][/TK] b",
+  "html": "<p>a <span class=\"blyg-tk-gen\">see <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">gen label</a></span> b</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "x",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

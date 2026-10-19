@@ -1,0 +1,12 @@
+{
+  "name": "label_directive_malformed",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w | a]] b]]\n\ntext ![[01j9zq3k4m5n6p7q8r9s0t1v2w | inline]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w | no close\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w ]]\n\n![[a label | 01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w | a]] b]]</p>\n<p>text ![[01j9zq3k4m5n6p7q8r9s0t1v2w | inline]]</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w | no close</p>\n<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w ]]</p>\n<p>![[a label | 01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -410,7 +410,9 @@ impl Assist {
         if picker::query(&text, pk.at, pk.kind, cursor).is_none() {
             return;
         }
-        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id);
+        // Below studio 0.47 the bare form, so the post doesn't wait (`blyg_core::floor`).
+        let label = blyg_core::floor::picker_label(self.backend.server_outdated(), &row.label);
+        let (new, caret) = picker::insert(&text, pk.at, cursor, pk.kind, &row.id, label);
         self.splice(&text, &new, caret, window, cx);
     }
 
@@ -457,6 +459,11 @@ impl Assist {
     /// The mention popup is up (the tutorial watches for it).
     pub fn mention_open(&self) -> bool {
         self.mention.is_some()
+    }
+
+    /// The link or quote picker popup is up (the tutorial watches for it).
+    pub fn picker_open(&self) -> bool {
+        self.picker.is_some()
     }
 
     /// The spelling menu is up (the tutorial watches for it).
@@ -915,7 +922,7 @@ impl Assist {
                     .max_h(px(300.))
                     .overflow_y_scroll()
                     .track_scroll(&pk.scroll)
-                    .children(picker::rows(p, &pk.rows, pk.sel, pick)),
+                    .children(picker::rows(p, pk.kind, &pk.rows, pk.sel, pick)),
             )
             .when(empty, |d| {
                 d.child(

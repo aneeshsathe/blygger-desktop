@@ -156,6 +156,8 @@ struct State {
     profile_fetches: Vec<String>,
     /// Public item documents fetched (`public_item`), for tests.
     public_fetches: Vec<String>,
+    /// Every row a read mark or a signal was sent for (`kind:sub:id`).
+    reading_sends: Vec<String>,
     // --- reader folders --- ids handed out by `create_folder`.
     folder_seq: u64,
 }
@@ -170,6 +172,45 @@ pub struct FakeBackend {
 }
 
 impl FakeBackend {
+    /// --- own posts --- your pinned version `version` of `id`, as your
+    /// public pin file would serve it, with the post's kind.
+    fn own_pin(st: &State, origin: &str, id: &str, version: u32) -> Option<(PinnedVersion, Kind)> {
+        if !blyg_core::profile::same_origin(origin, ORIGIN) {
+            return None;
+        }
+        let item = st.items.iter().find(|i| {
+            i.server_id
+                .as_ref()
+                .is_some_and(|s| s.0.eq_ignore_ascii_case(id))
+        })?;
+        let v = st
+            .versions
+            .get(&item.local_id)?
+            .iter()
+            .find(|v| v.version == version && v.pinned)?;
+        let text = st
+            .rd
+            .own_texts
+            .get(&(item.local_id.clone(), version))
+            .cloned()
+            .or_else(|| (version == item.version).then(|| item.content_md.clone()))?;
+        Some((
+            PinnedVersion {
+                version,
+                at: v.published_at.clone(),
+                note: v.note.clone(),
+                content_html: blyg_render::render_markdown(&text),
+                content_hash: blyg_core::content_hash(&text),
+                content_md: text,
+                origin: format!("{ORIGIN}/"),
+                id: id.to_string(),
+                author: None,
+                hash_mismatch: false,
+            },
+            item.kind,
+        ))
+    }
+
     pub fn new() -> Self {
         Self::with_timing(Timing::realistic())
     }
@@ -298,6 +339,7 @@ impl FakeBackend {
                 profiles: HashMap::new(),    // --- profiles ---
                 profile_fetches: Vec::new(), // --- profiles ---
                 public_fetches: Vec::new(),
+                reading_sends: Vec::new(),
                 folder_seq: 0,
             })),
             generation: Arc::new(AtomicU64::new(0)),
@@ -362,14 +404,15 @@ impl FakeBackend {
         Ok(())
     }
 
-    /// Tests: a reading pull finds a stock server (no extensions).
+    /// Tests: a reading pull finds a stock server older than 0.40 (no
+    /// `/api/reading/imported`).
     #[cfg(test)]
     pub fn trigger_server_limited(&self) {
         let sink = self.lock().sink.clone();
         Self::emit(&sink, CoreEvent::ServerLimited);
     }
 
-    /// Tests: sync finds the server older than blygger-studio 0.9.
+    /// Tests: sync finds the server older than blygger-studio 0.47.
     #[cfg(test)]
     pub fn trigger_server_outdated(&self) {
         let sink = {
@@ -626,6 +669,12 @@ impl FakeBackend {
 
     // --- profiles ---
 
+    /// Tests: the rows read marks and signals were sent for.
+    #[cfg(test)]
+    pub fn reading_sends(&self) -> Vec<String> {
+        self.lock().reading_sends.clone()
+    }
+
     /// Tests: every public item document fetched, in order.
     #[cfg(test)]
     pub fn public_fetches(&self) -> Vec<String> {
@@ -805,6 +854,11 @@ impl Backend for FakeBackend {
             if it.content_md == content_md {
                 return Ok(());
             }
+            // The first edit of a clean published post: what it replaces is
+            // that version's text (so a restore of it, Discard changes,
+            // brings it back).
+            let published = (it.status == Status::Public && !it.dirty)
+                .then(|| (it.version, it.content_md.clone()));
             it.content_md = content_md.to_string();
             it.updated = Utc::now().to_rfc3339();
             let scratch = it.status == Status::Scratch;
@@ -817,6 +871,9 @@ impl Backend for FakeBackend {
                 && let Some(new) = blyg_core::tk::remap(&old_md, &old, content_md)
             {
                 st.prov.insert(id.clone(), (content_md.to_string(), new));
+            }
+            if let Some((v, md)) = published {
+                st.rd.own_texts.entry((id.clone(), v)).or_insert(md);
             }
             scratch
         };
@@ -1018,6 +1075,7 @@ impl Backend for FakeBackend {
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
         let changed = {
             let mut st = self.lock();
+            st.reading_sends.push(format!("read:{sub_id}:{remote_id}"));
             let mut changed = false;
             for r in st.rd.reading.iter_mut() {
                 if r.subscription_id == sub_id
@@ -1153,7 +1211,10 @@ impl Backend for FakeBackend {
                 .iter_mut()
                 .find(|i| &i.local_id == id)
                 .ok_or(CoreError::NotFound)?;
+            // Restoring the published version is "discard changes": clean,
+            // and the edits waiting to sync are gone (like blyg-core).
             it.dirty = it.version != version;
+            it.pending_sync = false;
             it.content_md = text;
             it.updated = Utc::now().to_rfc3339();
             st.sink.clone()
@@ -1220,20 +1281,26 @@ impl Backend for FakeBackend {
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
         thread::sleep(self.timing.network);
         self.remote_guard()?;
-        let text = {
+        // --- own posts --- your own pin forks as the studio does: its kind
+        // and text, `forked_from` naming your origin.
+        let (text, kind) = {
             let st = self.lock();
-            st.rd
-                .pins
-                .values()
-                .find(|p| p.origin == of.origin && p.id == of.id && p.version == of.version)
-                .map(|p| p.content_md.clone())
-                .ok_or(CoreError::Rejected {
-                    status: 404,
-                    message: "not pinned".into(),
-                    details: vec![],
-                })?
+            match Self::own_pin(&st, &of.origin, &of.id, of.version) {
+                Some((pin, kind)) => (pin.content_md, kind),
+                None => st
+                    .rd
+                    .pins
+                    .values()
+                    .find(|p| p.origin == of.origin && p.id == of.id && p.version == of.version)
+                    .map(|p| (p.content_md.clone(), Kind::Thread))
+                    .ok_or(CoreError::Rejected {
+                        status: 404,
+                        message: "not pinned".into(),
+                        details: vec![],
+                    })?,
+            }
         };
-        let id = self.create_draft(Kind::Thread, &text)?;
+        let id = self.create_draft(kind, &text)?;
         if let Some(it) = self.lock().items.iter_mut().find(|i| i.local_id == id) {
             it.forked_from = Some(of.clone());
         }
@@ -1373,6 +1440,9 @@ impl Backend for FakeBackend {
     fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
         let n = {
             let mut st = self.lock();
+            for (s, id) in rows {
+                st.reading_sends.push(format!("set_read:{s}:{id}"));
+            }
             let mut n = 0;
             for r in st.rd.reading.iter_mut() {
                 if !rows
@@ -1452,6 +1522,8 @@ impl Backend for FakeBackend {
         self.remote_guard()?;
         {
             let mut st = self.lock();
+            st.reading_sends
+                .push(format!("signal:{sub_id}:{remote_id}"));
             for r in st
                 .rd
                 .reading
@@ -1778,6 +1850,10 @@ impl Backend for FakeBackend {
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         thread::sleep(self.timing.network);
         self.remote_guard()?;
+        // --- own posts --- your own pin files.
+        if let Some((pin, _)) = Self::own_pin(&self.lock(), origin, id, version) {
+            return Ok(pin);
+        }
         self.lock()
             .rd
             .public_pins

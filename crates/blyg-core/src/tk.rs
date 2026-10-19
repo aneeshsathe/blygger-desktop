@@ -73,28 +73,10 @@ pub fn parse(md: &str) -> Option<Vec<Scope>> {
     ok.then_some(scopes)
 }
 
-/// The Worker's id alphabet (Crockford-ish base32, lowercase).
-const ID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
-
+/// Deduplicated `![[id]]` / `![[id | label]]` refs anywhere in a scope,
+/// first-occurrence order (`tk.ts` `SOURCE_REF`).
 fn source_ids(scope: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut rest = scope;
-    while let Some(p) = rest.find("![[") {
-        let after = &rest[p + 3..];
-        if after.len() >= 28
-            && after.as_bytes()[26..28] == *b"]]"
-            && after[..26].chars().all(|c| ID_ALPHABET.contains(c))
-        {
-            let id = after[..26].to_string();
-            if !out.contains(&id) {
-                out.push(id);
-            }
-            rest = &after[28..];
-        } else {
-            rest = after;
-        }
-    }
-    out
+    crate::grammar::source_ids(scope)
 }
 
 /// Scope count, the number of provenance entries the Worker expects.
@@ -245,6 +227,10 @@ mod tests {
             "[TK]use ![[0123456789abcdefghjkmnpqrs]] and ![[0123456789abcdefghjkmnpqrs]][=]x[/TK]",
         )
         .unwrap();
+        assert_eq!(ids[0].source_ids, vec!["0123456789abcdefghjkmnpqrs"]);
+        // A labelled source ref counts by its id (studio 0.47, #70).
+        let ids = parse("[TK]summarise ![[0123456789abcdefghjkmnpqrs | their post]] briefly[/TK]")
+            .unwrap();
         assert_eq!(ids[0].source_ids, vec!["0123456789abcdefghjkmnpqrs"]);
     }
 

@@ -133,8 +133,12 @@ struct NetState {
     pushing: bool,
     /// The server proved to speak studio 0.9+'s API this session.
     compatible: bool,
-    /// The server proved older than studio 0.9; cleared once it isn't.
+    /// The server proved older than Burrow's floor (studio 0.47, or 0.9 for
+    /// the API itself); cleared once it isn't.
     outdated: bool,
+    /// The last studio-floor check (`crate::floor`): whether the blyg was
+    /// below it, and when. `None` before one this session.
+    floor: Option<(bool, Instant)>,
     /// Reading comes from upstream's own routes (no `/reading/imported`):
     /// `Some(true)`; `Some(false)` from the fork's; `None` not yet known.
     stock_reading: Option<bool>,
@@ -191,6 +195,10 @@ fn read_denied_message(e: &CoreError) -> String {
     )
 }
 
+/// While a blyg is below the studio floor, how often the worker checks
+/// again (a manual sync checks at once).
+const FLOOR_RECHECK: Duration = Duration::from_secs(60);
+
 /// The time allowed per pull for fetching item documents (lineage).
 const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
 
@@ -238,6 +246,7 @@ impl Engine {
                 pushing: false,
                 compatible: false,
                 outdated: false,
+                floor: None,
                 stock_reading: None,
                 stock_swept: None,
                 stock_seen: Default::default(),
@@ -344,7 +353,7 @@ impl Engine {
             },
             Health::Error => SyncStatus::Error,
             Health::Ok if pushing => SyncStatus::Syncing,
-            Health::Ok if self.store.earliest_due().is_some() => SyncStatus::Saving,
+            Health::Ok if self.earliest_due().is_some() => SyncStatus::Saving,
             Health::Ok => SyncStatus::Synced,
         }
     }
@@ -476,10 +485,15 @@ impl Engine {
                 Ok(None) => break Ok(()),
                 Err(e) => break Err(e),
             };
-            if let Err(e) = self.check_server() {
+            if let Err(e) = self.check_server(true) {
                 // Nothing is pushed; the op stays queued for a server that can take it.
                 self.note_err(&e);
                 break Err(e);
+            }
+            // The check may just have found the blyg below the studio floor:
+            // this op waits then, and `next_op` now passes over it.
+            if self.labels_held(&op) {
+                continue;
             }
             self.set_pushing(true);
             let ran = self.run_op(&op);
@@ -527,34 +541,116 @@ impl Engine {
         result
     }
 
-    /// Whether the server proved older than studio 0.9 (as of the last check).
+    /// Whether the server proved older than Burrow's floor, blygger-studio
+    /// 0.47 (or 0.9, when nothing syncs), as of the last check.
     pub fn server_outdated(&self) -> bool {
         self.state().outdated
     }
 
-    /// Make sure the server speaks studio 0.9+'s API before anything is
-    /// pushed or pulled: on an older one a new route's 404 reads as "item
-    /// deleted", and the push would re-create it. Checked once per session
-    /// (one small read), and again while the answer is "outdated".
-    fn check_server(&self) -> Result<()> {
-        if self.state().compatible {
-            return Ok(());
+    /// The blyg is below the studio floor (0.47): posts with labelled links
+    /// wait (`crate::floor`).
+    pub fn floor_below(&self) -> bool {
+        matches!(self.state().floor, Some((true, _)))
+    }
+
+    /// `op` sends a post's text, the text holds labelled links, and the blyg
+    /// is below the floor: it waits in the outbox. Read from the text as it
+    /// is now, so taking the labels out releases it on the next flush.
+    fn labels_held(&self, op: &Op) -> bool {
+        self.floor_below() && self.op_has_labels(op)
+    }
+
+    fn op_has_labels(&self, op: &Op) -> bool {
+        matches!(op.kind, OpKind::Create | OpKind::Save | OpKind::Recreate)
+            && self
+                .store
+                .row(&op.local_id)
+                .is_some_and(|r| crate::floor::has_labels(&r.item.content_md))
+    }
+
+    /// When the next op is due, passing over the ones held for labels (so
+    /// the worker doesn't wake for them).
+    pub fn earliest_due(&self) -> Option<i64> {
+        if !self.floor_below() {
+            return self.store.earliest_due();
         }
-        match self.api.count_items() {
-            Ok(_) => {
-                let mut st = self.state();
-                st.compatible = true;
-                st.outdated = false;
-                Ok(())
-            }
-            Err(CoreError::ServerOutdated) => {
-                let first = !std::mem::replace(&mut self.state().outdated, true);
-                if first {
-                    self.emit(CoreEvent::ServerOutdated);
+        let conflicted = self.store.conflicted().unwrap_or_default();
+        self.store
+            .ops()
+            .ok()?
+            .into_iter()
+            .filter(|o| !conflicted.contains(&o.local_id) && !self.op_has_labels(o))
+            .map(|o| o.not_before)
+            .min()
+    }
+
+    /// Before a post is published (`content`, its working copy): the checks
+    /// a push makes, and below the studio floor, no labelled links.
+    pub fn check_publish(&self, content: &str) -> Result<()> {
+        self.check_server(true)?;
+        if self.floor_below() && crate::floor::has_labels(content) {
+            return Err(CoreError::ServerOutdated);
+        }
+        Ok(())
+    }
+
+    /// Make sure the server can take what Burrow sends. Two checks, each
+    /// once per session (one small read each) and again while it fails:
+    ///
+    /// - studio 0.9+'s API, before anything is pushed or pulled: on an
+    ///   older one a new route's 404 reads as "item deleted", and the push
+    ///   would re-create it;
+    /// - studio 0.47+ (`crate::floor`): an older one doesn't understand
+    ///   labelled links, so posts holding them wait (`labels_held`). Only a
+    ///   push (`push`) waits for this check's verdict.
+    fn check_server(&self, push: bool) -> Result<()> {
+        if !self.state().compatible {
+            match self.api.count_items() {
+                Ok(_) => self.state().compatible = true,
+                Err(CoreError::ServerOutdated) => {
+                    self.mark_outdated();
+                    return Err(CoreError::ServerOutdated);
                 }
-                Err(CoreError::ServerOutdated)
+                Err(e) => return Err(e),
             }
-            Err(e) => Err(e),
+        }
+        self.check_floor(push)
+    }
+
+    /// The studio floor: checked when not yet known this session, and while
+    /// the blyg is below it at most every `FLOOR_RECHECK` (a manual sync
+    /// checks at once). A failed check decides nothing: a push waits for a
+    /// verdict, a pull goes on.
+    fn check_floor(&self, push: bool) -> Result<()> {
+        let due = match self.state().floor {
+            None => true,
+            Some((below, at)) => below && at.elapsed() >= FLOOR_RECHECK,
+        };
+        if due {
+            match self.api.studio_floor() {
+                Ok(f) => {
+                    let below = !f.meets();
+                    let mut st = self.state();
+                    st.floor = Some((below, Instant::now()));
+                    if below {
+                        drop(st);
+                        self.mark_outdated();
+                    } else {
+                        st.outdated = false;
+                    }
+                }
+                Err(e) if push && self.state().floor.is_none() => return Err(e),
+                Err(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// The server is below a floor: say so once (until it isn't).
+    fn mark_outdated(&self) {
+        let first = !std::mem::replace(&mut self.state().outdated, true);
+        if first {
+            self.emit(CoreEvent::ServerOutdated);
         }
     }
 
@@ -571,6 +667,7 @@ impl Engine {
         let conflicted = self.store.conflicted()?;
         let now = now_ms();
         let mut blocked: HashSet<LocalId> = HashSet::new();
+        let below = self.floor_below();
         let mut st = self.state();
         st.paced_until = None;
         for op in ops {
@@ -582,6 +679,12 @@ impl Engine {
             // Read state the credential can't write waits, queued, for one
             // that can; it holds nothing else up.
             if self.read_held_locked(&st, &op) {
+                continue;
+            }
+            // Below the studio floor a post with labelled links waits; the
+            // item's later ops wait behind it.
+            if below && self.op_has_labels(&op) {
+                blocked.insert(op.local_id.clone());
                 continue;
             }
             if conflicted.contains(&op.local_id) || op.in_flight || (!force && op.not_before > now)
@@ -1030,7 +1133,7 @@ impl Engine {
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
     fn pull_locked(&self) -> Result<()> {
-        self.check_server()?;
+        self.check_server(false)?;
         let rev = self.revisions()?;
         let full = rev.is_none()
             || self
@@ -1697,10 +1800,14 @@ impl Engine {
     }
 
     /// Push everything (ignoring the debounce), then pull. Bypasses backoff.
+    /// Below the studio floor it checks the version again first.
     pub fn sync_now(&self) -> Result<()> {
         {
             let mut st = self.state();
             st.retry_at = None;
+            if let Some((true, _)) = st.floor {
+                st.floor = None;
+            }
         }
         self.flush(None, true)?;
         self.pull()

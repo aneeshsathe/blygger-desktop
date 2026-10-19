@@ -71,6 +71,11 @@ impl MainView {
 
     /// Mark these posts read or unread (local, instant).
     pub(crate) fn mark_posts(&mut self, keys: Vec<Key>, read: bool, cx: &mut Context<Self>) {
+        // --- own posts --- yours have no read state, and none is sent.
+        let keys: Vec<Key> = keys
+            .into_iter()
+            .filter(|k| !super::own::is_own(k))
+            .collect();
         if keys.is_empty() {
             return self.show_toast("Nothing to mark", Some(PICK_HOW.into()), cx);
         }

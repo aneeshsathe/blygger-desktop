@@ -17,6 +17,7 @@
 
 mod embeds;
 mod emph;
+mod grammar;
 mod linemap;
 mod linkify;
 mod links;
@@ -31,8 +32,13 @@ mod transclusion;
 mod util;
 
 pub use embeds::{embed_css, preview_script, youtube_facade_html, youtube_id};
+pub use grammar::{
+    DirectiveRef, LinkRef, directive_ref, label_text, link_refs, link_source,
+    strip_generated_grammar,
+};
 pub use links::{
-    anchor_label, excerpt_from_html, normalize_selection, plain_text_from_html, selection_text,
+    anchor_label, excerpt_from_html, link_label, normalize_selection, plain_text_from_html,
+    selection_text,
 };
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
@@ -44,7 +50,7 @@ pub use transclusion::{
     Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
     Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
-pub use util::escape_html;
+pub use util::{escape_html, is_js_ws};
 
 /// Crockford base32 as blyg ids use it: lowercase, no i/l/o/u.
 pub const ID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";

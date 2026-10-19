@@ -82,6 +82,7 @@ const input = {
   spec: read("commonmark_spec_input.json"),
   vectors: read("linkify_vectors_input.json"),
   media: read("media_input.json"),
+  grammar: read("grammar_input.json"),
 };
 // Miniflare keeps scratch state in ./.wrangler: run it from a temporary
 // directory so nothing lands in the caller's working tree.
@@ -114,6 +115,7 @@ for (const doc of out.cases) write(`${doc.name}.json`, doc, 2);
 write("_commonmark_spec.json", { source: input.spec.source, examples: out.spec }, 1);
 write("_linkify_vectors.json", { source: input.vectors.source, cases: out.vectors }, 1);
 write("_media.json", { mount: input.media.mount, cases: out.media }, 2);
+write("_grammar.json", { id: input.grammar.id, ...out.grammar }, 1);
 write(
   "_manifest.json",
   {
@@ -125,6 +127,7 @@ write(
     commonmark_examples: out.spec.length,
     linkify_vectors: out.vectors.length,
     media_cases: out.media.length,
+    grammar_texts: out.grammar.texts.length,
   },
   2,
 );

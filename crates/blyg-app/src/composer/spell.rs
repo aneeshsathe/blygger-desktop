@@ -28,7 +28,8 @@ pub trait SpellEngine: Send + Sync + 'static {
 /// A copy of `text` with everything that isn't prose blanked to spaces,
 /// byte for byte (newlines kept), so offsets into it are offsets into `text`.
 /// Blanked: front matter, fenced code, code spans, link targets and
-/// reference definitions, autolinks and HTML tags, `![[id]]`, the
+/// reference definitions, autolinks and HTML tags, `![[id]]` (label and
+/// all), a `[[id]]` link's brackets and id (its label is prose), the
 /// `[TK]`/`[=]`/`[/TK]` markers, and bare URLs, domains, emails and `@…`.
 pub fn mask(text: &str) -> String {
     let mut b = text.as_bytes().to_vec();
@@ -110,6 +111,25 @@ fn mask_line(b: &mut [u8], off: usize, line: &str) {
                     i += run;
                 }
             }
+            continue;
+        }
+        // `[[id | label]]`: the label is the link's text, so it's checked;
+        // the rest of the link isn't prose.
+        if rest.starts_with("[[")
+            && let Some(r) =
+                blyg_core::grammar::link_refs(&rest[..rest.find('\n').unwrap_or(rest.len())])
+                    .into_iter()
+                    .next()
+                    .filter(|r| r.range.start == 0)
+        {
+            match blyg_core::grammar::label_range(rest, &r) {
+                Some(l) => {
+                    spans.push(i..i + l.start);
+                    spans.push(i + l.end..i + r.range.end);
+                }
+                None => spans.push(i..i + r.range.end),
+            }
+            i += r.range.end;
             continue;
         }
         if rest.starts_with("![[")
@@ -428,6 +448,13 @@ mod tests {
     #[test]
     fn mask_skips_blyg_markup() {
         assert_eq!(prose("Quote:\n![[01J9ABCDEF]]\nend"), ["Quote:", "end"]);
+        let id = "0a1b2c3d4e5f6g7h8j9k0m1n2p";
+        assert_eq!(
+            prose(&format!("See [[{id} | teh post]] and [[{id}]] too")),
+            ["See", "teh", "post", "and", "too"],
+            "a link's label is prose, its id isn't"
+        );
+        assert_eq!(prose(&format!("![[{id} | a nnote]]\nend")), ["end"]);
         assert_eq!(
             prose("[TK]write a line[=]A line.[/TK]"),
             ["write", "a", "line", "A", "line."]

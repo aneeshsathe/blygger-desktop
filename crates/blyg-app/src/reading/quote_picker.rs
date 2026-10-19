@@ -258,12 +258,20 @@ impl MainView {
             let s = self.editor.read(cx);
             (s.value().to_string(), s.cursor())
         };
+        // Bare below studio 0.47, so the post doesn't wait (`blyg_core::floor`).
+        let label = blyg_core::floor::picker_label(self.backend.server_outdated(), &pick.label);
         let (new_text, caret) = match kind {
-            PickKind::Quote => vm::insert_transclusion(&text, cursor, &pick.id),
+            // The long form, labelled with the text the link would show
+            // anyway (studio 0.47's picker, #70).
+            PickKind::Quote => vm::insert_directive(
+                &text,
+                cursor,
+                &blyg_core::grammar::directive_source(&pick.id, label),
+            ),
             // Where the typed `[[` was (it came out when the panel opened).
             PickKind::Link => {
                 let at = typed_at.unwrap_or(cursor).min(text.len());
-                picker::insert(&text, at, at, PickKind::Link, &pick.id)
+                picker::insert(&text, at, at, PickKind::Link, &pick.id, label)
             }
         };
         self.splice_editor(&text, &new_text, Some(caret), window, cx);
@@ -354,7 +362,7 @@ impl MainView {
                                 "Nothing held matches. Links and quotes come from your published posts and your blyg subscriptions.",
                             ))
                         })
-                        .children(picker::rows(p, &cands, sel, pick))
+                        .children(picker::rows(p, kind, &cands, sel, pick))
                     }),
             )
             .child(self.keys_row(vec![

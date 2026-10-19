@@ -543,25 +543,58 @@ pub struct OwnActions {
     pub can_pin: bool,
     pub already_pinned: bool,
     pub can_restore: bool,
+    /// The current version, while the post has unpublished edits: restoring
+    /// it is Discard changes.
+    pub can_discard: bool,
+    /// --- own fork --- "Fork this pin" is live (a pin of yours), or shown
+    /// greyed ("Pin one in ⌘Y to fork it"); `None`: not offered at all
+    /// (`own::FORK_OWN` off, or a withdrawal marker).
+    pub fork: Option<bool>,
 }
 
-/// One control on your own version. There's deliberately no fork: forking
-/// descends from someone else's pin (`PINNED_ACTIONS`), never from your
-/// own history.
+/// One control on your own version. Forking your own post is offered here
+/// only, as "Fork this pin" on a pinned version (blygger-studio's version
+/// history offers the same): protocol 0.4 §5.6 lets a fork descend from a
+/// pin of yours, `forked_from` naming your own origin ("REQUIRED, even when
+/// it is the publisher's own"). The reading pane and the Posts view offer
+/// no Fork on your own posts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OwnAction {
     /// "Pinned ✓" (a label, not a button).
     Pinned,
     Pin,
+    /// --- own fork --- a new draft from this pin (`forked_from`).
+    Fork,
+    /// --- own fork --- greyed on an unpinned version.
+    ForkNeedsPin,
     Restore,
+    /// Restore the current version: "Discard changes…".
+    Discard,
 }
+
+/// The tooltip on a greyed "Fork this pin" of your own.
+pub const OWN_FORK_NEEDS_PIN: &str = "Pin one in ⌘Y to fork it";
 
 impl OwnAction {
     pub fn label(self, v: u32) -> String {
         match self {
             OwnAction::Pinned => "Pinned ✓".into(),
             OwnAction::Pin => format!("📌 Pin v{v}…"),
+            OwnAction::Fork | OwnAction::ForkNeedsPin => "Fork this pin".into(),
             OwnAction::Restore => format!("Restore v{v}…"),
+            OwnAction::Discard => "Discard changes…".into(),
+        }
+    }
+
+    /// The control's one-sentence tooltip (empty: none).
+    pub fn tip(self, v: u32) -> String {
+        match self {
+            OwnAction::Fork => format!(
+                "Makes a new draft of yours from 📌 v{v}'s text, recorded as forked from it \
+                 (forked_from, naming your own blyg)."
+            ),
+            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.into(),
+            _ => String::new(),
         }
     }
 }
@@ -576,18 +609,29 @@ impl OwnActions {
         if self.can_pin {
             out.push(OwnAction::Pin);
         }
+        match self.fork {
+            Some(true) => out.push(OwnAction::Fork),
+            Some(false) => out.push(OwnAction::ForkNeedsPin),
+            None => {}
+        }
         if self.can_restore {
             out.push(OwnAction::Restore);
+        }
+        if self.can_discard {
+            out.push(OwnAction::Discard);
         }
         out
     }
 }
 
-pub fn own_actions(v: &Version, current: u32) -> OwnActions {
+/// `dirty`: the post has unpublished edits (`vm::has_unpublished_edits`).
+pub fn own_actions(v: &Version, current: u32, dirty: bool) -> OwnActions {
     OwnActions {
         can_pin: !v.pinned && !v.endcap,
         already_pinned: v.pinned,
         can_restore: !v.endcap && v.version != current,
+        can_discard: !v.endcap && v.version == current && dirty,
+        fork: (super::own::FORK_OWN && !v.endcap).then_some(v.pinned),
     }
 }
 
@@ -702,15 +746,22 @@ pub fn can_quote_into(item: Option<&Item>) -> bool {
 
 /// Insert `![[id]]` on its own line at byte `cursor`. Returns the new text
 /// and the caret after the inserted line.
+#[cfg(test)]
 pub fn insert_transclusion(text: &str, cursor: usize, id: &str) -> (String, usize) {
+    insert_directive(text, cursor, &format!("![[{id}]]"))
+}
+
+/// Insert a directive (`![[id]]` or `![[id | label]]`) on its own line at
+/// byte `cursor`. Returns the new text and the caret after the inserted line.
+pub fn insert_directive(text: &str, cursor: usize, directive: &str) -> (String, usize) {
     let cursor = floor_boundary(text, cursor.min(text.len()));
     let (before, after) = text.split_at(cursor);
-    let mut out = String::with_capacity(text.len() + id.len() + 8);
+    let mut out = String::with_capacity(text.len() + directive.len() + 2);
     out.push_str(before);
     if !before.is_empty() && !before.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(&format!("![[{id}]]"));
+    out.push_str(directive);
     let caret_line_end = out.len();
     if !after.starts_with('\n') {
         out.push('\n');
@@ -732,10 +783,38 @@ pub fn stub_body(remote_id: &str) -> String {
     blyg_render::stub_quote::stub_body(remote_id)
 }
 
+/// --- quote labels --- The label a quote of `r` is written with
+/// (`![[id | label]]`, studio 0.47): the picker's rule
+/// ([`blyg_core::pick::pick_label`]), so a quote from Reading and a pick
+/// read the same: the opening heading, else the title (the quoted excerpt
+/// when the title is too long to be a label).
+pub fn quote_label(r: &ReadingItem) -> String {
+    let html = if r.content_html.trim().is_empty() {
+        blyg_render::render_markdown(&r.content_md)
+    } else {
+        r.content_html.clone()
+    };
+    let title = post_title(r);
+    blyg_core::pick::pick_label(
+        Some(title.as_str()).filter(|t| *t != "…"),
+        blyg_core::pick::link_label(&html, r.kind),
+    )
+}
+
+/// `![[id | label]]` for `r` ([`quote_label`]); bare `![[id]]` when the
+/// blyg is below studio 0.47 (`below`), so the post doesn't wait.
+pub fn quote_directive(r: &ReadingItem, below: bool) -> String {
+    let label = quote_label(r);
+    blyg_core::grammar::directive_source(
+        &r.remote_id,
+        blyg_core::floor::picker_label(below, &label),
+    )
+}
+
 /// A link post: a new fragment holding `[[id]]`, a plain link that declares
 /// nothing on the wire (no `stub_of`, no mention). Not a reply: that's a stub.
 pub fn link_post_body(remote_id: &str) -> String {
-    format!("[[{remote_id}]]\n\n")
+    format!("{}\n\n", blyg_core::grammar::link_source(remote_id, None))
 }
 
 /// A partial transclusion: the directive with the (normalized) passage
@@ -920,6 +999,9 @@ mod tests {
         assert_eq!(t, "Hello\n![[X]]\n world");
         assert_eq!(&t[c..], " world");
         assert_eq!(insert_transclusion("a\n", 2, "X").0, "a\n![[X]]\n");
+        let (t, c) = insert_directive("Hello world", 5, "![[X | a note]]");
+        assert_eq!(t, "Hello\n![[X | a note]]\n world");
+        assert_eq!(&t[..c], "Hello\n![[X | a note]]\n");
     }
 
     #[test]
@@ -972,10 +1054,12 @@ mod tests {
         assert!(!PINNED_ACTIONS.contains(&"AI reply"));
     }
 
-    /// Your own history: every version can be restored or pinned, but no
-    /// version, pinned or not, offers Fork.
+    /// Your own history: every version can be restored or pinned; a pin
+    /// offers "Fork this pin" (protocol 0.4 §5.6), an unpinned version shows
+    /// it greyed with "Pin one in ⌘Y to fork it", a withdrawal marker not at
+    /// all. This is the only Fork your own posts get.
     #[test]
-    fn own_versions_never_offer_fork() {
+    fn own_versions_fork_from_pins_only() {
         for (pinned, endcap, version) in [
             (false, false, 1),
             (true, false, 2),
@@ -990,14 +1074,54 @@ mod tests {
                 pinned,
                 endcap,
             };
-            let a = own_actions(&v, 5);
-            for act in a.list() {
-                assert!(!act.label(version).to_lowercase().contains("fork"));
+            let a = own_actions(&v, 5, false);
+            let list = a.list();
+            match (pinned, endcap) {
+                (true, _) => {
+                    assert!(list.contains(&OwnAction::Fork));
+                    assert!(!list.contains(&OwnAction::ForkNeedsPin));
+                }
+                (false, false) => {
+                    assert!(list.contains(&OwnAction::ForkNeedsPin));
+                    assert_eq!(OwnAction::ForkNeedsPin.tip(version), OWN_FORK_NEEDS_PIN);
+                }
+                (false, true) => assert!(list.is_empty(), "{list:?}"),
             }
             if !pinned && !endcap && version != 5 {
-                assert_eq!(a.list(), [OwnAction::Pin, OwnAction::Restore]);
+                assert_eq!(
+                    list,
+                    [OwnAction::Pin, OwnAction::ForkNeedsPin, OwnAction::Restore]
+                );
             }
         }
+    }
+
+    /// The current version offers no Restore, but with unpublished edits
+    /// it offers Discard changes (the same path as ⌥⌘Z).
+    #[test]
+    fn the_current_version_discards_changes_when_dirty() {
+        let v = |version, endcap| Version {
+            version,
+            published_at: "2026-09-20T10:00:00Z".into(),
+            note: None,
+            pinned: false,
+            endcap,
+        };
+        assert_eq!(
+            own_actions(&v(5, false), 5, false).list(),
+            [OwnAction::Pin, OwnAction::ForkNeedsPin]
+        );
+        assert_eq!(
+            own_actions(&v(5, false), 5, true).list(),
+            [OwnAction::Pin, OwnAction::ForkNeedsPin, OwnAction::Discard]
+        );
+        assert_eq!(OwnAction::Discard.label(5), "Discard changes…");
+        // A past version restores, edits or not; an endcap does neither.
+        assert_eq!(
+            own_actions(&v(4, false), 5, true).list(),
+            [OwnAction::Pin, OwnAction::ForkNeedsPin, OwnAction::Restore]
+        );
+        assert!(own_actions(&v(5, true), 5, true).list().is_empty());
     }
 
     /// The reading search: title, author, origin and text, any case; an

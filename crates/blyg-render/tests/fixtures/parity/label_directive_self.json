@@ -1,0 +1,17 @@
+{
+  "name": "label_directive_self",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vzz | myself]]",
+  "html": "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: a thread cannot transclude itself</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[01j9zq3k4m5n6p7q8r9s0t1vzz | myself]]",
+      "reason": "a thread cannot transclude itself"
+    }
+  ]
+}

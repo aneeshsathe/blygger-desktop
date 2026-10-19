@@ -66,9 +66,19 @@ fn posts_become_a_quote_or_a_link() {
         title: "Rue".into(),
         first_line: "A hyperlink is a small unit of trust.".into(),
         url: Some("https://rue.blyg.example.com/f/trust/".into()),
+        label: Some("Rue".into()),
     };
-    // A thread may hold quotes: the transclusion.
-    assert_eq!(post_block(&blyg, true), "![[01K2RUE0TRUST0000000000001]]");
+    // A thread may hold quotes: the transclusion, labelled as the picker
+    // writes it.
+    assert_eq!(
+        post_block(&blyg, true),
+        "![[01K2RUE0TRUST0000000000001 | Rue]]"
+    );
+    let bare = PostRef {
+        label: None,
+        ..blyg.clone()
+    };
+    assert_eq!(post_block(&bare, true), "![[01K2RUE0TRUST0000000000001]]");
     // A fragment can't: a link and the first line, quoted.
     assert_eq!(
         post_block(&blyg, false),
@@ -80,6 +90,7 @@ fn posts_become_a_quote_or_a_link() {
         title: "The year [in review]".into(),
         first_line: "Fewer clients.".into(),
         url: Some("https://omar.example.com/2026/year".into()),
+        label: None,
     };
     assert_eq!(
         post_block(&rss, true),
@@ -481,15 +492,18 @@ mod ui {
         settle(cx);
         assert!(is_open(&view, cx));
         let text = notes_text(&view, cx);
-        assert_eq!(text, format!("# Reading notes\n\n![[{RUE_TRUST}]]\n\n"));
+        // --- quote labels --- labelled as the picker writes it (one long
+        // sentence: too long for a title label, so the quoted excerpt).
+        assert!(
+            text.starts_with(&format!("# Reading notes\n\n![[{RUE_TRUST} | “A hyperlink"))
+                && text.ends_with("]]\n\n"),
+            "{text}"
+        );
         assert_eq!(stored(&view, &fake, cx).content_md, text, "saved");
         // The caret is on a new line below, ready to type.
         cx.simulate_input("why this matters");
         settle(cx);
-        assert_eq!(
-            notes_text(&view, cx),
-            format!("# Reading notes\n\n![[{RUE_TRUST}]]\n\nwhy this matters")
-        );
+        assert_eq!(notes_text(&view, cx), format!("{text}why this matters"));
         // The chip is in the stream's action row.
         view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
         slide_out(cx);
@@ -554,7 +568,7 @@ mod ui {
             v.reading_action_for_test("Notes", window, cx)
         });
         settle(cx);
-        assert!(notes_text(&view, cx).contains(&format!("![[{LIN_GARDENS}]]")));
+        assert!(notes_text(&view, cx).contains(&format!("![[{LIN_GARDENS} | ")));
         view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
         slide_out(cx);
         // A passage selected in the post: ⇧⌘N quotes it with a link.

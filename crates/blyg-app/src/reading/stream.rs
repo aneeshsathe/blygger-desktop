@@ -515,7 +515,8 @@ impl MainView {
             }
         }
         let due = self.reading.stream.tracker.observe(&on_screen, now);
-        for (sub, rid) in due {
+        // --- own posts --- never unread, and never marked.
+        for (sub, rid) in due.into_iter().filter(|k| !super::own::is_own(k)) {
             let backend = self.backend.clone();
             cx.background_spawn(async move {
                 let _ = backend.mark_read(&sub, &rid);
@@ -651,7 +652,10 @@ impl MainView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.ink)
                     .hover(|s| s.text_color(p.accent))
-                    .tooltip(|_, cx| cx.new(|_| super::Tip("Profile · ⌘I".into())).into())
+                    .tooltip(|_, cx| {
+                        cx.new(|_| super::Tip(crate::keymap::hint("Profile · ⌘I").into()))
+                            .into()
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         cx.stop_propagation();
                         this.open_profile(origin.clone(), window, cx)
@@ -893,6 +897,10 @@ impl MainView {
                 if id == "Link post" && !blyg {
                     continue; // a feed post has no id to link
                 }
+                // --- own posts --- no AI reply to yourself.
+                if id == "AI reply" && super::own::is_own(&key) {
+                    continue;
+                }
                 let chip = vm::action_chip(id, &ctx);
                 let tip = chip.tip.clone();
                 let k = key.clone();
@@ -932,15 +940,18 @@ impl MainView {
         };
         row.push(div().flex_1().into_any_element());
         // --- notes --- the thumbs wrap together (the row grew a chip).
-        row.push(
-            div()
-                .flex_none()
-                .flex()
-                .gap(px(6.))
-                .child(t("stream-thumb-up", "👍", 1))
-                .child(t("stream-thumb-down", "👎", -1))
-                .into_any_element(),
-        );
+        // --- own posts --- no thumbs on yours (no signals about them).
+        if !super::own::is_own(&key) {
+            row.push(
+                div()
+                    .flex_none()
+                    .flex()
+                    .gap(px(6.))
+                    .child(t("stream-thumb-up", "👍", 1))
+                    .child(t("stream-thumb-down", "👎", -1))
+                    .into_any_element(),
+            );
+        }
         div()
             .id("stream-actions")
             .debug_selector(|| "stream-actions".into())
@@ -1101,11 +1112,16 @@ impl MainView {
         let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
         for s in spans {
             let start = text.len();
-            // An `[[id]]` link reads as the target's excerpt when it's held.
+            // An `[[id]]` link reads as its own label, else as the target's
+            // excerpt when it's held.
             let label = s.item.as_deref().map(|id| {
                 let held = stream_vm::quoted(&self.reading.rows, post, id);
                 let (origin, _) = stream_vm::quote_ref(post, id, held);
-                (stream_vm::link_label(held), origin, id.to_string())
+                (
+                    stream_vm::span_link_text(s.label.as_deref(), held),
+                    origin,
+                    id.to_string(),
+                )
             });
             match &label {
                 Some((l, ..)) => text.push_str(l),
@@ -1223,7 +1239,9 @@ impl MainView {
                     _ => div()
                         .italic()
                         .text_color(p.muted)
-                        .child("The quoted post isn't held on this Mac.")
+                        .child(crate::keymap::hint(
+                            "The quoted post isn't held on this Mac.",
+                        ))
                         .into_any_element(),
                 },
             ],

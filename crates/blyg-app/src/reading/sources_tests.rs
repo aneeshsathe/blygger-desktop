@@ -137,7 +137,8 @@ fn selecting_a_source_filters_the_list(cx: &mut TestAppContext) {
         "Lin's gardens aren't in Friends"
     );
     select(&view, Source::Smart(Smart::All), cx);
-    assert_eq!(shown(&view, cx), [LIN_GARDENS, OMAR_YEAR]);
+    // --- own posts --- yours are in All too.
+    assert_eq!(shown(&view, cx), [LIN_GARDENS, OMAR_YEAR, OWN_GARDENS]);
     view.update_in(cx, |v, window, cx| v.set_reading_query("", window, cx));
 
     // "All unread": a post read there stays listed until the source changes.
@@ -334,12 +335,19 @@ fn folders_are_made_renamed_reordered_and_deleted(cx: &mut TestAppContext) {
 fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     assert_eq!(pane(&view, cx), Pane::List);
-    // ← to the sources; ↓ picks the next source (the first folder).
+    // ← to the sources; ↓ picks the next source (Your blyg, then the
+    // first folder).
     cx.simulate_keystrokes("left");
     settle(cx);
     assert_eq!(pane(&view, cx), Pane::Sources);
     cx.simulate_keystrokes("left");
     assert_eq!(pane(&view, cx), Pane::Sources, "stops at the edge");
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.source.clone()),
+        Source::Own
+    );
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(
@@ -358,6 +366,7 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let first = shown(&view, cx)[0].clone();
     assert_eq!(opened(&view, cx).as_deref(), Some(first.as_str()));
     assert_eq!(pane(&view, cx), Pane::Sources, "the keys stay put");
+    cx.simulate_keystrokes("up");
     cx.simulate_keystrokes("up");
     settle(cx);
     assert_eq!(

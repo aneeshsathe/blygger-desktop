@@ -1135,8 +1135,8 @@ pub enum CoreEvent {
     ReadingChanged,
     /// A background operation failed; human-readable.
     Error(String),
-    /// The server turned out to be older than blygger-studio 0.9 (sent once
-    /// per session, when first noticed). See `Backend::server_outdated`.
+    /// The server turned out to be older than blygger-studio 0.47 (sent
+    /// once per session, when first noticed). See `Backend::server_outdated`.
     ServerOutdated,
     /// The server turned out to be a stock blygger-studio, without the
     /// extensions in docs/SERVER.md (sent once per local database). See
@@ -1238,6 +1238,11 @@ fn plain_line(line: &str) -> String {
         .or_else(|| t.strip_prefix("* "))
         .unwrap_or(t);
     let mut out = String::new();
+    // A labelled link reads as its label, as upstream's plain text has it
+    // (studio 0.47, #70); the label's own Markdown goes like the rest.
+    // An unlabelled one is an arrow, as the list has no titles.
+    let t =
+        crate::grammar::replace_links(t, |r| Some(r.label.clone().unwrap_or_else(|| "↗".into())));
     let c: Vec<char> = t.chars().collect();
     let mut i = 0;
     while i < c.len() {
@@ -1327,6 +1332,15 @@ mod title_tests {
         assert_eq!(plain_title("![[0a1b2c3d4e5f6g7h8j9k0m1n2p]]\n\n"), None);
         assert_eq!(t("See [[0a1b2c3d4e5f6g7h8j9k0m1n2p]] too"), "See ↗ too");
         assert_eq!(t("[[not an id]]"), "[[not an id]]");
+        assert_eq!(
+            t("See [[0a1b2c3d4e5f6g7h8j9k0m1n2p | the *earlier* post]], yes"),
+            "See the earlier post, yes"
+        );
+        assert_eq!(t("é [[0a1b2c3d4e5f6g7h8j9k0m1n2p |  ]] é"), "é ↗ é");
+        assert_eq!(
+            t("Mine\n![[0a1b2c3d4e5f6g7h8j9k0m1n2p | a note]]\nmore"),
+            "Mine"
+        );
     }
 
     /// Studio 0.8.2: a thread is named in its author's own words, never in
@@ -1433,7 +1447,13 @@ mod lineage_tests {
             highlight_mode: None,
         };
         let target = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
-        let quote = item("Q", &format!("Mine\n![[{target}]]"), Status::Public, 1);
+        // A labelled quote (studio 0.47) responds by its id.
+        let quote = item(
+            "Q",
+            &format!("Mine\n![[{target} | their post]]"),
+            Status::Public,
+            1,
+        );
         let mut stub = item("S", &format!("Re\n![[{target}]]"), Status::Public, 2);
         stub.stub_of = Some(RemoteRef {
             origin: "https://ada.example/".into(),

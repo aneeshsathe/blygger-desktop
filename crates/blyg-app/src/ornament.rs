@@ -1204,10 +1204,25 @@ pub fn divider(t: &Theme) -> Option<AnyElement> {
 
 /// What the status ornaments can show.
 pub struct StatusData {
-    /// Posts written per day, oldest first (the tide sparkline).
+    /// Posts written per day, oldest first (the tide and block sparklines).
     pub activity: Vec<u32>,
-    /// The selected post's depth in the list (1 = the top).
-    pub depth: Option<usize>,
+}
+
+/// The block sparkline's tooltip.
+pub const BLOCK_SPARKLINE_TIP: &str = "Your posts, last 14 days · today on the right";
+
+/// `block-sparkline`: a day per character, oldest first, `▁`…`█` scaled to
+/// the busiest day and `·` for a day with none.
+pub fn block_strip(values: &[u32]) -> String {
+    const BLOCKS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let max = values.iter().copied().max().unwrap_or(0).max(1);
+    values
+        .iter()
+        .map(|&v| match v {
+            0 => '·',
+            v => BLOCKS[((v * 8).div_ceil(max) as usize).clamp(1, 8) - 1],
+        })
+        .collect()
 }
 
 /// `status.ornament`.
@@ -1252,18 +1267,17 @@ pub fn status(t: &Theme, data: StatusData, chrome_font: &'static str) -> Option<
                     .into_any_element(),
             )
         }
-        Kind::ZLevel => {
+        Kind::BlockSparkline => {
             let c = solid(&o, 0, p.accent);
-            let z = data.depth.unwrap_or(0);
             Some(
                 div()
-                    .id("z-level")
+                    .id("block-sparkline")
                     .font_family(chrome_font)
                     .text_color(c)
-                    .child(if z == 0 {
-                        "z 0  ▲".to_string()
-                    } else {
-                        format!("z −{z}  ▼")
+                    .child(block_strip(&data.activity))
+                    .tooltip(|_, cx| {
+                        cx.new(|_| crate::app::reading::Tip(BLOCK_SPARKLINE_TIP.into()))
+                            .into()
                     })
                     .into_any_element(),
             )
@@ -1662,5 +1676,16 @@ mod tests {
         assert_eq!(g[1].size.width, px(120.));
         assert!(gutters(b, Some(0.)).is_empty(), "no margin: nothing drawn");
         assert_eq!(gutters(b, None), vec![b]);
+    }
+
+    /// Fortress's status strip: a character a day, scaled to the busiest.
+    #[test]
+    fn the_block_sparkline_draws_a_character_a_day() {
+        use super::block_strip;
+        assert_eq!(block_strip(&[0, 1, 2, 4, 8]), "·▁▂▄█");
+        assert_eq!(block_strip(&[3, 0, 3]), "█·█");
+        assert_eq!(block_strip(&[1, 7]), "▂█", "the least day still shows");
+        assert_eq!(block_strip(&[0; 14]).chars().count(), 14);
+        assert_eq!(block_strip(&[]), "");
     }
 }

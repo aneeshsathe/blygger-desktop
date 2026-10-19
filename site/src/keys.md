@@ -4,9 +4,15 @@ Burrow is keyboard-first. Every toolbar button's tooltip shows its key, and
 `blygger +list-keybinds` prints this list from the app itself.
 
 **On Windows**, read every ⌘ as **Ctrl** (⌘⏎ is Ctrl+Enter, ⇧⌘, is
-Ctrl+Shift+,), with one exception: Versions is Ctrl+Shift+Y, because Ctrl+Y
-is Redo there. The app's tooltips, menu and `+list-keybinds` show the Windows
+Ctrl+Shift+,), with two exceptions: Versions is Ctrl+Shift+Y, because Ctrl+Y
+is Redo there, and Discard changes has no key (Ctrl+Alt+Z is AltGr+Z, which types
+a letter on some layouts): use Menu › Post › Discard Changes… or the toolbar.
+The app's tooltips, menu and `+list-keybinds` show the Windows
 keys.
+
+⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply · new stub, Quote into a thread, Link post) act on
+the post in front of you: in Reading the open post, else the selected one; in
+Posts your own published post.
 
 ## The main table
 
@@ -28,8 +34,8 @@ These belong to one screen or sheet, so they aren't in the table above.
 | ⏎ | Open the selected post, or start a draft when nothing matches |
 | esc | Clear the search; from the editor, back to the omnibar |
 | ⌃⌥B | Quick capture, from any app (`capture-hotkey`) |
-| ⌘K, or `![[` at the start of a line | Quote a post (threads only) |
-| `[[` | Link a post |
+| ⌘K, or `![[` at the start of a line | Quote a post (threads only); ⏎ inserts `![[… \| note]]` on its own line |
+| `[[` | Link a post; ⏎ inserts `[[… \| label]]` |
 | @ | Mention a blyg |
 
 **Quick capture and the notes drawer**
@@ -57,7 +63,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 
 | Key | What it does |
 |---|---|
-| ⏎ | Confirm (publish, delete, accept) |
+| ⏎ | Confirm (publish, delete, discard changes, accept) |
 | esc | Cancel or close |
 | 1 / 2 / 3 | In a conflict: keep mine, take the server's, keep both |
 | ⇥, F, ← | In a profile: switch tabs, follow the selected entry, go back |

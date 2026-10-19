@@ -1,0 +1,12 @@
+{
+  "name": "label_link_bang",
+  "kind": "fragment",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w | a quote]] inline ![[01j9zq3k4m5n6p7q8r9s0t1v2w | x]] and [[[01j9zq3k4m5n6p7q8r9s0t1v2w | triple]]] and \\[[01j9zq3k4m5n6p7q8r9s0t1v2w | escaped]]",
+  "html": "<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w | a quote]] inline ![[01j9zq3k4m5n6p7q8r9s0t1v2w | x]] and [<a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">triple</a>] and \\<a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">escaped</a></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

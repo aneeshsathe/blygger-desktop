@@ -7,14 +7,15 @@
 //! A link is inline and bakes nothing: no `transclusions[]` entry, no
 //! mention, no self or cycle check. It resolves in the same order as a
 //! quote (your published item, then an imported blyg item) and becomes an
-//! anchor whose text is the target's opening heading, else a short excerpt
-//! of the target in quotes.
+//! anchor whose text is the author's label (`[[id | text]]`, studio 0.47),
+//! else the target's opening heading, else a short excerpt of the target in
+//! quotes. The grammar itself is `grammar.rs`.
 
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use crate::ID_ALPHABET;
+use crate::grammar::{self, Ids};
 use crate::linemap::Mapped;
 use crate::markdown;
 use crate::transclusion::{Found, Resolution, Resolver, Unresolved, UnresolvedReason};
@@ -29,36 +30,13 @@ pub(crate) const NATIVE_SENTINEL: char = '\u{4}';
 /// Marks each candidate in the "is this code?" probe; never leaves it.
 const PROBE: char = '\u{5}';
 
-fn link_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(&format!(r"\[\[([{ID_ALPHABET}]{{26}})\]\]")).expect("link re"))
-}
-
-/// Any 26 ASCII letters and digits, either case: what the native block
-/// model accepts (it only decides what to draw as a link, like its looser
-/// directive grammar).
-fn loose_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\[\[([0-9A-Za-z]{26})\]\]").expect("loose link re"))
-}
-
-/// `(?<!!)\[\[(id)\]\]` over `text`: `(start, end)` of each match.
+/// `LINK_INLINE` over `text`: `(start, end)` of each match.
+#[cfg(test)]
 fn matches(text: &str) -> Vec<(usize, usize)> {
-    matches_with(text, link_re())
-}
-
-fn matches_with(text: &str, re: &Regex) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    let mut at = 0;
-    while let Some(m) = re.find_at(text, at) {
-        if text[..m.start()].ends_with('!') {
-            at = m.start() + 1;
-            continue;
-        }
-        out.push((m.start(), m.end()));
-        at = m.end();
-    }
-    out
+    grammar::link_bodies(text, Ids::Strict)
+        .into_iter()
+        .map(|(p, b)| (p, b.end))
+        .collect()
 }
 
 /// `codeMatches`: which matches Markdown puts inside `<code>`, found by
@@ -98,37 +76,52 @@ fn code_matches(text: &str, ms: &[(usize, usize)], html: bool) -> HashSet<usize>
     in_code
 }
 
+/// An `[[id]]` the native block model draws: its id and the author's label.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NativeLink {
+    pub id: String,
+    pub label: Option<String>,
+}
+
 /// `[[id]]` links in `text` (outside code) swapped for `U+0004 n U+0004`
-/// tokens, with the ids in token order. For the native block model, which
-/// draws the links itself.
-pub(crate) fn tokenize(text: &str) -> (String, Vec<String>) {
+/// tokens, with the links in token order. For the native block model, which
+/// draws the links itself. Ids are read loosely (any case), labels as the
+/// grammar reads them.
+pub(crate) fn tokenize(text: &str) -> (String, Vec<NativeLink>) {
     if !text.contains("[[") {
         return (text.to_string(), Vec::new());
     }
-    let ms = matches_with(text, loose_re());
+    let bodies = grammar::link_bodies(text, Ids::Loose);
+    let ms: Vec<(usize, usize)> = bodies.iter().map(|(p, b)| (*p, b.end)).collect();
     let in_code = code_matches(text, &ms, false);
     let in_url = url_matches(text, &ms, false);
-    let mut ids = Vec::new();
+    let mut links = Vec::new();
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
-    for (i, &(a, b)) in ms.iter().enumerate() {
+    for (i, (a, body)) in bodies.iter().enumerate() {
         if in_code.contains(&i) || in_url.contains(&i) {
             continue;
         }
-        out.push_str(&text[last..a]);
+        out.push_str(&text[last..*a]);
         out.push(NATIVE_SENTINEL);
-        out.push_str(&ids.len().to_string());
+        out.push_str(&links.len().to_string());
         out.push(NATIVE_SENTINEL);
-        ids.push(text[a + 2..b - 2].to_string());
-        last = b;
+        links.push(NativeLink {
+            id: text[body.id.clone()].to_string(),
+            label: grammar::label(body.raw_label.clone().map(|r| &text[r])).map(str::to_string),
+        });
+        last = body.end;
     }
     out.push_str(&text[last..]);
-    (out, ids)
+    (out, links)
 }
 
-/// Split `s` around the tokens [`tokenize`] made: `Err(id)` for a link,
+/// Split `s` around the tokens [`tokenize`] made: `Err(link)` for a link,
 /// `Ok(text)` for the text between.
-pub(crate) fn split_tokens<'a>(s: &'a str, ids: &'a [String]) -> Vec<Result<&'a str, &'a str>> {
+pub(crate) fn split_tokens<'a>(
+    s: &'a str,
+    links: &'a [NativeLink],
+) -> Vec<Result<&'a str, &'a NativeLink>> {
     let mut out = Vec::new();
     let mut parts = s.split(NATIVE_SENTINEL);
     if let Some(first) = parts.next()
@@ -140,8 +133,8 @@ pub(crate) fn split_tokens<'a>(s: &'a str, ids: &'a [String]) -> Vec<Result<&'a 
     let mut token = true;
     for p in parts {
         if token {
-            match p.parse::<usize>().ok().and_then(|i| ids.get(i)) {
-                Some(id) => out.push(Err(id.as_str())),
+            match p.parse::<usize>().ok().and_then(|i| links.get(i)) {
+                Some(link) => out.push(Err(link)),
                 None if !p.is_empty() => out.push(Ok(p)),
                 None => {}
             }
@@ -189,8 +182,7 @@ fn url_matches(text: &str, ms: &[(usize, usize)], html: bool) -> HashSet<usize> 
         }
     }
     for (i, &(a, b)) in ms.iter().enumerate() {
-        let id = &text[a + 2..b - 2];
-        let encoded = format!("%5B%5B{id}%5D%5D");
+        let encoded = encode_uri(&text[a..b]);
         if spans
             .iter()
             .any(|&(s, e, href)| a > s && b < e && (!html || href.contains(&encoded)))
@@ -213,7 +205,15 @@ fn our_origin(mount: &str) -> String {
 /// transclusion.ts `anchorText`: the target's opening heading as plain text,
 /// else its excerpt in curly quotes, else "a thread" or "a fragment".
 fn anchor_text(f: &Found) -> String {
-    anchor_label(&f.content_html).unwrap_or_else(|| format!("a {}", f.kind.as_str()))
+    link_label(&f.content_html, f.kind)
+}
+
+/// link-label.ts `linkLabel` (studio 0.47): the text an unlabelled `[[id]]`
+/// shows, and the label the picker and *copy [[id]]* write into the long
+/// form ([`link_source`](crate::link_source)): [`anchor_label`], else
+/// "a thread" or "a fragment". Not HTML-escaped.
+pub fn link_label(content_html: &str, kind: crate::ItemKind) -> String {
+    anchor_label(content_html).unwrap_or_else(|| format!("a {}", kind.as_str()))
 }
 
 /// The label an `[[id]]` anchor takes from its target's `content_html`
@@ -322,7 +322,7 @@ fn substitute(
 ) -> (Option<String>, Links) {
     let mut links = Links::default();
     let ms = if text.contains("[[") {
-        matches(text)
+        grammar::link_bodies(text, Ids::Strict)
     } else {
         Vec::new()
     };
@@ -337,7 +337,8 @@ fn substitute(
     let origin = our_origin(mount);
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
-    for &(a, b) in &ms {
+    for (a, body) in &ms {
+        let (a, b) = (*a, body.end);
         if markdown::in_ranges(&code, a) {
             continue;
         }
@@ -346,7 +347,8 @@ fn substitute(
         let n = *seq;
         *seq += 1;
         let literal = &text[a..b];
-        let id = &text[a + 2..b - 2];
+        let id = &text[body.id.clone()];
+        let author = grammar::label(body.raw_label.clone().map(|r| &text[r]));
         let (html, label) = match reason(resolver.resolve_link(id)) {
             Ok(f) => {
                 let href = match &f.origin {
@@ -354,7 +356,9 @@ fn substitute(
                     None => blyg_item_url(&origin, f.kind, &f.id, None),
                 };
                 links.resolved += 1;
-                let label = escape_html(&anchor_text(&f));
+                // The author's label is the anchor text when there is one
+                // (§10.1, #70); otherwise the target's own text.
+                let label = escape_html(&author.map_or_else(|| anchor_text(&f), str::to_string));
                 (
                     format!("<a href=\"{}\">{label}</a>", escape_html(&href)),
                     label,
@@ -406,9 +410,18 @@ pub(crate) struct Links {
     pub unresolved: Vec<Unresolved>,
 }
 
-/// `encodeURI` of a `[[id]]` literal (the id is ASCII letters and digits).
-fn encode_literal(literal: &str) -> String {
-    literal.replace('[', "%5B").replace(']', "%5D")
+/// JavaScript's `encodeURI`: UTF-8 percent-encoding of everything but
+/// ASCII letters, digits and `;,/?:@&=+$-_.!~*'()#`.
+fn encode_uri(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 3);
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || b";,/?:@&=+$-_.!~*'()#".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
 }
 
 impl Links {
@@ -453,7 +466,7 @@ impl Links {
         if self.tokens.is_empty() {
             return html;
         }
-        let out = self.replace_tokens(&html, ENCODED_SENTINEL, &|t| encode_literal(&t.literal));
+        let out = self.replace_tokens(&html, ENCODED_SENTINEL, &|t| encode_uri(&t.literal));
         if !out.contains(SENTINEL) {
             return out;
         }
@@ -491,7 +504,7 @@ impl Links {
                 if is_tag || in_code > 0 {
                     escape_html(&t.literal)
                 } else if in_anchor > 0 {
-                    if anchor_tag.contains(&encode_literal(&t.literal)) {
+                    if anchor_tag.contains(&encode_uri(&t.literal)) {
                         escape_html(&t.literal)
                     } else {
                         t.label.clone()

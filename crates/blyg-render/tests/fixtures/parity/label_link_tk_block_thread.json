@@ -1,0 +1,24 @@
+{
+  "name": "label_link_tk_block_thread",
+  "kind": "thread",
+  "md": "[TK]list[=]- [see [[01j9zq3k4m5n6p7q8r9s0t1v2w | inner]]](https://x.test/)\n- <https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]>\n- [[0zzzzzzzzzzzzzzzzzzzzzzzzz | bad]][/TK]\n\nBody [[01j9zq3k4m5n6p7q8r9s0t1v2w | body label]]",
+  "html": "<div class=\"blyg-tk-gen\"><ul>\n<li><a href=\"https://x.test/\">see inner</a></li>\n<li><a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7Ctight%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|tight]]</a></li>\n<li><span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span></li>\n</ul>\n</div>\n<p>Body <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">body label</a></p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "list",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz | bad]]",
+      "reason": "unknown item"
+    }
+  ]
+}

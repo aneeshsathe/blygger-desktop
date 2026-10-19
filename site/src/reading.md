@@ -23,8 +23,8 @@ the post they point to.
 ## The Reader
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
-(All unread, Today, Thumbed, your folders, then the rest), the posts from
-that source in the middle, and the post on the right.
+(All unread, Today, Thumbed, All, then **Your blyg**, your folders and the
+rest), the posts from that source in the middle, and the post on the right.
 
 - **Folders** stay on your Mac. Drag a subscription onto one to file it, or
   use its context menu; Blyg › New Folder… makes one.
@@ -33,6 +33,21 @@ that source in the middle, and the post on the right.
 - ⌥⌘S hides the sources pane, and its edge drags to resize.
 
 ![The three-pane Reader](screenshots/reader-three-pane.png)
+
+### Your blyg
+
+Your own published posts are in Reading too. They sit among everyone else's
+by date in All, Today and the stream, and alone under **Your blyg** in the
+sources pane (once you've published something). They read as "You", with the
+same reading pane, lineage and actions: Quote into a thread, Reply · new
+stub, Link post, Open on web and → Notes. There's no AI reply to yourself,
+and no Fork here: your own post forks from a pin in ⌘Y (see
+[Replying to, quoting and linking your own posts](writing.md#replying-to-quoting-and-linking-your-own-posts)).
+
+Your posts are **never unread**: they get no dot, never count in All unread
+or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
+read state. Opening one shows your current version and your pins, and, when
+you have unpublished edits, the text as it's published.
 
 **Search** (⌘F, or `/` with the list focused) filters whatever you're reading
 as you type, over the title, the author, the blyg and the text of the posts
@@ -100,7 +115,9 @@ added) and `blygger +export-opml <file>`.
 
 The selected post shows its actions. Each says what it makes:
 
-- **Quote into a thread**: `![[id]]` in a thread of yours.
+- **Quote into a thread**: `![[id | label]]` in a thread of yours, labelled
+  with the post's heading or title (on a blyg older than studio 0.47,
+  `![[id]]`; see [labelled links](writing.md#labelled-links)).
 - **Reply · new stub**: a new thread that responds to the post (a *stub*,
   Blygger's reply). It starts quoting the whole post. A line above the
   editor says what the stub is doing; **quote a passage instead** shows the

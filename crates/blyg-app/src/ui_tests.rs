@@ -222,6 +222,42 @@ fn publish_sheet_enter_publishes_with_note(cx: &mut TestAppContext) {
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
 }
 
+/// Below studio 0.47 a post with labelled links gets the held sheet: ⏎
+/// writes them bare and publishes; esc leaves it as it was.
+#[gpui_kit::test]
+fn publishing_labelled_links_to_an_old_blyg_offers_the_bare_form(cx: &mut TestAppContext) {
+    const LID: &str = "7c9wk2n4h6q1x8v0z3m5rjy2ke";
+    let (view, fake, cx) = setup(cx);
+    let id = LocalId("01J9QK3".into());
+    let text = format!("A lighthouse, see [[{LID} | that post]]");
+    fake.save(&id, &text).unwrap();
+    fake.trigger_server_outdated();
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::HeldLabels { .. }))));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert_eq!(fake.item(&id).unwrap().content_md, text, "left as it was");
+
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("enter");
+    for _ in 0..50 {
+        cx.run_until_parked();
+        if fake.item(&id).unwrap().status == Status::Public {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let item = fake.item(&id).unwrap();
+    assert_eq!(item.status, Status::Public);
+    assert_eq!(item.content_md, format!("A lighthouse, see [[{LID}]]"));
+}
+
 #[gpui_kit::test]
 fn publish_sheet_escape_cancels(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
@@ -271,7 +307,7 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         let t = v.toast.as_ref().expect("a toast");
         assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
-        assert!(t.sub.as_ref().is_some_and(|s| s.contains("0.9")));
+        assert!(t.sub.as_ref().is_some_and(|s| s.contains("0.47 or later")));
         assert!(
             v.render_server_notice().is_some(),
             "the status bar keeps saying it"
@@ -279,23 +315,16 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
     });
 }
 
+/// The "older than 0.40" sheet is gone with the 0.47 floor: such a blyg
+/// gets the outdated notice, and the old event opens nothing.
 #[gpui_kit::test]
-fn a_stock_server_explains_whats_limited(cx: &mut TestAppContext) {
+fn a_pre_0_40_studio_opens_no_limits_sheet(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.trigger_server_limited();
-    for _ in 0..50 {
+    for _ in 0..10 {
         cx.run_until_parked();
-        if view.read_with(cx, |v, _| v.sheet.is_some()) {
-            break;
-        }
         std::thread::sleep(std::time::Duration::from_millis(5));
     }
-    assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::ServerLimits { .. })
-    )));
-    cx.simulate_keystrokes("enter");
-    cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
 }
 
@@ -692,6 +721,42 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
         Some("a-token")
     );
     assert!(config_text(cx).contains("blyg-url = https://blyg.example.com"));
+}
+
+/// Connecting to a blyg older than studio 0.47 succeeds (reading works),
+/// and says it needs updating rather than "Connected".
+#[gpui_kit::test]
+fn connecting_to_an_old_blyg_says_it_needs_updating(cx: &mut TestAppContext) {
+    let tokens = Arc::new(MemoryTokenStore::default());
+    let (view, fake, cx) = setup_with(cx, "# fresh\n", tokens.clone());
+    fake.trigger_server_outdated();
+    cx.run_until_parked();
+    let switch = crate::connection::SwitchBackend::new(fake, crate::connection::Mode::Fake);
+    cx.update(|_, cx| {
+        cx.set_global(crate::connection::Connection {
+            switch,
+            data_dir: std::env::temp_dir(),
+            verify: |_, _| Ok(3),
+        })
+    });
+    view.update_in(cx, |v, window, cx| {
+        v.toast = None;
+        v.set_connect_way(super::ConnectWay::Token, window, cx);
+        if let Some(Sheet::Connect { url, token, .. }) = &v.sheet {
+            url.update(cx, |s, cx| {
+                s.set_value("https://blyg.example.com", window, cx)
+            });
+            token.update(cx, |s, cx| s.set_value("a-token", window, cx));
+        }
+        v.submit_connect(window, cx);
+    });
+    cx.run_until_parked();
+    view.read_with(cx, |v, _| {
+        assert!(v.sheet.is_none(), "connected");
+        let t = v.toast.as_ref().expect("a toast");
+        assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
+        assert!(v.render_server_notice().is_some());
+    });
 }
 
 #[gpui_kit::test]

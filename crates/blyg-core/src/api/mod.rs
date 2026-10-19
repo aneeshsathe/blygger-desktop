@@ -302,6 +302,34 @@ impl Api {
             .ok_or(CoreError::ServerOutdated)
     }
 
+    /// Whether this blyg meets Burrow's studio floor (`crate::floor`): the
+    /// manifest's `generator` (`GET {blyg}/blyg.json`, public, no
+    /// credential), else one `GET /api/search?limit=1` for the `label` a
+    /// 0.47 hit carries. Offline, rate-limited, 5xx or 401: an error, so
+    /// nothing is decided on a failed read. A search route that's missing
+    /// or refuses: `Unknown` (not locked out on a guess).
+    pub fn studio_floor(&self) -> Result<crate::floor::Floor> {
+        let res = self
+            .agent
+            .get(&format!("{}/blyg.json", self.base))
+            .set("accept", "application/json")
+            .call();
+        match read_json(res) {
+            Ok(m) => {
+                if let Some(f) = crate::floor::from_manifest(&m) {
+                    return Ok(f);
+                }
+            }
+            Err(e) if is_transient(&e) => return Err(e),
+            Err(_) => {}
+        }
+        match self.call("GET", "/api/search?limit=1", None) {
+            Ok(v) => Ok(crate::floor::from_search(&v)),
+            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
+            Err(_) => Ok(crate::floor::Floor::Unknown),
+        }
+    }
+
     pub fn get_item(&self, id: &str) -> Result<WireItem> {
         let w = self.call_as("GET", &format!("/api/items/{}", enc(id)), None)?;
         Ok(self.resolve(w))
@@ -1079,10 +1107,10 @@ impl std::fmt::Display for ConnectError {
                 "There's no blyg studio sign-in at that address (…/studio/login is 404). Check the URL, including any path the blyg lives under.",
             ),
             ConnectError::MissingExtensions => f.write_str(
-                "This server has no owner JSON API (GET /api/items is 404). It needs blygger-studio 0.9 or later. See docs/SERVER.md.",
+                "This server has no owner JSON API (GET /api/items is 404). Burrow needs blygger-studio 0.47 or later. See docs/SERVER.md.",
             ),
             ConnectError::Outdated => f.write_str(
-                "This blyg's server is older than blygger-studio 0.9. Update it, then connect again.",
+                "Your blyg needs updating: Burrow needs blygger-studio 0.47 or later, and this one is older than 0.9. Update it, then connect again.",
             ),
             ConnectError::Other(m) => f.write_str(m),
         }

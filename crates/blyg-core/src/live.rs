@@ -697,6 +697,9 @@ impl Backend for LiveBackend {
     // --------------------------------------------------------------- remote
 
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
+        // Below the studio floor a post with labelled links waits (`crate::floor`).
+        let content = self.row(id)?.item.content_md;
+        self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
             // A scratch note publishes by being promoted first.
             let note = note.map(str::to_string);
@@ -787,6 +790,14 @@ impl Backend for LiveBackend {
         }
     }
 
+    /// Restoring the published version is Discard changes. The sync lock is
+    /// held throughout, so no push of the old text runs during it (an
+    /// in-flight one finishes first); `replace_from_server` then drops every
+    /// edit op still waiting, so none runs after it either. A save made
+    /// after the reload is a new edit: the app holds the editor's saves
+    /// while a restore is on its way (blyg-app `discard.rs`). If the reload
+    /// fails, the waiting ops stay and the edits sync back: the user is
+    /// told the restore failed, and the text they see is what syncs.
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
@@ -828,7 +839,13 @@ impl Backend for LiveBackend {
         alt: Option<&str>,
     ) -> Result<MediaRef> {
         let sid = match item {
-            Some(id) => Some(self.ensure_on_server(id)?),
+            // A post held for labelled links (below the studio floor) may
+            // never have reached the blyg: the image goes up unattached.
+            Some(id) => match self.ensure_on_server(id) {
+                Ok(sid) => Some(sid),
+                Err(CoreError::NotSynced) if self.e().floor_below() => None,
+                Err(e) => return Err(e),
+            },
             None => None,
         };
         let m = self

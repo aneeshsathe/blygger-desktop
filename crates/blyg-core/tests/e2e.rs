@@ -367,6 +367,107 @@ fn publish_edit_pin_restore() {
     assert_eq!(it.content_md, v1_text);
 }
 
+/// The server's `dirty` for an item (a boolean, or 0/1).
+fn server_dirty(v: &Value) -> bool {
+    v["dirty"] == json!(true) || v["dirty"] == json!(1)
+}
+
+/// Discard changes: `restore` of the version the post has published
+/// (upstream's "discard changes"), with the sync worker running. An edit
+/// already on the blyg and one still waiting in the outbox both go; nothing
+/// pushes the old text back afterwards, and the public post never moves.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discard_changes_goes_back_to_the_published_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
+    let t = tag("discard");
+    let v1_text = format!("{t} as published");
+    let (id, sid) = published(&b, Kind::Fragment, &v1_text, None);
+
+    // An edit that reached the blyg…
+    let pushed = format!("{t} an edit on the blyg");
+    b.save(&id, &pushed).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], pushed);
+    assert!(server_dirty(&server_item(&sid)));
+    // …then one still waiting for its push.
+    b.save(&id, &format!("{t} an edit still on this Mac"))
+        .unwrap();
+    assert!(b.item(&id).unwrap().pending_sync);
+
+    b.restore(&id, 1).unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, v1_text, "the editor holds v1 again");
+    assert_eq!(it.version, 1, "nothing published");
+    assert!(!it.pending_sync, "the waiting save went with the edits");
+    let server = server_item(&sid);
+    assert_eq!(server["content_md"], v1_text);
+    assert_eq!(
+        it.dirty,
+        server_dirty(&server),
+        "local agrees with the blyg"
+    );
+    if e.stock {
+        // Studio 0.42+: discarding leaves the copy clean.
+        assert!(!it.dirty, "clean again");
+    }
+
+    // Past the debounce and a pull: the old text never comes back.
+    std::thread::sleep(Duration::from_millis(600));
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], v1_text);
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, v1_text);
+    assert!(!it.conflict && !it.pending_sync);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["version"], 1);
+    assert_eq!(doc["content_md"], v1_text);
+
+    // Typing again after the discard is an ordinary edit.
+    let again = format!("{v1_text}, and a second thought");
+    b.save(&id, &again).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(server_item(&sid)["content_md"], again);
+    assert!(b.item(&id).unwrap().dirty);
+}
+
+/// Discard changes on a version that disclosed generated text: the words
+/// come back, but upstream leaves `dirty` set (a restore can't carry the
+/// provenance back), and the local copy says so too.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discard_changes_on_a_generated_version_stays_unpublished() {
+    if !provenance_recordable() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("discard-gen");
+    let (_, src) = published(&b, Kind::Fragment, &format!("{t} a source"), None);
+    let text = format!("{t}\n\n[TK]sum up ![[{src}]][=]A short summary.[/TK]");
+    let id = b.create_draft(Kind::Fragment, &t).unwrap();
+    b.save_with_provenance(&id, &text, &[prov("test-model-1", &[&src])])
+        .unwrap();
+    b.sync_now().unwrap();
+    let out = b.publish(&id, None).unwrap();
+    assert_eq!(out.version, 1);
+    let sid = sid_of(&b, &id);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["generated"].as_array().map(Vec::len), Some(1), "{doc}");
+    let published_md = doc["content_md"].as_str().unwrap().to_string();
+
+    b.save(&id, &format!("{t} rewritten by hand")).unwrap();
+    b.restore(&id, 1).unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, published_md, "the published words");
+    assert!(!it.pending_sync);
+    assert!(server_dirty(&server_item(&sid)));
+    assert!(it.dirty, "still unpublished: v1 had generated text");
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn set_kind_before_first_publish() {
@@ -1836,7 +1937,13 @@ fn an_unchanged_pull_reads_only_the_change_counters() {
     b.pull_now().unwrap();
     assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged pull");
     b.sync_now().unwrap();
-    assert_eq!(proxy.take(), vec!["GET /api/changes"], "an unchanged sync");
+    // Below studio 0.47 a manual sync checks the version again first.
+    let synced: Vec<String> = proxy
+        .take()
+        .into_iter()
+        .filter(|r| !(b.server_outdated() && r == "GET /blyg.json"))
+        .collect();
+    assert_eq!(synced, vec!["GET /api/changes"], "an unchanged sync");
 
     // An edit made elsewhere (the web studio, another Mac) moves `items`
     // only: the items are read again, the reading list isn't.
@@ -3667,4 +3774,204 @@ fn a_feed_rows_author_comes_through() {
     let r = reading_item(&me, &rid).unwrap();
     let a = r.author.expect("the row's author");
     assert_eq!(a.name.as_deref(), Some(format!("Writer {t}").as_str()));
+}
+
+// ----------------------------------------------- the studio floor (0.47)
+
+/// A studio older than 0.47 doesn't understand `[[id | label]]`: there a
+/// post with labelled links waits (its push and its publish) until the
+/// labels go, and everything else syncs as usual. Runs against either side
+/// of the floor; the manifest's `generator` says which this is.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn studio_floor_holds_labelled_posts_below_0_47() {
+    use blyg_core::floor::{self, Floor};
+    let e = e2e();
+    let manifest = public_json(&format!("{}/blyg.json", e.url));
+    let generator = manifest["generator"].as_str().unwrap_or("").to_string();
+    eprintln!("studio floor: generator {generator}");
+    let expected = floor::from_manifest(&manifest).expect("a studio names its version");
+    let api = Api::new(&e.url, e.cred.clone());
+    assert_eq!(
+        api.studio_floor().expect("the check"),
+        expected,
+        "{generator}"
+    );
+    verify_connection(&e.url, e.cred.clone()).expect("connects");
+
+    // The capability probe agrees with the manifest, given a public item
+    // (made as the web studio would).
+    let t = tag("floor");
+    let (st, made) = owner(
+        "POST",
+        &e.url,
+        "/api/items",
+        Some(json!({
+            "mode": "blank",
+            "kind": "fragment",
+            "content_md": format!("# {t} from the studio"),
+        })),
+    );
+    assert!(st == 200 || st == 201, "{st} {made}");
+    let made_id = made["id"].as_str().expect("an id").to_string();
+    let (st, v) = owner(
+        "POST",
+        &e.url,
+        &format!("/api/items/{made_id}/publish"),
+        Some(json!({})),
+    );
+    assert_eq!(st, 200, "{v}");
+    let (st, hits) = owner("GET", &e.url, "/api/search?limit=1", None);
+    assert_eq!(st, 200, "{hits}");
+    let probed = floor::from_search(&hits);
+    assert_ne!(probed, Floor::Unknown, "{hits}");
+    assert_eq!(probed.meets(), expected.meets(), "{hits}");
+
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    // One post with a bare link, one with a labelled one.
+    let plain = b
+        .create_draft(Kind::Fragment, &format!("{t} plain, see [[{made_id}]]"))
+        .unwrap();
+    let labelled_text = format!("{t} labelled, see [[{made_id} | the studio's]]");
+    let labelled = b.create_draft(Kind::Fragment, &labelled_text).unwrap();
+    b.sync_now().expect("sync");
+    assert_eq!(b.server_outdated(), !expected.meets());
+
+    // The bare one goes either way, publish included.
+    let plain_sid = sid_of(&b, &plain);
+    assert_eq!(b.publish(&plain, None).expect("publish").version, 1);
+    assert!(
+        server_item(&plain_sid)["content_md"]
+            .as_str()
+            .is_some_and(|c| c.contains("plain, see"))
+    );
+
+    if expected.meets() {
+        let sid = sid_of(&b, &labelled);
+        assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
+        assert!(
+            server_item(&sid)["content_md"]
+                .as_str()
+                .is_some_and(|c| c.contains("| the studio's]]"))
+        );
+        return;
+    }
+
+    // Below the floor the labelled one waits, its publish too.
+    assert!(b.item(&labelled).unwrap().server_id.is_none(), "held");
+    assert!(b.item(&labelled).unwrap().pending_sync, "the edit waits");
+    assert!(matches!(
+        b.publish(&labelled, None),
+        Err(CoreError::ServerOutdated)
+    ));
+    let all = conforms("GET", &e.url, "/api/items?limit=100");
+    assert!(
+        !all.to_string().contains("| the studio's]]"),
+        "no labelled link reached the server"
+    );
+    // Reading goes on: the studio's own post was pulled.
+    assert!(
+        b.items()
+            .iter()
+            .any(|i| i.content_md.contains(&format!("{t} from the studio"))),
+        "pulled below the floor"
+    );
+    // Withdraw and pin don't send the text: they go.
+    b.withdraw(&plain, None).expect("withdraw");
+
+    // Written bare (the publish sheet's fix), it syncs and publishes.
+    b.save(&labelled, &floor::strip_labels(&labelled_text))
+        .unwrap();
+    b.sync_now().expect("sync");
+    let sid = sid_of(&b, &labelled);
+    assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
+    let content = server_item(&sid)["content_md"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        content.contains(&format!("labelled, see [[{made_id}]]")),
+        "{content}"
+    );
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_self_stub_and_a_self_fork_cite_your_own_origin() {
+    // The reading actions on your own post (Burrow's "Your blyg" and the
+    // Posts view's Reply / Fork). Protocol 0.4: `stub_of` and `forked_from`
+    // name the origin even when it's the publisher's own (§5.6 rule 1,
+    // §10.6), a fork descends from a pin only (§5.6 rule 2), and the quote's
+    // `transclusions[]` entry leaves `origin` out (§10.3).
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let me = manual(dir.path());
+    let t = tag("self");
+    let v1 = format!("{t} first thoughts on harbours.");
+    let (id, sid) = published(&me, Kind::Thread, &v1, None);
+    me.pin(&id, 1).unwrap();
+    me.save(&id, &format!("{t} second thoughts on harbours."))
+        .unwrap();
+    assert_eq!(me.publish(&id, None).unwrap().version, 2);
+    // As the app's own row spells it: the base origin with a slash.
+    let origin = format!("{}/", me.base_url().unwrap().trim_end_matches('/'));
+    assert_eq!(origin.trim_end_matches('/'), e.url);
+
+    // Reply · new stub: the whole post quoted, stub_of naming your origin.
+    let of = RemoteRef {
+        origin: origin.clone(),
+        id: sid.clone(),
+        version: 2,
+        cited: None,
+    };
+    let body = blyg_render::stub_quote::stub_body(&sid);
+    let stub = me
+        .create_stub(&of, &format!("{body}A note to myself."))
+        .unwrap();
+    me.sync_now().unwrap();
+    let out = me.publish(&stub, None).expect("publish the self-stub");
+    let stub_sid = sid_of(&me, &stub);
+    let wire = server_item(&stub_sid);
+    assert_eq!(wire["stub_of"]["origin"], origin.as_str(), "{wire}");
+    assert_eq!(wire["stub_of"]["id"], sid.as_str());
+    assert_eq!(wire["stub_of"]["version"], 2, "agrees with the quote baked");
+    let doc = public_json(&format!("{}/items/{stub_sid}.json", e.url));
+    assert_eq!(doc["stub_of"]["origin"], origin.as_str(), "{doc}");
+    let tr = &doc["transclusions"][0];
+    assert_eq!(tr["id"], sid.as_str(), "{doc}");
+    assert!(tr.get("origin").is_none(), "own quote, no origin: {doc}");
+    let (st, page) = public_get(&out.permalink);
+    assert_eq!(st, 200);
+    assert!(
+        baked_quotes(&page)
+            .iter()
+            .any(|q| q.contains("second thoughts on harbours.")),
+        "{page}"
+    );
+
+    // Fork this pin: from your 📌 v1, forked_from naming your origin.
+    let fork = me
+        .fork(&RemoteRef {
+            origin: origin.clone(),
+            id: sid.clone(),
+            version: 1,
+            cited: None,
+        })
+        .expect("fork your own pin");
+    let it = me.item(&fork).unwrap();
+    assert_eq!(it.content_md.trim(), v1);
+    let f = it.forked_from.as_ref().expect("forked_from");
+    assert_eq!((f.id.as_str(), f.version), (sid.as_str(), 1));
+    let wire = server_item(&sid_of(&me, &fork));
+    assert_eq!(wire["forked_from"]["origin"], origin.as_str(), "{wire}");
+    assert_eq!(wire["forked_from"]["version"], 1);
+    // An unpinned version of your own can't be forked.
+    let unpinned = RemoteRef {
+        origin,
+        id: sid,
+        version: 2,
+        cited: None,
+    };
+    assert!(me.fork(&unpinned).is_err(), "forks descend from pins only");
 }

@@ -326,13 +326,14 @@ pub enum Slot {
     StatusOrnament,
     MarkerPinned,
     MarkerNew,
+    MarkerEdited,
     Texture,
     ScrollEdge,
     EmptyArt,
 }
 
 impl Slot {
-    pub const ALL: [Slot; 13] = [
+    pub const ALL: [Slot; 14] = [
         Slot::TitlebarBand,
         Slot::SidebarGround,
         Slot::SidebarTop,
@@ -343,6 +344,7 @@ impl Slot {
         Slot::StatusOrnament,
         Slot::MarkerPinned,
         Slot::MarkerNew,
+        Slot::MarkerEdited,
         Slot::Texture,
         Slot::ScrollEdge,
         Slot::EmptyArt,
@@ -360,6 +362,7 @@ impl Slot {
             Slot::StatusOrnament => "status.ornament",
             Slot::MarkerPinned => "marker.pinned",
             Slot::MarkerNew => "marker.new",
+            Slot::MarkerEdited => "marker.edited",
             Slot::Texture => "texture",
             Slot::ScrollEdge => "scroll.edge",
             Slot::EmptyArt => "empty.art",
@@ -377,7 +380,10 @@ impl Slot {
             Slot::Divider => "The rule under the editor and between posts in the stream.",
             Slot::StatusOrnament => "A mark at the right of the status bar.",
             Slot::MarkerPinned => "The mark on a published post in the list.",
-            Slot::MarkerNew => "The mark on a post with unpublished edits.",
+            Slot::MarkerNew => {
+                "The mark on something new: an unread post, subscription or mention."
+            }
+            Slot::MarkerEdited => "The mark on a post with unpublished edits in the posts list.",
             Slot::Texture => "A faint texture on the sidebar and the editor's margins.",
             Slot::ScrollEdge => "A fade at the bottom of the posts list.",
             Slot::EmptyArt => "A small picture above an empty list.",
@@ -421,7 +427,7 @@ pub enum Kind {
     Contours,
     HarbourGlow,
     TideSparkline,
-    ZLevel,
+    BlockSparkline,
     Glyph,
     Dot,
     Arch,
@@ -670,18 +676,18 @@ const KINDS: &[KindSpec] = &[
         "A tide sparkline of your writing over the last two weeks.",
     ),
     k(
-        Kind::ZLevel,
-        "z-level",
+        Kind::BlockSparkline,
+        "block-sparkline",
         &[S::StatusOrnament],
         (1, 1),
-        "The selected post's depth, as a z-level.",
+        "Your posts over the last two weeks in block characters ▁▂▃▅▇█.",
     ),
     KindSpec {
         text: true,
         ..k(
             Kind::Glyph,
             "glyph",
-            &[S::MarkerPinned, S::MarkerNew, S::EmptyArt],
+            &[S::MarkerPinned, S::MarkerNew, S::MarkerEdited, S::EmptyArt],
             (0, 1),
             "One glyph, e.g. glyph(\"☼\").",
         )
@@ -689,7 +695,7 @@ const KINDS: &[KindSpec] = &[
     k(
         Kind::Dot,
         "dot",
-        &[S::MarkerPinned, S::MarkerNew],
+        &[S::MarkerPinned, S::MarkerNew, S::MarkerEdited],
         (0, 1),
         "A small dot.",
     ),
@@ -927,6 +933,19 @@ fn tokens(s: &str) -> Result<Vec<String>, String> {
     Ok(out)
 }
 
+/// Ornaments that were renamed or replaced: (old name, its successor). A
+/// theme naming the old one still loads, with the successor and a warning.
+/// `z-level` (the selected post's depth) became `block-sparkline` in 0.13.
+const RENAMED_KINDS: &[(&str, &str)] = &[("z-level", "block-sparkline")];
+
+/// The renamed ornament a slot value names, if it names one.
+fn renamed_kind(name: &str) -> Option<(&'static str, &'static str)> {
+    RENAMED_KINDS
+        .iter()
+        .copied()
+        .find(|(old, _)| old.eq_ignore_ascii_case(name.trim()))
+}
+
 /// Parse a slot value such as `roots(#d9b98a, opacity=0.55)` for `slot`.
 /// `dir` resolves a relative `svg(…)` path.
 pub fn parse_ornament(value: &str, slot: Slot, dir: &Path) -> Result<Ornament, String> {
@@ -941,6 +960,7 @@ pub fn parse_ornament(value: &str, slot: Slot, dir: &Path) -> Result<Ornament, S
         None => (v, ""),
     };
     let name = name.to_ascii_lowercase();
+    let name = renamed_kind(&name).map_or(name, |(_, new)| new.to_string());
     let spec = kind_spec(&name).ok_or_else(|| {
         let known: Vec<&str> = KINDS
             .iter()
@@ -1246,7 +1266,17 @@ pub fn parse_theme(
             KeyKind::Border => Border::parse(&raw.to_ascii_lowercase())
                 .map(Value::Border)
                 .ok_or_else(|| format!("`{raw}` must be solid, dashed, double or none")),
-            KeyKind::Slot(slot) => parse_ornament(raw, slot, dir).map(Value::Ornament),
+            KeyKind::Slot(slot) => {
+                let name = raw.split('(').next().unwrap_or(raw);
+                if let Some((old, new)) = renamed_kind(name) {
+                    diags.push(diag(
+                        e.line,
+                        Severity::Warning,
+                        format!("{key}: `{old}` is now `{new}`; using `{new}`"),
+                    ));
+                }
+                parse_ornament(raw, slot, dir).map(Value::Ornament)
+            }
         };
         match v {
             Ok(v) => {
@@ -1607,6 +1637,20 @@ mod tests {
         assert_eq!(r.resolve("konkan").unwrap().name, "Konkan harbour");
     }
 
+    /// Unpublished edits have their own mark, so Fortress's Δ (in
+    /// `color-edited`: no colour of its own) never reads as unread's `*`.
+    #[test]
+    fn fortress_marks_edits_apart_from_unread() {
+        let r = Registry::builtin();
+        let f = r.resolve("fortress").unwrap();
+        let edited = f.slot(Slot::MarkerEdited);
+        assert_eq!(edited.kind, Kind::Glyph);
+        assert_eq!(edited.text.as_deref(), Some("Δ"));
+        assert!(edited.colors.is_empty(), "drawn in color-edited");
+        assert_eq!(f.slot(Slot::MarkerNew).text.as_deref(), Some("*"));
+        assert_eq!(Slot::from_key("marker.edited"), Some(Slot::MarkerEdited));
+    }
+
     #[test]
     fn body_text_contrast_is_at_least_4_5() {
         let r = Registry::builtin();
@@ -1685,6 +1729,30 @@ mod tests {
         let (_, d) = user("inherit = nope\n");
         assert_eq!(d.len(), 1);
         assert!(d[0].message.contains("isn't a built-in theme"), "{d:?}");
+    }
+
+    /// A user theme written for Fortress's old `z-level` still loads: the
+    /// block sparkline takes its place, with a warning, not an error.
+    #[test]
+    fn a_theme_naming_z_level_gets_the_block_sparkline() {
+        let (r, d) = user("inherit = fortress\nstatus.ornament = z-level(#e0a33a)\n");
+        assert_eq!(d.len(), 1, "{d:#?}");
+        assert_eq!((d[0].line, d[0].severity), (2, Severity::Warning));
+        assert!(
+            d[0].message.contains("`z-level` is now `block-sparkline`"),
+            "{}",
+            d[0].message
+        );
+        let t = r.resolve("mine").unwrap();
+        assert_eq!(t.slot(Slot::StatusOrnament).kind, Kind::BlockSparkline);
+        assert_eq!(
+            r.resolve("fortress")
+                .unwrap()
+                .slot(Slot::StatusOrnament)
+                .kind,
+            Kind::BlockSparkline
+        );
+        assert!(kind_spec("z-level").is_none(), "only an alias now");
     }
 
     #[test]

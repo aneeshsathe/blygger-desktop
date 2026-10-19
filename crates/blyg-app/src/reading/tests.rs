@@ -450,7 +450,9 @@ fn quote_picker_offers_only_held_items_and_only_in_threads(cx: &mut TestAppConte
     cx.run_until_parked();
     let text = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
     assert!(
-        text.lines().any(|l| l == format!("![[{RUE_TRUST}]]")),
+        // The long form, labelled as the link would read (studio 0.47).
+        text.lines()
+            .any(|l| l.starts_with(&format!("![[{RUE_TRUST} | ")) && l.ends_with("]]")),
         "{text}"
     );
 }
@@ -641,7 +643,8 @@ fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) 
     cx.simulate_input("GARDEN");
     cx.run_until_parked();
     assert_eq!(query(&view, cx), "GARDEN");
-    assert_eq!(shown(&view, cx), [LIN_GARDENS, OMAR_YEAR]);
+    // --- own posts --- and your own "…Small Gardens", by date.
+    assert_eq!(shown(&view, cx), [LIN_GARDENS, OMAR_YEAR, OWN_GARDENS]);
     // Nothing was opened (so nothing marked read) just by typing.
     assert_eq!(opened(&view, cx), None);
 
@@ -654,9 +657,12 @@ fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) 
     assert_eq!(opened(&view, cx).as_deref(), Some(OMAR_YEAR));
     cx.simulate_keystrokes("down");
     settle(cx);
+    assert_eq!(opened(&view, cx).as_deref(), Some(OWN_GARDENS));
+    cx.simulate_keystrokes("down");
+    settle(cx);
     assert_eq!(
         opened(&view, cx).as_deref(),
-        Some(OMAR_YEAR),
+        Some(OWN_GARDENS),
         "stops at the end"
     );
     assert!(search_focused(&view, cx), "the caret stays in the field");

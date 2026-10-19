@@ -1,0 +1,21 @@
+{
+  "name": "label_link_unresolved_thread",
+  "kind": "thread",
+  "md": "bad [[0zzzzzzzzzzzzzzzzzzzzzzzzz | a label]]\n\n![[0zzzzzzzzzzzzzzzzzzzzzzzzz | missing quote]]",
+  "html": "<p>bad <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span></p>\n\n<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: unknown item</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "![[0zzzzzzzzzzzzzzzzzzzzzzzzz | missing quote]]",
+      "reason": "unknown item"
+    },
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz | a label]]",
+      "reason": "unknown item"
+    }
+  ]
+}

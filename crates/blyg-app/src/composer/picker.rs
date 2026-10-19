@@ -21,9 +21,9 @@ use crate::theme::Palette;
 /// What the picker inserts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PickKind {
-    /// `[[id]]`, inline: a link that declares nothing on the wire.
+    /// `[[id | label]]`, inline: a link that declares nothing on the wire.
     Link,
-    /// `![[id]]` on its own line: a transclusion (threads only).
+    /// `![[id | note]]` on its own line: a transclusion (threads only).
     Quote,
 }
 
@@ -44,8 +44,8 @@ impl PickKind {
 
     pub fn enter_hint(self) -> &'static str {
         match self {
-            PickKind::Link => "inserts [[…]]",
-            PickKind::Quote => "inserts ![[…]] on its own line",
+            PickKind::Link => "inserts [[… | label]]",
+            PickKind::Quote => "inserts ![[… | note]] on its own line",
         }
     }
 }
@@ -127,14 +127,27 @@ pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&st
 
 /// Replace the typed brackets and query (`at..cursor`, plus a `]]` the
 /// editor may already hold after it) with the pick. A link goes inline; a
-/// quote takes its line. Returns the new text and the caret.
-pub fn insert(text: &str, at: usize, cursor: usize, kind: PickKind, id: &str) -> (String, usize) {
+/// quote takes its line. With a label (studio 0.47, #70) the pick is
+/// written long, `[[id | label]]` / `![[id | label]]`: the picker passes
+/// the text the link would show anyway, so nothing changes until it's
+/// edited. Returns the new text and the caret.
+pub fn insert(
+    text: &str,
+    at: usize,
+    cursor: usize,
+    kind: PickKind,
+    id: &str,
+    label: Option<&str>,
+) -> (String, usize) {
     let at = at.min(text.len());
     let mut end = cursor.min(text.len()).max(at);
     if text[end..].starts_with("]]") {
         end += 2;
     }
-    let directive = format!("{}{id}]]", kind.open());
+    let directive = match kind {
+        PickKind::Link => blyg_core::grammar::link_source(id, label),
+        PickKind::Quote => blyg_core::grammar::directive_source(id, label),
+    };
     let mut out = String::with_capacity(text.len() + directive.len() + 1);
     out.push_str(&text[..at]);
     out.push_str(&directive);
@@ -266,20 +279,67 @@ pub fn filter_row(p: Palette, f: &Filters, subs: &[(String, String)], set: OnFil
     )
 }
 
-/// The result rows: title, excerpt, and where it's from.
-pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyElement> {
+/// What a result row says above its meta line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowText {
+    /// The post's title, what people scan for.
+    pub title: String,
+    /// A link's `links as “…”`: the label a pick writes, when it isn't the
+    /// title. A quote has none (its label is a note readers never see).
+    pub links_as: Option<String>,
+    /// The excerpt after the title (it usually starts with it), unless the
+    /// label already says it.
+    pub excerpt: Option<String>,
+}
+
+/// A row's text: title first, then what the link will show, then the
+/// excerpt.
+pub fn row_text(r: &Pickable, kind: PickKind) -> RowText {
+    let title = match r.title.trim() {
+        "" | "…" => r.label.clone(),
+        t => t.to_string(),
+    };
+    let links_as =
+        (kind == PickKind::Link && r.label != title).then(|| format!("links as {}", r.label));
+    let rest = r
+        .excerpt
+        .strip_prefix(r.title.as_str())
+        .unwrap_or(&r.excerpt)
+        .trim();
+    // The label's own words, quotes and ellipsis off.
+    let said = r
+        .label
+        .trim_start_matches('“')
+        .trim_end_matches('”')
+        .trim_end_matches('…');
+    let probe: String = rest.trim_end_matches('…').chars().take(24).collect();
+    let repeats = links_as.is_some() && said.contains(probe.as_str());
+    let excerpt = (!rest.is_empty() && !repeats).then(|| rest.to_string());
+    RowText {
+        title,
+        links_as,
+        excerpt,
+    }
+}
+
+/// The result rows: title, what a link shows, excerpt, and where it's from.
+pub fn rows(
+    p: Palette,
+    kind: PickKind,
+    rows: &[Pickable],
+    sel: usize,
+    pick: OnPick,
+) -> Vec<AnyElement> {
     let now = chrono::Utc::now();
     rows.iter()
         .enumerate()
         .map(|(i, r)| {
             let pick = pick.clone();
-            // The excerpt after the title (it usually starts with it).
-            let rest = r
-                .excerpt
-                .strip_prefix(r.title.as_str())
-                .unwrap_or(&r.excerpt)
-                .trim();
-            let excerpt = (!rest.is_empty()).then(|| rest.to_string());
+            let RowText {
+                title,
+                links_as,
+                excerpt,
+            } = row_text(r, kind);
             div()
                 .id(("pick-row", i))
                 .px(px(8.))
@@ -289,7 +349,15 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
                 .when(i == sel, |d| d.bg(p.pick()))
                 .when(i != sel, |d| d.hover(|s| s.bg(p.hover())))
                 .on_click(move |_, window, cx| pick(i, window, cx))
-                .child(div().truncate().child(r.title.clone()))
+                .child(div().truncate().child(title))
+                .children(links_as.map(|l| {
+                    div()
+                        .text_size(px(11.5))
+                        .text_color(p.muted)
+                        .italic()
+                        .truncate()
+                        .child(l)
+                }))
                 .children(excerpt.map(|e| {
                     div()
                         .text_size(px(11.5))
@@ -311,7 +379,7 @@ pub fn rows(p: Palette, rows: &[Pickable], sel: usize, pick: OnPick) -> Vec<AnyE
 
 #[cfg(test)]
 mod tests {
-    use super::{Filters, PickKind, insert, link_trigger, query};
+    use super::{Filters, PickKind, insert, link_trigger, query, row_text};
     use blyg_core::{PickSort, PickSource};
 
     fn typed(before: &str, after: &str) -> Option<usize> {
@@ -347,17 +415,111 @@ mod tests {
 
     #[test]
     fn a_pick_replaces_the_typed_text() {
-        let (t, c) = insert("see [[gar more", 4, 9, PickKind::Link, "01ABC");
+        let (t, c) = insert("see [[gar more", 4, 9, PickKind::Link, "01ABC", None);
         assert_eq!(t, "see [[01ABC]] more");
         assert_eq!(&t[..c], "see [[01ABC]]");
-        let (t, _) = insert("see [[gar]] more", 4, 9, PickKind::Link, "01ABC");
+        let (t, _) = insert("see [[gar]] more", 4, 9, PickKind::Link, "01ABC", None);
         assert_eq!(t, "see [[01ABC]] more", "a closing ]] isn't doubled");
-        let (t, c) = insert("One.\n![[tid", 5, 11, PickKind::Quote, "01Q");
+        let (t, c) = insert("One.\n![[tid", 5, 11, PickKind::Quote, "01Q", None);
         assert_eq!(t, "One.\n![[01Q]]\n");
         assert_eq!(c, t.len());
-        let (t, c) = insert("One.\n![[t\nTwo.", 5, 9, PickKind::Quote, "01Q");
+        let (t, c) = insert("One.\n![[t\nTwo.", 5, 9, PickKind::Quote, "01Q", None);
         assert_eq!(t, "One.\n![[01Q]]\nTwo.");
         assert_eq!(&t[..c], "One.\n![[01Q]]\n");
+    }
+
+    #[test]
+    fn a_pick_writes_the_long_form_with_its_label() {
+        let (t, c) = insert(
+            "see [[gar]] more",
+            4,
+            9,
+            PickKind::Link,
+            "01ABC",
+            Some("Garden beds"),
+        );
+        assert_eq!(t, "see [[01ABC | Garden beds]] more");
+        assert_eq!(&t[..c], "see [[01ABC | Garden beds]]");
+        let (t, _) = insert(
+            "One.\n![[t",
+            5,
+            9,
+            PickKind::Quote,
+            "01Q",
+            Some("“Two\nlines ]] here”"),
+        );
+        assert_eq!(t, "One.\n![[01Q | “Two lines ] ] here”]]\n");
+        let (t, _) = insert("[[", 0, 2, PickKind::Link, "01ABC", Some("  "));
+        assert_eq!(t, "[[01ABC]]", "an empty label is no label");
+    }
+
+    /// The footer names the labelled form a pick writes (studio 0.47).
+    #[test]
+    fn the_footer_says_what_a_pick_writes() {
+        assert_eq!(PickKind::Link.enter_hint(), "inserts [[… | label]]");
+        assert_eq!(
+            PickKind::Quote.enter_hint(),
+            "inserts ![[… | note]] on its own line"
+        );
+    }
+
+    #[test]
+    fn a_row_leads_with_its_title() {
+        let row = |kind: PickKind, label: &str, title: &str, excerpt: &str| {
+            let t = row_text(
+                &blyg_core::Pickable {
+                    id: "x".into(),
+                    title: title.into(),
+                    excerpt: excerpt.into(),
+                    label: label.into(),
+                    source: PickSource::Mine,
+                    kind: blyg_core::Kind::Fragment,
+                    version: 1,
+                    at: String::new(),
+                    subscription_id: None,
+                    source_title: None,
+                },
+                kind,
+            );
+            (t.title, t.links_as, t.excerpt)
+        };
+        let s = |t: &str| Some(t.to_string());
+        // Labelled with its title: no "links as" line, then the body.
+        assert_eq!(
+            row(
+                PickKind::Link,
+                "Garden beds",
+                "Garden beds",
+                "Garden beds Raised, this year."
+            ),
+            ("Garden beds".into(), None, s("Raised, this year."))
+        );
+        // A quoted excerpt as the label: the title first, then "links as",
+        // and the excerpt isn't said twice.
+        let label = "“Gardens, not streams A note on how I write in public: slowly…”";
+        let excerpt = "Gardens, not streams A note on how I write in public: slowly, in beds";
+        assert_eq!(
+            row(PickKind::Link, label, "Gardens, not streams", excerpt),
+            (
+                "Gardens, not streams".into(),
+                s(&format!("links as {label}")),
+                None
+            )
+        );
+        // A quote: title, then the excerpt (its label is only a note).
+        assert_eq!(
+            row(PickKind::Quote, label, "Gardens, not streams", excerpt),
+            (
+                "Gardens, not streams".into(),
+                None,
+                s("A note on how I write in public: slowly, in beds")
+            )
+        );
+        // No title of its own: the label stands in.
+        assert_eq!(
+            row(PickKind::Link, "a thread", "…", ""),
+            ("a thread".into(), None, None)
+        );
     }
 
     #[test]

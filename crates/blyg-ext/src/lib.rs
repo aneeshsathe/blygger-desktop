@@ -28,6 +28,9 @@ pub mod rpc;
 pub mod spawn;
 
 pub use api::{BackendApi, HostApi, NoBlyg};
+/// The bracket grammar (`[[id]]`, `![[id | label]]`), for extensions that
+/// read post Markdown.
+pub use blyg_core::grammar;
 pub use capability::{CONSENT_CAVEAT, Capability, DECLARED_SUFFIX, consent_sentence, describe};
 pub use grants::{Grants, settings_from_lines};
 pub use host::{

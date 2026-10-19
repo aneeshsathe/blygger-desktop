@@ -217,6 +217,33 @@ pub fn has_unpublished_edits(item: &Item) -> bool {
     item.status == Status::Public && item.dirty
 }
 
+/// The two ways out of "unpublished edits", for the status bar's version
+/// and the row's edit marker: "⌘⏎ publishes them as v2 · ⌥⌘Z discards
+/// them". On Windows Discard has no key (`keymap::WINDOWS_KEYLESS`), so it
+/// names the menu item. `None` without unpublished edits.
+pub fn edits_tip(item: &Item) -> Option<String> {
+    has_unpublished_edits(item).then(|| {
+        let discard = if crate::keymap::keyless_here("DiscardChanges") {
+            "Discard Changes in the Post menu"
+        } else {
+            "⌥⌘Z discards them"
+        };
+        crate::keymap::hint_owned(format!(
+            "⌘⏎ publishes them as v{} · {discard}",
+            item.version + 1
+        ))
+    })
+}
+
+/// The published marks in a Posts row (the `vN` pill and `marker.pinned`,
+/// Fortress's ☼): "Published: v2 is public on your blyg".
+pub fn published_tip(item: &Item) -> String {
+    format!("Published: v{} is public on your blyg", item.version)
+}
+
+/// `marker.pinned` beside a pinned version in ⌘Y.
+pub const PINNED_TIP: &str = "Pinned: this version stays public, for others to quote or fork";
+
 pub fn version_label(item: &Item) -> String {
     match item.status {
         Status::Public => {
@@ -349,6 +376,34 @@ pub fn discard_noun(item: &Item) -> &'static str {
         "scratch note"
     } else {
         "draft"
+    }
+}
+
+// ---------------------------------------------------------------- discard changes
+
+/// Why Discard changes can't run, when it can't. In the order checked, so
+/// the reason names what's actually in the way.
+pub const DISCARD_NOT_PUBLISHED: &str =
+    "Not published, so there's no version to go back to. ⇧⌘⌫ deletes a draft";
+pub const DISCARD_WITHDRAWN: &str = "Withdrawn, so there's no published version to go back to";
+pub const DISCARD_CLEAN: &str = "No unpublished changes to discard";
+pub const DISCARD_OFFLINE: &str = "Discard needs the blyg";
+
+/// Discard changes (upstream's "discard changes", blygger-studio
+/// `restoreVersion`): restore the *current* published version into the
+/// working copy. Only a published post with unpublished edits has any;
+/// drafts and scratch notes are deleted instead (`discard`). `Ok` is the
+/// version the editor goes back to.
+pub fn discard_changes(item: &Item, offline: bool) -> std::result::Result<u32, &'static str> {
+    match item.status {
+        Status::Scratch | Status::Draft => Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED)),
+        Status::Withdrawn => Err(DISCARD_WITHDRAWN),
+        Status::Public if item.version == 0 || item.server_id.is_none() => {
+            Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED))
+        }
+        Status::Public if !item.dirty => Err(DISCARD_CLEAN),
+        Status::Public if offline => Err(DISCARD_OFFLINE),
+        Status::Public => Ok(item.version),
     }
 }
 
@@ -1001,6 +1056,65 @@ mod tests {
         assert_eq!(discard(&it), Discard::Withdraw);
         it.status = Status::Withdrawn;
         assert_eq!(discard(&it), Discard::AlreadyWithdrawn);
+    }
+
+    /// "unpublished edits" names both ways out, through `keymap::hint`.
+    #[test]
+    fn unpublished_edits_say_how_to_publish_or_discard_them() {
+        let mut it = item("a", "x");
+        assert_eq!(edits_tip(&it), None, "a draft");
+        it.status = Status::Public;
+        it.version = 1;
+        assert_eq!(edits_tip(&it), None, "clean");
+        it.dirty = true;
+        let want = if cfg!(target_os = "windows") {
+            "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
+        } else {
+            "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"
+        };
+        assert_eq!(edits_tip(&it).as_deref(), Some(want));
+    }
+
+    /// Discard changes: only a published post with unpublished edits, and
+    /// only online; drafts and scratch notes are Delete's.
+    #[test]
+    fn discard_changes_needs_a_published_post_with_edits() {
+        let hint = crate::keymap::hint;
+        let mut it = item("a", "x");
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
+        it.status = Status::Scratch;
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
+        it.status = Status::Public;
+        it.version = 3;
+        it.server_id = Some(blyg_core::ServerId("s".into()));
+        it.dirty = false;
+        assert_eq!(discard_changes(&it, false), Err(DISCARD_CLEAN));
+        assert_eq!(
+            discard_changes(&it, true),
+            Err(DISCARD_CLEAN),
+            "nothing to do anyway"
+        );
+        it.dirty = true;
+        assert_eq!(
+            discard_changes(&it, false),
+            Ok(3),
+            "back to the current version"
+        );
+        assert_eq!(discard_changes(&it, true), Err(DISCARD_OFFLINE));
+        it.status = Status::Withdrawn;
+        assert_eq!(discard_changes(&it, false), Err(DISCARD_WITHDRAWN));
+        // A draft with history is still Withdraw's, not Discard's.
+        it.status = Status::Draft;
+        assert_eq!(
+            discard_changes(&it, false),
+            Err(hint(DISCARD_NOT_PUBLISHED))
+        );
     }
 
     #[test]

@@ -19,13 +19,13 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes. A stock blygger-studio 0.40 or later is fully supported: nothing
-needs a patched server. On 0.28 or later, sign in with your browser (or an
-API token from the studio's Client access page); on an older one, with your
-studio password. Burrow works with any studio from 0.9, but an older one
-limits a little (read state across your Macs before 0.39, AI disclosure for
-text generated in Burrow before 0.28), and Burrow tells you which the first
-time it connects. See [Server requirements](server.md).
+Yes. Burrow 0.13 needs blygger-studio 0.47 or later, stock and unpatched.
+Sign in with your browser, an API token from the studio's Client access page,
+or your studio password. On an older blyg everything syncs except posts with
+labelled links (`[[id | label]]`), which an older studio doesn't understand:
+they wait until the blyg is updated, and publishing one offers to write the
+links bare. See
+[Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 
@@ -65,11 +65,37 @@ scratch notes can be deleted (⇧⌘⌫).
 
 Forking descends only from **pinned** versions. Pick a pin in the post's
 version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. If the post has
-no pins, it can't be forked.
+no pins, it can't be forked. Your own posts fork the same way, from ⌘Y: pick
+a pinned version, then **Fork this pin**.
+
+### How do I undo my edits to a published post?
+
+**Discard changes** (⌥⌘Z, Post › Discard Changes…, or the toolbar's eraser)
+puts the editor back to the version your blyg has published, after asking.
+The public post doesn't change. On Windows it has no key: use the Post menu
+or the toolbar. See [Discard changes](writing.md#discard-changes).
+
+### What's the text after `|` in a link?
+
+The link's **label**: `[[id | Gardens, not streams]]` reads "Gardens, not
+streams" on the published page. Edit it to rename the link. The `[[` picker
+writes it for you, from the post's heading or title. In a quote,
+`![[id | note]]`, it's a note only you see. Labels need blygger-studio 0.47;
+on an older blyg the picker writes bare links. See
+[Labelled links](writing.md#labelled-links).
+
+### Why is a post waiting with "labelled links need studio 0.47"?
+
+Your blyg runs a studio older than 0.47, which can't show labelled links, so
+Burrow holds that post (and only that post) until the blyg is updated.
+Publishing it offers ⏎ to write its links bare and publish now. Burrow's
+status bar has an **Update your blyg** link. See
+[Server requirements](server.md).
 
 ### Why won't my quote go in?
 
-Quotes (`![[id]]`) only go in threads; ⌘T makes a fragment a thread. A
+Quotes (`![[id]]`, or `![[id | note]]`) only go in threads; ⌘T makes a
+fragment a thread. A
 partial quote's passage must be in the quoted post exactly as written; the
 preview flags one that isn't, and publishing refuses it.
 

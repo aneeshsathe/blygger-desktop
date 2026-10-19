@@ -157,13 +157,6 @@ impl ConnectionInfo {
             ConnectionInfo::Disconnected => &[],
         }
     }
-
-    /// Connected to a server without `GET /api/reading/imported` (a studio
-    /// older than 0.40): the About window says what that limits.
-    pub fn limited(&self) -> bool {
-        matches!(self, ConnectionInfo::Live { caps, .. }
-            if caps.iter().any(|c| c.label == EXTENSIONS && !c.on))
-    }
 }
 
 const EXTENSIONS: &str = "Full reading feed";
@@ -212,6 +205,9 @@ pub struct Report {
     pub macos: String,
     pub update: UpdateInfo,
     pub connection: ConnectionInfo,
+    /// The blyg is older than blygger-studio 0.47: posts with labelled
+    /// links wait (`server_notice`).
+    pub server_outdated: bool,
 }
 
 impl Report {
@@ -234,6 +230,9 @@ impl Report {
             ("Update", self.update.status.clone()),
             ("Blyg", self.connection.summary()),
         ];
+        if self.server_outdated {
+            rows.push(("Server", "needs blygger-studio 0.47 or later".into()));
+        }
         for c in self.connection.caps() {
             rows.push((c.label, if c.on { "yes" } else { "no" }.to_string()));
         }
@@ -275,7 +274,20 @@ mod tests {
                 host: "blyg.example.com".into(),
                 caps: capabilities(true, false, true),
             },
+            server_outdated: false,
         }
+    }
+
+    #[test]
+    fn copy_text_says_when_the_blyg_needs_updating() {
+        let mut r = report();
+        assert!(!r.copy_text().contains("Server:"));
+        r.server_outdated = true;
+        let text = r.copy_text();
+        assert!(
+            text.contains("Server:            needs blygger-studio 0.47 or later\n"),
+            "{text}"
+        );
     }
 
     #[test]

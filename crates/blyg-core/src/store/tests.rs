@@ -322,3 +322,53 @@ fn a_stub_is_a_draft_thread_with_stub_of() {
     assert_eq!(ops.len(), 1);
     assert_eq!(ops[0].kind, OpKind::Create, "pushed like any draft");
 }
+
+/// Discard changes (`Backend::restore` of the published version): the
+/// server's copy replaces the working copy, and a save still waiting in
+/// the outbox goes with it, so the old text can't be pushed back after.
+#[test]
+fn discard_changes_drops_the_waiting_save() {
+    let s = store();
+    let id = s.create_draft(Kind::Fragment, "as published", 0).unwrap();
+    s.conn().execute("DELETE FROM outbox", []).unwrap();
+    s.conn()
+        .execute(
+            "UPDATE items SET server_id = 'S1' WHERE local_id = ?1",
+            [&id.0],
+        )
+        .unwrap();
+    s.after_publish(&id, 1, "https://blyg.example.com/f/S1", "as published")
+        .unwrap();
+    // An edit, saved locally; its push waits (debounce).
+    s.save(&id, "an edit to throw away", 60_000).unwrap();
+    let it = s.item(&id).unwrap();
+    assert!(it.dirty && it.pending_sync);
+    assert_eq!(s.pending_count(), 1);
+    let restored = |dirty: bool| WireItem {
+        id: "S1".into(),
+        kind: "fragment".into(),
+        authored_kind: None,
+        status: "public".into(),
+        version: 1,
+        dirty,
+        created: String::new(),
+        updated: String::new(),
+        content_md: "as published".into(),
+        ..Default::default()
+    };
+    s.replace_from_server(&id, &restored(false)).unwrap();
+    let it = s.item(&id).unwrap();
+    assert_eq!(it.content_md, "as published");
+    assert!(!it.dirty, "clean again");
+    assert!(!it.pending_sync);
+    assert_eq!(s.pending_count(), 0, "the waiting save is gone");
+
+    // A version with generated text stays `dirty` on the blyg (upstream's
+    // `restoreVersion`): the store keeps the server's word for it.
+    s.save(&id, "another edit", 60_000).unwrap();
+    s.replace_from_server(&id, &restored(true)).unwrap();
+    let it = s.item(&id).unwrap();
+    assert_eq!(it.content_md, "as published");
+    assert!(it.dirty, "the blyg still says unpublished");
+    assert_eq!(s.pending_count(), 0);
+}

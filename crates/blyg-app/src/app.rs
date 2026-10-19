@@ -143,6 +143,12 @@ enum Sheet {
         next_version: u32,
         note: Entity<InputState>,
     },
+    /// Publishing a post with labelled links to a blyg below studio 0.47
+    /// (`server_notice::HELD_*`): `⏎` writes them bare and publishes.
+    HeldLabels {
+        id: LocalId,
+        focus: FocusHandle,
+    },
     Conflict {
         id: LocalId,
         mine: Vec<(DiffOp, String)>,
@@ -174,10 +180,6 @@ enum Sheet {
         host: String,
         focus: FocusHandle,
     },
-    /// What's limited on a stock blygger-studio (`server_notice`).
-    ServerLimits {
-        focus: FocusHandle,
-    },
     // --- delete & withdraw --- (discard.rs)
     /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
     DeleteDraft {
@@ -191,6 +193,14 @@ enum Sheet {
         id: LocalId,
         title: String,
         note: Entity<InputState>,
+    },
+    /// ⌥⌘Z on a published post with unpublished edits: `⏎` restores the
+    /// published `version`, `esc` keeps the edits.
+    DiscardChanges {
+        id: LocalId,
+        title: String,
+        version: u32,
+        focus: FocusHandle,
     },
     // --- browser macros --- (browser/automation): the text before a run,
     // and what the composer holds before its `submit`.
@@ -218,6 +228,9 @@ pub struct MainView {
     current: Option<Item>,
     mode: Mode,
     loading_editor: bool,
+    /// --- discard changes --- A restore of this post is on its way: the
+    /// editor doesn't save it meanwhile (`discard::restore_working_copy`).
+    restoring: Option<LocalId>,
     /// The full editor: view mode and the live preview (studio/mod.rs).
     studio: studio::Studio,
     sheet: Option<Sheet>,
@@ -382,6 +395,7 @@ impl MainView {
             current: None,
             mode: Mode::Search,
             loading_editor: false,
+            restoring: None,
             studio: studio::Studio::new(
                 cx.try_global::<crate::connection::Connection>()
                     .map(|c| c.data_dir.clone()),
@@ -467,6 +481,11 @@ impl MainView {
                     println!("initial-sync items={n} ok={}", result.is_ok());
                 }
                 match (result, connected_to) {
+                    // Connected to a blyg below the studio floor: say that,
+                    // not "connected" (the status bar keeps saying it).
+                    (Ok(()) | Err(CoreError::ServerOutdated), _) if v.backend.server_outdated() => {
+                        v.server_outdated(cx)
+                    }
                     (Ok(()), Some(host)) => v.show_toast(
                         format!("Connected to {host}"),
                         Some(
@@ -932,6 +951,9 @@ impl MainView {
                 self.sheet = None;
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
+                if self.backend.server_outdated() {
+                    return self.server_outdated(cx);
+                }
                 self.show_toast(
                     format!("Connected to {host}"),
                     Some(
@@ -1266,6 +1288,10 @@ impl MainView {
                 if let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) {
                     self.scratch_sync_editor(&id, window, cx);
                 }
+                // --- own posts --- your published posts are reading rows too.
+                if self.reading.view == reading::View::Reading {
+                    self.reading_changed(cx);
+                }
                 self.requery(window, cx)
             }
             CoreEvent::SyncStatus(s) => {
@@ -1302,7 +1328,9 @@ impl MainView {
             }
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
-            CoreEvent::ServerLimited => self.server_limited(window, cx),
+            // The "older than 0.40" sheet is gone: below the 0.47 floor the
+            // outdated notice already says it all (`server_notice`).
+            CoreEvent::ServerLimited => {}
             CoreEvent::SignedOut => {
                 if self.sheet.is_none() {
                     self.signed_out(window, cx);
@@ -1318,7 +1346,9 @@ impl MainView {
     fn signed_out(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.show_toast(
             "Your blyg signed Burrow out",
-            Some("Sign in again to sync; your changes wait on this Mac".into()),
+            Some(
+                crate::keymap::hint("Sign in again to sync; your changes wait on this Mac").into(),
+            ),
             cx,
         );
         self.open_connect(window, cx);
@@ -1406,6 +1436,17 @@ impl MainView {
             PublishDecision::AlreadyPublished(v) => {
                 self.show_toast(format!("Already published as v{v}"), None, cx)
             }
+            // Below studio 0.47 a post with labelled links can't go as it is.
+            PublishDecision::Sheet { .. } if self.labels_held(&item.content_md) => {
+                let focus = cx.focus_handle();
+                window.focus(&focus, cx);
+                self.sheet_gen += 1;
+                self.sheet = Some(Sheet::HeldLabels {
+                    id: item.local_id,
+                    focus,
+                });
+                cx.notify();
+            }
             PublishDecision::Sheet {
                 title,
                 next_version,
@@ -1434,15 +1475,48 @@ impl MainView {
         }
     }
 
+    /// The blyg is below studio 0.47 and `text` has labelled links: it
+    /// waits (`blyg_core::floor`).
+    pub(crate) fn labels_held(&self, text: &str) -> bool {
+        self.backend.server_outdated() && blyg_core::floor::has_labels(text)
+    }
+
+    /// The held-labels sheet's `⏎`: write the open post's labelled links
+    /// bare (`[[id]]`, `![[id]]`), then publish it.
+    fn publish_without_labels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Sheet::HeldLabels { id, .. }) = self.sheet.take() else {
+            return;
+        };
+        if self.current.as_ref().map(|c| &c.local_id) == Some(&id) {
+            let text = self.editor.read(cx).value().to_string();
+            let bare = blyg_core::floor::strip_labels(&text);
+            if bare != text {
+                self.splice_editor(&text, &bare, None, window, cx);
+            }
+        }
+        self.focus_after_sheet(window, cx);
+        self.start_publish(id, None, window, cx);
+    }
+
     fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
         let Some(Sheet::Publish { id, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
+        let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
+        self.start_publish(id, note_opt, window, cx);
+    }
+
+    fn start_publish(
+        &mut self,
+        id: LocalId,
+        note_opt: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.publishing = true;
         cx.notify();
         let backend = self.backend.clone();
-        let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
         let task = cx.background_spawn({
             let id = id.clone();
             let note = note_opt.clone();
@@ -1814,7 +1888,7 @@ impl MainView {
                 if let Some(new_text) = replaced {
                     if editing_same {
                         v.splice_editor(&text, &new_text, None, window, cx);
-                    } else {
+                    } else if v.restoring.as_ref() != Some(&id) {
                         let _ = v.backend.save(&id, &new_text);
                     }
                 }
@@ -1858,6 +1932,13 @@ impl MainView {
         let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
             return;
         };
+        // --- discard changes --- the blyg is replacing this text: saving
+        // it now could put the old text back after the restore.
+        if self.restoring.as_ref() == Some(&id) {
+            self.refresh_preview(false, cx);
+            cx.notify();
+            return;
+        }
         let text = self.editor.read(cx).value();
         if let Err(e) = self.ai_save_edit(&id, &text) {
             self.show_toast(format!("Couldn't save: {e}"), None, cx);
@@ -2404,41 +2485,82 @@ impl MainView {
                     .font_family(chrome)
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .when(vm::has_unpublished_edits(item), |d| {
+                    // Unpublished edits in their own colour (`color-edited`)
+                    // and slot (`marker.edited`, Fortress's Δ), so they don't
+                    // read as unread (`marker.new`, the accent dot).
+                    .when_some(vm::edits_tip(item), |d, tip| {
+                        let tip = format!("Unpublished edits: {tip}");
                         d.child(
-                            crate::ornament::marker(
-                                &self.theme,
-                                blyg_core::config::theme::Slot::MarkerNew,
-                                p.accent,
-                                chrome,
-                            )
-                            .unwrap_or_else(|| {
-                                div()
-                                    .size(px(6.))
-                                    .rounded_full()
-                                    .bg(p.accent)
-                                    .into_any_element()
-                            }),
+                            div()
+                                .id(("row-edited", ix))
+                                .tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                                .child(
+                                    crate::ornament::marker(
+                                        &self.theme,
+                                        blyg_core::config::theme::Slot::MarkerEdited,
+                                        p.edited,
+                                        chrome,
+                                    )
+                                    .unwrap_or_else(|| {
+                                        div()
+                                            .size(px(6.))
+                                            .rounded_full()
+                                            .bg(p.edited)
+                                            .into_any_element()
+                                    }),
+                                ),
                         )
                     })
                     .child(vm::kind_label(item.kind))
                     .child(
                         div()
+                            .id(("row-pill", ix))
                             .px(px(6.))
                             .rounded(px(self.theme.chip_radius))
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
+                            .when(pill_pub && !self.labels_held(&item.content_md), |d| {
+                                let tip = vm::published_tip(item);
+                                d.text_color(p.accent).tooltip(move |_, cx| {
+                                    cx.new(|_| reading::Tip(tip.clone())).into()
+                                })
+                            })
                             .when(pill_pub, |d| d.text_color(p.accent))
-                            .child(pill_text),
+                            .child(pill_text)
+                            // Below studio 0.47: this post waits for its labels.
+                            .when(self.labels_held(&item.content_md), |d| {
+                                let (bg, ink) = self.palette.tip();
+                                d.tooltip(move |_, cx| {
+                                    cx.new(|_| toolbar::ButtonTip {
+                                        text: crate::keymap::hint(server_notice::HELD_TIP).into(),
+                                        reason: None,
+                                        bg,
+                                        ink,
+                                        font: chrome,
+                                    })
+                                    .into()
+                                })
+                            }),
                     )
                     .when(pill_pub, |d| {
-                        d.children(crate::ornament::marker(
-                            &self.theme,
-                            blyg_core::config::theme::Slot::MarkerPinned,
-                            p.accent,
-                            chrome,
-                        ))
+                        let tip = vm::published_tip(item);
+                        d.children(
+                            crate::ornament::marker(
+                                &self.theme,
+                                blyg_core::config::theme::Slot::MarkerPinned,
+                                p.accent,
+                                chrome,
+                            )
+                            .map(|m| {
+                                div()
+                                    .id(("row-published", ix))
+                                    .tooltip(move |_, cx| {
+                                        cx.new(|_| reading::Tip(tip.clone())).into()
+                                    })
+                                    .child(m)
+                            }),
+                        )
                     })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
@@ -2484,6 +2606,8 @@ impl MainView {
                     },
                 ])
             })
+            // --- own posts --- Reply, Quote, Fork, Link on your published post.
+            .children(self.render_own_post_bar(cx))
             // --- stub quotes --- a stub's hint line and passage chooser.
             .children(self.render_stub_bar(cx))
             .child(
@@ -2694,11 +2818,21 @@ impl MainView {
                     .child(sync_text),
             )
             // --- new post --- "New note · saved locally · …" while in it.
-            .children(
-                self.new_post_label()
-                    .map(str::to_string)
-                    .or_else(|| item.map(vm::version_label)),
-            )
+            .children(match self.new_post_label() {
+                Some(l) => Some(div().child(l.to_string()).into_any_element()),
+                // "public vN · unpublished edits" says how to publish or
+                // discard them on hover.
+                None => item.map(|item| {
+                    let tip = vm::edits_tip(item);
+                    div()
+                        .id("version")
+                        .child(vm::version_label(item))
+                        .when_some(tip, |d, tip| {
+                            d.tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())
+                        })
+                        .into_any_element()
+                }),
+            })
             // --- themes ---
             .children(crate::ornament::status(
                 &self.theme,
@@ -2719,7 +2853,7 @@ impl MainView {
     }
 
     /// --- themes --- What the status ornaments show: posts touched per day
-    /// over the last two weeks, and the selected post's depth in the list.
+    /// over the last two weeks (the tide and block sparklines).
     fn status_data(&self) -> crate::ornament::StatusData {
         if !self
             .theme
@@ -2727,7 +2861,6 @@ impl MainView {
         {
             return crate::ornament::StatusData {
                 activity: Vec::new(),
-                depth: None,
             };
         }
         let mut activity = vec![0u32; 14];
@@ -2739,14 +2872,7 @@ impl MainView {
                 }
             }
         }
-        let depth = self.list.selected().and_then(|id| {
-            self.list
-                .results()
-                .iter()
-                .position(|i| &i.local_id == id)
-                .map(|i| i + 1)
-        });
-        crate::ornament::StatusData { activity, depth }
+        crate::ornament::StatusData { activity }
     }
 
     fn render_toast(&self) -> Option<AnyElement> {
@@ -2869,6 +2995,42 @@ impl MainView {
                         key_hint("⏎", "publish"),
                         key_hint("esc", "cancel"),
                     ]))
+                    .into_any_element(),
+            ),
+            Sheet::HeldLabels { focus, .. } => (
+                460.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" => this.publish_without_labels(window, cx),
+                            "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading("Labelled links".into()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(crate::keymap::hint(server_notice::HELD_SHEET)),
+                    )
+                    .child(
+                        keys_row(vec![])
+                            .child(crate::platform::key_button(
+                                key_hint("⏎", server_notice::HELD_FIX),
+                                "held-fix",
+                                cx.listener(|this, _, window, cx| {
+                                    this.publish_without_labels(window, cx)
+                                }),
+                            ))
+                            .child(crate::platform::key_button(
+                                key_hint("esc", "cancel"),
+                                "held-cancel",
+                                cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                            )),
+                    )
                     .into_any_element(),
             ),
             Sheet::Conflict {
@@ -3020,53 +3182,6 @@ impl MainView {
                     )))
                     .into_any_element(),
             ),
-            Sheet::ServerLimits { focus } => (
-                500.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "enter" | "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading(server_notice::LIMITS_TITLE.into()))
-                    .child(
-                        div()
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(server_notice::LIMITS_INTRO),
-                    )
-                    .children(server_notice::LIMITS.iter().map(|l| {
-                        div()
-                            .mt(px(6.))
-                            .flex()
-                            .gap(px(6.))
-                            .line_height(relative(1.45))
-                            .child(div().text_color(p.muted).child("•"))
-                            .child(div().flex_1().child(*l))
-                    }))
-                    .child(
-                        div()
-                            .mt(px(8.))
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(server_notice::LIMITS_OUTRO),
-                    )
-                    .child(
-                        div()
-                            .id("limits-help")
-                            .mt(px(8.))
-                            .cursor_pointer()
-                            .text_color(p.accent)
-                            .hover(|s| s.underline())
-                            .child("What a server needs for everything")
-                            .on_click(|_, _, cx| cx.open_url(server_notice::SERVER_HELP_URL)),
-                    )
-                    .child(keys_row(vec![key_hint("⏎", "OK")]))
-                    .into_any_element(),
-            ),
             Sheet::Connect {
                 url,
                 token,
@@ -3164,7 +3279,7 @@ impl MainView {
                                     ConnectWay::Password,
                                 )),
                         )
-                        .child(note(explain))
+                        .child(note(crate::keymap::hint(explain)))
                         .when(way != ConnectWay::Browser, |d| {
                             d.child(label(if way == ConnectWay::Password {
                                 "STUDIO PASSWORD"
@@ -3249,6 +3364,59 @@ impl MainView {
                             )
                             .child(
                                 key_hint("esc", "cancel")
+                                    .id("sheet-cancel")
+                                    .debug_selector(|| "sheet-cancel".into())
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.close_sheet(window, cx)
+                                    })),
+                            ),
+                    )
+                    .into_any_element(),
+            ),
+            // --- discard changes ---
+            Sheet::DiscardChanges {
+                title,
+                version,
+                focus,
+                ..
+            } => (
+                440.,
+                div()
+                    .track_focus(focus)
+                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                        match ev.keystroke.key.as_str() {
+                            "enter" => this.confirm_discard_changes(window, cx),
+                            "escape" => this.close_sheet(window, cx),
+                            _ => return,
+                        }
+                        cx.stop_propagation();
+                    }))
+                    .child(heading("Discard unpublished changes?".to_string()))
+                    .child(
+                        div()
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(div().text_color(p.ink).child(format!("“{title}”")))
+                            .child(format!(
+                                "The editor goes back to v{version} as published. {}",
+                                discard::DISCARD_NOTE
+                            )),
+                    )
+                    .child(
+                        keys_row(vec![])
+                            .child(
+                                key_hint("⏎", "discard changes")
+                                    .id("sheet-discard")
+                                    .debug_selector(|| "sheet-discard".into())
+                                    .cursor_pointer()
+                                    .text_color(p.over_text())
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.confirm_discard_changes(window, cx)
+                                    })),
+                            )
+                            .child(
+                                key_hint("esc", "keep them")
                                     .id("sheet-cancel")
                                     .debug_selector(|| "sheet-cancel".into())
                                     .cursor_pointer()
@@ -3469,7 +3637,9 @@ impl MainView {
             div()
                 .text_size(px(11.))
                 .text_color(p.muted)
-                .child(format!("theme-dark = {d} is used while macOS is dark"))
+                .child(crate::keymap::hint_owned(format!(
+                    "theme-dark = {d} is used while macOS is dark"
+                )))
         });
         let layouts = LayoutPref::ALL.iter().map(|l| {
             let l = *l;

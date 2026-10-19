@@ -44,6 +44,8 @@ pub enum Source {
     Folder(String),
     /// A subscription id.
     Sub(String),
+    /// --- own posts --- your own published posts ("Your blyg").
+    Own,
 }
 
 impl Default for Source {
@@ -105,6 +107,7 @@ pub fn in_source(
         Source::Smart(Smart::Thumbed) => r.thumb == Some(1),
         Source::Folder(f) => filed.get(&r.subscription_id) == Some(f),
         Source::Sub(s) => &r.subscription_id == s,
+        Source::Own => super::own::is_own_row(r),
     }
 }
 
@@ -155,6 +158,9 @@ pub enum Entry {
         /// Anything to read: a dot, never a count.
         unread: bool,
     },
+    /// --- own posts --- "Your blyg": your published posts (never unread,
+    /// so never a count or a dot).
+    Own,
 }
 
 impl Entry {
@@ -165,6 +171,7 @@ impl Entry {
             Entry::Smart { smart, .. } => Some(Source::Smart(*smart)),
             Entry::Folder { folder, .. } => Some(Source::Folder(folder.id.clone())),
             Entry::Sub { sub, .. } => Some(Source::Sub(sub.id.clone())),
+            Entry::Own => Some(Source::Own),
         }
     }
 }
@@ -194,6 +201,10 @@ pub fn entries(
             smart,
             unread: unread_of(&|r| in_source(r, &src, filed, now)),
         });
+    }
+    // --- own posts --- your blyg, under the smart feeds, once it has posts.
+    if rows.iter().any(super::own::is_own_row) {
+        out.push(Entry::Own);
     }
     // A folder id that no longer exists counts as unfiled.
     let known: HashSet<&str> = folders.iter().map(|f| f.id.as_str()).collect();
@@ -294,6 +305,7 @@ pub fn source_label(source: &Source, folders: &[Folder], subs: &[Subscription]) 
             .find(|s| &s.id == id)
             .map(sub_name)
             .unwrap_or_else(|| "Subscription".into()),
+        Source::Own => super::own::OWN_LABEL.into(),
     }
 }
 
@@ -306,6 +318,7 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::All) => "Nothing to read yet.",
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
+        Source::Own => "Nothing published yet. Your published posts show here.",
     }
 }
 
@@ -360,6 +373,7 @@ mod tests {
                 Entry::Sub { sub, filed, .. } => {
                     format!("{}{}", if *filed { "  " } else { "" }, sub.title)
                 }
+                Entry::Own => "Your blyg".into(),
             })
             .collect();
         assert_eq!(
@@ -507,5 +521,89 @@ mod tests {
         let second = next_unread(&rows, &all, Some(first)).unwrap();
         assert!(second > first && needs_reading(&rows[second]));
         assert_eq!(next_unread(&rows, &all, Some(rows.len() - 1)), None);
+    }
+
+    // --- own posts ---
+    #[test]
+    fn your_blyg_is_a_source_but_never_unread_or_thumbed() {
+        let (sd, now) = seed();
+        let mut mine = sd.reading[0].clone();
+        mine.subscription_id = super::super::own::OWN.into();
+        mine.remote_id = "7c9wk2n4h6q1x8v0z3m5rjy2ke".into();
+        mine.read_version = Some(mine.version);
+        mine.thumb = None;
+        mine.updated = Some(now.to_rfc3339());
+        let mut rows = super::super::vm::order(sd.reading.clone());
+        let before = entries(
+            &sd.folders,
+            &sd.filed,
+            &sd.subs,
+            &rows,
+            &HashSet::new(),
+            now,
+        );
+        assert!(!before.contains(&Entry::Own), "no posts of yours, no entry");
+        rows.push(mine.clone());
+        let e = entries(
+            &sd.folders,
+            &sd.filed,
+            &sd.subs,
+            &rows,
+            &HashSet::new(),
+            now,
+        );
+        let at = e
+            .iter()
+            .position(|x| *x == Entry::Own)
+            .expect("Your blyg is listed");
+        assert_eq!(
+            e[at - 1],
+            Entry::Smart {
+                smart: Smart::All,
+                unread: e
+                    .iter()
+                    .find_map(|x| match x {
+                        Entry::Smart {
+                            smart: Smart::All,
+                            unread,
+                        } => Some(*unread),
+                        _ => None,
+                    })
+                    .unwrap(),
+            },
+            "right under the smart feeds"
+        );
+        // The unread counts are the same with and without your posts.
+        let counts = |e: &[Entry]| -> Vec<usize> {
+            e.iter()
+                .filter_map(|x| match x {
+                    Entry::Smart { unread, .. } | Entry::Folder { unread, .. } => Some(*unread),
+                    _ => None,
+                })
+                .collect()
+        };
+        assert_eq!(counts(&e), counts(&before));
+        let filed = HashMap::new();
+        assert!(in_source(&mine, &Source::Own, &filed, now));
+        assert!(in_source(&mine, &Source::Smart(Smart::All), &filed, now));
+        assert!(in_source(&mine, &Source::Smart(Smart::Today), &filed, now));
+        assert!(!in_source(
+            &mine,
+            &Source::Smart(Smart::Unread),
+            &filed,
+            now
+        ));
+        assert!(!in_source(
+            &mine,
+            &Source::Smart(Smart::Thumbed),
+            &filed,
+            now
+        ));
+        assert!(!in_source(&sd.reading[0], &Source::Own, &filed, now));
+        assert_eq!(source_label(&Source::Own, &[], &[]), "Your blyg");
+        assert_eq!(
+            selectable(&e).iter().filter(|s| **s == Source::Own).count(),
+            1
+        );
     }
 }

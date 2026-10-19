@@ -135,10 +135,14 @@ pub fn prepare_fill(
     })
 }
 
-/// Model output made safe to put inside a scope: TK tokens removed (so it
-/// can't close or nest a scope) and trailing whitespace trimmed.
+/// Model output made safe to put inside a scope: the bracket grammar taken
+/// out (generated text is not grammar, studio 0.47 `stripGeneratedGrammar`:
+/// an inline `[[id]]` / `![[id]]` becomes its label or nothing, an own-line
+/// `![[id]]` stays a quote), TK tokens removed (so it can't close or nest a
+/// scope) and whitespace trimmed.
 pub fn clean_output(s: &str) -> String {
-    s.replace("[/TK]", "")
+    blyg_core::grammar::strip_generated_grammar(s)
+        .replace("[/TK]", "")
         .replace("[TK]", "")
         .replace("[=]", "")
         .trim()
@@ -301,6 +305,31 @@ mod tests {
         assert_eq!(again, "Intro. [TK]say hi[=]Hi.[/TK] End.");
         // The scope was edited away meanwhile: nothing is written.
         assert_eq!(apply_fill("Intro. End.", 0, "say hi", "Hi"), None);
+    }
+
+    #[test]
+    fn generated_text_loses_inline_grammar() {
+        let md = format!("[TK]summarize ![[{ID}]][/TK]");
+        let out = apply_fill(
+            &md,
+            0,
+            &format!("summarize ![[{ID}]]"),
+            &format!("A fine summary, see ![[{ID}]]"),
+        )
+        .unwrap();
+        assert_eq!(
+            out,
+            format!("[TK]summarize ![[{ID}]][=]A fine summary, see[/TK]")
+        );
+        assert_eq!(
+            clean_output(&format!("As argued in [[{ID} | the earlier post]], yes.")),
+            "As argued in the earlier post, yes."
+        );
+        // An own-line directive in the output is a real quote and stays.
+        assert_eq!(
+            clean_output(&format!("Above.\n\n![[{ID}]]\n\nBelow.")),
+            format!("Above.\n\n![[{ID}]]\n\nBelow.")
+        );
     }
 
     #[test]

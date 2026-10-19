@@ -34,10 +34,11 @@ brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-r
 
 ## Connecting your blyg
 
-Burrow works with any blyg running blygger-studio 0.9 or later, and fully with
-a stock, unmodified studio 0.40 or later: no server patches. An older studio
-limits a few things, and Burrow tells you which (see
-[Server requirements](server.md)). No blyg yet? Try the app on the sample data.
+Burrow works with any blyg running blygger-studio 0.47 or later, stock and
+unmodified: no server patches. On an older blyg everything syncs except posts
+with labelled links, which wait until the blyg is updated, and Burrow tells you
+so (see [Server requirements](server.md)).
+No blyg yet? Try the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
 `https://blyg.example.com`, including any path it lives under) and how to sign
@@ -51,7 +52,7 @@ in:
 - **API token**: make one in your studio under **More › Client access**
   (REST API, with every permission; allow **reading:state**, on studio 0.39+,
   so read marks sync) and paste it. It lasts 30 days.
-- **Studio password**, for a studio older than 0.28.
+- **Studio password**, as a fallback.
 
 It checks them with the server before saving anything, and says plainly what's
 wrong:
@@ -63,9 +64,10 @@ wrong:
 - the server is older than blygger-studio 0.9.
 
 The sign-in, token or password then goes in your Keychain and the address into the
-config file as `blyg-url`, and the app loads your posts. If the server is
-older than 0.9, Burrow says so when it starts and pushes nothing until it's
-updated. **Burrow › Disconnect…** forgets
+config file as `blyg-url`, and the app loads your posts. If the blyg runs a
+studio older than 0.47, Burrow says "Your blyg needs updating" as it connects
+(and when it starts), keeps a notice in the status bar with an **Update your
+blyg** link, and holds back only posts with labelled links until it's updated. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
 
 If your blyg later refuses Burrow's sign-in (a token expired or was revoked,

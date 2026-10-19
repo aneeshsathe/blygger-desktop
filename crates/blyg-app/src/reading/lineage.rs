@@ -185,13 +185,14 @@ impl MainView {
         id: &str,
         graph: Option<&blyg_core::lineage::LineageGraph>,
     ) -> Model {
-        let fresh;
-        let rows = if self.reading.rows.is_empty() {
-            fresh = self.backend.reading();
-            &fresh
+        // --- own posts --- your rows aren't reading rows here: your posts
+        // count as your posts (`own`), as they always have.
+        let fresh = if self.reading.rows.is_empty() {
+            self.backend.reading()
         } else {
-            &self.reading.rows
+            super::own::without_own(&self.reading.rows)
         };
+        let rows = &fresh;
         let own = self.backend.items();
         let mentions = self
             .reading
@@ -240,7 +241,7 @@ impl MainView {
         let keys: Vec<String> = self
             .reading
             .shown_rows()
-            .filter(|r| !r.subscription_id.is_empty())
+            .filter(|r| !r.subscription_id.is_empty() && !super::own::is_own_row(r))
             .take(LINEAGE_KEYS_MAX)
             .map(|r| blyg_core::lineage::imported_key(&r.subscription_id, &r.remote_id))
             .collect();
@@ -519,8 +520,11 @@ impl MainView {
                 _ => Some("Not in your reading list. Open ↗ shows it in the reader first."),
             };
         }
+        // --- own posts --- a stub of your own post is yours to make (its
+        // stub_of names your origin); your own pins fork from ⌘Y.
+        let blyg = blyg || c.own;
         match act {
-            Act::Fork if c.own => Some("It's yours: edit it instead."),
+            Act::Fork if c.own => Some("Yours forks from ⌘Y: Fork this pin, on a pinned version."),
             Act::Fork if !blyg => Some("Feed posts can't be forked."),
             Act::Fork => match s.pin {
                 Pin::Unknown | Pin::Looking => Some("Looking for a pinned version…"),
@@ -530,7 +534,6 @@ impl MainView {
                 ),
                 Pin::Found(_) => None,
             },
-            Act::Reply if c.own => Some("It's yours: publish a new version, or quote it (Q)."),
             Act::Link if !c.own && !blyg => Some("Feed posts can't be linked with [[…]]."),
             _ => None,
         }
@@ -544,9 +547,17 @@ impl MainView {
             self.show_toast(why, None, cx);
             return;
         }
-        let c = s.model.centre.clone();
+        let mut c = s.model.centre.clone();
         let pin = s.pin;
         self.close_reading_sheet(window, cx);
+        // --- own posts --- your post acts as its reading row (Reply, Quote,
+        // Fork, Link post and Open take the reading pane's own code).
+        if c.held.is_none() && c.own && !matches!(act, Act::Versions | Act::Fork) {
+            c.held = self
+                .own_rows()
+                .into_iter()
+                .find(|r| r.remote_id.eq_ignore_ascii_case(&c.id));
+        }
         let own_item = || {
             self.backend.items().into_iter().find(|i| {
                 i.server_id
@@ -563,19 +574,7 @@ impl MainView {
                     version,
                     cited: None,
                 };
-                let backend = self.backend.clone();
-                let task = cx.background_spawn(async move { backend.fork(&of) });
-                cx.spawn_in(window, async move |this, cx| {
-                    let r = task.await;
-                    let _ = this.update_in(cx, |this, window, cx| match r {
-                        Ok(id) => {
-                            this.open_new_draft(&id, window, cx);
-                            this.show_toast(format!("Forked 📌 v{version}"), None, cx);
-                        }
-                        Err(e) => this.show_toast(format!("Couldn't fork: {e}"), None, cx),
-                    });
-                })
-                .detach();
+                self.fork_pin(of, window, cx);
             }
             (Act::Reply, Some(item)) => self.item_action(item.clone(), "Reply", window, cx),
             (Act::Quote, Some(item)) => self.item_action(item.clone(), "Quote", window, cx),
@@ -587,7 +586,12 @@ impl MainView {
                     o.dropdown = true;
                 }
             }
-            (Act::Quote, None) => self.quote_into_thread(format!("![[{}]]", c.id), window, cx),
+            // --- quote labels --- a post not held here: no text to label.
+            (Act::Quote, None) => self.quote_into_thread(
+                blyg_core::grammar::directive_source(&c.id, None),
+                window,
+                cx,
+            ),
             (Act::Link, None) => match self
                 .backend
                 .create_draft(blyg_core::Kind::Fragment, &vm::link_post_body(&c.id))
@@ -654,9 +658,9 @@ impl MainView {
             .child(if s.model.served {
                 "Responses: what your blyg knows"
             } else {
-                "Responses: what this Mac holds"
+                crate::keymap::hint("Responses: what this Mac holds")
             })
-            .child("⌘J / esc closes");
+            .child(crate::keymap::hint("⌘J / esc closes"));
         let body = div()
             .flex()
             .gap(px(14.))
@@ -1136,7 +1140,10 @@ impl MainView {
                 d.child(empty(UP_Y, "draws on nothing: an original"))
             })
             .when(m.downs.is_empty() && ghost.is_none(), |d| {
-                d.child(empty(DOWN_Y, "no responses this Mac has seen"))
+                d.child(empty(
+                    DOWN_Y,
+                    crate::keymap::hint("no responses this Mac has seen"),
+                ))
             })
             .children(cards)
             .child(hex_text)
@@ -1426,7 +1433,7 @@ impl MainView {
     /// The glyph's numbers for `r`: this Mac's edges, with the node's counts
     /// over them when it serves them.
     pub(crate) fn lineage_glyph_of(&self, r: &blyg_core::ReadingItem) -> Glyph {
-        let served = (!r.subscription_id.is_empty())
+        let served = (!r.subscription_id.is_empty() && !super::own::is_own_row(r))
             .then(|| {
                 self.reading.served.get(&blyg_core::lineage::imported_key(
                     &r.subscription_id,

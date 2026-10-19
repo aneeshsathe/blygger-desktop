@@ -44,10 +44,33 @@ result and its address, and ⌘O opens the post on the web.
 | ![The publish sheet](screenshots/publish-sheet.png) | ![Published](screenshots/published-toast.png) |
 
 Every publish makes a new public version (v1, v2, …); editing a published
-post leaves it `public v3 · unpublished edits` until you publish again.
+post leaves it `public v3 · unpublished edits` until you publish again, and
+its row in Posts gets the edit mark. Hover either to see both ways out: ⌘⏎
+publishes the edits as v4, ⌥⌘Z discards them. The published and pinned marks
+say what they mean on hover too.
 **Versions** (⌘Y) lists every version of your post with its note. Open any of
 them and **Restore** it into the editor; publishing it makes a new version,
 since versions never go backwards.
+
+### Discard changes
+
+Changed your mind about the edits to a published post? **Discard changes**
+puts the editor back to the version your blyg has published. Use ⌥⌘Z,
+**Post › Discard Changes…**, the toolbar's eraser button, or **Discard
+changes…** on the current version in ⌘Y. A sheet asks first ("Discard
+unpublished changes? … The editor goes back to v3 as published. You can't
+undo this."): ⏎ discards, esc keeps the edits. Then a toast says "Back to v3
+as published".
+
+The public post doesn't change: only your unpublished edits go. Discard is
+unavailable, with the reason on hover, for a draft or scratch note (delete
+those instead), a withdrawn post, a post with no edits, and while you're
+offline, since it needs the blyg. If v3 disclosed generated text, the blyg
+keeps the post marked unpublished after a discard, and the toast says so: ⌘⏎
+publishes it again as v4.
+
+On Windows Discard changes has no key (Ctrl+Alt+Z is AltGr+Z on some
+layouts): use **Menu › Post › Discard Changes…** or the toolbar.
 
 A version can be **pinned**: a pin is served unchanged forever, and it's what
 other blygs can fork. Pinning can't be undone, so it asks you to type to
@@ -122,7 +145,8 @@ and video. Click a paragraph in the preview to jump to it.
 In a thread, `![[id]]` alone on a line **quotes** a post: yours, or one from a
 blyg you follow. The quote is a snapshot taken when you publish; later edits
 to the original never rewrite it. ⌘K (or typing `![[` at the start of a line)
-opens a picker of the posts you hold, and ⏎ inserts the line. The picker
+opens a picker of the posts you hold, and ⏎ inserts the line with a note,
+`![[id | note]]` (see [labelled links](#labelled-links) below). The picker
 searches every word of your published posts and the blyg posts you read, on
 your Mac, and filters by source (all, mine, imported) and blyg, newest or
 oldest first. Where you type the search is the blyg's **picker typing**
@@ -165,7 +189,43 @@ quotes, linked. Links inside code stay as text. A link that can't be resolved
 is flagged in the preview, the status bar and the publish sheet, as quotes
 are; publishing refuses it ("one or more references do not resolve").
 
-Typing `[[` opens the same picker, and ⏎ inserts the link.
+### Labelled links
+
+A link can carry its own text after a `|`:
+
+```markdown
+As I said in [[01J9ZK3Q7T5V8X2B4N6M0PQRST | Gardens, not streams]], the
+lighthouse is the point.
+```
+
+The **label** is what the link says on the published page, in place of the
+target's first words. To **rename a link**, edit the words after `|`; the id
+before it is what the link points at, so leave that alone. A quote takes a
+label too, `![[id | note]]`, but there it's a **note** for you: the published
+quote shows the quoted post, not the note. The preview renders labels as
+blygger-studio 0.47 does.
+
+Typing `[[` anywhere outside code opens the same picker as `![[`, for a link.
+Each row leads with the post's title. ⏎ writes the labelled form, and the
+footer says so: "⏎ inserts [[… | label]]" for a link, "⏎ inserts ![[… |
+note]] on its own line" for a quote. The label the picker writes is:
+
+- the post's **heading**, when it opens with one;
+- else its **title** (its first line), `[[id | Gardens, not streams]]`;
+- else, when the title is longer than 80 characters or the post has no text,
+  a **quoted excerpt** of its first words.
+
+When that label isn't the title, the row shows it on a muted line, *links as
+“…”*, so you know what the page will say. (For a post with no heading the web
+studio writes a quoted excerpt of its first 60 characters; Burrow writes the
+title, which is what you searched for and what a reader should see. Either
+way the label is just your text, and you can change it.) **Quote into a
+thread** from Reading writes the labelled form too.
+
+Labelled links need **blygger-studio 0.47** or later. On an older blyg the
+pickers write bare links (`[[id]]`, `![[id]]`), and a post that already has a
+label waits, unsent, until the blyg is updated. Publishing it offers ⏎ to
+write its links bare and publish. See [Server requirements](server.md).
 
 | | |
 |---|---|
@@ -174,6 +234,21 @@ Typing `[[` opens the same picker, and ⏎ inserts the link.
 **Link post** (next to Fork on a post you're reading) starts a new fragment
 holding `[[id]]`: a plain link, not a response. Reply is the one way to
 respond.
+
+### Replying to, quoting and linking your own posts
+
+A published post of yours has a row of chips above its text in Posts: "Your
+post · v3 ·" then **Reply · new stub** (⌥⌘R), **Quote into a thread** (⌥⌘Q)
+and **Link post · new fragment** (⌥⌘L). They're in the Post menu too, and do
+what the same actions do on a post you're reading: Reply starts a stub thread
+of your own post, Quote puts `![[id | label]]` in a thread, and Link post
+makes a fragment holding `[[id]]`. Drafts and scratch notes have no row.
+
+There's no Fork there: your own post forks only from a pin. Open ⌘Y, pick a
+pinned version, and choose **Fork this pin** for a new draft that descends
+from it. On an unpinned version it's greyed out ("Pin one in ⌘Y to fork it").
+Your posts are also a source in Reading; see
+[Your blyg](reading.md#your-blyg).
 
 ## TK: gaps for later
 

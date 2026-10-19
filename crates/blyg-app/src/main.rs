@@ -388,12 +388,17 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Versions…", app::reading::ShowVersions),
                 MenuItem::action("Lineage…", app::reading::ShowLineage),
                 MenuItem::action("Quote…", app::reading::QuotePicker),
+                // --- own posts ---
+                MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
+                MenuItem::action("Quote into a Thread", app::reading::own::QuotePost),
+                MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
                 // --- extensions ---
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
                 MenuItem::separator(),
+                MenuItem::action("Discard Changes…", app::discard::DiscardChanges),
                 MenuItem::action("Delete Draft…", app::discard::DeleteDraft),
                 MenuItem::action("Withdraw…", app::discard::Withdraw),
             ],

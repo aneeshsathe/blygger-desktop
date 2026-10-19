@@ -1,18 +1,20 @@
 //! What Burrow tells you about your blyg's server.
 //!
-//! The "your blyg's server needs updating" notice: Burrow needs
-//! blygger-studio 0.9 or later, and an older server gets nothing pushed to it
-//! (see `CoreError::ServerOutdated`). A toast when sync first notices, then a
-//! status-bar notice for as long as it stays true.
+//! The "your blyg needs updating" notice: Burrow needs blygger-studio 0.47
+//! or later (`blyg_core::floor`), because its `[[` picker writes labelled
+//! links, `[[id | label]]`, that an older studio doesn't understand. On an
+//! older blyg a post holding them waits (`blyg_core::floor::has_labels`):
+//! its sync and its publish, which offers to write the links bare
+//! (`HELD_*`). Everything else syncs. A toast when sync first notices (and
+//! on connecting to such a blyg), then a status-bar notice for as long as it
+//! stays true. The About window says the same.
 //!
-//! The "this blyg's studio is older than 0.40" sheet: once per local
-//! database, when a reading pull first finds a server without
-//! `GET /api/reading/imported` (studio 0.40+, or the old Worker fork's
-//! extension 3). It says what works and what's limited, and why. A stock
-//! studio 0.40 or later is fully supported and never sees it.
+//! There used to be a second notice here, a sheet listing what a studio
+//! older than 0.40 limits. The 0.47 floor made it unreachable: every blyg
+//! old enough to see it already gets this one, and nothing is sent to it.
 //!
 //! A child module of `app` (like the update notice) so it can use
-//! `MainView`'s toast and sheet.
+//! `MainView`'s toast.
 
 use gpui_kit::*;
 
@@ -22,57 +24,40 @@ use super::MainView;
 /// upstream's upgrade guide.
 pub const SERVER_HELP_URL: &str = "https://aneeshsathe.github.io/blygger-desktop/server.html";
 
-/// The toast, once per session.
-pub const OUTDATED_TOAST: &str = "Your blyg's server needs updating";
+/// The toast, once per session (and on connecting to an older blyg).
+pub const OUTDATED_TOAST: &str = "Your blyg needs updating";
 pub const OUTDATED_TOAST_SUB: &str =
-    "Burrow needs blygger-studio 0.9 or later. Nothing syncs until the server is updated.";
+    "Posts with labelled links wait until it's on blygger-studio 0.47 or later.";
 
-/// The status bar's text while the server is outdated.
-pub const OUTDATED_NOTICE: &str = "Server needs updating · nothing syncs";
+/// The status bar's text while the server is outdated, and its link.
+pub const OUTDATED_NOTICE: &str =
+    "Your blyg needs updating · posts with labelled links wait until it's on studio 0.47";
+pub const OUTDATED_LINK: &str = "Update your blyg";
 
-/// The stock-server sheet.
-pub const LIMITS_TITLE: &str = "Your blyg runs an older blygger-studio";
-pub const LIMITS_INTRO: &str = "Writing, publishing, versions, subscriptions and your reading \
-     list all work. A few things need a newer studio (0.40 or later has them all):";
-/// What's limited, and how Burrow copes. Also in the About window.
-pub const LIMITS: [&str; 4] = [
-    "Before studio 0.39: read state stays on this Mac. Posts you read here still show as \
-     unread on your other Macs.",
-    "Before studio 0.28: AI disclosure for text generated in Burrow. Before you publish such \
-     text, Burrow says it will go out without the disclosure, and lets you cancel.",
-    "Before studio 0.26: an image you paste into a draft and then delete stays on the server.",
-    "Before studio 0.18: who a post replies to, or forks, appears once Burrow has fetched it \
-     from the author's blyg.",
-];
-pub const LIMITS_OUTRO: &str =
-    "Generation on your blyg's own server, if you use it, records its disclosure itself.";
+/// The About window's line, under the connection.
+pub const OUTDATED_ABOUT: &str = "Posts with labelled links wait until it's on blygger-studio \
+     0.47 or later. Everything else syncs.";
+
+/// The publish sheet on a post held for its labelled links.
+pub const HELD_SHEET: &str =
+    "This post has labelled links, which your blyg can't show until it's updated to studio 0.47.";
+pub const HELD_FIX: &str = "write them as [[id]] and publish";
+
+/// The list row's tooltip on a post that waits for them.
+pub const HELD_TIP: &str = "Waiting: labelled links need studio 0.47";
 
 impl MainView {
-    /// A reading pull just found a stock server (first time for this
-    /// database): explain, unless another sheet is up; then a toast points
-    /// at the About window, which lists the same.
-    pub(super) fn server_limited(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sheet.is_some() {
-            self.show_toast(
-                LIMITS_TITLE,
-                Some("A few features are limited: see Burrow › About".into()),
-                cx,
-            );
-            return;
-        }
-        let focus = cx.focus_handle();
-        window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(super::Sheet::ServerLimits { focus });
-        cx.notify();
-    }
-
-    /// Sync just found an outdated server.
+    /// Sync just found an outdated server (or a connect did).
     pub(super) fn server_outdated(&mut self, cx: &mut Context<Self>) {
-        self.show_toast(OUTDATED_TOAST, Some(OUTDATED_TOAST_SUB.into()), cx);
+        self.show_toast(
+            OUTDATED_TOAST,
+            Some(crate::keymap::hint(OUTDATED_TOAST_SUB).into()),
+            cx,
+        );
     }
 
-    /// "Server needs updating · nothing syncs · How to update", while true.
+    /// "Your blyg needs updating · posts with labelled links wait … ·
+    /// Update your blyg", while true.
     pub(super) fn render_server_notice(&self) -> Option<AnyElement> {
         if !self.backend.server_outdated() {
             return None;
@@ -88,7 +73,12 @@ impl MainView {
                 .gap(px(6.))
                 .min_w_0()
                 .overflow_hidden()
-                .child(div().truncate().text_color(warn).child(OUTDATED_NOTICE))
+                .child(
+                    div()
+                        .truncate()
+                        .text_color(warn)
+                        .child(crate::keymap::hint(OUTDATED_NOTICE)),
+                )
                 .child("·")
                 .child(
                     div()
@@ -96,7 +86,7 @@ impl MainView {
                         .cursor_pointer()
                         .text_color(link)
                         .hover(|s| s.underline())
-                        .child("How to update")
+                        .child(OUTDATED_LINK)
                         .on_click(|_, _, cx| cx.open_url(SERVER_HELP_URL)),
                 )
                 .into_any_element(),

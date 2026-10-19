@@ -637,6 +637,9 @@ fn do_step(e: &mut Env, id: &str) {
         }
         "versions" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
         "quotes" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-k")),
+        // The Post menu's item (Windows has no key for it).
+        "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
+        "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
@@ -1379,6 +1382,92 @@ fn the_0_12_steps_show_the_warning_and_the_note(cx: &mut TestAppContext) {
         _ => None,
     });
     assert_eq!(visible, Some(true), "the tour shows the post");
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+}
+
+/// The first launch after updating from 0.12.0 to 0.13.0: "Show me what's
+/// new" lands on Discard changes.
+#[gpui_kit::test]
+fn a_launch_after_updating_from_0_12_starts_at_0_13s_first_step(cx: &mut TestAppContext) {
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = Some("0.13.0"));
+    let mut e = setup_full(cx, CONNECTED, Some("0.12.0"), Mode::Fake, false);
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = None);
+    assert!(news_up(&e), "the card is up");
+    let versions: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().unwrap();
+        t.news.iter().map(|r| r.version).collect()
+    });
+    assert_eq!(versions, ["0.13.0"]);
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(!news_up(&e));
+    let first_new = STEPS.iter().find(|s| s.since == "0.13.0").map(|s| s.id);
+    assert_eq!(tour_step(&mut e), first_new);
+    assert_eq!(tour_step(&mut e), Some("discard"));
+}
+
+/// 0.13.0's steps land on what they teach: Discard asks about the edited
+/// published post, your own post's chips make a stub of it, typing `[[`
+/// opens the link picker, and the Reader lists Your blyg.
+#[gpui_kit::test]
+fn the_0_13_steps_show_discard_own_posts_and_links(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.real.take();
+
+    // The published post has unpublished edits; Discard asks, ⏎ discards.
+    enter(&mut e, "discard");
+    let dirty = e.view.read_with(e.cx, |v, _| {
+        v.current
+            .as_ref()
+            .map(|c| (c.local_id.0.clone(), c.status, c.dirty))
+    });
+    assert_eq!(
+        dirty,
+        Some((steps::VERSIONED.to_string(), Status::Public, true))
+    );
+    do_step(&mut e, "discard");
+    assert!(tour_done(&mut e));
+    let asked = e.view.read_with(e.cx, |v, _| {
+        matches!(v.sheet, Some(Sheet::DiscardChanges { .. }))
+    });
+    assert!(asked, "the confirm sheet is up");
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    let clean = e.view.read_with(e.cx, |v, _| {
+        v.backend
+            .item(&LocalId(steps::VERSIONED.into()))
+            .map(|i| (i.dirty, i.version))
+    });
+    assert_eq!(clean, Some((false, 3)), "back to v3 as published");
+
+    // Your published post's chips; ⌥⌘R makes a stub of it.
+    enter(&mut e, "own-post");
+    assert!(drawn(&mut e, "own-post-bar"));
+    assert!(drawn(&mut e, "own-act-Reply"));
+    do_step(&mut e, "own-post");
+    assert!(tour_done(&mut e));
+    let stub = e.view.read_with(e.cx, |v, _| {
+        v.current
+            .as_ref()
+            .map(|c| (c.local_id.0.clone(), c.status, c.stub_of.is_some()))
+    });
+    let (id, status, is_stub) = stub.expect("a draft is open");
+    assert_ne!(id, steps::VERSIONED);
+    assert_eq!(status, Status::Draft);
+    assert!(is_stub, "a stub of your own post");
+
+    // Typing [[ opens the link picker.
+    enter(&mut e, "quotes");
+    e.cx.simulate_input("[[");
+    e.cx.run_until_parked();
+    assert!(tour_done(&mut e), "[[ counts");
+
+    // Reader: Your blyg in the sources pane.
+    enter(&mut e, "reader");
+    do_step(&mut e, "reader");
+    wait_drawn(&mut e, "reader", "src-own");
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
 }
 

@@ -43,11 +43,13 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- own posts ---
+use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
-use crate::app::discard::{DeleteDraft, Withdraw};
+use crate::app::discard::{DeleteDraft, DiscardChanges, Withdraw};
 // --- auto-update ---
 use crate::update::CheckForUpdates;
 // --- about ---
@@ -479,6 +481,30 @@ pub fn mac_table() -> Vec<Keybind> {
             "Quote a post in this thread",
             Some("Post › Quote…")
         ),
+        // --- own posts --- the reading actions on the post in front of you:
+        // your published post in Posts, the open (or selected) post in Reading.
+        kb!(
+            "alt-cmd-r",
+            Main,
+            ReplyToPost,
+            "Reply · new stub: a thread of yours that's a stub of this post (yours too)",
+            Some("Post › Reply · New Stub")
+        ),
+        kb!(
+            "alt-cmd-q",
+            Main,
+            QuotePost,
+            "Quote this post into a thread (![[…]]; the draft open, or a new one)",
+            Some("Post › Quote into a Thread")
+        ),
+        kb!(
+            "alt-cmd-l",
+            Main,
+            LinkToPost,
+            "Link post · new fragment: [[…]] to this post, no stub_of",
+            Some("Post › Link Post · New Fragment")
+        ),
+        // --- end own posts ---
         menu_only!(
             SubscribeTo,
             "Subscribe to a blyg or feed",
@@ -556,6 +582,20 @@ pub fn mac_table() -> Vec<Keybind> {
             ),
             "trash-2",
             "Delete"
+        ),
+        // --- discard changes --- (upstream's "discard changes": the
+        // current published version back into the working copy). ⌥⌘Z, next
+        // to ⌘Z / ⇧⌘Z; gpui-base's inputs don't bind it.
+        button!(
+            kb!(
+                "alt-cmd-z",
+                Main,
+                DiscardChanges,
+                "Discard unpublished changes: back to the published version (asks first)",
+                Some("Post › Discard Changes…")
+            ),
+            "eraser",
+            "Discard"
         ),
         button!(
             menu_only!(
@@ -740,7 +780,7 @@ pub fn mac_table() -> Vec<Keybind> {
 fn platform_keys(rows: Vec<Keybind>) -> Vec<Keybind> {
     #[cfg(target_os = "windows")]
     {
-        let mut rows = rows;
+        let mut rows = drop_windows_keys(rows);
         for k in &mut rows {
             k.key = platform_key(k.key);
             k.menu_key = k.menu_key.map(platform_key);
@@ -748,6 +788,33 @@ fn platform_keys(rows: Vec<Keybind>) -> Vec<Keybind> {
         rows
     }
     #[cfg(not(target_os = "windows"))]
+    rows
+}
+
+/// Actions with a key on macOS and none on Windows. Discard changes is
+/// ⌥⌘Z, which Windows would spell Ctrl+Alt+Z, and Windows reports AltGr as
+/// Ctrl+Alt: on layouts where AltGr+Z types a letter (Polish programmer's
+/// ż) typing it would open the Discard sheet, whose ⏎ throws the edits
+/// away. There it's Menu › Post › Discard Changes… and the toolbar button,
+/// as Withdraw is everywhere.
+pub const WINDOWS_KEYLESS: &[&str] = &["DiscardChanges"];
+
+/// `action` has no key on this platform although the table gives it one
+/// (`WINDOWS_KEYLESS`).
+pub fn keyless_here(action: &str) -> bool {
+    cfg!(target_os = "windows") && WINDOWS_KEYLESS.contains(&action)
+}
+
+/// The `WINDOWS_KEYLESS` rows without their key: menu (and button) only.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
+    for k in &mut rows {
+        if WINDOWS_KEYLESS.contains(&k.action) {
+            k.key = "";
+            k.menu_key = None;
+            k.make = None;
+        }
+    }
     rows
 }
 
@@ -908,6 +975,8 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
     ("the Keychain", "Credential Manager"),
     ("Keychain", "Credential Manager"),
     ("follow macOS", "follow Windows"),
+    ("while macOS is dark", "while Windows is dark"),
+    ("your other Macs", "your other PCs"),
     ("this Mac", "this PC"),
     ("your Mac", "your PC"),
     ("another Mac", "another PC"),
@@ -1075,8 +1144,9 @@ pub const TOOLBAR: &[&[&str]] = &[
     &["ViewWrite", "ViewSplit", "ViewStudio"],
     &["ShowVersions", "AiGenerate"],
     // One slot: Delete for a draft or scratch note, Withdraw for a published
-    // post (`toolbar::visible`).
-    &["DeleteDraft", "Withdraw"],
+    // post (`toolbar::visible`). Discard changes sits beside it: it drops
+    // edits, where Delete and Withdraw drop the post.
+    &["DiscardChanges", "DeleteDraft", "Withdraw"],
     &["ShowCapture"],
 ];
 
@@ -1402,6 +1472,36 @@ mod tests {
     }
 
     #[test]
+    fn discard_changes_has_no_key_on_windows() {
+        // Every platform checks the Windows table's one exception.
+        let mac = mac_table();
+        let win = drop_windows_keys(mac_table());
+        assert_eq!(WINDOWS_KEYLESS, &["DiscardChanges"]);
+        let row = |rows: &[Keybind], a: &str| {
+            rows.iter()
+                .position(|k| k.action == a)
+                .unwrap_or_else(|| panic!("{a}"))
+        };
+        let d = row(&win, "DiscardChanges");
+        assert_eq!(mac[d].key, "alt-cmd-z", "⌥⌘Z on macOS");
+        assert!(win[d].key.is_empty() && win[d].make.is_none() && win[d].menu_key.is_none());
+        assert_eq!(
+            win[d].menu,
+            Some("Post › Discard Changes…"),
+            "still in the menu"
+        );
+        assert_eq!(win[d].button, Some("Discard"), "and on the toolbar");
+        // Nothing else lost its key.
+        for (m, w) in mac.iter().zip(&win) {
+            if m.action != "DiscardChanges" {
+                assert_eq!(m.key, w.key, "{}", m.action);
+            }
+        }
+        assert_eq!(keyless_here("DiscardChanges"), cfg!(target_os = "windows"));
+        assert!(!keyless_here("Publish"));
+    }
+
+    #[test]
     fn keys_respell_for_windows() {
         assert_eq!(respell_for_windows("cmd-l"), "ctrl-l");
         assert_eq!(respell_for_windows("cmd-shift-,"), "ctrl-shift-,");
@@ -1442,6 +1542,10 @@ mod tests {
         assert_eq!(
             windows_hint("scratch · only on this Mac"),
             "scratch · only on this PC"
+        );
+        assert_eq!(
+            windows_hint("Posts you read here still show as unread on your other Macs."),
+            "Posts you read here still show as unread on your other PCs."
         );
         assert_eq!(windows_hint("Macintosh"), "Macintosh");
         // macOS text is untouched.
@@ -1531,8 +1635,13 @@ mod tests {
                         };
                         assert!(tip.ends_with(want), "{tip}");
                     } else {
-                        // Keyless on purpose (Withdraw is irreversible): menu only.
-                        assert_eq!(KEYLESS_BUTTONS, &[action], "{action} has no key");
+                        // Keyless on purpose (Withdraw is irreversible), or
+                        // only on Windows (Discard's Ctrl+Alt+Z is AltGr+Z):
+                        // menu only, and the tooltip shows no key.
+                        assert!(
+                            KEYLESS_BUTTONS.contains(&action) || keyless_here(action),
+                            "{action} has no key"
+                        );
                         assert!(k.menu.is_some(), "{action}: a keyless button needs a menu");
                         assert_eq!(tip, k.button.unwrap(), "{tip}");
                     }
@@ -1550,7 +1659,7 @@ mod tests {
                     k.key
                 );
             }
-            assert_eq!(seen, 14);
+            assert_eq!(seen, 15);
             // Only listed buttons exist (no orphan labels in the table).
             for k in table().iter().filter(|k| k.button.is_some()) {
                 assert!(

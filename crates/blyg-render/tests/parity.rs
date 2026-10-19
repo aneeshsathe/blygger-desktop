@@ -197,3 +197,62 @@ fn media_parity_with_worker() {
         assert_eq!(preview_media(&media, mount, content), strip, "{name}");
     }
 }
+
+/// The bracket grammar (studio grammar.ts and link-label.ts, 0.47): how each
+/// text's links and directive read, what generated text keeps, the long
+/// form and the default link label, against the studio's own functions.
+#[test]
+fn grammar_parity_with_worker() {
+    use blyg_render::{
+        ItemKind, directive_ref, label_text, link_label, link_refs, link_source,
+        strip_generated_grammar,
+    };
+    let text = std::fs::read_to_string(fixtures_dir().join("parity/_grammar.json")).unwrap();
+    let g: Value = serde_json::from_str(&text).unwrap();
+    let id = g["id"].as_str().unwrap();
+    let texts = g["texts"].as_array().unwrap();
+    assert!(texts.len() >= 40, "expected the grammar vectors");
+    for t in texts {
+        let text = t["text"].as_str().unwrap();
+        let links: Vec<Value> = link_refs(text)
+            .into_iter()
+            .map(|l| serde_json::json!({ "match": &text[l.range], "id": l.id, "label": l.label }))
+            .collect();
+        assert_eq!(Value::Array(links), t["links"], "links of {text:?}");
+        let directive = directive_ref(text)
+            .map(|d| serde_json::json!({ "id": d.id, "label": d.label }))
+            .unwrap_or(Value::Null);
+        assert_eq!(directive, t["directive"], "directive of {text:?}");
+        assert_eq!(
+            strip_generated_grammar(text),
+            t["stripped"].as_str().unwrap(),
+            "stripGeneratedGrammar({text:?})"
+        );
+    }
+    for l in g["labels"].as_array().unwrap() {
+        let text = l["text"].as_str().unwrap();
+        assert_eq!(
+            label_text(text),
+            l["label_text"].as_str().unwrap(),
+            "labelText({text:?})"
+        );
+        assert_eq!(
+            link_source(id, Some(text)),
+            l["link_source"].as_str().unwrap(),
+            "linkSource({text:?})"
+        );
+    }
+    for h in g["link_labels"].as_array().unwrap() {
+        let kind = if h["kind"] == "thread" {
+            ItemKind::Thread
+        } else {
+            ItemKind::Fragment
+        };
+        let html = h["content_html"].as_str().unwrap();
+        assert_eq!(
+            link_label(html, kind),
+            h["label"].as_str().unwrap(),
+            "linkLabel({html:?})"
+        );
+    }
+}

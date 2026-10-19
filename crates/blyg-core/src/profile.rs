@@ -692,6 +692,8 @@ pub fn first_line(md: &str) -> Option<String> {
     md.lines()
         .map(|l| l.trim_start_matches('#').trim())
         .find(|l| !l.is_empty() && !l.starts_with("![["))
+        // A labelled link reads as its label (studio 0.47).
+        .map(crate::grammar::with_link_labels)
         .map(|l| {
             let mut s: String = l.chars().take(120).collect();
             if l.chars().count() > 120 {
@@ -868,14 +870,22 @@ pub fn own_connections(origin: &str, items: &[Item], held: &[ReadingItem]) -> Ve
     tally(seen)
 }
 
-/// Ids of `![[id]]` lines (the transclusion grammar, §10.1).
+/// Ids of `![[id]]` / `![[id | label]]` lines (the transclusion grammar,
+/// §10.1). More lenient than the grammar about the id itself: any 26 ASCII
+/// letters and digits, as written (a remote client may upper-case them).
 pub fn transclusion_ids(md: &str) -> Vec<String> {
-    md.lines()
+    md.split('\n')
         .filter_map(|l| {
-            let t = l.trim();
-            let id = t.strip_prefix("![[")?.strip_suffix("]]")?;
-            (id.len() == 26 && id.chars().all(|c| c.is_ascii_alphanumeric()))
-                .then(|| id.to_string())
+            // Every ASCII alphanumeric as `0` (an id character), byte for
+            // byte, so the grammar's offsets are offsets into `l`.
+            let shape: String = l
+                .chars()
+                .map(|c| if c.is_ascii_alphanumeric() { '0' } else { c })
+                .collect();
+            crate::grammar::directive_ref(&shape)?;
+            // The id is right after the line's leading `![[`.
+            let at = l.len() - l.trim_start_matches(crate::grammar::is_js_ws).len() + 3;
+            Some(l[at..at + 26].to_string())
         })
         .collect()
 }
@@ -1243,5 +1253,11 @@ mod tests {
     fn transclusion_ids_follow_the_grammar() {
         let md = "hi\n![[01j9t4r7c8m2q5v6w3x8y9z0ab]]\n  ![[01J9T4R7C8M2Q5V6W3X8Y9Z0AB]]  \ninline ![[01j9t4r7c8m2q5v6w3x8y9z0ab]]\n![[short]]";
         assert_eq!(transclusion_ids(md).len(), 2);
+        let md = "![[01j9t4r7c8m2q5v6w3x8y9z0ab | a note]]\n![[01j9t4r7c8m2q5v6w3x8y9z0ab |]]\n\
+                  ![[01j9t4r7c8m2q5v6w3x8y9z0ab note]]";
+        assert_eq!(
+            transclusion_ids(md),
+            vec!["01j9t4r7c8m2q5v6w3x8y9z0ab", "01j9t4r7c8m2q5v6w3x8y9z0ab"]
+        );
     }
 }
