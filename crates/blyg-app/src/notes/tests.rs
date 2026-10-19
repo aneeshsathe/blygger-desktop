@@ -492,9 +492,10 @@ mod ui {
         settle(cx);
         assert!(is_open(&view, cx));
         let text = notes_text(&view, cx);
-        // --- quote labels --- labelled as the picker writes it.
+        // --- quote labels --- labelled as the picker writes it (one long
+        // sentence: too long for a title label, so the quoted excerpt).
         assert!(
-            text.starts_with(&format!("# Reading notes\n\n![[{RUE_TRUST} | A hyperlink"))
+            text.starts_with(&format!("# Reading notes\n\n![[{RUE_TRUST} | “A hyperlink"))
                 && text.ends_with("]]\n\n"),
             "{text}"
         );

@@ -784,24 +784,21 @@ pub fn stub_body(remote_id: &str) -> String {
 }
 
 /// --- quote labels --- The label a quote of `r` is written with
-/// (`![[id | label]]`, studio 0.47): the post's opening heading (the label
-/// a bare link would show), else its title.
-// TODO(merge with usability-fixes): use the picker's title-as-label helper
-// once it exposes one, so the two can't drift.
+/// (`![[id | label]]`, studio 0.47): the picker's rule
+/// ([`blyg_core::pick::pick_label`]), so a quote from Reading and a pick
+/// read the same: the opening heading, else the title (the quoted excerpt
+/// when the title is too long to be a label).
 pub fn quote_label(r: &ReadingItem) -> String {
     let html = if r.content_html.trim().is_empty() {
         blyg_render::render_markdown(&r.content_md)
     } else {
         r.content_html.clone()
     };
-    match blyg_render::anchor_label(&html) {
-        // A heading reads as itself; an excerpt comes back in quotes.
-        Some(heading) if !heading.starts_with('“') => heading,
-        _ => match post_title(r) {
-            t if t == "…" => blyg_core::pick::link_label(&html, r.kind),
-            t => t,
-        },
-    }
+    let title = post_title(r);
+    blyg_core::pick::pick_label(
+        Some(title.as_str()).filter(|t| *t != "…"),
+        blyg_core::pick::link_label(&html, r.kind),
+    )
 }
 
 /// `![[id | label]]` for `r` ([`quote_label`]); bare `![[id]]` when the

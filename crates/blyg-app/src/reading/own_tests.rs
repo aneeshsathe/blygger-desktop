@@ -321,7 +321,8 @@ fn the_posts_view_replies_quotes_and_links_your_post(cx: &mut TestAppContext) {
     assert!(made[0].stub_of.is_none() && made[0].forked_from.is_none());
 
     // Quote into a thread: a new thread quoting it, labelled as the picker
-    // writes it (no heading: its title); the transclusion's origin is left
+    // writes it (no heading, and one sentence too long for a title label:
+    // the quoted excerpt); the transclusion's origin is left
     // out at publish, as own.
     open_post(&view, FRICTION, cx);
     let before = fake.items();
@@ -330,7 +331,7 @@ fn the_posts_view_replies_quotes_and_links_your_post(cx: &mut TestAppContext) {
     let made = new_items(&fake, &before);
     assert_eq!(made[0].kind, Kind::Thread);
     let label = super::vm::quote_label(&own_row);
-    assert!(label.starts_with("On friction"), "{label}");
+    assert!(label.starts_with("“On friction"), "{label}");
     assert_eq!(
         made[0].content_md,
         format!("![[{OWN_FRICTION} | {label}]]\n\n")
