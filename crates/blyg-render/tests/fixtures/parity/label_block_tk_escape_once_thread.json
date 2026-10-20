@@ -1,0 +1,19 @@
+{
+  "name": "label_block_tk_escape_once_thread",
+  "kind": "thread",
+  "md": "[TK]write[=]One [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & x *em*]].\n\nTwo.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>One <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">a &lt;b&gt; &amp; x *em*</a>.</p>\n<p>Two.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

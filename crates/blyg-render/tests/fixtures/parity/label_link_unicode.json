@@ -2,7 +2,7 @@
   "name": "label_link_unicode",
   "kind": "fragment",
   "md": "[[01j9zq3k4m5n6p7q8r9s0t1v2w | café — “quoted” ✓]] and https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|café]] and <https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|é&x]]>",
-  "html": "<p><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">café — “quoted” ✓</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7Ccaf%C3%A9%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|café]]</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7C%C3%A9&x%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|é&amp;x]]</a></p>\n",
+  "html": "<p><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">café — “quoted” ✓</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7Ccaf%C3%A9%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|café]]</a> and <a href=\"https://x.test/%5B%5B01j9zq3k4m5n6p7q8r9s0t1v2w%7C%C3%A9&amp;x%5D%5D\">https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|é&amp;x]]</a></p>\n",
   "tk": {
     "scopes": [],
     "errors": []

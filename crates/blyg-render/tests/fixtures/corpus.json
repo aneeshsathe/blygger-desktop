@@ -248,5 +248,12 @@
   {"name": "label_directive_fragment", "kind": "fragment", "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w | note]]\n\nText."},
   {"name": "label_tk_source", "kind": "thread", "md": "[TK]summarise ![[01j9zq3k4m5n6p7q8r9s0t1v2w | their post]] briefly[=]Done.[/TK]\n\n[TK]compare ![[01j9zq3k4m5n6p7q8r9s0t1v2w]] and ![[02abcdefghjkmnpqrstvwxyz01 | theirs]][/TK]"},
   {"name": "label_tk_output_directive", "kind": "thread", "md": "Start [TK]sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | src]][=]one\n![[02abcdefghjkmnpqrstvwxyz01 | echoed]]\ntwo[/TK] end"},
-  {"name": "label_tk_source_fragment", "kind": "fragment", "md": "[TK]sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | a source]] and [[02abcdefghjkmnpqrstvwxyz01 | a link]][=]Out [[02abcdefghjkmnpqrstvwxyz01 | a link]].[/TK]"}
+  {"name": "label_tk_source_fragment", "kind": "fragment", "md": "[TK]sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | a source]] and [[02abcdefghjkmnpqrstvwxyz01 | a link]][=]Out [[02abcdefghjkmnpqrstvwxyz01 | a link]].[/TK]"},
+  {"name": "label_block_tk_escape_once", "kind": "fragment", "md": "Body [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & x *em*]] here.\n\n[TK]write[=]One [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & x *em*]].\n\nTwo.[/TK]\n\nIntro [TK]write[=]one [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & x *em*]] two[/TK] outro."},
+  {"name": "label_block_tk_escape_once_thread", "kind": "thread", "md": "[TK]write[=]One [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & x *em*]].\n\nTwo.[/TK]"},
+  {"name": "label_block_tk_unresolved", "kind": "fragment", "md": "[TK]write[=]A [[0zzzzzzzzzzzzzzzzzzzzzzzzz | gone & *away*]] and `[[01j9zq3k4m5n6p7q8r9s0t1v2w | x]]`.[/TK]"},
+  {"name": "label_backtick_later_link", "kind": "fragment", "md": "See [[01j9zq3k4m5n6p7q8r9s0t1v2w | it`s]] and [[01j9zq3k4m5n6p7q8r9s0t1v4y]] then `code`."},
+  {"name": "label_backtick_code_before_wins", "kind": "fragment", "md": "See `x [[01j9zq3k4m5n6p7q8r9s0t1v2w | y`]] after."},
+  {"name": "label_backtick_two_labels", "kind": "fragment", "md": "[[01j9zq3k4m5n6p7q8r9s0t1v2w | a`]] mid [[01j9zq3k4m5n6p7q8r9s0t1v4y | `b]] and `real code` then [[01j9zq3k4m5n6p7q8r9s0t1v2w]]."},
+  {"name": "label_autolink_amp", "kind": "fragment", "md": "<https://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|a&copy]]>\n\nhttps://x.test/[[01j9zq3k4m5n6p7q8r9s0t1v2w|a&copy]]"}
 ]

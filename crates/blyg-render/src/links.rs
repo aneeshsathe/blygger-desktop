@@ -280,14 +280,7 @@ pub(crate) fn resolve(
     mount: &str,
     seq: &mut usize,
 ) -> (Mapped, Links) {
-    let (text, links) = substitute(
-        &doc.text,
-        false,
-        &|at| doc.line_at(at),
-        resolver,
-        mount,
-        seq,
-    );
+    let (text, links) = substitute(&doc.text, &|at| doc.line_at(at), resolver, mount, seq);
     // Links are single-line, so every line keeps its source line.
     let doc = match text {
         Some(t) => doc.with_text(t),
@@ -296,25 +289,31 @@ pub(crate) fn resolve(
     (doc, links)
 }
 
-/// `previewInternalLinks(…, html = true)`: over a generated block's rendered
-/// HTML (`resolveBlockLinks`, studio#14: the preview resolves these as
-/// publish does). Every unresolved link reports the block's source `line`.
-pub(crate) fn resolve_html(
-    html: &str,
+/// `resolveBlockLinks`' resolver: `previewInternalLinks` over a generated
+/// block's own Markdown (studio#14: the preview resolves these as publish
+/// does). Since studio 0.48 the block is resolved over its Markdown, never
+/// its rendered HTML, so a label is escaped once, as in the body; the caller
+/// renders the block again from the new text. Every unresolved link reports
+/// the block's source `line`.
+pub(crate) fn resolve_block(
+    md: &str,
     line: usize,
     resolver: &dyn Resolver,
     mount: &str,
     seq: &mut usize,
 ) -> (Option<String>, Links) {
-    substitute(html, true, &|_| line, resolver, mount, seq)
+    substitute(md, &|_| line, resolver, mount, seq)
 }
 
 /// `resolveInternalLinks`: the new text (`None` when nothing matched). A
-/// link inside code is inert (`codeRanges`, or `htmlCodeRanges` for
-/// rendered HTML); every other one becomes a token, resolved or not.
+/// link inside code is inert (`codeRanges`); every other one becomes a
+/// token, resolved or not. A label is text, not Markdown, so once a live
+/// link's label holds a backtick it is blanked (same length) and code found
+/// again, left to right: a backtick in a label never opens a code span that
+/// swallows a later link, but a span opened before a link still wins
+/// (studio 0.48, #54).
 fn substitute(
     text: &str,
-    html: bool,
     line_of: &dyn Fn(usize) -> usize,
     resolver: &dyn Resolver,
     mount: &str,
@@ -329,11 +328,8 @@ fn substitute(
     if ms.is_empty() {
         return (None, links);
     }
-    let code = if html {
-        markdown::html_code_ranges(text)
-    } else {
-        markdown::code_ranges(text)
-    };
+    let mut scanned: Option<String> = None;
+    let mut code = markdown::code_ranges(text);
     let origin = our_origin(mount);
     let mut out = String::with_capacity(text.len());
     let mut last = 0;
@@ -341,6 +337,15 @@ fn substitute(
         let (a, b) = (*a, body.end);
         if markdown::in_ranges(&code, a) {
             continue;
+        }
+        if let Some(r) = body
+            .raw_label
+            .clone()
+            .filter(|r| text[r.clone()].contains('`'))
+        {
+            let blanked = scanned.get_or_insert_with(|| text.to_string());
+            blanked.replace_range(r.clone(), &" ".repeat(r.len()));
+            code = markdown::code_ranges(blanked);
         }
         out.push_str(&text[last..a]);
         last = b;
@@ -424,6 +429,11 @@ fn encode_uri(s: &str) -> String {
     out
 }
 
+/// `escapeHtml(encodeURI(literal))`: a token's literal inside an `href`.
+fn in_href(literal: &str) -> String {
+    escape_html(&encode_uri(literal))
+}
+
 impl Links {
     fn token(&self, seq: &str) -> Option<&Token> {
         seq.parse().ok().and_then(|n: usize| self.tokens.get(&n))
@@ -466,7 +476,9 @@ impl Links {
         if self.tokens.is_empty() {
             return html;
         }
-        let out = self.replace_tokens(&html, ENCODED_SENTINEL, &|t| encode_uri(&t.literal));
+        // The literal, encoded the way the URL around it was, and escaped
+        // like any attribute value: `encodeURI` keeps `&` (studio 0.48).
+        let out = self.replace_tokens(&html, ENCODED_SENTINEL, &|t| in_href(&t.literal));
         if !out.contains(SENTINEL) {
             return out;
         }
@@ -504,7 +516,7 @@ impl Links {
                 if is_tag || in_code > 0 {
                     escape_html(&t.literal)
                 } else if in_anchor > 0 {
-                    if anchor_tag.contains(&encode_uri(&t.literal)) {
+                    if anchor_tag.contains(&in_href(&t.literal)) {
                         escape_html(&t.literal)
                     } else {
                         t.label.clone()

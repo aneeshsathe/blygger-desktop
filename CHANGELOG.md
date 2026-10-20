@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Labels render as Blygger Studio 0.48 renders them.** The preview now matches studio 0.48.0, which fixed six label bugs that Burrow had copied on purpose from 0.47.0: a label in a generated block is escaped once (not `&amp;lt;`), a backtick in a label no longer turns a later link on the line into plain text, a `&` in a labelled link inside a web address is escaped in the link, a label made of `]` characters can no longer cut a link short, and choosing a passage in a stub keeps the quote's note (`![[id | note]]`).
+
 ## [0.13.0] - 2026-10-18
 
 ### Changed

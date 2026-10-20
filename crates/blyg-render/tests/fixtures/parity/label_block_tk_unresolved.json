@@ -1,0 +1,24 @@
+{
+  "name": "label_block_tk_unresolved",
+  "kind": "fragment",
+  "md": "[TK]write[=]A [[0zzzzzzzzzzzzzzzzzzzzzzzzz | gone & *away*]] and `[[01j9zq3k4m5n6p7q8r9s0t1v2w | x]]`.[/TK]",
+  "html": "<div class=\"blyg-tk-gen\"><p>A <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ unknown item</span> and <code>[[01j9zq3k4m5n6p7q8r9s0t1v2w | x]]</code>.</p>\n</div>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "write",
+        "generated": true,
+        "block": true,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[0zzzzzzzzzzzzzzzzzzzzzzzzz | gone & *away*]]",
+      "reason": "unknown item"
+    }
+  ]
+}
