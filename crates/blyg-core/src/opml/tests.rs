@@ -407,6 +407,7 @@ fn pacing_spaces_the_starts() {
         interval: Duration::from_millis(60),
         max_waits: 0,
     };
+    let began = Instant::now();
     run_paced(
         &feeds(&["https://a/1", "https://a/2", "https://a/3", "https://a/4"]),
         &pace,
@@ -420,16 +421,12 @@ fn pacing_spaces_the_starts() {
     );
     let mut s = starts.into_inner().unwrap();
     s.sort();
-    // Each start has its own slot 60 ms after the last (a thread may wake a
-    // little late, so pairs can be closer; the whole run can't be).
-    let span = s[3] - s[0];
-    assert!(span >= Duration::from_millis(150), "{span:?}");
-    for w in s.windows(2) {
-        assert!(
-            w[1] - w[0] >= Duration::from_millis(30),
-            "{:?}",
-            w[1] - w[0]
-        );
+    // Each start has its own slot 60 ms after the last, so the k-th start is
+    // never sooner than k slots in. A thread may wake late, which can bring
+    // two starts closer than a slot, so the gaps themselves aren't checked.
+    for (k, at) in s.iter().enumerate() {
+        let after = *at - began;
+        assert!(after >= pace.interval * k as u32, "start {k} at {after:?}");
     }
 }
 
