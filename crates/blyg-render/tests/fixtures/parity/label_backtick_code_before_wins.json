@@ -1,0 +1,12 @@
+{
+  "name": "label_backtick_code_before_wins",
+  "kind": "fragment",
+  "md": "See `x [[01j9zq3k4m5n6p7q8r9s0t1v2w | y`]] after.",
+  "html": "<p>See <code>x [[01j9zq3k4m5n6p7q8r9s0t1v2w | y</code>]] after.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

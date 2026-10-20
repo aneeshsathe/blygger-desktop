@@ -198,7 +198,7 @@ fn media_parity_with_worker() {
     }
 }
 
-/// The bracket grammar (studio grammar.ts and link-label.ts, 0.47): how each
+/// The bracket grammar (studio grammar.ts and link-label.ts, 0.48): how each
 /// text's links and directive read, what generated text keeps, the long
 /// form and the default link label, against the studio's own functions.
 #[test]
@@ -253,6 +253,34 @@ fn grammar_parity_with_worker() {
             link_label(html, kind),
             h["label"].as_str().unwrap(),
             "linkLabel({html:?})"
+        );
+    }
+    // Studio 0.48: choosing a passage keeps the directive line as written.
+    let stubs = g["stubs"].as_array().unwrap();
+    assert!(!stubs.is_empty(), "expected the stub vectors");
+    for s in stubs {
+        let md = s["md"].as_str().unwrap();
+        let passage = s["passage"].as_str();
+        assert_eq!(
+            blyg_render::stub_quote::with_stub_quote(md, id, passage),
+            s["out"].as_str().unwrap(),
+            "withStubQuote({md:?}, {passage:?})"
+        );
+    }
+    // Studio 0.48: an own-line directive in TK output takes the same
+    // whitespace as `DIRECTIVE_LINE` (NBSP, FF, VT, CR).
+    let outputs = g["unrequested"].as_array().unwrap();
+    assert!(!outputs.is_empty(), "expected the TK output vectors");
+    for o in outputs {
+        let md = o["md"].as_str().unwrap();
+        let ids: Vec<Value> = blyg_render::unrequested_output_directives(md)
+            .into_iter()
+            .map(Value::String)
+            .collect();
+        assert_eq!(
+            Value::Array(ids),
+            o["ids"],
+            "unrequestedOutputDirectives({md:?})"
         );
     }
 }

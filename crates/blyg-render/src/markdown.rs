@@ -244,13 +244,6 @@ pub(crate) fn in_ranges(ranges: &[(usize, usize)], pos: usize) -> bool {
     ranges.iter().any(|&(s, e)| pos >= s && pos < e)
 }
 
-/// code-ranges.ts `htmlCodeRanges`: every `<code>…</code>` of rendered HTML.
-pub(crate) fn html_code_ranges(html: &str) -> Vec<(usize, usize)> {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"(?is)<code[\s>].*?</code>").expect("code re"));
-    re.find_iter(html).map(|m| (m.start(), m.end())).collect()
-}
-
 fn is_block(node: &Node) -> bool {
     node.is::<Paragraph>()
         || node.is::<ATXHeading>()

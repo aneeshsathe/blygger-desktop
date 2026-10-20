@@ -157,14 +157,21 @@ provenance line uses too). A relative `page` is origin-relative, a leading
 (templated blygs, §16.6e). An unresolved link shows
 `span.blyg-link-unresolved` and joins `Stats::unresolved` after the quotes,
 with `directive` `[[id]]`; publish refuses it ("one or more references do not
-resolve"). A link in code (`codeRanges`; in a generated block's rendered
-HTML, any `<code>…</code>`) is literal text and never resolved. Every
+resolve"). A link in code (`codeRanges`) is literal text and never
+resolved. A label is text, not Markdown: once a live link's label holds a
+backtick, the label is blanked and code found again, left to right, so a
+backtick in a label never opens a code span that makes a later link inert,
+while a code span opened before a link still wins (studio 0.48). A generated
+block's links are resolved over the block's own Markdown, as the body's
+are, and the block is rendered again from the result (`resolveBlockLinks`,
+studio 0.48), so a label is escaped once wherever it sits. Every
 other link is resolved and reported, then spliced only where an anchor can
 go (`applyInternalLinks`, studio#13): inside a tag (an image's alt) or a
 URL it is the author's literal `[[id]]` (percent-encoded in an `href`);
 inside another link's text it is the anchor's text, or the literal when
 that link's URL carries it (an autolink). The literal is the whole
-`[[id | label]]`; in an `href` it is `encodeURI`'d (`%20`, `%7C`, UTF-8). `native_blocks` turns links into `Span { item: Some(id), .. }` for
+`[[id | label]]`; in an `href` it is `encodeURI`'d (`%20`, `%7C`, UTF-8)
+and then HTML-escaped, so a `&` in it is `&amp;` (studio 0.48). `native_blocks` turns links into `Span { item: Some(id), .. }` for
 the stream to label; a labelled link also sets `Span::label` (and `text`
 to it), which the caller keeps instead of its own label. Its ids are read
 looser (either case), like its directive grammar; labels are read as the
@@ -233,12 +240,12 @@ pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteS
 
 pub fn render_markdown(md: &str) -> String;           // the Worker's renderMarkdown
 
-// The bracket grammar (grammar.ts, link-label.ts; studio 0.47)
+// The bracket grammar (grammar.ts, link-label.ts; studio 0.48)
 pub struct LinkRef { range: Range<usize> /* bytes, brackets included */, id: String, label: Option<String> }
 pub struct DirectiveRef { id: String, label: Option<String> }
 pub fn link_refs(text: &str) -> Vec<LinkRef>;               // matchAll(linkInline()) + label(); code not skipped
 pub fn directive_ref(line: &str) -> Option<DirectiveRef>;   // DIRECTIVE_LINE + label()
-pub fn label_text(text: &str) -> String;                    // labelText: one line, ]] → "] ]", trimmed
+pub fn label_text(text: &str) -> String;                    // labelText: one line, trimmed, a `]` before `]` or the end → "] "
 pub fn link_source(id: &str, label: Option<&str>) -> String; // linkSource: [[id]] or [[id | label]]
 pub fn link_label(content_html: &str, kind: ItemKind) -> String; // linkLabel: an unlabelled link's text
 pub fn strip_generated_grammar(text: &str) -> String;       // stripGeneratedGrammar (row 67)
@@ -304,11 +311,11 @@ cargo test -p blyg-render
 ```
 
 **Reference version.** The fixtures come from stock blygger-studio
-0.47.0 (tag `v0.47.0`, unpatched), re-generated 2026-10-18
+0.48.0 (tag `v0.48.0`, commit 320fe2e, unpatched), re-generated 2026-10-19
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
 versions). Earlier fixtures came from the maintainer's patched Worker; see
-"Studio 0.46.1" below for what changed then, and "Studio 0.47.0" for the
-labels. The Worker's preview helpers moved again in 0.32
+"Studio 0.46.1" below for what changed then, "Studio 0.47.0" for the
+labels, and "Studio 0.48.0" for the label fixes. The Worker's preview helpers moved again in 0.32
 (`previewLinkDocs`/`spliceLinkDocs` became `previewInternalLinks`,
 `resolveBlockLinks` and `applyInternalLinks`), so the generator now calls the
 handler's own sequence instead of a copy of it.
@@ -348,11 +355,59 @@ provisional: revisit them when upstream fixes its preview and publish.
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing) | 250 | 246 + 4 known | 246 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing) | 257 | 253 + 4 known | 253 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`) | 4 | 4 | 4 |
-| bracket grammar (links, directive, `stripGeneratedGrammar`; `labelText`/`linkSource`; `linkLabel`) | 49 + 11 + 5 | exact | exact |
+| bracket grammar (links, directive, `stripGeneratedGrammar`; `labelText`/`linkSource`; `linkLabel`; `withStubQuote`; `unrequestedOutputDirectives`) | 49 + 19 + 5 + 5 + 9 | exact | exact |
+
+**Studio 0.48.0** (re-synced 2026-10-19 from 0.47.0). The release fixes
+the six label-grammar bugs that 0.47.0 had and this crate pinned
+(upstream #78: fix d482b02, regressions in
+`test/label-grammar-edge-cases.test.ts`). This crate now does what the
+studio does, and no longer emulates any of them:
+
+- A block TK scope's links are resolved over the block's Markdown and the
+  block rendered again (`resolveBlockLinks` takes `blockSources`), never
+  over its HTML, so a label is escaped once, as in the body and inline
+  scopes. `htmlCodeRanges` is gone upstream, and `html_code_ranges` here.
+- A backtick in a live link's label no longer opens a code span that makes
+  a later link inert: labels are blanked and code found again, left to
+  right, so a code span opened before a link still wins.
+- `labelText` puts a space after every `]` followed by `]` or by the end,
+  so `a]]]b` is `a] ] ]b` and `x]` is `x] `: `linkSource` round-trips
+  any run of `]`.
+- In an autolinked URL the restored literal is `escapeHtml(encodeURI(…))`,
+  so the `href` carries `&amp;`, never a raw `&`.
+- `withStubQuote` keeps the directive line as written, label included.
+- `directiveOwnLine` takes `[^\S\n]` at both ends, as `DIRECTIVE_LINE`
+  does, so an NBSP-, FF- or VT-led own-line directive in TK output is
+  warned about. This crate's `unrequested_output_directives` already used
+  the directive-line rule, so nothing changed here; the new vectors check it.
+
+Four existing fixtures changed, all from those fixes, and this crate
+follows each: `label_link_tk_block` (the block labels are escaped once:
+`a &lt;b&gt; &amp; label`, `*em*` literal), `label_link_backtick_in_label`
+(the later link resolves), `label_link_unicode` (`&amp;` in the autolink's
+`href`) and `link_tk_block_nested` (a linkified URL in a block scope now
+sees the link token in the block's Markdown, not the closing `]]` already
+in its HTML, so linkify takes the whole `[[id]]` into the URL, as in the
+body). Seven corpus cases were added (`label_block_tk_escape_once`, its
+thread form, `label_block_tk_unresolved`, `label_backtick_later_link`,
+`label_backtick_code_before_wins`, `label_backtick_two_labels`,
+`label_autolink_amp`), with eight `labelText` vectors (runs of `]`, a
+trailing `]`), and two new grammar suites run through the studio's own
+functions: `withStubQuote` (5) and `unrequestedOutputDirectives` (9: NBSP,
+FF, VT, CRLF, em and ideographic spaces, a requested source and an inline
+directive). All match.
+
+Nothing else in the render path changed. Between the tags `markdown.ts`,
+`embeds.ts`, `importer/sanitize.ts` and `link-label.ts` are unchanged;
+`authoring.ts`, `tk.ts`, `transclusion.ts`, `grammar.ts` and
+`code-ranges.ts` changed only for the fixes; `pages.ts` adds a public
+page's "Local mentions" list (page chrome, never in a document) and reads a
+version's own attachments (`listVersionMedia`), neither of which the
+preview or `media_html` sees.
 
 **Studio 0.32.2** (upstream #60) takes a scope's sources from its
 instruction only: a `![[id]]` that only the output names is not a source.
@@ -460,23 +515,9 @@ them too:
 - A multi-line inline scope holding an own-line `![[id]]` puts the quote
   inside the scope's `span`, across paragraphs
   (`tr_inline_tk_multiline_directive`, `label_tk_output_directive`).
-- A labelled link in a **block** TK scope's output is resolved from the
-  block's rendered HTML (`resolveBlockLinks`), so its label is the
-  rendered text, escaped a second time: `a <b> & x` shows as
-  `a &lt;b&gt; &amp; x` on the page, and `*em*` as `<em>em</em>` in
-  literal tags (`label_link_tk_block`). In body text and inline scopes the
-  label is the author's source text, escaped once.
-- Code ranges are found on the source, label included, so a backtick inside
-  a label can open a code span that makes a *later* link on the line inert
-  text, though no code renders (`label_link_backtick_in_label`).
-- In an autolinked URL the restored literal is `encodeURI`'d, which keeps
-  `&` raw inside the `href` attribute (`label_link_unicode`).
-- `labelText` rewrites `]]` in one non-overlapping pass, so `a]]]b` becomes
-  `a] ]]b`, which still holds a `]]`; `linkSource` then writes a link whose
-  label is cut short (the `_grammar.json` labels).
-- Choosing a stub passage rewrites the directive line as `![[id]]`, so the
-  directive's label is dropped (`stub-quote.ts withStubQuote`; this crate's
-  `with_stub_quote` does the same).
+
+The six label-grammar bugs pinned here for 0.47.0 are fixed upstream in
+0.48.0 and no longer emulated (see "Studio 0.48.0").
 
 ### Deliberate differences (outside the fixtures' reach, or safer)
 

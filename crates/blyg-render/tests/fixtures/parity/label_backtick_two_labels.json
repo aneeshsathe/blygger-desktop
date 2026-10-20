@@ -1,0 +1,17 @@
+{
+  "name": "label_backtick_two_labels",
+  "kind": "fragment",
+  "md": "[[01j9zq3k4m5n6p7q8r9s0t1v2w | a`]] mid [[01j9zq3k4m5n6p7q8r9s0t1v4y | `b]] and `real code` then [[01j9zq3k4m5n6p7q8r9s0t1v2w]].",
+  "html": "<p><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">a`</a> mid <span class=\"blyg-link-unresolved\" style=\"color:#b3412b\">⚠ item is a draft, not published</span> and <code>real code</code> then <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": [
+    {
+      "directive": "[[01j9zq3k4m5n6p7q8r9s0t1v4y | `b]]",
+      "reason": "item is a draft, not published"
+    }
+  ]
+}

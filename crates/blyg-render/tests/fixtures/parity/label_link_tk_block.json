@@ -2,7 +2,7 @@
   "name": "label_link_tk_block",
   "kind": "fragment",
   "md": "[TK]write[=]One [[01j9zq3k4m5n6p7q8r9s0t1v2w | a <b> & label]].\n\nTwo [[01j9zq3k4m5n6p7q8r9s0t1v2w | *em*]] and `[[0zzzzzzzzzzzzzzzzzzzzzzzzz | code]]`.[/TK]",
-  "html": "<div class=\"blyg-tk-gen\"><p>One <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">a &amp;lt;b&amp;gt; &amp;amp; label</a>.</p>\n<p>Two <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">&lt;em&gt;em&lt;/em&gt;</a> and <code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz | code]]</code>.</p>\n</div>\n",
+  "html": "<div class=\"blyg-tk-gen\"><p>One <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">a &lt;b&gt; &amp; label</a>.</p>\n<p>Two <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">*em*</a> and <code>[[0zzzzzzzzzzzzzzzzzzzzzzzzz | code]]</code>.</p>\n</div>\n",
   "tk": {
     "scopes": [
       {

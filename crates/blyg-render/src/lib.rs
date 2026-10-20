@@ -191,14 +191,16 @@ pub fn render_preview(
     }
 
     // `[[id]]` links become tokens here and anchors after rendering: the
-    // body's, then each generated block's (its rendered HTML, patch 12).
+    // body's, then each generated block's, resolved over the block's own
+    // Markdown and the block rendered again (`resolveBlockLinks`, studio 0.48).
     let mut seq = 0;
     let (link_doc, links) = links::resolve(&annotated.doc, resolver, &opts.mount, &mut seq);
     let mut link_docs = vec![links];
-    for (block, (_, _, line)) in blocks.iter_mut().zip(&annotated.blocks) {
-        let (html, l) = links::resolve_html(&block.html, *line, resolver, &opts.mount, &mut seq);
-        if let Some(html) = html {
-            block.html = html;
+    for (block, (_, text, line)) in blocks.iter_mut().zip(&annotated.blocks) {
+        let (md, l) = links::resolve_block(text, *line, resolver, &opts.mount, &mut seq);
+        if let Some(md) = md {
+            let (html, _) = markdown::render(&md, None);
+            block.html = format!("<div class=\"blyg-tk-gen\">{html}</div>");
             link_docs.push(l);
         }
     }

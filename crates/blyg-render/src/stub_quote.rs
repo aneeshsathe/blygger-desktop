@@ -131,18 +131,23 @@ pub fn add_stub_quote(md: &str, id: &str, passage: &str, at: usize) -> String {
 
 /// The body with its quote of `id` set to `passage` (a selection), or to the
 /// whole post when `passage` is `None`. A body with no quote of `id` gains
-/// one at the top, where the stub action puts it.
+/// one at the top, where the stub action puts it. The directive line is kept
+/// as written, so its label survives (studio 0.48, decision #70).
 pub fn with_stub_quote(md: &str, id: &str, passage: Option<&str>) -> String {
     let selection = passage.map(normalize_selection).unwrap_or_default();
-    let mut block = format!("![[{id}]]");
+    let lines: Vec<&str> = md.split('\n').collect();
+    let found = quotes_of(md, id).first().copied();
+    let mut block = match found {
+        Some((at, _, _)) => lines[at].to_string(),
+        None => format!("![[{id}]]"),
+    };
     if !selection.is_empty() {
         block.push('\n');
         block.push_str(&quote_lines(&selection));
     }
-    match quotes_of(md, id).first() {
+    match found {
         None => format!("{block}\n\n{}", md.trim_start_matches('\n')),
-        Some(&(at, _, next)) => {
-            let lines: Vec<&str> = md.split('\n').collect();
+        Some((at, _, next)) => {
             let mut out: Vec<&str> = lines[..at].to_vec();
             out.push(&block);
             out.extend_from_slice(&lines[next..]);
@@ -196,15 +201,25 @@ mod tests {
 
     #[test]
     fn a_labelled_directive_is_the_quote_too() {
-        // Studio 0.47 (#70): `![[id | note]]` is the same directive. Choosing
-        // a passage rewrites the directive line, as the studio's does, so the
-        // note goes with it.
+        // Studio 0.47 (#70): `![[id | note]]` is the same directive. Since
+        // 0.48 choosing a passage keeps the directive line as written, label
+        // included (label-grammar-edge-cases.test.ts).
         let md = format!("![[{ID} | the source]]\n> old\n\nMy reply.");
         assert_eq!(stub_quote_form(&md, ID), Some(StubQuoteForm::Passage));
         assert_eq!(passage_count(&md, ID), 1);
         assert_eq!(
             with_stub_quote(&md, ID, None),
-            format!("![[{ID}]]\n\nMy reply.")
+            format!("![[{ID} | the source]]\n\nMy reply.")
+        );
+        let md = format!("![[{ID} | their post]]\n\nMy reply.");
+        let out = with_stub_quote(&md, ID, Some("a passage"));
+        assert_eq!(
+            out,
+            format!("![[{ID} | their post]]\n> a passage\n\nMy reply.")
+        );
+        assert_eq!(
+            with_stub_quote(&out, ID, None).split('\n').next(),
+            Some(format!("![[{ID} | their post]]").as_str())
         );
     }
 

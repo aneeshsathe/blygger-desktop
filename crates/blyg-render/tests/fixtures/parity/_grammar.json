@@ -525,8 +525,8 @@
   },
   {
    "text": "a]]]b",
-   "label_text": "a] ]]b",
-   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] ]]b]]"
+   "label_text": "a] ] ]b",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] ] ]b]]"
   },
   {
    "text": "  pad\t\tme  ",
@@ -535,8 +535,8 @@
   },
   {
    "text": "[[nested]]",
-   "label_text": "[[nested] ]",
-   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [[nested] ]]]"
+   "label_text": "[[nested] ] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | [[nested] ] ]]"
   },
   {
    "text": " nbsp ",
@@ -552,6 +552,46 @@
    "text": "pipe | inside",
    "label_text": "pipe | inside",
    "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | pipe | inside]]"
+  },
+  {
+   "text": "a]]]]b",
+   "label_text": "a] ] ] ]b",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] ] ] ]b]]"
+  },
+  {
+   "text": "x]]]",
+   "label_text": "x] ] ] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | x] ] ] ]]"
+  },
+  {
+   "text": "x]",
+   "label_text": "x] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | x] ]]"
+  },
+  {
+   "text": "]",
+   "label_text": "] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ] ]]"
+  },
+  {
+   "text": "a ]",
+   "label_text": "a ] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a ] ]]"
+  },
+  {
+   "text": "]]",
+   "label_text": "] ] ",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | ] ] ]]"
+  },
+  {
+   "text": "a] b",
+   "label_text": "a] b",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] b]]"
+  },
+  {
+   "text": "a]\n]b",
+   "label_text": "a] ]b",
+   "link_source": "[[7c9wk2n4h6q1x8v0z3m5rjy2ke | a] ]b]]"
   }
  ],
  "link_labels": [
@@ -579,6 +619,85 @@
    "content_html": "<h2></h2>\n",
    "kind": "thread",
    "label": "a thread"
+  }
+ ],
+ "stubs": [
+  {
+   "md": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | their post]]\n\nMy reply.",
+   "passage": "a passage",
+   "out": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | their post]]\n> a passage\n\nMy reply."
+  },
+  {
+   "md": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | their post]]\n> a passage\n\nMy reply.",
+   "passage": null,
+   "out": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke | their post]]\n\nMy reply."
+  },
+  {
+   "md": "Lead-in.\n\n  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke|note]]  \n> old\n\nAfter.",
+   "passage": "new\n\nlines",
+   "out": "Lead-in.\n\n  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke|note]]  \n> new\n>\n> lines\n\nAfter."
+  },
+  {
+   "md": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMy reply.",
+   "passage": "plain",
+   "out": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n> plain\n\nMy reply."
+  },
+  {
+   "md": "just words",
+   "passage": null,
+   "out": "![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\njust words"
+  }
+ ],
+ "unrequested": [
+  {
+   "md": "[TK]write[=]Intro.\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\n\n ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\n\n\f![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\n\n\u000b![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\n\n  ![[7c9wk2n4h6q1x8v0z3m5rjy2ke | echoed]] \n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\r\n\r\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\r\n\r\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]write[=]Intro.\n\n ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]　\n\nMore.[/TK]",
+   "ids": [
+    "7c9wk2n4h6q1x8v0z3m5rjy2ke"
+   ]
+  },
+  {
+   "md": "[TK]sum ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]][=]Intro.\n\n ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nMore.[/TK]",
+   "ids": []
+  },
+  {
+   "md": "[TK]write[=]Inline ![[7c9wk2n4h6q1x8v0z3m5rjy2ke]] here.[/TK]",
+   "ids": []
   }
  ]
 }

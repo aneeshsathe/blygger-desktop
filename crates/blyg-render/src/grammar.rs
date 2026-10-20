@@ -1,5 +1,5 @@
 //! The bracket grammar, defined once (the studio's `grammar.ts`, protocol
-//! 0.4 §10.1, studio 0.47).
+//! 0.4 §10.1, studio 0.47, label fixes from 0.48).
 //!
 //! Two forms, one `!` apart: an own-line directive `![[id]]` that
 //! transcludes, and an inline link `[[id]]` that does not. Either may carry
@@ -178,9 +178,10 @@ pub fn directive_ref(line: &str) -> Option<DirectiveRef> {
 }
 
 /// `labelText()`: text made safe to write as a label: one line (each run of
-/// whitespace one space), every `]]` rewritten `] ]`, trimmed. Like the
-/// studio's, the rewrite is one non-overlapping pass, so `]]]` becomes
-/// `] ]]` and still holds a `]]`.
+/// whitespace one space), trimmed, then every `]` followed by another `]`,
+/// or by the end (where the closing `]]` will go), takes a space after it
+/// (`.replace(/\](?=\]|$)/g, "] ")`, studio 0.48). So `a]]]b` is
+/// `a] ] ]b` and `x]` is `x] `: no run of `]` can cut the link short.
 pub fn label_text(text: &str) -> String {
     let mut one_line = String::with_capacity(text.len());
     let mut in_ws = false;
@@ -195,7 +196,16 @@ pub fn label_text(text: &str) -> String {
             in_ws = false;
         }
     }
-    js_trim(&one_line.replace("]]", "] ]")).to_string()
+    let trimmed = js_trim(&one_line);
+    let mut out = String::with_capacity(trimmed.len() + 4);
+    let mut chars = trimmed.chars().peekable();
+    while let Some(c) = chars.next() {
+        out.push(c);
+        if c == ']' && matches!(chars.peek(), None | Some(']')) {
+            out.push(' ');
+        }
+    }
+    out
 }
 
 /// `linkSource()`: `[[id]]`, or `[[id | label]]` when `text` leaves a label
@@ -394,11 +404,20 @@ mod tests {
         assert_eq!(link_source(ID, Some("  ")), format!("[[{ID}]]"));
         assert_eq!(label_text("two\nlines"), "two lines");
         assert_eq!(label_text("ends ]] early"), "ends ] ] early");
-        assert_eq!(label_text("a]]]b"), "a] ]]b");
+        assert_eq!(label_text("a]]]b"), "a] ] ]b");
+        assert_eq!(label_text("x]]]"), "x] ] ] ");
         assert_eq!(
             links(&link_source(ID, Some("ends ]] early"))),
             one(Some("ends ] ] early"))
         );
+        // label-grammar-edge-cases.test.ts: runs of `]` round-trip whole.
+        for text in ["a]]]b", "a]]]]b", "x]]]"] {
+            let src = link_source(ID, Some(text));
+            let refs = link_refs(&src);
+            assert_eq!(refs.len(), 1, "{src}");
+            assert_eq!(refs[0].range, 0..src.len(), "{src}");
+            assert!(!refs[0].label.as_deref().unwrap().contains("]]"), "{src}");
+        }
     }
 
     // tk-generate.test.ts, "generated text is not grammar".

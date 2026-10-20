@@ -9,12 +9,13 @@
 // (thread), with a fake D1 in place of the database.
 
 import { renderMarkdown } from "worker-src/markdown.ts";
-import { parseScopes } from "worker-src/tk.ts";
+import { parseScopes, unrequestedOutputDirectives } from "worker-src/tk.ts";
 import { annotateTkPreview } from "worker-src/authoring.ts";
 import { applyInternalLinks, previewInternalLinks, previewTransclusions, resolveBlockLinks } from "worker-src/transclusion.ts";
 import { injectProvenance, transclusionProvenance, mediaHtml } from "worker-src/pages.ts";
 import { DIRECTIVE_LINE, label, labelText, linkInline, linkSource, stripGeneratedGrammar } from "worker-src/grammar.ts";
 import { linkLabel } from "worker-src/link-label.ts";
+import { withStubQuote } from "worker-src/ui/stub-quote.ts";
 
 // --- A fake D1 over fake_store.json ----------------------------------------------
 // Answers exactly the queries resolveTarget() and transclusionProvenance() issue.
@@ -67,7 +68,7 @@ async function render(store, c) {
   // what the Rust side derives from `mount`.
   const origin = store.mount + "/";
   const links = await previewInternalLinks(db, tk.text, origin);
-  const blocks = await resolveBlockLinks(tk.blocks, (html) => previewInternalLinks(db, html, origin, true));
+  const blocks = await resolveBlockLinks(tk, (md) => previewInternalLinks(db, md, origin));
   const splice = (html) => [links, ...blocks.docs].reduce((acc, doc) => applyInternalLinks(acc, doc), tk.finish(html));
   const linkErrors = [...links.errors, ...blocks.errors];
   if (c.kind === "fragment") {
@@ -116,6 +117,10 @@ export default {
         }),
         labels: grammar.labels.map((text) => ({ text, label_text: labelText(text), link_source: linkSource(grammar.id, text) })),
         link_labels: grammar.html.map((h) => ({ ...h, label: linkLabel(h.content_html, h.kind) })),
+        // The stub editor's passage chooser (ui/stub-quote.ts).
+        stubs: grammar.stubs.map((c) => ({ ...c, out: withStubQuote(c.md, grammar.id, c.passage) })),
+        // Own-line directives in TK output the instruction did not ask for (tk.ts).
+        unrequested: grammar.outputs.map((md) => ({ md, ids: unrequestedOutputDirectives(md) })),
       },
     });
   },
