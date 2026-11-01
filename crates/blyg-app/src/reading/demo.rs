@@ -78,6 +78,37 @@ impl MainView {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("bench", window, cx);
             }
+            // --- reading compose --- the compose box under the stream, a
+            // thought half typed; `rd-compose-reader`: the Reader with a
+            // post open and its quote in the box.
+            ("rd-stream-compose", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-compose", 1) => {
+                self.stream_move(1, window, cx);
+                self.focus_compose(window, cx);
+                if let Some(e) = self.reading.compose.editor.clone() {
+                    e.update(cx, |s, cx| {
+                        s.set_value(
+                            "Trust as a unit of lending: that's the line I keep coming back to.",
+                            window,
+                            cx,
+                        )
+                    });
+                }
+            }
+            ("rd-compose-reader", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-compose-reader", 1) => {
+                open(self, RUE_TRUST, window, cx);
+                self.compose_quote_open(window, cx);
+                if let Some(e) = self.reading.compose.editor.clone() {
+                    e.update(cx, |s, cx| {
+                        let t = format!(
+                            "{}\nSpend it carefully, and say where you got it.",
+                            s.value()
+                        );
+                        s.set_value(t, window, cx)
+                    });
+                }
+            }
             // --- quote targets --- a held quote's original opens at once;
             // one nobody here follows is fetched, at its quoted pinned v1.
             ("rd-stream-original", 0) => self.show_view(View::Reading, window, cx),

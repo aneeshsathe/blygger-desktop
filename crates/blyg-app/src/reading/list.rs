@@ -695,6 +695,7 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.unavailable())
+                .children(self.render_compose_bar(cx)) // --- reading compose ---
                 .into_any_element();
         }
         if stream {
@@ -705,6 +706,7 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.render_stream_body(body_font, cx))
+                .children(self.render_compose_bar(cx)) // --- reading compose ---
                 .into_any_element();
         }
         let held = self.reading.rows.len();
@@ -788,6 +790,7 @@ impl MainView {
                 self.render_reading_detail(body_font, cx),
                 cx,
             ))
+            .children(self.render_compose_bar(cx)) // --- reading compose ---
             .into_any_element()
     }
 

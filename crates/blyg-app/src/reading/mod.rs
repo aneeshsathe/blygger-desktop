@@ -19,6 +19,8 @@
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
 mod change_lead; // --- background ---
+// --- reading compose --- the compose box along the reading screen's foot.
+pub(crate) mod compose;
 // --- browse --- following links, quotes and stubs inside the reader.
 pub(crate) mod browse;
 #[cfg(test)]
@@ -54,6 +56,8 @@ pub(crate) mod sources;
 pub(crate) mod sources_vm;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod compose_tests; // --- reading compose ---
 #[cfg(test)]
 mod own_tests; // --- own posts ---
 #[cfg(test)]
@@ -345,6 +349,8 @@ pub struct State {
     pub leads: change_lead::Leads,
     /// --- browse --- the walk, the link answers, the history pane.
     pub browse: browse::Browse,
+    /// --- reading compose --- the compose box.
+    pub compose: compose::Compose,
 }
 
 impl State {
@@ -396,6 +402,14 @@ impl State {
             picked: Default::default(),
             leads: Default::default(), // --- background ---
             browse: Default::default(),
+            // --- reading compose --- kept in state.json, except on the sample
+            // data (BLYGGER_FAKE shares the real data dir; its text mustn't
+            // turn up in the real box).
+            compose: compose::Compose::new(
+                data_dir
+                    .clone()
+                    .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
+            ),
         }
         .refiltered()
     }
@@ -488,6 +502,7 @@ impl MainView {
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
+        .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -600,6 +615,35 @@ impl MainView {
         cx.notify();
     }
 
+    /// --- reading compose --- Hook (the app's launch, `main.rs`): open on
+    /// the reading screen. Not while onboarding or the tour runs (the tour
+    /// starts from Posts and walks there itself), not over a sheet (the
+    /// Connect sheet when no blyg is connected, which belongs with Posts),
+    /// and not when there's no blyg to read from (disconnected, or a blyg
+    /// without the owner read API): those stay on Posts as before.
+    /// `State::new` keeps Posts, so a view built without launching (the
+    /// headless tests, a demo) starts where it always did.
+    pub(crate) fn launch_into_reading(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.onboarding.flow.is_some() || self.onboarding.tutorial.is_some() {
+            return;
+        }
+        if self.sheet.is_some() || self.reading.sheet.is_some() {
+            return;
+        }
+        let mode = crate::connection::mode(cx);
+        let connected = match mode {
+            Some(crate::connection::Mode::Fake) => true,
+            Some(crate::connection::Mode::Disconnected) => false,
+            _ => crate::settings::blyg_url(cx).is_some(),
+        };
+        if !connected || !self.backend.read_extensions_available() {
+            return;
+        }
+        if self.reading.view == View::Posts {
+            self.show_view(View::Reading, window, cx);
+        }
+    }
+
     /// Hook: ⌘L goes back to the posts list.
     pub(super) fn leave_reading(&mut self) {
         self.reading.view = View::Posts;
@@ -693,6 +737,11 @@ impl MainView {
         // Typing in the search field is the field's business (its own
         // esc, ↑/↓ and ⏎ are handled in `render_reading_search`).
         if self.reading_search_focused(window, cx) {
+            return;
+        }
+        // --- reading compose --- typing in the compose box is the box's
+        // business too (its esc and ⌘⏎ are its own, `compose.rs`).
+        if self.reading.compose.has_keyboard(window, cx) {
             return;
         }
         let k = &ev.keystroke;
@@ -799,6 +848,11 @@ impl MainView {
             }
             (View::Reading, "/") => {
                 self.focus_reading_search(window, cx);
+                true
+            }
+            // --- reading compose --- `c` writes a post, as in social apps.
+            (View::Reading, "c") => {
+                self.focus_compose(window, cx);
                 true
             }
             (_, "escape") => {

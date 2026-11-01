@@ -42,6 +42,7 @@
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
+| ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
 | ⇧⌘H | Browsing history beside the reading pane: where following links took you (private) | Blyg › Browsing History |

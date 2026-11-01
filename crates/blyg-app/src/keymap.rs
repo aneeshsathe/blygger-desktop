@@ -45,6 +45,8 @@ use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
 // --- browse ---
 use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
+// --- reading compose ---
+use crate::app::reading::compose::FocusCompose;
 // --- own posts ---
 use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
@@ -545,6 +547,17 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Blyg › Reader")
         ),
         // --- end stream ---
+        // --- reading compose --- the compose box on the reading screen. Its
+        // single key, `c` (the list focused), lives in reading_key_down; in
+        // the box ⌘⏎ posts, ⌘D saves a draft and esc goes back to the list.
+        kb!(
+            "cmd-shift-k",
+            Main,
+            FocusCompose,
+            "Compose while reading: the post box at the foot of the reading screen (c there)",
+            Some("Blyg › Compose While Reading")
+        ),
+        // --- end reading compose ---
         // --- reader folders --- the Reader's sources pane. Its own keys
         // (←/→ between panes, ↑/↓, j/k, Space, [ ], esc) live in
         // reading_key_down / sources::reader_key.
