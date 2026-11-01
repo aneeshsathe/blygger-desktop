@@ -50,6 +50,23 @@ pub struct AppState {
     /// (a library id: `notes`, `notes.<label>`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_vault: Option<String>,
+    /// --- blyg switcher --- What each signed-in blyg looked like when it
+    /// was last active (its name and avatar), by host, so the switcher can
+    /// show blygs whose database isn't open.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub blyg_cards: std::collections::BTreeMap<String, BlygCard>,
+}
+
+/// --- blyg switcher --- A blyg as the switcher shows it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BlygCard {
+    /// The author's name, or the site title.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The avatar's absolute URL (drawn from the image cache when it's there).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
 }
 
 impl AppState {
@@ -89,6 +106,22 @@ mod tests {
         assert_eq!(AppState::load(dir.path()), AppState::default());
         AppState::update(dir.path(), |s| s.launched_before = true).unwrap();
         assert!(AppState::load(dir.path()).launched_before);
+        // --- blyg switcher ---
+        AppState::update(dir.path(), |s| {
+            s.blyg_cards.insert(
+                "notes.example.org".into(),
+                BlygCard {
+                    name: Some("Field notes".into()),
+                    avatar: None,
+                },
+            );
+        })
+        .unwrap();
+        let back = AppState::load(dir.path());
+        assert_eq!(
+            back.blyg_cards["notes.example.org"].name.as_deref(),
+            Some("Field notes")
+        );
         std::fs::write(AppState::path(dir.path()), "{not json").unwrap();
         assert_eq!(AppState::load(dir.path()), AppState::default());
     }

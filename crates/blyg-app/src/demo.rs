@@ -29,6 +29,15 @@ impl MainView {
             let _ = this.update_in(cx, |v, window, cx| v.demo_step(&scenario, 1, window, cx));
             step(1200).await;
             let _ = this.update_in(cx, |v, window, cx| v.demo_step(&scenario, 2, window, cx));
+            // --- blyg switcher --- a window macOS isn't showing (screenshot
+            // runs never activate) may not redraw by itself: draw it a few
+            // times so a window capture shows the last step.
+            if scenario.starts_with("switch") {
+                for _ in 0..4 {
+                    step(300).await;
+                    let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
+                }
+            }
             if snapshot && !scenario.starts_with("about") && !scenario.ends_with("capture") {
                 step(600).await;
                 let _ = this.update_in(cx, |_, window, cx| {
@@ -138,6 +147,11 @@ impl MainView {
             ("empty", 0) => self.set_query_text("zqxj", window, cx),
             ("connect", 0) => self.open_connect(window, cx),
             ("disconnect", 0) => self.on_disconnect(&super::Disconnect, window, cx),
+            // --- blyg switcher --- (a config with two blygs): the switcher
+            // open; then switched to the second blyg; then Manage….
+            ("switcher", 0) => self.toggle_blyg_switcher(false, window, cx),
+            ("switched", 0) => self.switch_nth(1, window, cx),
+            ("switcher-manage", 0) => self.toggle_blyg_switcher(true, window, cx),
             // The status bar's update notice (no updater runs in fake mode).
             ("update", 0) => {
                 self.demo_open("01J9QK3", window, cx);

@@ -115,6 +115,17 @@ pub const KEYS: &[KeySpec] = &[
          with no blyg-url the app starts by asking you to connect one.\n\
          Your sign-in for this blyg is kept in the macOS Keychain, never in this file.",
     ),
+    // --- blyg switcher ---
+    docs(
+        list(key("blyg", ValueKind::Url, None), &[]),
+        "Every blyg you're signed in to, one line each, e.g. blyg = https://notes.example.org. \
+         The blyg switcher (click the blyg's name in the title bar, or Blyg › Switch To) lists \
+         them in this order, and ⌃⌘1 to ⌃⌘9 switch to the first nine. blyg-url is the one \
+         you're writing to now, and is always in the list whether a line names it or not. \
+         Burrow writes these lines when you add a second blyg and removes them when you're \
+         back to one. Each blyg keeps its own sign-in in the Keychain and its own posts, \
+         drafts and reading on this Mac.",
+    ),
     docs(
         key("theme", ValueKind::ThemeName, Some("system")),
         "Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of \

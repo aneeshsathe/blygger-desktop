@@ -432,6 +432,21 @@ impl FakeBackend {
         self.lock().prov_unavailable = !available;
     }
 
+    /// --- blyg switcher --- Replace the sample posts with these drafts (a
+    /// second sample blyg in fake mode: the same reading, its own posts).
+    pub fn replace_posts(&self, drafts: &[(Kind, &str)]) {
+        {
+            let mut s = self.lock();
+            s.items.clear();
+            s.versions.clear();
+            s.theirs.clear();
+            s.synced.clear();
+        }
+        for (kind, text) in drafts {
+            let _ = self.create_draft(*kind, text);
+        }
+    }
+
     /// Tests: every `save_with_provenance` so far, as (item, scope count).
     #[cfg(test)]
     pub fn provenance_saves(&self) -> Vec<(LocalId, usize)> {
