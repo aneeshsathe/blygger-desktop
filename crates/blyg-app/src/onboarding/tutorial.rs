@@ -242,9 +242,15 @@ impl MainView {
             self.list.select(id);
         }
         self.load_selected(window, cx);
+        let editing = back.is_some() && p.editing;
         match back {
             Some(id) if p.editing => self.open(&id, window, cx),
             _ => self.back_to_search(window, cx),
+        }
+        // Reading is where Burrow opens; the tour ends there too, unless it
+        // was started from a post being written.
+        if !editing {
+            self.launch_into_reading(window, cx);
         }
         let held = std::mem::take(&mut *p.events.lock().unwrap_or_else(|e| e.into_inner()));
         for ev in held {
@@ -254,7 +260,7 @@ impl MainView {
         }
         self.show_toast(
             "Tour finished",
-            Some(crate::keymap::hint("Back to your own posts · ⌘, › Help replays it").into()),
+            Some(crate::keymap::hint("⌘, › Help replays it").into()),
             cx,
         );
         cx.notify();
