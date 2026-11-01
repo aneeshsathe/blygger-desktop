@@ -15,6 +15,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-01
+
 ### Added
 
 - **Several blygs, one click apart.** Sign in to more than one blyg and switch between them from the title bar: click the blyg's name, or press ⌃⌘0 (Blyg › Switch Blyg…), and pick one, or jump with ⌃⌘1–⌃⌘9 (Ctrl+Shift+digit on Windows). **Add a blyg…** signs in to another without signing out of the first; **Manage…** signs out of one, keeping or deleting its local copy. Each blyg keeps its own posts, drafts, reading and sign-in, and changes waiting on one blyg sync when you switch back to it. Your current blyg's data stays where it is. In the config file, `blyg` lines list your blygs and `blyg-url` is still the active one. CLI: `blygger +list-blygs`, and `--blyg <host>` on the OPML commands.

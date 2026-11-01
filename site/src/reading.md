@@ -163,7 +163,6 @@ The selected post shows its actions. Each says what it makes:
   post** goes back. A quote inside the quote, or a preview that hasn't
   caught up with your typing, offers nothing.
 
-  ![Choosing a passage in a stub](screenshots/stub-passage.png)
 - **AI reply · new stub**: the same, with a first draft from AI.
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.
