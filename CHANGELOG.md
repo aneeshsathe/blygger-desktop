@@ -20,16 +20,19 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Follow the thicket from the reader** (Blygger Studio 0.49). In the reading pane, every quoted layer, quotes inside quotes included, says whose it is and opens in the reader. So do a stub's "responds to" line and any ordinary link that points at a blyg post: Burrow asks your blyg which links name posts (studio 0.49), or checks the linked pages itself on an older blyg. A post from a blyg you don't follow opens as a peek, read from its own blyg with nothing saved, under "You're not subscribed to this blyg — subscribe?". Links that aren't blyg posts open in the browser, so you keep your place. A breadcrumb above the post shows the path you took, and **⌘[** or "‹ back" steps back one post at a time.
 - **Browsing history** (⇧⌘H, Blyg › Browsing History, or "history" above the post). A pane beside the reader lists this walk and earlier ones, as the tree they were, each step opening its post, with "clear history". It's private to you: kept in your blyg's own browsing log on studio 0.49, or on this Mac with an older blyg, and never published.
 - **Background.** Withdrawn posts, the blygs' and your own, are listed under a new Background smart feed and nowhere else, so a retraction stays findable without crowding what you're reading.
+- **Write while you read.** A post box runs along the foot of the reading screen, under the Stream and the Reader alike, so you can post without losing your place. `c` (with the list focused) or ⇧⌘K (Blyg › Compose While Reading) puts the caret in it; ⌘⏎ posts a fragment (a thread when it quotes a post or runs long), ⌘D keeps a draft, ⤢ moves it into the editor, and **❝ Quote** drops the open post's `![[…]]` in. Unsent text survives switching screens and restarts. The Posts screen is unchanged.
 - **A revised post leads with what changed.** In the stream, a post past its first version opens with its latest changelog note, "V3: …", read from the author's changelog, or "V3: No changelog entry available" when they left none.
 
 ### Changed
 
+- **Burrow opens on Reading**, not Posts, and the tour ends there too unless you started it while writing. It stays on Posts during first-run setup and when there's no blyg to read from.
 - **A stub's passage is chosen in the editor's preview** (Blygger Studio 0.49). Select text inside the stub's quote in the preview and press **❝ quote only this** (or ⇧⌘D): the passage goes under that quote, whichever of several it is. **Quote another passage** adds a whole-post quote after the caret to select from. The separate passage chooser is gone.
 - Burrow refuses to sync with a blyg whose studio speaks a newer private-API contract than it does (the 2.0+ contracts in Blygger Studio's pending API rework), saying so, rather than misreading it. Nothing local is touched.
 
 ### Fixed
 
 - On a stock blyg whose reading list leaves withdrawn posts out (studio 0.49), withdrawn posts are no longer forgotten on a full refresh.
+- Withdrawn posts no longer count toward the Reading screen's unread mark.
 
 ## [0.13.1] - 2026-10-19
 
