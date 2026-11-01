@@ -324,6 +324,10 @@ impl MainView {
             }
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),
+            // --- browse --- the walk, the history pane, a peek, nested quotes.
+            (s, n) if s.starts_with("rd-browse") || s == "rd-stream-nested" => {
+                self.browse_demo(s, n, window, cx)
+            }
             _ => {}
         }
         if n == 2 {

@@ -18,6 +18,10 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+// --- browse --- following links, quotes and stubs inside the reader.
+pub(crate) mod browse;
+#[cfg(test)]
+mod browse_tests;
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
 mod lineage;
 pub(crate) mod lineage_vm;
@@ -335,6 +339,8 @@ pub struct State {
     pub stub: Option<stub_bar::Chooser>,
     /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
     pub picked: pick_vm::Picked,
+    /// --- browse --- the walk, the link answers, the history pane.
+    pub browse: browse::Browse,
 }
 
 impl State {
@@ -384,6 +390,7 @@ impl State {
             avatars: sources::avatars(backend),
             stub: None,
             picked: Default::default(),
+            browse: Default::default(),
         }
         .refiltered()
     }
@@ -475,6 +482,7 @@ impl MainView {
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
+        .map(|d| self.browse_actions(d, cx)) // --- browse ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -700,6 +708,17 @@ impl MainView {
             cx.stop_propagation();
             return;
         }
+        // --- browse --- ⌘[ goes back along the walk (the reading screen's
+        // own key, as ⌘F: gpui-base's inputs bind ⌘[ too).
+        if self.reading.view == View::Reading
+            && m.secondary()
+            && !(other || m.alt || m.shift)
+            && k.key == "["
+        {
+            self.reader_back(window, cx);
+            cx.stop_propagation();
+            return;
+        }
         // --- read/unread --- ⌘A picks every post the Reader's list shows
         // (the search field's own ⌘A is the field's).
         if self.reading.view == View::Reading
@@ -724,6 +743,11 @@ impl MainView {
                     o.dropdown = false;
                 }
                 cx.notify();
+                true
+            }
+            // --- browse --- the history pane closes before anything else.
+            (View::Reading, "escape") if self.reading.browse.history_open => {
+                self.toggle_browse_history(cx);
                 true
             }
             // --- reader folders --- a context menu takes esc first.

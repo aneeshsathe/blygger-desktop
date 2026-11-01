@@ -44,6 +44,7 @@
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
+| ⇧⌘H | Browsing history beside the reading pane: where following links took you (private) | Blyg › Browsing History |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
 | ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |
 | ⌘I | Profile of this post's author (yours on your own post); again closes it | Blyg › Profile |
@@ -93,6 +94,7 @@
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
+| Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |
 | Your own profile, as visitors see it | Blyg › My Profile |
 | The interactive tutorial (on sample data) | Help › Burrow Tutorial |

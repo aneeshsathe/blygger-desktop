@@ -1188,7 +1188,12 @@ impl MainView {
                 .on_click(ranges, move |i, window, cx| {
                     let t = targets.get(i).cloned();
                     let _ = view.update(cx, |this, cx| match t {
-                        Some(Target::Url(u)) => this.open_link(u, window, cx),
+                        // --- browse --- a link that names a blyg item
+                        // opens in the reader; ⌘/⌥ keep it a link.
+                        Some(Target::Url(u)) => {
+                            let m = window.modifiers();
+                            this.browse_link(u, m.platform || m.alt, false, window, cx)
+                        }
                         Some(Target::Post(o, id)) => this.open_original(o, id, None, window, cx),
                         None => {}
                     });
@@ -1202,7 +1207,8 @@ impl MainView {
     }
 
     /// A `![[id]]` quote: a grey box with the quoted text when it's held
-    /// here, and a footer naming where it's from.
+    /// here, and a footer naming where it's from. Quotes inside it are
+    /// boxes too (`QUOTE_LAYERS`).
     fn render_quote_box(
         &self,
         post: &ReadingItem,
@@ -1224,13 +1230,22 @@ impl MainView {
                 .map(|para| div().child(para.to_string()).into_any_element())
                 .collect(),
             Some(q) if !q.content_md.trim().is_empty() || !q.content_html.trim().is_empty() => {
+                // --- browse --- quotes inside quotes are boxes too, each
+                // naming its own blyg and opening its own post, to
+                // `QUOTE_LAYERS` deep (the box stays small). A layer with no
+                // origin is from the blyg of the post that quoted it (`q`).
+                let depth = QUOTE_DEPTH.get();
                 let blocks: Vec<Block> = post_blocks(q)
                     .into_iter()
-                    // No quotes inside quotes: the box stays small.
-                    .filter(|b| !matches!(b, Block::Transclusion { .. }))
+                    .filter(|b| {
+                        depth + 1 < QUOTE_LAYERS || !matches!(b, Block::Transclusion { .. })
+                    })
                     .collect();
                 let (shown, _) = stream_vm::preview(&blocks);
-                self.render_blocks(&shown, q, n, cx)
+                QUOTE_DEPTH.set(depth + 1);
+                let inner = self.render_blocks(&shown, q, n, cx);
+                QUOTE_DEPTH.set(depth);
+                inner
             }
             // Not held: the citation the quoting blyg froze, when it sent one.
             _ => vec![
@@ -1296,6 +1311,15 @@ impl MainView {
             // --- themes --- the frame (the classic box when unset).
             .map(|d| crate::ornament::quote_frame(&self.theme, d))
     }
+}
+
+/// --- browse --- How many quote layers a stream post draws (the outer box
+/// and the quotes inside it); deeper ones open with the post.
+pub const QUOTE_LAYERS: usize = 3;
+
+thread_local! {
+    /// The quote layer being drawn (0: the post itself).
+    static QUOTE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn badge(p: crate::theme::Palette, s: String) -> Div {

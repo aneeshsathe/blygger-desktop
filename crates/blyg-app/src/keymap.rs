@@ -43,6 +43,8 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- browse ---
+use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
 // --- own posts ---
 use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
@@ -568,6 +570,22 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Blyg › Check All Feeds Now")
         ),
         // --- end reader folders ---
+        // --- browse --- (studio 0.49) the walk from post to post inside the
+        // reader. Its key, ⌘[, is the reading screen's own (handled in
+        // reading_key_down, like ⌘F): gpui-base's inputs bind ⌘[ themselves,
+        // and the browser pane's ⌘[ is the pane's.
+        menu_only!(
+            ReaderBack,
+            "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
+            "Blyg › Back"
+        ),
+        kb!(
+            "cmd-shift-h",
+            Main,
+            ToggleBrowseHistory,
+            "Browsing history beside the reading pane: where following links took you (private)",
+            Some("Blyg › Browsing History")
+        ),
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start

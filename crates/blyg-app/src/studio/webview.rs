@@ -451,6 +451,16 @@ pub fn take_click_modifiers() -> Option<(bool, bool)> {
         .map(|(_, cmd, alt)| (cmd, alt))
 }
 
+/// --- browse --- [`take_click_modifiers`] without using them up: the
+/// reader looks first (a ⌘/⌥-click on a link is always a link), then hands
+/// the click on to `open_link`, which takes them.
+pub fn peek_click_modifiers() -> Option<(bool, bool)> {
+    CLICK_MODIFIERS
+        .get()
+        .filter(|(t, ..)| t.elapsed() < std::time::Duration::from_secs(1))
+        .map(|(_, cmd, alt)| (cmd, alt))
+}
+
 #[cfg(all(target_os = "macos", not(test)))]
 fn note_click_modifiers() {
     // SAFETY: `+[NSEvent modifierFlags]` is a plain class getter of the

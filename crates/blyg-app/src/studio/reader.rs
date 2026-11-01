@@ -388,19 +388,23 @@ fn attr<'a>(tag: &'a str, name: &str) -> Option<&'a str> {
 /// original". The name (`.blyg-qorigin`, carrying the origin) opens the
 /// profile; a click anywhere else in the box opens the original post (the
 /// host script, `webview::HOST_SCRIPT`). `html` is already sanitized; the
-/// footer's own text is escaped here. A quote without `data-blyg-origin` is
-/// from the post's own blyg (`post_origin`).
+/// footer's own text is escaped here. Every layer at any depth gets one
+/// (studio 0.49, "browse the thicket"): a quote without `data-blyg-origin`
+/// is from the blyg of the layer that baked it, the enclosing quote's, and
+/// at the top the post's own (`post_origin`), as upstream's
+/// `injectNestedProvenance`.
 pub fn quote_footers(
     html: &str,
     post_origin: &str,
     name_of: &dyn Fn(&str) -> Option<String>,
 ) -> String {
-    // Per open blockquote: the footer to put before its end tag, if any.
-    let mut stack: Vec<Option<String>> = Vec::new();
+    // Per open blockquote: the footer to put before its end tag, if any, and
+    // the origin a layer inside it inherits.
+    let mut stack: Vec<(Option<String>, String)> = Vec::new();
     let mut inserts: Vec<(usize, String)> = Vec::new();
     for (start, tag) in blockquote_tags(html) {
         if tag.starts_with("</") {
-            if let Some(Some(footer)) = stack.pop() {
+            if let Some((Some(footer), _)) = stack.pop() {
                 inserts.push((start, footer));
             }
             continue;
@@ -409,31 +413,38 @@ pub fn quote_footers(
             let mut cls = c.split_whitespace();
             cls.clone().any(|x| x == "blyg-transclusion") && !cls.any(|x| x == "unresolved")
         }) && attr(tag, "data-blyg-id").is_some();
-        stack.push(quote.then(|| {
-            let origin = attr(tag, "data-blyg-origin")
-                .map(unescape)
-                .filter(|o| o.starts_with("https://") || o.starts_with("http://"))
-                .unwrap_or_else(|| post_origin.to_string());
-            let name = name_of(&origin).unwrap_or_else(|| {
-                crate::vm::url_host(&origin).unwrap_or_else(|| origin.clone())
-            });
-            let version = attr(tag, "data-blyg-version")
-                .and_then(|v| v.parse::<u32>().ok())
-                .map(|v| format!(" · v{v}"))
-                .unwrap_or_default();
-            format!(
-                "<div class=\"blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
-                 data-blyg-origin=\"{}\">{}</span>{version} · <span class=\"blyg-qopen\">open original</span></div>\n",
-                blyg_render::escape_html(&origin),
-                blyg_render::escape_html(&name),
-            )
-        }));
+        let inherited = stack
+            .last()
+            .map(|(_, o)| o.clone())
+            .unwrap_or_else(|| post_origin.to_string());
+        let origin = attr(tag, "data-blyg-origin")
+            .map(unescape)
+            .filter(|o| o.starts_with("https://") || o.starts_with("http://"))
+            .filter(|_| quote)
+            .unwrap_or(inherited);
+        stack.push((quote.then(|| quote_footer(tag, &origin, name_of)), origin));
     }
     let mut out = html.to_string();
     for (at, footer) in inserts.into_iter().rev() {
         out.insert_str(at, &footer);
     }
     out
+}
+
+/// One quote layer's footer: "quoted from <name> · v2 · open original".
+fn quote_footer(tag: &str, origin: &str, name_of: &dyn Fn(&str) -> Option<String>) -> String {
+    let name = name_of(origin)
+        .unwrap_or_else(|| crate::vm::url_host(origin).unwrap_or_else(|| origin.to_string()));
+    let version = attr(tag, "data-blyg-version")
+        .and_then(|v| v.parse::<u32>().ok())
+        .map(|v| format!(" · v{v}"))
+        .unwrap_or_default();
+    format!(
+        "<div class=\"blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
+         data-blyg-origin=\"{}\">{}</span>{version} · <span class=\"blyg-qopen\">open original</span></div>\n",
+        blyg_render::escape_html(origin),
+        blyg_render::escape_html(&name),
+    )
 }
 
 /// Every `<blockquote …>` and `</blockquote>` tag in `html`, with its offset.
@@ -714,6 +725,12 @@ impl MainView {
             }
             // --- browser --- a link: the browser pane, or the default browser
             // (the click's modifiers and `open-links` decide).
+            // --- browse --- in the reading pane, a link that names a blyg
+            // item opens here (a step of the walk); the rest as before.
+            SurfaceEvent::OpenUrl(url) if self.reader_selection_ui() => {
+                let modified = webview::peek_click_modifiers().is_some_and(|(c, a)| c || a);
+                self.browse_link(url, modified, true, window, cx)
+            }
             SurfaceEvent::OpenUrl(url) => self.open_link(url, window, cx),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
             // --- quote targets --- the quote's original, in the reading pane.
@@ -721,7 +738,14 @@ impl MainView {
                 origin,
                 id,
                 version,
-            } => self.open_original(origin, id, version, window, cx),
+            } => self.browse_follow(
+                blyg_core::browse::BrowseVia::Quote,
+                origin,
+                id,
+                version,
+                window,
+                cx,
+            ),
             // --- reader folders --- Space at the end of the page.
             SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
         }
@@ -800,14 +824,28 @@ mod tests {
         let names = |o: &str| (o == "https://ada.blyg.example.com/").then(|| "Ada <3".to_string());
         let out = quote_footers(html, "https://lin.blyg.example.com/", &names);
         assert_eq!(out.matches("class=\"blyg-qfoot\"").count(), 2, "{out}");
-        // The inner quote (no origin: the post's own blyg) closes first.
+        // The inner quote closes first. It has no origin, so it is from the
+        // blyg of the layer that baked it (studio 0.49's
+        // injectNestedProvenance): Ada's, not the post's.
         let inner = out.find("<p>inner</p>").unwrap();
         let inner_foot = out[inner..].find("blyg-qfoot").unwrap() + inner;
         assert!(out[inner_foot..].starts_with(
             "blyg-qfoot\">quoted from <span class=\"blyg-qorigin\" \
-             data-blyg-origin=\"https://lin.blyg.example.com/\">lin.blyg.example.com</span> · v1 · \
+             data-blyg-origin=\"https://ada.blyg.example.com/\">Ada &lt;3</span> · v1 · \
              <span class=\"blyg-qopen\">open original</span></div>\n</blockquote>"
         ));
+        // At the top, a quote without an origin is from the post's own blyg.
+        let top = quote_footers(
+            "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01ccc\"><p>t</p></blockquote>",
+            "https://lin.blyg.example.com/",
+            &names,
+        );
+        assert!(
+            top.contains(
+                "data-blyg-origin=\"https://lin.blyg.example.com/\">lin.blyg.example.com</span>"
+            ),
+            "{top}"
+        );
         assert!(out.contains(
             "data-blyg-origin=\"https://ada.blyg.example.com/\">Ada &lt;3</span> · v2 · "
         ));

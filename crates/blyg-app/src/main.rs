@@ -416,6 +416,12 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
+                // --- browse ---
+                MenuItem::action("Back", app::reading::browse::ReaderBack),
+                MenuItem::action(
+                    "Browsing History",
+                    app::reading::browse::ToggleBrowseHistory,
+                ),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),
