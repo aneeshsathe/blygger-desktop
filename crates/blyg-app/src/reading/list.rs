@@ -501,7 +501,7 @@ impl MainView {
 
     /// The current version's actions on any post (the open one, or the
     /// stream's selected one): Quote, Reply, AI reply, Open on web.
-    pub(super) fn item_action(
+    pub(crate) fn item_action(
         &mut self,
         item: blyg_core::ReadingItem,
         action: &'static str,
