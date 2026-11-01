@@ -1122,6 +1122,14 @@ impl Backend for FakeBackend {
         }
         thread::sleep(self.timing.publish);
         self.remote_guard()?;
+        // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
+        if self.item(id).is_some_and(|i| i.conflict) {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "resolve the sync conflict first".into(),
+                details: vec![],
+            });
+        }
         let (outcome, sink) = {
             let mut st = self.lock();
             let n = st.next_id;
@@ -1174,6 +1182,14 @@ impl Backend for FakeBackend {
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
         thread::sleep(self.timing.publish);
         self.remote_guard()?;
+        // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
+        if self.item(id).is_some_and(|i| i.conflict) {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "resolve the sync conflict first".into(),
+                details: vec![],
+            });
+        }
         let mut st = self.lock();
         let it = st
             .items
@@ -1956,6 +1972,16 @@ impl Backend for FakeBackend {
 
     // --- background --- every tombstone the sample blygs hold, signalled
     // or not, newest first (`reading()` keeps hiding the unsignalled ones).
+    // --- conflicts --- (issue #52)
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let st = self.lock();
+        let it = st.items.iter().find(|i| &i.local_id == id && i.conflict)?;
+        Some((
+            it.content_md.clone(),
+            st.theirs.get(id).cloned().unwrap_or_default(),
+        ))
+    }
+
     fn background_reading(&self) -> Vec<ReadingItem> {
         let st = self.lock();
         if !st.read_ext {

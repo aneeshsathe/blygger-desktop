@@ -146,6 +146,10 @@ The status bar shows how many changes are waiting.
 When the server changed under you (say, you edited the same post in the web
 studio), a side-by-side sheet shows **On this Mac** and **On the server**:
 press 1 to keep yours, 2 to take the server's, or 3 to keep both.
+If you close the sheet without choosing, the post stays in conflict and
+waits: the status bar says **sync conflict · resolve…** while it's open,
+and clicking that (or trying to publish or withdraw it) shows the sheet
+again.
 
 | | |
 |---|---|

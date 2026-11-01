@@ -1316,19 +1316,7 @@ impl MainView {
                 local_id,
                 mine,
                 theirs,
-            } => {
-                let (m, t) = vm::word_diff(&mine, &theirs);
-                let focus = cx.focus_handle();
-                window.focus(&focus, cx);
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::Conflict {
-                    id: local_id,
-                    mine: m,
-                    theirs: t,
-                    focus,
-                });
-                cx.notify();
-            }
+            } => self.show_conflict_sheet(local_id, &mine, &theirs, window, cx),
             CoreEvent::ReadingChanged => {
                 self.unread = self
                     .backend
@@ -1573,6 +1561,9 @@ impl MainView {
                     Err(CoreError::Offline) => {
                         v.show_toast("Offline. Publish again when you're back online.", None, cx)
                     }
+                    // --- conflicts --- refused for a conflict: the sheet
+                    // again, not a toast with no way out (issue #52).
+                    Err(_) if v.reopen_conflict(&id, window, cx) => {}
                     Err(e) => v.show_toast(format!("Publish failed: {e}"), None, cx),
                 }
                 // --- follow-ups --- promotion may have rewritten local images.
@@ -2745,6 +2736,48 @@ impl MainView {
         )
     }
 
+    /// --- conflicts --- The resolve sheet for an item in conflict.
+    pub(crate) fn show_conflict_sheet(
+        &mut self,
+        id: LocalId,
+        mine: &str,
+        theirs: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (m, t) = vm::word_diff(mine, theirs);
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        self.sheet_gen += 1;
+        self.sheet = Some(Sheet::Conflict {
+            id,
+            mine: m,
+            theirs: t,
+            focus,
+        });
+        cx.notify();
+    }
+
+    /// --- conflicts --- Show the resolve sheet again for an item that is
+    /// still in conflict, from the texts the store kept (the event that
+    /// first showed it fires only once; issue #52). False when it isn't in
+    /// conflict, or another sheet is up.
+    pub(crate) fn reopen_conflict(
+        &mut self,
+        id: &LocalId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.sheet.is_some() {
+            return false;
+        }
+        let Some((mine, theirs)) = self.backend.conflict_texts(id) else {
+            return false;
+        };
+        self.show_conflict_sheet(id.clone(), &mine, &theirs, window, cx);
+        true
+    }
+
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette.on_status();
         let chrome = self.theme.chrome_font(&self.prefs);
@@ -2854,6 +2887,31 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
+            // --- conflicts --- an item still in conflict says so, and a
+            // click shows the resolve sheet again (issue #52).
+            .children(item.filter(|i| i.conflict).map(|i| {
+                let id = i.local_id.clone();
+                div()
+                    .id("conflict-marker")
+                    .text_color(p.over)
+                    .cursor_pointer()
+                    .hover(|d| d.underline())
+                    .child("sync conflict · resolve…")
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            reading::Tip(
+                                "The server's copy changed while you edited. Click to choose \
+                                 which to keep; publishing waits until then."
+                                    .into(),
+                            )
+                        })
+                        .into()
+                    })
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.reopen_conflict(&id, window, cx);
+                    }))
+                    .into_any_element()
+            }))
             // --- new post --- "New note · saved locally · …" while in it.
             .children(match self.new_post_label() {
                 Some(l) => Some(div().child(l.to_string()).into_any_element()),

@@ -681,4 +681,13 @@ pub trait Backend: Send + Sync {
     fn background_reading(&self) -> Vec<ReadingItem> {
         Vec::new()
     }
+
+    /// --- conflicts --- An item already in conflict: (mine, theirs), the
+    /// local text and the server's as last pulled, so the resolve sheet can
+    /// be shown again after it was dismissed (issue #52). `None` when the
+    /// item isn't in conflict. Local, instant. Additive.
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let _ = id;
+        None
+    }
 }

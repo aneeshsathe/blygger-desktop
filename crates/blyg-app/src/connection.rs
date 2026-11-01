@@ -895,6 +895,10 @@ impl Backend for SwitchBackend {
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
     }
+    // --- conflicts ---
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        self.cur().conflict_texts(id)
+    }
     // --- background ---
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()

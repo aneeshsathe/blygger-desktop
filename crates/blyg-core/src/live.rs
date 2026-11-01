@@ -540,6 +540,16 @@ impl Backend for LiveBackend {
         self.e().store.item(id)
     }
 
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let row = self.e().store.row(id)?;
+        row.item.conflict.then(|| {
+            (
+                row.item.content_md.clone(),
+                row.theirs.clone().unwrap_or_default(),
+            )
+        })
+    }
+
     fn create_draft(&self, kind: Kind, content_md: &str) -> Result<LocalId> {
         let id = self
             .e()

@@ -194,6 +194,7 @@ impl MainView {
         let note = Some(note.trim().to_string()).filter(|n| !n.is_empty());
         let task = cx.background_spawn({
             let note = note.clone();
+            let id = id.clone();
             async move { backend.withdraw(&id, note.as_deref()) }
         });
         cx.spawn_in(window, async move |this, cx| {
@@ -211,6 +212,8 @@ impl MainView {
                     Err(CoreError::Offline) => {
                         v.show_toast("Offline. Withdraw again when you're back online.", None, cx)
                     }
+                    // --- conflicts --- (issue #52)
+                    Err(_) if v.reopen_conflict(&id, window, cx) => {}
                     Err(e) => v.show_toast(format!("Couldn't withdraw: {e}"), None, cx),
                 }
                 cx.notify();

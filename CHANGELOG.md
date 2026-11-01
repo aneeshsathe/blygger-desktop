@@ -34,6 +34,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Fixed
 
+- **A sync conflict you closed without resolving is no longer a dead end** ([#52](https://github.com/aneeshsathe/blygger-desktop/issues/52)). Publishing or withdrawing the post shows the conflict sheet again instead of “resolve the sync conflict first”, and while the post is open the status bar says **sync conflict · resolve…**, which opens it too.
 - On a stock blyg whose reading list leaves withdrawn posts out (studio 0.49), withdrawn posts are no longer forgotten on a full refresh.
 - Withdrawn posts no longer count toward the Reading screen's unread mark.
 

@@ -292,6 +292,58 @@ fn conflict_sheet_keys_resolve(cx: &mut TestAppContext) {
     assert!(!fake.item(&LocalId("01J9K7T".into())).unwrap().conflict);
 }
 
+/// Issue #52: a conflict whose sheet was dismissed isn't a dead end.
+/// Publishing it shows the sheet again, and so does the status bar's mark.
+#[gpui_kit::test]
+fn a_dismissed_conflict_can_still_be_resolved(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    let id = LocalId("01J9K7T".into());
+    fake.trigger_conflict(&id);
+    let wait_sheet = |cx: &mut gpui_kit::VisualTestContext| {
+        for _ in 0..50 {
+            cx.run_until_parked();
+            if view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. }))) {
+                return true;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        false
+    };
+    assert!(wait_sheet(cx));
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()), "dismissed");
+    assert!(fake.item(&id).unwrap().conflict, "still in conflict");
+
+    // A refused publish brings the sheet back, not a toast.
+    view.update_in(cx, |v, window, cx| {
+        v.start_publish(id.clone(), None, window, cx)
+    });
+    assert!(wait_sheet(cx), "publish reopens the conflict sheet");
+    view.read_with(cx, |v, _| {
+        assert!(
+            v.toast
+                .as_ref()
+                .is_none_or(|t| !t.text.contains("Publish failed")),
+            "no dead-end toast"
+        );
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+
+    // So does the status bar's "sync conflict" mark.
+    view.update_in(cx, |v, window, cx| {
+        assert!(v.reopen_conflict(&id, window, cx));
+    });
+    assert!(wait_sheet(cx));
+    cx.simulate_keystrokes("3");
+    cx.run_until_parked();
+    assert!(!fake.item(&id).unwrap().conflict, "resolved");
+    view.update_in(cx, |v, window, cx| {
+        assert!(!v.reopen_conflict(&id, window, cx), "nothing to reopen");
+    });
+}
+
 #[gpui_kit::test]
 fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
