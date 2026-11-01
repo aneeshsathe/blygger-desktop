@@ -626,6 +626,19 @@ impl Engine {
     ///   push (`push`) waits for this check's verdict.
     fn check_server(&self, push: bool) -> Result<()> {
         if !self.state().compatible {
+            // A newer private-API contract than this Burrow speaks: stop
+            // before any list is read, because a misread page would prune
+            // what's held (`api::CONTRACT_MAJOR_MAX`). Asked once a session,
+            // with the rest of the compatibility check.
+            if let Some(c) = self.api.contract_version()?
+                && !crate::api::contract_supported(&c)
+            {
+                return Err(CoreError::Other(format!(
+                    "This blyg runs studio API contract {c}, which this version of Burrow \
+                     doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
+                     was synced, and your local copy is safe."
+                )));
+            }
             match self.api.count_items() {
                 Ok(_) => self.state().compatible = true,
                 Err(CoreError::ServerOutdated) => {

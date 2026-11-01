@@ -4335,3 +4335,18 @@ fn withdrawn_posts_are_background() {
     }
     me.unsubscribe(&sub.id).unwrap();
 }
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn contract_version_is_unset_on_the_studios_burrow_targets() {
+    // `GET /api/capabilities` arrives with blygger-studio PR #95; the studios
+    // Burrow targets don't serve it, so the guard lets them through.
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let got = api.contract_version().unwrap();
+    assert!(
+        got.as_deref()
+            .is_none_or(blyg_core::api::contract_supported),
+        "a contract Burrow doesn't speak: {got:?}"
+    );
+}

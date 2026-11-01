@@ -395,7 +395,11 @@ fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
     let (up, ext) = (contract::contract(), contract::extensions());
     let m = req.method.as_str();
     let what = format!("{m} {}", req.path);
-    if s.unchecked.iter().any(|p| req.path.starts_with(p.as_str())) {
+    // The contract-version probe asks for a route from a contract newer than
+    // any Burrow targets (`Api::contract_version`); its 404 is the answer.
+    if req.path == "/api/capabilities"
+        || s.unchecked.iter().any(|p| req.path.starts_with(p.as_str()))
+    {
         return;
     }
     // A request goes by the newest contract that has its operation (what a

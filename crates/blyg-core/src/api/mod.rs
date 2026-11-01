@@ -37,6 +37,25 @@ use crate::model::{
 use auth::Credential;
 use wire::*;
 
+/// The newest studio private-API contract major this Burrow speaks. Studio
+/// 0.49 has no contract version (no `/api/capabilities`); PR #95 calls that
+/// contract 1.0.0. Majors 2–5 (blygger-studio PRs #97–#100) move the REST
+/// root, require observed revisions on edits, rename every field to
+/// camelCase and page lists by cursor: read with today's code, a reading
+/// list would look complete after its first page and rows would be pruned.
+pub const CONTRACT_MAJOR_MAX: u64 = 1;
+
+/// Whether Burrow can speak `contract` (`"2.0.0"` → no). Unparseable: yes,
+/// so a server isn't locked out on a guess.
+pub fn contract_supported(contract: &str) -> bool {
+    contract
+        .trim()
+        .split('.')
+        .next()
+        .and_then(|m| m.parse::<u64>().ok())
+        .is_none_or(|major| major <= CONTRACT_MAJOR_MAX)
+}
+
 pub struct Api {
     agent: ureq::Agent,
     /// The blyg URL, with its mount (public pages, the studio).
@@ -123,9 +142,14 @@ impl Api {
     /// A request with the credential on it, and the browser sign-in's
     /// access token it carries (for the 401 retry).
     fn request(&self, method: &str, path: &str) -> Result<(ureq::Request, Option<String>)> {
+        self.request_url(method, &format!("{}{}", self.api_root, path))
+    }
+
+    /// `request` at an absolute URL.
+    fn request_url(&self, method: &str, url: &str) -> Result<(ureq::Request, Option<String>)> {
         let r = self
             .agent
-            .request(method, &format!("{}{}", self.api_root, path))
+            .request(method, url)
             .set("accept", "application/json");
         Ok(match &self.cred {
             Credential::Token(t) => (r.set("authorization", &format!("Bearer {t}")), None),
@@ -297,6 +321,34 @@ impl Api {
 
     /// How many items the server holds (one small read). Also the version
     /// probe: `ServerOutdated` from a server older than studio 0.9.
+    /// The studio's private-API contract version, from `GET /api/capabilities`
+    /// (blygger-studio PR #95; the route doesn't exist before it, and every
+    /// version Burrow targets answers 404). Asked under the blyg's mount
+    /// first, where the REST API moves with contract 2.0.0 (PR #97), then at
+    /// the origin. `Ok(None)`: not served, or not readable as one.
+    /// Offline, rate-limited or 5xx: an error, so nothing is decided on a
+    /// failed read.
+    pub fn contract_version(&self) -> Result<Option<String>> {
+        let mut urls = vec![format!("{}/api/capabilities", self.base)];
+        let at_root = format!("{}/api/capabilities", self.api_root);
+        if at_root != urls[0] {
+            urls.push(at_root);
+        }
+        for url in urls {
+            let (req, _) = self.request_url("GET", &url)?;
+            match read_json(req.call()) {
+                Ok(v) => {
+                    if let Some(c) = v.get("contractVersion").and_then(Value::as_str) {
+                        return Ok(Some(c.to_string()));
+                    }
+                }
+                Err(e) if is_transient(&e) => return Err(e),
+                Err(_) => {}
+            }
+        }
+        Ok(None)
+    }
+
     pub fn count_items(&self) -> Result<u64> {
         self.call_as::<Page<Value>>("GET", "/api/items?offset=0&limit=1", None)?
             .total
@@ -1363,6 +1415,19 @@ pub fn refused_provenance_key(e: &CoreError) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::contract_supported;
+
+    #[test]
+    fn contract_majors_past_one_are_refused() {
+        assert!(contract_supported("1.0.0"));
+        assert!(contract_supported("1.4.2"));
+        assert!(!contract_supported("2.0.0"));
+        assert!(!contract_supported(" 5.1.0 "));
+        // Not a version: not locked out on a guess.
+        assert!(contract_supported("next"));
+        assert!(contract_supported(""));
+    }
+
     use super::*;
 
     #[test]
