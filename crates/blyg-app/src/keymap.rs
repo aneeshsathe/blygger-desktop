@@ -49,6 +49,8 @@ use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
 use crate::app::reading::compose::FocusCompose;
 // --- own posts ---
 use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
+// --- hoppers ---
+use crate::app::reading::hoppers::{HopperPicker, NewHopper};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -595,6 +597,15 @@ pub fn mac_table() -> Vec<Keybind> {
             "Link post · new fragment: [[…]] to this post, no stub_of",
             Some("Post › Link Post · New Fragment")
         ),
+        // --- hoppers --- (⌥⌘H is the system's Hide Others; `h` on the
+        // reading screen is the picker's own single key)
+        kb!(
+            "alt-cmd-p",
+            Main,
+            HopperPicker,
+            "Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen)",
+            Some("Post › Put in Hopper…")
+        ),
         // --- end own posts ---
         menu_only!(
             SubscribeTo,
@@ -659,6 +670,12 @@ pub fn mac_table() -> Vec<Keybind> {
             NewFolder,
             "A new folder for your subscriptions (on this Mac only)",
             "Blyg › New Folder…"
+        ),
+        // --- hoppers ---
+        menu_only!(
+            NewHopper,
+            "A new hopper on your blyg: a collection of posts, private until you make it public",
+            "Blyg › New Hopper…"
         ),
         // --- subscription checks --- (studio 0.30; one subscription's
         // "Check Now" is in its menu in the sources pane)

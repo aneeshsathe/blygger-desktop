@@ -1036,7 +1036,7 @@ fn read_extension_shapes() {
         ..s.clone()
     })
     .unwrap();
-    assert!(b.hoppers().is_ok());
+    assert!(b.server_hoppers().is_ok());
 
     // Raw shapes against upstream's contract, so a server change shows up
     // here first.
@@ -4371,4 +4371,248 @@ fn a_refused_credential_never_passes_the_contract_check() {
         ),
         "a refused token must not pass: {got:?}"
     );
+}
+
+// ------------------------------------------------------------------ hoppers
+
+/// The server's memberships of hopper `id`, as sorted (sub, remote id) pairs.
+fn server_members(id: &str) -> Vec<(String, String)> {
+    let v = conforms("GET", &e2e().url, &format!("/api/hoppers/{id}"));
+    let mut out: Vec<(String, String)> = v["memberships"]
+        .as_array()
+        .expect("memberships")
+        .iter()
+        .map(|m| {
+            (
+                m["subscription_id"].as_str().unwrap().to_string(),
+                m["remote_id"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
+}
+
+/// Deletes the hopper when the test ends, passed or not.
+struct DropHopper<'a>(&'a LiveBackend, String);
+
+impl Drop for DropHopper<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.delete_hopper(&self.1);
+    }
+}
+
+fn held_hopper(b: &LiveBackend, id: &str) -> Option<Hopper> {
+    b.hoppers().into_iter().find(|h| h.id == id)
+}
+
+fn edit(f: impl FnOnce(&mut HopperEdit)) -> HopperEdit {
+    let mut e = HopperEdit::default();
+    f(&mut e);
+    e
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn hoppers_are_made_renamed_published_and_deleted() {
+    let e = e2e();
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+    let t = tag("hopper");
+
+    // New: private and empty, held here and listed on the blyg.
+    let h = me.create_hopper(&format!("  {t} reads ")).unwrap();
+    let _gone = DropHopper(&me, h.id.clone());
+    assert_eq!(h.name, format!("{t} reads"));
+    assert!(!h.public && !h.slug_frozen && h.count == 0, "{h:?}");
+    assert!(held_hopper(&me, &h.id).is_some());
+    let list = conforms("GET", &e.url, "/api/hoppers?offset=0&limit=100");
+    assert!(
+        list["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x["id"] == h.id.as_str()),
+        "{list}"
+    );
+    assert!(me.create_hopper("   ").is_err(), "a name is needed");
+
+    // Rename and describe.
+    let r = me
+        .update_hopper(&h.id, &edit(|e| e.name = Some(format!("{t} long reads"))))
+        .unwrap();
+    assert_eq!(r.name, format!("{t} long reads"));
+    let slug = r.slug.clone().expect("a slug");
+    me.update_hopper(
+        &h.id,
+        &edit(|e| e.description = Some("Writing that takes its time.".into())),
+    )
+    .unwrap();
+    assert_eq!(
+        held_hopper(&me, &h.id).unwrap().description.as_deref(),
+        Some("Writing that takes its time.")
+    );
+    assert!(
+        me.update_hopper(&h.id, &edit(|e| e.description = Some("x".repeat(281))))
+            .is_err(),
+        "280 characters at most"
+    );
+    let page = format!("{}/h/{slug}/", e.url);
+    assert_eq!(public_get(&page).0, 404, "private: no page");
+
+    // Public: a page, and its address stays put through a rename.
+    let p = me
+        .update_hopper(&h.id, &edit(|e| e.public = Some(true)))
+        .unwrap();
+    assert!(p.public && p.slug_frozen, "{p:?}");
+    let (st, body) = public_get(&page);
+    assert_eq!(st, 200, "{page}");
+    assert!(body.contains(&format!("{t} long reads")));
+    let r2 = me
+        .update_hopper(&h.id, &edit(|e| e.name = Some(format!("{t} renamed"))))
+        .unwrap();
+    assert_eq!(
+        r2.slug.as_deref(),
+        Some(slug.as_str()),
+        "frozen once public"
+    );
+    assert_eq!(public_get(&page).0, 200);
+    me.update_hopper(&h.id, &edit(|e| e.public = Some(false)))
+        .unwrap();
+    assert_eq!(public_get(&page).0, 404, "private again: the page goes");
+
+    // A fresh Mac reads it all back.
+    let d2 = tempfile::tempdir().unwrap();
+    let other = manual(d2.path());
+    other.sync_now().unwrap();
+    let back = held_hopper(&other, &h.id).expect("listed on the other Mac");
+    assert_eq!(back.name, format!("{t} renamed"));
+    assert_eq!(
+        back.description.as_deref(),
+        Some("Writing that takes its time.")
+    );
+    assert!(!back.public && back.slug_frozen);
+
+    // Delete: gone there and here.
+    me.delete_hopper(&h.id).unwrap();
+    assert!(held_hopper(&me, &h.id).is_none());
+    let (st, _) = owner("GET", &e.url, &format!("/api/hoppers/{}", h.id), None);
+    assert_eq!(st, 404);
+    me.delete_hopper(&h.id).unwrap(); // already gone is fine
+    other.sync_now().unwrap();
+    assert!(held_hopper(&other, &h.id).is_none());
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn posts_go_in_and_out_of_hoppers_theirs_and_yours() {
+    e2e();
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("hopper-items");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} theirs"), None);
+    let sub = me.subscribe(&src_url, Some("Hopper source")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let (_, own) = published(&me, Kind::Fragment, &format!("{t} mine"), None);
+    let h = me.create_hopper(&format!("{t} box")).unwrap();
+    let _gone = DropHopper(&me, h.id.clone());
+    let own_key = (OWN_SUBSCRIPTION.to_string(), own.clone());
+
+    // In: here at once (the row, the members and the count), then sent.
+    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, true)
+        .unwrap();
+    assert!(reading_item(&me, &rid).unwrap().hoppers.contains(&h.id));
+    assert_eq!(me.hopper_members().get(&own_key), Some(&vec![h.id.clone()]));
+    assert_eq!(held_hopper(&me, &h.id).unwrap().count, 2);
+    me.sync_now().unwrap();
+    let mut want = vec![own_key.clone(), (sub.id.clone(), rid.clone())];
+    want.sort();
+    assert_eq!(server_members(&h.id), want);
+    // A pull agrees with what's here.
+    me.sync_now().unwrap();
+    assert_eq!(held_hopper(&me, &h.id).unwrap().count, 2);
+    assert!(reading_item(&me, &rid).unwrap().hoppers.contains(&h.id));
+
+    // Another Mac sees the hopper, both posts in it, and the row marked.
+    let other = manual(d3.path());
+    sync_until_held(&other, &[&rid]);
+    assert_eq!(held_hopper(&other, &h.id).unwrap().count, 2);
+    assert!(reading_item(&other, &rid).unwrap().hoppers.contains(&h.id));
+    assert!(
+        other
+            .hopper_members()
+            .get(&own_key)
+            .is_some_and(|v| v.contains(&h.id))
+    );
+
+    // Out: both, and the server forgets them; the posts stay.
+    me.set_in_hopper(&h.id, &sub.id, &rid, false).unwrap();
+    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, false)
+        .unwrap();
+    assert!(!reading_item(&me, &rid).unwrap().hoppers.contains(&h.id));
+    me.sync_now().unwrap();
+    assert!(server_members(&h.id).is_empty());
+    other.sync_now().unwrap();
+    assert_eq!(held_hopper(&other, &h.id).unwrap().count, 0);
+    let row = reading_item(&other, &rid).expect("the post stays");
+    assert!(!row.hoppers.contains(&h.id));
+    assert!(!other.hopper_members().contains_key(&own_key));
+
+    // Deleting a hopper with a post in it leaves the post alone.
+    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.sync_now().unwrap();
+    me.delete_hopper(&h.id).unwrap();
+    assert!(reading_item(&me, &rid).unwrap().hoppers.is_empty());
+    me.sync_now().unwrap();
+    let row = reading_item(&me, &rid).expect("the post stays");
+    assert!(row.hoppers.is_empty());
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_hopper_add_made_offline_is_sent_later() {
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let b = backend_at(dir.path(), &e.url, e.cred.clone(), true);
+    let t = tag("hopper-offline");
+    let (_, own) = published(&b, Kind::Fragment, &format!("{t} mine"), None);
+    let h = b.create_hopper(&format!("{t} later")).unwrap();
+    let _gone = DropHopper(&b, h.id.clone());
+    let own_key = (OWN_SUBSCRIPTION.to_string(), own.clone());
+
+    ctl(&["stop", "a"]);
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // Offline: the add is here at once and waits; a new hopper can't be made.
+        b.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, true)
+            .unwrap();
+        assert!(
+            b.hopper_members()
+                .get(&own_key)
+                .is_some_and(|v| v.contains(&h.id))
+        );
+        assert!(b.create_hopper(&format!("{t} never")).is_err());
+        wait_until(
+            "offline status",
+            Duration::from_secs(10),
+            || matches!(b.sync_status(), SyncStatus::Offline { pending } if pending >= 1),
+        );
+    }));
+    ctl(&["start", "a", e.url.rsplit(':').next().unwrap()]);
+    result.unwrap_or_else(|p| std::panic::resume_unwind(p));
+
+    wait_until("the add to reach the blyg", Duration::from_secs(20), || {
+        server_members(&h.id) == vec![own_key.clone()]
+    });
+    wait_until("synced status", Duration::from_secs(10), || {
+        b.sync_status() == SyncStatus::Synced
+    });
+    assert!(b.hoppers().iter().all(|x| !x.name.ends_with("never")));
 }

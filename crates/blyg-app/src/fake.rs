@@ -1070,6 +1070,7 @@ impl Backend for FakeBackend {
         let mut v = st.rd.reading.clone();
         // The full editor's sample thread quotes this imported post.
         v.push(sample_reading());
+        fake_hoppered(&st.rd.hopper_items, &mut v); // --- hoppers ---
         // Newest first by the post's own date, as the store sorts (#6).
         v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
         v
@@ -1994,9 +1995,181 @@ impl Backend for FakeBackend {
             .filter(|r| r.state == "tombstone")
             .cloned()
             .collect();
+        fake_hoppered(&st.rd.hopper_items, &mut v); // --- hoppers ---
         v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
         v
     }
+
+    // --- hoppers --- the store's rules: membership is local and instant;
+    // a hopper's own fields go to the "server" (refused offline).
+    fn hoppers(&self) -> Vec<Hopper> {
+        self.lock().rd.hoppers.clone()
+    }
+
+    fn hopper_members(&self) -> HashMap<(String, String), Vec<String>> {
+        let st = self.lock();
+        let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+        for (h, s, r) in &st.rd.hopper_items {
+            out.entry((s.clone(), r.clone()))
+                .or_default()
+                .push(h.clone());
+        }
+        for v in out.values_mut() {
+            v.sort();
+        }
+        out
+    }
+
+    fn create_hopper(&self, name: &str) -> Result<Hopper> {
+        self.remote_guard()?;
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "A hopper needs a name".into(),
+                details: vec![],
+            });
+        }
+        let h = {
+            let mut st = self.lock();
+            st.folder_seq += 1;
+            let h = Hopper {
+                id: format!("hop-{}", st.folder_seq),
+                name: name.into(),
+                slug: Some(fake_slug(name)),
+                public: false,
+                count: 0,
+                description: None,
+                slug_frozen: false,
+            };
+            st.rd.hoppers.push(h.clone());
+            h
+        };
+        self.reading_changed();
+        Ok(h)
+    }
+
+    fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        self.remote_guard()?;
+        if edit.name.as_deref().is_some_and(|n| n.trim().is_empty()) {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "A hopper needs a name".into(),
+                details: vec![],
+            });
+        }
+        if edit
+            .description
+            .as_deref()
+            .is_some_and(|d| d.trim().chars().count() > HOPPER_DESCRIPTION_MAX)
+        {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: format!("A description is at most {HOPPER_DESCRIPTION_MAX} characters"),
+                details: vec![],
+            });
+        }
+        let h = {
+            let mut st = self.lock();
+            let h = st
+                .rd
+                .hoppers
+                .iter_mut()
+                .find(|h| h.id == id)
+                .ok_or(CoreError::NotFound)?;
+            if let Some(n) = &edit.name {
+                h.name = n.trim().into();
+                if !h.slug_frozen {
+                    h.slug = Some(fake_slug(n));
+                }
+            }
+            if let Some(p) = edit.public {
+                h.public = p;
+                h.slug_frozen |= p;
+            }
+            if let Some(d) = &edit.description {
+                h.description = Some(d.trim().to_string()).filter(|d| !d.is_empty());
+            }
+            h.clone()
+        };
+        self.reading_changed();
+        Ok(h)
+    }
+
+    fn delete_hopper(&self, id: &str) -> Result<()> {
+        self.remote_guard()?;
+        {
+            let mut st = self.lock();
+            st.rd.hoppers.retain(|h| h.id != id);
+            st.rd.hopper_items.retain(|(h, _, _)| h != id);
+        }
+        self.reading_changed();
+        Ok(())
+    }
+
+    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+        let changed = {
+            let mut st = self.lock();
+            let st = &mut *st;
+            let Some(h) = st.rd.hoppers.iter_mut().find(|h| h.id == hopper) else {
+                return Ok(());
+            };
+            let at = st
+                .rd
+                .hopper_items
+                .iter()
+                .position(|(x, s, r)| x == hopper && s == sub_id && r == remote_id);
+            let changed = match (at, on) {
+                (None, true) => {
+                    st.rd
+                        .hopper_items
+                        .push((hopper.into(), sub_id.into(), remote_id.into()));
+                    h.count += 1;
+                    true
+                }
+                (Some(i), false) => {
+                    st.rd.hopper_items.remove(i);
+                    h.count = h.count.saturating_sub(1);
+                    true
+                }
+                _ => false,
+            };
+            if changed {
+                st.reading_sends
+                    .push(format!("hopper:{hopper}:{sub_id}:{remote_id}:{on}"));
+            }
+            changed
+        };
+        if changed {
+            self.reading_changed();
+        }
+        Ok(())
+    }
+}
+
+/// --- hoppers --- Each row's `hoppers` from the memberships.
+fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {
+    for r in rows {
+        r.hoppers = items
+            .iter()
+            .filter(|(_, s, id)| *s == r.subscription_id && *id == r.remote_id)
+            .map(|(h, _, _)| h.clone())
+            .collect();
+        r.hoppers.sort();
+    }
+}
+
+/// --- hoppers --- A page slug from a name, as the studio makes one.
+fn fake_slug(name: &str) -> String {
+    let s: String = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect();
+    s.split('-')
+        .filter(|p| !p.is_empty())
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 // --- reader folders --- the store's name rules (blyg-core `store/folders.rs`).

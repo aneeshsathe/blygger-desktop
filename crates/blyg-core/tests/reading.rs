@@ -36,7 +36,7 @@ fn patch3_404_degrades_cleanly() {
     assert!(b.reading().is_empty());
     assert!(!b.reading_available());
     assert_eq!(b.mentions().unwrap(), vec![]);
-    assert_eq!(b.hoppers().unwrap(), vec![]);
+    assert_eq!(b.server_hoppers().unwrap(), vec![]);
     assert!(matches!(b.settings(), Err(CoreError::NotFound)));
     assert_eq!(
         b.sync_status(),
@@ -299,7 +299,7 @@ fn mentions_and_settings_when_available() {
     assert_eq!(put["timezone"], "");
     assert_eq!(put["show_responses_default"], false);
 
-    assert_eq!(b.hoppers().unwrap()[0].count, 3);
+    assert_eq!(b.server_hoppers().unwrap()[0].count, 3);
 }
 
 #[test]

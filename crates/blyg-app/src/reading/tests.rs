@@ -178,7 +178,8 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
             "Fork",
             "Link post",
             "Open on web",
-            "Notes"
+            "Notes",
+            "Hopper"
         ]
     );
     // Step through every version the pill allows; unpinned never render.
@@ -802,7 +803,8 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Fork",
             "Link post · new fragment",
             "Open on web",
-            "→ Notes" // --- notes ---
+            "→ Notes",  // --- notes ---
+            "Hopper ›"  // --- hoppers ---
         ]
     );
     assert!(tip(&row, "Link post").contains("no stub_of"));

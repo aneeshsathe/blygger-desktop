@@ -249,14 +249,15 @@ pub struct Pill {
 
 /// Action ids under the current version. `Fork` is always shown there but
 /// disabled: it says where forking lives (a pin), rather than hiding it.
-pub const CURRENT_ACTIONS: [&str; 7] = [
+pub const CURRENT_ACTIONS: [&str; 8] = [
     "Quote",
     "Reply",
     "AI reply",
     "Fork",
     "Link post",
     "Open on web",
-    "Notes", // --- notes ---
+    "Notes",  // --- notes ---
+    "Hopper", // --- hoppers ---
 ];
 pub const PINNED_ACTIONS: [&str; 4] = [
     "Quote this version",
@@ -351,6 +352,13 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             "→ Notes",
             "Adds a link to this post to your notes drawer, or quotes the passage \
              you selected in it. ⇧⌘N opens the notes."
+                .into(),
+        ),
+        // --- hoppers ---
+        "Hopper" => on(
+            "Hopper ›",
+            "Puts this post in one of your hoppers, or takes it out (h). A public hopper \
+             shows it on its page."
                 .into(),
         ),
         // --- quote targets --- a post shown without a subscription.

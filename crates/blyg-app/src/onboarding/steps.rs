@@ -86,6 +86,9 @@ pub enum Key {
     StubPassage,
     /// The blyg switcher sheet is open (the title bar's blyg, or ⌃⌘0).
     BlygSwitcher,
+    // --- hoppers ---
+    /// The Hopper picker is open on a post (`h`, ⌥⌘P, or Hopper ›).
+    HopperPicker,
 }
 
 /// The part of the window a step highlights.
@@ -179,6 +182,9 @@ pub enum Setup {
     Thicket,
     /// `Thicket`, with its quote followed: a walk of two posts.
     Walked,
+    /// Reading, in Reader mode, the sample "Slow media" hopper picked and
+    /// its first post open.
+    Hoppers,
     /// A stub replying to a reading post, open beside its preview.
     Stub,
     /// The browser pane on a blank sample page (nothing is loaded).
@@ -697,8 +703,8 @@ pub const STEPS: &[Step] = &[
         title: "Reader: sources, posts, post",
         caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
                   All, and Background, the only place withdrawn posts are listed), Your blyg \
-                  (your own posts, never unread or counted), your folders, which stay on this \
-                  Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
+                  (your own posts, never unread or counted), your hoppers, your folders, which \
+                  stay on this Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
                   Stream again.",
         keys: &[Key::ReaderMode],
         key_label: "⌥⌘2",
@@ -706,6 +712,23 @@ pub const STEPS: &[Step] = &[
         button: None,
         setup: Setup::Stream,
         pause_ms: 3000,
+        settle: false,
+        stay: true,
+    },
+    // --- hoppers ---
+    Step {
+        id: "hoppers",
+        since: "0.15.0",
+        title: "Hoppers: posts you keep together",
+        caption: "Under Hoppers on the left are your blyg's hoppers, collections of posts, yours \
+                  and others'. Pick one to list its posts. h (or Hopper › on a post) puts the \
+                  open post in a hopper or takes it out; a public one, marked with a globe, has its own page.",
+        keys: &[Key::HopperPicker],
+        key_label: "h",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::Hoppers,
+        pause_ms: 1600,
         settle: false,
         stay: true,
     },
@@ -984,6 +1007,7 @@ mod tests {
             Key::BrowseHistory,
             Key::StubPassage,
             Key::BlygSwitcher,
+            Key::HopperPicker,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

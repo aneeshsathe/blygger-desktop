@@ -502,6 +502,15 @@ impl MainView {
                 Key::BlygSwitcher,
                 matches!(self.sheet, Some(Sheet::Blygs(_))),
             ),
+            // --- hoppers ---
+            (
+                Key::HopperPicker,
+                reading
+                    && matches!(
+                        self.reading.sheet,
+                        Some(crate::app::reading::RSheet::HopperPick { .. })
+                    ),
+            ),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -831,6 +840,24 @@ impl MainView {
                     self.open_reading(key, window, cx);
                 }
             }
+            // --- hoppers ---
+            Setup::Hoppers => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                self.select_source(
+                    crate::app::reading::sources_vm::Source::Hopper(
+                        crate::fake::reading_seed::HOPPER_SLOW.into(),
+                    ),
+                    cx,
+                );
+                let first = self
+                    .reading
+                    .shown_rows()
+                    .next()
+                    .map(crate::app::reading::vm::key);
+                if let Some(key) = first {
+                    self.open_reading(key, window, cx);
+                }
+            }
             Setup::Walked => {
                 self.tutorial_setup(Setup::Thicket, window, cx);
                 let origin = self
@@ -937,6 +964,8 @@ impl MainView {
                 self.tutorial_setup(Setup::Walked, window, cx);
             }
             "history" => self.toggle_browse_history(cx),
+            // --- hoppers ---
+            "hoppers" => self.open_hopper_picker(window, cx),
             "stub-passage" => self.studio_demo_select_passage(),
             "notes" => self.open_notes(window, cx),
             "browser" => self.close_browser(window, cx),

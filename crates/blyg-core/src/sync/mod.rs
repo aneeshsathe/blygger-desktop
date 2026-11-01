@@ -41,6 +41,8 @@ pub const CHANGES_SEEN: &str = "changes_seen:";
 const ITEMS_DEPS: &[&str] = &["items", "settings"];
 const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
 const READING_DEPS: &[&str] = &["reading", "subscriptions", "signals", "hoppers"];
+/// --- hoppers --- the hoppers, their memberships and the unheld posts.
+const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
 
 /// With `/api/changes`, everything is still read whole this often, as a
 /// safety net (a trigger the server's dependency matrix misses, lineage
@@ -176,6 +178,10 @@ struct NetState {
     /// session (a new sign-in is a new session), and the rest of the outbox
     /// goes on without them.
     read_denied: bool,
+    /// --- hoppers --- The server refused a hopper membership write with
+    /// 403 (a credential without `owner:manage`): those ops stay queued,
+    /// unsent, for the rest of the session; nothing else waits for them.
+    hopper_denied: bool,
     /// `GET /api/reading/imported` answered in upstream's shape (studio
     /// 0.40+): `Some(true)`; the old Worker patch 3's: `Some(false)`.
     upstream_feed: Option<bool>,
@@ -197,6 +203,19 @@ fn read_denied_message(e: &CoreError) -> String {
     format!(
         "Read state isn't syncing. {why} Until then your read marks are kept on this \
          Mac and wait to be sent; everything else syncs as usual."
+    )
+}
+
+/// --- hoppers --- What to say, once a session, when the blyg refuses a
+/// hopper membership write (the 403's own message names the scope).
+fn hopper_denied_message(e: &CoreError) -> String {
+    let why = match e {
+        CoreError::Rejected { message, .. } if !message.is_empty() => message.as_str(),
+        _ => "The blyg refused to change a hopper for this sign-in.",
+    };
+    format!(
+        "Hopper changes aren't syncing. {why} They're kept on this Mac and wait to be \
+         sent; everything else syncs as usual."
     )
 }
 
@@ -280,6 +299,7 @@ impl Engine {
                 pushed: HashMap::new(),
                 paced_until: None,
                 read_denied: false,
+                hopper_denied: false,
                 upstream_feed: None,
                 read_flags: None,
                 signed_out: false,
@@ -592,15 +612,26 @@ impl Engine {
     /// When the next op is due, passing over the ones held for labels (so
     /// the worker doesn't wake for them).
     pub fn earliest_due(&self) -> Option<i64> {
-        if !self.floor_below() {
+        let held = {
+            let st = self.state();
+            st.read_denied || st.hopper_denied
+        };
+        if !self.floor_below() && !held {
             return self.store.earliest_due();
         }
+        // Ops held for labels, or for a scope this credential lacks, don't
+        // wake the worker.
         let conflicted = self.store.conflicted().unwrap_or_default();
+        let below = self.floor_below();
         self.store
             .ops()
             .ok()?
             .into_iter()
-            .filter(|o| !conflicted.contains(&o.local_id) && !self.op_has_labels(o))
+            .filter(|o| {
+                !conflicted.contains(&o.local_id)
+                    && !(below && self.op_has_labels(o))
+                    && !self.read_held(o)
+            })
             .map(|o| o.not_before)
             .min()
     }
@@ -745,6 +776,9 @@ impl Engine {
         if matches!(op.kind, OpKind::Read | OpKind::Unread) {
             return self.run_read(op);
         }
+        if op.kind == OpKind::Hopper {
+            return self.run_hopper(op); // --- hoppers ---
+        }
         if op.kind == OpKind::DeleteRemote {
             self.store.set_in_flight(op.seq, true)?;
             return match self.api.delete_item(&op.payload) {
@@ -880,7 +914,9 @@ impl Engine {
                     Err(e) => Err(e),
                 }
             }
-            OpKind::DeleteRemote | OpKind::Read | OpKind::Unread => unreachable!(),
+            OpKind::DeleteRemote | OpKind::Read | OpKind::Unread | OpKind::Hopper => {
+                unreachable!()
+            }
         }
     }
 
@@ -1240,6 +1276,23 @@ impl Engine {
                 self.accept(&rev, "reading", READING_DEPS)?;
             }
         }
+        // --- hoppers --- the hoppers and every membership (yours too), for
+        // the sources pane; the rows' `hoppers` follow what's held here.
+        if stale("hoppers", HOPPERS_DEPS) {
+            match self.fetch_hoppers() {
+                Ok(changed) => {
+                    reading_changed |= changed;
+                    self.accept(&rev, "hoppers", HOPPERS_DEPS)?;
+                }
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                // A refused read leaves what's held; asked again next pull.
+                Err(_) => {}
+            }
+        } else {
+            reading_changed |= self.store.sync_reading_hoppers()?;
+        }
         if reading_changed {
             self.emit(CoreEvent::ReadingChanged);
         }
@@ -1267,7 +1320,7 @@ impl Engine {
             return Ok(None);
         };
         if self.store.meta(CHANGES_EPOCH).as_deref() != Some(c.epoch.as_str()) {
-            for consumer in ["items", "subscriptions", "reading"] {
+            for consumer in ["items", "subscriptions", "reading", "hoppers"] {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
             }
@@ -1311,6 +1364,70 @@ impl Engine {
         )
     }
 
+    // ------------------------------------------------------------ hoppers
+
+    /// Read every hopper with its memberships and store them
+    /// (`Store::replace_hoppers`). A server without hoppers (404) holds
+    /// none. True when anything shown changed.
+    pub fn fetch_hoppers(&self) -> Result<bool> {
+        let Some(details) = self.api.hopper_details()? else {
+            return self.store.replace_hoppers(&[]);
+        };
+        let subs: HashMap<String, (String, String)> = self
+            .store
+            .subscriptions()
+            .into_iter()
+            .map(|s| (s.id, (s.title, s.origin)))
+            .collect();
+        let fetched: Vec<crate::store::FetchedHopper> = details
+            .into_iter()
+            .map(|d| crate::store::FetchedHopper {
+                members: d
+                    .members
+                    .into_iter()
+                    .map(|m| (m.subscription_id, m.remote_id, m.added_at))
+                    .collect(),
+                items: d
+                    .items
+                    .iter()
+                    .filter_map(|v| {
+                        let sub = v.get("subscription_id")?.as_str()?;
+                        let (title, origin) = subs.get(sub)?;
+                        crate::api::wire::stock_row(v, title, origin, None, &[], None)
+                    })
+                    .collect(),
+                hopper: d.hopper,
+            })
+            .collect();
+        self.store.replace_hoppers(&fetched)
+    }
+
+    /// Send a `hopper` op: `PUT` or `DELETE /api/hoppers/{id}/items/…`. A
+    /// 404 (the hopper or the subscription is gone) drops it: the next read
+    /// of the hoppers settles what's shown. A 403 holds every hopper op for
+    /// the session (`hopper_denied`), and says so once.
+    fn run_hopper(&self, op: &Op) -> Result<()> {
+        let Ok(h) = serde_json::from_str::<crate::store::HopperOp>(&op.payload) else {
+            return self.store.drop_op(op.seq);
+        };
+        self.store.set_in_flight(op.seq, true)?;
+        match self
+            .api
+            .set_hopper_item(&h.hopper, &h.sub, &h.remote_id, h.on)
+        {
+            Ok(()) | Err(CoreError::NotFound) => self.store.drop_op(op.seq),
+            Err(e @ CoreError::Rejected { status: 403, .. }) => {
+                self.store.set_in_flight(op.seq, false)?;
+                let first = !std::mem::replace(&mut self.state().hopper_denied, true);
+                if first {
+                    self.emit(CoreEvent::Error(hopper_denied_message(&e)));
+                }
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
+    }
+
     // ------------------------------------------------------------ read state
 
     /// The server syncs read state (extension 5, or upstream's read-state
@@ -1326,7 +1443,8 @@ impl Engine {
     }
 
     fn read_held_locked(&self, st: &NetState, op: &Op) -> bool {
-        st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread)
+        (st.read_denied && matches!(op.kind, OpKind::Read | OpKind::Unread))
+            || (st.hopper_denied && op.kind == OpKind::Hopper) // --- hoppers ---
     }
 
     /// A read-state write answered 403 (`e`, which names the missing scope,
