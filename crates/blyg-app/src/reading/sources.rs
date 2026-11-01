@@ -67,6 +67,8 @@ pub enum MenuTarget {
     /// --- read/unread --- a post in the list (and the picks, when it's
     /// among them).
     Posts(super::vm::Key),
+    /// --- hoppers --- a hopper in the pane.
+    Hopper(String),
 }
 
 /// A context menu, at a window position.
@@ -74,7 +76,8 @@ pub enum MenuTarget {
 pub struct SourceMenu {
     pub target: MenuTarget,
     pub at: Point<Pixels>,
-    /// The "Move to folder ›" list is showing.
+    /// The "Move to folder ›" list is showing (on a post: the "Hopper ›"
+    /// list).
     pub folders: bool,
 }
 
@@ -105,6 +108,21 @@ pub enum MenuCmd {
     // --- read/unread ---
     /// Mark these posts read (`true`) or unread.
     Mark(Vec<super::vm::Key>, bool),
+    // --- hoppers ---
+    /// New Hopper… (the pane's menu, Blyg › New Hopper…).
+    NewHopper,
+    /// Show a post's "Hopper ›" list.
+    HopperMenu,
+    /// Put the post in the hopper, or take it out when it's there.
+    ToggleHopper(super::vm::Key, String),
+    /// A new hopper, then put the post in it.
+    NewHopperFor(super::vm::Key),
+    RenameHopper(String),
+    DescribeHopper(String),
+    /// Make Public… (asks first: it publishes a page) or Make Private.
+    SetHopperPublic(String, bool),
+    /// Delete Hopper… (asks first; the posts stay).
+    DeleteHopper(String),
 }
 
 /// A subscription being dragged onto a folder.
@@ -218,6 +236,7 @@ impl MainView {
     /// Everything the pane lists now.
     pub(crate) fn source_entries(&self) -> Vec<Entry> {
         sources_vm::entries(
+            &self.reading.hoppers,
             &self.reading.folders,
             &self.reading.filed,
             &self.reading.subs,
@@ -340,7 +359,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if cmd == MenuCmd::MoveToFolder {
+        if cmd == MenuCmd::MoveToFolder || cmd == MenuCmd::HopperMenu {
             if let Some(m) = self.reading.src_menu.as_mut() {
                 m.folders = true;
             }
@@ -368,6 +387,34 @@ impl MainView {
             MenuCmd::CheckNow(id) => self.check_feeds(Some(id), window, cx),
             MenuCmd::CheckAll => self.check_feeds(None, window, cx),
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
+            // --- hoppers ---
+            MenuCmd::HopperMenu => {}
+            MenuCmd::NewHopper => self.open_hopper_name_sheet(
+                super::hoppers::NameFor::New { then_add: None },
+                window,
+                cx,
+            ),
+            MenuCmd::NewHopperFor(key) => self.open_hopper_name_sheet(
+                super::hoppers::NameFor::New {
+                    then_add: Some(key),
+                },
+                window,
+                cx,
+            ),
+            MenuCmd::ToggleHopper(key, id) => self.toggle_hopper(&key, &id, cx),
+            MenuCmd::RenameHopper(id) => {
+                self.open_hopper_name_sheet(super::hoppers::NameFor::Rename(id), window, cx)
+            }
+            MenuCmd::DescribeHopper(id) => {
+                self.open_hopper_name_sheet(super::hoppers::NameFor::Describe(id), window, cx)
+            }
+            MenuCmd::SetHopperPublic(id, true) => {
+                self.open_hopper_confirm(id, super::hoppers::Confirm::Public, window, cx)
+            }
+            MenuCmd::SetHopperPublic(id, false) => self.set_hopper_public(id, false, window, cx),
+            MenuCmd::DeleteHopper(id) => {
+                self.open_hopper_confirm(id, super::hoppers::Confirm::Delete, window, cx)
+            }
         }
         cx.notify();
     }
@@ -381,14 +428,25 @@ impl MainView {
         match &m.target {
             MenuTarget::Pane => vec![
                 ("New Folder…".into(), Some(MenuCmd::NewFolder), false),
+                ("New Hopper…".into(), Some(MenuCmd::NewHopper), false),
                 sep(),
                 ("Check All Feeds Now".into(), Some(MenuCmd::CheckAll), false),
             ],
-            MenuTarget::Posts(key) => self
-                .post_menu_items(key)
-                .into_iter()
-                .map(|(label, cmd)| (label, Some(cmd), false))
-                .collect(),
+            // --- hoppers --- a post's "Hopper ›" list.
+            MenuTarget::Posts(key) if m.folders => self.hopper_menu_items(key),
+            MenuTarget::Hopper(id) => self.hopper_items_for(id),
+            MenuTarget::Posts(key) => {
+                let mut v: Vec<_> = self
+                    .post_menu_items(key)
+                    .into_iter()
+                    .map(|(label, cmd)| (label, Some(cmd), false))
+                    .collect();
+                if super::hoppers::can_hopper(self, key) {
+                    v.push(sep());
+                    v.push(("Hopper ›".into(), Some(MenuCmd::HopperMenu), false));
+                }
+                v
+            }
             MenuTarget::Folder(id) => {
                 let i = self.reading.folders.iter().position(|f| &f.id == id);
                 let last = self.reading.folders.len().saturating_sub(1);
@@ -1131,6 +1189,7 @@ impl MainView {
             &self.reading.source,
             &self.reading.folders,
             &self.reading.subs,
+            &self.reading.hoppers,
         );
         div()
             .id("list-source")
@@ -1295,6 +1354,50 @@ impl MainView {
                     this.select_source(Source::Own, cx);
                 }))
                 .into_any_element(),
+            // --- hoppers --- a hopper: its count, and whether it's public.
+            Entry::Hopper(h) => {
+                let (id1, id2) = (h.id.clone(), h.id.clone());
+                row(SharedString::from(format!("src-hopper-{}", h.id)))
+                    .debug_selector({
+                        let id = h.id.clone();
+                        move || format!("src-hopper-{id}")
+                    })
+                    .child(icon(super::hoppers::ICON_HOPPER))
+                    .child(div().flex_1().min_w_0().truncate().child(h.name.clone()))
+                    .when(h.public, |d| {
+                        d.child(
+                            div()
+                                .id(SharedString::from(format!("src-hopper-pub-{}", h.id)))
+                                .flex_none()
+                                .child(icon(super::hoppers::ICON_PUBLIC))
+                                .tooltip(|_, cx| {
+                                    cx.new(|_| {
+                                        super::Tip("Public: it has a page on your blyg".to_string())
+                                    })
+                                    .into()
+                                }),
+                        )
+                    })
+                    .child(count(h.count as usize))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        window.focus(&this.reading.focus, cx);
+                        this.set_pane(Pane::Sources, cx);
+                        this.select_source(Source::Hopper(id1.clone()), cx);
+                    }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_source_menu(
+                                MenuTarget::Hopper(id2.clone()),
+                                e.position,
+                                false,
+                                cx,
+                            )
+                        }),
+                    )
+                    .into_any_element()
+            }
             Entry::Folder {
                 folder,
                 unread,

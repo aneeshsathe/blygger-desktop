@@ -50,6 +50,7 @@
 | ⌥⌘R | Reply · new stub: a thread of yours that's a stub of this post (yours too) | Post › Reply · New Stub |
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
+| ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
@@ -107,6 +108,7 @@
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
+| A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
 | Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |
 | Your own profile, as visitors see it | Blyg › My Profile |

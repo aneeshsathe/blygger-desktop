@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use blyg_core::{Folder, ReadingItem, Subscription};
+use blyg_core::{Folder, Hopper, ReadingItem, Subscription};
 use chrono::{DateTime, Local, Utc};
 
 use super::vm::Key;
@@ -57,6 +57,8 @@ pub enum Source {
     Sub(String),
     /// --- own posts --- your own published posts ("Your blyg").
     Own,
+    /// --- hoppers --- a hopper id: the posts in it, theirs and yours.
+    Hopper(String),
 }
 
 impl Default for Source {
@@ -139,6 +141,7 @@ pub fn in_source(
         Source::Folder(f) => filed.get(&r.subscription_id) == Some(f),
         Source::Sub(s) => &r.subscription_id == s,
         Source::Own => super::own::is_own_row(r),
+        Source::Hopper(h) => r.hoppers.iter().any(|x| x == h),
     }
 }
 
@@ -192,6 +195,9 @@ pub enum Entry {
     /// --- own posts --- "Your blyg": your published posts (never unread,
     /// so never a count or a dot).
     Own,
+    /// --- hoppers --- one of your hoppers, with how many posts it holds
+    /// (the blyg's count, not unread: a hopper is a collection).
+    Hopper(Hopper),
 }
 
 impl Entry {
@@ -203,14 +209,17 @@ impl Entry {
             Entry::Folder { folder, .. } => Some(Source::Folder(folder.id.clone())),
             Entry::Sub { sub, .. } => Some(Source::Sub(sub.id.clone())),
             Entry::Own => Some(Source::Own),
+            Entry::Hopper(h) => Some(Source::Hopper(h.id.clone())),
         }
     }
 }
 
-/// Everything the sources pane lists, top to bottom: the smart feeds, each
-/// folder with its subscriptions (unless collapsed), then the subscriptions
-/// in no folder. Subscriptions keep the server's order within a group.
+/// Everything the sources pane lists, top to bottom: the smart feeds (and
+/// Your blyg), your hoppers, each folder with its subscriptions (unless
+/// collapsed), then the subscriptions in no folder. Subscriptions keep the
+/// server's order within a group, hoppers the blyg's.
 pub fn entries(
+    hoppers: &[Hopper],
     folders: &[Folder],
     filed: &HashMap<String, String>,
     subs: &[Subscription],
@@ -239,6 +248,11 @@ pub fn entries(
         .any(|r| super::own::is_own_row(r) && !is_background(r))
     {
         out.push(Entry::Own);
+    }
+    // --- hoppers --- under Background (and Your blyg), before the folders.
+    if !hoppers.is_empty() {
+        out.push(Entry::Heading("Hoppers"));
+        out.extend(hoppers.iter().cloned().map(Entry::Hopper));
     }
     // A folder id that no longer exists counts as unfiled.
     let known: HashSet<&str> = folders.iter().map(|f| f.id.as_str()).collect();
@@ -326,8 +340,18 @@ pub fn sub_name(s: &Subscription) -> String {
 }
 
 /// The source's name, for the list header and the empty state.
-pub fn source_label(source: &Source, folders: &[Folder], subs: &[Subscription]) -> String {
+pub fn source_label(
+    source: &Source,
+    folders: &[Folder],
+    subs: &[Subscription],
+    hoppers: &[Hopper],
+) -> String {
     match source {
+        Source::Hopper(id) => hoppers
+            .iter()
+            .find(|h| &h.id == id)
+            .map(|h| h.name.clone())
+            .unwrap_or_else(|| "Hopper".into()),
         Source::Smart(s) => s.label().to_string(),
         Source::Folder(id) => folders
             .iter()
@@ -356,6 +380,7 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
+        Source::Hopper(_) => "Nothing in this hopper yet. Press h on a post to put it here.",
     }
 }
 
@@ -394,6 +419,7 @@ mod tests {
         let (sd, now) = seed();
         let rows = super::super::vm::order(sd.reading.clone());
         let e = entries(
+            &[],
             &sd.folders,
             &sd.filed,
             &sd.subs,
@@ -411,6 +437,7 @@ mod tests {
                     format!("{}{}", if *filed { "  " } else { "" }, sub.title)
                 }
                 Entry::Own => "Your blyg".into(),
+                Entry::Hopper(h) => format!("▤ {}", h.name),
             })
             .collect();
         assert_eq!(
@@ -434,6 +461,7 @@ mod tests {
         );
         // Collapsing a folder hides its subscriptions, not the folder.
         let e2 = entries(
+            &[],
             &sd.folders,
             &sd.filed,
             &sd.subs,
@@ -455,6 +483,7 @@ mod tests {
         let (sd, now) = seed();
         let rows = super::super::vm::order(sd.reading.clone());
         let e = entries(
+            &[],
             &sd.folders,
             &sd.filed,
             &sd.subs,
@@ -535,7 +564,15 @@ mod tests {
     #[test]
     fn stepping_and_letters() {
         let (sd, now) = seed();
-        let e = entries(&sd.folders, &sd.filed, &sd.subs, &[], &HashSet::new(), now);
+        let e = entries(
+            &[],
+            &sd.folders,
+            &sd.filed,
+            &sd.subs,
+            &[],
+            &HashSet::new(),
+            now,
+        );
         let all = Source::Smart(Smart::All);
         assert_eq!(
             step_source(&e, &all, 2),
@@ -576,6 +613,7 @@ mod tests {
         mine.updated = Some(now.to_rfc3339());
         let mut rows = super::super::vm::order(sd.reading.clone());
         let before = entries(
+            &[],
             &sd.folders,
             &sd.filed,
             &sd.subs,
@@ -586,6 +624,7 @@ mod tests {
         assert!(!before.contains(&Entry::Own), "no posts of yours, no entry");
         rows.push(mine.clone());
         let e = entries(
+            &[],
             &sd.folders,
             &sd.filed,
             &sd.subs,
@@ -632,7 +671,7 @@ mod tests {
             now
         ));
         assert!(!in_source(&sd.reading[0], &Source::Own, &filed, now));
-        assert_eq!(source_label(&Source::Own, &[], &[]), "Your blyg");
+        assert_eq!(source_label(&Source::Own, &[], &[], &[]), "Your blyg");
         assert_eq!(
             selectable(&e).iter().filter(|s| **s == Source::Own).count(),
             1
@@ -689,13 +728,60 @@ mod tests {
             rows.iter().filter(|r| !is_background(r)).count()
         );
         // No count, and your withdrawn post alone doesn't make "Your blyg".
-        let e = entries(&[], &filed, &[], &rows, &HashSet::new(), now);
+        let e = entries(&[], &[], &filed, &[], &rows, &HashSet::new(), now);
         assert!(e.contains(&Entry::Smart {
             smart: Smart::Background,
             unread: 0
         }));
         assert!(!e.contains(&Entry::Own));
-        assert_eq!(source_label(&bg, &[], &[]), "Background");
+        assert_eq!(source_label(&bg, &[], &[], &[]), "Background");
         assert!(empty_label(&bg).starts_with("Nothing withdrawn"));
+    }
+
+    // --- hoppers ---
+    #[test]
+    fn hoppers_are_a_section_and_a_source_but_never_withdrawn_posts() {
+        let (sd, now) = seed();
+        let mut rows = super::super::vm::order(sd.reading.clone());
+        rows[0].hoppers = vec![HOPPER_SLOW.into()];
+        let kept = rows[0].clone();
+        let mut gone = rows[1].clone();
+        gone.state = "tombstone".into();
+        gone.hoppers = vec![HOPPER_SLOW.into()];
+        rows.push(gone.clone());
+        let e = entries(
+            &sd.hoppers,
+            &sd.folders,
+            &sd.filed,
+            &sd.subs,
+            &rows,
+            &HashSet::new(),
+            now,
+        );
+        let at = e
+            .iter()
+            .position(|x| *x == Entry::Heading("Hoppers"))
+            .unwrap();
+        assert!(matches!(&e[at + 1], Entry::Hopper(h) if h.id == HOPPER_SLOW));
+        assert!(matches!(&e[at + 2], Entry::Hopper(h) if h.id == HOPPER_GARDENS));
+        assert_eq!(e[at + 3], Entry::Heading("Folders"));
+        let filed = HashMap::new();
+        let src = Source::Hopper(HOPPER_SLOW.into());
+        assert!(in_source(&kept, &src, &filed, now));
+        assert!(!in_source(
+            &kept,
+            &Source::Hopper(HOPPER_GARDENS.into()),
+            &filed,
+            now
+        ));
+        assert!(
+            !in_source(&gone, &src, &filed, now),
+            "withdrawn: Background only"
+        );
+        assert_eq!(source_label(&src, &[], &[], &sd.hoppers), "Slow media");
+        assert!(empty_label(&src).contains("hopper"));
+        // No hoppers, no section.
+        let e = entries(&[], &[], &filed, &[], &rows, &HashSet::new(), now);
+        assert!(!e.contains(&Entry::Heading("Hoppers")));
     }
 }

@@ -114,7 +114,7 @@ impl LiveBackend {
     }
 
     /// `GET /api/hoppers` with counts; empty when the server doesn't have it.
-    pub fn hoppers(&self) -> Result<Vec<Hopper>> {
+    pub fn server_hoppers(&self) -> Result<Vec<Hopper>> {
         Ok(self
             .engine
             .track(self.engine.api.hoppers())?
@@ -1355,4 +1355,85 @@ impl Backend for LiveBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.e().store.background_reading()
     }
+
+    // --- hoppers ---
+    fn hoppers(&self) -> Vec<Hopper> {
+        self.e().store.hoppers()
+    }
+
+    fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+        self.e().store.hopper_members()
+    }
+
+    fn hopper_unheld(&self) -> Vec<ReadingItem> {
+        self.e().store.hopper_unheld()
+    }
+
+    fn create_hopper(&self, name: &str) -> Result<Hopper> {
+        let name = clean_hopper_name(name)?;
+        let h = self.e().track(self.e().api.create_hopper(&name))?;
+        let h = self.e().store.put_hopper(&h)?;
+        self.e().emit(CoreEvent::ReadingChanged);
+        Ok(h)
+    }
+
+    fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        let mut edit = edit.clone();
+        if let Some(n) = &edit.name {
+            edit.name = Some(clean_hopper_name(n)?);
+        }
+        if let Some(d) = &edit.description {
+            let d = d.trim();
+            if d.chars().count() > HOPPER_DESCRIPTION_MAX {
+                return Err(CoreError::Rejected {
+                    status: 400,
+                    message: format!(
+                        "A description is at most {HOPPER_DESCRIPTION_MAX} characters"
+                    ),
+                    details: vec![],
+                });
+            }
+            edit.description = Some(d.to_string());
+        }
+        let h = self.e().track(self.e().api.update_hopper(id, &edit))?;
+        let h = self.e().store.put_hopper(&h)?;
+        self.e().emit(CoreEvent::ReadingChanged);
+        Ok(h)
+    }
+
+    fn delete_hopper(&self, id: &str) -> Result<()> {
+        match self.e().track(self.e().api.delete_hopper(id)) {
+            // Already gone there: gone here too.
+            Ok(()) | Err(CoreError::NotFound) => {}
+            Err(e) => return Err(e),
+        }
+        self.e().store.remove_hopper(id)?;
+        self.e().emit(CoreEvent::ReadingChanged);
+        Ok(())
+    }
+
+    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+        if self
+            .e()
+            .store
+            .set_hopper_member(hopper, sub_id, remote_id, on)?
+        {
+            self.e().emit(CoreEvent::ReadingChanged);
+            self.wake();
+        }
+        Ok(())
+    }
+}
+
+/// --- hoppers --- A hopper name as sent: trimmed, never empty.
+fn clean_hopper_name(name: &str) -> Result<String> {
+    let n = name.trim();
+    if n.is_empty() {
+        return Err(CoreError::Rejected {
+            status: 400,
+            message: "A hopper needs a name".into(),
+            details: vec![],
+        });
+    }
+    Ok(n.to_string())
 }

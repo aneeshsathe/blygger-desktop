@@ -34,6 +34,9 @@ mod mentions;
 pub(crate) mod opml; // --- OPML import/export ---
 // --- own posts --- your published posts as a reading source, and the
 // reading actions on them from the Posts view.
+pub(crate) mod hoppers; // --- hoppers ---
+#[cfg(test)]
+mod hoppers_tests;
 #[cfg(test)]
 mod opml_tests;
 pub(crate) mod own;
@@ -256,6 +259,32 @@ pub enum RSheet {
     },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
+    /// --- hoppers --- Hopper › on a post: each hopper with a check.
+    HopperPick {
+        key: Key,
+        /// The post, as the sheet names it.
+        title: String,
+        /// The highlighted row (the hoppers, then "New Hopper…").
+        sel: usize,
+        focus: FocusHandle,
+    },
+    /// --- hoppers --- New Hopper…, Rename…, Description….
+    HopperName {
+        input: Entity<InputState>,
+        what: hoppers::NameFor,
+        error: Option<String>,
+        /// The text the error is about (⏎ also reports a change).
+        tried: String,
+        busy: bool,
+    },
+    /// --- hoppers --- Make Public… or Delete…, asked first.
+    HopperConfirm {
+        id: String,
+        what: hoppers::Confirm,
+        error: Option<String>,
+        busy: bool,
+        focus: FocusHandle,
+    },
     /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
     Opml(Box<opml::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
@@ -324,6 +353,11 @@ pub struct State {
     /// Local folders, in order, and subscription id → folder id.
     pub folders: Vec<blyg_core::Folder>,
     pub filed: HashMap<String, String>,
+    /// --- hoppers --- the blyg's hoppers, in its order.
+    pub hoppers: Vec<blyg_core::Hopper>,
+    /// --- hoppers --- rows held only because a hopper read returned them
+    /// (posts this Mac doesn't hold): listed under their hopper, nowhere else.
+    pub hopper_only: HashSet<Key>,
     /// What the list shows (Reader mode; the stream shows everything).
     pub source: sources_vm::Source,
     /// Which pane has the keyboard.
@@ -390,6 +424,8 @@ impl State {
             own_origin: None,
             folders: backend.folders(),
             filed: backend.subscription_folders(),
+            hoppers: backend.hoppers(),
+            hopper_only: hoppers::unheld_keys(backend),
             source: sources_vm::Source::default(),
             pane: sources_vm::Pane::default(),
             sources_open: sources::load_open(data_dir.as_deref()),
@@ -435,6 +471,15 @@ impl State {
         } else {
             sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
+        // --- hoppers --- a post only a hopper holds shows under it alone.
+        let in_hopper = self.mode == stream_vm::ReadMode::Reader
+            && matches!(self.source, sources_vm::Source::Hopper(_));
+        if !self.hopper_only.is_empty() && !in_hopper {
+            let only = &self.hopper_only;
+            let rows = &self.rows;
+            self.shown
+                .retain(|&i| rows.get(i).is_none_or(|r| !only.contains(&vm::key(r))));
+        }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
         if !self.picked.is_empty() {
@@ -503,6 +548,7 @@ impl MainView {
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
+        .map(|d| self.hopper_actions(d, cx)) // --- hoppers ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -516,6 +562,14 @@ impl MainView {
         // --- reader folders ---
         r.folders = self.backend.folders();
         r.filed = self.backend.subscription_folders();
+        // --- hoppers ---
+        r.hoppers = self.backend.hoppers();
+        r.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
+        if let sources_vm::Source::Hopper(id) = &r.source
+            && !r.hoppers.iter().any(|h| &h.id == id)
+        {
+            r.source = sources_vm::Source::default();
+        }
         r.avatars = sources::avatars(self.backend.as_ref());
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
@@ -585,6 +639,8 @@ impl MainView {
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
                 self.reading.filed = self.backend.subscription_folders();
+                self.reading.hoppers = self.backend.hoppers(); // --- hoppers ---
+                self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
@@ -850,6 +906,11 @@ impl MainView {
                 self.focus_reading_search(window, cx);
                 true
             }
+            // --- hoppers --- `h`: Hopper › on the post in front of you.
+            (View::Reading, "h") => {
+                self.open_hopper_picker(window, cx);
+                true
+            }
             // --- reading compose --- `c` writes a post, as in social apps.
             (View::Reading, "c") => {
                 self.focus_compose(window, cx);
@@ -909,6 +970,10 @@ impl MainView {
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
             RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
+            // --- hoppers ---
+            RSheet::HopperPick { .. } => (420., self.render_hopper_pick(sheet, cx)),
+            RSheet::HopperName { .. } => (440., self.render_hopper_name_sheet(sheet, cx)),
+            RSheet::HopperConfirm { .. } => (460., self.render_hopper_confirm(sheet, cx)),
         };
         Some(self.sheet_frame(width, content, cx))
     }
