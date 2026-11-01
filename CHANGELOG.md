@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- The check for a studio API contract Burrow doesn't speak refreshes an expired sign-in like any other request, and a sign-in the blyg refuses now stops the check instead of passing it.
+
 ## [0.14.0] - 2026-11-01
 
 ### Added
