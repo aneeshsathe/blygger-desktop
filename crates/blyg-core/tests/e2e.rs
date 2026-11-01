@@ -2792,16 +2792,26 @@ fn subscription_rename_and_revert_to_source() {
     me.rename_subscription(&sub.id, None).unwrap();
     assert!(sub_of(&me, &sub.id).title_follows_source);
     // The next poll re-reads the source's manifest (Check all feeds now).
+    // `title: null` asks for that by clearing `last_index_sync_at`, but a
+    // poll already in flight from an earlier test (wrangler's waitUntil) can
+    // record an index sync over it, and the manifest then waits a day. So
+    // hand the name back again, and poll, every few seconds until it shows.
     me.poll_subscriptions().unwrap();
     let t0 = Instant::now();
+    let mut asked = Instant::now();
     loop {
         me.sync_now().unwrap();
         let s = sub_of(&me, &sub.id);
         if s.title == own {
             break;
         }
+        if asked.elapsed() >= Duration::from_secs(4) {
+            me.rename_subscription(&sub.id, None).unwrap();
+            me.poll_subscriptions().unwrap();
+            asked = Instant::now();
+        }
         assert!(
-            t0.elapsed() < Duration::from_secs(20),
+            t0.elapsed() < Duration::from_secs(30),
             "timed out waiting for the source's name {own:?}; still {s:?}"
         );
         std::thread::sleep(Duration::from_millis(50));
