@@ -3,7 +3,9 @@
 //! lines. A post held in the local reading store opens at once (at the
 //! quoted version when that version is pinned); one that isn't is fetched
 //! from its author's public item document (`Backend::public_item`, with the
-//! token-less public client) and shown with a "Subscribe" action.
+//! token-less public client) and shown with a "Subscribe" action and, when
+//! you don't follow its blyg, the alert "You're not subscribed to this blyg
+//! — subscribe?" (the peek, studio 0.49; `browse.rs`).
 
 use gpui_kit::*;
 
@@ -54,6 +56,7 @@ impl MainView {
         }
         let key = external_key(&origin, &id);
         if self.reading.opened.as_ref().is_some_and(|o| o.key == key) {
+            self.reading.browse.trail.cancel(); // --- browse ---
             return;
         }
         self.show_toast(
@@ -72,6 +75,7 @@ impl MainView {
                     let shown = vm::shown(&p.versions);
                     let current = vm::current_ix(&shown);
                     let responses = v.backend.responses(&p.item.origin, &p.item.remote_id);
+                    v.browse_pane_opening(); // --- browse ---
                     v.reading.opened = Some(Opened {
                         responses,
                         key: key.clone(),
@@ -85,6 +89,7 @@ impl MainView {
                         diff_vs_now: false,
                     });
                     v.toast = None;
+                    v.browse_visited(cx); // --- browse --- a step of the walk
                     if let Some(i) =
                         version.and_then(|want| shown.iter().position(|s| s.version == want))
                         && Some(i) != current
@@ -94,7 +99,10 @@ impl MainView {
                     window.focus(&v.reading.focus, cx);
                     cx.notify();
                 }
-                Err(e) => v.show_toast(format!("Couldn't fetch the original: {e}"), None, cx),
+                Err(e) => {
+                    v.reading.browse.trail.cancel(); // --- browse ---
+                    v.show_toast(format!("Couldn't fetch the original: {e}"), None, cx)
+                }
             });
         })
         .detach();
