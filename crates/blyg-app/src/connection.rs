@@ -641,6 +641,10 @@ impl Backend for SwitchBackend {
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
     }
+    // --- background ---
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        self.cur().background_reading()
+    }
     // --- browse ---
     fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
         self.cur().classify_links(urls)

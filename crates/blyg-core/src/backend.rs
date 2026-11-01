@@ -673,4 +673,12 @@ pub trait Backend: Send + Sync {
         let _ = trail;
         Ok(())
     }
+
+    /// --- background --- The Background lens (studio 0.49.0): withdrawn
+    /// posts only, the blygs you read (tombstones, signalled or not) newest
+    /// first. `reading()` keeps hiding unsignalled tombstones; your own
+    /// withdrawn posts come from `items()`. Local, instant. Additive.
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        Vec::new()
+    }
 }
