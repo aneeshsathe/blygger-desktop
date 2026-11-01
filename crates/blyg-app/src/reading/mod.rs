@@ -331,8 +331,8 @@ pub struct State {
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
     pub avatars: Vec<(String, String)>,
-    /// --- stub quotes --- the stub editor's passage chooser, when open.
-    pub stub: Option<stub_bar::Chooser>,
+    /// --- stub quotes --- a passage selected in the editor preview's quote.
+    pub stub: Option<stub_bar::Pick>,
     /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
     pub picked: pick_vm::Picked,
 }

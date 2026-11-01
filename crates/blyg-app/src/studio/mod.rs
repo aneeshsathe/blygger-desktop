@@ -234,6 +234,15 @@ pub struct Studio {
     /// `images::own_media_gen` as of the last render: a private image
     /// landing since means rendering again.
     own_media_gen: u64,
+    /// --- stub quotes --- The Markdown the newest render (`latest`) was
+    /// made from, and the one the page shows (with `shown_html`).
+    latest_src: Option<String>,
+    shown_src: Option<String>,
+    /// What the page was last told (`webview::stub_js`): whether a stub is
+    /// open, and the text it shows, under the number `stub_gen`. A selection
+    /// the page reports counts only for that number and that text.
+    stub_sent: Option<(bool, Option<String>)>,
+    stub_gen: u64,
     /// Loads and patches sent (tests).
     #[cfg(test)]
     pub(crate) loads: usize,
@@ -279,6 +288,10 @@ impl Studio {
             dark: None,
             reader: reader::Reader::new(),
             own_media_gen: 0,
+            latest_src: None,
+            shown_src: None,
+            stub_sent: None,
+            stub_gen: 0,
             #[cfg(test)]
             loads: 0,
         }
@@ -320,6 +333,8 @@ impl Studio {
             self.page = Some(key);
             self.ready = false;
             self.shown_html = Some(out.html);
+            self.shown_src = self.latest_src.clone();
+            self.stub_sent = None; // a new document: told again once ready
             self.scrolled_block = None;
             #[cfg(test)]
             {
@@ -331,7 +346,23 @@ impl Studio {
                 slot.with(|s| s.probe());
             }
             self.shown_html = Some(out.html);
+            self.shown_src = self.latest_src.clone();
+        } else if self.shown_html.as_deref() == Some(out.html.as_str()) {
+            // The same page for an edit that changed nothing it shows.
+            self.shown_src = self.latest_src.clone();
         }
+    }
+
+    /// --- stub quotes --- The page as a stub selection is checked against:
+    /// its number, the text it shows and its HTML, when it is loaded and has
+    /// been told (see `stub_sent`).
+    pub(crate) fn stub_page(&self) -> Option<StubPage<'_>> {
+        let (_, src) = self.stub_sent.as_ref().filter(|_| self.ready)?;
+        Some(StubPage {
+            gen_: self.stub_gen,
+            src: src.as_deref()?,
+            html: self.shown_html.as_deref()?,
+        })
     }
 
     fn base_href(&self) -> Option<String> {
@@ -368,6 +399,18 @@ impl Studio {
                 .with(|s| s.eval(&webview::scroll_js(block)));
         }
     }
+}
+
+/// --- stub quotes --- The editor preview as it stands, for checking a
+/// selection it reported (`reading::stub_bar::pick_passage`).
+#[derive(Debug, Clone, Copy)]
+pub struct StubPage<'a> {
+    /// The number the page was given with this text.
+    pub gen_: u64,
+    /// The Markdown the page was rendered from.
+    pub src: &'a str,
+    /// The page's `.item-content`.
+    pub html: &'a str,
 }
 
 /// `N thing(s)`.
@@ -570,6 +613,7 @@ impl MainView {
                 self.studio.ready = true;
                 self.studio.push();
                 self.studio.sync_scroll();
+                self.studio_stub_sync();
                 if std::env::var_os("BLYGGER_TIMING").is_some() {
                     let frame = self.studio.slot.borrow().frame;
                     println!("preview-ready frame={frame:?}");
@@ -607,7 +651,53 @@ impl MainView {
             // --- selection --- the preview shows no pill (it is your own
             // draft, the one a quote would go into).
             SurfaceEvent::Selected(_) | SurfaceEvent::QuoteSelection => {}
+            // --- stub quotes --- a passage selected in one of the stub's
+            // quotes (studio 0.49): offered by the stub bar.
+            SurfaceEvent::StubSelection(pick) => self.stub_selected(pick, cx),
         }
+    }
+
+    /// --- stub quotes --- Tell the page the open stub's target and the text
+    /// it now shows, when either changed (a new number each time).
+    fn studio_stub_sync(&mut self) {
+        if !self.studio.ready {
+            return;
+        }
+        let now = (self.stub_target().is_some(), self.studio.shown_src.clone());
+        if self.studio.stub_sent.as_ref() == Some(&now) {
+            return;
+        }
+        self.studio.stub_gen += 1;
+        let js = webview::stub_js(now.0, self.studio.stub_gen);
+        self.studio.stub_sent = Some(now);
+        self.studio.slot.borrow_mut().with(|s| s.eval(&js));
+    }
+
+    /// --- stub quotes --- `BLYGGER_DEMO=rd-stub-select`: select the first
+    /// sentence of the preview's first quote box, as a drag would (inside
+    /// the page; no OS input).
+    pub(crate) fn studio_demo_select_passage(&mut self) {
+        const JS: &str = r#"(function () {
+  var p = document.querySelector(".item-content blockquote.blyg-transclusion p:not(.provenance)");
+  if (!p) return;
+  var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT), t = w.nextNode();
+  if (!t) return;
+  var n = t.textContent.indexOf("."), r = document.createRange();
+  r.setStart(t, 0);
+  r.setEnd(t, n > 0 ? n + 1 : Math.min(40, t.textContent.length));
+  var s = window.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+})();"#;
+        self.studio.slot.borrow_mut().with(|s| s.eval(JS));
+    }
+
+    /// --- stub quotes --- Drop the preview's selection (it was quoted).
+    pub(crate) fn studio_stub_clear(&mut self) {
+        self.studio
+            .slot
+            .borrow_mut()
+            .with(|s| s.eval(webview::STUB_CLEAR_JS));
     }
 
     /// Switch modes (⌘1/⌘2/⌘3/⌘E) and remember the choice.
@@ -662,6 +752,7 @@ impl MainView {
         self.studio.render_gen += 1;
         let gen_ = self.studio.render_gen;
         let delay = if now { None } else { Some(DEBOUNCE) };
+        let src = md.clone();
         self.studio.render_task = Some(cx.spawn(async move |this, cx| {
             if let Some(d) = delay {
                 cx.background_executor().timer(d).await;
@@ -679,8 +770,10 @@ impl MainView {
             let _ = this.update(cx, |v, cx| {
                 if v.studio.render_gen == gen_ {
                     v.studio.latest = Some((key, out));
+                    v.studio.latest_src = Some(src);
                     v.studio.push();
                     v.studio.sync_scroll();
+                    v.studio_stub_sync();
                     cx.notify();
                 }
             });

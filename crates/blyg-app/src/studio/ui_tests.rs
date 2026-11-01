@@ -464,3 +464,105 @@ fn publish_warns_about_a_quote_generated_text_echoed(cx: &mut TestAppContext) {
     let w = view.read_with(cx, |v, cx| v.studio_publish_warning(cx));
     assert_eq!(w, None);
 }
+
+/// --- stub quotes --- A stub draft of the sample quote, open in the editor.
+fn open_stub(view: &Entity<MainView>, fake: &FakeBackend, body: &str, cx: &mut VisualTestContext) {
+    let of = blyg_core::RemoteRef {
+        origin: "https://notes.example.org/".into(),
+        id: SAMPLE_QUOTE_ID.into(),
+        version: 2,
+        cited: None,
+    };
+    let id = fake.create_stub(&of, body).unwrap();
+    view.update_in(cx, |v, window, cx| {
+        let results = v.backend.search("");
+        v.list.refresh(results);
+        v.open(&id, window, cx);
+    });
+    cx.run_until_parked();
+}
+
+/// --- stub quotes --- (studio 0.49) A passage selected in one of a stub's
+/// quotes in the editor preview goes under that quote's `![[id]]`; a page
+/// behind the draft offers nothing.
+#[gpui_kit::test]
+fn a_passage_selected_in_the_preview_goes_under_its_quote(cx: &mut TestAppContext) {
+    use super::webview::StubPick;
+    let (view, fake, log, cx) = setup(cx, true);
+    let body = format!("![[{SAMPLE_QUOTE_ID}]]\n\nMy reply.\n\n![[{SAMPLE_QUOTE_ID}]]\n\nMore.");
+    open_stub(&view, &fake, &body, cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
+    frame(cx);
+    send(&view, SurfaceEvent::Ready, cx);
+    // The page is told a stub is open, with the number of what it shows.
+    let told = log
+        .borrow()
+        .evals()
+        .iter()
+        .rev()
+        .find(|e| e.contains("__blyg.stub("))
+        .map(|e| e.to_string())
+        .expect("the page is told about the stub");
+    assert!(told.contains("stub(true, "), "{told}");
+    let gen_: u64 = told
+        .rsplit(", ")
+        .next()
+        .and_then(|s| s.trim_end_matches(");").parse().ok())
+        .unwrap();
+    let passage = view.read_with(cx, |v, cx| v.stub_passage(cx));
+    assert_eq!(passage, None, "nothing selected yet");
+
+    // A selection in the second quote box (the page's index 1).
+    let pick = |gen_, index| StubPick {
+        gen_,
+        index,
+        text: " twice a day,  that it  belongs\n".into(),
+    };
+    send(
+        &view,
+        SurfaceEvent::StubSelection(Some(pick(gen_ - 1, 1))),
+        cx,
+    );
+    let stale = view.read_with(cx, |v, cx| v.stub_passage(cx));
+    assert_eq!(stale, None, "an older page's selection");
+    send(&view, SurfaceEvent::StubSelection(Some(pick(gen_, 1))), cx);
+    let passage = view.read_with(cx, |v, cx| v.stub_passage(cx));
+    assert_eq!(passage, Some((1, "twice a day, that it belongs".into())));
+    // ⇧⌘D quotes it, under the second directive.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-d"));
+    cx.run_until_parked();
+    let text = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert_eq!(
+        text,
+        format!(
+            "![[{SAMPLE_QUOTE_ID}]]\n\nMy reply.\n\n![[{SAMPLE_QUOTE_ID}]]\n> twice a day, that it belongs\n\nMore."
+        )
+    );
+    assert!(
+        log.borrow().evals().iter().any(|e| e.contains("stubClear")),
+        "the page's selection is dropped"
+    );
+    // Changed since: the old selection would pair with a stale page.
+    send(&view, SurfaceEvent::StubSelection(Some(pick(gen_, 0))), cx);
+    let passage = view.read_with(cx, |v, cx| v.stub_passage(cx));
+    assert_eq!(passage, None, "the page is behind the draft");
+}
+
+/// --- stub quotes --- "quote another passage" adds a whole quote after
+/// the caret to select from, and puts the preview on screen.
+#[gpui_kit::test]
+fn quote_another_passage_adds_a_whole_quote_and_shows_the_preview(cx: &mut TestAppContext) {
+    let (view, fake, _, cx) = setup(cx, true);
+    let body = format!("![[{SAMPLE_QUOTE_ID}]]\n> twice a day\n\nMine.");
+    open_stub(&view, &fake, &body, cx);
+    assert_eq!(view_mode(&view, cx), ViewMode::Write);
+    view.update_in(cx, |v, window, cx| v.stub_choose_passage(window, cx));
+    cx.run_until_parked();
+    let text = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert!(
+        text.ends_with(&format!("![[{SAMPLE_QUOTE_ID}]]\n\n")),
+        "{text:?}"
+    );
+    assert_eq!(text.matches("![[").count(), 2, "{text:?}");
+    assert_eq!(view_mode(&view, cx), ViewMode::Split, "the preview shows");
+}

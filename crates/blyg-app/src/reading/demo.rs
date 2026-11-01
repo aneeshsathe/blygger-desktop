@@ -163,26 +163,33 @@ impl MainView {
                 self.open_sub_name_sheet("sub-omar".into(), window, cx);
             }
             // --- stub quotes --- Reply: the whole post, the hint line; then
-            // the passage chooser with a selection; then that passage quoted.
-            ("rd-stub" | "rd-stub-passage", 0) => {
+            // the editor preview with a passage selected in the quote box
+            // (`rd-stub-select`, "quote only this" offered); then that passage
+            // quoted (`rd-stub-passage`).
+            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 0) => {
                 self.show_view(View::Reading, window, cx);
                 open(self, LIN_GARDENS, window, cx);
             }
-            ("rd-stub" | "rd-stub-passage", 1) => {
+            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 1) => {
                 if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
                     self.item_action(item, "Reply", window, cx);
                 }
-                self.toggle_stub_chooser(window, cx);
-                if let Some(post) = self.reading.stub.as_ref().and_then(|c| c.post.clone()) {
-                    post.update(cx, |s, cx| {
-                        let t = s.value().to_string();
-                        let end = t.find('.').map_or(t.len().min(40), |i| i + 1);
-                        s.set_selected_range(0..end, cx);
-                        s.focus(window, cx);
-                    });
+                self.stub_choose_passage(window, cx);
+            }
+            ("rd-stub-select" | "rd-stub-passage", 2) => {
+                self.studio_demo_select_passage();
+                if scenario == "rd-stub-passage" {
+                    cx.spawn_in(window, async move |this, cx| {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(900))
+                            .await;
+                        let _ = this.update_in(cx, |v, window, cx| {
+                            v.quote_stub_passage(window, cx);
+                        });
+                    })
+                    .detach();
                 }
             }
-            ("rd-stub-passage", 2) => self.quote_stub_passage(false, window, cx),
             // A subscription's context menu, on its "Move to folder ›" list.
             ("rd-folder-menu", 0) => self.show_view(View::Reading, window, cx),
             ("rd-folder-menu", 1) => {

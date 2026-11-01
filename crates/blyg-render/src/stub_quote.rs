@@ -1,5 +1,7 @@
-//! The stub editor's passage chooser: a port of the reference studio's
-//! `src/ui/stub-quote.ts` (studio 0.31). A stub opens quoting the whole
+//! The stub editor's quote: a port of the reference studio's
+//! `src/ui/stub-quote.ts` (studio 0.31; since studio 0.49 a passage is
+//! picked in the editor's preview, so a quote is addressed by its place
+//! among the target's quotes, `nth`). A stub opens quoting the whole
 //! target; choosing a passage writes §10.1's partial grammar under the
 //! directive (`>` lines), and "quote whole post" removes it again. Pure text
 //! in, text out.
@@ -101,7 +103,20 @@ pub fn add_stub_quote(md: &str, id: &str, passage: &str, at: usize) -> String {
     if selection.is_empty() {
         return md.to_string();
     }
-    let block = format!("![[{id}]]\n{}", quote_lines(&selection));
+    insert_quote(md, &format!("![[{id}]]\n{}", quote_lines(&selection)), at)
+}
+
+/// Another whole-post quote of `id`, placed as [`add_stub_quote`] places a
+/// passage: the quote the editor's preview shows in full, to select a
+/// passage from (studio 0.49's *quote another passage*, `addStubQuote` with
+/// a null passage).
+pub fn add_whole_stub_quote(md: &str, id: &str, at: usize) -> String {
+    insert_quote(md, &format!("![[{id}]]"), at)
+}
+
+/// `block` as its own block after the line holding `at` (see
+/// [`add_stub_quote`]).
+fn insert_quote(md: &str, block: &str, at: usize) -> String {
     let lines: Vec<&str> = md.split('\n').collect();
     let starts = line_offsets(&lines);
     let last = lines.len() - 1;
@@ -129,14 +144,29 @@ pub fn add_stub_quote(md: &str, id: &str, passage: &str, at: usize) -> String {
     }
 }
 
+/// How many own-line directives of `id` the body holds, partial or whole
+/// (`quoteCount`, studio 0.49): the quotes the preview renders as
+/// `blockquote.blyg-transclusion[data-blyg-id]`, in order, so the nth
+/// top-level preview quote of `id` is the nth directive.
+pub fn quote_count(md: &str, id: &str) -> usize {
+    quotes_of(md, id).len()
+}
+
 /// The body with its quote of `id` set to `passage` (a selection), or to the
 /// whole post when `passage` is `None`. A body with no quote of `id` gains
 /// one at the top, where the stub action puts it. The directive line is kept
 /// as written, so its label survives (studio 0.48, decision #70).
 pub fn with_stub_quote(md: &str, id: &str, passage: Option<&str>) -> String {
+    with_stub_quote_nth(md, id, passage, 0)
+}
+
+/// [`with_stub_quote`] on the `nth` quote of `id` (0-based; studio 0.49's
+/// `withStubQuote(…, nth)`): the one a selection in the editor's preview
+/// sits in. A body with fewer quotes gains one at the top.
+pub fn with_stub_quote_nth(md: &str, id: &str, passage: Option<&str>, nth: usize) -> String {
     let selection = passage.map(normalize_selection).unwrap_or_default();
     let lines: Vec<&str> = md.split('\n').collect();
-    let found = quotes_of(md, id).first().copied();
+    let found = quotes_of(md, id).get(nth).copied();
     let mut block = match found {
         Some((at, _, _)) => lines[at].to_string(),
         None => format!("![[{id}]]"),
@@ -169,7 +199,7 @@ pub fn stub_hint(md: &str, id: &str) -> String {
     match stub_quote_form(md, id) {
         Some(StubQuoteForm::Whole) => "Quoting the whole post. Write above the quote for a quote post, below it for a reply, or nothing for a repost.".into(),
         _ if passages > 1 => format!(
-            "Quoting {passages} passages: a running commentary. Choose another to add it after the cursor."
+            "Quoting {passages} passages: a running commentary."
         ),
         Some(StubQuoteForm::Passage) => {
             "Quoting a passage: the > lines under the quote. Write above it, below it, or both.".into()
@@ -295,6 +325,38 @@ mod tests {
         assert_eq!(
             add_stub_quote(&md, ID, "x", 0),
             format!("{md}\n\n![[{ID}]]\n> x\n\n")
+        );
+    }
+
+    #[test]
+    fn a_selection_in_the_nth_quote_rewrites_that_quote_only() {
+        // stub-quote.test.ts (studio 0.49).
+        let md = format!("![[{ID}]]\n> first passage\n\nMy point.\n\n![[{ID}]]\n\nMy end.");
+        assert_eq!(quote_count(&md, ID), 2);
+        assert_eq!(quote_count(&format!("```\n![[{ID}]]\n```\n"), ID), 0);
+        assert_eq!(
+            with_stub_quote_nth(&md, ID, Some("second"), 1),
+            format!("![[{ID}]]\n> first passage\n\nMy point.\n\n![[{ID}]]\n> second\n\nMy end.")
+        );
+        assert_eq!(
+            with_stub_quote_nth(&md, ID, None, 0),
+            format!("![[{ID}]]\n\nMy point.\n\n![[{ID}]]\n\nMy end.")
+        );
+        // Another quote to choose from arrives whole, after the caret's block.
+        assert_eq!(
+            add_whole_stub_quote(&format!("![[{ID}]]\n> a\n\nMine."), ID, 0),
+            format!("![[{ID}]]\n> a\n\nMine.\n\n![[{ID}]]\n\n")
+        );
+        // A labelled nth directive keeps its label.
+        let md = format!("![[{ID}]]\n\n![[{ID} | again]]\n\nEnd.");
+        assert_eq!(
+            with_stub_quote_nth(&md, ID, Some("x"), 1),
+            format!("![[{ID}]]\n\n![[{ID} | again]]\n> x\n\nEnd.")
+        );
+        // Past the last quote: one is added at the top, as for none.
+        assert_eq!(
+            with_stub_quote_nth("words", ID, Some("p"), 3),
+            format!("![[{ID}]]\n> p\n\nwords")
         );
     }
 
