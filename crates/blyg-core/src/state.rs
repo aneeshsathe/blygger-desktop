@@ -50,6 +50,10 @@ pub struct AppState {
     /// (a library id: `notes`, `notes.<label>`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_vault: Option<String>,
+    /// --- reading compose --- What's typed in the reading screen's compose
+    /// box and not yet posted or saved (kept across views and restarts).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub compose_draft: Option<String>,
 }
 
 impl AppState {

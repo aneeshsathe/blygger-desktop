@@ -2042,6 +2042,9 @@ impl Render for MainView {
         self.studio_frame(window, cx);
         self.browser_frame(window, cx); // --- browser ---
         self.notes_frame(cx); // --- notes ---
+        // --- reading compose ---
+        self.compose_frame(window, cx);
+        // --- end reading compose ---
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();

@@ -238,6 +238,9 @@ fn open_main(
             }
             if let Ok(scenario) = std::env::var("BLYGGER_DEMO") {
                 let _ = handle.update(cx, |view, window, cx| view.run_demo(&scenario, window, cx));
+            } else {
+                // --- reading compose --- launch on the reading screen.
+                let _ = handle.update(cx, |view, window, cx| view.launch_into_reading(window, cx));
             }
         }
         Err(e) => eprintln!("blygger: couldn't open the main window: {e}"),
@@ -412,6 +415,8 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
                 // --- stream ---
                 MenuItem::action("Stream", app::reading::stream::StreamMode),
                 MenuItem::action("Reader", app::reading::stream::ReaderMode),
+                // --- reading compose ---
+                MenuItem::action("Compose While Reading", app::reading::compose::FocusCompose),
                 // --- reader folders ---
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
