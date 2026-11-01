@@ -27,6 +27,14 @@ pub fn extensions() -> &'static Contract {
     C.get_or_init(|| Contract::load(include_str!("../fixtures/extensions.json")))
 }
 
+/// The operations Burrow uses that changed after the vendored contract, cut
+/// from studio 0.49.1's (`GET /api/reading`'s `background`, the browse
+/// routes). Requests are checked against this before `contract()`.
+pub fn studio_049() -> &'static Contract {
+    static C: OnceLock<Contract> = OnceLock::new();
+    C.get_or_init(|| Contract::load(include_str!("../fixtures/studio-0.49.json")))
+}
+
 /// The `lineage-glyph` studio extension's owner reads (studio dc632c5).
 pub fn lineage_glyph() -> &'static Contract {
     static C: OnceLock<Contract> = OnceLock::new();

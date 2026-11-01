@@ -12,6 +12,16 @@ against `extensions.json`. A route in neither fails the test. The mock
 server in `tests/common/` validates every request the app sends, and every
 response the mock gives, against them (`tests/common/contract.rs`).
 
+`studio-0.49.json` holds the operations the app uses whose contract changed
+after the vendored `openapi.json`, cut verbatim from blygger-studio v0.49.1's
+`openapi.json` (same license): `GET /api/reading` (its `background`
+parameter) and the 0.49 routes `GET /api/peek`, `POST /api/peek/links` and
+`GET/POST/DELETE /api/browse`, with the schemas they reference. A request is
+checked against it before `openapi.json`; a mock reply against the contract
+it was written for. The e2e checks a real studio's browse and peek answers
+against it. Vendoring the whole 0.49.1 contract instead would mean bringing
+the mock replies up to it (new required fields since 0.32.1).
+
 `lineage-glyph.json` is the two owner reads of blygger-studio's
 `lineage-glyph` extension (`GET /api/ext/lineage-glyph/summaries` and
 `/lineage`) and their schemas, cut from that studio's `openapi.json` at

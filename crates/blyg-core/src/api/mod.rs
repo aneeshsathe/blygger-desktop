@@ -15,6 +15,7 @@
 //! advertised `read_state: true`.
 
 pub mod auth;
+pub mod browse; // --- browse --- (studio 0.49)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
@@ -881,9 +882,21 @@ impl Api {
 
     /// Upstream's `GET /api/reading`, one page (at most 50). `None` on 404.
     pub fn stock_reading(&self, offset: u64) -> Result<Option<StockReadingPage>> {
+        self.stock_reading_with(offset, false)
+    }
+
+    /// The same, or with `background` only the withdrawn entries (studio
+    /// 0.49+, which leaves them out of the plain list; an older server
+    /// ignores the parameter and sends everything).
+    pub fn stock_reading_with(
+        &self,
+        offset: u64,
+        background: bool,
+    ) -> Result<Option<StockReadingPage>> {
+        let bg = if background { "&background=true" } else { "" };
         Self::optional(self.call_as(
             "GET",
-            &format!("/api/reading?offset={offset}&limit={STOCK_READING_PAGE}"),
+            &format!("/api/reading?offset={offset}&limit={STOCK_READING_PAGE}{bg}"),
             None,
         ))
     }

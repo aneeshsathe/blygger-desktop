@@ -344,6 +344,42 @@ impl Store {
         out.into_iter().map(|r| r.item).collect()
     }
 
+    /// --- background --- Withdrawn posts only (studio 0.49's Background
+    /// lens): every tombstone held, signalled or not, newest first, one
+    /// entry per post. A post withdrawn in one copy but live in a duplicate
+    /// stays out: it still reads in the reading list.
+    pub fn background_reading(&self) -> Vec<ReadingItem> {
+        let rows = self.reading_rows();
+        let live: HashSet<String> = rows
+            .iter()
+            .filter(|r| r.item.state != "tombstone")
+            .map(|r| group_key(&r.item))
+            .collect();
+        let mut slot: HashMap<String, usize> = HashMap::new();
+        let mut out: Vec<Row> = Vec::new();
+        for row in rows {
+            if row.item.state != "tombstone" {
+                continue;
+            }
+            let key = group_key(&row.item);
+            if live.contains(&key) {
+                continue;
+            }
+            match slot.get(&key) {
+                None => {
+                    slot.insert(key, out.len());
+                    out.push(row);
+                }
+                Some(&i) => {
+                    if better(&row, &out[i]) {
+                        out[i] = row;
+                    }
+                }
+            }
+        }
+        out.into_iter().map(|r| r.item).collect()
+    }
+
     /// Mark a reading item, and every duplicate of the same post, as read at
     /// its current version.
     pub fn mark_read(&self, sub: &str, remote_id: &str) -> Result<bool> {

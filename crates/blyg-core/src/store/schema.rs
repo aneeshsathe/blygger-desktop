@@ -250,6 +250,34 @@ const MIGRATIONS: &[&str] = &[
     UPDATE reading SET read_at = 0 WHERE read_version IS NOT NULL;
     UPDATE subscriptions SET json = json_insert(json, '$.title_follows_source', json('false'));
     "#,
+    // v13 --- browse --- (store/browse.rs; studio 0.49's migration 0033)
+    // `browse_log`: the owner's walk through the reader when the blyg
+    //   doesn't keep it (a studio before 0.49, or a credential without
+    //   `reading:state`). A tree: each step names the step it was reached
+    //   from. Private: never sent anywhere.
+    // `link_probe`: whether a link names a blyg item, as learned by looking
+    //   at the page (§5.8's rel="alternate" item document); misses too, so
+    //   a page isn't fetched again on every open. `checked_at` is unix ms.
+    r#"
+    CREATE TABLE browse_log (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        at        TEXT NOT NULL,
+        trail     TEXT NOT NULL,
+        parent_id INTEGER,
+        origin    TEXT NOT NULL,
+        remote_id TEXT NOT NULL,
+        version   INTEGER,
+        via       TEXT NOT NULL,
+        title     TEXT
+    );
+    CREATE INDEX browse_log_trail ON browse_log (trail, id);
+    CREATE TABLE link_probe (
+        url        TEXT PRIMARY KEY,
+        origin     TEXT,
+        remote_id  TEXT,
+        checked_at INTEGER NOT NULL
+    );
+    "#,
 ];
 
 /// Returns whether any migration ran.
