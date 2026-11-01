@@ -272,6 +272,36 @@ or export reads it. It holds only numbers (and the time of a clear) keyed by sub
 and item, never text. A change, including a clear, advances the `reading` revision of
 `GET /api/changes`, so a mark on one device shows on another's next pull.
 
+## Hoppers
+
+Hoppers are the studio's collections of posts. Burrow uses these routes (all in
+`crates/blyg-core/src/api/mod.rs`); every write needs the scope **`owner:manage`**,
+which Burrow's sign-in already asks for.
+
+| Call | Body | Success |
+|---|---|---|
+| `GET /api/hoppers` | `offset`, `limit` | `{items: [Hopper], total, offset, limit}`, created first |
+| `GET /api/hoppers/{id}` | | `{hopper, memberships: [{subscription_id, remote_id, added_at}], items, total, source_count}` |
+| `POST /api/hoppers` | `{name}` | `201 Hopper` |
+| `PATCH /api/hoppers/{id}` | `{name?, public?, description?}` (description ≤ 280; empty clears it) | `Hopper` |
+| `DELETE /api/hoppers/{id}` | | `{ok: true}` |
+| `PUT /api/hoppers/{id}/items/{sub}/{remoteId}` | | `{ok: true}` |
+| `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}` | | `{ok: true}` |
+
+`Hopper` is `{id, name, slug, public, slug_frozen, description, created}`. Your own
+posts are members with the subscription `~own` and the item's id (0.45); the studio
+takes any of your items there, and a public hopper's page shows only the published
+ones. A rename recomputes the slug until the hopper is first made public, which
+freezes it. A public hopper has a page at `{mount}/h/{slug}/`, listed under
+Collections on the homepage and archive and never in the feed.
+
+The list and each hopper's memberships are read on the first sync and whenever the
+`hoppers` counter of `GET /api/changes` moves (one request per hopper). Adding and
+removing posts go through the outbox, so they wait while offline; a `404` drops the
+change, and a `403` (a credential without `owner:manage`) holds the hopper changes
+until the next launch or sign-in without blocking the rest. Making, renaming,
+publishing and deleting a hopper are direct calls that need the blyg to answer.
+
 ## Also used when present
 
 - `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes on

@@ -154,6 +154,19 @@ impl MainView {
                 self.select_source(Source::Folder(FOLDER_FRIENDS.into()), cx);
                 open(self, RUE_TRUST, window, cx);
             }
+            // --- hoppers --- a hopper picked, its first post open; then
+            // the Hopper picker on that post.
+            ("rd-hoppers" | "rd-hopper-picker", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-hoppers" | "rd-hopper-picker", 1) => {
+                use super::sources_vm::Source;
+                use crate::fake::reading_seed::HOPPER_SLOW;
+                self.select_source(Source::Hopper(HOPPER_SLOW.into()), cx);
+                let first = self.shown_keys().first().cloned();
+                if let Some(k) = first {
+                    self.open_reading(k, window, cx);
+                }
+            }
+            ("rd-hopper-picker", 2) => self.open_hopper_picker(window, cx),
             // --- read/unread --- three posts picked, then the row menu.
             ("rd-picks" | "rd-post-menu", 0) => self.show_view(View::Reading, window, cx),
             ("rd-picks" | "rd-post-menu", 1) => {

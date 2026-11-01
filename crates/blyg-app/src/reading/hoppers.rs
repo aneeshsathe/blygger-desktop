@@ -398,61 +398,78 @@ impl MainView {
                     this.pick_hopper_row(i, window, cx);
                 }))
         };
-        let mut rows: Vec<AnyElement> = self
-            .reading
-            .hoppers
-            .iter()
-            .enumerate()
-            .map(|(i, h)| {
-                let on = held.contains(&h.id);
-                row(i, i == *sel)
-                    .child(
-                        div()
-                            .w(px(14.))
-                            .flex_none()
-                            .text_color(p.accent)
-                            .child(if on { "✓" } else { "" }),
-                    )
-                    .child(
-                        svg()
-                            .data(ICON_HOPPER)
-                            .size(px(14.))
-                            .flex_none()
-                            .text_color(p.muted),
-                    )
-                    .child(div().flex_1().min_w_0().truncate().child(h.name.clone()))
-                    .when(h.public, |d| {
-                        d.child(div().text_size(px(11.)).text_color(p.muted).child("public"))
-                    })
-                    .child(
-                        div()
-                            .w(px(28.))
-                            .flex_none()
-                            .text_size(px(11.))
-                            .text_color(p.muted)
-                            .flex()
-                            .justify_end()
-                            .child(h.count.to_string()),
-                    )
-                    .when(i < 9, |d| {
-                        d.child(
+        let mut rows: Vec<AnyElement> =
+            self.reading
+                .hoppers
+                .iter()
+                .enumerate()
+                .map(|(i, h)| {
+                    let on = held.contains(&h.id);
+                    row(i, i == *sel)
+                        .child(
                             div()
                                 .w(px(14.))
                                 .flex_none()
+                                .text_color(p.accent)
+                                .child(if on { "✓" } else { "" }),
+                        )
+                        .child(
+                            svg()
+                                .data(ICON_HOPPER)
+                                .size(px(14.))
+                                .flex_none()
+                                .text_color(p.muted),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(h.name.clone()))
+                        .when(h.public, |d| {
+                            d.child(div().text_size(px(11.)).text_color(p.muted).child("public"))
+                        })
+                        .child(
+                            div()
+                                .flex_none()
                                 .text_size(px(11.))
                                 .text_color(p.muted)
-                                .child((i + 1).to_string()),
+                                .child(match h.count {
+                                    1 => "1 post".to_string(),
+                                    n => format!("{n} posts"),
+                                }),
                         )
-                    })
-                    .into_any_element()
-            })
-            .collect();
+                        // Its number key, as a key cap.
+                        .child(div().w(px(18.)).flex_none().flex().justify_center().when(
+                            i < 9,
+                            |d| {
+                                d.child(
+                                    div()
+                                        .px(px(4.))
+                                        .rounded(px(self.theme.corner(3.)))
+                                        .border_1()
+                                        .border_color(p.muted.opacity(0.4))
+                                        .text_size(px(10.))
+                                        .text_color(p.muted)
+                                        .child((i + 1).to_string()),
+                                )
+                            },
+                        ))
+                        .into_any_element()
+                })
+                .collect();
         let new_ix = self.reading.hoppers.len();
         rows.push(
             row(new_ix, new_ix == *sel)
                 .child(div().w(px(14.)).flex_none())
                 .child(div().flex_1().text_color(p.accent).child("New Hopper…"))
-                .child(div().text_size(px(11.)).text_color(p.muted).child("n"))
+                .child(
+                    div().w(px(18.)).flex_none().flex().justify_center().child(
+                        div()
+                            .px(px(4.))
+                            .rounded(px(self.theme.corner(3.)))
+                            .border_1()
+                            .border_color(p.muted.opacity(0.4))
+                            .text_size(px(10.))
+                            .text_color(p.muted)
+                            .child("n"),
+                    ),
+                )
                 .into_any_element(),
         );
         div()
