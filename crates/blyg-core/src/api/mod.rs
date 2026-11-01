@@ -141,11 +141,6 @@ impl Api {
 
     /// A request with the credential on it, and the browser sign-in's
     /// access token it carries (for the 401 retry).
-    fn request(&self, method: &str, path: &str) -> Result<(ureq::Request, Option<String>)> {
-        self.request_url(method, &format!("{}{}", self.api_root, path))
-    }
-
-    /// `request` at an absolute URL.
     fn request_url(&self, method: &str, url: &str) -> Result<(ureq::Request, Option<String>)> {
         let r = self
             .agent
@@ -167,8 +162,9 @@ impl Api {
         })
     }
 
-    fn send(&self, method: &str, path: &str, body: &Body) -> (Result<Value>, Option<String>) {
-        let (req, bearer) = match self.request(method, path) {
+    /// A request at an absolute URL, with the 403 scope message.
+    fn send_url(&self, method: &str, url: &str, body: &Body) -> (Result<Value>, Option<String>) {
+        let (req, bearer) = match self.request_url(method, url) {
             Ok(r) => r,
             Err(e) => return (Err(e), None),
         };
@@ -208,15 +204,21 @@ impl Api {
     /// a browser sign-in, renew the access token and retry once; when the
     /// renewal is refused the grant is marked ended (sign in again).
     fn exec(&self, method: &str, path: &str, body: Body) -> Result<Value> {
-        let (r, bearer) = self.send(method, path, &body);
+        self.exec_url(method, &format!("{}{}", self.api_root, path), body)
+    }
+
+    /// `exec` at an absolute URL: a 401 signs in again (a password) or
+    /// refreshes the browser sign-in once, and the request is retried.
+    fn exec_url(&self, method: &str, url: &str, body: Body) -> Result<Value> {
+        let (r, bearer) = self.send_url(method, url, &body);
         match (&self.cred, r) {
             (Credential::Password(_), Err(CoreError::Unauthorized)) => {
                 *self.session.lock().unwrap() = None;
-                self.send(method, path, &body).0
+                self.send_url(method, url, &body).0
             }
             (Credential::OAuth(s), Err(CoreError::Unauthorized)) if bearer.is_some() => {
                 s.after_unauthorized(bearer.as_deref())?;
-                self.send(method, path, &body).0
+                self.send_url(method, url, &body).0
             }
             (_, r) => r,
         }
@@ -325,9 +327,9 @@ impl Api {
     /// (blygger-studio PR #95; the route doesn't exist before it, and every
     /// version Burrow targets answers 404). Asked under the blyg's mount
     /// first, where the REST API moves with contract 2.0.0 (PR #97), then at
-    /// the origin. `Ok(None)`: not served, or not readable as one.
-    /// Offline, rate-limited or 5xx: an error, so nothing is decided on a
-    /// failed read.
+    /// the origin. `Ok(None)`: not served (404), or not readable as one.
+    /// Refused credentials (401 after a refresh, 403), offline,
+    /// rate-limited or 5xx: an error, so nothing passes on a failed read.
     pub fn contract_version(&self) -> Result<Option<String>> {
         let mut urls = vec![format!("{}/api/capabilities", self.base)];
         let at_root = format!("{}/api/capabilities", self.api_root);
@@ -335,14 +337,24 @@ impl Api {
             urls.push(at_root);
         }
         for url in urls {
-            let (req, _) = self.request_url("GET", &url)?;
-            match read_json(req.call()) {
+            match self.exec_url("GET", &url, Body::None) {
                 Ok(v) => {
                     if let Some(c) = v.get("contractVersion").and_then(Value::as_str) {
                         return Ok(Some(c.to_string()));
                     }
                 }
+                // The route is authenticated: a credential the blyg refuses
+                // (after one refresh) or a missing scope says nothing about
+                // the contract, so it must not pass as "no contract".
+                Err(e @ CoreError::Unauthorized) => return Err(e),
+                Err(
+                    e @ CoreError::Rejected {
+                        status: 401 | 403, ..
+                    },
+                ) => return Err(e),
                 Err(e) if is_transient(&e) => return Err(e),
+                // 404 (a studio from before capabilities), or anything that
+                // isn't a capabilities answer at this address.
                 Err(_) => {}
             }
         }

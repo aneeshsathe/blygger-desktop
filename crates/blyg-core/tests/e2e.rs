@@ -4350,3 +4350,25 @@ fn contract_version_is_unset_on_the_studios_burrow_targets() {
         "a contract Burrow doesn't speak: {got:?}"
     );
 }
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_refused_credential_never_passes_the_contract_check() {
+    // The capabilities route is authenticated: a token the blyg refuses
+    // must stop the check, never read as "a studio from before
+    // capabilities" (which would let a new contract through to sync).
+    let e = e2e();
+    let api = Api::new(&e.url, Credential::Token("not-a-real-token".into()));
+    let got = api.contract_version();
+    assert!(
+        matches!(
+            got,
+            Err(CoreError::Unauthorized
+                | CoreError::Rejected {
+                    status: 401 | 403,
+                    ..
+                })
+        ),
+        "a refused token must not pass: {got:?}"
+    );
+}
