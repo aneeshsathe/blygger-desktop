@@ -19,6 +19,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod probe;
+pub(crate) mod reads;
+
 /// How a browse step was reached (the studio's `BROWSE_VIA`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -104,8 +107,9 @@ pub struct NewBrowseStep {
     pub title: Option<String>,
 }
 
-/// The studio's limit on one `POST /api/peek/links` (`CLASSIFY_MAX`).
-pub const CLASSIFY_MAX: usize = 50;
+/// The studio's limit on one `POST /api/peek/links` (`CLASSIFY_MAX`: 40 at
+/// studio 0.49.1; a longer list there is a 400).
+pub const CLASSIFY_MAX: usize = 40;
 
 /// A fresh trail id: 16 hex characters (the server wants 8–64).
 pub fn new_trail() -> String {

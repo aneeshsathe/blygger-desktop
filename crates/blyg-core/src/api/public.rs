@@ -363,6 +363,86 @@ impl PublicClient {
         }
     }
 
+    // --- browse --- link probes (`crate::browse::probe`)
+
+    /// Like [`with_timeouts`](Self::with_timeouts), with a ceiling on each
+    /// whole request too: a link probe must not hang on a slow page.
+    pub fn bounded(connect: Duration, read: Duration, overall: Duration) -> Self {
+        let agent = ureq::AgentBuilder::new()
+            .timeout_connect(connect)
+            .timeout_read(read)
+            .timeout(overall)
+            .redirects(5)
+            .build();
+        PublicClient { agent }
+    }
+
+    /// A public page's head: at most `max` bytes as text (longer is cut),
+    /// and the URL it was served from after redirects. No token, no cookies.
+    /// 404/410 → `NotFound`; other statuses → `Rejected`.
+    pub fn get_page(&self, url: &str, max: u64) -> Result<(String, String)> {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(CoreError::Other(format!("not an http(s) URL: {url}")));
+        }
+        let res = self
+            .agent
+            .get(url)
+            .set(
+                "accept",
+                "text/html, application/xhtml+xml;q=0.9, */*;q=0.5",
+            )
+            .call();
+        match res {
+            Ok(r) => {
+                let at = r.get_url().to_string();
+                let mut bytes = Vec::new();
+                r.into_reader()
+                    .take(max)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| CoreError::Offline)?;
+                Ok((String::from_utf8_lossy(&bytes).into_owned(), at))
+            }
+            Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
+            Err(ureq::Error::Status(404 | 410, _)) => Err(CoreError::NotFound),
+            Err(ureq::Error::Status(code, _)) => Err(CoreError::Rejected {
+                status: code,
+                message: format!("{url} returned {code}"),
+                details: vec![],
+            }),
+        }
+    }
+
+    /// A public JSON document of at most `max` bytes, and the URL it was
+    /// served from after redirects (what §12.2 authenticates).
+    pub fn get_json_at(&self, url: &str, max: u64) -> Result<(Value, String)> {
+        if !(url.starts_with("http://") || url.starts_with("https://")) {
+            return Err(CoreError::Other(format!("not an http(s) URL: {url}")));
+        }
+        match self.agent.get(url).set("accept", "application/json").call() {
+            Ok(r) => {
+                let at = r.get_url().to_string();
+                let mut bytes = Vec::new();
+                r.into_reader()
+                    .take(max + 1)
+                    .read_to_end(&mut bytes)
+                    .map_err(|_| CoreError::Offline)?;
+                if bytes.len() as u64 > max {
+                    return Err(CoreError::Other(format!("{url} is too large")));
+                }
+                let v = serde_json::from_slice(&bytes)
+                    .map_err(|e| CoreError::Other(format!("bad JSON from {url}: {e}")))?;
+                Ok((v, at))
+            }
+            Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
+            Err(ureq::Error::Status(404 | 410, _)) => Err(CoreError::NotFound),
+            Err(ureq::Error::Status(code, _)) => Err(CoreError::Rejected {
+                status: code,
+                message: format!("{url} returned {code}"),
+                details: vec![],
+            }),
+        }
+    }
+
     /// `GET {origin}items/{id}.json`.
     pub fn item_doc(&self, origin: &str, id: &str) -> Result<ItemDoc> {
         let url = item_doc_url(origin, id)

@@ -10,6 +10,7 @@
 //! is what makes coalescing trivial (50 keystrokes = one pending `save` whose
 //! `not_before` keeps moving).
 
+mod browse; // --- browse ---
 mod folders; // --- reader folders ---
 mod lineage; // --- lineage counts ---
 pub use lineage::Served as LineageServed;

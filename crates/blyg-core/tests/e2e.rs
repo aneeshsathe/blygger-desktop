@@ -31,6 +31,7 @@ mod contract;
 
 use blyg_core::api::auth::{self, Credential};
 use blyg_core::api::{Api, ConnectError, verify_connection};
+use blyg_core::browse::{BrowseVia, LinkTarget, NewBrowseStep};
 use blyg_core::*;
 use serde_json::{Value, json};
 
@@ -2792,10 +2793,19 @@ fn subscription_rename_and_revert_to_source() {
     assert!(sub_of(&me, &sub.id).title_follows_source);
     // The next poll re-reads the source's manifest (Check all feeds now).
     me.poll_subscriptions().unwrap();
-    wait_until("the source's name", Duration::from_secs(20), || {
+    let t0 = Instant::now();
+    loop {
         me.sync_now().unwrap();
-        sub_of(&me, &sub.id).title == own
-    });
+        let s = sub_of(&me, &sub.id);
+        if s.title == own {
+            break;
+        }
+        assert!(
+            t0.elapsed() < Duration::from_secs(20),
+            "timed out waiting for the source's name {own:?}; still {s:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
     me.unsubscribe(&sub.id).unwrap();
 }
 
@@ -3974,4 +3984,344 @@ fn a_self_stub_and_a_self_fork_cite_your_own_origin() {
         cited: None,
     };
     assert!(me.fork(&unpinned).is_err(), "forks descend from pins only");
+}
+
+// ------------------------------------------------------------------ browse
+
+/// The studio's version from its manifest's `generator`; `None` for
+/// another generator.
+fn studio_version(base: &str) -> Option<(u32, u32, u32)> {
+    let manifest = public_json(&format!("{base}/blyg.json"));
+    let v = manifest["generator"]
+        .as_str()?
+        .strip_prefix("blygger-studio/")?
+        .to_string();
+    let mut it = v.split(['.', '-']).map(|p| p.parse::<u32>().ok());
+    Some((it.next()??, it.next()??, it.next()??))
+}
+
+/// Studio 0.49+ serves the browse routes; older ones 404 them.
+fn serves_browse(base: &str) -> bool {
+    studio_version(base).is_some_and(|v| v >= (0, 49, 0))
+}
+
+/// Which links name a blyg item: on 0.49+ the studio says (`POST
+/// /api/peek/links`), elsewhere Burrow probes the pages itself. Both must
+/// find an item of ours and one of a blyg we don't hold, and nothing in a
+/// page that isn't one.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn links_that_name_blyg_items_classify() {
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("peek");
+    let (_, mine) = published(&me, Kind::Fragment, &format!("{t} mine"), None);
+    let (_, theirs) = published(&source, Kind::Fragment, &format!("{t} theirs"), None);
+    let own = format!("{}/", e.url);
+    let other = format!("{src_url}/");
+    let urls: Vec<String> = vec![
+        format!("{}/f/{mine}/", e.url),
+        format!("{src_url}/f/{theirs}/#passage"),
+        format!("{src_url}/"),
+        format!("{}/no-such-page-{t}", e.url),
+        "mailto:someone@blyg.example.com".to_string(),
+    ];
+    let check = |got: &[LinkTarget], how: &str| {
+        assert_eq!(got.len(), urls.len(), "{how}: {got:?}");
+        for (g, u) in got.iter().zip(&urls) {
+            assert_eq!(&g.url, u, "{how}: order follows the input");
+        }
+        let t0 = got[0].target.as_ref().expect("our own permalink");
+        assert_eq!(
+            (t0.origin.as_str(), t0.id.as_str()),
+            (own.as_str(), mine.as_str()),
+            "{how}"
+        );
+        let t1 = got[1]
+            .target
+            .as_ref()
+            .expect("an item of a blyg we don't hold");
+        assert_eq!(
+            (t1.origin.as_str(), t1.id.as_str()),
+            (other.as_str(), theirs.as_str()),
+            "{how}"
+        );
+        assert_eq!(
+            got[2].target, None,
+            "{how}: a page without an item document isn't one"
+        );
+        assert_eq!(got[3].target, None, "{how}: a 404 isn't an item");
+        assert_eq!(got[4].target, None, "{how}: not a web page");
+    };
+
+    // The server's answer, where it has the route.
+    let api = Api::new(&e.url, e.cred.clone());
+    let served = match api.peek_links(&urls) {
+        Ok(s) => s,
+        // A studio before 0.49 refuses a bearer's POST to a route it
+        // doesn't know as a missing scope; the backend reads it as a 404.
+        Err(CoreError::Rejected { status: 403, .. }) if !serves_browse(&e.url) => None,
+        Err(err) => panic!("POST /api/peek/links: {err:?}"),
+    };
+    assert_eq!(served.is_some(), serves_browse(&e.url), "{served:?}");
+    if let Some(links) = &served {
+        let (st, v) = owner(
+            "POST",
+            &e.url,
+            "/api/peek/links",
+            Some(json!({ "urls": urls })),
+        );
+        if let Err(err) =
+            contract::studio_049().check_response("POST", &["api", "peek", "links"], st, &v)
+        {
+            panic!("POST /api/peek/links broke the contract: {err}\n{v}");
+        }
+        // Only the http(s) links are answered.
+        assert_eq!(links.len(), 4, "{links:?}");
+        assert!(
+            links
+                .iter()
+                .any(|l| l.url == urls[1] && l.target.as_ref().is_some_and(|t| t.id == theirs))
+        );
+    }
+
+    // Through the backend: the server on 0.49+, else probed here.
+    check(&me.classify_links(&urls).unwrap(), "backend");
+    // And asked again (the server, or the local cache).
+    check(&me.classify_links(&urls).unwrap(), "backend, again");
+
+    // The local prober on its own, whatever the server, with a fresh cache.
+    let store = blyg_core::store::Store::open_in_memory().unwrap();
+    let got = blyg_core::browse::probe::classify(
+        &store,
+        &blyg_core::browse::probe::client(),
+        std::slice::from_ref(&own),
+        &urls,
+        1_000_000,
+    );
+    check(&got, "local probe");
+    // Hits and misses are both remembered for a week.
+    let key = format!("{src_url}/f/{theirs}/");
+    assert!(
+        store
+            .cached_link_probe(&key, 0)
+            .is_some_and(|t| t.is_some())
+    );
+    assert_eq!(
+        store.cached_link_probe(&format!("{src_url}/"), 0),
+        Some(None)
+    );
+}
+
+/// The browsing log: two steps of one walk, the second reached from the
+/// first, read back by trail and cleared. On 0.49+ it is the studio's own
+/// log (so the web Studio's history pane sees it); on 0.48 the local one.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn browsing_log_round_trips() {
+    let e = e2e();
+    let dir = tempfile::tempdir().unwrap();
+    let me = manual(dir.path());
+    let trail = blyg_core::browse::new_trail();
+    let other = blyg_core::browse::new_trail();
+    let step = |parent: Option<i64>, id: &str, via: BrowseVia, trail: &str| NewBrowseStep {
+        trail: trail.to_string(),
+        parent_id: parent,
+        origin: "https://blyg.example.com/".into(),
+        remote_id: id.into(),
+        version: Some(3),
+        via,
+        title: Some(format!("Title {id}")),
+    };
+    let a = me
+        .log_browse(&step(None, "start-1", BrowseVia::Start, &trail))
+        .expect("log the first step");
+    let b = me
+        .log_browse(&step(Some(a), "linked-2", BrowseVia::Link, &trail))
+        .expect("log the second step");
+    let c = me
+        .log_browse(&step(None, "elsewhere", BrowseVia::Start, &other))
+        .unwrap();
+    assert!(a < b && b < c);
+
+    let walk = me.browse_history(Some(&trail), 0, 50).unwrap();
+    assert_eq!(
+        walk.iter().map(|s| s.id).collect::<Vec<_>>(),
+        [b, a],
+        "newest first"
+    );
+    assert_eq!(walk[0].parent_id, Some(a));
+    assert_eq!(walk[0].via, BrowseVia::Link);
+    assert_eq!(walk[0].remote_id, "linked-2");
+    assert_eq!(walk[0].version, Some(3));
+    assert_eq!(walk[0].title.as_deref(), Some("Title linked-2"));
+    assert_eq!(walk[1].parent_id, None);
+    assert!(walk.iter().all(|s| s.trail == trail));
+    let all = me.browse_history(None, 0, 50).unwrap();
+    assert!(all.iter().any(|s| s.id == c));
+    assert_eq!(me.browse_history(None, 1, 1).unwrap().len(), 1);
+
+    // Where it lives: the studio's log on 0.49+.
+    let api = Api::new(&e.url, e.cred.clone());
+    let server = api.list_browse(Some(&trail), 0, 50).unwrap();
+    assert_eq!(server.is_some(), serves_browse(&e.url));
+    if let Some(page) = server {
+        assert_eq!(page.total, 2);
+        assert_eq!(page.items, walk);
+        let page = conforms_049(&e.url, &format!("/api/browse?trail={trail}"));
+        assert_eq!(page["items"].as_array().map(Vec::len), Some(2));
+    }
+
+    me.clear_browse(Some(&trail)).unwrap();
+    assert!(me.browse_history(Some(&trail), 0, 50).unwrap().is_empty());
+    assert!(
+        me.browse_history(None, 0, 50)
+            .unwrap()
+            .iter()
+            .any(|s| s.id == c)
+    );
+    me.clear_browse(Some(&other)).unwrap();
+    assert!(me.browse_history(Some(&other), 0, 50).unwrap().is_empty());
+}
+
+/// `GET path` as the owner must answer 200 with a body that matches studio
+/// 0.49.1's contract for the operation (`tests/fixtures/studio-0.49.json`).
+fn conforms_049(base: &str, path: &str) -> Value {
+    let (p, _) = path.split_once('?').unwrap_or((path, ""));
+    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
+    let (st, v) = owner("GET", base, path, None);
+    if let Err(e) = contract::studio_049().check_response("GET", &segs, st, &v) {
+        panic!("GET {path} broke the contract: {e}\n{v}");
+    }
+    assert_eq!(st, 200, "GET {path}: {v}");
+    v
+}
+
+/// A credential without `reading:state` can read the studio's log but not
+/// write it: the log then stays on this Mac for the session, and a step is
+/// never lost to the 403.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn browsing_log_without_reading_state_stays_local() {
+    let e = e2e();
+    if !serves_browse(&e.url) {
+        eprintln!("skipped: the studio keeps no browsing log before 0.49");
+        return;
+    }
+    let Some(token) = minted_token(&["owner:read"]) else {
+        eprintln!("skipped: no manual tokens on this studio");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let me = backend_at(dir.path(), &e.url, Credential::Token(token), false);
+    let trail = blyg_core::browse::new_trail();
+    let first = NewBrowseStep {
+        trail: trail.clone(),
+        parent_id: None,
+        origin: "https://blyg.example.com/".into(),
+        remote_id: "scoped-1".into(),
+        version: None,
+        via: BrowseVia::Start,
+        title: None,
+    };
+    let a = me.log_browse(&first).expect("kept here");
+    let b = me
+        .log_browse(&NewBrowseStep {
+            parent_id: Some(a),
+            remote_id: "scoped-2".into(),
+            via: BrowseVia::Quote,
+            ..first.clone()
+        })
+        .unwrap();
+    let walk = me.browse_history(Some(&trail), 0, 50).unwrap();
+    assert_eq!(walk.iter().map(|s| s.id).collect::<Vec<_>>(), [b, a]);
+    assert_eq!(walk[0].parent_id, Some(a));
+    // Nothing reached the studio.
+    let api = Api::new(&e.url, e.cred.clone());
+    let page = api.list_browse(Some(&trail), 0, 50).unwrap().unwrap();
+    assert_eq!(page.total, 0);
+    me.clear_browse(Some(&trail)).unwrap();
+    assert!(me.browse_history(Some(&trail), 0, 50).unwrap().is_empty());
+}
+
+/// Studio 0.49 leaves withdrawn posts out of `GET /api/reading` unless
+/// `background=true`. Burrow's reading list (`/reading/imported`) still
+/// holds the tombstone, and the Background lens lists it even unsignalled,
+/// while the reading list hides it.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn withdrawn_posts_are_background() {
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("background");
+    let (local, rid) = published(&source, Kind::Fragment, &format!("{t} soon gone"), None);
+    let sub = me.subscribe(&src_url, None).unwrap();
+    sync_until_held(&me, &[&rid]);
+    assert!(me.background_reading().iter().all(|r| r.remote_id != rid));
+
+    source.withdraw(&local, Some("retracted")).unwrap();
+    // The reading list hides the tombstone, so `poll` can't see it.
+    trigger_scheduled(&e.url);
+    std::thread::sleep(Duration::from_millis(300));
+    me.sync_now().unwrap();
+    let gone = |me: &LiveBackend| {
+        me.reading_row(&sub.id, &rid)
+            .is_some_and(|r| r.state == "tombstone")
+    };
+    if !gone(&me) {
+        Api::new(&e.url, e.cred.clone())
+            .resync_subscription(&sub.id)
+            .unwrap();
+        me.sync_now().unwrap();
+    }
+    let row = me
+        .reading_row(&sub.id, &rid)
+        .expect("the tombstone is held");
+    assert_eq!(row.state, "tombstone");
+    assert!(
+        reading_item(&me, &rid).is_none(),
+        "unsignalled: out of the list"
+    );
+    let bg = me.background_reading();
+    assert!(bg.iter().any(|r| r.remote_id == rid), "{bg:?}");
+    assert!(bg.iter().all(|r| r.state == "tombstone"));
+
+    // The stock list's own behaviour, as the stock-reading path sees it.
+    let api = Api::new(&e.url, e.cred.clone());
+    let listed = |background: bool| -> Option<bool> {
+        let mut offset = 0;
+        loop {
+            let page = api.stock_reading_with(offset, background).unwrap()?;
+            let n = page.items.len() as u64;
+            if let Some(imp) = page
+                .items
+                .iter()
+                .filter_map(|x| x.imported.as_ref())
+                .find(|i| i.remote_id == rid && i.subscription_id == sub.id)
+            {
+                return Some(imp.withdrawn);
+            }
+            offset += n;
+            if n == 0 || offset >= page.total {
+                return None;
+            }
+        }
+    };
+    if serves_browse(&e.url) {
+        assert_eq!(listed(false), None, "0.49 leaves it out of the plain list");
+        assert_eq!(listed(true), Some(true), "…and lists it under background");
+    } else {
+        assert_eq!(
+            listed(false),
+            Some(true),
+            "listed with the rest before 0.49"
+        );
+    }
+    me.unsubscribe(&sub.id).unwrap();
 }

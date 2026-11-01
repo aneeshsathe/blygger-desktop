@@ -754,3 +754,31 @@ fn migration_indexes_existing_rows_references() {
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].relation, crate::profile::Relation::Stubs);
 }
+
+// --- background ---
+
+#[test]
+fn background_lists_every_tombstone_newest_first() {
+    let s = store();
+    let k = kinds(&[("s", SubscriptionKind::Blyg)]);
+    let o = "https://a.example/";
+    let live = ri("s", "L", o, None, 1, "2026-01-01T00:00:00Z", "live");
+    let quiet = ri("s", "Q", o, None, 1, "2026-01-02T00:00:00Z", "quiet");
+    let loud = ri("s", "T", o, None, 1, "2026-01-03T00:00:00Z", "loud");
+    let mut gone_quiet = tombstone(&quiet, 2);
+    gone_quiet.observed_at = "2026-03-01T00:00:00Z".into();
+    let mut gone_loud = tombstone(&loud, 2);
+    gone_loud.observed_at = "2026-02-01T00:00:00Z".into();
+    gone_loud.thumb = Some(1);
+    s.merge_reading(&[live, gone_quiet, gone_loud], true, &k)
+        .unwrap();
+    // The reading list hides the unsignalled one; Background has both.
+    let reading: Vec<_> = s.reading().into_iter().map(|r| r.remote_id).collect();
+    assert_eq!(reading, ["T", "L"]);
+    let bg: Vec<_> = s
+        .background_reading()
+        .into_iter()
+        .map(|r| r.remote_id)
+        .collect();
+    assert_eq!(bg, ["Q", "T"]);
+}

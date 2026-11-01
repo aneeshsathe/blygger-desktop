@@ -3,7 +3,7 @@
 Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
 (https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
 (`openapi.json`; route guide in its `docs/api.md`). Burrow 0.13 and later need
-**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.47.0** (and 0.46.1, below the floor).
+**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.49.1** (and 0.48.0, without the 0.49 routes).
 Every route the app shares with upstream is checked against `openapi.json` in its tests
 (`crates/blyg-core/tests/fixtures/`).
 
@@ -93,6 +93,8 @@ sends what waited.
 | AI disclosure for text generated **in Burrow** | **0.28+:** each TK scope's provenance goes with the text (`PATCH /api/items/:id {content_md, provenance}`, and on `POST /api/items`); on 0.41+ a remote source carries its `origin`. Older: before publishing such text Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
 | Removing an image you pasted, then deleted | **0.26+.** Older: it stays on the server. |
 | Syncing every 15 s on change counters | **0.32+** (`GET /api/changes`). Older: read whole every 60 s. |
+| Which links in a post name a blyg item | **0.49+:** `POST /api/peek/links`. Older: Burrow probes the pages itself; see [Following links](#following-links-studio-049). |
+| Browsing history shared with the web Studio | **0.49+:** `GET/POST/DELETE /api/browse`. Older: kept on this Mac. |
 
 Below 0.47 the "Older" columns still apply to what syncs. Burrow 0.12 and earlier also
 showed a sheet listing a pre-0.40 studio's limits; 0.13's floor replaced it with the
@@ -113,6 +115,60 @@ update notice.
   `feed_orders`, …). Burrow ignores them, and its `PATCH` sends only the keys it owns.
 - Mentions may have `relation: "source"` (0.41: generated text drew on your post).
 - Hopper routes take `~own` as the subscription with your own item's id (0.45).
+- `GET /api/reading` leaves withdrawn entries (yours and the blygs you read) out
+  unless `background=true`, which lists only them (0.49). Burrow reads this route
+  only on a studio without `/api/reading/imported` (before 0.40); there it also
+  walks `background=true`, so a withdrawn post stays a tombstone instead of
+  reading as gone. A server that ignores the parameter (it sends live entries
+  back) is remembered for the session and asked once.
+
+## Following links (studio 0.49)
+
+The reader follows a quoted layer, a stub's target or an ordinary link that names
+a blyg item into the reader, and keeps a private log of the walk. The routes Burrow
+uses are in one file, `crates/blyg-core/src/api/browse.rs`.
+
+**Which links name an item.** `POST /api/peek/links {urls}` (scope `owner:read`,
+at most 40 URLs a call; Burrow sends longer lists in chunks) answers
+`{links: [{url, target: {origin, id} | null}]}` for each distinct http(s) URL. The
+studio looks at each page's §5.8 `<link rel="alternate" type="application/json">`
+item document and remembers the answer for a week.
+
+Where the route isn't served (a 404, or the `403` a studio before 0.49 gives a
+bearer for a POST route it doesn't know), Burrow remembers that for six hours and
+classifies the links itself, by the studio's own rules (`src/peek.ts`):
+
+1. a permalink of your own blyg (`{origin}f/{id}/` or `t/{id}/`) is that post;
+2. a held post of a blyg subscription whose `page` is the link is that post;
+3. otherwise the page is fetched with the token-less public client (its first
+   256 KiB; 5 s to connect, 12 s in all, four at a time), and its first
+   `rel="alternate"` JSON document is fetched: the link names the item when that
+   document has a `blyg` key, a string `id` and an http(s) `origin`, and was served
+   from that origin's scheme, host and port (§12.2; the studio is looser here).
+
+Answers, hits and misses alike, are kept a week in the local `link_probe` table; a
+network failure (offline, a 5xx) is asked again next time. No token ever goes to
+another host.
+
+**The browsing log.** One walk is a *trail* (8–64 characters, made by Burrow); each
+step names the step it was reached from (`parent_id`), so the log is a tree.
+
+| Call | Body / query | Success |
+|---|---|---|
+| `GET /api/browse` | `offset`, `limit` (≤ 100), `trail?` | `{items: [{id, at, trail, parent_id, origin, remote_id, version, via, title}], total, offset, limit}`, newest first |
+| `POST /api/browse` | `{trail, parent_id?, origin, remote_id, version?, via, title?}`; `via` is `start`, `stub`, `quote`, `link` or `back`; `title` ≤ 400 (the studio keeps 160) | `201 {id}` |
+| `DELETE /api/browse` | `trail?` (none: everything) | `{ok: true}` |
+
+The writes need `reading:state`. Steps are best-effort: they are sent from a
+background thread, never through the outbox, and one that can't be sent (offline) is
+dropped. Where the studio has no log (a 404), Burrow keeps it in the local
+`browse_log` table (the same columns) and asks the studio again after six hours. A
+`403` (a credential without `reading:state`, or a studio before 0.49) keeps the log
+on this Mac until the next launch or sign-in. Clearing clears both. The log is never
+sent anywhere else and never appears on a public page.
+
+`GET /api/peek?origin&id` (an item read from its own blyg, not stored) is in the API
+client for completeness; Burrow reads item documents itself (`public_item`).
 
 ## Legacy: the old Worker fork's extensions
 

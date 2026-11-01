@@ -311,9 +311,16 @@ cargo test -p blyg-render
 ```
 
 **Reference version.** The fixtures come from stock blygger-studio
-0.48.0 (tag `v0.48.0`, commit 320fe2e, unpatched), re-generated 2026-10-19
+0.49.1 (tag `v0.49.1`, unpatched), re-generated 2026-10-31
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
-versions). Earlier fixtures came from the maintainer's patched Worker; see
+versions). Every case came out byte-identical to the 0.48.0 fixtures:
+0.49's one rendering change, `injectNestedProvenance` (a provenance line,
+`from … ↗ · snapshot of vN`, on each quote nested inside a quote), runs on
+the public pages (`pages.ts`'s thread card and block) after
+`injectProvenance`, and the generator calls only `injectProvenance`. So the
+thread preview here still names the direct layer only, where a 0.49 public
+page also names the nested ones; porting it would need the fake store to
+answer its subscription and imported-item lookups. Not done yet. Earlier fixtures came from the maintainer's patched Worker; see
 "Studio 0.46.1" below for what changed then, "Studio 0.47.0" for the
 labels, and "Studio 0.48.0" for the label fixes. The Worker's preview helpers moved again in 0.32
 (`previewLinkDocs`/`spliceLinkDocs` became `previewInternalLinks`,
