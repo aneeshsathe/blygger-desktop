@@ -18,6 +18,7 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+mod change_lead; // --- background ---
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
 mod lineage;
 pub(crate) mod lineage_vm;
@@ -335,6 +336,9 @@ pub struct State {
     pub stub: Option<stub_bar::Chooser>,
     /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
     pub picked: pick_vm::Picked,
+    // --- background ---
+    /// The stream cards' "V3: …" leads, asked once a session.
+    pub leads: change_lead::Leads,
 }
 
 impl State {
@@ -384,6 +388,7 @@ impl State {
             avatars: sources::avatars(backend),
             stub: None,
             picked: Default::default(),
+            leads: Default::default(), // --- background ---
         }
         .refiltered()
     }
@@ -407,7 +412,7 @@ impl State {
                 chrono::Utc::now(),
             )
         } else {
-            searched
+            sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -480,7 +485,8 @@ impl MainView {
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
     pub(super) fn reading_changed(&mut self, cx: &mut Context<Self>) {
         // --- own posts --- your published posts among the rows.
-        let fresh = own::merge(self.backend.reading(), self.own_rows());
+        // --- background --- and the withdrawn posts, at the end.
+        let fresh = self.reading_with_own();
         let r = &mut self.reading;
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
@@ -491,7 +497,7 @@ impl MainView {
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
-            let order = vm::order(fresh);
+            let order = fresh;
             let mut next: Vec<ReadingItem> = order
                 .iter()
                 .filter(|n| !r.rows.iter().any(|o| vm::key(o) == vm::key(n)))
@@ -502,9 +508,10 @@ impl MainView {
                     next.push(n.clone());
                 }
             }
-            r.rows = next;
+            // --- background --- the withdrawn posts stay last, newest first.
+            r.rows = own::with_background(next, vec![]);
         } else {
-            r.rows = vm::order(fresh);
+            r.rows = fresh;
         }
         let (own_posts, own_origin) = self.own_lineage();
         let r = &mut self.reading;

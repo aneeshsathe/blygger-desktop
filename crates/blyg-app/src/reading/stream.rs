@@ -774,6 +774,8 @@ impl MainView {
                     .gap(px(6.))
                     .child(meta)
                     .children(lineage)
+                    // --- background --- a revised post's "V3: …" first.
+                    .children(self.render_change_lead(r, cx))
                     .child(
                         div()
                             .flex()

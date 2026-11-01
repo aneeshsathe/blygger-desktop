@@ -21,10 +21,20 @@ pub enum Smart {
     Thumbed,
     /// Everything held.
     All,
+    /// --- background --- withdrawn posts only (studio 0.49.0's Background
+    /// lens): the blygs' tombstones and your own withdrawn posts. Nowhere
+    /// else lists them.
+    Background,
 }
 
 impl Smart {
-    pub const ALL: [Smart; 4] = [Smart::Unread, Smart::Today, Smart::Thumbed, Smart::All];
+    pub const ALL: [Smart; 5] = [
+        Smart::Unread,
+        Smart::Today,
+        Smart::Thumbed,
+        Smart::All,
+        Smart::Background,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
@@ -32,6 +42,7 @@ impl Smart {
             Smart::Today => "Today",
             Smart::Thumbed => "Thumbed",
             Smart::All => "All",
+            Smart::Background => "Background",
         }
     }
 }
@@ -78,7 +89,23 @@ pub fn pane_step(pane: Pane, right: bool, sources_open: bool, post_open: bool) -
 /// Counts as "to read" for the unread smart feed, the folder counts and
 /// the dots: never read, or edited since you read it.
 pub fn needs_reading(r: &ReadingItem) -> bool {
-    r.is_unread() || (r.edited_since_read() && r.state != "tombstone")
+    !is_background(r) && (r.is_unread() || r.edited_since_read())
+}
+
+/// --- background --- A withdrawn post (an imported tombstone, or your own
+/// withdrawn post): listed under Background only, never unread.
+pub fn is_background(r: &ReadingItem) -> bool {
+    r.state == "tombstone"
+}
+
+/// --- background --- The stream's rows (indices from the search's
+/// `searched`): everything but the withdrawn posts.
+pub fn stream_rows(rows: &[ReadingItem], searched: &[usize]) -> Vec<usize> {
+    searched
+        .iter()
+        .copied()
+        .filter(|&i| rows.get(i).is_some_and(|r| !is_background(r)))
+        .collect()
 }
 
 /// The post's own date (updated, else created) falls on today, local time.
@@ -100,8 +127,12 @@ pub fn in_source(
     filed: &HashMap<String, String>,
     now: DateTime<Utc>,
 ) -> bool {
+    // --- background --- withdrawn posts are in Background and nowhere else.
+    if is_background(r) != (*source == Source::Smart(Smart::Background)) {
+        return false;
+    }
     match source {
-        Source::Smart(Smart::All) => true,
+        Source::Smart(Smart::All) | Source::Smart(Smart::Background) => true,
         Source::Smart(Smart::Unread) => needs_reading(r),
         Source::Smart(Smart::Today) => is_today(r, now),
         Source::Smart(Smart::Thumbed) => r.thumb == Some(1),
@@ -203,7 +234,10 @@ pub fn entries(
         });
     }
     // --- own posts --- your blyg, under the smart feeds, once it has posts.
-    if rows.iter().any(super::own::is_own_row) {
+    if rows
+        .iter()
+        .any(|r| super::own::is_own_row(r) && !is_background(r))
+    {
         out.push(Entry::Own);
     }
     // A folder id that no longer exists counts as unfiled.
@@ -316,6 +350,9 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Today) => "Nothing dated today.",
         Source::Smart(Smart::Thumbed) => "No thumbed posts yet. 👍 a post to keep it here.",
         Source::Smart(Smart::All) => "Nothing to read yet.",
+        Source::Smart(Smart::Background) => {
+            "Nothing withdrawn. Posts their authors withdraw are kept here, out of the way."
+        }
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
@@ -384,6 +421,7 @@ mod tests {
                 "Today",
                 "Thumbed",
                 "All",
+                "Background",
                 "# Folders",
                 "[Friends]",
                 "  Rue",
@@ -466,14 +504,17 @@ mod tests {
                 .any(|r| &r.remote_id == id && r.subscription_id == "sub-lin")
         }));
         assert_eq!(ids(Source::Sub("sub-omar".into()), &none), [OMAR_YEAR]);
-        assert_eq!(ids(Source::Smart(Smart::Thumbed), &none), [RUE_KEPT]);
+        // --- background --- Rue's thumbed post is withdrawn: Background only.
+        assert!(ids(Source::Smart(Smart::Thumbed), &none).is_empty());
+        assert_eq!(ids(Source::Smart(Smart::Background), &none), [RUE_KEPT]);
         let unread = ids(Source::Smart(Smart::Unread), &none);
         assert!(unread.contains(&RUE_TRUST.to_string()), "edited since read");
         assert!(!unread.contains(&ADA_TIDES.to_string()), "read");
         // A read post stays while it's sticky.
         let sticky = HashSet::from([("sub-ada".to_string(), ADA_TIDES.to_string())]);
         assert!(ids(Source::Smart(Smart::Unread), &sticky).contains(&ADA_TIDES.to_string()));
-        assert_eq!(ids(Source::Smart(Smart::All), &none).len(), rows.len());
+        assert_eq!(ids(Source::Smart(Smart::All), &none).len(), rows.len() - 1);
+        assert!(!ids(Source::Smart(Smart::All), &none).contains(&RUE_KEPT.to_string()));
     }
 
     #[test]
@@ -497,9 +538,9 @@ mod tests {
         let e = entries(&sd.folders, &sd.filed, &sd.subs, &[], &HashSet::new(), now);
         let all = Source::Smart(Smart::All);
         assert_eq!(
-            step_source(&e, &all, 1),
+            step_source(&e, &all, 2),
             Some(Source::Folder(FOLDER_FRIENDS.into())),
-            "headings are skipped"
+            "headings are skipped (Background comes first)"
         );
         assert_eq!(
             step_source(&e, &Source::Smart(Smart::Unread), -1),
@@ -559,17 +600,8 @@ mod tests {
         assert_eq!(
             e[at - 1],
             Entry::Smart {
-                smart: Smart::All,
-                unread: e
-                    .iter()
-                    .find_map(|x| match x {
-                        Entry::Smart {
-                            smart: Smart::All,
-                            unread,
-                        } => Some(*unread),
-                        _ => None,
-                    })
-                    .unwrap(),
+                smart: Smart::Background,
+                unread: 0,
             },
             "right under the smart feeds"
         );
@@ -605,5 +637,65 @@ mod tests {
             selectable(&e).iter().filter(|s| **s == Source::Own).count(),
             1
         );
+    }
+
+    // --- background ---
+    #[test]
+    fn withdrawn_posts_are_background_and_nowhere_else() {
+        let (sd, now) = seed();
+        let mut rows = super::super::vm::order(sd.reading.clone());
+        // A withdrawn post that was never read, and one of yours.
+        let mut gone = sd.reading[0].clone();
+        gone.remote_id = "01k2bg0gone000000000000001".into();
+        gone.state = "tombstone".into();
+        gone.read_version = None;
+        gone.thumb = Some(1);
+        gone.created = Some(now.to_rfc3339());
+        let mut mine = gone.clone();
+        mine.subscription_id = super::super::own::OWN.into();
+        mine.remote_id = "7c9wk2n4h6q1x8v0z3m5rjy2bg".into();
+        mine.thumb = None;
+        rows.push(gone.clone());
+        rows.push(mine.clone());
+        let filed = HashMap::new();
+        let bg = Source::Smart(Smart::Background);
+        for r in [&gone, &mine] {
+            assert!(is_background(r));
+            assert!(!needs_reading(r), "never unread");
+            assert!(in_source(r, &bg, &filed, now));
+            for other in [
+                Source::Smart(Smart::Unread),
+                Source::Smart(Smart::Today),
+                Source::Smart(Smart::Thumbed),
+                Source::Smart(Smart::All),
+                Source::Own,
+                Source::Sub(r.subscription_id.clone()),
+            ] {
+                assert!(!in_source(r, &other, &filed, now), "{other:?}");
+            }
+        }
+        // Background lists nothing live.
+        assert!(
+            rows.iter()
+                .filter(|r| !is_background(r))
+                .all(|r| !in_source(r, &bg, &filed, now))
+        );
+        // The stream leaves them out.
+        let all: Vec<usize> = (0..rows.len()).collect();
+        let stream = stream_rows(&rows, &all);
+        assert!(stream.iter().all(|&i| !is_background(&rows[i])));
+        assert_eq!(
+            stream.len(),
+            rows.iter().filter(|r| !is_background(r)).count()
+        );
+        // No count, and your withdrawn post alone doesn't make "Your blyg".
+        let e = entries(&[], &filed, &[], &rows, &HashSet::new(), now);
+        assert!(e.contains(&Entry::Smart {
+            smart: Smart::Background,
+            unread: 0
+        }));
+        assert!(!e.contains(&Entry::Own));
+        assert_eq!(source_label(&bg, &[], &[]), "Background");
+        assert!(empty_label(&bg).starts_with("Nothing withdrawn"));
     }
 }

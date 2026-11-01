@@ -99,11 +99,14 @@ fn the_reader_opens_on_all_with_the_sources_pane(cx: &mut TestAppContext) {
         assert_eq!(v.reading.source, Source::Smart(Smart::All));
         assert!(v.reading.sources_open);
         assert_eq!(v.reading.pane, Pane::List);
-        assert_eq!(
-            v.reading.shown.len(),
-            v.reading.rows.len(),
-            "All = every row"
-        );
+        // --- background --- All = every row but the withdrawn posts.
+        let foreground = v
+            .reading
+            .rows
+            .iter()
+            .filter(|r| !super::sources_vm::is_background(r))
+            .count();
+        assert_eq!(v.reading.shown.len(), foreground, "All = every live row");
         let names: Vec<String> = v.reading.folders.iter().map(|f| f.name.clone()).collect();
         assert_eq!(names, ["Friends", "Gardens"]);
     });
@@ -124,8 +127,9 @@ fn selecting_a_source_filters_the_list(cx: &mut TestAppContext) {
 
     select(&view, Source::Sub("sub-omar".into()), cx);
     assert_eq!(shown(&view, cx), [OMAR_YEAR]);
+    // --- background --- Rue's thumbed post was withdrawn: Background only.
     select(&view, Source::Smart(Smart::Thumbed), cx);
-    assert_eq!(shown(&view, cx), [RUE_KEPT]);
+    assert!(shown(&view, cx).is_empty(), "{:?}", shown(&view, cx));
 
     // The search is scoped to the source.
     select(&view, Source::Folder(FOLDER_FRIENDS.into()), cx);
@@ -335,13 +339,19 @@ fn folders_are_made_renamed_reordered_and_deleted(cx: &mut TestAppContext) {
 fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     assert_eq!(pane(&view, cx), Pane::List);
-    // ← to the sources; ↓ picks the next source (Your blyg, then the
-    // first folder).
+    // ← to the sources; ↓ picks the next source (Background, Your blyg,
+    // then the first folder).
     cx.simulate_keystrokes("left");
     settle(cx);
     assert_eq!(pane(&view, cx), Pane::Sources);
     cx.simulate_keystrokes("left");
     assert_eq!(pane(&view, cx), Pane::Sources, "stops at the edge");
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.source.clone()),
+        Source::Smart(Smart::Background)
+    );
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(
@@ -366,6 +376,7 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let first = shown(&view, cx)[0].clone();
     assert_eq!(opened(&view, cx).as_deref(), Some(first.as_str()));
     assert_eq!(pane(&view, cx), Pane::Sources, "the keys stay put");
+    cx.simulate_keystrokes("up");
     cx.simulate_keystrokes("up");
     cx.simulate_keystrokes("up");
     settle(cx);
@@ -523,4 +534,133 @@ fn the_subscriptions_screen_chooses_a_folder(cx: &mut TestAppContext) {
     });
     menu(&view, MenuCmd::File("sub-rue".into(), None), cx);
     assert!(!fake.subscription_folders().contains_key("sub-rue"));
+}
+
+// --- background ---
+#[gpui_kit::test]
+fn withdrawn_posts_are_listed_under_background_only(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // Withdraw one of your published posts.
+    fake.withdraw(&blyg_core::LocalId("01J9E8B".into()), Some("gone"))
+        .unwrap();
+    view.update(cx, |v, cx| v.reading_changed(cx));
+    settle(cx);
+    let mine = "01J9E8BABCDEFGHJKMNPQRS".to_string();
+    let withdrawn = [ADA_GONE.to_string(), RUE_KEPT.to_string(), mine.clone()];
+
+    select(&view, Source::Smart(Smart::Background), cx);
+    let bg = shown(&view, cx);
+    for id in &withdrawn {
+        assert!(bg.contains(id), "{id} in {bg:?}");
+    }
+    assert_eq!(bg.len(), withdrawn.len(), "nothing live: {bg:?}");
+    view.read_with(cx, |v, _| {
+        let rows: Vec<_> = v.reading.shown_rows().cloned().collect();
+        assert!(
+            rows.iter().all(|r| !super::sources_vm::needs_reading(r)),
+            "never unread"
+        );
+        // Newest first.
+        let at: Vec<String> = rows.iter().map(|r| r.sort_at()).collect();
+        let mut sorted = at.clone();
+        sorted.sort_by(|a, b| b.cmp(a));
+        assert_eq!(at, sorted);
+        // No count beside Background, and no unread from withdrawn posts.
+        let e = super::sources_vm::entries(
+            &v.reading.folders,
+            &v.reading.filed,
+            &v.reading.subs,
+            &v.reading.rows,
+            &Default::default(),
+            chrono::Utc::now(),
+        );
+        assert!(e.contains(&super::sources_vm::Entry::Smart {
+            smart: Smart::Background,
+            unread: 0
+        }));
+    });
+
+    // Every other source, and the stream, leave them out.
+    let mut others = vec![
+        Source::Smart(Smart::Unread),
+        Source::Smart(Smart::Today),
+        Source::Smart(Smart::Thumbed),
+        Source::Smart(Smart::All),
+        Source::Own,
+        Source::Folder(FOLDER_FRIENDS.into()),
+        Source::Folder(FOLDER_GARDENS.into()),
+    ];
+    others.extend(
+        view.read_with(cx, |v, _| v.reading.subs.clone())
+            .into_iter()
+            .map(|s| Source::Sub(s.id)),
+    );
+    for src in others {
+        select(&view, src.clone(), cx);
+        let ids = shown(&view, cx);
+        assert!(
+            withdrawn.iter().all(|w| !ids.contains(w)),
+            "{src:?}: {ids:?}"
+        );
+    }
+    view.update_in(cx, |v, window, cx| {
+        v.set_read_mode(super::stream_vm::ReadMode::Stream, window, cx)
+    });
+    settle(cx);
+    let stream = shown(&view, cx);
+    assert!(!stream.is_empty());
+    assert!(withdrawn.iter().all(|w| !stream.contains(w)), "{stream:?}");
+
+    // Opened from Background, a tombstone reads as withdrawn.
+    view.update_in(cx, |v, window, cx| {
+        v.set_read_mode(super::stream_vm::ReadMode::Reader, window, cx)
+    });
+    select(&view, Source::Smart(Smart::Background), cx);
+    let pos = shown(&view, cx)
+        .iter()
+        .position(|id| id == ADA_GONE)
+        .unwrap();
+    for _ in 0..=pos {
+        view.update_in(cx, |v, window, cx| v.move_reading(1, window, cx));
+        settle(cx);
+    }
+    assert_eq!(opened(&view, cx).as_deref(), Some(ADA_GONE));
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.reading.opened.as_ref().unwrap().item.state, "tombstone");
+    });
+}
+
+#[gpui_kit::test]
+fn a_revised_post_leads_with_its_changelog_entry(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.set_read_mode(super::stream_vm::ReadMode::Stream, window, cx)
+    });
+    settle(cx);
+    // Drawing the stream asks for the leads of the cards on screen.
+    cx.update(|window, _| window.refresh());
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        use super::change_lead::{Lead, lead_text};
+        let rows: Vec<_> = v.reading.shown_rows().cloned().collect();
+        let r = rows
+            .iter()
+            .find(|r| r.remote_id == LIN_GARDENS)
+            .expect("Lin's gardens");
+        let l = v.reading.leads.get(&super::vm::key(r), r.version);
+        // Lin's gardens are at v4, "linked the reply".
+        assert_eq!(l, Some(Lead::Ready(Some("linked the reply".into()))));
+        assert_eq!(lead_text(r.version, l.as_ref()), "V4: linked the reply");
+        // A first version and your own posts get none.
+        for r in &rows {
+            if r.version <= 1 || super::own::is_own_row(r) {
+                assert_eq!(v.reading.leads.get(&super::vm::key(r), r.version), None);
+            }
+        }
+        assert_eq!(v.reading.leads.in_flight(), 0);
+    });
+    assert!(
+        cx.debug_bounds(format!("change-lead-{LIN_GARDENS}").leak())
+            .is_some()
+    );
 }
