@@ -15,16 +15,25 @@ the pane and the stream keeps its place.
 A post counts as read after a second on screen, and unread posts get a dot,
 never a count. Posts are dated by when their author published or last edited
 them, and an edit updates the post in place rather than adding a new one.
-Quotes show as grey boxes with the quoted text, and `[[id]]` links read as
-the post they point to.
+Quotes show as grey boxes with the quoted text (a quote inside a quote
+nests, three layers deep), and `[[id]]` links read as the post they point
+to. A post that has been revised leads with its latest changelog note,
+"V3: …", read from the author's changelog once the post is on screen, or
+"V3: No changelog entry available" when they left none.
 
 ![The stream](screenshots/stream.png)
 
 ## The Reader
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
-(All unread, Today, Thumbed, All, then **Your blyg**, your folders and the
-rest), the posts from that source in the middle, and the post on the right.
+(All unread, Today, Thumbed, All, Background, then **Your blyg**, your
+folders and the rest), the posts from that source in the middle, and the
+post on the right.
+
+- **Background** lists withdrawn posts, the blygs' and your own, newest
+  first, and nothing else lists them: not the other feeds, the counts or the
+  stream. A withdrawn post is never unread. Opened, it reads as withdrawn
+  (with its retained pin, when the author kept one).
 
 - **Folders** stay on your Mac. Drag a subscription onto one to file it, or
   use its context menu; Blyg › New Folder… makes one.
@@ -75,6 +84,31 @@ subscription at once.
 |---|---|
 | ![A subscription's menu](screenshots/reader-sub-menu.png) | ![Renaming a subscription](screenshots/reader-sub-rename.png) |
 
+## Write while you read
+
+A post box runs along the foot of the reading screen, under the Stream and
+under the Reader's panes alike, so you can write without losing your place.
+It never covers the post you're reading. Press `c` (with the list focused)
+or ⇧⌘K from anywhere in the window (Blyg › Compose While Reading), and type.
+It grows as you write, up to eight lines.
+
+- **⌘⏎** (or **Post**) publishes it as a fragment, the way quick capture
+  does. A post that quotes another, or runs past 1,000 characters, goes as a
+  thread; the footer says which.
+- **⌘D** (or **Draft**) keeps it as a draft on your blyg.
+- **⤢** moves the text into the full editor as a draft, for longer writing.
+- **❝ Quote**, with a blyg post open, puts that post's `![[id]]` in the box.
+- `[[`, `![[` and @-mentions work as they do in the editor.
+- **esc** gives the keys back to the list and keeps your text. While the
+  box has the keys, the list's single-key shortcuts don't fire.
+
+Text you haven't posted is kept across screens and restarts. A post that
+fails keeps the text and says why; trying again won't make a second post.
+The Posts screen is unchanged.
+
+Burrow now opens on Reading. It stays on Posts during the first-run setup
+and the tour, and when there's no blyg to read from.
+
 ## Import and export subscriptions (OPML)
 
 Moving from another feed reader? Export an OPML file there (Feedly,
@@ -120,10 +154,14 @@ The selected post shows its actions. Each says what it makes:
   `![[id]]`; see [labelled links](writing.md#labelled-links)).
 - **Reply · new stub**: a new thread that responds to the post (a *stub*,
   Blygger's reply). It starts quoting the whole post. A line above the
-  editor says what the stub is doing; **quote a passage instead** shows the
-  post's text, and the passage you select there becomes the quote (`>` lines
-  under `![[id]]`). Once there is one, the next passage goes after the caret
-  as its own quote, for a running commentary; **quote whole post** goes back.
+  editor says what the stub is doing. To quote only part of the post, select
+  the text inside its quote in the editor's preview (**select a passage in
+  the preview** shows it) and press **❝ quote only this**, or ⇧⌘D: the
+  passage goes under that quote's `![[id]]` as `>` lines, whichever of
+  several quotes it is. **Quote another passage** adds a whole-post quote
+  after the caret to select from, for a running commentary; **quote whole
+  post** goes back. A quote inside the quote, or a preview that hasn't
+  caught up with your typing, offers nothing.
 
   ![Choosing a passage in a stub](screenshots/stub-passage.png)
 - **AI reply · new stub**: the same, with a first draft from AI.
@@ -146,6 +184,41 @@ pin**, or **Diff vs now**. When an author edits a post you've read, it shows
 "edited", with the author's version notes since you read it.
 
 ![Versions of someone else's post](screenshots/versions.png)
+
+## Follow the thicket
+
+Blyg posts quote, stub and link each other, and the reader lets you walk
+that web without leaving it.
+
+- **Every quoted layer** opens in the reader, quotes inside quotes too. Each
+  says whose it is ("quoted from … · v2 · open original"). Clicking the name
+  opens the profile, anywhere else in the box the post.
+- **A stub's "responds to" line** opens what it answers.
+- **An ordinary link to a blyg post** opens it in the reader too. When a post
+  opens, Burrow asks your blyg which of its links name blyg posts (studio
+  0.49 answers from its own cache), or checks the linked pages itself on an
+  older blyg. Other links open in the browser, so you keep your place.
+- **A post from a blyg you don't follow** opens as a peek, read from its own
+  blyg with nothing saved, under "You're not subscribed to this blyg —
+  subscribe?". That link opens the Subscribe sheet with the address filled
+  in.
+
+A breadcrumb above the post shows the path you took; click an earlier entry
+to go straight back. **⌘[** (Blyg › Back) or **‹ back** steps back one post
+at a time. Opening a post from the stream, the list or a source starts a new
+walk.
+
+### Browsing history
+
+**⇧⌘H** (Blyg › Browsing History, or **history** above the post) opens a
+pane beside the reader listing this walk and earlier ones, newest first,
+indented as the tree they were. Each step opens its post. **clear history**
+(click twice) empties it. Esc closes the pane.
+
+The history is private. On a blyg running studio 0.49 or later it's kept in
+your blyg's own browsing log, so the web Studio's history pane shows the
+same walks; on an older blyg, or with a sign-in that lacks `reading:state`,
+it stays on this Mac. It's never published or sent to anyone else.
 
 ## Universal quoting
 
