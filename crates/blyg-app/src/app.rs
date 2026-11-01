@@ -102,6 +102,9 @@ pub(crate) mod notes;
 // --- extensions --- (the host, its sheets and the notes library; hooks marked the same way)
 #[path = "extensions/mod.rs"]
 pub(crate) mod extensions;
+// --- blyg switcher --- (several blygs, one active; hooks marked the same way)
+#[path = "switcher.rs"]
+pub(crate) mod switcher;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -206,6 +209,8 @@ enum Sheet {
     // and what the composer holds before its `submit`.
     MacroPreview(browser::automation::PreviewSheet),
     MacroPost(browser::automation::PostSheet),
+    // --- blyg switcher --- every signed-in blyg; switch, add, sign out.
+    Blygs(switcher::BlygSheet),
 }
 
 struct Toast {
@@ -1011,7 +1016,15 @@ impl MainView {
                     }),
                     cx,
                 );
-                self.open_connect(window, cx);
+                // --- blyg switcher --- the next signed-in blyg is active now;
+                // with none left (or none that opens), connect one.
+                if crate::settings::blyg_url(cx).is_some()
+                    && crate::connection::mode(cx) != Some(crate::connection::Mode::Disconnected)
+                {
+                    self.blyg_switched(window, cx);
+                } else {
+                    self.open_connect(window, cx);
+                }
             }
             Err(e) => self.show_toast(e, None, cx),
         }
@@ -2143,6 +2156,7 @@ impl Render for MainView {
             .map(|d| self.browser_actions(d, cx)) // --- browser ---
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
+            .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .size_full()
             .relative()
             .flex()
@@ -2151,7 +2165,17 @@ impl Render for MainView {
             .text_color(p.ink)
             .font_family(ui_font.clone())
             // Windows shows the title in its own title bar.
-            .child(self.render_titlebar(&ui_font, show_title && cfg!(target_os = "macos")))
+            // --- blyg switcher --- the active blyg is the title (a button),
+            // on Windows too.
+            .child(
+                self.render_titlebar(
+                    &ui_font,
+                    show_title && cfg!(target_os = "macos"),
+                    show_title
+                        .then(|| self.render_blyg_title(&ui_font, cx))
+                        .flatten(),
+                ),
+            )
             .children(crate::platform::menu_button(p, cx)) // Windows menu
             .child(self.render_view_switcher(cx)) // --- reading & versions ---
             .children(self.render_toolbar(toolbar, &ui_font, cx)) // --- buttons ---
@@ -2206,9 +2230,15 @@ impl Render for MainView {
 }
 
 impl MainView {
-    fn render_titlebar(&self, ui_font: &SharedString, show_title: bool) -> impl IntoElement {
+    fn render_titlebar(
+        &self,
+        ui_font: &SharedString,
+        show_title: bool,
+        blyg_title: Option<AnyElement>, // --- blyg switcher ---
+    ) -> impl IntoElement {
         let p = self.palette;
         let plate = crate::ornament::title_plate(&self.theme);
+        let connected = blyg_title.is_some(); // --- blyg switcher ---
         div()
             .id("titlebar")
             // On Windows the OS title bar moves the window, and a drag area
@@ -2229,7 +2259,9 @@ impl MainView {
             .border_color(p.bar_line)
             .children(crate::ornament::titlebar_band(&self.theme))
             // --- buttons --- the toolbar hides the title when it needs the room
-            .when(show_title, |d| {
+            // --- blyg switcher --- with a blyg, the title is the switcher.
+            .when_some(blyg_title, |d, t| d.child(t))
+            .when(show_title && !connected, |d| {
                 d.child(
                     div()
                         .font_family(ui_font.clone())
@@ -2972,6 +3004,7 @@ impl MainView {
             // --- browser macros ---
             Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
+            Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Publish {
                 title,
                 next_version,

@@ -29,6 +29,16 @@
 | ⌘1 | Write: list + editor | View › Write |
 | ⌘2 | List + editor + preview | View › List + Editor + Preview |
 | ⌘3 | Full editor: editor + preview | View › Full Editor |
+| ⌃⌘0 | Blyg switcher: every blyg you're signed in to (or click the title) | Blyg › Switch Blyg… |
+| ⌃⌘1 | Switch to the first blyg in the switcher (Blyg › Switch To) |  |
+| ⌃⌘2 | Switch to the second blyg |  |
+| ⌃⌘3 | Switch to the third blyg |  |
+| ⌃⌘4 | Switch to the fourth blyg |  |
+| ⌃⌘5 | Switch to the fifth blyg |  |
+| ⌃⌘6 | Switch to the sixth blyg |  |
+| ⌃⌘7 | Switch to the seventh blyg |  |
+| ⌃⌘8 | Switch to the eighth blyg |  |
+| ⌃⌘9 | Switch to the ninth blyg |  |
 | ⌘G | Generate: fill the [TK] under the caret, or open the AI helpers | Post › Generate (TK) |
 | ⇧⌘G | Shorten to fit 1000 (AI; you accept or reject) | Post › Shorten to Fit 1000 |
 | ⌘R | Reading list (again: back to posts) | Blyg › Reading |
@@ -88,6 +98,8 @@
 | Check spelling while typing (on/off; the spellcheck config key) | Edit › Spelling › Check Spelling While Typing |
 | Disconnect from this blyg | Burrow › Disconnect… |
 | Open the config file | Burrow › Open Config File |
+| Sign in to another blyg (the others stay signed in) | Blyg › Add a Blyg… |
+| Manage blygs: sign out of one, keeping or deleting its posts on this Mac | Blyg › Manage Blygs… |
 | Check for a new release now (whatever auto-update says) | Burrow › Check for Updates… |
 | Quick capture (the global hotkey, capture-hotkey) | Burrow › Quick Capture |
 | Subscribe to a blyg or feed | Blyg › Subscribe… |

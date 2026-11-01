@@ -5,6 +5,7 @@
 //! Secrets never go in the config file. App state (db, caches, media) lives
 //! in [`paths::data_dir`], not in config.
 
+pub mod blygs; // --- blyg switcher ---
 pub mod edit;
 pub mod keys;
 pub mod migrate;
