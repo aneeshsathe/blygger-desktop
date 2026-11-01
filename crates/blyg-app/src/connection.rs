@@ -641,6 +641,24 @@ impl Backend for SwitchBackend {
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
     }
+    // --- browse ---
+    fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
+        self.cur().classify_links(urls)
+    }
+    fn log_browse(&self, step: &blyg_core::browse::NewBrowseStep) -> Result<i64> {
+        self.cur().log_browse(step)
+    }
+    fn browse_history(
+        &self,
+        trail: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<blyg_core::browse::BrowseStep>> {
+        self.cur().browse_history(trail, offset, limit)
+    }
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        self.cur().clear_browse(trail)
+    }
     // --- lineage counts ---
     fn lineage_summaries(
         &self,
