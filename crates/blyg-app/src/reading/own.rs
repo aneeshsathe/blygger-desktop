@@ -104,6 +104,55 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
     })
 }
 
+/// --- background --- Your withdrawn post as a row for the Background
+/// feed: a tombstone without its text (as blygger-studio shows an endcap),
+/// read at its version, dated by the withdrawal. `None` for anything not
+/// withdrawn.
+pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
+    if item.status != Status::Withdrawn {
+        return None;
+    }
+    let public = Item {
+        status: Status::Public,
+        dirty: false,
+        ..item.clone()
+    };
+    let mut r = row(&public, origin)?;
+    r.state = "tombstone".into();
+    r.content_md.clear();
+    r.stub_of = None;
+    r.forked_from = None;
+    Some(r)
+}
+
+/// --- background --- The reading rows as the screen holds them: `ordered`
+/// (`vm::order`'s list) without its withdrawn posts, then every withdrawn
+/// post once (the tombstones `ordered` kept because they're signalled or
+/// hoppered, `background`'s, and yours), newest first. Withdrawn rows are
+/// read at their version, so they never count as unread anywhere; the
+/// sources filter keeps them to the Background feed.
+pub fn with_background(
+    ordered: Vec<ReadingItem>,
+    background: Vec<ReadingItem>,
+) -> Vec<ReadingItem> {
+    let (mut withdrawn, mut out): (Vec<_>, Vec<_>) = ordered
+        .into_iter()
+        .partition(super::sources_vm::is_background);
+    withdrawn.extend(
+        background
+            .into_iter()
+            .filter(super::sources_vm::is_background),
+    );
+    let mut seen = std::collections::HashSet::new();
+    withdrawn.retain(|r| seen.insert(vm::key(r)));
+    withdrawn.sort_by_key(|r| std::cmp::Reverse(r.sort_at()));
+    for r in &mut withdrawn {
+        r.read_version = Some(r.version);
+    }
+    out.extend(withdrawn);
+    out
+}
+
 /// Every published post of yours as a row, in `items`' order.
 pub fn rows(items: &[Item], origin: &str) -> Vec<ReadingItem> {
     items.iter().filter_map(|i| row(i, origin)).collect()
@@ -199,7 +248,25 @@ impl MainView {
     /// The reading rows as the screen lists them: the backend's, with your
     /// own published posts among them.
     pub(super) fn reading_with_own(&self) -> Vec<ReadingItem> {
-        vm::order(merge(self.backend.reading(), self.own_rows()))
+        with_background(
+            vm::order(merge(self.backend.reading(), self.own_rows())),
+            self.background_rows(),
+        )
+    }
+
+    /// --- background --- The withdrawn posts: the blygs' tombstones
+    /// (`Backend::background_reading`) and your own withdrawn posts.
+    pub(super) fn background_rows(&self) -> Vec<ReadingItem> {
+        let mut v = self.backend.background_reading();
+        if let Some(origin) = self.backend.base_url() {
+            v.extend(
+                self.backend
+                    .items()
+                    .iter()
+                    .filter_map(|i| withdrawn_row(i, &origin)),
+            );
+        }
+        v
     }
 
     /// The local id of your post `server_id`.
@@ -464,7 +531,7 @@ mod tests {
     // Not `super::*`: that would bring gpui's `test` attribute in.
     use super::{
         OWN, POST_ACTIONS, changelog, citation_origin, is_own, is_own_row, merge, own_action_ids,
-        post_chip, row, vm,
+        post_chip, row, vm, with_background, withdrawn_row,
     };
     use blyg_core::{
         Item, Kind, LocalId, ReadingItem, RemoteRef, ResponsesMode, ServerId, Status, Version,
@@ -640,5 +707,45 @@ mod tests {
             citation_origin("https://blyg.example.com/m/"),
             "https://blyg.example.com/m/"
         );
+    }
+
+    // --- background ---
+    #[test]
+    fn your_withdrawn_post_is_a_background_row_without_its_text() {
+        let w = item(Status::Withdrawn, 3, "2026-10-01T10:00:00Z");
+        let r = withdrawn_row(&w, ORIGIN).unwrap();
+        assert_eq!(vm::key(&r), (OWN.to_string(), SID.to_string()));
+        assert_eq!(r.state, "tombstone");
+        assert!(r.content_md.is_empty() && r.pinned_version_retained.is_none());
+        assert_eq!(r.read_version, Some(3), "never unread");
+        assert!(withdrawn_row(&item(Status::Public, 3, "2026-10-01T10:00:00Z"), ORIGIN).is_none());
+        assert!(withdrawn_row(&item(Status::Draft, 0, "2026-10-01T10:00:00Z"), ORIGIN).is_none());
+    }
+
+    #[test]
+    fn withdrawn_posts_go_last_once_each_newest_first_and_read() {
+        let live = reading("live", "2026-10-03T10:00:00Z");
+        let mut kept = reading("kept", "2026-10-01T10:00:00Z");
+        kept.state = "tombstone".into();
+        kept.thumb = Some(1);
+        let mut gone = reading("gone", "2026-10-02T10:00:00Z");
+        gone.state = "tombstone".into();
+        let mine =
+            withdrawn_row(&item(Status::Withdrawn, 2, "2026-10-04T10:00:00Z"), ORIGIN).unwrap();
+        let out = with_background(
+            vec![kept.clone(), live.clone()],
+            // `background_reading` repeats the signalled one; a live row
+            // there would be ignored.
+            vec![gone.clone(), kept.clone(), live.clone(), mine.clone()],
+        );
+        let ids: Vec<&str> = out.iter().map(|r| r.remote_id.as_str()).collect();
+        assert_eq!(ids, ["live", SID, "gone", "kept"]);
+        assert!(out[1..].iter().all(|r| r.read_version == Some(r.version)));
+        assert_eq!(
+            out[2].read_version,
+            Some(1),
+            "an unread tombstone reads as read"
+        );
+        assert_eq!(out[3].thumb, Some(1), "the held copy wins");
     }
 }

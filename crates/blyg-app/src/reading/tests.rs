@@ -89,11 +89,18 @@ fn cmd_r_shows_reading_edited_on_top_tombstones_hidden(cx: &mut TestAppContext) 
             .collect();
         // Edited since read, newest first, on top; then the rest in order.
         assert_eq!(&ids[..2], &[RUE_TRUST, LIN_GARDENS], "{ids:?}");
+        // --- background --- withdrawn posts are held (last, for the
+        // Background feed) but the stream never shows them.
+        let shown = v.reading_shown_ids();
         assert!(
-            !ids.contains(&ADA_GONE),
+            !shown.contains(&ADA_GONE.to_string()),
             "an unsignalled tombstone is hidden"
         );
-        assert!(ids.contains(&RUE_KEPT), "a thumbed tombstone stays");
+        assert!(
+            !shown.contains(&RUE_KEPT.to_string()),
+            "a thumbed tombstone is background too"
+        );
+        assert_eq!(&ids[ids.len() - 2..], &[ADA_GONE, RUE_KEPT], "{ids:?}");
         assert_eq!(
             super::vm::badge(&v.reading_rows()[0]).as_deref(),
             Some("edited · v5")

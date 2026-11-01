@@ -1938,6 +1938,24 @@ impl Backend for FakeBackend {
             .retain(|s| trail.is_some_and(|t| s.trail != t));
         Ok(())
     }
+
+    // --- background --- every tombstone the sample blygs hold, signalled
+    // or not, newest first (`reading()` keeps hiding the unsignalled ones).
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        let st = self.lock();
+        if !st.read_ext {
+            return Vec::new();
+        }
+        let mut v: Vec<ReadingItem> = st
+            .rd
+            .reading
+            .iter()
+            .filter(|r| r.state == "tombstone")
+            .cloned()
+            .collect();
+        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
+        v
+    }
 }
 
 // --- reader folders --- the store's name rules (blyg-core `store/folders.rs`).

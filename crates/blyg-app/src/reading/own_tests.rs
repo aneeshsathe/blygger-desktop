@@ -140,7 +140,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
     for (src, all_own, any_own) in [
         (Source::Own, true, true),
         (Source::Smart(Smart::Unread), false, false),
-        (Source::Smart(Smart::Thumbed), false, false),
+        (Source::Smart(Smart::Background), false, false), // --- background ---
         (Source::Smart(Smart::All), false, true),
     ] {
         view.update(cx, |v, cx| v.select_source(src.clone(), cx));

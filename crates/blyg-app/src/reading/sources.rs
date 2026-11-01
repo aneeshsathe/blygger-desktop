@@ -1,7 +1,9 @@
 //! --- reader folders --- The Reader's sources pane (NetNewsWire-style):
-//! smart feeds (All unread, Today, Thumbed, All), then the user's folders
-//! with their subscriptions, then the subscriptions in no folder. Picking a
-//! source filters the post list beside it; the post itself is on the right.
+//! smart feeds (All unread, Today, Thumbed, All, Background), then the
+//! user's folders with their subscriptions, then the subscriptions in no
+//! folder. Picking a source filters the post list beside it; the post itself
+//! is on the right. Background lists withdrawn posts, which nothing else
+//! shows (`sources_vm::is_background`).
 //!
 //! Folders are local only (`Backend::folders` and friends, the store's
 //! `folders` / `folder_members` tables): they never reach the blyg, and they
@@ -37,6 +39,8 @@ const ICON_UNREAD: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="
 const ICON_TODAY: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>"#;
 const ICON_THUMB: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M7 10.5V20H4.5v-9.5z"/><path d="M7 10.5l3.6-6.5c1.4 0 2.4 1 2.2 2.5L12.3 10H18a2 2 0 0 1 2 2.3l-1.1 5.9A2.2 2.2 0 0 1 16.7 20H7"/></svg>"#;
 const ICON_ALL: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><circle cx="4.5" cy="6.5" r=".8" fill="currentColor"/><circle cx="4.5" cy="12" r=".8" fill="currentColor"/><circle cx="4.5" cy="17.5" r=".8" fill="currentColor"/></svg>"#;
+/// --- background --- withdrawn posts: an archive box.
+const ICON_BACKGROUND: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.5 5h17v4h-17z"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg>"#;
 /// --- own posts --- "Your blyg": a house.
 const ICON_OWN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/></svg>"#;
 const ICON_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.2h8.5A1.5 1.5 0 0 1 21 8.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>"#;
@@ -47,6 +51,7 @@ fn smart_icon(s: Smart) -> &'static [u8] {
         Smart::Today => ICON_TODAY,
         Smart::Thumbed => ICON_THUMB,
         Smart::All => ICON_ALL,
+        Smart::Background => ICON_BACKGROUND,
     }
 }
 

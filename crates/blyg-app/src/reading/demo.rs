@@ -329,6 +329,26 @@ impl MainView {
                 }
                 cx.notify();
             }
+            // --- background --- the Background feed, Rue's withdrawn post
+            // open; and the stream at Ada's tide tables, "V2: one word".
+            ("rd-background", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-background", 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Background), cx);
+                self.move_reading(1, window, cx);
+            }
+            ("rd-stream-lead", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-lead", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == crate::fake::reading_seed::ADA_TIDES);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),
             _ => {}
