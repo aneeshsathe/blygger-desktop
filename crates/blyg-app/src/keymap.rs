@@ -790,7 +790,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-d",
             Main,
             QuoteToDraft,
-            "Quote the highlighted passage (a page, a post or your notes) in the draft",
+            "Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft",
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---

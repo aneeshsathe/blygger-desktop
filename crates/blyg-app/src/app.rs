@@ -441,7 +441,8 @@ impl MainView {
             .backend
             .reading()
             .iter()
-            .filter(|r| r.is_unread())
+            // Withdrawn posts are background: never unread (studio 0.49).
+            .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
             .count();
         let mode = crate::connection::mode(cx);
         if mode == Some(crate::connection::Mode::Live) {
@@ -1320,7 +1321,8 @@ impl MainView {
                     .backend
                     .reading()
                     .iter()
-                    .filter(|r| r.is_unread())
+                    // Withdrawn posts are background: never unread (studio 0.49).
+                    .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
                     .count();
                 // --- reading & versions ---
                 self.reading_changed(cx);

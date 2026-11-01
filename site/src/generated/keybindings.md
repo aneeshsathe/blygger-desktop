@@ -54,7 +54,7 @@
 | ⌥⌘← | Tutorial: previous step |  |
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
-| ⇧⌘D | Quote the highlighted passage (a page, a post or your notes) in the draft | Post › Quote Selection in Draft |
+| ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
 | ⇧⌘P | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
 
 ### While typing in the editor or a text field

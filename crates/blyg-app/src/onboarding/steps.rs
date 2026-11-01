@@ -623,7 +623,7 @@ pub const STEPS: &[Step] = &[
         since: "0.4.0",
         title: "Reader: sources, posts, post",
         caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All), Your blyg (your own posts, never unread or counted), your folders, \
+                  All, and Background for withdrawn posts), Your blyg (your own posts, never unread or counted), your folders, \
                   which stay on this Mac, and subscriptions. [ and ] step through a post's \
                   versions; ⌥⌘1 is the Stream again.",
         keys: &[Key::ReaderMode],
