@@ -9,6 +9,8 @@
 //! - `blygger +list-extensions`
 //! - `blygger +ext <bundled extension>` (run by Burrow itself, over stdio)
 //! - `blygger +import-opml <file> [--dry-run]`, `blygger +export-opml <file>`
+//!   (`--blyg <host>`: another signed-in blyg than the active one)
+//! - `blygger +list-blygs`
 //! - `blygger +version`
 //! - `blygger +help`
 
@@ -95,6 +97,10 @@ With no action, Burrow starts. Actions:
                           already follow are left alone. --dry-run lists
                           what would be added
   +export-opml <file>     save every subscription as an OPML 2.0 file
+      --blyg <host>       (either OPML action) use this signed-in blyg, not
+                          the active one
+  +list-blygs             every blyg you're signed in to; * marks the active
+                          one (blyg-url)
   +version                print the version
   +help                   this help
 
@@ -146,8 +152,18 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
         }
         "+list-extensions" => o.stdout = list_extensions(&load()),
         // --- OPML ---
-        "+import-opml" => import_opml(args, &load(), &mut o),
-        "+export-opml" => export_opml(args, &load(), &mut o),
+        // --- blyg switcher --- `--blyg <host>` picks another signed-in blyg.
+        "+import-opml" | "+export-opml" => match split_blyg(args) {
+            Ok((blyg, rest)) if action == "+import-opml" => {
+                import_opml(&rest, &load(), blyg, &mut o)
+            }
+            Ok((blyg, rest)) => export_opml(&rest, &load(), blyg, &mut o),
+            Err(e) => {
+                o.stderr = format!("blygger {action}: {e}\n");
+                o.code = 2;
+            }
+        },
+        "+list-blygs" => o.stdout = list_blygs(&load()),
         "+show-config" => match ShowOptions::from_args(args.iter().copied()) {
             Ok(opts) => {
                 let store = load();
@@ -248,15 +264,73 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
 
 // --- OPML ---
 
-/// The configured blyg, opened without the sync worker (nothing pushed),
-/// its subscriptions freshly pulled. `Err` says why not.
-fn opml_backend(store: &ConfigStore) -> Result<blyg_core::LiveBackend, String> {
+// --- blyg switcher ---
+
+/// `--blyg <host>` (or `--blyg=<host>`) out of `args`.
+fn split_blyg<'a>(args: &[&'a str]) -> Result<(Option<&'a str>, Vec<&'a str>), String> {
+    let mut blyg = None;
+    let mut rest = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        if *a == "--blyg" {
+            blyg = Some(
+                *it.next()
+                    .ok_or("--blyg needs a host, e.g. --blyg blyg.example.com")?,
+            );
+        } else if let Some(h) = a.strip_prefix("--blyg=") {
+            blyg = Some(h);
+        } else {
+            rest.push(*a);
+        }
+    }
+    Ok((blyg, rest))
+}
+
+/// The blyg an action works on: the active one, or the signed-in blyg
+/// `want` names (by host or URL).
+fn resolve_blyg(store: &ConfigStore, want: Option<&str>) -> Result<String, String> {
+    use blyg_core::config::blygs;
+    let Some(want) = want else {
+        return store
+            .config()
+            .blyg_url()
+            .map(str::to_string)
+            .ok_or_else(|| "no blyg is connected (open Burrow and connect one first)".into());
+    };
+    let as_url = if want.contains("://") {
+        want.to_string()
+    } else {
+        format!("https://{want}")
+    };
+    blygs::known(store.config())
+        .into_iter()
+        .find(|u| blygs::same(u, &as_url))
+        .ok_or_else(|| {
+            format!("you're not signed in to {want} (blygger +list-blygs lists your blygs)")
+        })
+}
+
+/// `+list-blygs`: one per line, `*` on the active one.
+fn list_blygs(store: &ConfigStore) -> String {
+    let cfg = store.config();
+    let known = blyg_core::config::blygs::known(cfg);
+    if known.is_empty() {
+        return "No blyg yet: open Burrow and connect one.\n".into();
+    }
+    let active = blyg_core::config::blygs::active_index(cfg);
+    known
+        .iter()
+        .enumerate()
+        .map(|(i, u)| format!("{} {u}\n", if Some(i) == active { "*" } else { " " }))
+        .collect()
+}
+
+/// The configured blyg (or `blyg`, another signed-in one), opened without
+/// the sync worker (nothing pushed), its subscriptions freshly pulled. `Err`
+/// says why not.
+fn opml_backend(store: &ConfigStore, blyg: Option<&str>) -> Result<blyg_core::LiveBackend, String> {
     use blyg_core::config::{MemoryTokenStore, TokenStore};
-    let url = store
-        .config()
-        .blyg_url()
-        .ok_or("no blyg is connected (open Burrow and connect one first)")?
-        .to_string();
+    let url = resolve_blyg(store, blyg)?;
     // BLYGGER_TEST_TOKEN: an in-memory token (a local studio), no Keychain.
     let tokens: std::sync::Arc<dyn TokenStore> = match std::env::var("BLYGGER_TEST_TOKEN") {
         Ok(t) => {
@@ -281,7 +355,7 @@ fn opml_backend(store: &ConfigStore) -> Result<blyg_core::LiveBackend, String> {
     Ok(live)
 }
 
-fn import_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
+fn import_opml(args: &[&str], store: &ConfigStore, blyg: Option<&str>, o: &mut Outcome) {
     use blyg_core::Backend as _;
     use blyg_core::opml::{self, Outcome as Got, Pace, Progress, Summary};
     let dry = args.contains(&"--dry-run");
@@ -298,7 +372,7 @@ fn import_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
             return;
         }
     };
-    let backend = match opml_backend(store) {
+    let backend = match opml_backend(store, blyg) {
         Ok(b) => Some(b),
         Err(e) if dry => {
             o.stderr = format!(
@@ -419,7 +493,7 @@ fn import_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
     }
 }
 
-fn export_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
+fn export_opml(args: &[&str], store: &ConfigStore, blyg: Option<&str>, o: &mut Outcome) {
     use blyg_core::Backend as _;
     let Some(file) = args.first() else {
         o.stderr = format!(
@@ -429,7 +503,7 @@ fn export_opml(args: &[&str], store: &ConfigStore, o: &mut Outcome) {
         o.code = 2;
         return;
     };
-    let subs = match opml_backend(store) {
+    let subs = match opml_backend(store, blyg) {
         Ok(b) => b.subscriptions(),
         Err(e) => {
             o.stderr = format!("blygger +export-opml: {e}\n");
@@ -872,6 +946,61 @@ mod tests {
         assert_eq!(exec("+export-opml", &[], &mut on_disk(dir.path())).code, 2);
         assert!(HELP.contains("+import-opml <file> [--dry-run]"));
         assert!(HELP.contains("+export-opml <file>"));
+    }
+
+    // --- blyg switcher ---
+    #[test]
+    fn list_blygs_and_the_blyg_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let o = exec("+list-blygs", &[], &mut on_disk(dir.path()));
+        assert!(o.stdout.starts_with("No blyg yet"), "{}", o.stdout);
+        std::fs::write(
+            dir.path().join("config"),
+            "blyg-url = https://notes.example.org\nblyg = https://blyg.example.com\nblyg = https://notes.example.org\n",
+        )
+        .unwrap();
+        let o = exec("+list-blygs", &[], &mut on_disk(dir.path()));
+        assert_eq!(
+            o.stdout,
+            "  https://blyg.example.com\n* https://notes.example.org\n"
+        );
+        let store = on_disk(dir.path())();
+        assert_eq!(
+            resolve_blyg(&store, None).unwrap(),
+            "https://notes.example.org"
+        );
+        assert_eq!(
+            resolve_blyg(&store, Some("blyg.example.com")).unwrap(),
+            "https://blyg.example.com"
+        );
+        assert_eq!(
+            resolve_blyg(&store, Some("https://BLYG.example.com/")).unwrap(),
+            "https://blyg.example.com"
+        );
+        assert!(
+            resolve_blyg(&store, Some("other.example.net"))
+                .unwrap_err()
+                .contains("not signed in to other.example.net")
+        );
+        assert_eq!(
+            split_blyg(&["a.opml", "--blyg", "blyg.example.com", "--dry-run"]).unwrap(),
+            (Some("blyg.example.com"), vec!["a.opml", "--dry-run"])
+        );
+        assert_eq!(
+            split_blyg(&["--blyg=notes.example.org"]).unwrap(),
+            (Some("notes.example.org"), vec![])
+        );
+        assert!(split_blyg(&["--blyg"]).is_err());
+        // An unknown --blyg is refused before anything is opened.
+        let out = dir.path().join("out.opml");
+        let o = exec(
+            "+export-opml",
+            &[out.to_str().unwrap(), "--blyg", "other.example.net"],
+            &mut on_disk(dir.path()),
+        );
+        assert_eq!(o.code, 1);
+        assert!(o.stderr.contains("not signed in"), "{}", o.stderr);
+        assert!(HELP.contains("+list-blygs"));
     }
 
     #[test]

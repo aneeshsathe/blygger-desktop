@@ -131,6 +131,10 @@ fn main() -> ExitCode {
     if std::env::var_os("BLYGGER_TIMING").is_some() {
         println!("backend={mode:?}");
     }
+    // --- blyg switcher --- fake mode: each blyg its own sample backend.
+    let opener = fake
+        .as_ref()
+        .map(|f| connection::fake_opener(f.clone(), store.config().blyg_url()));
     let switch = SwitchBackend::new(inner, mode);
     let backend: Arc<dyn Backend> = switch.clone();
     let connection = Connection {
@@ -165,6 +169,9 @@ fn main() -> ExitCode {
         cx.set_global(themes); // --- themes ---
         ai::init(cx);
         cx.set_global(connection);
+        if let Some(o) = opener {
+            cx.set_global(connection::BlygOpener(o)); // --- blyg switcher ---
+        }
         // A remote image (a profile avatar) landed in the cache: repaint.
         {
             let (tx, rx) = async_channel::unbounded::<()>();
@@ -193,7 +200,7 @@ fn main() -> ExitCode {
                 eprintln!("blygger: {e}");
             }
         });
-        cx.set_menus(menus(prefs.spellcheck));
+        refresh_menus(cx); // --- blyg switcher --- (Blyg › Switch To lists them)
         capture::init(backend.clone(), &prefs, cx);
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
@@ -238,6 +245,9 @@ fn open_main(
             }
             if let Ok(scenario) = std::env::var("BLYGGER_DEMO") {
                 let _ = handle.update(cx, |view, window, cx| view.run_demo(&scenario, window, cx));
+            } else {
+                // --- reading compose --- launch on the reading screen.
+                let _ = handle.update(cx, |view, window, cx| view.launch_into_reading(window, cx));
             }
         }
         Err(e) => eprintln!("blygger: couldn't open the main window: {e}"),
@@ -322,11 +332,18 @@ pub fn order_front_regardless(window: &Window) {
 }
 
 /// --- composer --- Rebuild the menu bar (the Spelling item's check mark).
+/// --- blyg switcher --- and Blyg › Switch To (the signed-in blygs).
 pub(crate) fn refresh_menus(cx: &mut App) {
-    cx.set_menus(menus(composer::spellcheck_enabled(cx)));
+    let blygs = app::switcher::entries(cx);
+    cx.set_menus(menus_with(composer::spellcheck_enabled(cx), &blygs));
 }
 
+#[cfg_attr(not(test), allow(dead_code))]
 fn menus(spellcheck: bool) -> Vec<Menu> {
+    menus_with(spellcheck, &[])
+}
+
+fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
     use gpui_kit::base::input::{Copy, Cut, Paste, Redo, SelectAll, Undo};
     vec![
         Menu {
@@ -408,14 +425,33 @@ fn menus(spellcheck: bool) -> Vec<Menu> {
         Menu {
             name: "Blyg".into(),
             items: vec![
+                // --- blyg switcher ---
+                MenuItem::action("Switch Blyg…", app::switcher::ShowBlygSwitcher),
+                MenuItem::submenu(Menu {
+                    name: "Switch To".into(),
+                    items: app::switcher::menu_items(blygs),
+                    disabled: false,
+                }),
+                MenuItem::action("Add a Blyg…", app::switcher::AddBlyg),
+                MenuItem::action("Manage Blygs…", app::switcher::ManageBlygs),
+                MenuItem::separator(),
+                // --- end blyg switcher ---
                 MenuItem::action("Reading", app::reading::ShowReading),
                 // --- stream ---
                 MenuItem::action("Stream", app::reading::stream::StreamMode),
                 MenuItem::action("Reader", app::reading::stream::ReaderMode),
+                // --- reading compose ---
+                MenuItem::action("Compose While Reading", app::reading::compose::FocusCompose),
                 // --- reader folders ---
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
+                // --- browse ---
+                MenuItem::action("Back", app::reading::browse::ReaderBack),
+                MenuItem::action(
+                    "Browsing History",
+                    app::reading::browse::ToggleBrowseHistory,
+                ),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::separator(),

@@ -539,7 +539,8 @@ impl MainView {
             .sum::<f32>()
             + 2. * (Screen::ALL.len() as f32 - 1.)
             + 12.;
-        let title = self.text_width(&self.title, 12., FontWeight::MEDIUM, ui, window);
+        let title = self.text_width(&self.title, 12., FontWeight::MEDIUM, ui, window)
+            + super::switcher::title_extra(cx); // --- blyg switcher ---
         let w = f32::from(window.viewport_size().width);
         Some((fit(w, labels, icons, switcher, title), buttons))
     }

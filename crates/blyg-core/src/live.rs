@@ -20,6 +20,10 @@ pub struct LiveBackend {
     public: PublicClient,
     tx: Mutex<Sender<Msg>>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    /// --- browse --- The link prober's own short-timeout public client.
+    probe: PublicClient,
+    /// --- browse --- Session state of the browsing log.
+    browse: crate::browse::reads::BrowseState,
 }
 
 pub const DB_FILE: &str = "blygger.db";
@@ -71,6 +75,8 @@ impl LiveBackend {
             public: PublicClient::new(),
             tx: Mutex::new(tx),
             worker: Mutex::new(worker),
+            probe: crate::browse::probe::client(),
+            browse: Default::default(),
         }
     }
 
@@ -532,6 +538,16 @@ impl Backend for LiveBackend {
 
     fn item(&self, id: &LocalId) -> Option<Item> {
         self.e().store.item(id)
+    }
+
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let row = self.e().store.row(id)?;
+        row.item.conflict.then(|| {
+            (
+                row.item.content_md.clone(),
+                row.theirs.clone().unwrap_or_default(),
+            )
+        })
     }
 
     fn create_draft(&self, kind: Kind, content_md: &str) -> Result<LocalId> {
@@ -1299,5 +1315,44 @@ impl Backend for LiveBackend {
         centre: &crate::lineage::Centre,
     ) -> Option<crate::lineage::LineageGraph> {
         crate::lineage::reads::cached_graph(self.e(), centre)
+    }
+
+    // --- browse --- (`crate::browse::reads`)
+
+    fn classify_links(&self, urls: &[String]) -> Result<Vec<crate::browse::LinkTarget>> {
+        Ok(crate::browse::reads::classify(
+            self.e(),
+            &self.probe,
+            urls,
+            crate::util::now_ms(),
+        ))
+    }
+
+    fn log_browse(&self, step: &crate::browse::NewBrowseStep) -> Result<i64> {
+        crate::browse::reads::log(self.e(), &self.browse, step, crate::util::now_ms())
+    }
+
+    fn browse_history(
+        &self,
+        trail: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<crate::browse::BrowseStep>> {
+        crate::browse::reads::history(
+            self.e(),
+            &self.browse,
+            trail,
+            offset,
+            limit,
+            crate::util::now_ms(),
+        )
+    }
+
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        crate::browse::reads::clear(self.e(), &self.browse, trail, crate::util::now_ms())
+    }
+
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        self.e().store.background_reading()
     }
 }

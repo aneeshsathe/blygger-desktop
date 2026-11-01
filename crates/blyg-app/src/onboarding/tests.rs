@@ -698,9 +698,58 @@ fn do_step(e: &mut Env, id: &str) {
         "consent" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-backspace"))
         }
+        // --- 0.14.0 ---
+        "switcher" => e.cx.simulate_keystrokes(&crate::keymap::keys("ctrl-cmd-0")),
+        "compose" => e.cx.simulate_keystrokes("c"),
+        // A click on the quote box (the reading pane's own call).
+        "thicket" => follow_quote(e),
+        "history" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-h"))
+        }
+        // A passage chosen in the preview and quoted: what "❝ quote only
+        // this" writes (a selection in the WebView can't be made headless;
+        // `the_0_14_steps_land_on_their_features` drives the page's path).
+        "stub-passage" => quote_a_passage(e),
         other => panic!("no way to do step {other}"),
     }
     e.cx.run_until_parked();
+}
+
+/// The thicket step's click: the quote in Ada's reply, followed.
+fn follow_quote(e: &mut Env) {
+    e.view.update_in(e.cx, |v, window, cx| {
+        let origin = v
+            .reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id == steps::QUOTED)
+            .map(|r| r.origin.clone())
+            .expect("the quoted post is held");
+        v.browse_follow(
+            blyg_core::browse::BrowseVia::Quote,
+            origin,
+            steps::QUOTED.into(),
+            Some(1),
+            window,
+            cx,
+        )
+    })
+}
+
+/// The open stub's quote narrowed to a passage, as "❝ quote only this"
+/// writes it.
+fn quote_a_passage(e: &mut Env) {
+    e.view.update_in(e.cx, |v, window, cx| {
+        let (_, id, _) = v.stub_target().expect("a stub is open");
+        let text = v.editor.read(cx).value().to_string();
+        let new = blyg_render::stub_quote::with_stub_quote_nth(
+            &text,
+            &id,
+            Some("Gardens, not streams"),
+            0,
+        );
+        v.splice_editor(&text, &new, None, window, cx);
+    })
 }
 
 #[gpui_kit::test]
@@ -770,7 +819,8 @@ fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
             // The toggle in the Stream; in Reader mode, the sources pane.
             Region::Reader if !in_reader(&mut e) => &["mode-stream", "mode-reader"],
             Region::StreamPost => &["stream-actions"],
-            Region::ReaderPost => &["responses"],
+            // The post pane: its breadcrumb row is at the top of every post.
+            Region::ReaderPost => &["trail-bar"],
             Region::BrowserChrome => &["browser-shield", "browser-clip", "browser-close"],
             Region::MacroRun => &["browser-macro-stop", "browser-close"],
             Region::ScreenHeader => &["opml-import-chip"],
@@ -1468,6 +1518,181 @@ fn the_0_13_steps_show_discard_own_posts_and_links(cx: &mut TestAppContext) {
     enter(&mut e, "reader");
     do_step(&mut e, "reader");
     wait_drawn(&mut e, "reader", "src-own");
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+}
+
+/// The first launch after updating from 0.13 to 0.14.0: "Show me what's
+/// new" lands on the blyg switcher's step.
+#[gpui_kit::test]
+fn a_launch_after_updating_from_0_13_starts_at_0_14s_first_step(cx: &mut TestAppContext) {
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = Some("0.14.0"));
+    let mut e = setup_full(cx, CONNECTED, Some("0.13.1"), Mode::Fake, false);
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = None);
+    assert!(news_up(&e), "the card is up");
+    let versions: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().unwrap();
+        t.news.iter().map(|r| r.version).collect()
+    });
+    assert_eq!(versions, ["0.14.0"]);
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert!(!news_up(&e));
+    let first_new = STEPS.iter().find(|s| s.since == "0.14.0").map(|s| s.id);
+    assert_eq!(tour_step(&mut e), first_new);
+    assert_eq!(tour_step(&mut e), Some("switcher"));
+}
+
+/// Burrow opens on Reading (0.14.0): the tour still starts on Posts, its
+/// steps walk to Reading themselves, and finishing comes back to Reading.
+#[gpui_kit::test]
+fn the_tour_starts_on_posts_when_burrow_opened_on_reading(cx: &mut TestAppContext) {
+    use crate::app::reading::View;
+    let mut e = setup(cx, CONNECTED, true);
+    let view = |e: &mut Env| e.view.read_with(e.cx, |v, _| v.reading.view);
+    // (main.rs calls this once the window is up.)
+    e.view
+        .update_in(e.cx, |v, window, cx| v.launch_into_reading(window, cx));
+    e.cx.run_until_parked();
+    assert_eq!(view(&mut e), View::Reading, "Burrow opened on Reading");
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    assert_eq!(tour_step(&mut e), Some("search"));
+    assert_eq!(view(&mut e), View::Posts, "the first step is on Posts");
+    assert!(ring_now(&mut e, Region::Search).is_some());
+    e.cx.simulate_keystrokes("down");
+    settle(&mut e);
+    assert_eq!(tour_step(&mut e), Some("create"), "its key works there");
+    enter(&mut e, "stream");
+    assert_eq!(view(&mut e), View::Reading);
+    e.view
+        .update_in(e.cx, |v, window, cx| v.finish_tutorial(window, cx));
+    e.cx.run_until_parked();
+    assert_eq!(view(&mut e), View::Reading, "back where Burrow opens");
+}
+
+/// 0.14.0's steps land on what they teach: the switcher sheet (which never
+/// switches the tour's blyg), a revised post's lead, the compose box, a
+/// walk through a quote and its history, and a stub replying in the
+/// preview, whose passage counts.
+#[gpui_kit::test]
+fn the_0_14_steps_land_on_their_features(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    let log = Rc::new(RefCell::new(Vec::new()));
+    let surfaces = Rc::new(RefCell::new(0usize));
+    let (l2, n2) = (log.clone(), surfaces.clone());
+    e.cx.update(|_, cx| {
+        cx.set_global(FactoryGlobal(Rc::new(move |_, _| {
+            let id = {
+                let mut n = n2.borrow_mut();
+                *n += 1;
+                *n - 1
+            };
+            Ok(Box::new(Surface(id, l2.clone())) as Box<dyn PreviewSurface>)
+        })))
+    });
+    let before = config_text(e.cx);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.real.take();
+    let fake = e.view.read_with(e.cx, |v, _| v.fake.clone()).unwrap();
+
+    // ⌃⌘0 opens the switcher; choosing a blyg in the tour switches nothing.
+    enter(&mut e, "switcher");
+    assert!(!tour_done(&mut e));
+    do_step(&mut e, "switcher");
+    assert!(tour_done(&mut e));
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Blygs(_))))
+    );
+    e.view
+        .update_in(e.cx, |v, window, cx| v.switch_nth(1, window, cx));
+    e.cx.run_until_parked();
+    assert!(!real_is_back(&e), "still the tour's sample data");
+    assert_eq!(config_text(e.cx), before, "no blyg-url written");
+
+    // The stream lands on a revised post, which leads with "V2: …".
+    enter(&mut e, "stream");
+    let sel = e.view.read_with(e.cx, |v, _| v.reading.sel.clone());
+    assert_eq!(sel.map(|k| k.1).as_deref(), Some(steps::REVISED));
+    let lead: &'static str = Box::leak(format!("change-lead-{}", steps::REVISED).into_boxed_str());
+    wait_drawn(&mut e, "stream", lead);
+
+    // The compose box: ringed, the card above it; c takes the keyboard,
+    // ⌘⏎ posts to the sample data.
+    enter(&mut e, "compose");
+    settle(&mut e);
+    let ring = ring_now(&mut e, Region::Compose).expect("the compose box is ringed");
+    let b = e.cx.debug_bounds("reading-compose").expect("the box");
+    assert!(
+        (ring.1 - f32::from(b.top())).abs() < 1.5,
+        "{ring:?} vs {b:?}"
+    );
+    let card = e.cx.debug_bounds("tutorial-card");
+    if let Some(card) = card {
+        assert!(
+            f32::from(card.bottom()) <= f32::from(b.top()) + 1.,
+            "the card sits above the box"
+        );
+    }
+    do_step(&mut e, "compose");
+    assert!(tour_done(&mut e));
+    e.cx.simulate_input("Fog again at the harbour");
+    e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(&mut e);
+    assert!(
+        fake.items()
+            .iter()
+            .any(|i| i.content_md.contains("Fog again at the harbour")),
+        "posted to the sample data"
+    );
+    assert_eq!(tour_step(&mut e), Some("compose"), "it stays");
+
+    // The quote in Ada's reply opens Lin's note; the breadcrumb and back.
+    enter(&mut e, "thicket");
+    assert!(drawn(&mut e, "trail-bar"));
+    assert!(!tour_done(&mut e));
+    do_step(&mut e, "thicket");
+    assert!(tour_done(&mut e));
+    let open = e.view.read_with(e.cx, |v, _| {
+        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+    });
+    assert_eq!(open.as_deref(), Some(steps::QUOTED));
+    let ring = ring_now(&mut e, Region::ReaderPost).expect("the post pane");
+    let back = e.cx.debug_bounds("trail-back").expect("‹ back");
+    assert!(
+        f32::from(back.left()) >= ring.0 - 1.,
+        "‹ back is in the ring"
+    );
+
+    // ⇧⌘H: the history pane beside the post, listing the walk.
+    enter(&mut e, "history");
+    assert!(!tour_done(&mut e));
+    do_step(&mut e, "history");
+    assert!(tour_done(&mut e));
+    wait_drawn(&mut e, "history", "browse-history");
+    assert!(
+        !fake.browse_history(None, 0, 10).unwrap().is_empty(),
+        "logged in the sample data"
+    );
+
+    // Reply made a stub; a passage selected in the preview's quote, then
+    // ⇧⌘D, quotes only it.
+    enter(&mut e, "stub-passage");
+    assert!(drawn(&mut e, "stub-hint"));
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| v.studio.view.preview_visible())
+    );
+    assert!(!tour_done(&mut e));
+    // (A selection inside the WebView preview can't be made headless; the
+    // studio's own tests drive "❝ quote only this" from the page's report.)
+    quote_a_passage(&mut e);
+    assert!(tour_done(&mut e), "the passage counts");
+    let text = e
+        .view
+        .read_with(e.cx, |v, cx| v.editor.read(cx).value().to_string());
+    assert!(text.contains("> Gardens, not streams"), "{text}");
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
 }
 

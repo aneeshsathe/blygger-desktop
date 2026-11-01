@@ -53,7 +53,66 @@ pub enum SurfaceEvent {
     /// went with studio 0.31: Reply quotes the whole post, and a passage is
     /// chosen in the stub editor.)
     QuoteSelection,
+    // --- stub quotes ---
+    /// The editor preview's selection, for the open stub (studio 0.49):
+    /// inside one quote box, or `None` (outside any, across two, on a
+    /// box's provenance line, nothing selected). See [`StubPick`].
+    StubSelection(Option<StubPick>),
 }
+
+/// --- stub quotes --- A selection inside one quote box of the editor
+/// preview: the `index`-th `blockquote.blyg-transclusion` of the page's
+/// `.item-content`, in document order (nested ones too), on the page the
+/// host numbered `gen_` (see [`stub_js`]). Only its shape is checked here;
+/// which quote of the stub it is, and whether the page is current, is the
+/// stub bar's to decide (`reading::stub_bar::pick_passage`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StubPick {
+    pub gen_: u64,
+    pub index: usize,
+    /// The selection's text, as the page gives it (not yet normalized).
+    pub text: String,
+}
+
+/// The most quote boxes a page may claim, and the longest selection taken
+/// from it.
+const STUB_MAX_BOXES: usize = 100_000;
+const STUB_MAX_TEXT: usize = 200_000;
+
+/// --- stub quotes --- Decode `stubsel:` (`gen␟index␟text`, or nothing).
+/// `None`: not a valid message; `Some(None)`: no passage selected.
+fn parse_stub_selection(m: &str) -> Option<Option<StubPick>> {
+    if m.is_empty() {
+        return Some(None);
+    }
+    let mut parts = m.splitn(3, '\u{1f}');
+    let num = |s: &str| -> Option<u64> {
+        (!s.is_empty() && s.len() <= 19 && s.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| s.parse().ok())
+            .flatten()
+    };
+    let gen_ = num(parts.next()?)?;
+    let index = usize::try_from(num(parts.next()?)?).ok()?;
+    let text = parts.next()?;
+    let ok = index < STUB_MAX_BOXES && text.len() <= STUB_MAX_TEXT && !text.trim().is_empty();
+    ok.then(|| {
+        Some(StubPick {
+            gen_,
+            index,
+            text: text.to_string(),
+        })
+    })
+}
+
+/// --- stub quotes --- Tell the preview page whether a stub is open (it
+/// reports selections only then) and the number of the text it shows.
+pub fn stub_js(on: bool, gen_: u64) -> String {
+    format!("window.__blyg && window.__blyg.stub && window.__blyg.stub({on}, {gen_});")
+}
+
+/// --- stub quotes --- Drop the page's selection (it was quoted).
+pub const STUB_CLEAR_JS: &str =
+    "window.__blyg && window.__blyg.stubClear && window.__blyg.stubClear();";
 
 /// A place to show the preview page. `wry` implements it for real; tests use
 /// a recording stub.
@@ -145,6 +204,10 @@ pub fn parse_ipc(msg: &str) -> Option<SurfaceEvent> {
         "sel:0" => return Some(SurfaceEvent::Selected(false)),
         "act:quote" => return Some(SurfaceEvent::QuoteSelection),
         _ => {}
+    }
+    // --- stub quotes ---
+    if let Some(m) = msg.strip_prefix("stubsel:") {
+        return parse_stub_selection(m).map(SurfaceEvent::StubSelection);
     }
     if let Some(o) = msg.strip_prefix("origin:") {
         let web = o.starts_with("https://") || o.starts_with("http://");
@@ -411,8 +474,51 @@ pub const HOST_SCRIPT: &str = r#"
     window.scrollBy({ top: d * Math.max(40, h * 0.85), behavior: "smooth" });
   }
   function nudge(d) { window.scrollBy({ top: d * 48 }); }
+  // --- stub quotes --- (studio 0.49) While a stub is open the host turns
+  // this on (`stub`) with the number of the text the page shows. A selection
+  // inside one quote box reports that box's place among all of them
+  // ("stubsel:gen␟index␟text"); the host works out whether it is a top-level
+  // quote of the stub's target, and which. Anything else (outside any box,
+  // across two, touching a box's provenance line) reports nothing.
+  var stubOn = false, stubG = 0, stubLast = null, stubTimer = 0;
+  var BOX = "blockquote.blyg-transclusion";
+  function stubEl(n) { return n && (n.nodeType === 1 ? n : n.parentElement); }
+  function stubBox(n, r) {
+    var e = stubEl(n), q = e && e.closest ? e.closest(BOX) : null;
+    return q && r.contains(q) ? q : null;
+  }
+  function stubProv(n) { var e = stubEl(n); return !!(e && e.closest && e.closest(".provenance")); }
+  function stubPick() {
+    var s = selected(), r = root();
+    if (!s || !r || !stubOn) return "";
+    var q = stubBox(s.anchorNode, r);
+    if (!q || q !== stubBox(s.focusNode, r) || stubProv(s.anchorNode) || stubProv(s.focusNode)) return "";
+    var index = Array.prototype.indexOf.call(r.querySelectorAll(BOX), q);
+    return index < 0 ? "" : stubG + "\u001f" + index + "\u001f" + String(s);
+  }
+  function stubReport() {
+    var m = stubPick();
+    if (m === stubLast) return;
+    stubLast = m;
+    post("stubsel:" + m);
+  }
+  document.addEventListener("selectionchange", function () {
+    if (!stubOn) return;
+    // A collapse may be a focus change the selection comes back from.
+    clearTimeout(stubTimer);
+    stubTimer = setTimeout(stubReport, selected() ? 80 : 450);
+  });
+  function stub(on, gen) { stubOn = !!on; stubG = gen; stubLast = null; if (on) stubReport(); }
+  function stubClear() {
+    kept = null;
+    var s = window.getSelection();
+    if (s) s.removeAllRanges();
+    stubReport();
+  }
   document.addEventListener("DOMContentLoaded", function () { tag(); post("ready"); });
   window.__blyg = { patch: patch, scrollTo: scrollTo, page: page, nudge: nudge, selectionUi: selectionUi };
+  window.__blyg.stub = stub;
+  window.__blyg.stubClear = stubClear;
 })();
 "#;
 
@@ -447,6 +553,16 @@ thread_local! {
 pub fn take_click_modifiers() -> Option<(bool, bool)> {
     CLICK_MODIFIERS
         .take()
+        .filter(|(t, ..)| t.elapsed() < std::time::Duration::from_secs(1))
+        .map(|(_, cmd, alt)| (cmd, alt))
+}
+
+/// --- browse --- [`take_click_modifiers`] without using them up: the
+/// reader looks first (a ⌘/⌥-click on a link is always a link), then hands
+/// the click on to `open_link`, which takes them.
+pub fn peek_click_modifiers() -> Option<(bool, bool)> {
+    CLICK_MODIFIERS
+        .get()
         .filter(|(t, ..)| t.elapsed() < std::time::Duration::from_secs(1))
         .map(|(_, cmd, alt)| (cmd, alt))
 }
@@ -1020,6 +1136,49 @@ mod tests {
             assert!(HOST_SCRIPT.contains(part), "{part}");
         }
         assert!(!HOST_SCRIPT.contains("Reply with this"));
+    }
+
+    /// --- stub quotes --- A stub selection from the page is checked for
+    /// shape: plain numbers, bounded, some text (which may hold anything).
+    #[test]
+    fn stub_selection_messages() {
+        assert_eq!(
+            parse_ipc("stubsel:"),
+            Some(SurfaceEvent::StubSelection(None))
+        );
+        assert_eq!(
+            parse_ipc("stubsel:7\u{1f}1\u{1f}A line.\n\nAnd \u{1f} more."),
+            Some(SurfaceEvent::StubSelection(Some(StubPick {
+                gen_: 7,
+                index: 1,
+                text: "A line.\n\nAnd \u{1f} more.".into(),
+            })))
+        );
+        for bad in [
+            "stubsel:7\u{1f}0\u{1f}  \n", // no text
+            "stubsel:-1\u{1f}0\u{1f}x",
+            "stubsel:7\u{1f}+0\u{1f}x",
+            "stubsel:7\u{1f} 0\u{1f}x",
+            "stubsel:7\u{1f}0",
+            "stubsel:x",
+            "stubsel:1\u{1f}100000\u{1f}x",
+            "stubsel:99999999999999999999\u{1f}0\u{1f}x",
+        ] {
+            assert_eq!(parse_ipc(bad), None, "{bad:?}");
+        }
+        let long = format!("stubsel:1\u{1f}0\u{1f}{}", "a".repeat(STUB_MAX_TEXT + 1));
+        assert_eq!(parse_ipc(&long), None);
+        assert_eq!(
+            stub_js(true, 3),
+            "window.__blyg && window.__blyg.stub && window.__blyg.stub(true, 3);"
+        );
+        for part in [
+            "post(\"stubsel:\" + m)",
+            "stubProv(s.anchorNode) || stubProv(s.focusNode)",
+            "window.__blyg.stub = stub;",
+        ] {
+            assert!(HOST_SCRIPT.contains(part), "{part}");
+        }
     }
 
     #[test]

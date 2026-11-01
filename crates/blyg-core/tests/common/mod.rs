@@ -395,10 +395,22 @@ fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
     let (up, ext) = (contract::contract(), contract::extensions());
     let m = req.method.as_str();
     let what = format!("{m} {}", req.path);
-    if s.unchecked.iter().any(|p| req.path.starts_with(p.as_str())) {
+    // The contract-version probe asks for a route from a contract newer than
+    // any Burrow targets (`Api::contract_version`); its 404 is the answer.
+    if req.path == "/api/capabilities"
+        || s.unchecked.iter().any(|p| req.path.starts_with(p.as_str()))
+    {
         return;
     }
-    let req_side = if up.knows(m, &segs) { up } else { ext };
+    // A request goes by the newest contract that has its operation (what a
+    // current studio accepts); a mock reply by the one it was written for.
+    let new = contract::studio_049();
+    let old_side = if up.knows(m, &segs) || !new.knows(m, &segs) {
+        if up.knows(m, &segs) { up } else { ext }
+    } else {
+        new
+    };
+    let req_side = if new.knows(m, &segs) { new } else { old_side };
     let query: Vec<(String, String)> = url::form_urlencoded::parse(req.query.as_bytes())
         .into_owned()
         .collect();
@@ -408,7 +420,7 @@ fn check(req: &Req, status: u16, body: &Value, s: &mut State) {
         return;
     }
     let reply_side = if up.declares(m, &segs, status) || !ext.declares(m, &segs, status) {
-        req_side
+        old_side
     } else {
         ext
     };

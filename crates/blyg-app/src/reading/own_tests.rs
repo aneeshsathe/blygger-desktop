@@ -140,7 +140,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
     for (src, all_own, any_own) in [
         (Source::Own, true, true),
         (Source::Smart(Smart::Unread), false, false),
-        (Source::Smart(Smart::Thumbed), false, false),
+        (Source::Smart(Smart::Background), false, false), // --- background ---
         (Source::Smart(Smart::All), false, true),
     ] {
         view.update(cx, |v, cx| v.select_source(src.clone(), cx));
@@ -380,22 +380,31 @@ fn a_quote_is_labelled_with_the_heading_else_the_title() {
     );
 }
 
-/// A stub of your own post can choose a passage of it.
+/// A stub of your own post can choose a passage of it: in the editor
+/// preview, where its quote shows your post (studio 0.49).
 #[gpui_kit::test]
 fn a_self_stub_quotes_a_passage_of_your_post(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     open_post(&view, "01J9K7T", cx);
     cx.dispatch_action(ReplyToPost);
     settle(cx);
-    view.update_in(cx, |v, window, cx| v.toggle_stub_chooser(window, cx));
+    view.update_in(cx, |v, window, cx| v.stub_choose_passage(window, cx));
     settle(cx);
-    let text = view.read_with(cx, |v, cx| {
-        v.reading
-            .stub
-            .as_ref()
-            .and_then(|c| c.post.as_ref())
-            .map(|p| p.read(cx).value().to_string())
+    let (target, preview, text) = view.read_with(cx, |v, cx| {
+        (
+            v.stub_target().map(|(_, id, _)| id),
+            v.studio.view.preview_visible(),
+            v.editor.read(cx).value().to_string(),
+        )
     });
-    let text = text.expect("your post's text in the chooser");
-    assert!(text.contains("Soil matters more than seeds."), "{text}");
+    let target = target.expect("a stub of your post is open");
+    assert!(preview, "the preview, to select the passage in");
+    // The draft quotes your post whole, the quote the preview shows to
+    // select from. (The sample post's id is outside the blyg alphabet, so
+    // the sample preview can't bake it; a real id is baked as any other.)
+    assert_eq!(
+        blyg_render::stub_quote::quote_count(&text, &target),
+        1,
+        "{text}"
+    );
 }

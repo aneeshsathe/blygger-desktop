@@ -150,6 +150,11 @@ struct NetState {
     /// The last stock reading pull left changed rows for later
     /// (`STOCK_FETCHES`), so its revision isn't accepted yet.
     stock_deferred: bool,
+    /// --- background --- `GET /api/reading?background=true` lists the
+    /// withdrawn entries that studio 0.49+ leaves out of the plain list:
+    /// `Some(true)`; `Some(false)` when the server ignored the parameter
+    /// (older) or refused it; `None` not yet asked this session.
+    stock_background: Option<bool>,
     /// The server answers `GET /api/changes` (`None` before a pull).
     changes: Option<bool>,
     /// When everything was last read whole.
@@ -212,6 +217,21 @@ const STOCK_FETCHES: usize = 100;
 /// whole list is read this often, to catch older edits and removals.
 const STOCK_SWEEP: Duration = Duration::from_secs(10 * 60);
 
+/// One pull of the stock reading list, across its walks
+/// (`Engine::stock_walk`).
+struct StockWalk<'a> {
+    subs: &'a std::collections::HashMap<String, (String, String)>,
+    thumbs: &'a std::collections::HashMap<(String, String), i8>,
+    hoppers: &'a std::collections::HashMap<(String, String), Vec<String>>,
+    /// Read to the end, not just down to the first unchanged page.
+    sweep: bool,
+    out: Vec<ReadingItem>,
+    /// Imported items fetched so far (at most `STOCK_FETCHES`).
+    fetched: usize,
+    /// Changed rows left for a later pull.
+    deferred: bool,
+}
+
 pub(crate) struct Engine {
     pub store: Store,
     pub api: Api,
@@ -251,6 +271,7 @@ impl Engine {
                 stock_swept: None,
                 stock_seen: Default::default(),
                 stock_deferred: false,
+                stock_background: None,
                 changes: None,
                 full_at: None,
                 rate_limited: false,
@@ -605,6 +626,19 @@ impl Engine {
     ///   push (`push`) waits for this check's verdict.
     fn check_server(&self, push: bool) -> Result<()> {
         if !self.state().compatible {
+            // A newer private-API contract than this Burrow speaks: stop
+            // before any list is read, because a misread page would prune
+            // what's held (`api::CONTRACT_MAJOR_MAX`). Asked once a session,
+            // with the rest of the compatibility check.
+            if let Some(c) = self.api.contract_version()?
+                && !crate::api::contract_supported(&c)
+            {
+                return Err(CoreError::Other(format!(
+                    "This blyg runs studio API contract {c}, which this version of Burrow \
+                     doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
+                     was synced, and your local copy is safe."
+                )));
+            }
             match self.api.count_items() {
                 Ok(_) => self.state().compatible = true,
                 Err(CoreError::ServerOutdated) => {
@@ -1623,38 +1657,100 @@ impl Engine {
             .state()
             .stock_swept
             .is_none_or(|t| t.elapsed() >= STOCK_SWEEP);
+        let mut walk = StockWalk {
+            subs: &subs,
+            thumbs: &thumbs,
+            hoppers: &hoppers,
+            sweep,
+            out: Vec::new(),
+            fetched: 0,
+            deferred: false,
+        };
+        let Some(reached_end) = self.stock_walk(&mut walk, false)? else {
+            self.state().reading_unavailable = true;
+            return Ok(None);
+        };
+        // --- background --- Studio 0.49+ leaves withdrawn entries out of
+        // the plain list. Without them a tombstone would read as gone and be
+        // pruned, so ask for them too where the server lists them apart.
+        let bg_end = if self.state().stock_background != Some(false) {
+            self.stock_walk(&mut walk, true)?.unwrap_or(true)
+        } else {
+            true
+        };
+        let deferred = walk.deferred;
+        let complete = reached_end && bg_end && !deferred;
+        self.state().stock_deferred = deferred;
+        if complete {
+            self.state().stock_swept = Some(Instant::now());
+        }
+        Ok(Some((walk.out, complete)))
+    }
+
+    /// One walk of upstream's `GET /api/reading`, into `w.out`: the plain
+    /// list, or (`background`) its withdrawn entries only. `None` when the
+    /// route is missing (or, for `background`, the server doesn't list
+    /// withdrawn entries apart); else whether the walk reached the end.
+    fn stock_walk(&self, w: &mut StockWalk<'_>, background: bool) -> Result<Option<bool>> {
         let max_pages = u64::from(self.opts.reading_pages.max(1)) * 10;
-        let mut out = Vec::new();
-        let mut fetched = 0;
-        let mut deferred = false;
         let mut offset = 0u64;
-        let mut reached_end = false;
         for _ in 0..max_pages {
-            let Some(page) = self.api.stock_reading(offset)? else {
-                self.state().reading_unavailable = true;
-                return Ok(None);
+            let page = match self.api.stock_reading_with(offset, background) {
+                Ok(Some(p)) => p,
+                // Refused by a strict older server: it lists withdrawn
+                // entries with the rest, as before 0.49.
+                Ok(None) | Err(CoreError::Rejected { status: 400, .. }) if background => {
+                    self.state().stock_background = Some(false);
+                    return Ok(None);
+                }
+                Ok(None) => return Ok(None),
+                Err(e) => return Err(e),
             };
-            let first = {
-                let mut st = self.state();
-                st.reading_unavailable = false;
-                st.stock_reading.replace(true) != Some(true)
-            };
-            if offset == 0 {
-                // Read state, when the server keeps it (studio's read-state
-                // routes): `imported.readVersion` on each entry.
-                self.set_read_sync(page.read_sync())?;
-                self.set_read_clear(page.read_clear())?;
-            }
-            if first && self.store.meta(STOCK_TOLD).is_none() {
-                self.store.set_meta(STOCK_TOLD, "1")?;
-                self.emit(CoreEvent::ServerLimited);
+            if background {
+                if offset == 0 {
+                    // An older server ignores the parameter and sends the
+                    // whole list: a live entry in it says so.
+                    let ignored = page
+                        .items
+                        .iter()
+                        .filter_map(|e| e.imported.as_ref())
+                        .any(|i| !i.withdrawn);
+                    self.state().stock_background = Some(!ignored);
+                    if ignored {
+                        return Ok(None);
+                    }
+                }
+            } else {
+                let first = {
+                    let mut st = self.state();
+                    st.reading_unavailable = false;
+                    st.stock_reading.replace(true) != Some(true)
+                };
+                if offset == 0 {
+                    // Read state, when the server keeps it (studio's read-state
+                    // routes): `imported.readVersion` on each entry.
+                    self.set_read_sync(page.read_sync())?;
+                    self.set_read_clear(page.read_clear())?;
+                }
+                if first && self.store.meta(STOCK_TOLD).is_none() {
+                    self.store.set_meta(STOCK_TOLD, "1")?;
+                    self.emit(CoreEvent::ServerLimited);
+                }
             }
             let n = page.items.len() as u64;
             let mut any_new = false;
             for imp in page.items.into_iter().filter_map(|e| e.imported) {
                 let key = (imp.subscription_id.clone(), imp.remote_id.clone());
-                let thumb = thumbs.get(&key).copied();
-                let hop = hoppers.get(&key).cloned().unwrap_or_default();
+                if background
+                    && (!imp.withdrawn
+                        || w.out
+                            .iter()
+                            .any(|r| r.subscription_id == key.0 && r.remote_id == key.1))
+                {
+                    continue;
+                }
+                let thumb = w.thumbs.get(&key).copied();
+                let hop = w.hoppers.get(&key).cloned().unwrap_or_default();
                 let stored = self.store.reading_row(&key.0, &key.1).map(|(r, _)| r);
                 // The importer bumps `observed_at` (and `updated`) with each
                 // version, to the second; the signature catches a change
@@ -1677,21 +1773,22 @@ impl Engine {
                     r.thumb = thumb;
                     r.hoppers = hop;
                     r.read_version = server_read;
-                    out.push(r);
+                    w.out.push(r);
                     continue;
                 }
                 any_new = true;
-                if fetched >= STOCK_FETCHES {
-                    deferred = true;
+                if w.fetched >= STOCK_FETCHES {
+                    w.deferred = true;
                     // keep what's held until its turn
-                    out.extend(stored.map(|mut r| {
+                    w.out.extend(stored.map(|mut r| {
                         r.read_version = server_read;
                         r
                     }));
                     continue;
                 }
-                fetched += 1;
-                let (title, origin) = subs
+                w.fetched += 1;
+                let (title, origin) = w
+                    .subs
                     .get(&key.0)
                     .cloned()
                     .unwrap_or_else(|| (imp.subscription_title.clone(), String::new()));
@@ -1708,10 +1805,10 @@ impl Engine {
                             .page
                             .take()
                             .and_then(|p| crate::api::absolute_page(&r.origin, &p));
-                        out.push(r);
+                        w.out.push(r);
                     }
                     // Doesn't read: keep what's held rather than lose it.
-                    None => out.extend(stored.map(|mut r| {
+                    None => w.out.extend(stored.map(|mut r| {
                         r.read_version = server_read;
                         r
                     })),
@@ -1719,19 +1816,13 @@ impl Engine {
             }
             offset += n;
             if n == 0 || offset >= page.total {
-                reached_end = true;
-                break;
+                return Ok(Some(true));
             }
-            if !sweep && !any_new {
+            if !w.sweep && !any_new {
                 break; // nothing new this far down: the rest is as held
             }
         }
-        let complete = reached_end && !deferred;
-        self.state().stock_deferred = deferred;
-        if complete {
-            self.state().stock_swept = Some(Instant::now());
-        }
-        Ok(Some((out, complete)))
+        Ok(Some(false))
     }
 
     /// Reading rows from extension 3 or a studio before 0.18 carry no

@@ -18,6 +18,13 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+mod change_lead; // --- background ---
+// --- reading compose --- the compose box along the reading screen's foot.
+pub(crate) mod compose;
+// --- browse --- following links, quotes and stubs inside the reader.
+pub(crate) mod browse;
+#[cfg(test)]
+mod browse_tests;
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
 mod lineage;
 pub(crate) mod lineage_vm;
@@ -49,6 +56,8 @@ pub(crate) mod sources;
 pub(crate) mod sources_vm;
 pub(crate) mod vm;
 
+#[cfg(test)]
+mod compose_tests; // --- reading compose ---
 #[cfg(test)]
 mod own_tests; // --- own posts ---
 #[cfg(test)]
@@ -331,10 +340,17 @@ pub struct State {
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
     pub avatars: Vec<(String, String)>,
-    /// --- stub quotes --- the stub editor's passage chooser, when open.
-    pub stub: Option<stub_bar::Chooser>,
+    /// --- stub quotes --- a passage selected in the editor preview's quote.
+    pub stub: Option<stub_bar::Pick>,
     /// --- read/unread --- posts picked in the list (⌘-click, ⇧-click, ⌘A).
     pub picked: pick_vm::Picked,
+    // --- background ---
+    /// The stream cards' "V3: …" leads, asked once a session.
+    pub leads: change_lead::Leads,
+    /// --- browse --- the walk, the link answers, the history pane.
+    pub browse: browse::Browse,
+    /// --- reading compose --- the compose box.
+    pub compose: compose::Compose,
 }
 
 impl State {
@@ -384,6 +400,16 @@ impl State {
             avatars: sources::avatars(backend),
             stub: None,
             picked: Default::default(),
+            leads: Default::default(), // --- background ---
+            browse: Default::default(),
+            // --- reading compose --- kept in state.json, except on the sample
+            // data (BLYGGER_FAKE shares the real data dir; its text mustn't
+            // turn up in the real box).
+            compose: compose::Compose::new(
+                data_dir
+                    .clone()
+                    .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
+            ),
         }
         .refiltered()
     }
@@ -407,7 +433,7 @@ impl State {
                 chrono::Utc::now(),
             )
         } else {
-            searched
+            sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -475,12 +501,15 @@ impl MainView {
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
+        .map(|d| self.browse_actions(d, cx)) // --- browse ---
+        .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
     pub(super) fn reading_changed(&mut self, cx: &mut Context<Self>) {
         // --- own posts --- your published posts among the rows.
-        let fresh = own::merge(self.backend.reading(), self.own_rows());
+        // --- background --- and the withdrawn posts, at the end.
+        let fresh = self.reading_with_own();
         let r = &mut self.reading;
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
@@ -491,7 +520,7 @@ impl MainView {
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
-            let order = vm::order(fresh);
+            let order = fresh;
             let mut next: Vec<ReadingItem> = order
                 .iter()
                 .filter(|n| !r.rows.iter().any(|o| vm::key(o) == vm::key(n)))
@@ -502,9 +531,10 @@ impl MainView {
                     next.push(n.clone());
                 }
             }
-            r.rows = next;
+            // --- background --- the withdrawn posts stay last, newest first.
+            r.rows = own::with_background(next, vec![]);
         } else {
-            r.rows = vm::order(fresh);
+            r.rows = fresh;
         }
         let (own_posts, own_origin) = self.own_lineage();
         let r = &mut self.reading;
@@ -583,6 +613,35 @@ impl MainView {
         }
         window.focus(&self.reading.focus, cx);
         cx.notify();
+    }
+
+    /// --- reading compose --- Hook (the app's launch, `main.rs`): open on
+    /// the reading screen. Not while onboarding or the tour runs (the tour
+    /// starts from Posts and walks there itself), not over a sheet (the
+    /// Connect sheet when no blyg is connected, which belongs with Posts),
+    /// and not when there's no blyg to read from (disconnected, or a blyg
+    /// without the owner read API): those stay on Posts as before.
+    /// `State::new` keeps Posts, so a view built without launching (the
+    /// headless tests, a demo) starts where it always did.
+    pub(crate) fn launch_into_reading(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.onboarding.flow.is_some() || self.onboarding.tutorial.is_some() {
+            return;
+        }
+        if self.sheet.is_some() || self.reading.sheet.is_some() {
+            return;
+        }
+        let mode = crate::connection::mode(cx);
+        let connected = match mode {
+            Some(crate::connection::Mode::Fake) => true,
+            Some(crate::connection::Mode::Disconnected) => false,
+            _ => crate::settings::blyg_url(cx).is_some(),
+        };
+        if !connected || !self.backend.read_extensions_available() {
+            return;
+        }
+        if self.reading.view == View::Posts {
+            self.show_view(View::Reading, window, cx);
+        }
     }
 
     /// Hook: ⌘L goes back to the posts list.
@@ -680,6 +739,11 @@ impl MainView {
         if self.reading_search_focused(window, cx) {
             return;
         }
+        // --- reading compose --- typing in the compose box is the box's
+        // business too (its esc and ⌘⏎ are its own, `compose.rs`).
+        if self.reading.compose.has_keyboard(window, cx) {
+            return;
+        }
         let k = &ev.keystroke;
         // ⌘F searches the reading list. Handled here, not in the keymap
         // table: gpui-base's inputs bind ⌘F themselves, and this is the
@@ -697,6 +761,17 @@ impl MainView {
             && k.key == "f"
         {
             self.focus_reading_search(window, cx);
+            cx.stop_propagation();
+            return;
+        }
+        // --- browse --- ⌘[ goes back along the walk (the reading screen's
+        // own key, as ⌘F: gpui-base's inputs bind ⌘[ too).
+        if self.reading.view == View::Reading
+            && m.secondary()
+            && !(other || m.alt || m.shift)
+            && k.key == "["
+        {
+            self.reader_back(window, cx);
             cx.stop_propagation();
             return;
         }
@@ -724,6 +799,11 @@ impl MainView {
                     o.dropdown = false;
                 }
                 cx.notify();
+                true
+            }
+            // --- browse --- the history pane closes before anything else.
+            (View::Reading, "escape") if self.reading.browse.history_open => {
+                self.toggle_browse_history(cx);
                 true
             }
             // --- reader folders --- a context menu takes esc first.
@@ -768,6 +848,11 @@ impl MainView {
             }
             (View::Reading, "/") => {
                 self.focus_reading_search(window, cx);
+                true
+            }
+            // --- reading compose --- `c` writes a post, as in social apps.
+            (View::Reading, "c") => {
+                self.focus_compose(window, cx);
                 true
             }
             (_, "escape") => {

@@ -81,12 +81,16 @@ impl SwitchBackend {
     }
 }
 
-/// Which blyg the local database in the data dir belongs to.
-const DB_OWNER_FILE: &str = "blygger.db.blyg-url";
+// --- blyg switcher --- (`DB_OWNER_FILE`: which blyg a data folder's database belongs to)
+use blyg_core::config::blygs::{self, DB_OWNER_FILE};
 
 /// Open the live backend for `url` if the Keychain holds a credential (its
 /// studio password, or its owner token) for it.
-/// A local database that belongs to a *different* blyg is moved aside first
+///
+/// `data_dir` is the app's data dir; the blyg's own folder in it comes from
+/// [`blygs::data_dir_for`] (the data dir itself for the blyg that owns it,
+/// `blygs/<host>/` for the others), so several blygs never share a database.
+/// A database there that belongs to a *different* blyg is moved aside first
 /// (`blygger.<host>.db`), so one blyg's unpushed drafts can never be pushed
 /// to another.
 pub fn open_live(
@@ -103,7 +107,7 @@ pub fn open_live(
 /// `open_live` with sync options (`blygger +import-opml` opens it without
 /// the sync worker).
 pub fn open_live_with(
-    data_dir: &Path,
+    root: &Path,
     url: &str,
     tokens: &Arc<dyn TokenStore>,
     opts: blyg_core::SyncOptions,
@@ -111,11 +115,20 @@ pub fn open_live_with(
     let Some(cred) = blyg_core::config::load_credential(tokens, url)? else {
         return Ok(None);
     };
+    let data_dir = blygs::data_dir_for(root, url);
+    let data_dir = data_dir.as_path();
+    // --- blyg switcher --- the same blyg, switched away from a moment ago,
+    // may still be finishing its last sync pass: one sync worker per database.
+    if !closing::wait(data_dir, std::time::Duration::from_secs(20)) {
+        return Err(CoreError::Other(
+            "that blyg is still finishing its last sync; try again in a moment".into(),
+        ));
+    }
     std::fs::create_dir_all(data_dir).map_err(|e| CoreError::Storage(e.to_string()))?;
     let owner = data_dir.join(DB_OWNER_FILE);
     let db = data_dir.join(blyg_core::live::DB_FILE);
     if let Ok(prev) = std::fs::read_to_string(&owner)
-        && prev.trim() != url
+        && !blygs::same(prev.trim(), url)
         && db.exists()
     {
         let host = crate::vm::url_host(prev.trim()).unwrap_or_else(|| "previous".into());
@@ -142,6 +155,63 @@ pub fn delete_local_data(data_dir: &Path) {
     // The retired native preview's image cache, from older versions.
     let _ = std::fs::remove_dir_all(crate::images::cache_dir(data_dir));
     crate::app::studio::style_cache::forget(data_dir);
+}
+
+/// --- blyg switcher --- Delete one blyg's local copy: its own folder under
+/// `blygs/`, or the database files in the data dir itself.
+pub fn delete_blyg_data(root: &Path, dir: &Path) {
+    if blygs::is_sub_dir(root, dir) {
+        let _ = std::fs::remove_dir_all(dir);
+    } else {
+        delete_local_data(dir);
+    }
+}
+
+/// --- blyg switcher --- Data folders whose backend is being dropped (its
+/// sync thread finishing): opening the same blyg again waits for it.
+pub mod closing {
+    use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Condvar, LazyLock, Mutex};
+    use std::time::{Duration, Instant};
+
+    static CLOSING: LazyLock<(Mutex<HashSet<PathBuf>>, Condvar)> =
+        LazyLock::new(|| (Mutex::new(HashSet::new()), Condvar::new()));
+
+    pub fn start(dir: &Path) {
+        CLOSING
+            .0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(dir.to_path_buf());
+    }
+
+    pub fn done(dir: &Path) {
+        CLOSING
+            .0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(dir);
+        CLOSING.1.notify_all();
+    }
+
+    /// Wait until `dir` isn't closing. False on timeout.
+    pub fn wait(dir: &Path, timeout: Duration) -> bool {
+        let end = Instant::now() + timeout;
+        let mut g = CLOSING.0.lock().unwrap_or_else(|p| p.into_inner());
+        while g.contains(dir) {
+            let left = end.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return false;
+            }
+            g = CLOSING
+                .1
+                .wait_timeout(g, left)
+                .unwrap_or_else(|p| p.into_inner())
+                .0;
+        }
+        true
+    }
 }
 
 // ------------------------------------------------------------ app global
@@ -198,18 +268,108 @@ pub fn go_live(url: &str, cx: &mut gpui_kit::App) -> Result<bool> {
         return Ok(false);
     };
     // --- onboarding --- (a sample-data session still goes live on connect)
-    if conn.switch.mode() == Mode::Fake && !cx.has_global::<SampleSession>() {
+    if conn.switch.mode() == Mode::Fake
+        && !cx.has_global::<SampleSession>()
+        && !cx.has_global::<BlygOpener>()
+    {
         return Ok(false);
     }
-    let (switch, dir) = (conn.switch.clone(), conn.data_dir.clone());
-    let tokens = crate::settings::get(cx).tokens.clone();
-    match open_live(&dir, url, &tokens)? {
-        Some(live) => {
-            switch.switch(live, Mode::Live, || {});
+    let (switch, root) = (conn.switch.clone(), conn.data_dir.clone());
+    match open_blyg(url, cx)? {
+        Some((next, mode)) => {
+            swap(&switch, &root, next, mode, || {});
+            crate::refresh_menus(cx); // --- blyg switcher ---
             Ok(true)
         }
         None => Err(CoreError::Other("the token wasn't saved".into())),
     }
+}
+
+// --- blyg switcher ---
+
+/// How a blyg's backend is opened. The app opens a `LiveBackend`; fake mode
+/// and tests set a [`BlygOpener`] instead.
+pub type Opener = Arc<dyn Fn(&str) -> Result<Option<(Arc<dyn Backend>, Mode)>> + Send + Sync>;
+
+/// Opens blygs instead of `open_live` (fake mode, tests).
+pub struct BlygOpener(pub Opener);
+
+impl gpui_kit::Global for BlygOpener {}
+
+/// Open `url`'s backend: `None` when there's no credential for it.
+fn open_blyg(url: &str, cx: &gpui_kit::App) -> Result<Option<(Arc<dyn Backend>, Mode)>> {
+    if let Some(o) = cx.try_global::<BlygOpener>() {
+        return (o.0)(url);
+    }
+    let Some(conn) = cx.try_global::<Connection>() else {
+        return Ok(None);
+    };
+    let tokens = crate::settings::get(cx).tokens.clone();
+    Ok(open_live(&conn.data_dir, url, &tokens)?.map(|b| (b, Mode::Live)))
+}
+
+/// Swap in `next`. The live backend going out is marked closing until its
+/// sync thread has finished (`after` runs first), so reopening that blyg
+/// right away waits for it instead of running two sync workers on one
+/// database.
+fn swap(
+    switch: &SwitchBackend,
+    root: &Path,
+    next: Arc<dyn Backend>,
+    mode: Mode,
+    after: impl FnOnce() + Send + 'static,
+) {
+    let old_dir = (switch.mode() == Mode::Live)
+        .then(|| switch.current().base_url())
+        .flatten()
+        .map(|u| blygs::data_dir_for(root, &u));
+    if let Some(d) = &old_dir {
+        closing::start(d);
+    }
+    switch.switch(next, mode, move || {
+        after();
+        if let Some(d) = old_dir {
+            closing::done(&d);
+        }
+    });
+}
+
+/// What [`switch_to`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Switched {
+    /// It's the active blyg already.
+    Same,
+    Changed,
+    /// No sign-in for it in the Keychain: sign in again (the Connect sheet).
+    NeedsSignIn,
+}
+
+/// Make `url` the active blyg: open its backend, point `blyg-url` at it, and
+/// swap it in. The blyg switched away from is closed: its sync worker
+/// finishes the pass it's in and stops, and anything still in its outbox
+/// waits in its own database until it's active again.
+pub fn switch_to(url: &str, cx: &mut gpui_kit::App) -> std::result::Result<Switched, String> {
+    let Some(conn) = cx.try_global::<Connection>() else {
+        return Err("Not connected".into());
+    };
+    let (switch, root) = (conn.switch.clone(), conn.data_dir.clone());
+    let current = crate::settings::blyg_url(cx);
+    if current.as_deref().is_some_and(|c| blygs::same(c, url))
+        && switch.mode() != Mode::Disconnected
+    {
+        return Ok(Switched::Same);
+    }
+    let host = crate::vm::url_host(url).unwrap_or_else(|| url.to_string());
+    let Some((next, mode)) =
+        open_blyg(url, cx).map_err(|e| format!("Couldn't open {host}: {e}"))?
+    else {
+        return Ok(Switched::NeedsSignIn);
+    };
+    let cfg = crate::settings::get(cx).store.config().clone();
+    crate::settings::write(&blygs::activate(&cfg, url), cx)?;
+    swap(&switch, &root, next, mode, || {});
+    crate::refresh_menus(cx);
+    Ok(Switched::Changed)
 }
 
 // --- onboarding ---
@@ -241,6 +401,16 @@ pub fn use_sample_data(fake: Arc<dyn Backend>, cx: &mut gpui_kit::App) -> bool {
 }
 // --- end onboarding ---
 
+/// What signing out of a blyg did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignedOut {
+    pub host: String,
+    /// It was the active blyg.
+    pub was_active: bool,
+    /// The active blyg now, if any.
+    pub active: Option<String>,
+}
+
 /// Forget the password and token (Keychain) and `blyg-url` (config); keep or delete the
 /// local copy. Returns the host that was disconnected.
 pub fn disconnect(
@@ -248,6 +418,18 @@ pub fn disconnect(
     cx: &mut gpui_kit::App,
 ) -> std::result::Result<String, String> {
     let url = crate::settings::blyg_url(cx).ok_or("Not connected to a blyg")?;
+    disconnect_blyg(&url, delete_local, cx).map(|s| s.host)
+}
+
+/// Sign out of one blyg: forget its password and token (Keychain), take it
+/// off the list (config), and keep or delete its local copy. Signing out of
+/// the active blyg switches to the next one in the list, or to nothing.
+pub fn disconnect_blyg(
+    url: &str,
+    delete_local: bool,
+    cx: &mut gpui_kit::App,
+) -> std::result::Result<SignedOut, String> {
+    let url = url.to_string();
     let host = crate::vm::url_host(&url).unwrap_or(url.clone());
     let tokens = crate::settings::get(cx).tokens.clone();
     // A browser sign-in is revoked at the blyg too (best effort, off the
@@ -263,19 +445,91 @@ pub fn disconnect(
     }
     blyg_core::config::delete_credential(tokens.as_ref(), &url)
         .map_err(|e| format!("Couldn't remove it from the Keychain: {e}"))?;
-    crate::settings::write(&[("blyg-url", blyg_core::config::Change::Remove)], cx)?;
-    if let Some(conn) = cx.try_global::<Connection>()
-        && conn.switch.mode() != Mode::Fake
-    {
-        let dir = conn.data_dir.clone();
-        conn.switch
-            .switch(Arc::new(Disconnected), Mode::Disconnected, move || {
-                if delete_local {
-                    delete_local_data(&dir);
-                }
-            });
+    let cfg = crate::settings::get(cx).store.config().clone();
+    let was_active = cfg.blyg_url().is_some_and(|a| blygs::same(a, &url));
+    let (changes, next) = blygs::remove(&cfg, &url);
+    crate::settings::write(&changes, cx)?;
+    crate::refresh_menus(cx);
+    let out = SignedOut {
+        host,
+        was_active,
+        active: next.clone(),
+    };
+    let Some(conn) = cx.try_global::<Connection>() else {
+        return Ok(out);
+    };
+    let (switch, root) = (conn.switch.clone(), conn.data_dir.clone());
+    // Fake mode never deletes real files.
+    let fake = switch.mode() == Mode::Fake || cx.has_global::<BlygOpener>();
+    let dir = blygs::data_dir_for(&root, &url);
+    let wipe = {
+        let (root, dir) = (root.clone(), dir.clone());
+        move || {
+            if delete_local && !fake {
+                delete_blyg_data(&root, &dir);
+            }
+        }
+    };
+    if was_active {
+        let target = match &next {
+            Some(n) => open_blyg(n, cx).ok().flatten(),
+            None => None,
+        };
+        match target {
+            Some((b, m)) => swap(&switch, &root, b, m, wipe),
+            None if switch.mode() != Mode::Fake => swap(
+                &switch,
+                &root,
+                Arc::new(Disconnected),
+                Mode::Disconnected,
+                wipe,
+            ),
+            None => {}
+        }
+    } else if delete_local {
+        std::thread::spawn(move || {
+            closing::wait(&dir, std::time::Duration::from_secs(30));
+            wipe();
+        });
     }
-    Ok(host)
+    Ok(out)
+}
+
+/// --- blyg switcher --- Fake mode: each blyg is its own `FakeBackend`, kept
+/// for the session. The active one (`active`) is `initial`; every other gets
+/// a few posts of its own over the same sample reading.
+pub fn fake_opener(initial: Arc<crate::fake::FakeBackend>, active: Option<&str>) -> Opener {
+    use std::collections::HashMap;
+    let mut fakes: HashMap<String, Arc<crate::fake::FakeBackend>> = HashMap::new();
+    if let Some(a) = active {
+        fakes.insert(blygs::identity(a), initial);
+    }
+    let fakes = Mutex::new(fakes);
+    Arc::new(move |url: &str| {
+        let mut g = fakes.lock().unwrap_or_else(|p| p.into_inner());
+        let f = g
+            .entry(blygs::identity(url))
+            .or_insert_with(|| {
+                let f = Arc::new(crate::fake::FakeBackend::new());
+                f.replace_posts(&[
+                    (
+                        Kind::Fragment,
+                        "Field note: the heron was back at the weir this morning, standing like a question mark.",
+                    ),
+                    (
+                        Kind::Thread,
+                        "Tide tables\n\nA list of the low tides worth walking out for this month, with the caveat that the sea keeps its own counsel.",
+                    ),
+                    (
+                        Kind::Fragment,
+                        "Moss grows fastest where nobody walks. Make of that what you will.",
+                    ),
+                ]);
+                f
+            })
+            .clone();
+        Ok(Some((f as Arc<dyn Backend>, Mode::Fake)))
+    })
 }
 
 /// Nothing connected yet: an empty list, and every write explains why.
@@ -640,6 +894,32 @@ impl Backend for SwitchBackend {
     }
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
         self.cur().public_pinned(origin, id, version)
+    }
+    // --- conflicts ---
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        self.cur().conflict_texts(id)
+    }
+    // --- background ---
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        self.cur().background_reading()
+    }
+    // --- browse ---
+    fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
+        self.cur().classify_links(urls)
+    }
+    fn log_browse(&self, step: &blyg_core::browse::NewBrowseStep) -> Result<i64> {
+        self.cur().log_browse(step)
+    }
+    fn browse_history(
+        &self,
+        trail: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<blyg_core::browse::BrowseStep>> {
+        self.cur().browse_history(trail, offset, limit)
+    }
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        self.cur().clear_browse(trail)
     }
     // --- lineage counts ---
     fn lineage_summaries(

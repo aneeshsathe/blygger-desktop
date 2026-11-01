@@ -3,6 +3,7 @@
 
 pub mod api;
 pub mod backend;
+pub mod browse; // --- browse ---
 pub mod config;
 pub mod floor;
 pub mod grammar;

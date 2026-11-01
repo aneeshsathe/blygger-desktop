@@ -513,6 +513,11 @@ impl MainView {
                 .children(parts.into_iter().map(|l| {
                     let url = l.url.clone();
                     let id = l.id;
+                    let via = if id == "pf-lineage-stub" {
+                        blyg_core::browse::BrowseVia::Stub
+                    } else {
+                        blyg_core::browse::BrowseVia::Link
+                    };
                     // --- quote targets --- the name opens the profile; the
                     // lead and the rest open the post itself.
                     let post =
@@ -521,7 +526,8 @@ impl MainView {
                                 d.cursor_pointer()
                                     .hover(|s| s.text_color(p.accent))
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.open_original(o.clone(), i.clone(), v, window, cx)
+                                        // --- browse --- a step of the walk.
+                                        this.browse_follow(via, o.clone(), i.clone(), v, window, cx)
                                     }))
                             })
                         };

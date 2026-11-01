@@ -264,6 +264,7 @@ impl MainView {
         if self.is_own_origin(&item.origin) && matches!(self.reading.mentions, Load::Idle) {
             self.load_mentions(cx);
         }
+        self.browse_pane_opening(); // --- browse ---
         self.reading.opened = Some(Opened {
             responses,
             key: key.clone(),
@@ -276,6 +277,7 @@ impl MainView {
             pins: Default::default(),
             diff_vs_now: false,
         });
+        self.browse_visited(cx); // --- browse --- the walk, and its links
         cx.notify();
         // --- own posts --- your history, never a read mark.
         if super::own::is_own(&key) {
@@ -499,7 +501,7 @@ impl MainView {
 
     /// The current version's actions on any post (the open one, or the
     /// stream's selected one): Quote, Reply, AI reply, Open on web.
-    pub(super) fn item_action(
+    pub(crate) fn item_action(
         &mut self,
         item: blyg_core::ReadingItem,
         action: &'static str,
@@ -693,6 +695,7 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.unavailable())
+                .children(self.render_compose_bar(cx)) // --- reading compose ---
                 .into_any_element();
         }
         if stream {
@@ -703,6 +706,7 @@ impl MainView {
                 .flex_col()
                 .child(header)
                 .child(self.render_stream_body(body_font, cx))
+                .children(self.render_compose_bar(cx)) // --- reading compose ---
                 .into_any_element();
         }
         let held = self.reading.rows.len();
@@ -786,6 +790,7 @@ impl MainView {
                 self.render_reading_detail(body_font, cx),
                 cx,
             ))
+            .children(self.render_compose_bar(cx)) // --- reading compose ---
             .into_any_element()
     }
 
@@ -931,11 +936,17 @@ impl MainView {
             .into_any_element()
     }
 
+    /// The open post, with the browsing history pane beside it when shown.
     pub(super) fn render_reading_detail(
         &self,
         body_font: &SharedString,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let detail = self.render_opened_post(body_font, cx);
+        self.with_history_pane(detail, cx) // --- browse ---
+    }
+
+    fn render_opened_post(&self, body_font: &SharedString, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette.on_page();
         let Some(o) = self.reading.opened.as_ref() else {
             return div()
@@ -986,14 +997,9 @@ impl MainView {
                 ),
                 None => (None, Some("Withdrawn by the author".into())),
             },
-            // --- quote targets --- fetched on demand, not from a subscription.
-            None if super::original::is_external(&o.key) => (
-                Some(item.content_md.clone()),
-                Some(format!(
-                    "From {}'s public files · you don't follow this blyg",
-                    vm::host(&item.origin)
-                )),
-            ),
+            // --- quote targets --- fetched on demand, not from a
+            // subscription: the peek note says so (`render_peek_note`).
+            None if super::original::is_external(&o.key) => (Some(item.content_md.clone()), None),
             None => (Some(item.content_md.clone()), None),
         };
 
@@ -1063,6 +1069,7 @@ impl MainView {
             .when(diffing, |d| d.flex_1().min_h_0())
             // Room for the body: a long diff scrolls here instead.
             .when(!diffing, |d| d.max_h(relative(0.45)))
+            .children(self.render_peek_note(o, cx)) // --- browse ---
             .when_some(banner, |d, b| {
                 d.child(
                     div()
@@ -1157,7 +1164,14 @@ impl MainView {
             .min_h_0()
             .flex()
             .flex_col()
-            .pt(px(22.))
+            .pt(px(14.))
+            // --- browse --- ‹ back, the breadcrumb, history.
+            .child(
+                div()
+                    .px(px(32.))
+                    .flex_none()
+                    .child(self.render_trail_bar(cx)),
+            )
             .child(div().px(px(32.)).flex_none().child(header))
             .child(notes)
             .child(body)

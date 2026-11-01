@@ -29,6 +29,16 @@
 | ⌘1 | Write: list + editor | View › Write |
 | ⌘2 | List + editor + preview | View › List + Editor + Preview |
 | ⌘3 | Full editor: editor + preview | View › Full Editor |
+| ⌃⌘0 | Blyg switcher: every blyg you're signed in to (or click the title) | Blyg › Switch Blyg… |
+| ⌃⌘1 | Switch to the first blyg in the switcher (Blyg › Switch To) |  |
+| ⌃⌘2 | Switch to the second blyg |  |
+| ⌃⌘3 | Switch to the third blyg |  |
+| ⌃⌘4 | Switch to the fourth blyg |  |
+| ⌃⌘5 | Switch to the fifth blyg |  |
+| ⌃⌘6 | Switch to the sixth blyg |  |
+| ⌃⌘7 | Switch to the seventh blyg |  |
+| ⌃⌘8 | Switch to the eighth blyg |  |
+| ⌃⌘9 | Switch to the ninth blyg |  |
 | ⌘G | Generate: fill the [TK] under the caret, or open the AI helpers | Post › Generate (TK) |
 | ⇧⌘G | Shorten to fit 1000 (AI; you accept or reject) | Post › Shorten to Fit 1000 |
 | ⌘R | Reading list (again: back to posts) | Blyg › Reading |
@@ -42,8 +52,10 @@
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
+| ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
+| ⇧⌘H | Browsing history beside the reading pane: where following links took you (private) | Blyg › Browsing History |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
 | ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |
 | ⌘I | Profile of this post's author (yours on your own post); again closes it | Blyg › Profile |
@@ -52,7 +64,7 @@
 | ⌥⌘← | Tutorial: previous step |  |
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
-| ⇧⌘D | Quote the highlighted passage (a page, a post or your notes) in the draft | Post › Quote Selection in Draft |
+| ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
 | ⇧⌘P | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
 
 ### While typing in the editor or a text field
@@ -86,6 +98,8 @@
 | Check spelling while typing (on/off; the spellcheck config key) | Edit › Spelling › Check Spelling While Typing |
 | Disconnect from this blyg | Burrow › Disconnect… |
 | Open the config file | Burrow › Open Config File |
+| Sign in to another blyg (the others stay signed in) | Blyg › Add a Blyg… |
+| Manage blygs: sign out of one, keeping or deleting its posts on this Mac | Blyg › Manage Blygs… |
 | Check for a new release now (whatever auto-update says) | Burrow › Check for Updates… |
 | Quick capture (the global hotkey, capture-hotkey) | Burrow › Quick Capture |
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
@@ -93,6 +107,7 @@
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
+| Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |
 | Your own profile, as visitors see it | Blyg › My Profile |
 | The interactive tutorial (on sample data) | Help › Burrow Tutorial |

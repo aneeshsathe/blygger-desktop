@@ -78,6 +78,37 @@ impl MainView {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("bench", window, cx);
             }
+            // --- reading compose --- the compose box under the stream, a
+            // thought half typed; `rd-compose-reader`: the Reader with a
+            // post open and its quote in the box.
+            ("rd-stream-compose", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-compose", 1) => {
+                self.stream_move(1, window, cx);
+                self.focus_compose(window, cx);
+                if let Some(e) = self.reading.compose.editor.clone() {
+                    e.update(cx, |s, cx| {
+                        s.set_value(
+                            "Trust as a unit of lending: that's the line I keep coming back to.",
+                            window,
+                            cx,
+                        )
+                    });
+                }
+            }
+            ("rd-compose-reader", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-compose-reader", 1) => {
+                open(self, RUE_TRUST, window, cx);
+                self.compose_quote_open(window, cx);
+                if let Some(e) = self.reading.compose.editor.clone() {
+                    e.update(cx, |s, cx| {
+                        let t = format!(
+                            "{}\nSpend it carefully, and say where you got it.",
+                            s.value()
+                        );
+                        s.set_value(t, window, cx)
+                    });
+                }
+            }
             // --- quote targets --- a held quote's original opens at once;
             // one nobody here follows is fetched, at its quoted pinned v1.
             ("rd-stream-original", 0) => self.show_view(View::Reading, window, cx),
@@ -163,26 +194,33 @@ impl MainView {
                 self.open_sub_name_sheet("sub-omar".into(), window, cx);
             }
             // --- stub quotes --- Reply: the whole post, the hint line; then
-            // the passage chooser with a selection; then that passage quoted.
-            ("rd-stub" | "rd-stub-passage", 0) => {
+            // the editor preview with a passage selected in the quote box
+            // (`rd-stub-select`, "quote only this" offered); then that passage
+            // quoted (`rd-stub-passage`).
+            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 0) => {
                 self.show_view(View::Reading, window, cx);
                 open(self, LIN_GARDENS, window, cx);
             }
-            ("rd-stub" | "rd-stub-passage", 1) => {
+            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 1) => {
                 if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
                     self.item_action(item, "Reply", window, cx);
                 }
-                self.toggle_stub_chooser(window, cx);
-                if let Some(post) = self.reading.stub.as_ref().and_then(|c| c.post.clone()) {
-                    post.update(cx, |s, cx| {
-                        let t = s.value().to_string();
-                        let end = t.find('.').map_or(t.len().min(40), |i| i + 1);
-                        s.set_selected_range(0..end, cx);
-                        s.focus(window, cx);
-                    });
+                self.stub_choose_passage(window, cx);
+            }
+            ("rd-stub-select" | "rd-stub-passage", 2) => {
+                self.studio_demo_select_passage();
+                if scenario == "rd-stub-passage" {
+                    cx.spawn_in(window, async move |this, cx| {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(900))
+                            .await;
+                        let _ = this.update_in(cx, |v, window, cx| {
+                            v.quote_stub_passage(window, cx);
+                        });
+                    })
+                    .detach();
                 }
             }
-            ("rd-stub-passage", 2) => self.quote_stub_passage(false, window, cx),
             // A subscription's context menu, on its "Move to folder ›" list.
             ("rd-folder-menu", 0) => self.show_view(View::Reading, window, cx),
             ("rd-folder-menu", 1) => {
@@ -322,8 +360,32 @@ impl MainView {
                 }
                 cx.notify();
             }
+            // --- background --- the Background feed, Rue's withdrawn post
+            // open; and the stream at Ada's tide tables, "V2: one word".
+            ("rd-background", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-background", 1) => {
+                use super::sources_vm::{Smart, Source};
+                self.select_source(Source::Smart(Smart::Background), cx);
+                self.move_reading(1, window, cx);
+            }
+            ("rd-stream-lead", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-stream-lead", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == crate::fake::reading_seed::ADA_TIDES);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
             ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
             ("rd-quote", 1) => self.open_quote_picker(window, cx),
+            // --- browse --- the walk, the history pane, a peek, nested quotes.
+            (s, n) if s.starts_with("rd-browse") || s == "rd-stream-nested" => {
+                self.browse_demo(s, n, window, cx)
+            }
             _ => {}
         }
         if n == 2 {

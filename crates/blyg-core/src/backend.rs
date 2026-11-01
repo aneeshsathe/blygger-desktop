@@ -630,4 +630,64 @@ pub trait Backend: Send + Sync {
         let _ = centre;
         None
     }
+
+    // --- browse --- following links out of an entry (studio 0.49.0;
+    // `crate::browse`). Additive; the defaults classify nothing and keep no
+    // log, so implementors compile.
+
+    /// Which of `urls` name a blyg item (blocking; at most
+    /// `browse::CLASSIFY_MAX` are asked at once, more are batched). Studio
+    /// 0.49+: `POST /api/peek/links`; elsewhere probed with the public client
+    /// and cached locally. Order follows `urls`.
+    fn classify_links(&self, urls: &[String]) -> Result<Vec<crate::browse::LinkTarget>> {
+        Ok(urls
+            .iter()
+            .map(|u| crate::browse::LinkTarget {
+                url: u.clone(),
+                target: None,
+            })
+            .collect())
+    }
+
+    /// Record one step of the private browsing log; returns its id (the next
+    /// step's `parent_id`). Studio 0.49+: `POST /api/browse` (scope
+    /// `reading:state`); elsewhere, or on a 403, the local store.
+    fn log_browse(&self, step: &crate::browse::NewBrowseStep) -> Result<i64> {
+        let _ = step;
+        Err(CoreError::Other("not supported here".into()))
+    }
+
+    /// The browsing log, newest first: one trail, or every trail.
+    fn browse_history(
+        &self,
+        trail: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<crate::browse::BrowseStep>> {
+        let _ = (trail, offset, limit);
+        Ok(Vec::new())
+    }
+
+    /// Clear one trail, or the whole log.
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        let _ = trail;
+        Ok(())
+    }
+
+    /// --- background --- The Background lens (studio 0.49.0): withdrawn
+    /// posts only, the blygs you read (tombstones, signalled or not) newest
+    /// first. `reading()` keeps hiding unsignalled tombstones; your own
+    /// withdrawn posts come from `items()`. Local, instant. Additive.
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        Vec::new()
+    }
+
+    /// --- conflicts --- An item already in conflict: (mine, theirs), the
+    /// local text and the server's as last pulled, so the resolve sheet can
+    /// be shown again after it was dismissed (issue #52). `None` when the
+    /// item isn't in conflict. Local, instant. Additive.
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let _ = id;
+        None
+    }
 }

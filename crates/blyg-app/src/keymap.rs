@@ -43,6 +43,10 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- browse ---
+use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
+// --- reading compose ---
+use crate::app::reading::compose::FocusCompose;
 // --- own posts ---
 use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 
@@ -60,6 +64,11 @@ use crate::composer::ToggleSpellcheck;
 use crate::app::notes::{QuoteToDraft, ToggleNotes};
 // --- extensions ---
 use crate::app::extensions::ShowExtensions;
+// --- blyg switcher ---
+use crate::app::switcher::{
+    AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
+    SwitchBlyg5, SwitchBlyg6, SwitchBlyg7, SwitchBlyg8, SwitchBlyg9,
+};
 // --- browser ---
 use crate::app::browser::{
     BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
@@ -370,6 +379,88 @@ pub fn mac_table() -> Vec<Keybind> {
             "Open the config file",
             "Burrow › Open Config File"
         ),
+        // --- blyg switcher --- (switcher.rs; the blyg list is the `blyg` key)
+        kb!(
+            "ctrl-cmd-0",
+            Main,
+            ShowBlygSwitcher,
+            "Blyg switcher: every blyg you're signed in to (or click the title)",
+            Some("Blyg › Switch Blyg…")
+        ),
+        kb!(
+            "ctrl-cmd-1",
+            Main,
+            SwitchBlyg1,
+            "Switch to the first blyg in the switcher (Blyg › Switch To)",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-2",
+            Main,
+            SwitchBlyg2,
+            "Switch to the second blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-3",
+            Main,
+            SwitchBlyg3,
+            "Switch to the third blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-4",
+            Main,
+            SwitchBlyg4,
+            "Switch to the fourth blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-5",
+            Main,
+            SwitchBlyg5,
+            "Switch to the fifth blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-6",
+            Main,
+            SwitchBlyg6,
+            "Switch to the sixth blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-7",
+            Main,
+            SwitchBlyg7,
+            "Switch to the seventh blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-8",
+            Main,
+            SwitchBlyg8,
+            "Switch to the eighth blyg",
+            None
+        ),
+        kb!(
+            "ctrl-cmd-9",
+            Main,
+            SwitchBlyg9,
+            "Switch to the ninth blyg",
+            None
+        ),
+        menu_only!(
+            AddBlyg,
+            "Sign in to another blyg (the others stay signed in)",
+            "Blyg › Add a Blyg…"
+        ),
+        menu_only!(
+            ManageBlygs,
+            "Manage blygs: sign out of one, keeping or deleting its posts on this Mac",
+            "Blyg › Manage Blygs…"
+        ),
+        // --- end blyg switcher ---
         // --- auto-update ---
         menu_only!(
             CheckForUpdates,
@@ -543,6 +634,17 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Blyg › Reader")
         ),
         // --- end stream ---
+        // --- reading compose --- the compose box on the reading screen. Its
+        // single key, `c` (the list focused), lives in reading_key_down; in
+        // the box ⌘⏎ posts, ⌘D saves a draft and esc goes back to the list.
+        kb!(
+            "cmd-shift-k",
+            Main,
+            FocusCompose,
+            "Compose while reading: the post box at the foot of the reading screen (c there)",
+            Some("Blyg › Compose While Reading")
+        ),
+        // --- end reading compose ---
         // --- reader folders --- the Reader's sources pane. Its own keys
         // (←/→ between panes, ↑/↓, j/k, Space, [ ], esc) live in
         // reading_key_down / sources::reader_key.
@@ -568,6 +670,22 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Blyg › Check All Feeds Now")
         ),
         // --- end reader folders ---
+        // --- browse --- (studio 0.49) the walk from post to post inside the
+        // reader. Its key, ⌘[, is the reading screen's own (handled in
+        // reading_key_down, like ⌘F): gpui-base's inputs bind ⌘[ themselves,
+        // and the browser pane's ⌘[ is the pane's.
+        menu_only!(
+            ReaderBack,
+            "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
+            "Blyg › Back"
+        ),
+        kb!(
+            "cmd-shift-h",
+            Main,
+            ToggleBrowseHistory,
+            "Browsing history beside the reading pane: where following links took you (private)",
+            Some("Blyg › Browsing History")
+        ),
         // --- end reading & versions ---
         // --- delete & withdraw --- (docs/SPEC.md rule 5: published work is
         // withdrawn, never deleted). ⇧⌘⌫, not ⌘⌫: that's delete-to-line-start
@@ -759,7 +877,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-d",
             Main,
             QuoteToDraft,
-            "Quote the highlighted passage (a page, a post or your notes) in the draft",
+            "Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft",
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
@@ -839,7 +957,20 @@ pub fn platform_key(key: &'static str) -> &'static str {
 
 /// Keys whose plain respelling would take a Windows convention: Ctrl+Y is
 /// Redo in every Windows text field (and gpui-base's `Input` binds it).
-const WINDOWS_OVERRIDES: &[(&str, &str)] = &[("cmd-y", "ctrl-shift-y")];
+const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
+    ("cmd-y", "ctrl-shift-y"),
+    // --- blyg switcher --- ⌃⌘<digit> would fold into Ctrl+<digit>, the views.
+    ("ctrl-cmd-0", "ctrl-shift-0"),
+    ("ctrl-cmd-1", "ctrl-shift-1"),
+    ("ctrl-cmd-2", "ctrl-shift-2"),
+    ("ctrl-cmd-3", "ctrl-shift-3"),
+    ("ctrl-cmd-4", "ctrl-shift-4"),
+    ("ctrl-cmd-5", "ctrl-shift-5"),
+    ("ctrl-cmd-6", "ctrl-shift-6"),
+    ("ctrl-cmd-7", "ctrl-shift-7"),
+    ("ctrl-cmd-8", "ctrl-shift-8"),
+    ("ctrl-cmd-9", "ctrl-shift-9"),
+];
 
 /// The pure part of `platform_key`.
 #[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
@@ -1046,6 +1177,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
+    let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
 }
 
 /// `Ctrl+Shift+,` for `ctrl-shift-,` (Windows spells keys out).

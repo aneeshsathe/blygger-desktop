@@ -102,6 +102,9 @@ pub(crate) mod notes;
 // --- extensions --- (the host, its sheets and the notes library; hooks marked the same way)
 #[path = "extensions/mod.rs"]
 pub(crate) mod extensions;
+// --- blyg switcher --- (several blygs, one active; hooks marked the same way)
+#[path = "switcher.rs"]
+pub(crate) mod switcher;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -206,6 +209,8 @@ enum Sheet {
     // and what the composer holds before its `submit`.
     MacroPreview(browser::automation::PreviewSheet),
     MacroPost(browser::automation::PostSheet),
+    // --- blyg switcher --- every signed-in blyg; switch, add, sign out.
+    Blygs(switcher::BlygSheet),
 }
 
 struct Toast {
@@ -441,7 +446,8 @@ impl MainView {
             .backend
             .reading()
             .iter()
-            .filter(|r| r.is_unread())
+            // Withdrawn posts are background: never unread (studio 0.49).
+            .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
             .count();
         let mode = crate::connection::mode(cx);
         if mode == Some(crate::connection::Mode::Live) {
@@ -1010,7 +1016,15 @@ impl MainView {
                     }),
                     cx,
                 );
-                self.open_connect(window, cx);
+                // --- blyg switcher --- the next signed-in blyg is active now;
+                // with none left (or none that opens), connect one.
+                if crate::settings::blyg_url(cx).is_some()
+                    && crate::connection::mode(cx) != Some(crate::connection::Mode::Disconnected)
+                {
+                    self.blyg_switched(window, cx);
+                } else {
+                    self.open_connect(window, cx);
+                }
             }
             Err(e) => self.show_toast(e, None, cx),
         }
@@ -1302,25 +1316,14 @@ impl MainView {
                 local_id,
                 mine,
                 theirs,
-            } => {
-                let (m, t) = vm::word_diff(&mine, &theirs);
-                let focus = cx.focus_handle();
-                window.focus(&focus, cx);
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::Conflict {
-                    id: local_id,
-                    mine: m,
-                    theirs: t,
-                    focus,
-                });
-                cx.notify();
-            }
+            } => self.show_conflict_sheet(local_id, &mine, &theirs, window, cx),
             CoreEvent::ReadingChanged => {
                 self.unread = self
                     .backend
                     .reading()
                     .iter()
-                    .filter(|r| r.is_unread())
+                    // Withdrawn posts are background: never unread (studio 0.49).
+                    .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
                     .count();
                 // --- reading & versions ---
                 self.reading_changed(cx);
@@ -1558,6 +1561,9 @@ impl MainView {
                     Err(CoreError::Offline) => {
                         v.show_toast("Offline. Publish again when you're back online.", None, cx)
                     }
+                    // --- conflicts --- refused for a conflict: the sheet
+                    // again, not a toast with no way out (issue #52).
+                    Err(_) if v.reopen_conflict(&id, window, cx) => {}
                     Err(e) => v.show_toast(format!("Publish failed: {e}"), None, cx),
                 }
                 // --- follow-ups --- promotion may have rewritten local images.
@@ -2042,6 +2048,9 @@ impl Render for MainView {
         self.studio_frame(window, cx);
         self.browser_frame(window, cx); // --- browser ---
         self.notes_frame(cx); // --- notes ---
+        // --- reading compose ---
+        self.compose_frame(window, cx);
+        // --- end reading compose ---
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
@@ -2138,6 +2147,7 @@ impl Render for MainView {
             .map(|d| self.browser_actions(d, cx)) // --- browser ---
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
+            .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .size_full()
             .relative()
             .flex()
@@ -2146,7 +2156,17 @@ impl Render for MainView {
             .text_color(p.ink)
             .font_family(ui_font.clone())
             // Windows shows the title in its own title bar.
-            .child(self.render_titlebar(&ui_font, show_title && cfg!(target_os = "macos")))
+            // --- blyg switcher --- the active blyg is the title (a button),
+            // on Windows too.
+            .child(
+                self.render_titlebar(
+                    &ui_font,
+                    show_title && cfg!(target_os = "macos"),
+                    show_title
+                        .then(|| self.render_blyg_title(&ui_font, cx))
+                        .flatten(),
+                ),
+            )
             .children(crate::platform::menu_button(p, cx)) // Windows menu
             .child(self.render_view_switcher(cx)) // --- reading & versions ---
             .children(self.render_toolbar(toolbar, &ui_font, cx)) // --- buttons ---
@@ -2201,9 +2221,15 @@ impl Render for MainView {
 }
 
 impl MainView {
-    fn render_titlebar(&self, ui_font: &SharedString, show_title: bool) -> impl IntoElement {
+    fn render_titlebar(
+        &self,
+        ui_font: &SharedString,
+        show_title: bool,
+        blyg_title: Option<AnyElement>, // --- blyg switcher ---
+    ) -> impl IntoElement {
         let p = self.palette;
         let plate = crate::ornament::title_plate(&self.theme);
+        let connected = blyg_title.is_some(); // --- blyg switcher ---
         div()
             .id("titlebar")
             // On Windows the OS title bar moves the window, and a drag area
@@ -2224,7 +2250,9 @@ impl MainView {
             .border_color(p.bar_line)
             .children(crate::ornament::titlebar_band(&self.theme))
             // --- buttons --- the toolbar hides the title when it needs the room
-            .when(show_title, |d| {
+            // --- blyg switcher --- with a blyg, the title is the switcher.
+            .when_some(blyg_title, |d, t| d.child(t))
+            .when(show_title && !connected, |d| {
                 d.child(
                     div()
                         .font_family(ui_font.clone())
@@ -2708,6 +2736,48 @@ impl MainView {
         )
     }
 
+    /// --- conflicts --- The resolve sheet for an item in conflict.
+    pub(crate) fn show_conflict_sheet(
+        &mut self,
+        id: LocalId,
+        mine: &str,
+        theirs: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let (m, t) = vm::word_diff(mine, theirs);
+        let focus = cx.focus_handle();
+        window.focus(&focus, cx);
+        self.sheet_gen += 1;
+        self.sheet = Some(Sheet::Conflict {
+            id,
+            mine: m,
+            theirs: t,
+            focus,
+        });
+        cx.notify();
+    }
+
+    /// --- conflicts --- Show the resolve sheet again for an item that is
+    /// still in conflict, from the texts the store kept (the event that
+    /// first showed it fires only once; issue #52). False when it isn't in
+    /// conflict, or another sheet is up.
+    pub(crate) fn reopen_conflict(
+        &mut self,
+        id: &LocalId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.sheet.is_some() {
+            return false;
+        }
+        let Some((mine, theirs)) = self.backend.conflict_texts(id) else {
+            return false;
+        };
+        self.show_conflict_sheet(id.clone(), &mine, &theirs, window, cx);
+        true
+    }
+
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let p = self.palette.on_status();
         let chrome = self.theme.chrome_font(&self.prefs);
@@ -2817,6 +2887,31 @@ impl MainView {
                     .child(dot_el)
                     .child(sync_text),
             )
+            // --- conflicts --- an item still in conflict says so, and a
+            // click shows the resolve sheet again (issue #52).
+            .children(item.filter(|i| i.conflict).map(|i| {
+                let id = i.local_id.clone();
+                div()
+                    .id("conflict-marker")
+                    .text_color(p.over)
+                    .cursor_pointer()
+                    .hover(|d| d.underline())
+                    .child("sync conflict · resolve…")
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            reading::Tip(
+                                "The server's copy changed while you edited. Click to choose \
+                                 which to keep; publishing waits until then."
+                                    .into(),
+                            )
+                        })
+                        .into()
+                    })
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        this.reopen_conflict(&id, window, cx);
+                    }))
+                    .into_any_element()
+            }))
             // --- new post --- "New note · saved locally · …" while in it.
             .children(match self.new_post_label() {
                 Some(l) => Some(div().child(l.to_string()).into_any_element()),
@@ -2967,6 +3062,7 @@ impl MainView {
             // --- browser macros ---
             Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
+            Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Publish {
                 title,
                 next_version,

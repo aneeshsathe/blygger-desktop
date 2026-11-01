@@ -74,6 +74,18 @@ pub enum Key {
     OpmlImport,
     /// The link or quote picker is open (typed `[[` or `![[`, or ⌘K).
     Picker,
+    /// The reading screen's compose box has the keyboard (`c` or ⇧⌘K).
+    Compose,
+    /// A layer, a "responds to" line or a link in the open post was
+    /// followed: the walk has a step to go back to.
+    FollowThicket,
+    /// The browsing history pane is open beside the post (⇧⌘H).
+    BrowseHistory,
+    /// The open stub quotes a passage, chosen in the preview ("❝ quote
+    /// only this" or ⇧⌘D).
+    StubPassage,
+    /// The blyg switcher sheet is open (the title bar's blyg, or ⌃⌘0).
+    BlygSwitcher,
 }
 
 /// The part of the window a step highlights.
@@ -105,6 +117,8 @@ pub enum Region {
     MacroRun,
     /// A reading screen's header (Subscriptions: its chips).
     ScreenHeader,
+    /// The compose box along the foot of the reading screen.
+    Compose,
     /// The whole window (no ring).
     Whole,
 }
@@ -149,6 +163,9 @@ pub enum Setup {
     /// Reading, in the Stream, the side pane closed, the newest post
     /// selected.
     Stream,
+    /// Reading, in the Stream, a revised post (it leads with "V2: …")
+    /// selected, the side pane closed.
+    StreamLead,
     /// Reading, in the Stream, the post with a quote selected.
     StreamQuote,
     /// Reading, in the Stream, the post with text marked as generated
@@ -158,6 +175,12 @@ pub enum Setup {
     Lineage,
     /// Reading, in Reader mode, a post open.
     Reader,
+    /// Reading, in Reader mode, the quoting post open (a walk starts at it).
+    Thicket,
+    /// `Thicket`, with its quote followed: a walk of two posts.
+    Walked,
+    /// A stub replying to a reading post, open beside its preview.
+    Stub,
     /// The browser pane on a blank sample page (nothing is loaded).
     Browser,
     /// The notes drawer on its Notes tab, showing the tour's first sample
@@ -220,6 +243,10 @@ pub const QUOTING: &str = crate::fake::reading_seed::ADA_REPLY;
 pub const QUOTED: &str = crate::fake::reading_seed::LIN_BENCH;
 /// The sample reading post with a sentence its blyg marks as generated.
 pub const GENERATED: &str = crate::fake::reading_seed::LIN_FORK;
+/// A revised sample reading post (it leads with its changelog note).
+pub const REVISED: &str = crate::fake::reading_seed::ADA_TIDES;
+/// The sample reading post the stub step replies to.
+pub const STUBBED: &str = crate::fake::reading_seed::LIN_GARDENS;
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -520,18 +547,64 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     Step {
+        id: "switcher",
+        since: "0.14.0",
+        title: "Your blygs",
+        caption: if cfg!(target_os = "windows") {
+            "The name in the title bar is the blyg you're writing to. Click it, or press \
+             Ctrl+Shift+0, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
+             straight to them. Each blyg keeps its own posts and reading. (The tour stays on \
+             its sample blyg.)"
+        } else {
+            "The name in the title bar is the blyg you're writing to. Click it, or press ⌃⌘0, \
+             to switch blygs or add another; ⌃⌘1 and ⌃⌘2 jump straight to them. Each blyg \
+             keeps its own posts and reading. (The tour stays on its sample blyg.)"
+        },
+        keys: &[Key::BlygSwitcher],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+0"
+        } else {
+            "⌃⌘0"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
         id: "stream",
         since: "0.4.0",
         title: "Reading, in the Stream",
-        caption: "⌘R opens Reading: posts from the blygs you follow, newest first by their own \
-                  date. j/k move, and a post a second on screen counts as read. ⏎, Space, a \
-                  double-click or Read more opens it in a side pane.",
+        caption: "Burrow opens here, on Reading (⌘R goes to your posts and back): posts from \
+                  the blygs you follow, newest first by their own date. j/k move, and a post a \
+                  second on screen counts as read. A revised post leads with what changed, \
+                  “V2: …”, from its author's changelog. ⏎, Space, a double-click or Read more \
+                  opens it in a side pane.",
         keys: &[Key::ReadMore],
         key_label: "⏎",
         region: Region::Stream,
         button: None,
-        setup: Setup::Stream,
+        setup: Setup::StreamLead,
         pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "compose",
+        since: "0.14.0",
+        title: "Post while you read",
+        caption: "The box at the foot of Reading writes a post without leaving the one you're \
+                  reading. c puts the caret in it (⇧⌘K from anywhere), ⌘⏎ posts a fragment, \
+                  ⌘D keeps a draft, and esc goes back to the stream with your text kept. With \
+                  a post open, ❝ Quote quotes it.",
+        keys: &[Key::Compose],
+        key_label: "c",
+        region: Region::Compose,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1600,
         settle: false,
         stay: true,
     },
@@ -623,15 +696,66 @@ pub const STEPS: &[Step] = &[
         since: "0.4.0",
         title: "Reader: sources, posts, post",
         caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All), Your blyg (your own posts, never unread or counted), your folders, \
-                  which stay on this Mac, and subscriptions. [ and ] step through a post's \
-                  versions; ⌥⌘1 is the Stream again.",
+                  All, and Background, the only place withdrawn posts are listed), Your blyg \
+                  (your own posts, never unread or counted), your folders, which stay on this \
+                  Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
+                  Stream again.",
         keys: &[Key::ReaderMode],
         key_label: "⌥⌘2",
         region: Region::Reader,
         button: None,
         setup: Setup::Stream,
         pause_ms: 3000,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "thicket",
+        since: "0.14.0",
+        title: "Follow the thicket",
+        caption: "Ada's reply quotes Lin's note. Click the quote to open it here; quotes inside \
+                  quotes, a stub's “responds to” line and links to blyg posts open the same \
+                  way. The breadcrumb above the post shows the path, and ⌘[ or ‹ back steps \
+                  back.",
+        keys: &[Key::FollowThicket],
+        key_label: "click",
+        region: Region::ReaderPost,
+        button: None,
+        setup: Setup::Thicket,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "history",
+        since: "0.14.0",
+        title: "Where you've been",
+        caption: "⇧⌘H, or history above the post, lists this walk and earlier ones beside the \
+                  reader, as the tree they were; each step opens its post. It's private: kept \
+                  in your blyg's own browsing log, or on this Mac, and never published.",
+        keys: &[Key::BrowseHistory],
+        key_label: "⇧⌘H",
+        region: Region::ReaderPost,
+        button: None,
+        setup: Setup::Walked,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "stub-passage",
+        since: "0.14.0",
+        title: "Reply to a passage",
+        caption: "Reply made this stub, quoting the whole of Lin's post. To answer one passage, \
+                  select it inside the quote in the preview on the right, then press ❝ quote \
+                  only this (or ⇧⌘D): it goes under that quote. Quote another passage adds one \
+                  more to select from.",
+        keys: &[Key::StubPassage],
+        key_label: "⇧⌘D",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Stub,
+        pause_ms: 1600,
         settle: false,
         stay: true,
     },
@@ -787,8 +911,8 @@ pub const STEPS: &[Step] = &[
         id: "done",
         since: "0.1.0",
         title: "That's the tour",
-        caption: "Everything you did here was on sample data. Your own posts come back when you \
-                  finish. Settings (⌘,) › Help replays this tour.",
+        caption: "Everything you did here was on sample data. Your own posts and reading come \
+                  back when you finish. Settings (⌘,) › Help replays this tour.",
         keys: &[],
         key_label: "",
         region: Region::Whole,
@@ -855,6 +979,11 @@ mod tests {
             Key::DiscardChanges,
             Key::OwnPostAction,
             Key::Picker,
+            Key::Compose,
+            Key::FollowThicket,
+            Key::BrowseHistory,
+            Key::StubPassage,
+            Key::BlygSwitcher,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

@@ -160,6 +160,8 @@ struct State {
     reading_sends: Vec<String>,
     // --- reader folders --- ids handed out by `create_folder`.
     folder_seq: u64,
+    // --- browse --- the private browsing log, oldest first.
+    browse: Vec<blyg_core::browse::BrowseStep>,
 }
 
 pub struct FakeBackend {
@@ -341,6 +343,7 @@ impl FakeBackend {
                 public_fetches: Vec::new(),
                 reading_sends: Vec::new(),
                 folder_seq: 0,
+                browse: Vec::new(),
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -427,6 +430,21 @@ impl FakeBackend {
     /// provenance endpoint (or not).
     pub fn set_provenance_available(&self, available: bool) {
         self.lock().prov_unavailable = !available;
+    }
+
+    /// --- blyg switcher --- Replace the sample posts with these drafts (a
+    /// second sample blyg in fake mode: the same reading, its own posts).
+    pub fn replace_posts(&self, drafts: &[(Kind, &str)]) {
+        {
+            let mut s = self.lock();
+            s.items.clear();
+            s.versions.clear();
+            s.theirs.clear();
+            s.synced.clear();
+        }
+        for (kind, text) in drafts {
+            let _ = self.create_draft(*kind, text);
+        }
     }
 
     /// Tests: every `save_with_provenance` so far, as (item, scope count).
@@ -1104,6 +1122,14 @@ impl Backend for FakeBackend {
         }
         thread::sleep(self.timing.publish);
         self.remote_guard()?;
+        // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
+        if self.item(id).is_some_and(|i| i.conflict) {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "resolve the sync conflict first".into(),
+                details: vec![],
+            });
+        }
         let (outcome, sink) = {
             let mut st = self.lock();
             let n = st.next_id;
@@ -1156,6 +1182,14 @@ impl Backend for FakeBackend {
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
         thread::sleep(self.timing.publish);
         self.remote_guard()?;
+        // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
+        if self.item(id).is_some_and(|i| i.conflict) {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "resolve the sync conflict first".into(),
+                details: vec![],
+            });
+        }
         let mut st = self.lock();
         let it = st
             .items
@@ -1869,6 +1903,99 @@ impl Backend for FakeBackend {
                 message: "not pinned".into(),
                 details: vec![],
             })
+    }
+    // --- browse --- the log in memory; no link names a blyg item except a
+    // `{origin}f/{id}/` or `t/{id}/` page of an origin this fake knows.
+    fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
+        let st = self.lock();
+        let known: Vec<String> = st.rd.subs.iter().map(|s| s.origin.clone()).collect();
+        Ok(urls
+            .iter()
+            .map(|u| blyg_core::browse::LinkTarget {
+                url: u.clone(),
+                target: known.iter().find_map(|o| {
+                    let rest = u.strip_prefix(o.as_str())?;
+                    let rest = rest
+                        .strip_prefix("f/")
+                        .or_else(|| rest.strip_prefix("t/"))?;
+                    let id = rest.trim_end_matches('/');
+                    (!id.is_empty() && !id.contains('/')).then(|| blyg_core::browse::ItemRef {
+                        origin: o.clone(),
+                        id: id.to_string(),
+                    })
+                }),
+            })
+            .collect())
+    }
+
+    fn log_browse(&self, step: &blyg_core::browse::NewBrowseStep) -> Result<i64> {
+        let mut st = self.lock();
+        let id = st.browse.len() as i64 + 1;
+        st.browse.push(blyg_core::browse::BrowseStep {
+            id,
+            at: Utc::now().to_rfc3339(),
+            trail: step.trail.clone(),
+            parent_id: step.parent_id,
+            origin: step.origin.clone(),
+            remote_id: step.remote_id.clone(),
+            version: step.version,
+            via: step.via,
+            title: step.title.clone(),
+        });
+        Ok(id)
+    }
+
+    fn browse_history(
+        &self,
+        trail: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<blyg_core::browse::BrowseStep>> {
+        Ok(self
+            .lock()
+            .browse
+            .iter()
+            .rev()
+            .filter(|s| trail.is_none_or(|t| s.trail == t))
+            .skip(offset)
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        self.lock()
+            .browse
+            .retain(|s| trail.is_some_and(|t| s.trail != t));
+        Ok(())
+    }
+
+    // --- background --- every tombstone the sample blygs hold, signalled
+    // or not, newest first (`reading()` keeps hiding the unsignalled ones).
+    // --- conflicts --- (issue #52)
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        let st = self.lock();
+        let it = st.items.iter().find(|i| &i.local_id == id && i.conflict)?;
+        Some((
+            it.content_md.clone(),
+            st.theirs.get(id).cloned().unwrap_or_default(),
+        ))
+    }
+
+    fn background_reading(&self) -> Vec<ReadingItem> {
+        let st = self.lock();
+        if !st.read_ext {
+            return Vec::new();
+        }
+        let mut v: Vec<ReadingItem> = st
+            .rd
+            .reading
+            .iter()
+            .filter(|r| r.state == "tombstone")
+            .cloned()
+            .collect();
+        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
+        v
     }
 }
 

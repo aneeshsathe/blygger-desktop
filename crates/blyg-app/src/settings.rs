@@ -206,7 +206,7 @@ pub fn validate_blyg_url(url: &str) -> Result<String, String> {
 }
 
 /// Store the credential (password or token) in the Keychain, then point the
-/// config at the blyg.
+/// config at the blyg (adding it to the `blyg` list when it's a second one).
 pub fn connect(
     url: &str,
     cred: &blyg_core::api::auth::Credential,
@@ -224,8 +224,18 @@ pub fn connect(
     }
     blyg_core::config::save_credential(get(cx).tokens.as_ref(), &url, cred)
         .map_err(|e| format!("Couldn't save it in the Keychain: {e}"))?;
-    write(&[("blyg-url", Change::Set(url.clone()))], cx)?;
+    // --- blyg switcher --- a new blyg joins the list; the others stay.
+    let changes = blyg_core::config::blygs::activate(get(cx).store.config(), &url);
+    write(&changes, cx)?;
     Ok(url)
+}
+
+/// --- blyg switcher --- Every signed-in blyg, in the switcher's order
+/// (`blyg` lines, plus `blyg-url`).
+pub fn known_blygs(cx: &App) -> Vec<String> {
+    cx.try_global::<AppConfig>()
+        .map(|c| blyg_core::config::blygs::known(c.store.config()))
+        .unwrap_or_default()
 }
 
 /// Migrate the old data dir and the old TOML files (first launch after the

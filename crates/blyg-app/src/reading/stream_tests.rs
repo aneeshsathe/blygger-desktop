@@ -231,7 +231,14 @@ fn search_filters_the_stream(cx: &mut TestAppContext) {
     view.update_in(cx, |v, window, cx| v.set_reading_query("", window, cx));
     settle(cx);
     view.read_with(cx, |v, _| {
-        assert_eq!(v.reading.stream.list.item_count(), v.reading.rows.len())
+        // --- background --- every row but the withdrawn posts.
+        let live = v
+            .reading
+            .rows
+            .iter()
+            .filter(|r| !super::sources_vm::is_background(r))
+            .count();
+        assert_eq!(v.reading.stream.list.item_count(), live)
     });
 }
 

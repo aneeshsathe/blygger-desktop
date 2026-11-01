@@ -43,6 +43,12 @@ impl MainView {
         if let Some((sel, source)) = self.notes_selection(window, cx) {
             return self.quote_into_draft(sel, source, window, cx);
         }
+        // --- stub quotes --- a passage selected in one of the open stub's
+        // quotes in the editor preview: "quote only this" (studio 0.49).
+        if !self.browser.open && !self.studio.reader.active() && self.quote_stub_passage(window, cx)
+        {
+            return;
+        }
         let from = if self.browser.open {
             Some(QuoteFrom::Browser)
         } else if self.studio.reader.active() && self.reading.opened.is_some() {
