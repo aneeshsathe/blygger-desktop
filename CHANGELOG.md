@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Hoppers.** Your blyg's hoppers, its collections of posts, are listed under **Hoppers** in the Reader's sources pane, below Your blyg, each with its count and a globe when it's public. Pick one to list its posts. Press **h** on the reading screen, ⌥⌘P (Post › Put in Hopper…), or choose **Hopper ›** from a post's chips or right-click menu to put the post in a hopper or take it out; **New Hopper…** makes one and adds the post. Your own posts go in hoppers too. Adds and removals show at once and are sent in the background, so ones made offline are sent later. A hopper's right-click menu renames it, sets its description, makes it public (it gets its own page on your blyg; Burrow asks first) or private, and deletes it without touching its posts. Blyg › New Hopper… and the sources pane's menu make one.
+
 ### Fixed
 
 - The check for a studio API contract Burrow doesn't speak refreshes an expired sign-in like any other request, and a sign-in the blyg refuses now stops the check instead of passing it.

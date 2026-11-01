@@ -21,6 +21,19 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.15.0",
+        items: &[
+            "Hoppers: your blyg's collections of posts, yours and others', are listed under \
+             Hoppers in the Reader's sources. Pick one to list its posts.",
+            "h on the reading screen, ⌥⌘P, or Hopper › on a post puts it in a hopper or takes \
+             it out; New Hopper… makes one and adds the post. Adds made offline are sent \
+             later.",
+            "Right-click a hopper to rename it, describe it, make it public (it gets a page on \
+             your blyg) or private, or delete it. Deleting a hopper never touches its posts.",
+        ],
+        first_step: Some("hoppers"),
+    },
+    Release {
         version: "0.14.0",
         items: &[
             if cfg!(target_os = "windows") {

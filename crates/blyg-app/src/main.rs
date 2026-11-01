@@ -409,6 +409,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
                 MenuItem::action("Quote into a Thread", app::reading::own::QuotePost),
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
+                // --- hoppers ---
+                MenuItem::action("Put in Hopper…", app::reading::hoppers::HopperPicker),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
                 // --- extensions ---
@@ -445,6 +447,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 // --- reader folders ---
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
+                MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),

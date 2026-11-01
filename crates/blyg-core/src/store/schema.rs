@@ -278,6 +278,28 @@ const MIGRATIONS: &[&str] = &[
         checked_at INTEGER NOT NULL
     );
     "#,
+    // v14 --- hoppers --- (store/hoppers.rs)
+    // `hoppers`: the blyg's hoppers as last read (a `Hopper` as JSON), in
+    //   the server's order, so the sources pane lists them offline.
+    // `hopper_items`: every membership, with the pending outbox ops already
+    //   applied; `item_json` is the imported item the hopper read returned
+    //   (a `ReadingItem`), for a post this Mac doesn't hold. `~own` rows are
+    //   your own posts.
+    r#"
+    CREATE TABLE hoppers (
+        id       TEXT PRIMARY KEY,
+        json     TEXT NOT NULL,
+        position INTEGER NOT NULL
+    );
+    CREATE TABLE hopper_items (
+        hopper_id       TEXT NOT NULL,
+        subscription_id TEXT NOT NULL,
+        remote_id       TEXT NOT NULL,
+        added_at        TEXT NOT NULL DEFAULT '',
+        item_json       TEXT,
+        PRIMARY KEY (hopper_id, subscription_id, remote_id)
+    );
+    "#,
 ];
 
 /// Returns whether any migration ran.

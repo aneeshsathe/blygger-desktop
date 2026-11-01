@@ -1048,14 +1048,42 @@ pub struct Settings {
     pub picker_typing: Option<PickerTyping>,
 }
 
+/// --- hoppers --- One of the owner's hoppers: a named collection of posts,
+/// theirs and yours (studio's `Hopper`). Private unless `public`, when the
+/// blyg gives it a page of its own (`{blyg}/h/{slug}/`) and lists it under
+/// Collections on the homepage and archive; it never appears in the feed.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Hopper {
     pub id: String,
     pub name: String,
     pub slug: Option<String>,
     pub public: bool,
+    /// How many posts it holds (the server's `total`, your own included).
     pub count: u32,
+    /// A one-line description (at most 280 characters), shown on its public
+    /// page and in Collections.
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Once made public, the page's address stays put when it's renamed.
+    #[serde(default)]
+    pub slug_frozen: bool,
 }
+
+/// --- hoppers --- What `Backend::update_hopper` changes; `None` leaves a
+/// field alone. An empty description clears it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HopperEdit {
+    pub name: Option<String>,
+    pub public: Option<bool>,
+    pub description: Option<String>,
+}
+
+/// --- hoppers --- The longest description a hopper takes (studio's limit).
+pub const HOPPER_DESCRIPTION_MAX: usize = 280;
+
+/// --- hoppers --- The subscription id that addresses one of your own posts
+/// in a hopper (studio 0.45): `PUT /api/hoppers/{id}/items/~own/{itemId}`.
+pub const OWN_SUBSCRIPTION: &str = "~own";
 
 // --- reader folders ---
 

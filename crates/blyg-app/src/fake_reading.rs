@@ -46,6 +46,11 @@ pub const KIT_TIDES: &str = "01k2k1t0t1des0000000000001";
 // --- reader folders ---
 pub const FOLDER_FRIENDS: &str = "fld-friends";
 pub const FOLDER_GARDENS: &str = "fld-gardens";
+// --- hoppers ---
+pub const HOPPER_SLOW: &str = "hop-slow-media";
+pub const HOPPER_GARDENS: &str = "hop-garden-reading";
+/// Your "Notes on The Field Guide to Small Gardens" as the blyg names it.
+pub const OWN_GARDENS_SERVER: &str = "01J9K7TABCDEFGHJKMNPQRS";
 
 /// Lin's thread as Lin's blyg published it: the quote of Ada's post baked in
 /// as a transclusion snapshot, and an image with a relative (origin-relative)
@@ -80,6 +85,10 @@ pub struct Seed {
     pub folders: Vec<Folder>,
     /// Subscription id → folder id.
     pub filed: HashMap<String, String>,
+    // --- hoppers --- the blyg's hoppers, and who's in them
+    // (hopper id, subscription id or `~own`, remote id).
+    pub hoppers: Vec<Hopper>,
+    pub hopper_items: Vec<(String, String, String)>,
 }
 
 fn sub(
@@ -667,7 +676,37 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         (ada.id.clone(), FOLDER_FRIENDS.to_string()),
         (lin.id.clone(), FOLDER_GARDENS.to_string()),
     ]);
+    // --- hoppers --- a public one with a post of yours in it, and a
+    // private one.
+    let hoppers = vec![
+        Hopper {
+            id: HOPPER_SLOW.into(),
+            name: "Slow media".into(),
+            slug: Some("slow-media".into()),
+            public: true,
+            count: 3,
+            description: Some("Writing that takes its time.".into()),
+            slug_frozen: true,
+        },
+        Hopper {
+            id: HOPPER_GARDENS.into(),
+            name: "Garden reading".into(),
+            slug: Some("garden-reading".into()),
+            public: false,
+            count: 1,
+            description: None,
+            slug_frozen: false,
+        },
+    ];
+    let hopper_items = vec![
+        (HOPPER_SLOW.into(), ada.id.clone(), ADA_FINISHED.into()),
+        (HOPPER_SLOW.into(), rue.id.clone(), RUE_TRUST.into()),
+        (HOPPER_SLOW.into(), "~own".into(), OWN_GARDENS_SERVER.into()),
+        (HOPPER_GARDENS.into(), lin.id.clone(), LIN_GARDENS.into()),
+    ];
     Seed {
+        hoppers,
+        hopper_items,
         folders,
         filed,
         public,

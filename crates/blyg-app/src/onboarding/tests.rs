@@ -710,6 +710,8 @@ fn do_step(e: &mut Env, id: &str) {
         // this" writes (a selection in the WebView can't be made headless;
         // `the_0_14_steps_land_on_their_features` drives the page's path).
         "stub-passage" => quote_a_passage(e),
+        // --- hoppers ---
+        "hoppers" => e.cx.simulate_keystrokes("h"),
         other => panic!("no way to do step {other}"),
     }
     e.cx.run_until_parked();
@@ -1715,4 +1717,75 @@ impl PreviewSurface for Surface {
     fn eval(&mut self, _: &str) {}
     fn focus_parent(&mut self) {}
     fn set_dark(&mut self, _: bool) {}
+}
+
+// --- hoppers ---
+
+/// The first launch after updating from 0.14 to 0.15.0: "Show me what's
+/// new" lands on the hoppers step.
+#[gpui_kit::test]
+fn a_launch_after_updating_from_0_14_starts_at_0_15s_first_step(cx: &mut TestAppContext) {
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = Some("0.15.0"));
+    let mut e = setup_full(cx, CONNECTED, Some("0.14.0"), Mode::Fake, false);
+    super::whats_new::TEST_VERSION.with(|v| *v.borrow_mut() = None);
+    assert!(news_up(&e), "the card is up");
+    let versions: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().unwrap();
+        t.news.iter().map(|r| r.version).collect()
+    });
+    assert_eq!(versions, ["0.15.0"]);
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert_eq!(tour_step(&mut e), Some("hoppers"));
+}
+
+/// 0.15.0's step lands on a hopper: the sample "Slow media" picked in the
+/// sources pane (ringed), its post open; h opens the picker, and what's
+/// chosen there changes only the sample data.
+#[gpui_kit::test]
+fn the_0_15_step_lands_on_a_hopper(cx: &mut TestAppContext) {
+    use crate::app::reading::sources_vm::Source;
+    use crate::fake::reading_seed::HOPPER_SLOW;
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.real.take();
+    let fake = e.view.read_with(e.cx, |v, _| v.fake.clone()).unwrap();
+
+    enter(&mut e, "hoppers");
+    settle(&mut e);
+    let source = e.view.read_with(e.cx, |v, _| v.reading.source.clone());
+    assert_eq!(source, Source::Hopper(HOPPER_SLOW.into()));
+    let open = e.view.read_with(e.cx, |v, _| {
+        v.reading.opened.as_ref().map(|o| o.item.hoppers.clone())
+    });
+    assert!(
+        open.is_some_and(|h| h.contains(&HOPPER_SLOW.to_string())),
+        "a post in the hopper is open"
+    );
+    let row: &'static str = Box::leak(format!("src-hopper-{HOPPER_SLOW}").into_boxed_str());
+    wait_drawn(&mut e, "hoppers", row);
+    let ring = ring_now(&mut e, Region::Reader).expect("the sources pane");
+    let b = e.cx.debug_bounds(row).expect("the hopper's row");
+    assert!(
+        f32::from(b.top()) >= ring.1 - 1. && f32::from(b.bottom()) <= ring.1 + ring.3 + 1.,
+        "the hopper's row is in the ring"
+    );
+
+    assert!(!tour_done(&mut e));
+    do_step(&mut e, "hoppers");
+    assert!(tour_done(&mut e));
+    assert!(drawn(&mut e, "hopper-pick-0"));
+    // Its first row is the hopper the post is in: choosing takes it out,
+    // on the sample data only.
+    e.cx.simulate_keystrokes("enter");
+    settle(&mut e);
+    assert!(
+        fake.reading_sends()
+            .iter()
+            .any(|s| s.starts_with(&format!("hopper:{HOPPER_SLOW}:"))),
+        "{:?}",
+        fake.reading_sends()
+    );
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
 }

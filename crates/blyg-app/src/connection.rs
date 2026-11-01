@@ -903,6 +903,28 @@ impl Backend for SwitchBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()
     }
+    // --- hoppers ---
+    fn hoppers(&self) -> Vec<Hopper> {
+        self.cur().hoppers()
+    }
+    fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+        self.cur().hopper_members()
+    }
+    fn hopper_unheld(&self) -> Vec<ReadingItem> {
+        self.cur().hopper_unheld()
+    }
+    fn create_hopper(&self, name: &str) -> Result<Hopper> {
+        self.cur().create_hopper(name)
+    }
+    fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        self.cur().update_hopper(id, edit)
+    }
+    fn delete_hopper(&self, id: &str) -> Result<()> {
+        self.cur().delete_hopper(id)
+    }
+    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+        self.cur().set_in_hopper(hopper, sub_id, remote_id, on)
+    }
     // --- browse ---
     fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
         self.cur().classify_links(urls)

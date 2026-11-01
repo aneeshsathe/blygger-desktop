@@ -682,6 +682,58 @@ pub trait Backend: Send + Sync {
         Vec::new()
     }
 
+    // --- hoppers ---
+    // The blyg's hoppers (studio's createHopper … removeHopperItem). The list
+    // and memberships are local reads of what the last pull stored. A
+    // hopper's own fields change on the server first (blocking, like a
+    // subscription's rename); membership is local and instant, queued in
+    // the outbox (offline-safe). Additive; the defaults know no hoppers and
+    // refuse changes, so implementors compile.
+
+    /// Every hopper, oldest first, with its post count. Local.
+    fn hoppers(&self) -> Vec<Hopper> {
+        Vec::new()
+    }
+
+    /// (subscription id, remote id) → the ids of the hoppers holding that
+    /// post; your own posts are `("~own", server id)`. Local.
+    fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+        Default::default()
+    }
+
+    /// Posts in a hopper that aren't held as reading rows (the hopper read
+    /// returned them), each with its `hoppers`. Local.
+    fn hopper_unheld(&self) -> Vec<ReadingItem> {
+        Vec::new()
+    }
+
+    /// A new, private, empty hopper. Remote. `Rejected{400}` for an empty name.
+    fn create_hopper(&self, name: &str) -> Result<Hopper> {
+        let _ = name;
+        Err(CoreError::Other("hoppers aren't supported here".into()))
+    }
+
+    /// Rename it, make it public or private, or set its description (an
+    /// empty one clears it). Remote; the stored hopper follows the answer.
+    fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        let _ = (id, edit);
+        Err(CoreError::Other("hoppers aren't supported here".into()))
+    }
+
+    /// Delete a hopper. Remote. The posts in it are untouched.
+    fn delete_hopper(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::Other("hoppers aren't supported here".into()))
+    }
+
+    /// Put a post in a hopper (`on`) or take it out. Local and instant (the
+    /// row's `hoppers` and the count follow at once); queued for the blyg.
+    /// `sub_id` is `"~own"` with your post's server id for one of yours.
+    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+        let _ = (hopper, sub_id, remote_id, on);
+        Err(CoreError::Other("hoppers aren't supported here".into()))
+    }
+
     /// --- conflicts --- An item already in conflict: (mine, theirs), the
     /// local text and the server's as last pulled, so the resolve sheet can
     /// be shown again after it was dismissed (issue #52). `None` when the

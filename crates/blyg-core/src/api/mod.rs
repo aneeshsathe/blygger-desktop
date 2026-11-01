@@ -31,8 +31,8 @@ use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
 use crate::model::{
-    Hopper, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings, SubscribePreview,
-    Subscription, SubscriptionKind,
+    Hopper, HopperEdit, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings,
+    SubscribePreview, Subscription, SubscriptionKind,
 };
 use auth::Credential;
 use wire::*;
@@ -1142,10 +1142,168 @@ impl Api {
                 slug: h.slug,
                 public: h.public,
                 count,
+                description: None,
+                slug_frozen: false,
             });
         }
         Ok(Some(out))
     }
+
+    // ---------- hoppers (studio's createHopper … removeHopperItem) ----------
+
+    /// Every hopper with all its memberships and the imported items it
+    /// holds (`GET /api/hoppers`, then `GET /api/hoppers/{id}` each, without
+    /// `preview`). `None` from a server without hoppers (404).
+    pub fn hopper_details(&self) -> Result<Option<Vec<HopperDetail>>> {
+        let Some(list) = Self::optional(self.collect::<WireHopper>("/api/hoppers", ""))? else {
+            return Ok(None);
+        };
+        #[derive(serde::Deserialize)]
+        struct M {
+            subscription_id: String,
+            remote_id: String,
+            #[serde(default)]
+            added_at: String,
+        }
+        #[derive(serde::Deserialize)]
+        struct Detail {
+            #[serde(default)]
+            memberships: Vec<M>,
+            #[serde(default)]
+            items: Vec<Value>,
+            #[serde(default)]
+            total: Option<u32>,
+        }
+        let mut out = Vec::with_capacity(list.len());
+        for h in list {
+            let d: Detail = self.call_as("GET", &format!("/api/hoppers/{}", enc(&h.id)), None)?;
+            let members: Vec<HopperMember> = d
+                .memberships
+                .into_iter()
+                .map(|m| HopperMember {
+                    subscription_id: m.subscription_id,
+                    remote_id: m.remote_id,
+                    added_at: m.added_at,
+                })
+                .collect();
+            let count = d.total.unwrap_or(members.len() as u32);
+            out.push(HopperDetail {
+                hopper: h.into_hopper(count),
+                members,
+                items: d.items,
+            });
+        }
+        Ok(Some(out))
+    }
+
+    /// `POST /api/hoppers {name}` → the new hopper (201), private and empty.
+    pub fn create_hopper(&self, name: &str) -> Result<Hopper> {
+        let h: WireHopper = self.call_as("POST", "/api/hoppers", Some(json!({ "name": name })))?;
+        Ok(h.into_hopper(0))
+    }
+
+    /// `PATCH /api/hoppers/{id} {name?, public?, description?}` → the
+    /// hopper as it is now (`count` is the caller's to keep).
+    pub fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        let mut body = serde_json::Map::new();
+        if let Some(n) = &edit.name {
+            body.insert("name".into(), json!(n));
+        }
+        if let Some(p) = edit.public {
+            body.insert("public".into(), json!(p));
+        }
+        if let Some(d) = &edit.description {
+            body.insert("description".into(), json!(d));
+        }
+        let h: WireHopper = self.call_as(
+            "PATCH",
+            &format!("/api/hoppers/{}", enc(id)),
+            Some(Value::Object(body)),
+        )?;
+        Ok(h.into_hopper(0))
+    }
+
+    /// `DELETE /api/hoppers/{id}`: the hopper and its memberships; the
+    /// posts themselves are untouched.
+    pub fn delete_hopper(&self, id: &str) -> Result<()> {
+        self.call("DELETE", &format!("/api/hoppers/{}", enc(id)), None)
+            .map(|_| ())
+    }
+
+    /// `PUT` (`on`) or `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}`.
+    /// `sub` is `~own` for one of your own posts (studio 0.45). Both are
+    /// idempotent.
+    pub fn set_hopper_item(&self, id: &str, sub: &str, remote_id: &str, on: bool) -> Result<()> {
+        self.call(
+            if on { "PUT" } else { "DELETE" },
+            &format!(
+                "/api/hoppers/{}/items/{}/{}",
+                enc(id),
+                enc(sub),
+                enc(remote_id)
+            ),
+            None,
+        )
+        .map(|_| ())
+    }
+}
+
+/// --- hoppers --- One membership: a post in a hopper (`~own` for yours).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HopperMember {
+    pub subscription_id: String,
+    pub remote_id: String,
+    pub added_at: String,
+}
+
+/// --- hoppers --- A hopper as `GET /api/hoppers/{id}` reads it: every
+/// membership, and the imported items it holds (studio's `ImportedItem`
+/// rows, for posts this Mac doesn't hold).
+#[derive(Debug, Clone)]
+pub struct HopperDetail {
+    pub hopper: Hopper,
+    pub members: Vec<HopperMember>,
+    pub items: Vec<Value>,
+}
+
+/// --- hoppers --- The contract's `Hopper` (studio 0.24+: `description`,
+/// `slug_frozen`; older servers leave them out).
+#[derive(serde::Deserialize)]
+struct WireHopper {
+    id: String,
+    name: String,
+    #[serde(default)]
+    slug: Option<String>,
+    #[serde(default, deserialize_with = "lenient_bool")]
+    public: bool,
+    #[serde(default, deserialize_with = "lenient_bool")]
+    slug_frozen: bool,
+    #[serde(default)]
+    description: Option<String>,
+}
+
+impl WireHopper {
+    fn into_hopper(self, count: u32) -> Hopper {
+        Hopper {
+            id: self.id,
+            name: self.name,
+            slug: self.slug,
+            public: self.public,
+            count,
+            description: self.description.filter(|d| !d.trim().is_empty()),
+            slug_frozen: self.slug_frozen,
+        }
+    }
+}
+
+/// A boolean the old Worker fork may send as 0/1.
+fn lenient_bool<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
+    use serde::Deserialize;
+    Ok(match Value::deserialize(d)? {
+        Value::Bool(b) => b,
+        Value::Number(n) => n.as_i64().is_some_and(|n| n != 0),
+        _ => false,
+    })
 }
 
 /// Why a connection check failed, worded for the "Connect your blyg" sheet.

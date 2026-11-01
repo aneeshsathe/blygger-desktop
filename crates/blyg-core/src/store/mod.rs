@@ -12,6 +12,8 @@
 
 mod browse; // --- browse ---
 mod folders; // --- reader folders ---
+mod hoppers; // --- hoppers ---
+pub use hoppers::{FetchedHopper, HOPPERS_KNOWN, HopperOp, hopper_key};
 mod lineage; // --- lineage counts ---
 pub use lineage::Served as LineageServed;
 mod pick;
@@ -65,6 +67,10 @@ pub enum OpKind {
     /// A row has at most one waiting `Read` or `Unread` op: the last action
     /// replaces the other (`read_sync::queue_read` / `queue_unread`).
     Unread,
+    /// --- hoppers --- Put a post in a hopper or take it out; payload a
+    /// `hoppers::HopperOp`, `local_id` = `hoppers::hopper_key`. One waits
+    /// per (hopper, post): the last action replaces it.
+    Hopper,
 }
 
 impl OpKind {
@@ -76,6 +82,7 @@ impl OpKind {
             OpKind::DeleteRemote => "delete_remote",
             OpKind::Read => "read",
             OpKind::Unread => "unread",
+            OpKind::Hopper => "hopper",
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -85,6 +92,7 @@ impl OpKind {
             "delete_remote" => OpKind::DeleteRemote,
             "read" => OpKind::Read,
             "unread" => OpKind::Unread,
+            "hopper" => OpKind::Hopper,
             _ => OpKind::Save,
         }
     }
@@ -1257,3 +1265,6 @@ mod folders_tests; // --- reader folders ---
 
 #[cfg(test)]
 mod read_state_tests; // --- read/unread ---
+
+#[cfg(test)]
+mod hoppers_tests; // --- hoppers ---

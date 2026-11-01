@@ -27,14 +27,16 @@ to. A post that has been revised leads with its latest changelog note,
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
 (All unread, Today, Thumbed, All, Background, then **Your blyg**, your
-folders and the rest), the posts from that source in the middle, and the
-post on the right.
+**hoppers**, your folders and the rest), the posts from that source in the
+middle, and the post on the right.
 
 - **Background** lists withdrawn posts, the blygs' and your own, newest
   first, and nothing else lists them: not the other feeds, the counts or the
   stream. A withdrawn post is never unread. Opened, it reads as withdrawn
   (with its retained pin, when the author kept one).
 
+- **Hoppers** are your blyg's collections of posts (see
+  [Hoppers](#hoppers) below). Picking one lists its posts.
 - **Folders** stay on your Mac. Drag a subscription onto one to file it, or
   use its context menu; Blyg › New Folder… makes one.
 - ←/→ move between the panes, j/k go to the next or previous post from
@@ -57,6 +59,41 @@ Your posts are **never unread**: they get no dot, never count in All unread
 or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
+
+### Hoppers
+
+A hopper is a collection of posts on your blyg: other people's posts and your
+own, kept together under a name. Your hoppers are listed under **Hoppers** in
+the sources pane, below Your blyg, each with how many posts it holds and a
+globe when it's public. Pick one to list its posts in the middle pane, newest
+first. Withdrawn posts aren't listed there; they stay under Background.
+
+**Put a post in a hopper.** With a post open or selected, press **h** (or
+⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from its action chips or
+its right-click menu. Each hopper is listed with a check by the ones the post
+is in. Choosing a hopper (click, ⏎, Space, or its number) puts the post in or
+takes it out, and **New Hopper…** (n) makes one and puts the post in it. Your
+own posts go in hoppers too. A change shows at once and is sent to your blyg
+in the background, so one made offline is sent when you're back online.
+
+**Manage a hopper** from its right-click menu:
+
+- **Rename…** gives it a new name. Once it's public, its address stays the same.
+- **Description…** sets the line shown on its page (280 characters at most).
+- **Make Public…** gives it its own page on your blyg (`/h/<name>/`), listed
+  under Collections on your homepage and archive. It never appears in your
+  feed. Burrow asks first, and then shows the address. **Make Private** takes
+  the page down.
+- **Delete Hopper…** deletes the hopper after asking. Its posts aren't
+  touched.
+
+New hoppers are made with **New Hopper…** in the sources pane's right-click
+menu, or Blyg › New Hopper…. A new hopper is private. Making, renaming and
+deleting a hopper happen on your blyg, so they need it to be reachable.
+
+| | |
+|---|---|
+| ![A hopper picked in the Reader](screenshots/reader-hoppers.png) | ![The Hopper picker on a post](screenshots/reader-hopper-picker.png) |
 
 **Search** (⌘F, or `/` with the list focused) filters whatever you're reading
 as you type, over the title, the author, the blyg and the text of the posts

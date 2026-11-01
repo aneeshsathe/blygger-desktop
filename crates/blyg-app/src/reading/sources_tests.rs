@@ -340,7 +340,7 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     assert_eq!(pane(&view, cx), Pane::List);
     // ← to the sources; ↓ picks the next source (Background, Your blyg,
-    // then the first folder).
+    // then the hoppers, then the first folder).
     cx.simulate_keystrokes("left");
     settle(cx);
     assert_eq!(pane(&view, cx), Pane::Sources);
@@ -358,6 +358,14 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
         view.read_with(cx, |v, _| v.reading.source.clone()),
         Source::Own
     );
+    for h in [HOPPER_SLOW, HOPPER_GARDENS] {
+        cx.simulate_keystrokes("down");
+        settle(cx);
+        assert_eq!(
+            view.read_with(cx, |v, _| v.reading.source.clone()),
+            Source::Hopper(h.into())
+        );
+    }
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(
@@ -376,9 +384,9 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let first = shown(&view, cx)[0].clone();
     assert_eq!(opened(&view, cx).as_deref(), Some(first.as_str()));
     assert_eq!(pane(&view, cx), Pane::Sources, "the keys stay put");
-    cx.simulate_keystrokes("up");
-    cx.simulate_keystrokes("up");
-    cx.simulate_keystrokes("up");
+    for _ in 0..5 {
+        cx.simulate_keystrokes("up");
+    }
     settle(cx);
     assert_eq!(
         view.read_with(cx, |v, _| v.reading.source.clone()),
@@ -567,6 +575,7 @@ fn withdrawn_posts_are_listed_under_background_only(cx: &mut TestAppContext) {
         assert_eq!(at, sorted);
         // No count beside Background, and no unread from withdrawn posts.
         let e = super::sources_vm::entries(
+            &v.reading.hoppers,
             &v.reading.folders,
             &v.reading.filed,
             &v.reading.subs,

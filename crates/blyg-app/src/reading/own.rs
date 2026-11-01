@@ -239,17 +239,30 @@ pub fn post_chip(id: &'static str) -> vm::ActionChip {
 impl MainView {
     /// Your published posts as reading rows, at your blyg's origin.
     pub(super) fn own_rows(&self) -> Vec<ReadingItem> {
-        match self.backend.base_url() {
+        let mut v = match self.backend.base_url() {
             Some(origin) => rows(&self.backend.items(), &origin),
             None => vec![],
+        };
+        // --- hoppers --- the hoppers each of yours is in (`~own` members).
+        let members = self.backend.hopper_members();
+        if !members.is_empty() {
+            for r in &mut v {
+                if let Some(h) = members.get(&(OWN.to_string(), r.remote_id.clone())) {
+                    r.hoppers = h.clone();
+                }
+            }
         }
+        v
     }
 
     /// The reading rows as the screen lists them: the backend's, with your
-    /// own published posts among them.
+    /// own published posts among them (and, --- hoppers ---, the posts only
+    /// a hopper holds, read, so they never count).
     pub(super) fn reading_with_own(&self) -> Vec<ReadingItem> {
+        let mut extra = self.own_rows();
+        extra.extend(super::hoppers::unheld_rows(self.backend.as_ref()));
         with_background(
-            vm::order(merge(self.backend.reading(), self.own_rows())),
+            vm::order(merge(self.backend.reading(), extra)),
             self.background_rows(),
         )
     }

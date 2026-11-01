@@ -451,6 +451,11 @@ impl MainView {
                 self.item_action(item, action, window, cx)
             }
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
+            "Hopper" => {
+                // --- hoppers ---
+                let title = vm::title(&item.content_md);
+                self.open_hopper_picker_for(vm::key(&item), title, window, cx)
+            }
             "Quote this version" => {
                 let Some(v) = pinned else { return };
                 let text = o
@@ -547,6 +552,11 @@ impl MainView {
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
+            "Hopper" => {
+                // --- hoppers ---
+                let title = vm::title(&item.content_md);
+                self.open_hopper_picker_for(vm::key(&item), title, window, cx)
+            }
             "Open on web" => match vm::web_url(&item) {
                 Some(u) => {
                     cx.open_url(&u);
