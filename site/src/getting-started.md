@@ -79,6 +79,23 @@ again sends what waited.
 |---|---|
 | ![Connected to a blyg](screenshots/live-list.png) | ![Checking the token](screenshots/connect-check.png) |
 
+## Several blygs
+
+You can write to more than one blyg from one Burrow. The blyg's name in the
+title bar is the blyg you're writing to: click it, or press ⌃⌘0 (Blyg ›
+Switch Blyg…), to see every blyg you're signed in to. Press a number, or
+⌃⌘1–⌃⌘9 from anywhere, to switch. **Add a blyg…** signs in to another
+without leaving the first.
+
+Each blyg keeps its own posts, drafts and reading on your Mac, and its own
+sign-in in the Keychain. Switching saves what you're typing first. Changes
+waiting to sync on one blyg sync when you switch back to it. **Manage…**
+signs you out of a blyg, keeping or deleting its local copy.
+
+In the [config file](config.md), `blyg-url` is the blyg you're writing to
+and `blyg` lines list them all (written once you have two). From the command
+line, `blygger +list-blygs` lists them.
+
 ## The window
 
 There's one window. At the top is the **omnibar**: type to filter your posts,
