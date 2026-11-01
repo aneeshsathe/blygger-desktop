@@ -724,6 +724,8 @@ impl MainView {
             } => self.open_original(origin, id, version, window, cx),
             // --- reader folders --- Space at the end of the page.
             SurfaceEvent::PageEnd => self.open_next_unread(window, cx),
+            // --- stub quotes --- the editor preview's alone.
+            SurfaceEvent::StubSelection(_) => {}
         }
     }
 
