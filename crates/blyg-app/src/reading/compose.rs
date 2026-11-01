@@ -85,6 +85,9 @@ pub struct Compose {
     loading: bool,
     /// The text before the last edit (to see typed `[[` / `![[`).
     last: String,
+    /// Where the bar was last drawn (the tour rings it and keeps its card
+    /// clear of it).
+    pub(crate) bounds: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
 }
 
 impl Compose {
@@ -99,6 +102,7 @@ impl Compose {
             focused: false,
             loading: false,
             last: String::new(),
+            bounds: Default::default(),
         }
     }
 
@@ -660,10 +664,17 @@ impl MainView {
                 d.on_click(cx.listener(|this, _, window, cx| this.compose_quote_open(window, cx)))
             })
         });
+        let at = c.bounds.clone();
+        // Records where the bar is drawn (for the tour's ring).
+        let marker = canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {})
+            .absolute()
+            .inset_0();
         Some(
             div()
                 .id("reading-compose")
                 .debug_selector(|| "reading-compose".into())
+                .relative()
+                .child(marker)
                 .flex_none()
                 .flex()
                 .flex_col()

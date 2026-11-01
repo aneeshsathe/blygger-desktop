@@ -227,6 +227,9 @@ impl MainView {
     /// "Add a blyg…": the Connect sheet with an empty address. Signing in
     /// adds the blyg to the list and switches to it; the others stay.
     pub(crate) fn add_blyg(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tutorial_keeps_blyg(cx) {
+            return; // --- onboarding --- the tour's sample blyg only
+        }
         self.open_connect(window, cx);
         if let Some(Sheet::Connect { url, .. }) = &self.sheet {
             url.update(cx, |s, cx| s.set_value("", window, cx));
@@ -247,6 +250,9 @@ impl MainView {
 
     /// Make `url` the active blyg.
     pub(crate) fn switch_blyg(&mut self, url: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.tutorial_keeps_blyg(cx) {
+            return; // --- onboarding --- the tour's sample blyg only
+        }
         // Never lose text: the editor autosaves on every change, but save
         // whatever it holds now in case the last edit hasn't landed.
         self.flush_editor(cx);
@@ -486,6 +492,9 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.tutorial_keeps_blyg(cx) {
+            return; // --- onboarding --- the tour's sample blyg only
+        }
         match crate::connection::disconnect_blyg(&url, delete_local, cx) {
             Ok(out) => {
                 let sub = Some(

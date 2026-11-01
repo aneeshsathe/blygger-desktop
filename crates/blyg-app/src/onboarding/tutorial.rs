@@ -280,7 +280,7 @@ impl MainView {
         t.retries = 0;
         let step = &STEPS[i];
         self.tutorial_setup(step.setup, window, cx);
-        let seen = self.tutorial_observed(cx);
+        let seen = self.tutorial_observed(window, cx);
         if let Some(t) = self.onboarding.tutorial.as_mut() {
             t.seen = seen;
         }
@@ -419,8 +419,12 @@ impl MainView {
 
     /// Keys that are states rather than actions (a pane that opened, a
     /// popup that showed): what's true now.
-    fn tutorial_observed(&self, cx: &App) -> Vec<Key> {
+    fn tutorial_observed(&self, window: &Window, cx: &App) -> Vec<Key> {
         let reading = self.reading.view == View::Reading;
+        // --- 0.14.0 --- the stub quotes a passage now.
+        let passage = self.stub_target().is_some_and(|(_, id, _)| {
+            blyg_render::stub_quote::passage_count(self.editor.read(cx).value().as_ref(), &id) > 0
+        });
         let reader = reading && self.reading.mode == ReadMode::Reader;
         let opened = self.reading.opened.as_ref().filter(|_| reading);
         let assist = self.assist.read(cx);
@@ -480,6 +484,24 @@ impl MainView {
                 Key::MacroFolded,
                 self.browser.automation.folded_run(self.browser.open),
             ),
+            // --- 0.14.0 ---
+            (
+                Key::Compose,
+                reading && self.reading.compose.has_keyboard(window, cx),
+            ),
+            (
+                Key::FollowThicket,
+                opened.is_some() && self.reading.browse.trail.can_go_back(),
+            ),
+            (
+                Key::BrowseHistory,
+                opened.is_some() && self.reading.browse.history_open,
+            ),
+            (Key::StubPassage, passage),
+            (
+                Key::BlygSwitcher,
+                matches!(self.sheet, Some(Sheet::Blygs(_))),
+            ),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -489,7 +511,7 @@ impl MainView {
     /// Per frame: a state key the step waits for that has come true since
     /// the step began.
     pub(super) fn tutorial_watch_observed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let now = self.tutorial_observed(cx);
+        let now = self.tutorial_observed(window, cx);
         let Some(t) = self.onboarding.tutorial.as_mut().filter(|t| !t.done) else {
             return;
         };
@@ -559,6 +581,9 @@ impl MainView {
         self.reading.sheet = None;
         self.leave_reading();
         self.reading.opened = None;
+        // --- 0.14.0 --- the history pane and the walk.
+        self.reading.browse.history_open = false;
+        self.reading.browse.trail.end();
         if self.notes.drawn() {
             self.notes_tour_hide(cx);
         }
@@ -749,6 +774,17 @@ impl MainView {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
                 self.stream_move(1, window, cx);
             }
+            Setup::StreamLead => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == steps::REVISED);
+                match ix {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
             Setup::StreamQuote => {
                 self.tutorial_reading(ReadMode::Stream, window, cx);
                 let ix = self
@@ -788,6 +824,44 @@ impl MainView {
                 if let Some(key) = self.tutorial_reading_key(steps::QUOTED) {
                     self.open_reading(key, window, cx);
                 }
+            }
+            Setup::Thicket => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::QUOTING) {
+                    self.open_reading(key, window, cx);
+                }
+            }
+            Setup::Walked => {
+                self.tutorial_setup(Setup::Thicket, window, cx);
+                let origin = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == steps::QUOTED)
+                    .map(|r| r.origin.clone());
+                if let Some(origin) = origin {
+                    self.browse_follow(
+                        blyg_core::browse::BrowseVia::Quote,
+                        origin,
+                        steps::QUOTED.into(),
+                        None,
+                        window,
+                        cx,
+                    );
+                }
+            }
+            Setup::Stub => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                let item = self
+                    .reading
+                    .rows
+                    .iter()
+                    .find(|r| r.remote_id == steps::STUBBED)
+                    .cloned();
+                if let Some(item) = item {
+                    self.item_action(item, "Reply", window, cx);
+                }
+                self.stub_choose_passage(window, cx);
             }
             Setup::Browser => {
                 self.tutorial_setup(Setup::Reader, window, cx);
@@ -847,6 +921,23 @@ impl MainView {
                 }
             }
             "reader" => self.set_read_mode(ReadMode::Reader, window, cx),
+            // --- 0.14.0 ---
+            "switcher" => {
+                window.dispatch_action(Box::new(crate::app::switcher::ShowBlygSwitcher), cx)
+            }
+            "compose" => {
+                self.focus_compose(window, cx);
+                if let Some(e) = self.reading.compose.editor.clone() {
+                    e.update(cx, |s, cx| {
+                        s.set_value("Tide tables, read aloud, are nearly a poem.", window, cx)
+                    });
+                }
+            }
+            "thicket" => {
+                self.tutorial_setup(Setup::Walked, window, cx);
+            }
+            "history" => self.toggle_browse_history(cx),
+            "stub-passage" => self.studio_demo_select_passage(),
             "notes" => self.open_notes(window, cx),
             "browser" => self.close_browser(window, cx),
             "mentions" => self.demo_type("@", window, cx),
@@ -964,6 +1055,7 @@ impl MainView {
             | Region::StreamPost
             | Region::Reader
             | Region::ReaderPost
+            | Region::Compose
             | Region::BrowserChrome => return self.tutorial_reading_region(region, w, h),
         })
     }
@@ -977,9 +1069,9 @@ impl MainView {
         if self.reading.view != View::Reading || !self.reading.available {
             return None;
         }
-        // Below the screen header, above the status bar.
+        // Below the screen header, above the compose box.
         let top = TITLEBAR_H + OMNI_H;
-        let body_h = (h - STATUS_H - top).max(0.);
+        let body_h = (h - STATUS_H - top - self.tutorial_compose_h()).max(0.);
         let stream = self.reading.mode == ReadMode::Stream;
         // The Stream | Reader toggle, at the header's right end.
         let toggle = (
@@ -1022,8 +1114,46 @@ impl MainView {
                 let x = (sources_w + list_w + 1.).round();
                 Some((x, top, (w - x).max(0.), body_h))
             }
+            Region::Compose => {
+                let b = self.reading.compose.bounds.get()?;
+                let r = (
+                    f32::from(b.left()),
+                    f32::from(b.top()),
+                    f32::from(b.size.width),
+                    f32::from(b.size.height),
+                );
+                (r.2 > 8. && r.3 > 8.).then_some(r)
+            }
             _ => None,
         }
+    }
+
+    /// The reading screen's compose box's height (0 off the reading
+    /// screen, or before it's drawn).
+    fn tutorial_compose_h(&self) -> f32 {
+        if self.reading.view != View::Reading {
+            return 0.;
+        }
+        self.reading
+            .compose
+            .bounds
+            .get()
+            .map_or(0., |b| f32::from(b.size.height))
+    }
+
+    /// --- blyg switcher --- The tour runs on sample data: switching,
+    /// adding or signing out of a blyg waits until it ends (true: refused,
+    /// and said so).
+    pub(in crate::app) fn tutorial_keeps_blyg(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.onboarding.tutorial.is_none() {
+            return false;
+        }
+        self.show_toast(
+            "The tour stays on its sample blyg",
+            Some("Switch blygs once it ends".into()),
+            cx,
+        );
+        true
     }
 
     /// Whether the tour hides the reading pane's WebView. A native view
@@ -1073,7 +1203,7 @@ impl MainView {
                 w - pw,
                 TITLEBAR_H + OMNI_H,
                 pw,
-                h - STATUS_H - TITLEBAR_H - OMNI_H,
+                (h - STATUS_H - TITLEBAR_H - OMNI_H - self.tutorial_compose_h()).max(0.),
             ));
         }
         v
@@ -1220,6 +1350,7 @@ impl MainView {
 
         let card = div()
             .id("tutorial-card")
+            .debug_selector(|| "tutorial-card".into())
             .occlude()
             .absolute()
             // Clear of the lineage sheet's responses row.
@@ -1230,7 +1361,14 @@ impl MainView {
                     d.left(px(CARD_LEFT))
                 }
             })
-            .bottom(px(STATUS_H + 14.))
+            // Above the compose box when the step is about it.
+            .bottom(px(STATUS_H
+                + 14.
+                + if step.region == Region::Compose {
+                    self.tutorial_compose_h()
+                } else {
+                    0.
+                }))
             .w(px(CARD_W))
             .max_w(relative(0.9))
             // --- themes --- the theme's card.

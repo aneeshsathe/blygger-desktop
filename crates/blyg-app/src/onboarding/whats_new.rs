@@ -21,6 +21,33 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.14.0",
+        items: &[
+            if cfg!(target_os = "windows") {
+                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+0, \
+                 to switch, add one or sign out of one; Ctrl+Shift+1–9 jump straight to one. \
+                 Each keeps its own posts and reading."
+            } else {
+                "Several blygs: click the blyg's name in the title bar, or press ⌃⌘0, to \
+                 switch, add one or sign out of one; ⌃⌘1–⌃⌘9 jump straight to one. Each keeps \
+                 its own posts and reading."
+            },
+            "Burrow opens on Reading now. ⌘R goes to your posts and back.",
+            "Write while you read: the box at the foot of Reading posts a fragment (⌘⏎) or \
+             keeps a draft (⌘D). c or ⇧⌘K puts the caret in it; esc keeps your text.",
+            "A revised post leads with what changed in the stream: “V3: …”, from its author's \
+             changelog.",
+            "Follow the thicket: in the reader, a quote, a stub's “responds to” line or a link \
+             to a blyg post opens that post. The breadcrumb shows the path; ⌘[ steps back.",
+            "⇧⌘H lists where following links has taken you. It's private, and never \
+             published.",
+            "Withdrawn posts are listed under Background in the Reader, and nowhere else.",
+            "A stub's passage is chosen in the preview: select it inside the quote, then ❝ \
+             quote only this or ⇧⌘D. The separate chooser is gone.",
+        ],
+        first_step: Some("switcher"),
+    },
+    Release {
         version: "0.13.0",
         items: &[
             "Links have labels: [[ and ![[ write [[id | label]], the post's title (or its \
@@ -263,6 +290,19 @@ mod tests {
                 env!("CARGO_PKG_VERSION")
             );
         }
+    }
+
+    #[test]
+    fn a_launch_after_0_13_shows_0_14() {
+        let news = since(Some("0.13.1"), "0.14.0");
+        assert_eq!(news.len(), 1);
+        assert_eq!(news[0].version, "0.14.0");
+        assert_eq!(news[0].first_step, Some("switcher"));
+        let from_0_12: Vec<_> = since(Some("0.12.0"), "0.14.0")
+            .iter()
+            .map(|r| r.first_step)
+            .collect();
+        assert_eq!(from_0_12, [Some("switcher"), Some("discard")]);
     }
 
     #[test]
