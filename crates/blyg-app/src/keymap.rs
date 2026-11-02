@@ -15,7 +15,10 @@
 //!   box). Deeper than, or as deep as and later than, the main window's
 //!   rows, so ⌘⏎ continues there instead of reaching Publish.
 
-use gpui_kit::{Action, App, KeyBinding};
+use gpui_kit::{
+    Action, App, DummyKeyboardMapper, KeyBinding, KeyBindingContextPredicate,
+    PlatformKeyboardMapper,
+};
 
 use crate::app::ShowCapture; // --- buttons ---
 
@@ -145,7 +148,7 @@ pub struct Keybind {
     /// "enter" through as the letter ⌘E), the key it should show instead,
     /// bound in a context that never matches.
     pub menu_key: Option<&'static str>,
-    make: Option<fn(&str, Option<&str>) -> KeyBinding>,
+    make: Option<MakeBinding>,
     // --- buttons ---
     /// The toolbar icon (a name in `app::toolbar::ICONS`), when the row has a button.
     pub icon: Option<&'static str>,
@@ -156,6 +159,9 @@ pub struct Keybind {
     pub new_action: Option<fn() -> Box<dyn Action>>,
 }
 
+/// Builds a row's binding: its key, its context, the keyboard mapper.
+type MakeBinding = fn(&str, Option<&str>, &dyn PlatformKeyboardMapper) -> KeyBinding;
+
 macro_rules! kb {
     ($key:expr, $scope:ident, $action:ident, $label:expr, $menu:expr) => {
         Keybind {
@@ -165,7 +171,7 @@ macro_rules! kb {
             label: $label,
             menu: $menu,
             menu_key: None,
-            make: Some(|k, c| KeyBinding::new(k, $action, c)),
+            make: Some(|k, c, m| binding(k, $action, c, m)),
             icon: None,
             button: None,
             new_action: Some(|| Box::new($action)),
@@ -977,7 +983,11 @@ pub fn platform_key(key: &'static str) -> &'static str {
 const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     ("cmd-y", "ctrl-shift-y"),
     // --- blyg switcher --- ⌃⌘<digit> would fold into Ctrl+<digit>, the views.
-    ("ctrl-cmd-0", "ctrl-shift-0"),
+    // Ctrl+Shift+0 never reaches an app on Windows set up with more than one
+    // input language (it's the system's language hotkey; GPUI's Windows
+    // backend notes it can't be triggered), so the switcher sheet is
+    // Ctrl+Shift+L ("list") there; the blygs themselves are Ctrl+Shift+1…9.
+    ("ctrl-cmd-0", "ctrl-shift-l"),
     ("ctrl-cmd-1", "ctrl-shift-1"),
     ("ctrl-cmd-2", "ctrl-shift-2"),
     ("ctrl-cmd-3", "ctrl-shift-3"),
@@ -1169,21 +1179,51 @@ pub fn keys(keystrokes: &str) -> String {
     }
 }
 
+/// One binding, its keys read through `mapper`.
+fn binding<A: Action>(
+    key: &str,
+    action: A,
+    context: Option<&str>,
+    mapper: &dyn PlatformKeyboardMapper,
+) -> KeyBinding {
+    let predicate = context.map(|c| {
+        KeyBindingContextPredicate::parse(c)
+            .unwrap_or_else(|e| panic!("context {c}: {e}"))
+            .into()
+    });
+    KeyBinding::load(key, Box::new(action), predicate, false, None, mapper)
+        .unwrap_or_else(|e| panic!("key {key}: {e}"))
+}
+
 /// Register every binding. Call after `gpui_kit::init`, so that ours are
 /// added later and win ties at the same depth.
+///
+/// On Windows the keys go through the platform's keyboard mapper. Windows
+/// reports Shift with a digit or punctuation key as the character it types
+/// on the current layout, without Shift (Ctrl+Shift+1 is `ctrl-!` on a US
+/// layout, `ctrl-1` on AZERTY), so a plain `ctrl-shift-1` binding never
+/// matches; the mapper spells each binding the way that layout reports it.
+/// macOS reports the key itself, so it keeps the keys as written.
 pub fn bind_keys(cx: &mut App) {
+    // Both arms compile everywhere, so macOS builds check the Windows one.
+    let mapper: std::rc::Rc<dyn PlatformKeyboardMapper> = if cfg!(target_os = "windows") {
+        cx.keyboard_mapper().clone()
+    } else {
+        std::rc::Rc::new(DummyKeyboardMapper)
+    };
+    let mapper = &*mapper;
     let table = table();
     let mut out = Vec::new();
     // Menu-equivalent shims first: the native menu uses the *first* binding
     // of an action when none matches its default context.
     for k in &table {
         if let (Some(mk), Some(make)) = (k.menu_key, k.make) {
-            out.push(make(mk, Some(MENU_ONLY)));
+            out.push(make(mk, Some(MENU_ONLY), mapper));
         }
     }
     for k in &table {
         if let Some(make) = k.make {
-            out.push(make(k.key, k.scope.context()));
+            out.push(make(k.key, k.scope.context(), mapper));
         }
     }
     cx.bind_keys(out);
@@ -1195,6 +1235,15 @@ pub fn bind_keys(cx: &mut App) {
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
+}
+
+/// The key `action` has on this platform, as glyphs (`⌃⌘1`, or
+/// `Ctrl+Shift+1` on Windows); `None` when it has none here.
+pub fn action_glyphs(action: &str) -> Option<String> {
+    table()
+        .into_iter()
+        .find(|k| k.action == action && !k.key.is_empty())
+        .map(|k| glyphs(k.key))
 }
 
 /// `Ctrl+Shift+,` for `ctrl-shift-,` (Windows spells keys out).
@@ -1403,6 +1452,8 @@ pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-y", "Redo", None),
     ("ctrl-shift-z", "Redo", None),
     ("ctrl-a", "Select all", None),
+    // The input-language hotkey on many setups; GPUI never sees it.
+    ("ctrl-shift-0", "Switch input language", None),
 ];
 
 /// macOS shortcuts the system (or every Mac app) owns. An entry's action is
@@ -1660,6 +1711,12 @@ mod tests {
         assert_eq!(respell_for_windows("alt-up"), "alt-up");
         // Ctrl+Y is Redo on Windows, so Versions moves over.
         assert_eq!(respell_for_windows("cmd-y"), "ctrl-shift-y");
+        // --- blyg switcher --- Ctrl+Shift+<digit> for the blygs; the sheet
+        // can't be Ctrl+Shift+0 (the system's input-language key).
+        assert_eq!(respell_for_windows("ctrl-cmd-1"), "ctrl-shift-1");
+        assert_eq!(respell_for_windows("ctrl-cmd-9"), "ctrl-shift-9");
+        assert_eq!(respell_for_windows("ctrl-cmd-0"), "ctrl-shift-l");
+        assert_eq!(windows_label("ctrl-shift-1"), "Ctrl+Shift+1");
         assert_eq!(windows_label("ctrl-shift-,"), "Ctrl+Shift+,");
         assert_eq!(windows_label("ctrl-enter"), "Ctrl+Enter");
         assert_eq!(windows_label("ctrl--"), "Ctrl+-");

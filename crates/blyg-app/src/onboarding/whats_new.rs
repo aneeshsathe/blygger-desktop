@@ -49,7 +49,7 @@ pub const RELEASES: &[Release] = &[
         version: "0.14.0",
         items: &[
             if cfg!(target_os = "windows") {
-                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+0, \
+                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+L, \
                  to switch, add one or sign out of one; Ctrl+Shift+1–9 jump straight to one. \
                  Each keeps its own posts and reading."
             } else {

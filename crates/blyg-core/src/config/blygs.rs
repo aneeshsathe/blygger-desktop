@@ -16,6 +16,9 @@
 //!
 //! **Identity.** A blyg is its host, as the Keychain keys its sign-in
 //! ([`super::token_account`]): two entries with the same host are one blyg.
+//! So Burrow holds one blyg per host: signing in to a second one on a host
+//! it already knows, at another port or path, is refused ([`clash`]) rather
+//! than letting it take over the first one's sign-in and database.
 //!
 //! **Data.** Each blyg has its own data folder holding the same files
 //! (`blygger.db`, its WAL, the theme cache): the blyg that already owns the
@@ -64,6 +67,24 @@ pub fn known(cfg: &Config) -> Vec<String> {
         out.push(active.to_string());
     }
     out
+}
+
+/// Where a URL points within its host: the port (when not the scheme's
+/// default) and the path, without a trailing slash.
+fn address(url: &str) -> Option<(Option<u16>, String)> {
+    let u = url::Url::parse(url.trim()).ok()?;
+    Some((u.port(), u.path().trim_end_matches('/').to_string()))
+}
+
+/// A signed-in blyg that `url` would collide with: the same host (so the
+/// same Keychain account and data folder) but another port or path, i.e.
+/// another server. `None` when `url` is new or another spelling of a known
+/// blyg (case, a trailing slash, http → https).
+pub fn clash(cfg: &Config, url: &str) -> Option<String> {
+    let want = address(url)?;
+    known(cfg)
+        .into_iter()
+        .find(|k| same(k, url) && address(k).is_some_and(|a| a != want))
 }
 
 /// The active blyg's position in [`known`].
@@ -236,6 +257,29 @@ mod tests {
         let (changes, next) = remove(&c, B);
         assert_eq!(next.as_deref(), Some(A));
         assert_eq!(changes, vec![(KEY, Change::Remove)]);
+    }
+
+    #[test]
+    fn another_server_on_a_known_host_clashes() {
+        let c = cfg(&format!(
+            "blyg-url = {A}\nblyg = {A}\nblyg = http://127.0.0.1:8787\n"
+        ));
+        // Other spellings of a known blyg are that blyg.
+        assert_eq!(clash(&c, "https://BLYG.example.com/"), None);
+        assert_eq!(clash(&c, "http://blyg.example.com"), None);
+        assert_eq!(clash(&c, "http://127.0.0.1:8787/"), None);
+        // A new host is a new blyg.
+        assert_eq!(clash(&c, B), None);
+        // The same host at another port or path is another server.
+        assert_eq!(
+            clash(&c, "http://127.0.0.1:8788").as_deref(),
+            Some("http://127.0.0.1:8787")
+        );
+        assert_eq!(clash(&c, &format!("{A}/second")).as_deref(), Some(A));
+        assert_eq!(
+            clash(&c, "https://blyg.example.com:8443").as_deref(),
+            Some(A)
+        );
     }
 
     #[test]

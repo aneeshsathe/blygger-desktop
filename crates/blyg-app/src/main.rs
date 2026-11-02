@@ -136,6 +136,15 @@ fn main() -> ExitCode {
         .as_ref()
         .map(|f| connection::fake_opener(f.clone(), store.config().blyg_url()));
     let switch = SwitchBackend::new(inner, mode);
+    // --- blyg switcher --- the folder the live blyg was opened on.
+    if mode == Mode::Live {
+        switch.set_live_dir(
+            store
+                .config()
+                .blyg_url()
+                .map(|u| blyg_core::config::blygs::data_dir_for(&data_dir, u)),
+        );
+    }
     let backend: Arc<dyn Backend> = switch.clone();
     let connection = Connection {
         switch,

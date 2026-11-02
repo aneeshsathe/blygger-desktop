@@ -83,8 +83,10 @@ again sends what waited.
 You can write to more than one blyg from one Burrow. The blyg's name in the
 title bar is the blyg you're writing to: click it, or press ⌃⌘0 (Blyg ›
 Switch Blyg…), to see every blyg you're signed in to. Press a number, or
-⌃⌘1–⌃⌘9 from anywhere, to switch. **Add a blyg…** signs in to another
-without leaving the first.
+⌃⌘1–⌃⌘9 from anywhere, to switch. On Windows those are Ctrl+Shift+L and
+Ctrl+Shift+1–9. **Add a blyg…** signs in to another without leaving the
+first. Burrow keeps one blyg per host: a second blyg on the same host (at
+another port or path) needs the first one signed out.
 
 Each blyg keeps its own posts, drafts and reading on your Mac, and its own
 sign-in in the Keychain. Switching saves what you're typing first. Changes

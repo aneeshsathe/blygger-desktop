@@ -161,9 +161,12 @@ pub fn menu_items(entries: &[Entry]) -> Vec<gpui_kit::MenuItem> {
         .collect()
 }
 
-/// The `n`th blyg's shortcut, as the menu and the sheet show it.
+/// The `n`th blyg's shortcut, as the menu and the sheet show it: the key
+/// this platform binds (⌃⌘1 on macOS, Ctrl+Shift+1 on Windows).
 pub fn shortcut(n: usize) -> Option<String> {
-    (n < SHORTCUTS).then(|| crate::keymap::glyphs(&format!("ctrl-cmd-{}", n + 1)))
+    (n < SHORTCUTS)
+        .then(|| crate::keymap::action_glyphs(&format!("SwitchBlyg{}", n + 1)))
+        .flatten()
 }
 
 impl MainView {
@@ -388,7 +391,7 @@ impl MainView {
         let plate = crate::ornament::title_plate(&self.theme);
         let open = matches!(self.sheet, Some(Sheet::Blygs(_)));
         let many = crate::settings::known_blygs(cx).len() > 1;
-        let tip = crate::keymap::glyphs("ctrl-cmd-0");
+        let tip = crate::keymap::action_glyphs("ShowBlygSwitcher").unwrap_or_default();
         Some(
             div()
                 .id("blyg-switcher")
@@ -798,3 +801,7 @@ fn avatar(url: Option<&str>, host: &str, size: f32, p: &crate::theme::Palette) -
 #[cfg(test)]
 #[path = "switcher_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "switcher_e2e.rs"]
+mod e2e;

@@ -765,7 +765,9 @@ impl MainView {
             token.read(cx).value().to_string(),
         );
         if way == ConnectWay::Browser {
-            match crate::settings::validate_blyg_url(&u) {
+            let checked = crate::settings::validate_blyg_url(&u)
+                .and_then(|u| crate::settings::check_one_per_host(&u, cx).map(|()| u));
+            match checked {
                 Ok(u) => self.start_browser_sign_in(u, window, cx),
                 Err(e) => self.set_connect_state(Some(e), false, cx),
             }
@@ -1307,6 +1309,9 @@ impl MainView {
                 self.sync = s;
                 cx.notify();
             }
+            // --- blyg switcher --- a conflict queued by a blyg switched away
+            // from just now names an item this blyg doesn't have.
+            CoreEvent::Conflict { local_id, .. } if self.backend.item(&local_id).is_none() => {}
             CoreEvent::Conflict {
                 local_id,
                 mine,

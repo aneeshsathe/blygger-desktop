@@ -5,11 +5,13 @@
 #
 #   e2e-wrangler.sh setup                 derive the scratch config + secrets
 #   e2e-wrangler.sh token | password      print a scratch dev secret
-#   e2e-wrangler.sh mint-token <port>     sign in once and mint a manual API
+#   e2e-wrangler.sh mint-token <port> [host]  sign in once and mint a manual API
 #                                         token with every owner scope, and
 #                                         reading:state on studio 0.39+
 #                                         (studio 0.28+); prints it, or nothing
-#                                         on an older studio
+#                                         on an older studio. A token is bound
+#                                         to the origin it was minted on: [host]
+#                                         (default 127.0.0.1) picks it
 #   e2e-wrangler.sh start <name> <port> [KEY=value…]
 #                                         start instance <name> (own D1/R2 state);
 #                                         KEY=value overrides its dev vars only
@@ -106,9 +108,9 @@ password() { sed -n 's/^OWNER_PASSWORD=//p' "$BLYG_E2E_SCRATCH/.dev.vars"; }
 # Studio 0.28+ budgets password sign-ins, so the tests share one manual token
 # (More → Client access in Studio) instead of signing in per test.
 mint_token() {
-  local port="${1:?port}" base jar out
-  base="http://127.0.0.1:$port"
-  jar="$BLYG_E2E_SCRATCH/cookies.$port"
+  local port="${1:?port}" host="${2:-127.0.0.1}" base jar out
+  base="http://$host:$port"
+  jar="$BLYG_E2E_SCRATCH/cookies.$host.$port"
   curl -fsS -o /dev/null -c "$jar" --data-urlencode "password=$(password)" "$base/studio/login" \
     || die "signing in to :$port failed"
   # reading:state (studio 0.39+; the name is provisional, see READ_STATE_SCOPE
