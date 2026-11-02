@@ -9,6 +9,7 @@
 //! Typing `![[` at the start of a line in a thread opens it (see
 //! [`transclusion_trigger`]), and `[[` anywhere outside code opens the link
 //! picker (`picker::link_trigger`); esc then puts the typed brackets back.
+//! The `bracket-picker` config key turns either typed trigger off.
 
 use gpui_kit::base::input::{Escape, InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -126,10 +127,12 @@ impl MainView {
         let old = &self.current.as_ref()?.content_md;
         let s = self.editor.read(cx);
         let (new, cursor) = (s.value(), s.cursor());
-        if let Some(r) = transclusion_trigger(old, &new, cursor) {
-            return Some((PickKind::Quote, r));
-        }
-        picker::link_trigger(old, &new, cursor).map(|at| (PickKind::Link, at..cursor))
+        let typed = match transclusion_trigger(old, &new, cursor) {
+            Some(r) => Some((PickKind::Quote, r)),
+            None => picker::link_trigger(old, &new, cursor).map(|at| (PickKind::Link, at..cursor)),
+        };
+        // `bracket-picker` can leave typed brackets as plain text (#53).
+        typed.filter(|(kind, _)| self.prefs.bracket_picker.allows(*kind))
     }
 
     /// Typed brackets open the picker. With `picker_typing` in the editor

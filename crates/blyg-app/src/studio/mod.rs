@@ -861,6 +861,9 @@ impl MainView {
                 Ok(surface) => {
                     self.studio.slot.borrow_mut().surface = Some(surface);
                     self.studio.page = None;
+                    // A new web view follows the OS until told: send it
+                    // the theme's light/dark (noted before it existed).
+                    self.studio.dark = None;
                     self.studio.push();
                 }
                 Err(msg) => {

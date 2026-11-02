@@ -285,7 +285,8 @@ impl MainView {
             .or_else(|| {
                 crate::composer::picker::link_trigger(&old, &new, cursor)
                     .map(|at| (PickKind::Link, at))
-            });
+            })
+            .filter(|(kind, _)| self.prefs.bracket_picker.allows(*kind));
         if let (Some((kind, at)), Some(assist)) = (typed, self.reading.compose.assist.clone()) {
             assist.update(cx, |a, cx| a.open_picker(kind, at, None, cx));
         }

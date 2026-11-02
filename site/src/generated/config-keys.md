@@ -60,6 +60,14 @@ Show the toolbar buttons in the title bar (New, Make draft, Publish, the views, 
 Check spelling while you type, with the macOS spell checker (your system languages and the words you've taught it). Misspelled words get a red wavy underline; right-click one for suggestions, Learn Spelling and Ignore. Code, links, addresses and blyg markup are never checked. Edit › Spelling › Check Spelling While Typing toggles it.
 
 
+### `bracket-picker`
+
+- **Values:** `on`, `quotes`, `off`
+- **Default:** `on`
+
+Which typed brackets open the post picker. on: typing [[ anywhere outside code opens it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. off: typed brackets never open it. ⌘K always opens the picker.
+
+
 ### `auto-update`
 
 - **Values:** `install`, `notify`, `off`
