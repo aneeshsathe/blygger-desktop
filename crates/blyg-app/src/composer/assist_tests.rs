@@ -20,7 +20,14 @@ const CONNECTED: &str = "# test config\nblyg-url = https://blyg.example.com\n";
 const DRAFT_THREAD: &str = "01J9H4C";
 
 fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeSpell>, &mut VisualTestContext) {
-    let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
+    setup_with(CONNECTED, cx)
+}
+
+fn setup_with<'a>(
+    config: &'static str,
+    cx: &'a mut TestAppContext,
+) -> (Entity<MainView>, Arc<FakeSpell>, &'a mut VisualTestContext) {
+    let prefs = Prefs::from_config(ConfigStore::in_memory(config).config());
     let spell = Arc::new(FakeSpell::new(&[
         ("teh", &["the", "tea"]),
         ("wrold", &["world"]),
@@ -30,7 +37,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeSpell>, &mut Vis
         gpui_kit::init(cx);
         crate::app::bind_keys(cx);
         crate::settings::init(
-            ConfigStore::in_memory(CONNECTED),
+            ConfigStore::in_memory(config),
             Arc::new(MemoryTokenStore::default()),
             None,
             cx,
@@ -196,6 +203,83 @@ fn emails_pastes_and_code_never_open_it(cx: &mut TestAppContext) {
     cx.simulate_input("@");
     cx.run_until_parked();
     assert_eq!(labels(&view, cx), None, "inside a code fence");
+}
+
+// ------------------------------------------------------------ brackets (#53)
+
+/// TK scopes and a link, the way issue #53's reporter writes them.
+const TK_PROSE: &str = "[TK]a [[b]] c[/TK]";
+
+fn picker_up(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+    view.read_with(cx, |v, cx| {
+        v.assist.read(cx).picker_open() || v.reading.sheet.is_some()
+    })
+}
+
+/// Type `s` one key at a time, noting after each key whether a picker was up.
+fn type_keys(view: &Entity<MainView>, s: &str, cx: &mut VisualTestContext) -> Vec<bool> {
+    s.chars()
+        .map(|c| {
+            cx.simulate_input(&c.to_string());
+            cx.run_until_parked();
+            picker_up(view, cx)
+        })
+        .collect()
+}
+
+#[gpui_kit::test]
+fn with_bracket_picker_off_typed_brackets_never_pop_up(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup_with(
+        "# test config\nblyg-url = https://blyg.example.com\nbracket-picker = off\n",
+        cx,
+    );
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    let up = type_keys(&view, TK_PROSE, cx);
+    assert!(up.iter().all(|u| !u), "no popup on any key: {up:?}");
+    assert_eq!(text(&view, cx), format!("{before}{TK_PROSE}"));
+    // Nor a line-leading `![[` (⌘K still opens the picker).
+    cx.simulate_keystrokes("enter");
+    let up = type_keys(&view, "![[x]]", cx);
+    assert!(up.iter().all(|u| !u), "{up:?}");
+    assert_eq!(text(&view, cx), format!("{before}{TK_PROSE}\n![[x]]"));
+}
+
+#[gpui_kit::test]
+fn with_bracket_picker_quotes_only_bang_brackets_open_it(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup_with(
+        "# test config\nblyg-url = https://blyg.example.com\nbracket-picker = quotes\n",
+        cx,
+    );
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    let up = type_keys(&view, TK_PROSE, cx);
+    assert!(up.iter().all(|u| !u), "`[[` is plain text: {up:?}");
+    assert_eq!(text(&view, cx), format!("{before}{TK_PROSE}"));
+    cx.simulate_keystrokes("enter");
+    let up = type_keys(&view, "![[", cx);
+    assert_eq!(up, [false, false, true], "a line-leading `![[` still does");
+}
+
+#[gpui_kit::test]
+fn by_default_the_link_popup_never_takes_the_typing(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    let before = open_at_end(&view, DRAFT_THREAD, cx);
+    let up = type_keys(&view, TK_PROSE, cx);
+    // `[[` opens the documented link picker under the caret; `b` keeps
+    // going into the editor as its query, and the `]` closes it.
+    let at = TK_PROSE.find("[[").unwrap() + 1;
+    let close = TK_PROSE.find("]]").unwrap();
+    for (i, u) in up.iter().enumerate() {
+        assert_eq!(
+            *u,
+            (at..close).contains(&i),
+            "key {i} of {TK_PROSE:?}: {up:?}"
+        );
+    }
+    assert_eq!(
+        text(&view, cx),
+        format!("{before}{TK_PROSE}"),
+        "every key landed"
+    );
 }
 
 // ------------------------------------------------------------ spelling

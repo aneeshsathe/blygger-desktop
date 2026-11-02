@@ -188,6 +188,9 @@ pub struct Prefs {
     pub auto_update: AutoUpdate,
     // --- spellcheck --- (read-only here: Edit › Spelling writes the file)
     pub spellcheck: bool,
+    /// `bracket-picker`: which typed brackets open the `[[` / `![[` picker
+    /// (read-only here: set in the config file).
+    pub bracket_picker: crate::composer::picker::BracketPicker,
     // --- browser --- (read-only here: set in the config file)
     pub open_links: crate::app::browser::OpenLinks,
     pub content_blocking: bool,
@@ -237,6 +240,9 @@ impl Prefs {
             show_buttons: c.show_buttons(), // --- buttons ---
             auto_update: AutoUpdate::from_value(c.get("auto-update")), // --- auto-update ---
             spellcheck: c.spellcheck(),     // --- spellcheck ---
+            bracket_picker: crate::composer::picker::BracketPicker::from_value(
+                c.get("bracket-picker"),
+            ),
             // --- browser ---
             open_links: crate::app::browser::OpenLinks::from_value(c.get("open-links")),
             content_blocking: c.get("content-blocking") != Some("false"),
