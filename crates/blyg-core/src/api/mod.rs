@@ -1046,37 +1046,43 @@ impl Api {
         }))
     }
 
-    /// Every hopper, with its item count (`GET /api/hoppers/:id` → `total`).
+    /// Every hopper, with its item count (`GET /api/hoppers/:id` → `total`,
+    /// at most [`HOPPER_READS`] at a time). A hopper deleted between the
+    /// list and its count is left out.
     pub fn hoppers(&self) -> Result<Option<Vec<Hopper>>> {
         let Some(list) = Self::optional(self.collect::<WireHopper>("/api/hoppers", ""))? else {
             return Ok(None);
         };
-        let mut out = Vec::with_capacity(list.len());
-        for h in list {
-            let count = self.hopper_total(&h.id)?;
-            out.push(h.into_hopper(count));
-        }
-        Ok(Some(out))
+        let counted = bounded(list, HOPPER_READS, |h| match self.hopper_detail(&h.id) {
+            Ok(d) => Ok(Some(h.into_hopper(d.total))),
+            Err(CoreError::NotFound) => Ok(None),
+            Err(e) => Err(e),
+        })?;
+        Ok(Some(counted.into_iter().flatten().collect()))
     }
 
-    /// `GET /api/hoppers/:id` → `total`, how many posts it holds.
-    fn hopper_total(&self, id: &str) -> Result<u32> {
-        #[derive(serde::Deserialize)]
-        struct Detail {
-            #[serde(default)]
-            total: u32,
-        }
-        Ok(self
-            .call_as::<Detail>("GET", &format!("/api/hoppers/{}", enc(id)), None)?
-            .total)
+    /// `GET /api/hoppers/{id}`: one hopper as the blyg has it now, with its
+    /// count (`total`). `NotFound` when it was deleted.
+    pub fn hopper(&self, id: &str) -> Result<Hopper> {
+        let d = self.hopper_detail(id)?;
+        Ok(d.hopper.into_hopper(d.total))
+    }
+
+    fn hopper_detail(&self, id: &str) -> Result<WireHopperDetail> {
+        self.call_as("GET", &format!("/api/hoppers/{}", enc(id)), None)
     }
 
     // ---------- hoppers (studio's createHopper … removeHopperItem) ----------
 
-    /// Every hopper with all its memberships and the imported items it
-    /// holds (`GET /api/hoppers`, then each one's `GET
-    /// /api/hoppers/{id}/memberships`, every page). `None` from a server
-    /// without hoppers (404).
+    /// Every hopper with all its memberships, in the hopper's own order
+    /// (newest added first), and the imported items it holds (`GET
+    /// /api/hoppers`, then each one's `GET /api/hoppers/{id}/memberships`,
+    /// every page, at most [`HOPPER_READS`] hoppers at a time). Contract 5
+    /// has no cheaper read: the list carries no counts, revisions or
+    /// memberships, so the caller skips this whole read while the
+    /// `hoppers` change revision stands still. A hopper deleted between the
+    /// list and its memberships is left out. `None` from a server without
+    /// hoppers (404).
     pub fn hopper_details(&self) -> Result<Option<Vec<HopperDetail>>> {
         let Some(list) = Self::optional(self.collect::<WireHopper>("/api/hoppers", ""))? else {
             return Ok(None);
@@ -1091,10 +1097,13 @@ impl Api {
             #[serde(default)]
             item: Option<Value>,
         }
-        let mut out = Vec::with_capacity(list.len());
-        for h in list {
+        let read = bounded(list, HOPPER_READS, |h| {
             let rows: Vec<M> =
-                self.collect(&format!("/api/hoppers/{}/memberships", enc(&h.id)), "")?;
+                match self.collect(&format!("/api/hoppers/{}/memberships", enc(&h.id)), "") {
+                    Ok(rows) => rows,
+                    Err(CoreError::NotFound) => return Ok(None),
+                    Err(e) => return Err(e),
+                };
             let mut members = Vec::with_capacity(rows.len());
             let mut items = Vec::new();
             for m in rows {
@@ -1108,13 +1117,13 @@ impl Api {
                 });
             }
             let count = members.len() as u32;
-            out.push(HopperDetail {
+            Ok(Some(HopperDetail {
                 hopper: h.into_hopper(count),
                 members,
                 items,
-            });
-        }
-        Ok(Some(out))
+            }))
+        })?;
+        Ok(Some(read.into_iter().flatten().collect()))
     }
 
     /// `POST /api/hoppers {name}` → the new hopper (201), private and empty.
@@ -1213,6 +1222,64 @@ impl WireHopper {
             slug_frozen: self.slug_frozen,
         }
     }
+}
+
+/// --- hoppers --- `GET /api/hoppers/{id}`: `{ hopper, total, sourceCount }`.
+#[derive(serde::Deserialize)]
+struct WireHopperDetail {
+    hopper: WireHopper,
+    #[serde(default)]
+    total: u32,
+}
+
+/// --- hoppers --- How many hoppers are read at once (a request or more
+/// each): enough to overlap the round trips, few enough to stay well under
+/// the blyg's work budget.
+pub const HOPPER_READS: usize = 4;
+
+/// `f` over `items` with at most `n` running at once, the answers in
+/// `items`' order. A failure stops what hasn't started, and the first error
+/// (in `items`' order) is the answer.
+fn bounded<T: Send, R: Send>(
+    items: Vec<T>,
+    n: usize,
+    f: impl Fn(T) -> Result<R> + Sync,
+) -> Result<Vec<R>> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let len = items.len();
+    if n <= 1 || len <= 1 {
+        return items.into_iter().map(f).collect();
+    }
+    let queue = Mutex::new(items.into_iter().enumerate());
+    let out: Mutex<Vec<Option<Result<R>>>> = Mutex::new((0..len).map(|_| None).collect());
+    let failed = AtomicBool::new(false);
+    let worker = || {
+        while !failed.load(Ordering::Relaxed) {
+            let next = queue.lock().unwrap_or_else(|p| p.into_inner()).next();
+            let Some((i, t)) = next else {
+                return;
+            };
+            let r = f(t);
+            if r.is_err() {
+                failed.store(true, Ordering::Relaxed);
+            }
+            out.lock().unwrap_or_else(|p| p.into_inner())[i] = Some(r);
+        }
+    };
+    std::thread::scope(|s| {
+        for _ in 0..n.min(len) {
+            s.spawn(worker);
+        }
+    });
+    let mut v = Vec::with_capacity(len);
+    for r in out.into_inner().unwrap_or_else(|p| p.into_inner()) {
+        match r {
+            Some(Ok(x)) => v.push(x),
+            Some(Err(e)) => return Err(e),
+            None => {}
+        }
+    }
+    Ok(v)
 }
 
 /// Why a connection check failed, worded for the "Connect your blyg" sheet.
@@ -1493,6 +1560,34 @@ fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- hoppers ---
+    #[test]
+    fn bounded_keeps_the_order_and_never_runs_more_than_n_at_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let (now, peak) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let out = bounded((0..20).collect(), 4, |i: u32| {
+            let n = now.fetch_add(1, Ordering::SeqCst) + 1;
+            peak.fetch_max(n, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(5));
+            now.fetch_sub(1, Ordering::SeqCst);
+            Ok(i * 2)
+        })
+        .unwrap();
+        assert_eq!(out, (0..20).map(|i| i * 2).collect::<Vec<_>>());
+        let peak = peak.load(Ordering::SeqCst);
+        assert!((1..=4).contains(&peak), "{peak} at once");
+        // A failure is the answer.
+        let r = bounded((0..10).collect(), 3, |i: u32| {
+            if i == 6 {
+                Err(CoreError::Offline)
+            } else {
+                Ok(i)
+            }
+        });
+        assert!(matches!(r, Err(CoreError::Offline)));
+        assert!(bounded(Vec::<u32>::new(), 4, Ok).unwrap().is_empty());
+    }
 
     #[test]
     fn only_contract_five_is_spoken() {

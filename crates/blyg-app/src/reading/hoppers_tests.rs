@@ -297,7 +297,7 @@ fn the_row_menu_and_the_chip_offer_hopper(cx: &mut TestAppContext) {
     );
     menu(
         &view,
-        MenuCmd::ToggleHopper(key.clone(), HOPPER_SLOW.into()),
+        MenuCmd::ToggleHopper(vec![key.clone()], HOPPER_SLOW.into()),
         cx,
     );
     assert!(members_of(&fake, "sub-rue", RUE_TRUST).is_empty());
@@ -459,7 +459,7 @@ fn offline_a_new_hopper_waits_but_membership_does_not(cx: &mut TestAppContext) {
     // Putting a post in a hopper is local, and queued.
     view.update(cx, |v, cx| {
         v.toggle_hopper(
-            &("sub-ada".to_string(), ADA_TIDES.to_string()),
+            &[("sub-ada".to_string(), ADA_TIDES.to_string())],
             HOPPER_SLOW,
             cx,
         )
@@ -483,4 +483,129 @@ fn an_empty_name_is_refused_in_the_sheet(cx: &mut TestAppContext) {
         ))
     });
     assert_eq!(fake.hoppers().len(), n);
+}
+
+// --- hoppers --- the hopper's own order; several posts at once.
+
+#[gpui_kit::test]
+fn a_hopper_lists_its_posts_newest_added_first(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    select(&view, Source::Hopper(HOPPER_SLOW.into()), cx);
+    // The seed put them in as Ada's, Rue's, then yours.
+    assert_eq!(
+        shown(&view, cx),
+        [OWN_GARDENS_SERVER, RUE_TRUST, ADA_FINISHED],
+        "the hopper's order, not the posts' dates"
+    );
+    // One put in now goes on top.
+    view.update(cx, |v, cx| {
+        v.toggle_hopper(
+            &[("sub-omar".to_string(), OMAR_YEAR.to_string())],
+            HOPPER_SLOW,
+            cx,
+        )
+    });
+    settle(cx);
+    assert_eq!(
+        shown(&view, cx),
+        [OMAR_YEAR, OWN_GARDENS_SERVER, RUE_TRUST, ADA_FINISHED]
+    );
+}
+
+#[gpui_kit::test]
+fn the_picker_acts_on_the_picked_posts(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    let omar = ("sub-omar".to_string(), OMAR_YEAR.to_string());
+    let ada = ("sub-ada".to_string(), ADA_TIDES.to_string());
+    open(&view, ("sub-omar", OMAR_YEAR), cx);
+    // ⌘-click: the open post and Ada's are picked.
+    view.update(cx, |v, cx| {
+        let m = gpui_kit::Modifiers {
+            platform: true,
+            ..Default::default()
+        };
+        assert!(v.pick_click(&ada, m, cx));
+    });
+    settle(cx);
+    view.update_in(cx, |v, window, cx| v.open_hopper_picker(window, cx));
+    settle(cx);
+    view.read_with(cx, |v, _| match &v.reading.sheet {
+        Some(RSheet::HopperPick { keys, title, .. }) => {
+            assert_eq!(keys.len(), 2, "{keys:?}");
+            assert!(keys.contains(&omar) && keys.contains(&ada));
+            assert_eq!(title, "2 posts");
+        }
+        _ => panic!("the picker"),
+    });
+    // In together…
+    cx.simulate_keystrokes("2");
+    settle(cx);
+    assert_eq!(members_of(&fake, "sub-omar", OMAR_YEAR), [HOPPER_GARDENS]);
+    assert_eq!(members_of(&fake, "sub-ada", ADA_TIDES), [HOPPER_GARDENS]);
+    // …and out together.
+    cx.simulate_keystrokes("2");
+    settle(cx);
+    assert!(members_of(&fake, "sub-omar", OMAR_YEAR).is_empty());
+    assert!(members_of(&fake, "sub-ada", ADA_TIDES).is_empty());
+    // Some of them in: a dash, and choosing it puts the rest in.
+    view.update(cx, |v, cx| {
+        v.toggle_hopper(std::slice::from_ref(&omar), HOPPER_GARDENS, cx)
+    });
+    let both = [omar.clone(), ada.clone()];
+    assert_eq!(
+        super::hoppers::held_by(&fake.hopper_members(), &both, HOPPER_GARDENS),
+        super::hoppers::Held::Some
+    );
+    cx.simulate_keystrokes("2");
+    settle(cx);
+    assert_eq!(
+        super::hoppers::held_by(&fake.hopper_members(), &both, HOPPER_GARDENS),
+        super::hoppers::Held::All
+    );
+    cx.simulate_keystrokes("escape");
+    settle(cx);
+
+    // A picked row's menu acts on the picks too.
+    view.update(cx, |v, cx| {
+        v.open_post_menu(
+            ada.clone(),
+            gpui_kit::point(gpui_kit::px(10.), gpui_kit::px(10.)),
+            cx,
+        )
+    });
+    menu(&view, MenuCmd::HopperMenu, cx);
+    let items = view.read_with(cx, |v, _| v.menu_items());
+    let garden = items
+        .iter()
+        .find(|(l, _, _)| l == "Garden reading")
+        .cloned()
+        .expect("listed");
+    assert!(garden.2, "checked: both are in it");
+    match &garden.1 {
+        Some(MenuCmd::ToggleHopper(keys, id)) => {
+            assert_eq!(id, HOPPER_GARDENS);
+            assert_eq!(keys.len(), 2);
+        }
+        c => panic!("{c:?}"),
+    }
+    menu(&view, garden.1.clone().unwrap(), cx);
+    assert!(members_of(&fake, "sub-omar", OMAR_YEAR).is_empty());
+    assert!(members_of(&fake, "sub-ada", ADA_TIDES).is_empty());
+
+    // New Hopper… from the picks makes it with both in it.
+    let new = items
+        .iter()
+        .find(|(l, _, _)| l == "New Hopper…")
+        .and_then(|(_, c, _)| c.clone())
+        .expect("New Hopper…");
+    menu(&view, new, cx);
+    cx.simulate_input("Pairs");
+    cx.simulate_keystrokes("enter");
+    settle(cx);
+    let made = fake
+        .hoppers()
+        .into_iter()
+        .find(|h| h.name == "Pairs")
+        .expect("made");
+    assert_eq!(made.count, 2);
 }

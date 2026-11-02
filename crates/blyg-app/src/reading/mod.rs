@@ -261,8 +261,9 @@ pub enum RSheet {
     Lineage(Box<lineage::Sheet>),
     /// --- hoppers --- Hopper › on a post: each hopper with a check.
     HopperPick {
-        key: Key,
-        /// The post, as the sheet names it.
+        /// The open post, or the posts picked in the list.
+        keys: Vec<Key>,
+        /// The post (or "3 posts"), as the sheet names it.
         title: String,
         /// The highlighted row (the hoppers, then "New Hopper…").
         sel: usize,
@@ -358,6 +359,9 @@ pub struct State {
     /// --- hoppers --- rows held only because a hopper read returned them
     /// (posts this Mac doesn't hold): listed under their hopper, nowhere else.
     pub hopper_only: HashSet<Key>,
+    /// --- hoppers --- hopper id → its posts in its own order (newest added
+    /// first): how a hopper's list is ordered.
+    pub hopper_order: HashMap<String, Vec<Key>>,
     /// What the list shows (Reader mode; the stream shows everything).
     pub source: sources_vm::Source,
     /// Which pane has the keyboard.
@@ -426,6 +430,7 @@ impl State {
             filed: backend.subscription_folders(),
             hoppers: backend.hoppers(),
             hopper_only: hoppers::unheld_keys(backend),
+            hopper_order: backend.hopper_order(),
             source: sources_vm::Source::default(),
             pane: sources_vm::Pane::default(),
             sources_open: sources::load_open(data_dir.as_deref()),
@@ -472,13 +477,19 @@ impl State {
             sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
         // --- hoppers --- a post only a hopper holds shows under it alone.
-        let in_hopper = self.mode == stream_vm::ReadMode::Reader
-            && matches!(self.source, sources_vm::Source::Hopper(_));
-        if !self.hopper_only.is_empty() && !in_hopper {
+        let in_hopper = match (&self.mode, &self.source) {
+            (stream_vm::ReadMode::Reader, sources_vm::Source::Hopper(h)) => Some(h),
+            _ => None,
+        };
+        if !self.hopper_only.is_empty() && in_hopper.is_none() {
             let only = &self.hopper_only;
             let rows = &self.rows;
             self.shown
                 .retain(|&i| rows.get(i).is_none_or(|r| !only.contains(&vm::key(r))));
+        }
+        // --- hoppers --- a hopper lists its posts in its own order.
+        if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
+            hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -565,6 +576,7 @@ impl MainView {
         // --- hoppers ---
         r.hoppers = self.backend.hoppers();
         r.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
+        r.hopper_order = self.backend.hopper_order();
         if let sources_vm::Source::Hopper(id) = &r.source
             && !r.hoppers.iter().any(|h| &h.id == id)
         {
@@ -641,6 +653,7 @@ impl MainView {
                 self.reading.filed = self.backend.subscription_folders();
                 self.reading.hoppers = self.backend.hoppers(); // --- hoppers ---
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
+                self.reading.hopper_order = self.backend.hopper_order();
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---

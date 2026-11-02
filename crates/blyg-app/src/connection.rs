@@ -913,6 +913,9 @@ impl Backend for SwitchBackend {
     fn hopper_unheld(&self) -> Vec<ReadingItem> {
         self.cur().hopper_unheld()
     }
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+        self.cur().hopper_order()
+    }
     fn create_hopper(&self, name: &str) -> Result<Hopper> {
         self.cur().create_hopper(name)
     }

@@ -2020,6 +2020,19 @@ impl Backend for FakeBackend {
         out
     }
 
+    /// The memberships were added in the list's order: the last added
+    /// first.
+    fn hopper_order(&self) -> HashMap<String, Vec<(String, String)>> {
+        let st = self.lock();
+        let mut out: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        for (h, s, r) in st.rd.hopper_items.iter().rev() {
+            out.entry(h.clone())
+                .or_default()
+                .push((s.clone(), r.clone()));
+        }
+        out
+    }
+
     fn create_hopper(&self, name: &str) -> Result<Hopper> {
         self.remote_guard()?;
         let name = name.trim();

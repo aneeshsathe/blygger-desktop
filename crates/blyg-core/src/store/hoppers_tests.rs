@@ -270,3 +270,32 @@ fn a_hopper_not_read_here_yet_keeps_the_rows_word() {
     s.sync_reading_hoppers().unwrap();
     assert_eq!(row_hoppers(&s, "A"), ["H1", "H7"]);
 }
+
+#[test]
+fn a_hopper_is_ordered_newest_added_first_and_a_local_add_goes_on_top() {
+    let s = store();
+    let mut f = fetched(hopper("H1", "Slow", 4), &[]);
+    f.members = vec![
+        ("s1".into(), "old".into(), "2026-09-01T00:00:00.000Z".into()),
+        ("s1".into(), "new".into(), "2026-10-01T00:00:00.000Z".into()),
+        // Ties: subscription, then remote id.
+        ("s1".into(), "b".into(), "2026-09-15T00:00:00.000Z".into()),
+        ("s1".into(), "a".into(), "2026-09-15T00:00:00.000Z".into()),
+    ];
+    s.replace_hoppers(&[f]).unwrap();
+    let ids = |s: &Store| -> Vec<String> {
+        s.hopper_order()["H1"]
+            .iter()
+            .map(|(_, r)| r.clone())
+            .collect()
+    };
+    assert_eq!(ids(&s), ["new", "a", "b", "old"]);
+    // Put in here: on top at once, and still after a read that hasn't
+    // seen it yet.
+    s.set_hopper_member("H1", "s1", "fresh", true).unwrap();
+    assert_eq!(ids(&s)[0], "fresh");
+    let mut again = fetched(hopper("H1", "Slow", 4), &[]);
+    again.members = vec![("s1".into(), "old".into(), "2026-09-01T00:00:00.000Z".into())];
+    s.replace_hoppers(&[again]).unwrap();
+    assert_eq!(ids(&s), ["fresh", "old"]);
+}

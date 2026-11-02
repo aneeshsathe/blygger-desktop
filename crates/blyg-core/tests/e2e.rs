@@ -4539,6 +4539,106 @@ fn a_hopper_add_made_offline_is_sent_later() {
     assert!(b.hoppers().iter().all(|x| !x.name.ends_with("never")));
 }
 
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
+    let e = e2e();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let t = tag("hopper-order");
+    // Published oldest first, put in newest first: the hopper's order is
+    // the order they went in, not the posts' dates.
+    let (_, first) = published(&me, Kind::Fragment, &format!("{t} one"), None);
+    let (_, second) = published(&me, Kind::Fragment, &format!("{t} two"), None);
+    let h = me.create_hopper(&format!("{t} box")).unwrap();
+    let _gone = DropHopper(&me, h.id.clone());
+    let own = |rid: &str| (OWN_SUBSCRIPTION.to_string(), rid.to_string());
+    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &second, true)
+        .unwrap();
+    me.sync_now().unwrap();
+    // The studio keeps whole seconds; within one, ties go by id.
+    std::thread::sleep(Duration::from_millis(1100));
+    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &first, true)
+        .unwrap();
+    me.sync_now().unwrap();
+    let want = vec![own(&first), own(&second)];
+    assert_eq!(
+        me.hopper_order().get(&h.id),
+        Some(&want),
+        "newest added first"
+    );
+
+    // Another Mac reads the blyg's order (`addedAt`).
+    let proxy = Proxy::start(&e.url);
+    let other = backend_at(d2.path(), &proxy.url, e.cred.clone(), false);
+    other.sync_now().unwrap();
+    assert_eq!(other.hopper_order().get(&h.id), Some(&want));
+    let seen = proxy.take();
+    assert!(
+        seen.iter().any(|r| r.ends_with("/memberships")),
+        "the first pull reads the memberships: {seen:?}"
+    );
+    // Nothing changed: no hopper is read again.
+    other.pull_now().unwrap();
+    let seen = proxy.take();
+    assert!(
+        !seen.iter().any(|r| r.contains("/api/hoppers")),
+        "an unchanged pull reads no hopper: {seen:?}"
+    );
+    // A membership changed elsewhere: read again, in order.
+    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &second, false)
+        .unwrap();
+    me.sync_now().unwrap();
+    other.pull_now().unwrap();
+    assert!(
+        proxy.take().iter().any(|r| r.ends_with("/memberships")),
+        "a changed hopper is read again"
+    );
+    assert_eq!(other.hopper_order().get(&h.id), Some(&vec![own(&first)]));
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn renames_racing_on_one_hopper_are_retried_not_shown_as_a_plain_409() {
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = manual(d1.path());
+    let b = manual(d2.path());
+    let t = tag("hopper-race");
+    let h = a.create_hopper(&format!("{t} start")).unwrap();
+    let _gone = DropHopper(&a, h.id.clone());
+    b.sync_now().unwrap();
+    // Two Macs renaming at once: the studio refuses a rename that crossed
+    // another (409). Burrow reads the hopper again and sends it once more,
+    // so each either lands or says, in words, that it kept changing.
+    for round in 0..4 {
+        let (ra, rb) = std::thread::scope(|s| {
+            let ja = s.spawn(|| {
+                a.update_hopper(&h.id, &edit(|e| e.name = Some(format!("{t} a{round}"))))
+            });
+            let jb = s.spawn(|| {
+                b.update_hopper(&h.id, &edit(|e| e.name = Some(format!("{t} b{round}"))))
+            });
+            (ja.join().unwrap(), jb.join().unwrap())
+        });
+        for r in [ra, rb] {
+            if let Err(err) = r {
+                let msg = err.to_string();
+                assert!(
+                    msg.contains("kept changing"),
+                    "a refusal is explained, not the raw 409: {msg}"
+                );
+            }
+        }
+    }
+    // Both Macs settle on what the blyg has.
+    let server = conforms("GET", &e2e().url, &format!("/api/hoppers/{}", h.id));
+    let name = server["hopper"]["name"].as_str().unwrap().to_string();
+    a.sync_now().unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(held_hopper(&a, &h.id).unwrap().name, name);
+    assert_eq!(held_hopper(&b, &h.id).unwrap().name, name);
+}
+
 // ------------------------------------------- contract 5.0.0: cursors, revisions
 
 /// Every item the owner API lists, walked to `nextCursor: null`: (id,
