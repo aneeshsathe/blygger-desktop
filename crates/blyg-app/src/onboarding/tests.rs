@@ -712,6 +712,7 @@ fn do_step(e: &mut Env, id: &str) {
         "stub-passage" => quote_a_passage(e),
         // --- hoppers ---
         "hoppers" => e.cx.simulate_keystrokes("h"),
+        "hopper-several" => e.cx.simulate_keystrokes("h"),
         "conflict" => {
             // The sheet opens through the fake's Conflict event.
             for _ in 0..50 {

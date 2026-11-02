@@ -518,6 +518,14 @@ impl MainView {
                         Some(crate::app::reading::RSheet::HopperPick { .. })
                     ),
             ),
+            (
+                Key::HopperSeveral,
+                reading
+                    && matches!(
+                        &self.reading.sheet,
+                        Some(crate::app::reading::RSheet::HopperPick { keys, .. }) if keys.len() > 1
+                    ),
+            ),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -872,6 +880,20 @@ impl MainView {
                     .map(crate::app::reading::vm::key);
                 if let Some(key) = first {
                     self.open_reading(key, window, cx);
+                }
+            }
+            Setup::HopperSeveral => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                let two: Vec<_> = self
+                    .reading
+                    .shown_rows()
+                    .take(2)
+                    .map(crate::app::reading::vm::key)
+                    .collect();
+                if let [first, second] = two.as_slice() {
+                    self.open_reading(first.clone(), window, cx);
+                    self.reading.picked.toggle(second, Some(first));
+                    cx.notify();
                 }
             }
             Setup::Walked => {
