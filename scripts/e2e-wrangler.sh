@@ -125,7 +125,7 @@ mint_token() {
   fi
   rm -f "$jar"
   case "${out##*$'\n'}" in
-    200) printf '%s' "${out%$'\n'*}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).access_token))' ;;
+    200) printf '%s' "${out%$'\n'*}" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const j=JSON.parse(s);process.stdout.write(j.accessToken??j.access_token)})' ;;
     404) ;;
     *) die "minting a token on :$port failed (${out##*$'\n'})" ;;
   esac
