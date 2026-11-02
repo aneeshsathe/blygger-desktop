@@ -839,8 +839,12 @@ impl Engine {
     /// the blyg since that revision was read: it is read again and merged
     /// with conflict detection. When the blyg's text moved under a local
     /// edit, the item enters conflict and nothing is sent (`Ok(None)`, the
-    /// user chooses); otherwise the command goes once more with the fresh
-    /// revision. Nothing is ever sent blind over a change it didn't see.
+    /// user chooses). When the text moved with no local edit, this Mac now
+    /// shows the new text and the command isn't repeated over it
+    /// (`RevisionConflict`: a publish or delete must not act on text the
+    /// user hasn't seen). Only a revision that moved without the text (an
+    /// attachment, a setting) is retried, once, with the fresh revision.
+    /// Nothing is ever sent blind over a change it didn't see.
     pub(crate) fn with_revision<T>(
         &self,
         id: &LocalId,
@@ -850,6 +854,7 @@ impl Engine {
         let Some(rev) = self.revision_for(id, sid)? else {
             return Ok(None);
         };
+        let base = self.store.row(id).and_then(|r| r.base_content);
         match f(rev) {
             Err(CoreError::RevisionConflict) => {}
             r => return r.map(Some),
@@ -857,6 +862,9 @@ impl Engine {
         let Some(rev) = self.reread(id, sid)? else {
             return Ok(None);
         };
+        if self.store.row(id).and_then(|r| r.base_content) != base {
+            return Err(CoreError::RevisionConflict);
+        }
         f(rev).map(Some)
     }
 
