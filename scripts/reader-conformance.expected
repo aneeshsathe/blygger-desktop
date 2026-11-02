@@ -1,0 +1,16 @@
+# Known non-passing cases of the blygger-spec reader suite for Burrow
+# (scripts/reader-conformance.sh, docs/CONFORMANCE-READER.md).
+# One "<status> <case id>" per line. Every case not listed must pass.
+# A case listed here that now passes is reported as fixed; take it out.
+fail directive-label
+fail directive-label-remote
+fail directive-label-escaped
+fail directive-label-pipe
+fail directive-label-partial
+fail partial-lazy-continuation
+fail partial-of-thread-reaches-its-quote
+fail closure-contains-self
+fail local-nested-thread
+fail markdown-relative-links
+fail markdown-relative-image
+warn tk-output-own-line-directive
