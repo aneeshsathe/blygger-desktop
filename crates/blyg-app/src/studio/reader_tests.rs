@@ -68,6 +68,17 @@ enum Which {
 }
 
 impl Log {
+    /// The light/dark choices the reader's web view was given.
+    fn darks(&self, w: Which) -> Vec<bool> {
+        let ids = self.ids(w);
+        self.0
+            .iter()
+            .filter_map(|(i, c)| match c {
+                Call::Dark(d) if ids.contains(i) => Some(*d),
+                _ => None,
+            })
+            .collect()
+    }
     /// Which surface an id is, from the policy of the first page it loaded
     /// (the reader's CSP admits images over https only).
     fn which(&self, id: usize) -> Option<Which> {
@@ -120,7 +131,11 @@ type Setup<'a> = (
 );
 
 fn setup(cx: &mut TestAppContext) -> Setup<'_> {
-    let config = "blyg-url = https://blyg.example.com\n".to_string();
+    setup_with("", cx)
+}
+
+fn setup_with<'a>(extra: &str, cx: &'a mut TestAppContext) -> Setup<'a> {
+    let config = format!("blyg-url = https://blyg.example.com\n{extra}");
     let prefs = Prefs::from_config(ConfigStore::in_memory(&config).config());
     let log = Rc::new(RefCell::new(Log::default()));
     let l2 = log.clone();
@@ -237,6 +252,36 @@ fn the_body_is_the_published_html_in_the_webview(cx: &mut TestAppContext) {
     assert_eq!(log.borrow().pages(Which::Reader).len(), n);
     // Clicks in the page never navigate it; nothing is patched in.
     assert_eq!(log.borrow().evals(), 0);
+}
+
+// The web view follows Burrow's theme, not the OS: `theme = light` while
+// macOS is dark rendered a dark body, because the light/dark noted before
+// the reader's web view existed never reached it once it did.
+#[gpui_kit::test]
+fn the_reader_webview_is_told_a_light_themes_light(cx: &mut TestAppContext) {
+    let (view, _, log, cx) = setup_with("theme = light\n", cx);
+    reading(&view, cx);
+    open_row(&view, LIN_GARDENS, cx);
+    assert_eq!(log.borrow().darks(Which::Reader), [false]);
+    // Switching to a dark theme while it's open tells it, and reloads the
+    // page in the new theme's colours.
+    let pages = log.borrow().pages(Which::Reader).len();
+    view.update_in(cx, |v, window, cx| {
+        v.prefs.theme = "dark".into();
+        v.apply_prefs_live(window, cx);
+    });
+    settle(cx);
+    assert_eq!(log.borrow().darks(Which::Reader), [false, true]);
+    assert!(log.borrow().pages(Which::Reader).len() > pages);
+}
+
+#[gpui_kit::test]
+fn the_reader_webview_is_told_a_dark_themes_dark(cx: &mut TestAppContext) {
+    // The test window's appearance is light: `theme = dark` under light macOS.
+    let (view, _, log, cx) = setup_with("theme = dark\n", cx);
+    reading(&view, cx);
+    open_row(&view, LIN_GARDENS, cx);
+    assert_eq!(log.borrow().darks(Which::Reader), [true]);
 }
 
 #[gpui_kit::test]

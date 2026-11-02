@@ -126,6 +126,23 @@ pub fn forget(data_dir: &Path) {
     let _ = std::fs::remove_dir_all(cache_dir(data_dir));
 }
 
+/// [`BUILTIN_CSS`]'s light colours (kept in step by a test).
+const BUILTIN_LIGHT_VARS: &str = "--paper: #fffff8; --ink: #111; --muted: #6b665d; --accent: #a4271b; --rule: #dcd6c9; --wash: rgba(17,17,17,0.04);";
+/// [`BUILTIN_CSS`]'s dark colours (kept in step by a test).
+const BUILTIN_DARK_VARS: &str = "--paper: #161513; --ink: #e4dfd3; --muted: #9a9489; --accent: #e0775a; --rule: #2f2d29; --wash: rgba(228,223,211,0.05);";
+
+/// [`BUILTIN_CSS`]'s colours pinned to one scheme, for after it: the page
+/// then takes Burrow's light or dark, whatever the WebView's
+/// `prefers-color-scheme` says (`theme = light` while macOS is dark).
+pub fn builtin_scheme_css(dark: bool) -> String {
+    let (vars, scheme) = if dark {
+        (BUILTIN_DARK_VARS, "dark")
+    } else {
+        (BUILTIN_LIGHT_VARS, "light")
+    };
+    format!(":root {{ {vars} color-scheme: {scheme}; }}\n")
+}
+
 /// The app's own reading theme, for when the blyg's isn't available: the
 /// Tufte palette of the app itself, following light/dark.
 pub const BUILTIN_CSS: &str = r#"
@@ -161,6 +178,18 @@ mod tests {
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn the_pinned_scheme_is_the_builtin_palette() {
+        // The same colours as the stylesheet's own light and dark.
+        assert!(BUILTIN_CSS.contains(BUILTIN_LIGHT_VARS));
+        assert!(BUILTIN_CSS.contains(BUILTIN_DARK_VARS));
+        let light = builtin_scheme_css(false);
+        assert!(light.contains("--paper: #fffff8") && light.contains("color-scheme: light;"));
+        let dark = builtin_scheme_css(true);
+        assert!(dark.contains("--paper: #161513") && dark.contains("color-scheme: dark;"));
+        assert!(!light.contains("prefers-color-scheme") && !dark.contains("prefers-color-scheme"));
+    }
 
     struct FakeFetch(
         Result<(Vec<u8>, Option<String>), String>,

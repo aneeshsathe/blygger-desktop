@@ -621,6 +621,10 @@ impl MainView {
                 Ok(surface) => {
                     r.slot.borrow_mut().surface = Some(surface);
                     r.shown = None;
+                    // A new web view follows the OS until told otherwise:
+                    // the light/dark noted while there was none never
+                    // reached it (`theme = light` read dark under dark macOS).
+                    r.dark = None;
                 }
                 Err(msg) => {
                     eprintln!("blygger: {msg}");
