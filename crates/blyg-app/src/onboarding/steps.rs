@@ -585,7 +585,7 @@ pub const STEPS: &[Step] = &[
         title: "Your blygs",
         caption: if cfg!(target_os = "windows") {
             "The name in the title bar is the blyg you're writing to. Click it, or press \
-             Ctrl+Shift+0, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
+             Ctrl+Shift+L, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
              straight to them. Each blyg keeps its own posts and reading. (The tour stays on \
              its sample blyg.)"
         } else {
@@ -595,7 +595,7 @@ pub const STEPS: &[Step] = &[
         },
         keys: &[Key::BlygSwitcher],
         key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+0"
+            "Ctrl+Shift+L"
         } else {
             "⌃⌘0"
         },

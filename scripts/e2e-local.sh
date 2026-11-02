@@ -12,6 +12,8 @@
 #   BLYG_E2E_STOCK=1         kept for older invocations; every studio Burrow
 #                            supports is stock, and gets a minted manual token
 #   BLYG_E2E_SKIP_NOTES=1    skip the markdown-notes extension's e2e
+#   BLYG_E2E_SKIP_SWITCHER=1 skip the blyg switcher's e2e (the app's, with
+#                            `a` and `b` signed in at once)
 #
 # What it does:
 #   1. derives a local-only wrangler config and random dev secrets in a
@@ -22,7 +24,9 @@
 #   3. runs `cargo test -p blyg-core --test e2e -- --ignored --test-threads=1`,
 #      then the markdown-notes extension's e2e against the same blyg
 #      (`cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1`);
-#      extra test args go to the core suite only;
+#      extra test args go to the core suite only; and the blyg switcher's
+#      e2e in the app (`cargo test -p blyg-app --bin blygger switcher::e2e
+#      -- --ignored`), `a` and `b` (as localhost) signed in side by side;
 #   4. stops only the wrangler processes it started, and deletes the scratch
 #      dir (set BLYG_E2E_KEEP=1 to keep it, e.g. to read the wrangler logs).
 #
@@ -66,6 +70,12 @@ BLYG_E2E_TOKEN="$("$CTL" mint-token "$PORT_A")"
 if [ -n "$BLYG_E2E_TOKEN" ]; then
   BLYG_E2E_TOKEN_B="$("$CTL" mint-token "$PORT_B")"
   export BLYG_E2E_TOKEN_B
+  # The blyg switcher's second blyg: `b` again, as localhost, so its host
+  # (a blyg's identity: Keychain account, data folder) differs from `a`'s.
+  # Studio tokens are bound to their origin, so it gets its own.
+  BLYG_E2E_SWITCH_URL="http://localhost:$PORT_B"
+  BLYG_E2E_SWITCH_TOKEN="$("$CTL" mint-token "$PORT_B" localhost)"
+  export BLYG_E2E_SWITCH_URL BLYG_E2E_SWITCH_TOKEN
   [ "${BLYG_E2E_AUTH:-}" != password ] || BLYG_E2E_PASSWORD="$("$CTL" password)"
 else
   BLYG_E2E_TOKEN="$("$CTL" token)"
@@ -83,6 +93,10 @@ export BLYG_E2E_CTL="$CTL"
 
 cd "$ROOT"
 cargo test -p blyg-core --test e2e -- --ignored --test-threads=1 "$@"
+if [ -z "${BLYG_E2E_SKIP_SWITCHER:-}" ]; then
+  printf 'e2e-local: the blyg switcher, two blygs at once…\n' >&2
+  cargo test -p blyg-app --bin blygger switcher::e2e -- --ignored --test-threads=1
+fi
 [ -z "${BLYG_E2E_SKIP_NOTES:-}" ] || exit 0
 printf 'e2e-local: the markdown-notes extension…\n' >&2
 cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1

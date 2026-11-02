@@ -529,21 +529,26 @@ Extensions add commands and libraries to Burrow without touching its core. Nothi
 
 - Sign in to as many blygs as you like; one is active. `blyg-url` is the active blyg (unchanged meaning);
   the repeatable `blyg` key lists every signed-in blyg in switcher order, written only once there are two
-  and dropped again at one. A blyg is its host (as the Keychain keys its sign-in), so two blygs on one host
-  with different paths count as one.
+  and dropped again at one. A blyg is its host (as the Keychain keys its sign-in), so Burrow holds one blyg
+  per host: signing in to another on a known host (a different port or path) is refused with "sign out of
+  that one first", since it would take over the first one's sign-in and database.
 - Each blyg has its own data: the blyg that owns the data dir's database keeps it (today's layout, so
   nothing moves for an existing install); every other blyg uses `<data dir>/blygs/<host>/` with the same
   `blygger.db`. Drafts, reading, outbox and read state never mix. `state.json`'s `blyg_cards` keeps each
   blyg's name and avatar for the switcher.
 - The title bar shows the active blyg (avatar or initial, host, ▾) as a button. Click it, Blyg › Switch
-  Blyg… (⌃⌘0) or Blyg › Switch To (⌃⌘1–⌃⌘9; Ctrl+Shift+digit on Windows): a sheet lists every blyg
+  Blyg… (⌃⌘0) or Blyg › Switch To (⌃⌘1–⌃⌘9): a sheet lists every blyg
   (1–9 / ↑↓⏎), Add a blyg… (the Connect sheet; the others stay signed in) and Manage… (sign out of one:
-  1 keeps its posts on this Mac, 2 deletes them).
+  1 keeps its posts on this Mac, 2 deletes them). On Windows the blygs are Ctrl+Shift+1–9 and the sheet
+  Ctrl+Shift+L (Ctrl+Shift+0 is the system's input-language key there, and never reaches the app); the
+  keys are bound through the keyboard layout's mapper, because Windows reports Shift+digit as the
+  character it types (Ctrl+Shift+1 arrives as Ctrl+! on a US layout).
 - Switching is instant: unsaved editor text is saved, the backend swapped, the posts, reading, mentions
   and subscriptions reload on the same screen, and the old blyg's sheets close. The old blyg stops
   syncing; its outbox waits in its own database and syncs when it is active again (one sync worker at a
-  time; a quick A→B→A waits for A's old worker to stop). A blyg with no credential left opens Connect
-  with its address filled in.
+  time; a quick A→B→A waits for A's old worker to stop). Nothing the old blyg's last pass says (status,
+  conflicts, errors, a sign-out) reaches the window after the switch. A blyg with no credential left opens
+  Connect with its address filled in.
 - Disconnect signs out of the active blyg and switches to the next; with none left, Connect opens.
 - CLI: `blygger +list-blygs`; `--blyg <host>` on `+import-opml` / `+export-opml`.
 
