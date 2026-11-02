@@ -185,6 +185,13 @@ fn server_item(sid: &str) -> Value {
     conforms("GET", &e.url, &format!("/api/items/{sid}"))
 }
 
+/// The item's private revision on the server now.
+fn server_rev(sid: &str) -> u64 {
+    server_item(sid)["revision"]
+        .as_u64()
+        .expect("contract 5 items carry a revision")
+}
+
 fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
     let t0 = Instant::now();
     while !f() {
@@ -757,17 +764,27 @@ fn attachments_are_deduplicated_and_removable() {
     let (id, sid) = published(&b, Kind::Fragment, &tag("attach"), None);
 
     let first = api
-        .upload_media(PNG, "image/png", Some(&sid), Some("a dot"))
+        .upload_media(
+            PNG,
+            "image/png",
+            Some((&sid, server_rev(&sid))),
+            Some("a dot"),
+        )
         .unwrap();
     assert!(!first.duplicate);
     let again = api
-        .upload_media(PNG, "image/png", Some(&sid), None)
+        .upload_media(PNG, "image/png", Some((&sid, server_rev(&sid))), None)
         .unwrap();
     assert!(again.duplicate, "same bytes on the same item");
     assert_eq!(again.id, first.id);
     assert_eq!(again.url, first.url);
     let different = api
-        .upload_media(&other_png(), "image/png", Some(&sid), None)
+        .upload_media(
+            &other_png(),
+            "image/png",
+            Some((&sid, server_rev(&sid))),
+            None,
+        )
         .unwrap();
     assert!(!different.duplicate);
     assert_ne!(different.id, first.id);
@@ -799,7 +816,7 @@ fn attachments_are_deduplicated_and_removable() {
     ));
     // Uploading it again after removal stores it anew.
     let back = api
-        .upload_media(PNG, "image/png", Some(&sid), None)
+        .upload_media(PNG, "image/png", Some((&sid, server_rev(&sid))), None)
         .unwrap();
     assert!(!back.duplicate);
 
@@ -890,7 +907,7 @@ fn pasted_images_render_once_inline() {
     let sid = sid_of(&b, &id);
     let api = Api::new(&e.url, e.cred.clone());
     let att = api
-        .upload_media(PNG, "image/png", Some(&sid), None)
+        .upload_media(PNG, "image/png", Some((&sid, server_rev(&sid))), None)
         .unwrap();
     b.save(&id, &format!("{t}\n\n![]({})", att.url)).unwrap();
     b.sync_now().unwrap();
@@ -1747,9 +1764,7 @@ fn read_state_syncs_between_two_macs() {
     // server never lowers it.
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
-    let advertised = api.reading(1, None, None).unwrap().is_some_and(|p| {
-        p.read_sync() || (p.upstream && api.reading_flags().unwrap().is_some_and(|f| f.read_sync()))
-    });
+    let advertised = api.reading_flags().unwrap().is_some_and(|f| f.read_sync());
     if !advertised {
         eprintln!("SKIP: this server doesn't advertise read_state");
         return;
@@ -1787,7 +1802,7 @@ fn read_state_syncs_between_two_macs() {
     api.put_read(&sub.id, &rid, 1, None).unwrap();
     mac1.sync_now().unwrap();
     assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
-    let page = api.reading(100, None, None).unwrap().unwrap();
+    let page = api.reading(100, None).unwrap().unwrap();
     let row = page.items.iter().find(|i| i.remote_id == rid).unwrap();
     assert_eq!(row.read_version, Some(2), "the server kept the max");
 
@@ -1798,7 +1813,7 @@ fn read_state_syncs_between_two_macs() {
     assert_eq!(reading_item(&mac3, &rid).unwrap().read_version, Some(2));
 
     mac1.unsubscribe(&sub.id).unwrap();
-    let page = api.reading(100, None, None).unwrap().unwrap();
+    let page = api.reading(100, None).unwrap().unwrap();
     assert!(!page.items.iter().any(|i| i.remote_id == rid));
 }
 
@@ -2030,11 +2045,12 @@ fn generate_returns_the_spliced_body() {
     b.sync_now().unwrap();
     let sid = sid_of(&b, &id);
     let api = Api::new(&e.url, e.cred.clone());
-    match api.generate(&sid, 0) {
+    match api.generate(&sid, 0, None) {
         Ok(g) => {
-            let body = g.content_md.expect("studio 0.27+ returns content_md");
+            let body = g.content_md.expect("the studio returns the spliced body");
             assert!(body.contains(&g.text), "{body}");
-            assert_eq!(server_item(&sid)["content_md"], body);
+            assert_eq!(server_item(&sid)["contentMd"], body);
+            assert_eq!(server_rev(&sid), g.revision);
         }
         // The local Worker has no Workers AI binding (nothing billed).
         Err(err) => eprintln!("skipped: no AI on this local Worker ({err})"),
@@ -2552,7 +2568,7 @@ fn read_state_needs_its_own_scope() {
     use blyg_core::api::oauth::READ_STATE_SCOPE;
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
-    let Some(page) = api.stock_reading(0).unwrap() else {
+    let Some(page) = api.reading_flags().unwrap() else {
         eprintln!("SKIP: no GET /api/reading");
         return;
     };
@@ -2976,7 +2992,7 @@ fn a_stub_made_in_the_app_publishes_with_the_right_quote() {
 
 /// Upstream's reading page, raw: the server's read state of one row.
 fn server_read_version(rid: &str) -> Option<Value> {
-    let (st, v) = owner("GET", &e2e().url, "/api/reading?offset=0&limit=50", None);
+    let (st, v) = owner("GET", &e2e().url, "/api/reading?limit=50", None);
     assert_eq!(st, 200, "{v}");
     v["items"].as_array().unwrap().iter().find_map(|e| {
         (e["imported"]["remoteId"] == rid).then(|| e["imported"]["readVersion"].clone())
@@ -2990,7 +3006,7 @@ fn read_and_unread_sync_through_upstreams_read_state() {
     // tombstone against stale reads). Without it, unread stays on this Mac.
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
-    let Some(page) = api.stock_reading(0).unwrap() else {
+    let Some(page) = api.reading_flags().unwrap() else {
         eprintln!("SKIP: no GET /api/reading");
         return;
     };
@@ -3523,16 +3539,14 @@ fn opml_import_and_export() {
 
 /// Every row of `GET /api/reading/imported`, walked `limit` at a time with
 /// the server's own cursor: (sub, remote id) in the order served.
-fn walk_feed(api: &Api, limit: u32) -> (bool, Vec<(String, String)>) {
+fn walk_feed(api: &Api, limit: u32) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut cursor: Option<String> = None;
-    let mut upstream = None;
     loop {
         let page = api
-            .reading(limit, cursor.as_deref(), upstream)
+            .reading(limit, cursor.as_deref())
             .unwrap()
             .expect("the server has /api/reading/imported");
-        upstream.get_or_insert(page.upstream);
         out.extend(
             page.items
                 .iter()
@@ -3540,7 +3554,7 @@ fn walk_feed(api: &Api, limit: u32) -> (bool, Vec<(String, String)>) {
         );
         match page.next {
             Some(n) => cursor = Some(n),
-            None => return (upstream.unwrap_or(false), out),
+            None => return out,
         }
     }
 }
@@ -3563,27 +3577,22 @@ fn the_imported_feed_pages_by_cursor_without_repeats() {
     sync_until_held(&me, &want);
 
     let api = Api::new(&e.url, e.cred.clone());
-    let (upstream, whole) = walk_feed(&api, 100);
-    if e.stock {
-        assert!(
-            upstream,
-            "a stock studio serves upstream's listImportedReading"
-        );
-    }
-    // One poll stamps one observed_at on the whole backfill: the cursor
+    let whole = walk_feed(&api, 100);
+    // One poll stamps one observedAt on the whole backfill: the cursor
     // must resume inside that tie.
-    let (_, small) = walk_feed(&api, 2);
+    let small = walk_feed(&api, 2);
     let unique: std::collections::HashSet<_> = small.iter().collect();
     assert_eq!(unique.len(), small.len(), "no repeats across pages");
     assert_eq!(small, whole, "the same rows, in the same order");
     for rid in &rids {
         assert!(small.iter().any(|(s, r)| *s == sub.id && r == rid), "{rid}");
     }
-    if upstream {
-        // Upstream's bounds: 1..=100, else 400 (never silently clamped).
-        let (st, _) = owner("GET", &e.url, "/api/reading/imported?limit=101", None);
-        assert_eq!(st, 400);
-    }
+    // The bounds: 1..=100, else 400 (never silently clamped), and no
+    // offset paging.
+    let (st, _) = owner("GET", &e.url, "/api/reading/imported?limit=101", None);
+    assert_eq!(st, 400);
+    let (st, _) = owner("GET", &e.url, "/api/reading/imported?offset=2", None);
+    assert_eq!(st, 400, "offset paging is gone in contract 5");
     // The app holds every row, read the same way.
     for rid in &rids {
         let r = reading_item(&me, rid).unwrap();
@@ -3798,30 +3807,14 @@ fn a_feed_rows_author_comes_through() {
 
 // ----------------------------------------------- the studio floor (0.47)
 
-/// A studio older than 0.47 doesn't understand `[[id | label]]`: there a
-/// post with labelled links waits (its push and its publish) until the
-/// labels go, and everything else syncs as usual. Runs against either side
-/// of the floor; the manifest's `generator` says which this is.
+/// Every studio Burrow syncs with understands `[[id | label]]`: a post
+/// with labelled links syncs and publishes as written.
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
-fn studio_floor_holds_labelled_posts_below_0_47() {
-    use blyg_core::floor::{self, Floor};
+fn labelled_links_publish_as_written() {
     let e = e2e();
-    let manifest = public_json(&format!("{}/blyg.json", e.url));
-    let generator = manifest["generator"].as_str().unwrap_or("").to_string();
-    eprintln!("studio floor: generator {generator}");
-    let expected = floor::from_manifest(&manifest).expect("a studio names its version");
-    let api = Api::new(&e.url, e.cred.clone());
-    assert_eq!(
-        api.studio_floor().expect("the check"),
-        expected,
-        "{generator}"
-    );
     verify_connection(&e.url, e.cred.clone()).expect("connects");
-
-    // The capability probe agrees with the manifest, given a public item
-    // (made as the web studio would).
-    let t = tag("floor");
+    let t = tag("labels");
     let (st, made) = owner(
         "POST",
         &e.url,
@@ -3829,90 +3822,28 @@ fn studio_floor_holds_labelled_posts_below_0_47() {
         Some(json!({
             "mode": "blank",
             "kind": "fragment",
-            "content_md": format!("# {t} from the studio"),
+            "contentMd": format!("# {t} from the studio"),
         })),
     );
     assert!(st == 200 || st == 201, "{st} {made}");
     let made_id = made["id"].as_str().expect("an id").to_string();
-    let (st, v) = owner(
-        "POST",
-        &e.url,
-        &format!("/api/items/{made_id}/publish"),
-        Some(json!({})),
-    );
-    assert_eq!(st, 200, "{v}");
-    let (st, hits) = owner("GET", &e.url, "/api/search?limit=1", None);
-    assert_eq!(st, 200, "{hits}");
-    let probed = floor::from_search(&hits);
-    assert_ne!(probed, Floor::Unknown, "{hits}");
-    assert_eq!(probed.meets(), expected.meets(), "{hits}");
 
     let dir = tempfile::tempdir().unwrap();
     let b = manual(dir.path());
-    // One post with a bare link, one with a labelled one.
-    let plain = b
-        .create_draft(Kind::Fragment, &format!("{t} plain, see [[{made_id}]]"))
-        .unwrap();
-    let labelled_text = format!("{t} labelled, see [[{made_id} | the studio's]]");
-    let labelled = b.create_draft(Kind::Fragment, &labelled_text).unwrap();
-    b.sync_now().expect("sync");
-    assert_eq!(b.server_outdated(), !expected.meets());
-
-    // The bare one goes either way, publish included.
-    let plain_sid = sid_of(&b, &plain);
-    assert_eq!(b.publish(&plain, None).expect("publish").version, 1);
-    assert!(
-        server_item(&plain_sid)["content_md"]
-            .as_str()
-            .is_some_and(|c| c.contains("plain, see"))
-    );
-
-    if expected.meets() {
-        let sid = sid_of(&b, &labelled);
-        assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
-        assert!(
-            server_item(&sid)["content_md"]
-                .as_str()
-                .is_some_and(|c| c.contains("| the studio's]]"))
-        );
-        return;
-    }
-
-    // Below the floor the labelled one waits, its publish too.
-    assert!(b.item(&labelled).unwrap().server_id.is_none(), "held");
-    assert!(b.item(&labelled).unwrap().pending_sync, "the edit waits");
-    assert!(matches!(
-        b.publish(&labelled, None),
-        Err(CoreError::ServerOutdated)
-    ));
-    let all = conforms("GET", &e.url, "/api/items?limit=100");
-    assert!(
-        !all.to_string().contains("| the studio's]]"),
-        "no labelled link reached the server"
-    );
-    // Reading goes on: the studio's own post was pulled.
-    assert!(
-        b.items()
-            .iter()
-            .any(|i| i.content_md.contains(&format!("{t} from the studio"))),
-        "pulled below the floor"
-    );
-    // Withdraw and pin don't send the text: they go.
-    b.withdraw(&plain, None).expect("withdraw");
-
-    // Written bare (the publish sheet's fix), it syncs and publishes.
-    b.save(&labelled, &floor::strip_labels(&labelled_text))
+    let labelled = b
+        .create_draft(
+            Kind::Fragment,
+            &format!("{t} labelled, see [[{made_id} | the studio's]]"),
+        )
         .unwrap();
     b.sync_now().expect("sync");
+    assert!(!b.server_outdated());
     let sid = sid_of(&b, &labelled);
     assert_eq!(b.publish(&labelled, None).expect("publish").version, 1);
-    let content = server_item(&sid)["content_md"]
-        .as_str()
-        .unwrap_or_default()
-        .to_string();
     assert!(
-        content.contains(&format!("labelled, see [[{made_id}]]")),
-        "{content}"
+        server_item(&sid)["contentMd"]
+            .as_str()
+            .is_some_and(|c| c.contains("| the studio's]]"))
     );
 }
 
@@ -4085,7 +4016,7 @@ fn links_that_name_blyg_items_classify() {
             Some(json!({ "urls": urls })),
         );
         if let Err(err) =
-            contract::studio_049().check_response("POST", &["api", "peek", "links"], st, &v)
+            contract::contract().check_response("POST", &["api", "peek", "links"], st, &v)
         {
             panic!("POST /api/peek/links broke the contract: {err}\n{v}");
         }
@@ -4176,12 +4107,12 @@ fn browsing_log_round_trips() {
 
     // Where it lives: the studio's log on 0.49+.
     let api = Api::new(&e.url, e.cred.clone());
-    let server = api.list_browse(Some(&trail), 0, 50).unwrap();
+    let server = api.list_browse(Some(&trail), None, 50).unwrap();
     assert_eq!(server.is_some(), serves_browse(&e.url));
     if let Some(page) = server {
-        assert_eq!(page.total, 2);
+        assert_eq!(page.next, None);
         assert_eq!(page.items, walk);
-        let page = conforms_049(&e.url, &format!("/api/browse?trail={trail}"));
+        let page = conforms("GET", &e.url, &format!("/api/browse?trail={trail}"));
         assert_eq!(page["items"].as_array().map(Vec::len), Some(2));
     }
 
@@ -4195,19 +4126,6 @@ fn browsing_log_round_trips() {
     );
     me.clear_browse(Some(&other)).unwrap();
     assert!(me.browse_history(Some(&other), 0, 50).unwrap().is_empty());
-}
-
-/// `GET path` as the owner must answer 200 with a body that matches studio
-/// 0.49.1's contract for the operation (`tests/fixtures/studio-0.49.json`).
-fn conforms_049(base: &str, path: &str) -> Value {
-    let (p, _) = path.split_once('?').unwrap_or((path, ""));
-    let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
-    let (st, v) = owner("GET", base, path, None);
-    if let Err(e) = contract::studio_049().check_response("GET", &segs, st, &v) {
-        panic!("GET {path} broke the contract: {e}\n{v}");
-    }
-    assert_eq!(st, 200, "GET {path}: {v}");
-    v
 }
 
 /// A credential without `reading:state` can read the studio's log but not
@@ -4251,8 +4169,8 @@ fn browsing_log_without_reading_state_stays_local() {
     assert_eq!(walk[0].parent_id, Some(a));
     // Nothing reached the studio.
     let api = Api::new(&e.url, e.cred.clone());
-    let page = api.list_browse(Some(&trail), 0, 50).unwrap().unwrap();
-    assert_eq!(page.total, 0);
+    let page = api.list_browse(Some(&trail), None, 50).unwrap().unwrap();
+    assert!(page.items.is_empty());
     me.clear_browse(Some(&trail)).unwrap();
     assert!(me.browse_history(Some(&trail), 0, 50).unwrap().is_empty());
 }
@@ -4302,53 +4220,59 @@ fn withdrawn_posts_are_background() {
     assert!(bg.iter().any(|r| r.remote_id == rid), "{bg:?}");
     assert!(bg.iter().all(|r| r.state == "tombstone"));
 
-    // The stock list's own behaviour, as the stock-reading path sees it.
-    let api = Api::new(&e.url, e.cred.clone());
+    // The studio's own list: withdrawn entries only under `background`.
     let listed = |background: bool| -> Option<bool> {
-        let mut offset = 0;
+        let mut cursor: Option<String> = None;
         loop {
-            let page = api.stock_reading_with(offset, background).unwrap()?;
-            let n = page.items.len() as u64;
-            if let Some(imp) = page
-                .items
+            let mut path = String::from("/api/reading?limit=50");
+            if background {
+                path.push_str("&background=true");
+            }
+            if let Some(c) = &cursor {
+                path.push_str(&format!("&cursor={}", query_escape(c)));
+            }
+            let page = conforms("GET", &e.url, &path);
+            if let Some(imp) = page["items"]
+                .as_array()
+                .unwrap()
                 .iter()
-                .filter_map(|x| x.imported.as_ref())
-                .find(|i| i.remote_id == rid && i.subscription_id == sub.id)
+                .map(|x| &x["imported"])
+                .find(|i| i["remoteId"] == rid.as_str() && i["subscriptionId"] == sub.id.as_str())
             {
-                return Some(imp.withdrawn);
+                return imp["withdrawn"].as_bool();
             }
-            offset += n;
-            if n == 0 || offset >= page.total {
-                return None;
-            }
+            cursor = Some(page["page"]["nextCursor"].as_str()?.to_string());
         }
     };
-    if serves_browse(&e.url) {
-        assert_eq!(listed(false), None, "0.49 leaves it out of the plain list");
-        assert_eq!(listed(true), Some(true), "…and lists it under background");
-    } else {
-        assert_eq!(
-            listed(false),
-            Some(true),
-            "listed with the rest before 0.49"
-        );
-    }
+    assert_eq!(listed(false), None, "left out of the plain list");
+    assert_eq!(listed(true), Some(true), "…and listed under background");
     me.unsubscribe(&sub.id).unwrap();
 }
 
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
-fn contract_version_is_unset_on_the_studios_burrow_targets() {
-    // `GET /api/capabilities` arrives with blygger-studio PR #95; the studios
-    // Burrow targets don't serve it, so the guard lets them through.
+fn the_studio_speaks_contract_five() {
+    // `GET {mount}/api/capabilities`: Burrow speaks contract 5.x only.
     let e = e2e();
     let api = Api::new(&e.url, e.cred.clone());
     let got = api.contract_version().unwrap();
-    assert!(
-        got.as_deref()
-            .is_none_or(blyg_core::api::contract_supported),
+    assert_eq!(
+        blyg_core::api::contract(got.as_deref()),
+        blyg_core::api::Contract::Supported,
         "a contract Burrow doesn't speak: {got:?}"
     );
+}
+
+/// A query-string value, percent-escaped.
+fn query_escape(v: &str) -> String {
+    v.bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 #[test]

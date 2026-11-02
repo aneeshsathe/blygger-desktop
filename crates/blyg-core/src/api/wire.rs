@@ -1,21 +1,29 @@
 //! Wire shapes the owner API returns that don't map 1:1 onto `model` types.
-//! Field names follow upstream blygger-studio's OpenAPI contract
-//! (`openapi.json`, studio 0.10), plus the extensions in docs/SERVER.md.
+//! Field names follow blygger-studio's private API contract 5.0.0
+//! (`openapi.json`, studio 0.49.12): camelCase throughout. The app's own
+//! types (`model`) keep their snake_case serde names, which are also how the
+//! store keeps them, so conversion happens here.
 
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::model::{Author, Kind, Mention, ReadingItem, RemoteRef, ResponsesMode, Status, Version};
+use crate::model::{
+    Author, AuthorLink, Kind, Mention, PickerTyping, ReadingItem, ResponsesMode, Settings, Status,
+    Subscription, SubscriptionKind, Version,
+};
 
 /// `GET /api/items` element and `GET /api/items/:id` body (the contract's
-/// `Item`, plus `authored_kind` and `versions` on the detail read).
+/// `Item`).
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WireItem {
     pub id: String,
-    /// Current kind; `"withdrawn"` for withdrawn items, so prefer `authored_kind`.
-    pub kind: String,
+    /// The item's private revision: every command on it carries the one it
+    /// was based on (`expectedRevision`). 0 = not reported.
     #[serde(default)]
-    pub authored_kind: Option<String>,
+    pub revision: u64,
+    /// `fragment` or `thread`, also after withdrawal (`status` says that).
+    pub kind: String,
     pub status: String,
     #[serde(default)]
     pub version: u32,
@@ -34,34 +42,35 @@ pub struct WireItem {
     /// The item's response policy. `None` only on a hand-built placeholder.
     #[serde(default)]
     pub responses: Option<ResponsesMode>,
-    /// Only on `GET /api/items/:id`.
-    #[serde(default, deserialize_with = "wire_versions")]
+    /// Not on the wire: the version history, when it was read too
+    /// (`Api::get_item_full`, from `GET /api/items/:id/versions`).
+    #[serde(skip)]
     pub versions: Option<Vec<Version>>,
     /// Not on the wire: the client derives it (`{base}/f|t/{id}`) for
     /// published items. `None` keeps whatever the store already holds.
     #[serde(skip)]
     pub permalink: Option<String>,
     /// Not on the wire: whether the page shows responses now, resolved from
-    /// `responses` and the blyg's `show_responses_default`.
+    /// `responses` and the blyg's `showResponsesDefault`.
     #[serde(skip)]
     pub showing: Option<bool>,
-    /// The working copy's TK provenance, one entry per scope (studio 0.28+;
-    /// `None` from an older server). Raw: upstream's `model` is optional.
+    /// The working copy's TK provenance, one entry per scope. Raw:
+    /// upstream's `model` is optional.
     #[serde(default)]
     pub provenance: Option<Vec<Option<Value>>>,
-    /// The item's generated-text highlight choice (studio 0.27).
+    /// The item's generated-text highlight choice.
     #[serde(default)]
     pub highlight: Option<ResponsesMode>,
     /// Not on the wire: whether the public page highlights generated text
-    /// now, resolved from `highlight` and `highlight_generated_default`.
+    /// now, resolved from `highlight` and `highlightGeneratedDefault`.
     #[serde(skip)]
     pub highlighting: Option<bool>,
 }
 
 impl WireItem {
-    /// `provenance` as the app's shape (`None` from a server without the
-    /// field). An entry without a model reads as `"unknown"`; one that
-    /// doesn't parse as `null`.
+    /// `provenance` as the app's shape (`None` when the field is absent).
+    /// An entry without a model reads as `"unknown"`; one that doesn't
+    /// parse as `null`.
     pub fn server_provenance(&self) -> Option<Vec<Option<crate::model::ScopeProvenance>>> {
         self.provenance.as_ref().map(|all| {
             all.iter()
@@ -89,7 +98,7 @@ impl WireItem {
     }
 
     /// Fill the derived fields: `default` is the blyg's
-    /// `show_responses_default`, `base` the API base (it carries the mount).
+    /// `showResponsesDefault`, `base` the blyg's public base (with its mount).
     pub fn resolve(&mut self, default: bool, base: &str) {
         self.showing = Some(match self.responses {
             Some(ResponsesMode::Show) => true,
@@ -112,7 +121,7 @@ impl WireItem {
             .unwrap_or(self.highlight == Some(ResponsesMode::Show))
     }
 
-    /// Fill `highlighting`: `default` is `highlight_generated_default`.
+    /// Fill `highlighting`: `default` is `highlightGeneratedDefault`.
     pub fn resolve_highlight(&mut self, default: bool) {
         self.highlighting = Some(match self.highlight {
             Some(ResponsesMode::Show) => true,
@@ -122,32 +131,33 @@ impl WireItem {
     }
 
     pub fn local_kind(&self) -> Kind {
-        let k = self.authored_kind.as_deref().unwrap_or(&self.kind);
-        parse_kind(k)
+        parse_kind(&self.kind)
     }
 
     pub fn local_status(&self) -> Status {
         parse_status(&self.status)
     }
 
-    /// `stub_of` may also be `{url}` for an L0 stub, which `RemoteRef` can't hold.
-    pub fn stub_ref(&self) -> Option<RemoteRef> {
+    /// `stubOf` may also be `{url}` for an L0 stub, which `RemoteRef` can't hold.
+    pub fn stub_ref(&self) -> Option<crate::model::RemoteRef> {
         self.stub_of
             .as_ref()
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 
-    pub fn fork_ref(&self) -> Option<RemoteRef> {
+    pub fn fork_ref(&self) -> Option<crate::model::RemoteRef> {
         self.forked_from
             .as_ref()
             .and_then(|v| serde_json::from_value(v.clone()).ok())
     }
 }
 
-/// The contract's `Version`: a withdraw marker is `kind: "withdrawn"`.
+/// The contract's `Version` (`GET /api/items/:id/versions`): a withdrawal
+/// is `kind: "withdrawn"`.
 #[derive(Debug, Clone, Deserialize)]
-struct WireVersion {
-    version: u32,
+#[serde(rename_all = "camelCase")]
+pub struct WireVersion {
+    pub version: u32,
     #[serde(default)]
     published_at: String,
     #[serde(default)]
@@ -158,24 +168,21 @@ struct WireVersion {
     kind: String,
 }
 
-fn wire_versions<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Vec<Version>>, D::Error> {
-    let v = Option::<Vec<WireVersion>>::deserialize(d)?;
-    Ok(v.map(|v| {
-        v.into_iter()
-            .map(|w| Version {
-                version: w.version,
-                published_at: w.published_at,
-                note: w.note,
-                pinned: w.pinned,
-                endcap: w.kind == "withdrawn",
-            })
-            .collect()
-    }))
+impl WireVersion {
+    pub fn into_version(self) -> Version {
+        Version {
+            version: self.version,
+            published_at: self.published_at,
+            note: self.note,
+            pinned: self.pinned,
+            endcap: self.kind == "withdrawn",
+        }
+    }
 }
 
-/// `GET /api/mentions?direction=inbound` element. The source's author is a
-/// serialized JSON string (`source_author_json`).
+/// `GET /api/mentions?direction=inbound` element (the contract's `Mention`).
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WireMention {
     pub id: String,
     pub target_item_id: String,
@@ -191,8 +198,9 @@ pub struct WireMention {
     pub source_kind: Option<String>,
     #[serde(default)]
     pub source_version: Option<u32>,
+    /// The source's author object (remote data, unvalidated).
     #[serde(default)]
-    pub source_author_json: Option<String>,
+    pub source_author: Option<Value>,
     #[serde(default)]
     pub first_seen: String,
     #[serde(default)]
@@ -205,9 +213,9 @@ impl From<WireMention> for Mention {
     fn from(w: WireMention) -> Mention {
         // Tolerant: an author we can't read is no author.
         let source_author = w
-            .source_author_json
-            .as_deref()
-            .and_then(|j| serde_json::from_str::<Author>(j).ok());
+            .source_author
+            .filter(Value::is_object)
+            .and_then(|a| serde_json::from_value::<Author>(a).ok());
         Mention {
             id: w.id,
             target_item_id: w.target_item_id,
@@ -226,13 +234,94 @@ impl From<WireMention> for Mention {
     }
 }
 
-/// Collection reads: `{items, total, offset, limit}`. A server older than
-/// studio 0.9 answers `{items}` alone, so a missing `total` marks it.
+/// The contract's `Subscription`.
 #[derive(Debug, Clone, Deserialize)]
-pub struct Page<T> {
-    pub items: Vec<T>,
+#[serde(rename_all = "camelCase")]
+pub struct WireSubscription {
+    pub id: String,
+    pub kind: SubscriptionKind,
     #[serde(default)]
-    pub total: Option<u64>,
+    pub origin: String,
+    #[serde(default)]
+    pub feed_url: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub in_blogroll: bool,
+    #[serde(default)]
+    pub title_follows_source: bool,
+}
+
+impl From<WireSubscription> for Subscription {
+    fn from(w: WireSubscription) -> Subscription {
+        Subscription {
+            id: w.id,
+            kind: w.kind,
+            origin: w.origin,
+            feed_url: w.feed_url,
+            title: w.title,
+            status: w.status,
+            in_blogroll: w.in_blogroll,
+            title_follows_source: w.title_follows_source,
+        }
+    }
+}
+
+/// The contract's `Settings`, the fields the app reads.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct WireSettings {
+    pub site_title: Option<String>,
+    pub author_name: Option<String>,
+    pub author_bio: Option<String>,
+    pub site_url: Option<String>,
+    pub theme: Option<String>,
+    pub avatar_media_id: Option<String>,
+    pub author_links: Vec<AuthorLink>,
+    pub accept_mentions: Option<bool>,
+    pub timezone: Option<String>,
+    pub show_responses_default: Option<bool>,
+    pub highlight_generated_default: Option<bool>,
+    #[serde(deserialize_with = "crate::model::lenient")]
+    pub picker_typing: Option<PickerTyping>,
+}
+
+impl From<WireSettings> for Settings {
+    fn from(w: WireSettings) -> Settings {
+        Settings {
+            site_title: w.site_title,
+            author_name: w.author_name,
+            author_bio: w.author_bio,
+            site_url: w.site_url,
+            theme: w.theme,
+            avatar_media_id: w.avatar_media_id,
+            author_links: w.author_links,
+            accept_mentions: w.accept_mentions,
+            timezone: w.timezone,
+            show_responses_default: w.show_responses_default,
+            highlight_generated_default: w.highlight_generated_default,
+            picker_typing: w.picker_typing,
+        }
+    }
+}
+
+/// A cursor page: `{items, page: {limit, nextCursor}}`. A `nextCursor` of
+/// null means the list is exhausted. Lists carry no totals.
+#[derive(Debug, Clone, Deserialize)]
+pub struct CursorPage<T> {
+    pub items: Vec<T>,
+    pub page: PageInfo,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PageInfo {
+    #[serde(default)]
+    pub limit: u32,
+    /// Opaque; passed back verbatim as `cursor`.
+    pub next_cursor: Option<String>,
 }
 
 pub fn parse_kind(s: &str) -> Kind {
@@ -269,45 +358,49 @@ pub fn status_str(s: Status) -> &'static str {
     }
 }
 
-/// `POST /api/items/:id/generate` → `{text, model, content_md}`.
+/// `POST /api/items/:id/generate` → `{text, model, contentMd, revision}`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Generated {
     /// The scope's new output.
     pub text: String,
     pub model: String,
     /// The working copy with `text` spliced into its scope, as the server
-    /// stored it (studio 0.27+; `None` from an older server).
+    /// stored it.
     pub content_md: Option<String>,
+    /// The item's revision after it.
+    pub revision: u64,
 }
 
-/// `GET /api/changes` (studio 0.32+): `{epoch, domains: {items, reading,
-/// subscriptions, hoppers, signals, settings, feed}}`. A domain's counter
-/// moves whenever its data changes; a new epoch means the database was
-/// restored or replaced and no stored revision holds.
+/// `GET /api/changes`: `{epoch, domains: {items, reading, subscriptions,
+/// hoppers, signals, settings, feed, …}}`. A domain's counter moves whenever
+/// its data changes; a new epoch means the database was restored or
+/// replaced and no stored revision holds.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ChangeState {
     pub epoch: String,
     pub domains: std::collections::BTreeMap<String, u64>,
 }
 
-/// The id of a created resource (`POST /api/items` → `201 Item`,
-/// `POST /api/subscriptions {confirm}` → `201 Subscription`).
+/// The id of a created resource (`POST /api/subscriptions {confirm}` →
+/// `201 Subscription`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Created {
     pub id: String,
 }
 
-/// `POST /api/items/:id/publish` → `{ok, version, warning?}`.
+/// `POST /api/items/:id/publish` → `{ok, revision, version, warning?}`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Published {
     pub version: u32,
     #[serde(default)]
+    pub revision: u64,
+    #[serde(default)]
     pub warning: Option<String>,
 }
 
-/// `POST /api/media` → `201 {id, url, mime}`. The maintainer's Worker fork
-/// also answers `200 {…, duplicate: true}` when the item already has an
-/// attachment with identical bytes (the existing row comes back).
+/// `POST /api/media` → `201 {id, url, mime, revision?}`, or `200 {…,
+/// duplicate: true}` when the item already has these bytes in that place
+/// (the existing row comes back). `url` is absolute, with the blyg's mount.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Media {
     pub id: String,
@@ -315,102 +408,28 @@ pub struct Media {
     pub mime: String,
     #[serde(default)]
     pub duplicate: bool,
+    /// The item's revision after attaching (attachments only).
+    #[serde(default)]
+    pub revision: Option<u64>,
 }
 
-/// `GET /api/reading/imported`, one page, in either of two shapes:
-///
-/// - upstream's `listImportedReading` (studio 0.40+): `{items, next, limit}`,
-///   camelCase rows (`subscriptionId`, `readVersion`, `stubOf`, …), paged by
-///   `cursor`, at most 100 a page. No page-level flags: read state is
-///   advertised on `GET /api/reading`, and every row carries the origin's own
-///   lineage (null when none).
-/// - the maintainer's old Worker patch 3: `{items, next}` with snake_case rows,
-///   paged by `before`, plus `read_state: true` from a server that stores read
-///   state (each item then carries its `read_version`), `read_state_clear`, and
-///   `lineage: true` from one whose rows carry `stub_of` and `forked_from`.
-///
-/// `upstream` says which: a page without the patch's `read_state` flag, whose
-/// rows are camelCase (or that echoes `limit`), is upstream's.
+/// `GET /api/reading/imported`, one page, in the app's shape.
 #[derive(Debug, Clone)]
 pub struct ReadingPage {
     pub items: Vec<ReadingItem>,
+    /// The next page's cursor; `None` when this was the last page.
     pub next: Option<String>,
-    pub read_state: Option<bool>,
-    pub lineage: Option<bool>,
-    /// Read state can be cleared (mark unread, `read_at` on reads).
-    pub read_state_clear: Option<bool>,
-    /// Upstream's shape (see above).
-    pub upstream: bool,
 }
 
-impl<'de> Deserialize<'de> for ReadingPage {
-    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Raw {
-            items: Vec<Value>,
-            #[serde(default)]
-            next: Option<Value>,
-            #[serde(default)]
-            read_state: Option<Value>,
-            #[serde(default)]
-            read_state_clear: Option<Value>,
-            #[serde(default)]
-            lineage: Option<Value>,
-            #[serde(default)]
-            limit: Option<Value>,
-        }
-        let raw = Raw::deserialize(d)?;
-        let flag = |v: &Option<Value>| v.as_ref().and_then(Value::as_bool);
-        let camel = raw
-            .items
-            .first()
-            .is_some_and(|i| i.get("subscriptionId").is_some());
-        let upstream = raw.read_state.is_none() && (camel || raw.limit.is_some());
-        let mut items = Vec::with_capacity(raw.items.len());
-        for row in raw.items {
-            let it = if row.get("subscriptionId").is_some() {
-                upstream_row(&row)
-            } else {
-                serde_json::from_value(row).map_err(|e| e.to_string())
-            };
-            items.push(it.map_err(serde::de::Error::custom)?);
-        }
-        Ok(ReadingPage {
-            items,
-            next: raw
-                .next
-                .as_ref()
-                .and_then(Value::as_str)
-                .map(str::to_string),
-            read_state: flag(&raw.read_state),
-            lineage: flag(&raw.lineage),
-            read_state_clear: flag(&raw.read_state_clear),
-            upstream,
-        })
-    }
-}
+/// `GET /api/reading/imported` serves at most this many rows a page.
+pub const IMPORTED_READING_MAX: u32 = 100;
 
-impl ReadingPage {
-    /// The server advertises read-state sync (the patch's page flag).
-    pub fn read_sync(&self) -> bool {
-        self.read_state == Some(true)
-    }
-
-    /// The server can clear read state (`read_state_clear: true`).
-    pub fn read_clear(&self) -> bool {
-        self.read_sync() && self.read_state_clear == Some(true)
-    }
-}
-
-/// Upstream's `listImportedReading` serves at most this many rows a page.
-pub const UPSTREAM_READING_MAX: u32 = 100;
-
-/// One upstream `ImportedReadingEntry` (camelCase) in the app's shape.
-/// Tolerant: only `subscriptionId` and `remoteId` are required; anything
-/// else odd reads as absent. `withdrawn` is the old `state: "tombstone"`.
-/// The row's lineage is the origin's own (null when none), so it is known
-/// for every row but an L0 one or a withdrawn one.
-pub fn upstream_row(row: &Value) -> Result<ReadingItem, String> {
+/// One `ImportedReadingEntry` (camelCase) in the app's shape. Tolerant:
+/// only `subscriptionId` and `remoteId` are required; anything else odd
+/// reads as absent. `withdrawn` is the store's `state: "tombstone"`. The
+/// row's lineage is the origin's own (null when none), so it is known for
+/// every row but an L0 one or a withdrawn one.
+pub fn imported_row(row: &Value) -> Result<ReadingItem, String> {
     let o = row
         .as_object()
         .ok_or("a reading row that isn't an object")?;
@@ -473,9 +492,27 @@ pub fn upstream_row(row: &Value) -> Result<ReadingItem, String> {
     serde_json::from_value(v).map_err(|e| e.to_string())
 }
 
-/// `GET /api/reading`'s read-state flags (studio 0.39+): the server stores
-/// read state, and can clear it. Only the flags are read.
+/// A hopper membership's held item (the contract's `ImportedItem`) as a
+/// reading row, with the subscription's title and origin. `None` if it
+/// doesn't read.
+pub fn imported_item_row(item: &Value, title: &str, origin: &str) -> Option<ReadingItem> {
+    let mut o = item.as_object()?.clone();
+    let withdrawn = o.get("state").and_then(Value::as_str) == Some("tombstone");
+    o.insert("withdrawn".into(), withdrawn.into());
+    o.insert("subscriptionTitle".into(), title.into());
+    o.insert("origin".into(), origin.into());
+    let mut r = imported_row(&Value::Object(o)).ok()?;
+    r.page = r
+        .page
+        .take()
+        .and_then(|p| super::absolute_page(&r.origin, &p));
+    Some(r)
+}
+
+/// `GET /api/reading`'s read-state flags: the server stores read state
+/// (`readState`), and can clear it (`readStateClear`). Only the flags are read.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadingFlags {
     #[serde(default, deserialize_with = "crate::model::lenient")]
     pub read_state: Option<bool>,
@@ -495,21 +532,26 @@ impl ReadingFlags {
 
 /// One row's read state as sent to the server: `(sub, remote_id)` is a
 /// reading row, `version` the highest version read. `read_at` is when it
-/// was read on this Mac (ISO-8601, UTC). It is sent only to a server that
-/// advertises `read_state_clear`: elsewhere a strict body would refuse it.
+/// was read on this Mac (ISO-8601, UTC). It's also the payload of a queued
+/// `read` op, so the snake_case names an older Burrow queued still read.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadMark {
     pub sub: String,
+    #[serde(alias = "remote_id")]
     pub remote_id: String,
     pub version: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default, alias = "read_at", skip_serializing_if = "Option::is_none")]
     pub read_at: Option<String>,
 }
 
-/// One row to mark unread (`POST /api/reading/unread`).
+/// One row to mark unread (`POST /api/reading/unread`); also a queued
+/// `unread` op's payload.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UnreadMark {
     pub sub: String,
+    #[serde(alias = "remote_id")]
     pub remote_id: String,
 }
 
@@ -517,157 +559,11 @@ pub struct UnreadMark {
 /// (false: the server holds no such row, or the read predates a later
 /// "mark unread"), and the version it holds now (null: unread).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadAck {
-    #[serde(default = "stored_default")]
     pub stored: bool,
     #[serde(default)]
     pub read_version: Option<u32>,
-}
-
-/// An older extension-5 Worker answers `{ok}` only: the read was taken.
-fn stored_default() -> bool {
-    true
-}
-
-/// Upstream's `GET /api/reading` (a server without the fork's
-/// `/reading/imported`): the entries, own and imported, newest first.
-#[derive(Debug, Clone, Deserialize)]
-pub struct StockReadingPage {
-    pub items: Vec<StockEntry>,
-    #[serde(default)]
-    pub total: u64,
-    /// The server stores read state (upstream's read-state routes): each
-    /// imported entry's `readVersion` is meaningful.
-    #[serde(default, deserialize_with = "crate::model::lenient")]
-    pub read_state: Option<bool>,
-    /// …and can clear it (mark unread, `read_at` on reads).
-    #[serde(default, deserialize_with = "crate::model::lenient")]
-    pub read_state_clear: Option<bool>,
-}
-
-impl StockReadingPage {
-    /// The server advertises read-state sync.
-    pub fn read_sync(&self) -> bool {
-        self.read_state == Some(true)
-    }
-
-    /// The server can clear read state.
-    pub fn read_clear(&self) -> bool {
-        self.read_sync() && self.read_state_clear == Some(true)
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct StockEntry {
-    /// Absent on your own posts.
-    #[serde(default)]
-    pub imported: Option<StockImported>,
-}
-
-/// An imported entry's identity and what tells it changed.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StockImported {
-    pub subscription_id: String,
-    pub subscription_title: String,
-    pub remote_id: String,
-    pub observed_at: String,
-    /// Bumped when the post changes (`observedAt` stays the first sighting).
-    #[serde(default)]
-    pub updated: Option<String>,
-    #[serde(default)]
-    pub withdrawn: bool,
-    #[serde(default)]
-    pub pinned_version_retained: Option<u32>,
-    /// The entry's (sanitized) HTML: it changes with every new version, even
-    /// within the second the timestamps resolve to.
-    #[serde(default)]
-    pub content_html: String,
-    /// The highest version the owner marked read (null = unread), from a
-    /// server that advertises `read_state`.
-    #[serde(default)]
-    pub read_version: Option<u32>,
-}
-
-impl StockImported {
-    /// Everything about the entry that changes when the post does.
-    pub fn signature(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        (
-            &self.observed_at,
-            &self.updated,
-            self.withdrawn,
-            self.pinned_version_retained,
-            &self.content_html,
-        )
-            .hash(&mut h);
-        h.finish()
-    }
-}
-
-/// Upstream's reading entries hold at most this many per request.
-pub const STOCK_READING_PAGE: u32 = 50;
-
-/// One reading row in the app's shape from upstream's `ImportedItem`
-/// (`GET /api/imports/{sub}/{id}`) plus what the fork's row adds: the
-/// subscription's title and origin, the thumb and the hopper ids, and the
-/// server's read state (`readVersion` from `GET /api/reading`; `None` when
-/// unread or the server keeps none). `None` if it doesn't read.
-pub fn stock_row(
-    imported: &Value,
-    title: &str,
-    origin: &str,
-    thumb: Option<i8>,
-    hoppers: &[String],
-    read_version: Option<u32>,
-) -> Option<ReadingItem> {
-    let mut v = imported.as_object()?.clone();
-    let parse = |k: &str| -> Value {
-        v.get(k)
-            .and_then(Value::as_str)
-            .and_then(|s| serde_json::from_str::<Value>(s).ok())
-            .unwrap_or(Value::Null)
-    };
-    let author = match parse("author_json") {
-        // The whole object (protocol §5.5): `Author` keeps what it doesn't name.
-        a @ Value::Object(_) => a,
-        _ => Value::Null,
-    };
-    let transclusions = match parse("transclusions_json") {
-        t @ Value::Array(_) => t,
-        _ => Value::Null,
-    };
-    // Studio 0.18+ keeps the post's `stub_of` and `forked_from` (studio#12):
-    // the keys are there, null or not, and then the row's lineage is whole.
-    let lineage_known = v.contains_key("stub_of_json") || v.contains_key("forked_from_json");
-    let stub_of = parse("stub_of_json");
-    let forked_from = parse("forked_from_json");
-    for k in [
-        "author_json",
-        "transclusions_json",
-        "stub_of_json",
-        "forked_from_json",
-        "media_json",
-        "content_hash",
-        "l0",
-    ] {
-        v.remove(k);
-    }
-    v.insert("author".into(), author);
-    v.insert("transclusions".into(), transclusions);
-    v.insert("stub_of".into(), stub_of);
-    v.insert("forked_from".into(), forked_from);
-    v.insert("lineage_known".into(), lineage_known.into());
-    v.insert("subscription_title".into(), title.into());
-    v.insert("origin".into(), origin.into());
-    v.insert("thumb".into(), thumb.map_or(Value::Null, Value::from));
-    v.insert("hoppers".into(), hoppers.into());
-    v.insert(
-        "read_version".into(),
-        read_version.map_or(Value::Null, Value::from),
-    );
-    serde_json::from_value(Value::Object(v)).ok()
 }
 
 /// At most this many entries per `POST /api/reading/read`.
@@ -679,7 +575,7 @@ mod responses_tests {
     use serde_json::json;
 
     fn item(extra: Value) -> WireItem {
-        let mut v = json!({ "id": "A", "kind": "fragment", "status": "public", "version": 1 });
+        let mut v = json!({ "id": "A", "revision": 1, "kind": "fragment", "status": "public", "version": 1 });
         v.as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
@@ -704,78 +600,133 @@ mod responses_tests {
 
     #[test]
     fn permalinks_carry_the_mount_and_the_kind() {
-        let mut w = item(json!({ "kind": "withdrawn", "authored_kind": "thread" }));
+        // Contract 5: a withdrawn thread is still `kind: "thread"`.
+        let mut w = item(json!({ "kind": "thread", "status": "withdrawn" }));
         w.resolve(false, "https://blyg.example.com/b");
         assert_eq!(
             w.permalink.as_deref(),
             Some("https://blyg.example.com/b/t/A")
         );
+        assert_eq!(w.local_status(), Status::Withdrawn);
         let mut d = item(json!({ "version": 0 }));
         d.resolve(false, "https://blyg.example.com");
         assert_eq!(d.permalink, None, "a draft has no page");
     }
 
     #[test]
+    fn an_item_reads_in_camel_case_with_its_revision() {
+        let w = item(json!({ "revision": 7, "contentMd": "Hi", "stubOf": null, "dirty": true }));
+        assert_eq!(w.revision, 7);
+        assert_eq!(w.content_md, "Hi");
+        assert!(w.dirty);
+    }
+
+    #[test]
     fn a_withdrawn_version_is_the_endcap() {
-        let w = item(json!({ "versions": [
-            { "version": 1, "published_at": "t1", "note": null, "pinned": true, "kind": "fragment" },
-            { "version": 2, "published_at": "t2", "note": null, "pinned": false, "kind": "withdrawn" },
-        ] }));
-        let v = w.versions.unwrap();
-        assert!(v[0].pinned && !v[0].endcap);
+        let v: Vec<WireVersion> = serde_json::from_value(json!([
+            { "version": 1, "publishedAt": "t1", "note": null, "pinned": true, "kind": "fragment" },
+            { "version": 2, "publishedAt": "t2", "note": null, "pinned": false, "kind": "withdrawn" },
+        ]))
+        .unwrap();
+        let v: Vec<Version> = v.into_iter().map(WireVersion::into_version).collect();
+        assert!(v[0].pinned && !v[0].endcap && v[0].published_at == "t1");
         assert!(v[1].endcap);
     }
 
     #[test]
-    fn a_mention_author_is_parsed_from_its_json_string() {
+    fn a_mention_author_is_an_object() {
         let w: WireMention = serde_json::from_value(json!({
-            "id": "m", "target_item_id": "A", "status": "verified", "relation": "stub",
-            "source": "https://other.example.com/t/x", "source_author_json": "{\"name\":\"Ana\",\"url\":null}",
-            "first_seen": "t", "hidden": false,
+            "id": "m", "targetItemId": "A", "status": "verified", "relation": "stub",
+            "source": "https://other.example.com/t/x", "sourceAuthor": {"name": "Ana", "url": null},
+            "firstSeen": "t", "hidden": false,
         }))
         .unwrap();
         let m: Mention = w.into();
         assert_eq!(m.source_author.unwrap().name.as_deref(), Some("Ana"));
-    }
-}
-
-#[cfg(test)]
-mod stock_row_tests {
-    use super::*;
-
-    #[test]
-    fn a_studio_0_18_row_carries_its_lineage() {
-        let raw = serde_json::json!({
-            "subscription_id": "S", "remote_id": "R", "kind": "thread", "state": "current",
-            "version": 1, "created": null, "updated": null, "observed_at": "2030-01-01T00:00:00Z",
-            "content_md": "Re", "content_html": "<p>Re</p>", "content_hash": null,
-            "author_json": null, "media_json": null, "transclusions_json": null, "l0": false,
-            "pinned_version_retained": null, "page": null,
-            "stub_of_json": r#"{"origin":"https://ada.example/","id":"X","version":2}"#,
-            "forked_from_json": null,
-        });
-        let r = stock_row(&raw, "N", "https://them.example/", None, &[], None).unwrap();
-        assert!(r.lineage_known);
-        assert_eq!(r.stub_of.and_then(|s| s.id).as_deref(), Some("X"));
-        assert!(r.forked_from.is_none());
-        // Before 0.18 the keys are absent, and the row says so.
-        let mut old = raw.clone();
-        let o = old.as_object_mut().unwrap();
-        o.remove("stub_of_json");
-        o.remove("forked_from_json");
-        let r = stock_row(&old, "N", "https://them.example/", None, &[], None).unwrap();
-        assert!(!r.lineage_known && r.stub_of.is_none());
+        assert_eq!(m.target_item_id, "A");
     }
 
     #[test]
-    fn a_live_imported_item_becomes_a_row() {
-        let raw: Value = serde_json::from_str(r#"{"subscription_id":"S","remote_id":"R","kind":"fragment","state":"current","version":1,"created":"2026-10-03T03:56:29Z","updated":"2026-10-03T03:56:29Z","observed_at":"2026-10-03T03:56:29Z","content_md":"probe post","content_html":"<p>probe post</p>\n","content_hash":"sha256:a7","author_json":"{\"name\":\"\",\"url\":\"http://127.0.0.1:58955/\"}","media_json":"[]","transclusions_json":null,"l0":false,"pinned_version_retained":null,"page":"f/R/"}"#).unwrap();
-        let r = stock_row(&raw, "N", "http://127.0.0.1:58955/", None, &[], None);
+    fn a_cursor_page_ends_at_a_null_cursor() {
+        let p: CursorPage<Value> = serde_json::from_value(
+            json!({ "items": [1, 2], "page": { "limit": 2, "nextCursor": "c2" } }),
+        )
+        .unwrap();
+        assert_eq!(p.page.next_cursor.as_deref(), Some("c2"));
+        let last: CursorPage<Value> = serde_json::from_value(
+            json!({ "items": [], "page": { "limit": 2, "nextCursor": null } }),
+        )
+        .unwrap();
+        assert!(last.page.next_cursor.is_none());
+        // The old `{items, total, offset, limit}` shape isn't a page.
         assert!(
-            r.is_some(),
-            "{:?}",
-            serde_json::from_value::<ReadingItem>(raw.clone()).err()
+            serde_json::from_value::<CursorPage<Value>>(
+                json!({ "items": [], "total": 0, "offset": 0, "limit": 100 })
+            )
+            .is_err()
         );
+    }
+
+    #[test]
+    fn read_marks_go_out_in_camel_case_and_old_queued_ones_still_read() {
+        let m = ReadMark {
+            sub: "S".into(),
+            remote_id: "R".into(),
+            version: 2,
+            read_at: Some("2030-01-01T00:00:00Z".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&m).unwrap(),
+            json!({ "sub": "S", "remoteId": "R", "version": 2, "readAt": "2030-01-01T00:00:00Z" })
+        );
+        let old: ReadMark =
+            serde_json::from_str(r#"{"sub":"S","remote_id":"R","version":2,"read_at":"t"}"#)
+                .unwrap();
+        assert_eq!(old.remote_id, "R");
+        assert_eq!(old.read_at.as_deref(), Some("t"));
+        let u: UnreadMark = serde_json::from_str(r#"{"sub":"S","remote_id":"R"}"#).unwrap();
+        assert_eq!(
+            serde_json::to_value(&u).unwrap(),
+            json!({ "sub": "S", "remoteId": "R" })
+        );
+    }
+
+    #[test]
+    fn the_read_flags_are_camel_case() {
+        let f: ReadingFlags = serde_json::from_value(
+            json!({ "items": [], "readState": true, "readStateClear": true }),
+        )
+        .unwrap();
+        assert!(f.read_sync() && f.read_clear());
+        // The 4.x snake_case names aren't read.
+        let old: ReadingFlags =
+            serde_json::from_value(json!({ "read_state": true, "read_state_clear": true }))
+                .unwrap();
+        assert!(!old.read_sync());
+    }
+
+    #[test]
+    fn settings_and_subscriptions_read_in_camel_case() {
+        let s: Settings = serde_json::from_value::<WireSettings>(json!({
+            "siteTitle": "T", "siteUrl": "https://blyg.example.com", "showResponsesDefault": true,
+            "pickerTyping": "panel", "authorLinks": [{"label": "L", "url": "https://blyg.example.com/l"}],
+            "customTheme": null,
+        }))
+        .unwrap()
+        .into();
+        assert_eq!(s.site_title.as_deref(), Some("T"));
+        assert_eq!(s.show_responses_default, Some(true));
+        assert_eq!(s.picker_typing, Some(PickerTyping::Panel));
+        assert_eq!(s.author_links.len(), 1);
+        let sub: Subscription = serde_json::from_value::<WireSubscription>(json!({
+            "id": "S", "kind": "blyg", "origin": "https://ada.example.com/",
+            "feedUrl": "https://ada.example.com/feed.xml", "title": "Ada", "status": "active",
+            "inBlogroll": true, "titleFollowsSource": true, "lastPollAt": null,
+        }))
+        .unwrap()
+        .into();
+        assert!(sub.in_blogroll && sub.title_follows_source);
+        assert_eq!(sub.feed_url, "https://ada.example.com/feed.xml");
     }
 }
 
@@ -783,9 +734,9 @@ mod stock_row_tests {
 mod reading_page_tests {
     use super::*;
 
-    /// A page as blygger-studio 0.46.1's `listImportedReading` serves it
-    /// (src/imported-reading.ts `entry`), with invented content.
-    const UPSTREAM: &str = r#"{"items":[
+    /// A row as blygger-studio 0.49.12's `listImportedReading` serves it,
+    /// with invented content.
+    const ROWS: &str = r#"[
       {"subscriptionId":"S1","subscriptionTitle":"Ada","origin":"https://ada.example.com/",
        "remoteId":"R2","kind":"thread","withdrawn":false,"l0":false,"version":3,"readVersion":2,
        "created":"2030-01-01T00:00:00Z","updated":"2030-01-02T00:00:00Z","observedAt":"2030-01-02T00:00:05Z",
@@ -798,17 +749,14 @@ mod reading_page_tests {
       {"subscriptionId":"S1","subscriptionTitle":"Ada","origin":"https://ada.example.com/",
        "remoteId":"R1","kind":"fragment","withdrawn":true,"l0":false,"version":2,"readVersion":null,
        "created":null,"updated":null,"observedAt":"2030-01-01T00:00:05Z","contentMd":"","contentHtml":"",
-       "author":null,"page":null,"sourceUrl":null,"pinnedVersionRetained":1,"thumb":null,"hoppers":[],
+       "author":{"name":null,"url":null},"page":null,"sourceUrl":null,"pinnedVersionRetained":1,"thumb":null,"hoppers":[],
        "transclusions":null,"stubOf":null,"forkedFrom":null,"generated":null}
-    ],"next":"WyIyMDMwIiwiUzEiLCJSMSJd","limit":2}"#;
+    ]"#;
 
     #[test]
-    fn an_upstream_page_reads_in_the_apps_shape() {
-        let p: ReadingPage = serde_json::from_str(UPSTREAM).unwrap();
-        assert!(p.upstream);
-        assert!(!p.read_sync(), "upstream says so on GET /api/reading");
-        assert_eq!(p.next.as_deref(), Some("WyIyMDMwIiwiUzEiLCJSMSJd"));
-        let a = &p.items[0];
+    fn imported_rows_read_in_the_apps_shape() {
+        let rows: Vec<Value> = serde_json::from_str(ROWS).unwrap();
+        let a = imported_row(&rows[0]).unwrap();
         assert_eq!(
             (a.subscription_id.as_str(), a.remote_id.as_str()),
             ("S1", "R2")
@@ -822,88 +770,60 @@ mod reading_page_tests {
         assert_eq!(a.stub_of.as_ref().unwrap().id.as_deref(), Some("X"));
         assert_eq!(a.transclusions.len(), 1);
         assert!(a.lineage_known);
+        assert_eq!(a.created.as_deref(), Some("2030-01-01T00:00:00Z"));
         assert_eq!(
             a.source_url.as_deref(),
             Some("https://ada.example.com/t/R2/")
         );
         assert_eq!(a.generated.as_ref().map(Vec::len), Some(1));
-        let w = &p.items[1];
+        let w = imported_row(&rows[1]).unwrap();
         assert_eq!(w.state, "tombstone");
         assert_eq!(w.pinned_version_retained, Some(1));
         assert_eq!(w.read_version, None);
+        assert_eq!(
+            w.created, None,
+            "a date the studio couldn't normalize is null"
+        );
         assert!(!w.lineage_known, "a withdrawn row says nothing of lineage");
     }
 
     #[test]
-    fn an_empty_upstream_page_is_upstream() {
-        let p: ReadingPage =
-            serde_json::from_str(r#"{"items":[],"next":null,"limit":100}"#).unwrap();
-        assert!(p.upstream && p.items.is_empty() && p.next.is_none());
+    fn a_row_without_its_identity_fails() {
+        assert!(imported_row(&serde_json::json!({ "subscriptionId": "S" })).is_err());
     }
 
     #[test]
-    fn the_old_patch_page_still_reads() {
-        let p: ReadingPage = serde_json::from_str(
-            r#"{"items":[{"subscription_id":"S","remote_id":"R","subscription_title":"N",
-            "origin":"https://ada.example.com/","kind":"fragment","state":"current","version":1,
-            "created":null,"updated":null,"observed_at":"2030-01-01T00:00:00Z","content_md":"x",
-            "content_html":"<p>x</p>","author":null,"page":null,"thumb":null,"hoppers":[],
-            "read_version":1,"stub_of":null,"forked_from":null}],
-            "next":null,"read_state":true,"read_state_clear":true,"lineage":true}"#,
-        )
-        .unwrap();
-        assert!(!p.upstream);
-        assert!(p.read_sync() && p.read_clear());
-        assert_eq!(p.items[0].read_version, Some(1));
-        let empty: ReadingPage =
-            serde_json::from_str(r#"{"items":[],"next":null,"read_state":false}"#).unwrap();
-        assert!(!empty.upstream);
-    }
-
-    #[test]
-    fn a_row_without_its_identity_fails_the_page() {
-        let r = serde_json::from_str::<ReadingPage>(
-            r#"{"items":[{"subscriptionId":"S"}],"next":null,"limit":1}"#,
-        );
-        assert!(r.is_err());
-    }
-}
-
-#[cfg(test)]
-mod author_tests {
-    use super::*;
-
-    #[test]
-    fn a_stock_row_keeps_the_whole_author() {
-        let raw = serde_json::json!({
-            "subscription_id": "S", "remote_id": "R", "kind": "fragment", "state": "current",
-            "version": 1, "created": null, "updated": null, "observed_at": "2030-01-01T00:00:00Z",
-            "content_md": "x", "content_html": "<p>x</p>",
-            "author_json": r#"{"name":"Ada","url":"https://ada.example.com/","avatar":"https://ada.example.com/a.png","bio":"Writes."}"#,
-            "transclusions_json": null, "l0": false, "pinned_version_retained": null, "page": null,
+    fn a_hopper_item_becomes_a_row() {
+        let item = serde_json::json!({
+            "subscriptionId": "S", "remoteId": "R", "kind": "fragment", "state": "current",
+            "version": 1, "created": "2030-01-01T00:00:00Z", "updated": null,
+            "observedAt": "2030-01-01T00:00:00Z", "contentMd": "x", "contentHtml": "<p>x</p>",
+            "contentHash": null, "l0": false, "pinnedVersionRetained": null, "page": "f/R/",
+            "author": {"name": "Ada", "url": "https://ada.example.com/", "bio": "Writes."},
+            "media": null, "transclusions": null, "stubOf": null, "forkedFrom": null, "generated": null,
         });
-        let r = stock_row(&raw, "N", "https://ada.example.com/", None, &[], None).unwrap();
-        let a = r.author.unwrap();
-        assert_eq!(a.name.as_deref(), Some("Ada"));
-        assert_eq!(a.extra["avatar"], "https://ada.example.com/a.png");
-        assert_eq!(a.extra["bio"], "Writes.");
-        // …and it survives the store's JSON round trip.
-        let back: Author = serde_json::from_value(serde_json::to_value(&a).unwrap()).unwrap();
-        assert_eq!(back, a);
+        let r = imported_item_row(&item, "Ada", "https://ada.example.com/").unwrap();
+        assert_eq!(r.subscription_title, "Ada");
+        assert_eq!(r.page.as_deref(), Some("https://ada.example.com/f/R/"));
+        assert!(r.lineage_known);
+        // The whole author object is kept (protocol §5.5).
+        assert_eq!(r.author.unwrap().extra["bio"], "Writes.");
+        let mut gone = item.clone();
+        gone["state"] = "tombstone".into();
+        let r = imported_item_row(&gone, "Ada", "https://ada.example.com/").unwrap();
+        assert_eq!(r.state, "tombstone");
     }
 
     #[test]
     fn a_stub_of_keeps_its_citation() {
-        let p: ReadingPage = serde_json::from_str(
-            r#"{"items":[{"subscriptionId":"S","remoteId":"R","kind":"thread",
-            "stubOf":{"origin":"https://bo.example.com/","id":"X","version":2,
-              "cited":{"source":"Bo","url":"https://bo.example.com/t/X/","retrieved":"2030-01-01T00:00:00Z"}},
-            "forkedFrom":{"origin":"https://bo.example.com/","id":"Y","version":1,
-              "cited":{"source":"Bo","url":"https://bo.example.com/f/Y/","retrieved":"2030-01-01T00:00:00Z"}}}],
-            "next":null,"limit":1}"#,
-        )
+        let it = imported_row(&serde_json::json!({
+            "subscriptionId": "S", "remoteId": "R", "kind": "thread",
+            "stubOf": {"origin": "https://bo.example.com/", "id": "X", "version": 2,
+              "cited": {"source": "Bo", "url": "https://bo.example.com/t/X/", "retrieved": "2030-01-01T00:00:00Z"}},
+            "forkedFrom": {"origin": "https://bo.example.com/", "id": "Y", "version": 1,
+              "cited": {"source": "Bo", "url": "https://bo.example.com/f/Y/", "retrieved": "2030-01-01T00:00:00Z"}},
+        }))
         .unwrap();
-        let it = &p.items[0];
         let c = it.stub_of.as_ref().unwrap().cited.as_ref().unwrap();
         assert!(c.complete());
         assert_eq!(c.source.as_deref(), Some("Bo"));

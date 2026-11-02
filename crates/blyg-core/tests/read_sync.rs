@@ -1,6 +1,5 @@
-//! Read-state sync through the user's blyg (owner-API extension 5,
-//! docs/SERVER.md): merge on pull, queued/coalesced `read` ops, the one-time
-//! batch upload, and an unpatched server seeing no new requests at all.
+//! Read-state sync through the user's blyg (contract 5.0.0 read state):
+//! merge on pull, and queued/coalesced `read` ops.
 
 mod common;
 
@@ -20,12 +19,11 @@ fn item(sub: &str, rid: &str, page: Option<&str>, version: u32, obs: &str) -> Va
     })
 }
 
-/// Two posts from one blyg (S1: a at v2, b at v1), read sync on or off.
-fn env_with(read_sync: bool) -> Env {
+/// Two posts from one blyg (S1: a at v2, b at v1).
+fn env_with() -> Env {
     let env = Env::new();
     {
         let mut st = env.mock.state();
-        st.read_sync = read_sync;
         st.subs = vec![
             json!({ "id": "S1", "kind": "blyg", "origin": "https://them.example/",
             "feed_url": "x", "title": "Them", "status": "active", "in_blogroll": false }),
@@ -65,7 +63,7 @@ fn server_read(env: &Env, sub: &str, rid: &str) -> Option<u32> {
 
 #[test]
 fn pull_merges_the_max_and_never_lowers_local_state() {
-    let env = env_with(true);
+    let env = env_with();
     env.mock.state().reads.insert(("S1".into(), "b".into()), 1);
     let b = env.manual();
     b.sync_now().unwrap();
@@ -83,24 +81,26 @@ fn pull_merges_the_max_and_never_lowers_local_state() {
         "a lower server value never wins"
     );
 
-    // The server can't lower it either: a later pull with null keeps it.
+    // Contract 5 servers clear read state (`readStateClear`): null is
+    // "marked unread elsewhere", so `b` goes unread here too, while `a`,
+    // whose read is still queued, keeps it.
     env.mock.state().reads.clear();
     b.pull_now().unwrap();
     assert_eq!(read_version(&b, "a"), Some(2));
-    assert_eq!(read_version(&b, "b"), Some(1));
+    assert_eq!(read_version(&b, "b"), None);
 }
 
 #[test]
 fn junk_read_version_is_ignored_leniently() {
-    let env = env_with(true);
+    let env = env_with();
     {
         let mut st = env.mock.state();
         let mut r = st.reading.take().unwrap();
         r[0]["read_version"] = json!("two");
         r[1]["read_version"] = json!(-3);
         st.reading = Some(r);
-        // Deliberately off-contract.
-        st.unchecked.push("/api/reading/imported".into());
+        // Deliberately off-contract (both reading lists serve the rows).
+        st.unchecked.push("/api/reading".into());
     }
     let b = env.manual();
     b.sync_now().unwrap();
@@ -110,22 +110,8 @@ fn junk_read_version_is_ignored_leniently() {
 }
 
 #[test]
-fn read_version_is_ignored_without_the_capability_flag() {
-    let env = env_with(false);
-    {
-        let mut st = env.mock.state();
-        let mut r = st.reading.take().unwrap();
-        r[1]["read_version"] = json!(1);
-        st.reading = Some(r);
-    }
-    let b = env.manual();
-    b.sync_now().unwrap();
-    assert_eq!(read_version(&b, "b"), None, "unadvertised: not read state");
-}
-
-#[test]
 fn mark_read_queues_and_flushes_a_put() {
-    let env = env_with(true);
+    let env = env_with();
     let b = env.manual();
     b.sync_now().unwrap();
     assert!(
@@ -149,7 +135,7 @@ fn mark_read_queues_and_flushes_a_put() {
 
 #[test]
 fn the_worker_flushes_a_read_promptly() {
-    let env = env_with(true);
+    let env = env_with();
     let b = env.open(SyncOptions {
         pull_interval: Duration::from_secs(3600),
         ..fast()
@@ -164,7 +150,7 @@ fn the_worker_flushes_a_read_promptly() {
 
 #[test]
 fn offline_mark_then_flush_and_restart() {
-    let env = env_with(true);
+    let env = env_with();
     {
         let b = env.manual();
         b.sync_now().unwrap();
@@ -189,7 +175,7 @@ fn offline_mark_then_flush_and_restart() {
 
 #[test]
 fn a_transient_failure_retries_later() {
-    let env = env_with(true);
+    let env = env_with();
     let b = env.manual();
     b.sync_now().unwrap();
     env.mock.set_down(true);
@@ -207,7 +193,6 @@ fn duplicates_are_marked_and_sent_per_row() {
     let page = "https://them.example/f/A1";
     {
         let mut st = env.mock.state();
-        st.read_sync = true;
         st.subs = vec![
             json!({ "id": "B", "kind": "blyg", "origin": "https://them.example/", "feed_url": "x",
                     "title": "Them", "status": "active", "in_blogroll": false }),
@@ -256,7 +241,7 @@ fn duplicates_are_marked_and_sent_per_row() {
 
 #[test]
 fn repeated_reads_coalesce_to_the_highest_version() {
-    let env = env_with(true);
+    let env = env_with();
     let b = env.manual();
     b.sync_now().unwrap();
     env.mock.set_down(true);
@@ -279,154 +264,4 @@ fn repeated_reads_coalesce_to_the_highest_version() {
         "one op per row, not one per mark"
     );
     assert_eq!(server_read(&env, "S1", "b"), Some(3));
-}
-
-#[test]
-fn initial_batch_upload_happens_once() {
-    // Read on this Mac while the server couldn't sync read state.
-    let env = env_with(false);
-    let b = env.manual();
-    b.sync_now().unwrap();
-    b.mark_read("S1", "a").unwrap();
-    b.mark_read("S1", "b").unwrap();
-    b.sync_now().unwrap();
-    assert!(read_requests(&env).is_empty());
-
-    // The Worker is patched: the next pull uploads everything, in one batch.
-    env.mock.state().read_sync = true;
-    b.sync_now().unwrap();
-    {
-        let st = env.mock.state();
-        assert_eq!(st.read_batches.len(), 1);
-        let mut items = st.read_batches[0]["items"].as_array().unwrap().clone();
-        items.sort_by_key(|v| v["remote_id"].as_str().unwrap().to_string());
-        assert_eq!(
-            items,
-            vec![
-                json!({ "sub": "S1", "remote_id": "a", "version": 2 }),
-                json!({ "sub": "S1", "remote_id": "b", "version": 1 }),
-            ]
-        );
-    }
-    assert_eq!(server_read(&env, "S1", "a"), Some(2));
-
-    // Never again, including after a restart.
-    b.sync_now().unwrap();
-    drop(b);
-    let b = env.manual();
-    b.sync_now().unwrap();
-    assert_eq!(env.mock.state().read_batches.len(), 1);
-    assert_eq!(
-        env.mock.state().count("POST /api/reading/read"),
-        1,
-        "{:?}",
-        read_requests(&env)
-    );
-}
-
-#[test]
-fn initial_upload_is_chunked_at_500() {
-    let env = Env::new();
-    {
-        let mut st = env.mock.state();
-        st.subs = vec![
-            json!({ "id": "S1", "kind": "blyg", "origin": "https://them.example/",
-            "feed_url": "x", "title": "Them", "status": "active", "in_blogroll": false }),
-        ];
-        st.reading = Some(
-            (0..1001)
-                .map(|i| item("S1", &format!("r{i:04}"), None, 1, "2030-01-01T00:00:00Z"))
-                .collect(),
-        );
-    }
-    let b = env.open(SyncOptions {
-        start_worker: false,
-        ..fast()
-    });
-    b.sync_now().unwrap();
-    for r in b.reading() {
-        b.mark_read(&r.subscription_id, &r.remote_id).unwrap();
-    }
-    env.mock.state().read_sync = true;
-    b.sync_now().unwrap();
-    let st = env.mock.state();
-    let sizes: Vec<usize> = st
-        .read_batches
-        .iter()
-        .map(|b| b["items"].as_array().unwrap().len())
-        .collect();
-    assert_eq!(sizes, vec![500, 500, 1]);
-    assert_eq!(st.reads.len(), 1001);
-}
-
-#[test]
-fn reads_made_while_unsupported_catch_up_after_the_upload() {
-    let env = env_with(true);
-    let b = env.manual();
-    b.sync_now().unwrap(); // capability seen, (empty) upload done
-    // The server loses the capability for a while (rolled back)...
-    env.mock.state().read_sync = false;
-    b.sync_now().unwrap();
-    b.mark_read("S1", "a").unwrap();
-    b.sync_now().unwrap();
-    assert!(read_requests(&env).iter().all(|l| l.starts_with("POST")));
-    // ...and gets it back: the row ahead of the server is sent.
-    env.mock.state().read_sync = true;
-    b.sync_now().unwrap(); // pull queues it
-    b.sync_now().unwrap(); // flush sends it
-    assert_eq!(server_read(&env, "S1", "a"), Some(2));
-}
-
-#[test]
-fn capability_absent_means_zero_requests_to_the_new_endpoints() {
-    let env = env_with(false);
-    let b = env.manual();
-    b.sync_now().unwrap();
-    b.mark_read("S1", "a").unwrap();
-    b.mark_read("S1", "b").unwrap();
-    assert_eq!(b.sync_status(), SyncStatus::Synced, "nothing queued");
-    b.sync_now().unwrap();
-    b.sync_now().unwrap();
-    assert!(read_requests(&env).is_empty(), "{:?}", read_requests(&env));
-    assert_eq!(read_version(&b, "a"), Some(2), "local read state as before");
-    assert!(
-        !env.events()
-            .iter()
-            .any(|e| matches!(e, CoreEvent::Error(_)))
-    );
-}
-
-#[test]
-fn no_reading_endpoint_means_no_read_sync() {
-    let env = Env::new(); // patch 3 absent too
-    let b = env.manual();
-    b.sync_now().unwrap();
-    assert!(matches!(b.mark_read("S1", "a"), Err(CoreError::NotFound)));
-    b.sync_now().unwrap();
-    assert!(read_requests(&env).is_empty());
-}
-
-#[test]
-fn a_404_from_the_endpoint_turns_read_sync_off_quietly() {
-    let env = env_with(true);
-    let b = env.manual();
-    b.sync_now().unwrap();
-    // The Worker is downgraded between the pull and the flush: the reading
-    // list still says read_state, but the write 404s. (Simulated by turning
-    // the flag off only for writes: flip it, mark, flush.)
-    b.mark_read("S1", "a").unwrap();
-    env.mock.state().read_sync = false; // writes 404 now
-    b.sync_now().unwrap();
-    assert!(
-        !env.events()
-            .iter()
-            .any(|e| matches!(e, CoreEvent::Error(_))),
-        "a missing feature isn't an error"
-    );
-    assert_eq!(b.sync_status(), SyncStatus::Synced);
-    // And nothing more is queued.
-    env.mock.state().log.clear();
-    b.mark_read("S1", "b").unwrap();
-    b.sync_now().unwrap();
-    assert!(read_requests(&env).is_empty());
 }

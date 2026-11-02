@@ -49,35 +49,35 @@ impl Provider for BlygServer {
                 "the blyg server can only fill TK scopes in items that have synced".into(),
             ));
         };
-        let (text, model, content_md) = match self.api.generate(&scope.item_id, scope.scope as u32)
-        {
-            // `content_md` (studio 0.27.2+) is the whole body as stored: the
-            // caller puts it in the editor instead of pulling.
-            Ok(r) => (r.text, r.model, r.content_md),
-            Err(CoreError::NotFound) => {
-                return Err(AiError::Provider(
-                    "item not found on the server (or the server has no /generate)".into(),
-                ));
-            }
-            Err(CoreError::Unauthorized) => {
-                return Err(AiError::Unauthorized {
-                    provider: "your blyg".into(),
-                });
-            }
-            Err(CoreError::Offline) => {
-                return Err(AiError::Provider("couldn't reach your blyg".into()));
-            }
-            Err(CoreError::Rejected {
-                status, message, ..
-            }) => {
-                return Err(if message.contains("declined") {
-                    AiError::Refused(message)
-                } else {
-                    AiError::Provider(format!("blyg server: {message} ({status})"))
-                });
-            }
-            Err(e) => return Err(AiError::Provider(format!("blyg server: {e}"))),
-        };
+        let (text, model, content_md) =
+            match self.api.generate(&scope.item_id, scope.scope as u32, None) {
+                // `content_md` (studio 0.27.2+) is the whole body as stored: the
+                // caller puts it in the editor instead of pulling.
+                Ok(r) => (r.text, r.model, r.content_md),
+                Err(CoreError::NotFound) => {
+                    return Err(AiError::Provider(
+                        "item not found on the server (or the server has no /generate)".into(),
+                    ));
+                }
+                Err(CoreError::Unauthorized) => {
+                    return Err(AiError::Unauthorized {
+                        provider: "your blyg".into(),
+                    });
+                }
+                Err(CoreError::Offline) => {
+                    return Err(AiError::Provider("couldn't reach your blyg".into()));
+                }
+                Err(CoreError::Rejected {
+                    status, message, ..
+                }) => {
+                    return Err(if message.contains("declined") {
+                        AiError::Refused(message)
+                    } else {
+                        AiError::Provider(format!("blyg server: {message} ({status})"))
+                    });
+                }
+                Err(e) => return Err(AiError::Provider(format!("blyg server: {e}"))),
+            };
         req.cancel.check()?;
         on_delta(&text);
         Ok(GenResult {

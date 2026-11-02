@@ -587,7 +587,12 @@ fn media_upload_is_multipart() {
     let m = b
         .upload_media(png, "image/png", Some(&id), Some("a cat"))
         .unwrap();
-    assert!(m.url.starts_with("media/") && m.url.ends_with(".png"));
+    // Contract 5: absolute, under the mount, `media/{id}/{sha256}.{ext}`.
+    assert!(
+        m.url.starts_with(&format!("{}/media/", env.mock.url)) && m.url.ends_with(".png"),
+        "{}",
+        m.url
+    );
     assert_eq!(m.mime, "image/png");
     let st = env.mock.state();
     let body = String::from_utf8_lossy(&st.media_bodies[0]).to_string();
@@ -747,121 +752,47 @@ fn permalinks_use_the_site_url_when_one_is_set() {
     assert_eq!(b.item(&id).unwrap().permalink, Some(out.permalink));
 }
 
+/// A server without `GET {mount}/api/capabilities` (a studio before
+/// 0.49.7, or a Worker fork) is older than Burrow's minimum: nothing is
+/// pushed or pulled, the draft stays here, and the app is told once.
 #[test]
-fn an_outdated_server_gets_nothing_pushed_until_it_is_updated() {
+fn a_blyg_without_contract_five_syncs_nothing() {
     let env = Env::new();
-    env.mock.state().legacy_api = true;
-    let b = env.manual();
-    let id = b
-        .create_draft(Kind::Fragment, "written for a newer server")
-        .unwrap();
-    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
-    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
-    assert!(b.server_outdated());
-    {
-        let st = env.mock.state();
-        let writes: Vec<&String> = st.log.iter().filter(|l| !l.starts_with("GET ")).collect();
-        assert!(writes.is_empty(), "nothing pushed: {writes:?}");
-    }
-    let told = env
-        .events()
-        .iter()
-        .filter(|e| matches!(e, CoreEvent::ServerOutdated))
-        .count();
-    assert_eq!(told, 1, "said once, not on every retry");
-    assert!(b.item(&id).unwrap().pending_sync, "the draft waits");
-
-    // The server is updated: the draft goes up, and the notice clears.
-    env.mock.state().legacy_api = false;
-    b.sync_now().unwrap();
-    assert!(!b.server_outdated());
-    let it = b.item(&id).unwrap();
-    assert!(it.server_id.is_some() && !it.pending_sync);
-    assert_eq!(env.mock.state().items.len(), 1);
-}
-
-/// The blyg's manifest names a studio `version`.
-fn studio(env: &Env, version: &str) {
-    env.mock.state().public.insert(
-        "/blyg.json".into(),
-        json!({ "blyg": "0.4", "level": 2, "generator": format!("blygger-studio/{version}") }),
-    );
-}
-
-const LID: &str = "7c9wk2n4h6q1x8v0z3m5rjy2ke";
-
-#[test]
-fn below_studio_0_47_only_posts_with_labelled_links_wait() {
-    let env = Env::new();
-    studio(&env, "0.46.1");
-    let b = env.manual();
-    let plain = b
-        .create_draft(Kind::Fragment, &format!("see [[{LID}]]"))
-        .unwrap();
-    let held = b
-        .create_draft(Kind::Fragment, &format!("see [[{LID} | that]]"))
-        .unwrap();
-    let quoted = b
-        .create_draft(Kind::Thread, &format!("intro\n\n![[{LID} | theirs]]\n"))
-        .unwrap();
-    let coded = b
-        .create_draft(Kind::Fragment, &format!("`[[{LID} | code]]`"))
-        .unwrap();
-    b.sync_now().unwrap();
-    assert!(b.server_outdated());
-    for id in [&plain, &coded] {
-        assert!(b.item(id).unwrap().server_id.is_some(), "sent");
-    }
-    for id in [&held, &quoted] {
-        let it = b.item(id).unwrap();
-        assert!(it.server_id.is_none() && it.pending_sync, "held");
-    }
-    assert_eq!(env.mock.state().count("POST /api/items"), 2);
-    // Nothing held makes the outbox look busy, or the status an error.
-    assert_eq!(b.sync_status(), SyncStatus::Synced);
-    assert!(matches!(
-        b.publish(&held, None),
-        Err(CoreError::ServerOutdated)
-    ));
-    assert_eq!(b.publish(&plain, None).unwrap().version, 1);
-
-    // A saved post that gains a label waits; losing it sends it.
-    let sid = b.item(&plain).unwrap().server_id.unwrap();
-    b.save(&plain, &format!("see [[{LID} | now labelled]]"))
-        .unwrap();
-    b.sync_now().unwrap();
-    assert_eq!(server_content(&env, &sid), format!("see [[{LID}]]"));
-    b.save(
-        &held,
-        &blyg_core::floor::strip_labels(&b.item(&held).unwrap().content_md),
+    // Nothing answers under this mount: no capabilities.
+    let b = LiveBackend::open_with(
+        &env.data_dir(),
+        &format!("{}/old", env.mock.url),
+        TOKEN,
+        SyncOptions {
+            start_worker: false,
+            ..fast()
+        },
     )
     .unwrap();
-    b.sync_now().unwrap();
-    assert!(b.item(&held).unwrap().server_id.is_some(), "released");
-
-    // The blyg is updated: everything goes.
-    studio(&env, "0.47.0");
-    b.sync_now().unwrap();
-    assert!(!b.server_outdated());
-    assert_eq!(
-        server_content(&env, &sid),
-        format!("see [[{LID} | now labelled]]")
+    let ev = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = ev.clone();
+    b.set_event_sink(Box::new(move |e| sink.lock().unwrap().push(e)));
+    let id = b.create_draft(Kind::Fragment, "kept here").unwrap();
+    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
+    assert!(matches!(b.sync_now(), Err(CoreError::ServerOutdated)));
+    assert!(b.server_outdated());
+    let it = b.item(&id).unwrap();
+    assert!(it.server_id.is_none() && it.pending_sync, "held");
+    let st = env.mock.state();
+    assert!(st.items.is_empty(), "nothing pushed");
+    assert!(
+        !st.log
+            .iter()
+            .any(|l| l.starts_with("POST ") || l.contains("/api/items")),
+        "{:?}",
+        st.log
     );
-    assert!(b.item(&quoted).unwrap().server_id.is_some());
-    let told = env
-        .events()
+    drop(st);
+    let told = ev
+        .lock()
+        .unwrap()
         .iter()
         .filter(|e| matches!(e, CoreEvent::ServerOutdated))
         .count();
     assert_eq!(told, 1);
-}
-
-#[test]
-fn the_connect_check_names_an_outdated_server() {
-    let env = Env::new();
-    env.mock.state().legacy_api = true;
-    assert_eq!(
-        blyg_core::api::verify_connection(&env.mock.url, TOKEN),
-        Err(blyg_core::api::ConnectError::Outdated)
-    );
 }

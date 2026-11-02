@@ -1,18 +1,24 @@
-//! Blocking owner-API client (ureq + rustls). Follows upstream
-//! blygger-studio's OpenAPI contract (studio 0.10, `openapi.json`), plus the
-//! extensions in docs/SERVER.md. Every call carries the owner credential (a
-//! bearer token, or the studio session from a password sign-in; see
-//! `auth`), which is never logged, printed or included in errors (`Debug`
-//! redacts it). `/api` is host-rooted: a blyg mounted at `https://host/blyg`
-//! has its API at `https://host/api`.
+//! Blocking owner-API client (ureq + rustls). Speaks blygger-studio's
+//! private API contract 5.x (studio 0.49.12+, `openapi.json`), and nothing
+//! older: the client checks the contract (`GET {blyg}/api/capabilities`)
+//! before anything is pushed or pulled. Every call carries the owner
+//! credential (a bearer token, or the studio session from a password
+//! sign-in; see `auth`), which is never logged, printed or included in
+//! errors (`Debug` redacts it). The API lives under the blyg's mount: a
+//! blyg at `https://host/blyg` has its API at `https://host/blyg/api`.
+//!
+//! Lists are cursor pages (`{items, page: {limit, nextCursor}}`): a
+//! `nextCursor` of null ends the list, and there are no totals. A list that
+//! changes while it's read answers 409 `cursor-expired`; the pages read so
+//! far are thrown away and the list is read again from the start
+//! ([`Api::collect`]). Item commands carry the revision they were based on
+//! (`expectedRevision`); a stale one is 409 `revision-conflict`.
 //!
 //! Error mapping: transport failures → `Offline`, 401 → `Unauthorized`,
-//! 404 → `NotFound`, any other non-2xx → `Rejected{status, error, details}`
-//! (`details` from the contract's `errors` and `issues`). The read endpoints
-//! (`reading`, `mentions`, `settings`, `hoppers`) return `Ok(None)` on 404: a
-//! server older than studio 0.9 without the owner-read extensions. The
-//! read-state writes (extension 5) are only called once `GET /api/reading/imported`
-//! advertised `read_state: true`.
+//! 404 → `NotFound`, 409 `revision-conflict` → `RevisionConflict`, 409
+//! `cursor-expired` → `CursorExpired`, 429 → `RateLimited`, any other
+//! non-2xx → `Rejected{status, message, details}` (`details` from the
+//! contract's `details.issues`, `details.errors` and `details.tried`).
 
 pub mod auth;
 pub mod browse; // --- browse --- (studio 0.49)
@@ -32,36 +38,55 @@ use serde_json::{Value, json};
 use crate::backend::{CoreError, Result};
 use crate::model::{
     Hopper, HopperEdit, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings,
-    SubscribePreview, Subscription, SubscriptionKind,
+    SubscribePreview, Subscription, SubscriptionKind, Version,
 };
 use auth::Credential;
 use wire::*;
 
-/// The newest studio private-API contract major this Burrow speaks. Studio
-/// 0.49 has no contract version (no `/api/capabilities`); PR #95 calls that
-/// contract 1.0.0. Majors 2–5 (blygger-studio PRs #97–#100) move the REST
-/// root, require observed revisions on edits, rename every field to
-/// camelCase and page lists by cursor: read with today's code, a reading
-/// list would look complete after its first page and rows would be pruned.
-pub const CONTRACT_MAJOR_MAX: u64 = 1;
+/// The private API contract major this Burrow speaks: blygger-studio's
+/// 5.0.0 (studio 0.49.10+; Burrow's minimum is 0.49.12, which also keeps
+/// tokens made for the old host-root `/api` working). Anything else is
+/// refused before a list is read, because a page in another shape would
+/// read as the end of the list and rows would be pruned.
+pub const CONTRACT_MAJOR: u64 = 5;
 
-/// Whether Burrow can speak `contract` (`"2.0.0"` → no). Unparseable: yes,
-/// so a server isn't locked out on a guess.
-pub fn contract_supported(contract: &str) -> bool {
-    contract
+/// The oldest blygger-studio Burrow syncs with, for messages.
+pub const MIN_STUDIO: &str = "0.49.12";
+
+/// What Burrow makes of a studio's `contractVersion`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Contract {
+    /// 5.x: everything syncs.
+    Supported,
+    /// Older than 5 (or no contract at all: a studio before capability
+    /// discovery). The studio needs updating.
+    TooOld,
+    /// Newer than this Burrow (or not a version): Burrow needs updating.
+    TooNew(String),
+}
+
+/// Judge a studio's `contractVersion` (`None`: the studio has no
+/// `/api/capabilities` under its mount).
+pub fn contract(version: Option<&str>) -> Contract {
+    let Some(v) = version else {
+        return Contract::TooOld;
+    };
+    match v
         .trim()
         .split('.')
         .next()
         .and_then(|m| m.parse::<u64>().ok())
-        .is_none_or(|major| major <= CONTRACT_MAJOR_MAX)
+    {
+        Some(CONTRACT_MAJOR) => Contract::Supported,
+        Some(major) if major < CONTRACT_MAJOR => Contract::TooOld,
+        _ => Contract::TooNew(v.trim().to_string()),
+    }
 }
 
 pub struct Api {
     agent: ureq::Agent,
-    /// The blyg URL, with its mount (public pages, the studio).
+    /// The blyg URL, with its mount (public pages, the studio, the API).
     base: String,
-    /// Where `/api` lives: the blyg URL's origin.
-    api_root: String,
     cred: Credential,
     /// With a password: the studio session cookie's value, once signed in.
     session: Mutex<Option<String>>,
@@ -72,18 +97,22 @@ pub struct Api {
 /// The settings an item's derived fields depend on.
 #[derive(Debug, Clone, Default)]
 struct Site {
-    /// `show_responses_default`: what `responses: "default"` means.
+    /// `showResponsesDefault`: what `responses: "default"` means.
     responses_default: bool,
-    /// `site_url` without its trailing `/`; `""` = unset.
+    /// `siteUrl` without its trailing `/`; `""` = unset.
     site_url: String,
-    /// `highlight_generated_default`: what `highlight: "default"` means.
+    /// `highlightGeneratedDefault`: what `highlight: "default"` means.
     highlight_default: bool,
-    /// `picker_typing`, when the server reports it (studio 0.29).
+    /// `pickerTyping`.
     picker_typing: Option<crate::model::PickerTyping>,
 }
 
 /// Collection page size (the contract's maximum outside `/api/reading`).
 const PAGE: u32 = 100;
+
+/// How many times one list is read again from the start after its cursor
+/// expired (409 `cursor-expired`), before the read gives up for now.
+pub const CURSOR_RESTARTS: usize = 3;
 
 impl std::fmt::Debug for Api {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -98,6 +127,8 @@ impl std::fmt::Debug for Api {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pinned {
     pub already: bool,
+    /// The item's revision after it.
+    pub revision: u64,
 }
 
 /// A request body.
@@ -117,7 +148,6 @@ impl Api {
         let base = base_url.trim_end_matches('/').to_string();
         Api {
             agent,
-            api_root: api_root(&base),
             base,
             cred: cred.into(),
             session: Mutex::new(None),
@@ -127,6 +157,11 @@ impl Api {
 
     pub fn base_url(&self) -> &str {
         &self.base
+    }
+
+    /// Where the REST API lives: `{blyg}/api` (the mount included).
+    pub fn api_url(&self) -> String {
+        format!("{}/api", self.base)
     }
 
     /// The studio session, signing in when there's none yet.
@@ -175,8 +210,8 @@ impl Api {
                 req.set("content-type", content_type).send_bytes(data)
             }
         };
-        // A bearer without the scope this call needs (studio 0.28+): say
-        // which permission is missing (it's in the challenge).
+        // A bearer without the scope this call needs: say which permission
+        // is missing (it's in the challenge).
         if let Err(ureq::Error::Status(403, r)) = &res
             && let Some(needed) = r
                 .header("www-authenticate")
@@ -199,12 +234,13 @@ impl Api {
         (read_json(res), bearer)
     }
 
-    /// One call. With a password, a 401 means the session ended (30 days,
-    /// or the server's secret changed): sign in again and retry once. With
-    /// a browser sign-in, renew the access token and retry once; when the
-    /// renewal is refused the grant is marked ended (sign in again).
+    /// One call. `path` starts with `/api/`, under the blyg's mount. With
+    /// a password, a 401 means the session ended (30 days, or the server's
+    /// secret changed): sign in again and retry once. With a browser
+    /// sign-in, renew the access token and retry once; when the renewal is
+    /// refused the grant is marked ended (sign in again).
     fn exec(&self, method: &str, path: &str, body: Body) -> Result<Value> {
-        self.exec_url(method, &format!("{}{}", self.api_root, path), body)
+        self.exec_url(method, &format!("{}{}", self.base, path), body)
     }
 
     /// `exec` at an absolute URL: a 401 signs in again (a password) or
@@ -239,12 +275,12 @@ impl Api {
             .map_err(|e| CoreError::Other(format!("unexpected response from {path}: {e}")))
     }
 
-    /// 404 → `None` (endpoint not deployed yet).
+    /// 404 → `None` (the route isn't there).
     pub fn optional_of<T>(r: Result<T>) -> Result<Option<T>> {
         Self::optional(r)
     }
 
-    /// 404 → `None` (endpoint not deployed yet).
+    /// 404 → `None` (the route isn't there).
     fn optional<T>(r: Result<T>) -> Result<Option<T>> {
         match r {
             Ok(v) => Ok(Some(v)),
@@ -253,19 +289,59 @@ impl Api {
         }
     }
 
-    /// Every element of a `{items, total, offset, limit}` collection, read
-    /// `PAGE` at a time. `query` is extra query parameters (`k=v&…`).
+    /// One page of a cursor-paged list: `path?query&limit=…[&cursor=…]`.
+    fn page<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<CursorPage<T>> {
+        let mut url = format!("{path}?");
+        if !query.is_empty() {
+            url.push_str(query);
+            url.push('&');
+        }
+        url.push_str(&format!("limit={limit}"));
+        if let Some(c) = cursor {
+            url.push_str("&cursor=");
+            url.push_str(&enc(c));
+        }
+        self.call_as("GET", &url, None)
+    }
+
+    /// Every element of a cursor-paged list, as one coherent acquisition:
+    /// pages are read until `nextCursor` is null. When the list changes
+    /// under the walk (409 `cursor-expired`), everything read so far is
+    /// dropped and the walk starts again without a cursor, at most
+    /// [`CURSOR_RESTARTS`] times; then `CursorExpired`. Never a partial list,
+    /// so a caller may prune what the answer leaves out.
     fn collect<T: DeserializeOwned>(&self, path: &str, query: &str) -> Result<Vec<T>> {
+        for _ in 0..=CURSOR_RESTARTS {
+            match self.walk(path, query) {
+                Err(CoreError::CursorExpired) => continue,
+                r => return r,
+            }
+        }
+        Err(CoreError::CursorExpired)
+    }
+
+    /// One walk of a list from its first page to its last.
+    fn walk<T: DeserializeOwned>(&self, path: &str, query: &str) -> Result<Vec<T>> {
         let mut all = Vec::new();
+        let mut cursor: Option<String> = None;
         loop {
-            let sep = if query.is_empty() { "" } else { "&" };
-            let url = format!("{path}?{query}{sep}offset={}&limit={PAGE}", all.len());
-            let page: Page<T> = self.call_as("GET", &url, None)?;
-            let total = page.total.ok_or(CoreError::ServerOutdated)?;
-            let n = page.items.len();
+            let page: CursorPage<T> = self.page(path, query, PAGE, cursor.as_deref())?;
             all.extend(page.items);
-            if n == 0 || all.len() as u64 >= total {
-                return Ok(all);
+            match page.page.next_cursor {
+                // A server handing back the cursor it was given would loop.
+                Some(next) if cursor.as_deref() == Some(next.as_str()) => {
+                    return Err(CoreError::Other(format!(
+                        "{path} answered the same page twice"
+                    )));
+                }
+                Some(next) => cursor = Some(next),
+                None => return Ok(all),
             }
         }
     }
@@ -280,8 +356,8 @@ impl Api {
     }
 
     /// Where the blyg's public pages live, without a trailing `/`: its
-    /// `site_url` when set, else the API base (which carries the mount).
-    /// The Worker builds its own origin the same way.
+    /// `siteUrl` when set, else the blyg URL (which carries the mount).
+    /// The studio builds its own origin the same way.
     pub fn public_base(&self) -> String {
         let s = self.site();
         if s.site_url.is_empty() {
@@ -303,6 +379,32 @@ impl Api {
         w
     }
 
+    // ---------- contract ----------
+
+    /// The studio's private-API contract version, from `GET
+    /// {blyg}/api/capabilities` (under the mount; a studio before 0.49.7
+    /// has none there). `Ok(None)`: not served (404), or not readable as
+    /// one. Refused credentials (401 after a refresh, 403), offline,
+    /// rate-limited or 5xx: an error, so nothing passes on a failed read.
+    pub fn contract_version(&self) -> Result<Option<String>> {
+        match self.call("GET", "/api/capabilities", None) {
+            Ok(v) => Ok(v
+                .get("contractVersion")
+                .and_then(Value::as_str)
+                .map(str::to_string)),
+            Err(e @ CoreError::Unauthorized) => Err(e),
+            Err(
+                e @ CoreError::Rejected {
+                    status: 401 | 403, ..
+                },
+            ) => Err(e),
+            Err(e) if is_transient(&e) => Err(e),
+            // 404 (no capabilities under this mount), or anything that
+            // isn't a capabilities answer at this address.
+            Err(_) => Ok(None),
+        }
+    }
+
     // ---------- items ----------
 
     /// Every item. Re-reads settings first, so `responses: "default"`
@@ -321,226 +423,210 @@ impl Api {
         Ok(items.into_iter().map(|w| self.resolve(w)).collect())
     }
 
-    /// How many items the server holds (one small read). Also the version
-    /// probe: `ServerOutdated` from a server older than studio 0.9.
-    /// The studio's private-API contract version, from `GET /api/capabilities`
-    /// (blygger-studio PR #95; the route doesn't exist before it, and every
-    /// version Burrow targets answers 404). Asked under the blyg's mount
-    /// first, where the REST API moves with contract 2.0.0 (PR #97), then at
-    /// the origin. `Ok(None)`: not served (404), or not readable as one.
-    /// Refused credentials (401 after a refresh, 403), offline,
-    /// rate-limited or 5xx: an error, so nothing passes on a failed read.
-    pub fn contract_version(&self) -> Result<Option<String>> {
-        let mut urls = vec![format!("{}/api/capabilities", self.base)];
-        let at_root = format!("{}/api/capabilities", self.api_root);
-        if at_root != urls[0] {
-            urls.push(at_root);
-        }
-        for url in urls {
-            match self.exec_url("GET", &url, Body::None) {
-                Ok(v) => {
-                    if let Some(c) = v.get("contractVersion").and_then(Value::as_str) {
-                        return Ok(Some(c.to_string()));
-                    }
-                }
-                // The route is authenticated: a credential the blyg refuses
-                // (after one refresh) or a missing scope says nothing about
-                // the contract, so it must not pass as "no contract".
-                Err(e @ CoreError::Unauthorized) => return Err(e),
-                Err(
-                    e @ CoreError::Rejected {
-                        status: 401 | 403, ..
-                    },
-                ) => return Err(e),
-                Err(e) if is_transient(&e) => return Err(e),
-                // 404 (a studio from before capabilities), or anything that
-                // isn't a capabilities answer at this address.
-                Err(_) => {}
-            }
-        }
-        Ok(None)
-    }
-
+    /// How many items the server holds (`GET /api/items/summary`).
     pub fn count_items(&self) -> Result<u64> {
-        self.call_as::<Page<Value>>("GET", "/api/items?offset=0&limit=1", None)?
-            .total
-            .ok_or(CoreError::ServerOutdated)
+        #[derive(serde::Deserialize)]
+        struct Summary {
+            all: u64,
+        }
+        Ok(self
+            .call_as::<Summary>("GET", "/api/items/summary", None)?
+            .all)
     }
 
-    /// Whether this blyg meets Burrow's studio floor (`crate::floor`): the
-    /// manifest's `generator` (`GET {blyg}/blyg.json`, public, no
-    /// credential), else one `GET /api/search?limit=1` for the `label` a
-    /// 0.47 hit carries. Offline, rate-limited, 5xx or 401: an error, so
-    /// nothing is decided on a failed read. A search route that's missing
-    /// or refuses: `Unknown` (not locked out on a guess).
-    pub fn studio_floor(&self) -> Result<crate::floor::Floor> {
-        let res = self
-            .agent
-            .get(&format!("{}/blyg.json", self.base))
-            .set("accept", "application/json")
-            .call();
-        match read_json(res) {
-            Ok(m) => {
-                if let Some(f) = crate::floor::from_manifest(&m) {
-                    return Ok(f);
-                }
-            }
-            Err(e) if is_transient(&e) => return Err(e),
-            Err(_) => {}
-        }
-        match self.call("GET", "/api/search?limit=1", None) {
-            Ok(v) => Ok(crate::floor::from_search(&v)),
-            Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => Err(e),
-            Err(_) => Ok(crate::floor::Floor::Unknown),
-        }
-    }
-
+    /// `GET /api/items/:id` (no version history: [`Api::item_versions`]).
     pub fn get_item(&self, id: &str) -> Result<WireItem> {
         let w = self.call_as("GET", &format!("/api/items/{}", enc(id)), None)?;
         Ok(self.resolve(w))
     }
 
-    /// `POST /api/items {mode: "blank", kind, content_md, stub_of?,
-    /// provenance?}` → the new item's id. `provenance` (studio 0.28+) has one
-    /// entry per TK scope; an older server refuses the key with a 400.
+    /// The item and its whole version history (`versions` filled).
+    pub fn get_item_full(&self, id: &str) -> Result<WireItem> {
+        let mut w = self.get_item(id)?;
+        w.versions = Some(self.item_versions(id)?);
+        Ok(w)
+    }
+
+    /// `GET /api/items/:id/versions`, every page, oldest first.
+    pub fn item_versions(&self, id: &str) -> Result<Vec<Version>> {
+        let mut v: Vec<WireVersion> =
+            self.collect(&format!("/api/items/{}/versions", enc(id)), "")?;
+        v.sort_by_key(|w| w.version);
+        Ok(v.into_iter().map(WireVersion::into_version).collect())
+    }
+
+    /// `POST /api/items {mode: "blank", kind, contentMd, stubOf?,
+    /// provenance?}` → the new item (its id and revision). `provenance` has
+    /// one entry per TK scope.
     pub fn create_item(
         &self,
         content_md: &str,
         kind: Kind,
         stub_of: Option<&RemoteRef>,
         provenance: Option<&[Option<ScopeProvenance>]>,
-    ) -> Result<String> {
-        let mut body = json!({ "mode": "blank", "content_md": content_md, "kind": kind_str(kind) });
+    ) -> Result<WireItem> {
+        let mut body = json!({ "mode": "blank", "contentMd": content_md, "kind": kind_str(kind) });
         if let Some(s) = stub_of {
             let mut s = s.clone();
             // Upstream's `Citation` needs source, url and retrieved (strict).
             if s.cited.as_ref().is_some_and(|c| !c.complete()) {
                 s.cited = None;
             }
-            body["stub_of"] = serde_json::to_value(&s).unwrap_or(Value::Null);
+            body["stubOf"] = serde_json::to_value(&s).unwrap_or(Value::Null);
         }
         if let Some(p) = provenance {
             body["provenance"] = provenance_body(p);
         }
-        Ok(self
-            .call_as::<Created>("POST", "/api/items", Some(body))?
-            .id)
+        self.call_as("POST", "/api/items", Some(body))
     }
 
-    /// `PATCH /api/items/:id {content_md}`.
-    pub fn save_item(&self, id: &str, content_md: &str) -> Result<()> {
-        self.call(
-            "PATCH",
-            &format!("/api/items/{}", enc(id)),
-            Some(json!({ "content_md": content_md })),
-        )
-        .map(|_| ())
+    /// `PATCH /api/items/:id {expectedRevision, …}` → the item as stored.
+    fn patch_item(&self, id: &str, revision: u64, mut body: Value) -> Result<WireItem> {
+        body["expectedRevision"] = json!(revision);
+        let w = self.call_as("PATCH", &format!("/api/items/{}", enc(id)), Some(body))?;
+        Ok(self.resolve(w))
     }
 
-    /// `PATCH /api/items/:id {content_md, provenance}` (studio 0.28+): the
-    /// text and its whole per-scope provenance in one atomic write. An older
-    /// server refuses the unknown key with a 400 ([`refused_provenance_key`]).
+    /// `PATCH /api/items/:id {contentMd}`.
+    pub fn save_item(&self, id: &str, revision: u64, content_md: &str) -> Result<WireItem> {
+        self.patch_item(id, revision, json!({ "contentMd": content_md }))
+    }
+
+    /// `PATCH /api/items/:id {contentMd, provenance}`: the text and its
+    /// whole per-scope provenance in one atomic write.
     pub fn save_item_provenance(
         &self,
         id: &str,
+        revision: u64,
         content_md: &str,
         provenance: &[Option<ScopeProvenance>],
-    ) -> Result<()> {
-        self.call(
-            "PATCH",
-            &format!("/api/items/{}", enc(id)),
-            Some(json!({ "content_md": content_md, "provenance": provenance_body(provenance) })),
+    ) -> Result<WireItem> {
+        self.patch_item(
+            id,
+            revision,
+            json!({ "contentMd": content_md, "provenance": provenance_body(provenance) }),
         )
-        .map(|_| ())
     }
 
-    /// `PATCH /api/items/:id {content_md, kind}`: a draft's kind can change
+    /// `PATCH /api/items/:id {contentMd, kind}`: a draft's kind can change
     /// until it is first published (409 after).
-    pub fn save_item_kind(&self, id: &str, content_md: &str, kind: Kind) -> Result<()> {
-        self.call(
-            "PATCH",
-            &format!("/api/items/{}", enc(id)),
-            Some(json!({ "content_md": content_md, "kind": kind_str(kind) })),
+    pub fn save_item_kind(
+        &self,
+        id: &str,
+        revision: u64,
+        content_md: &str,
+        kind: Kind,
+    ) -> Result<WireItem> {
+        self.patch_item(
+            id,
+            revision,
+            json!({ "contentMd": content_md, "kind": kind_str(kind) }),
         )
-        .map(|_| ())
     }
 
-    pub fn publish(&self, id: &str, note: Option<&str>) -> Result<Published> {
+    pub fn publish(&self, id: &str, revision: u64, note: Option<&str>) -> Result<Published> {
         self.call_as(
             "POST",
             &format!("/api/items/{}/publish", enc(id)),
-            Some(note_body(note)),
+            Some(command_body(revision, note)),
         )
     }
 
-    pub fn withdraw(&self, id: &str, note: Option<&str>) -> Result<u32> {
+    /// `POST /api/items/:id/withdraw` → (the withdrawal's version, the
+    /// item's revision after it).
+    pub fn withdraw(&self, id: &str, revision: u64, note: Option<&str>) -> Result<(u32, u64)> {
         #[derive(serde::Deserialize)]
         struct R {
             version: u32,
+            revision: u64,
         }
-        Ok(self
-            .call_as::<R>(
-                "POST",
-                &format!("/api/items/{}/withdraw", enc(id)),
-                Some(note_body(note)),
-            )?
-            .version)
+        let r: R = self.call_as(
+            "POST",
+            &format!("/api/items/{}/withdraw", enc(id)),
+            Some(command_body(revision, note)),
+        )?;
+        Ok((r.version, r.revision))
     }
 
-    /// `PUT /api/items/:id/versions/:version/pin` (idempotent, no body).
-    pub fn pin(&self, id: &str, version: u32) -> Result<Pinned> {
+    /// `PUT /api/items/:id/versions/:version/pin` (repeat-safe).
+    pub fn pin(&self, id: &str, revision: u64, version: u32) -> Result<Pinned> {
         #[derive(serde::Deserialize)]
         struct R {
             #[serde(default)]
             already: bool,
+            revision: u64,
         }
         let r: R = self.call_as(
             "PUT",
             &format!("/api/items/{}/versions/{version}/pin", enc(id)),
-            None,
+            Some(json!({ "expectedRevision": revision })),
         )?;
-        Ok(Pinned { already: r.already })
+        Ok(Pinned {
+            already: r.already,
+            revision: r.revision,
+        })
     }
 
-    pub fn restore(&self, id: &str, version: u32) -> Result<()> {
+    /// `POST /api/items/:id/restore {version}` → the item's revision after.
+    pub fn restore(&self, id: &str, revision: u64, version: u32) -> Result<u64> {
+        #[derive(serde::Deserialize)]
+        struct R {
+            revision: u64,
+        }
+        Ok(self
+            .call_as::<R>(
+                "POST",
+                &format!("/api/items/{}/restore", enc(id)),
+                Some(json!({ "expectedRevision": revision, "version": version })),
+            )?
+            .revision)
+    }
+
+    /// `DELETE /api/items/:id {expectedRevision}`: discards a draft.
+    pub fn delete_item(&self, id: &str, revision: u64) -> Result<()> {
         self.call(
-            "POST",
-            &format!("/api/items/{}/restore", enc(id)),
-            Some(json!({ "version": version })),
+            "DELETE",
+            &format!("/api/items/{}", enc(id)),
+            Some(json!({ "expectedRevision": revision })),
         )
         .map(|_| ())
     }
 
-    pub fn delete_item(&self, id: &str) -> Result<()> {
-        self.call("DELETE", &format!("/api/items/{}", enc(id)), None)
-            .map(|_| ())
-    }
-
-    /// `POST /api/items/:id/generate {scope}`. The server fills that TK
-    /// scope with its own model and records the provenance.
-    pub fn generate(&self, id: &str, scope: u32) -> Result<Generated> {
+    /// `POST /api/items/:id/generate {scope, expectedRevision}`. The server
+    /// fills that TK scope with its own model, records the provenance and
+    /// stores the spliced text. `revision`: `None` reads the item first and
+    /// uses its current revision (for a caller that holds none).
+    pub fn generate(&self, id: &str, scope: u32, revision: Option<u64>) -> Result<Generated> {
+        let revision = match revision {
+            Some(r) => r,
+            None => self.get_item(id)?.revision,
+        };
         #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct R {
             text: String,
             #[serde(default)]
             model: Option<String>,
             #[serde(default)]
             content_md: Option<String>,
+            #[serde(default)]
+            revision: u64,
         }
         let r: R = self.call_as(
             "POST",
             &format!("/api/items/{}/generate", enc(id)),
-            Some(json!({ "scope": scope })),
+            Some(json!({ "scope": scope, "expectedRevision": revision })),
         )?;
         Ok(Generated {
             text: r.text,
             model: r.model.unwrap_or_else(|| "unknown".into()),
             content_md: r.content_md,
+            revision: r.revision,
         })
     }
 
-    /// `GET /api/changes` (studio 0.32+): the blyg's change epoch and one
-    /// revision counter per data domain. `None` on an older server (404).
+    /// `GET /api/changes`: the blyg's change epoch and one revision counter
+    /// per data domain. `None` when the route isn't there (404).
     pub fn changes(&self) -> Result<Option<ChangeState>> {
         Self::optional(self.call_as("GET", "/api/changes", None))
     }
@@ -555,98 +641,33 @@ impl Api {
         Ok(self.resolve(w))
     }
 
-    /// `GET /api/items/:id/tk-provenance` → the server's per-scope cache.
-    /// `None` when the endpoint isn't there (extension 4 missing).
-    pub fn get_tk_provenance(&self, id: &str) -> Result<Option<Vec<Option<ScopeProvenance>>>> {
-        #[derive(serde::Deserialize)]
-        struct R {
-            #[serde(default)]
-            scopes: Vec<Option<ScopeProvenance>>,
-        }
-        Self::optional(self.call_as::<R>(
-            "GET",
-            &format!("/api/items/{}/tk-provenance", enc(id)),
-            None,
-        ))
-        .map(|o| o.map(|r| r.scopes))
+    /// `PATCH /api/items/:id {responses}` → the item as stored (resolved:
+    /// `shows_responses`, `responses_mode`).
+    pub fn set_responses(&self, id: &str, revision: u64, mode: ResponsesMode) -> Result<WireItem> {
+        self.patch_item(id, revision, json!({ "responses": mode.as_str() }))
     }
 
-    /// `PUT /api/items/:id/tk-provenance {content_md?, scopes}`: the text and
-    /// the whole position-keyed provenance array in one atomic write (the
-    /// server validates first and writes nothing on a 400). Returns how many
-    /// scopes are disclosed. 404 means the endpoint (or item) isn't there.
-    pub fn put_tk_provenance(
-        &self,
-        id: &str,
-        content_md: Option<&str>,
-        scopes: &[Option<ScopeProvenance>],
-    ) -> Result<u32> {
-        let entries: Vec<Value> = scopes
-            .iter()
-            .enumerate()
-            .map(|(i, p)| match p {
-                None => Value::Null,
-                Some(p) => {
-                    let mut e = json!({ "index": i, "model": p.model, "sources": p.sources });
-                    if let Some(at) = &p.at {
-                        e["at"] = json!(at);
-                    }
-                    e
-                }
-            })
-            .collect();
-        let mut body = json!({ "scopes": entries });
-        if let Some(c) = content_md {
-            body["content_md"] = json!(c);
-        }
-        let v = self.call(
-            "PUT",
-            &format!("/api/items/{}/tk-provenance", enc(id)),
-            Some(body),
-        )?;
-        Ok(v.get("disclosed").and_then(Value::as_u64).unwrap_or(0) as u32)
-    }
-
-    /// `PATCH /api/items/:id {responses}`. Returns (showing now, the
-    /// item's policy as the server stored it).
-    pub fn set_responses(
-        &self,
-        id: &str,
-        mode: ResponsesMode,
-    ) -> Result<(bool, Option<ResponsesMode>)> {
-        let w: WireItem = self.call_as(
-            "PATCH",
-            &format!("/api/items/{}", enc(id)),
-            Some(json!({ "responses": mode.as_str() })),
-        )?;
-        let w = self.resolve(w);
-        Ok((w.shows_responses(), w.responses_mode()))
-    }
-
-    /// `PATCH /api/items/:id {highlight}` (studio 0.27; needs
-    /// `owner:publish`, as it changes the public page at once). Returns
-    /// (highlighting now, the item's choice as the server stored it).
+    /// `PATCH /api/items/:id {highlight}` (needs `owner:publish`, as it
+    /// changes the public page at once) → the item as stored (resolved:
+    /// `highlights`, `highlight`).
     pub fn set_highlight(
         &self,
         id: &str,
+        revision: u64,
         mode: crate::model::HighlightMode,
-    ) -> Result<(bool, Option<crate::model::HighlightMode>)> {
-        let w: WireItem = self.call_as(
-            "PATCH",
-            &format!("/api/items/{}", enc(id)),
-            Some(json!({ "highlight": mode.as_str() })),
-        )?;
-        let w = self.resolve(w);
-        Ok((w.highlights(), w.highlight))
+    ) -> Result<WireItem> {
+        self.patch_item(id, revision, json!({ "highlight": mode.as_str() }))
     }
 
     // ---------- media ----------
 
+    /// `POST /api/media` (multipart). `item`: the item to attach it to and
+    /// the revision that attachment is based on; `None` uploads it loose.
     pub fn upload_media(
         &self,
         bytes: &[u8],
         mime: &str,
-        item_id: Option<&str>,
+        item: Option<(&str, u64)>,
         alt: Option<&str>,
     ) -> Result<Media> {
         let boundary = format!("----blygger{:x}", crate::util::now_ms() ^ 0x5eed_b1a9);
@@ -664,8 +685,9 @@ impl Api {
                 format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n").as_bytes(),
             );
         };
-        if let Some(id) = item_id {
-            text_field(&mut body, "item_id", id);
+        if let Some((id, revision)) = item {
+            text_field(&mut body, "itemId", id);
+            text_field(&mut body, "expectedRevision", &revision.to_string());
         }
         if let Some(a) = alt {
             text_field(&mut body, "alt", a);
@@ -690,17 +712,25 @@ impl Api {
             .map_err(|e| CoreError::Other(format!("unexpected media response: {e}")))
     }
 
-    /// `DELETE /api/media/:id` (extension): removes the row and the stored
-    /// file. 404 unknown; 409 when it's the site avatar.
-    pub fn delete_media(&self, id: &str) -> Result<()> {
-        self.call("DELETE", &format!("/api/media/{}", enc(id)), None)
-            .map(|_| ())
+    /// `DELETE /api/media/:id {expectedRevision?}`: detaches it from its
+    /// item, deleting the bytes when no published version shows them.
+    /// `revision` is the owning item's (required for an attachment, absent
+    /// for a loose upload). 404 unknown; 409 when it's the site avatar.
+    /// Returns the item's revision after it, for an attachment.
+    pub fn delete_media(&self, id: &str, revision: Option<u64>) -> Result<Option<u64>> {
+        let body = match revision {
+            Some(r) => json!({ "expectedRevision": r }),
+            None => json!({}),
+        };
+        let v = self.call("DELETE", &format!("/api/media/{}", enc(id)), Some(body))?;
+        Ok(v.get("revision").and_then(Value::as_u64))
     }
 
     // ---------- subscriptions ----------
 
     pub fn list_subscriptions(&self) -> Result<Vec<Subscription>> {
-        self.collect("/api/subscriptions", "")
+        let subs: Vec<WireSubscription> = self.collect("/api/subscriptions", "")?;
+        Ok(subs.into_iter().map(Subscription::from).collect())
     }
 
     pub fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
@@ -738,8 +768,8 @@ impl Api {
 
     /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
     /// `Some(Some(t))` sets a name of your own, `Some(None)` sends
-    /// `title: null`, handing the name back to the source (studio 0.30),
-    /// which refreshes it while polling.
+    /// `title: null`, handing the name back to the source, which refreshes
+    /// it while polling.
     pub fn update_subscription(
         &self,
         id: &str,
@@ -748,7 +778,7 @@ impl Api {
     ) -> Result<()> {
         let mut body = json!({});
         if let Some(b) = in_blogroll {
-            body["in_blogroll"] = json!(b);
+            body["inBlogroll"] = json!(b);
         }
         if let Some(t) = title {
             body["title"] = t.map_or(Value::Null, |t| json!(t));
@@ -776,9 +806,9 @@ impl Api {
         .map(|_| ())
     }
 
-    /// `POST /api/subscriptions/poll` (studio 0.30): the server polls every
-    /// subscription that isn't paused, in the background, and answers at
-    /// once with how many.
+    /// `POST /api/subscriptions/poll`: the server polls every subscription
+    /// that isn't paused, in the background, and answers at once with how
+    /// many.
     pub fn poll_subscriptions(&self) -> Result<u32> {
         let v = self.call("POST", "/api/subscriptions/poll", None)?;
         Ok(v.get("polling").and_then(Value::as_u64).unwrap_or(0) as u32)
@@ -836,41 +866,41 @@ impl Api {
                 body.insert(k.to_string(), json!(v));
             }
         };
-        put("site_title", &s.site_title);
-        put("author_name", &s.author_name);
-        put("author_bio", &s.author_bio);
-        put("site_url", &s.site_url);
+        put("siteTitle", &s.site_title);
+        put("authorName", &s.author_name);
+        put("authorBio", &s.author_bio);
+        put("siteUrl", &s.site_url);
         put("theme", &s.theme);
-        put("avatar_media_id", &s.avatar_media_id);
+        put("avatarMediaId", &s.avatar_media_id);
         // `Some("")` clears it (the blyg then renders in UTC).
         put("timezone", &s.timezone);
         if let Some(on) = s.accept_mentions {
-            body.insert("accept_mentions".into(), json!(on));
+            body.insert("acceptMentions".into(), json!(on));
         }
         if let Some(on) = s.show_responses_default {
-            body.insert("show_responses_default".into(), json!(on));
+            body.insert("showResponsesDefault".into(), json!(on));
         }
         if let Some(on) = s.highlight_generated_default {
-            body.insert("highlight_generated_default".into(), json!(on));
+            body.insert("highlightGeneratedDefault".into(), json!(on));
         }
         if let Some(t) = s.picker_typing {
-            body.insert("picker_typing".into(), json!(t.as_str()));
+            body.insert("pickerTyping".into(), json!(t.as_str()));
         }
         body.insert(
-            "author_links".into(),
+            "authorLinks".into(),
             serde_json::to_value(&s.author_links).unwrap_or(json!([])),
         );
         let v = self.call("PATCH", "/api/settings", Some(Value::Object(body)))?;
         // The reply is the stored settings.
-        match serde_json::from_value::<Settings>(v) {
-            Ok(saved) => self.remember(Some(&saved)),
+        match serde_json::from_value::<WireSettings>(v) {
+            Ok(saved) => self.remember(Some(&saved.into())),
             Err(_) => *self.site.lock().unwrap() = None,
         }
         Ok(())
     }
 
     /// Cache what items resolve against. No settings (or no such field)
-    /// means no site default (hidden) and no `site_url`.
+    /// means no site default (hidden) and no `siteUrl`.
     fn remember(&self, s: Option<&Settings>) {
         *self.site.lock().unwrap() = Some(Site {
             responses_default: s.and_then(|s| s.show_responses_default).unwrap_or(false),
@@ -885,8 +915,8 @@ impl Api {
         });
     }
 
-    /// `picker_typing` as last read or written (`None` until settings were
-    /// read, or on a server before 0.29).
+    /// `pickerTyping` as last read or written (`None` until settings were
+    /// read).
     pub fn picker_typing(&self) -> Option<crate::model::PickerTyping> {
         self.site
             .lock()
@@ -897,135 +927,47 @@ impl Api {
 
     // ---------- reads (404 → None) ----------
 
-    /// `GET /api/reading/imported`: imported rows in the app's shape,
-    /// keyset-paged. Upstream's `listImportedReading` (studio 0.40+) pages by
-    /// `cursor`, at most 100 a page; the old Worker patch 3 by `before`.
-    /// `upstream` is which the server turned out to be on the walk's first
-    /// page (`None` before then: that page sends only `limit`, which both
-    /// take, and `ReadingPage::upstream` says which answered). Upstream's
-    /// own `/api/reading` is a different, rendered resource. `content_html`
-    /// is kept as served: the UI sanitizes it before display.
-    pub fn reading(
-        &self,
-        limit: u32,
-        cursor: Option<&str>,
-        upstream: Option<bool>,
-    ) -> Result<Option<ReadingPage>> {
-        let old = upstream == Some(false);
-        let limit = if old {
-            limit.max(1)
-        } else {
-            limit.clamp(1, UPSTREAM_READING_MAX)
+    /// `GET /api/reading/imported`, one page: imported rows in the app's
+    /// shape, keyset-paged by an opaque `cursor` over (observedAt,
+    /// subscriptionId, remoteId), at most [`IMPORTED_READING_MAX`] a page.
+    /// `content_html` is kept as served: the UI sanitizes it before display.
+    /// A whole list is one walk from the first page to `nextCursor: null`
+    /// (`Engine::fetch_reading`); on `CursorExpired` the walk starts over.
+    pub fn reading(&self, limit: u32, cursor: Option<&str>) -> Result<Option<ReadingPage>> {
+        let limit = limit.clamp(1, IMPORTED_READING_MAX);
+        let page: Option<CursorPage<Value>> =
+            Self::optional(self.page("/api/reading/imported", "", limit, cursor))?;
+        let Some(page) = page else {
+            return Ok(None);
         };
-        let mut path = format!("/api/reading/imported?limit={limit}");
-        if let Some(c) = cursor {
-            path.push_str(if old { "&before=" } else { "&cursor=" });
-            path.push_str(&enc(c));
+        let mut items = Vec::with_capacity(page.items.len());
+        for row in &page.items {
+            let mut it = imported_row(row).map_err(|e| {
+                CoreError::Other(format!(
+                    "unexpected response from /api/reading/imported: {e}"
+                ))
+            })?;
+            it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
+            items.push(it);
         }
-        let page: Option<ReadingPage> = Self::optional(self.call_as("GET", &path, None))?;
-        Ok(page.map(|mut p| {
-            // Upstream rows say per row; the patch says per page.
-            let lineage = p.lineage == Some(true);
-            for it in &mut p.items {
-                it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
-                if !p.upstream {
-                    it.lineage_known = lineage;
-                }
-            }
-            p
+        Ok(Some(ReadingPage {
+            items,
+            next: page.page.next_cursor,
         }))
     }
 
-    /// `GET /api/reading?limit=1`, for its read-state flags only (studio
-    /// 0.39+). `None` on 404.
+    /// `GET /api/reading?limit=1`, for its read-state flags only (`readState`,
+    /// `readStateClear`). `None` on 404.
     pub fn reading_flags(&self) -> Result<Option<ReadingFlags>> {
         Self::optional(self.call_as("GET", "/api/reading?limit=1", None))
     }
 
-    // ---------- reading on a stock server (no `/reading/imported`) ----------
+    // ---------- read state ----------
 
-    /// Upstream's `GET /api/reading`, one page (at most 50). `None` on 404.
-    pub fn stock_reading(&self, offset: u64) -> Result<Option<StockReadingPage>> {
-        self.stock_reading_with(offset, false)
-    }
-
-    /// The same, or with `background` only the withdrawn entries (studio
-    /// 0.49+, which leaves them out of the plain list; an older server
-    /// ignores the parameter and sends everything).
-    pub fn stock_reading_with(
-        &self,
-        offset: u64,
-        background: bool,
-    ) -> Result<Option<StockReadingPage>> {
-        let bg = if background { "&background=true" } else { "" };
-        Self::optional(self.call_as(
-            "GET",
-            &format!("/api/reading?offset={offset}&limit={STOCK_READING_PAGE}{bg}"),
-            None,
-        ))
-    }
-
-    /// `GET /api/imports/{sub}/{id}`: one imported item, raw.
-    pub fn imported(&self, sub: &str, remote_id: &str) -> Result<Value> {
-        self.call(
-            "GET",
-            &format!("/api/imports/{}/{}", enc(sub), enc(remote_id)),
-            None,
-        )
-    }
-
-    /// Every thumb: `GET /api/signals` → (sub, remote id) → 1 or -1.
-    pub fn signals(&self) -> Result<std::collections::HashMap<(String, String), i8>> {
-        #[derive(serde::Deserialize)]
-        struct S {
-            subscription_id: String,
-            remote_id: String,
-            thumb: i8,
-        }
-        let rows: Vec<S> = self.collect("/api/signals", "")?;
-        Ok(rows
-            .into_iter()
-            .map(|s| ((s.subscription_id, s.remote_id), s.thumb))
-            .collect())
-    }
-
-    /// Which hoppers hold each imported item: (sub, remote id) → hopper ids,
-    /// from every hopper's memberships.
-    pub fn hopper_members(
-        &self,
-    ) -> Result<std::collections::HashMap<(String, String), Vec<String>>> {
-        #[derive(serde::Deserialize)]
-        struct H {
-            id: String,
-        }
-        #[derive(serde::Deserialize)]
-        struct M {
-            subscription_id: String,
-            remote_id: String,
-        }
-        #[derive(serde::Deserialize)]
-        struct Detail {
-            #[serde(default)]
-            memberships: Vec<M>,
-        }
-        let mut out: std::collections::HashMap<(String, String), Vec<String>> = Default::default();
-        for h in self.collect::<H>("/api/hoppers", "")? {
-            let d: Detail = self.call_as("GET", &format!("/api/hoppers/{}", enc(&h.id)), None)?;
-            for m in d.memberships {
-                out.entry((m.subscription_id, m.remote_id))
-                    .or_default()
-                    .push(h.id.clone());
-            }
-        }
-        Ok(out)
-    }
-
-    // ---------- extension 5: read state (404 = not deployed) ----------
-
-    /// `PUT /api/reading/:sub/:remoteId/read {version, read_at?}`. The server
-    /// keeps `max(stored, version)`, so a replay is harmless. `read_at` only
-    /// for a server that advertises `read_state_clear`: a read older than
-    /// its latest "mark unread" is then ignored (`stored: false`).
+    /// `PUT /api/reading/:sub/:remoteId/read {version, readAt?}`. The server
+    /// keeps `max(stored, version)`, so a replay is harmless. A read whose
+    /// `readAt` is older than the row's latest "mark unread" is ignored
+    /// (`stored: false`).
     pub fn put_read(
         &self,
         sub: &str,
@@ -1035,21 +977,17 @@ impl Api {
     ) -> Result<ReadAck> {
         let mut body = json!({ "version": version });
         if let Some(at) = read_at {
-            body["read_at"] = json!(at);
+            body["readAt"] = json!(at);
         }
-        let v = self.call(
+        self.call_as(
             "PUT",
             &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
             Some(body),
-        )?;
-        Ok(serde_json::from_value(v).unwrap_or(ReadAck {
-            stored: true,
-            read_version: None,
-        }))
+        )
     }
 
-    /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread
-    /// (`read_state_clear`). Idempotent; 200 for a row the server doesn't hold.
+    /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread.
+    /// Idempotent; 200 for a row the server doesn't hold.
     pub fn delete_read(&self, sub: &str, remote_id: &str) -> Result<()> {
         self.call(
             "DELETE",
@@ -1059,7 +997,7 @@ impl Api {
         .map(|_| ())
     }
 
-    /// `POST /api/reading/unread {items: [{sub, remote_id}]}`, at most
+    /// `POST /api/reading/unread {items: [{sub, remoteId}]}`, at most
     /// `READ_BATCH_MAX` entries, all or nothing.
     pub fn post_unreads(&self, items: &[UnreadMark]) -> Result<()> {
         self.call(
@@ -1070,8 +1008,8 @@ impl Api {
         .map(|_| ())
     }
 
-    /// `POST /api/reading/read {items: [{sub, remote_id, version}]}`, at most
-    /// `READ_BATCH_MAX` entries (the caller chunks).
+    /// `POST /api/reading/read {items: [{sub, remoteId, version, readAt?}]}`,
+    /// at most `READ_BATCH_MAX` entries (the caller chunks).
     pub fn put_reads(&self, items: &[ReadMark]) -> Result<()> {
         self.call("POST", "/api/reading/read", Some(json!({ "items": items })))
             .map(|_| ())
@@ -1084,11 +1022,12 @@ impl Api {
         Ok(m.map(|m| m.into_iter().map(Mention::from).collect()))
     }
 
-    /// The server fills unset strings with upstream defaults (`""`, or
-    /// `"auto"`); `""` becomes `None`. Except `timezone`, where `Some("")`
-    /// means "the server has the setting, and it is unset".
+    /// The server fills unset strings with defaults (`""`, or `"auto"`);
+    /// `""` becomes `None`. Except `timezone`, where `Some("")` means "the
+    /// server has the setting, and it is unset".
     pub fn settings(&self) -> Result<Option<Settings>> {
-        let s: Option<Settings> = Self::optional(self.call_as("GET", "/api/settings", None))?;
+        let s: Option<WireSettings> = Self::optional(self.call_as("GET", "/api/settings", None))?;
+        let s: Option<Settings> = s.map(Settings::from);
         self.remember(s.as_ref());
         Ok(s.map(|mut s| {
             for f in [
@@ -1107,90 +1046,72 @@ impl Api {
         }))
     }
 
-    /// Every hopper, with its item count from the hopper's own preview read
-    /// (`GET /api/hoppers/:id?preview=true` → `total`).
+    /// Every hopper, with its item count (`GET /api/hoppers/:id` → `total`).
     pub fn hoppers(&self) -> Result<Option<Vec<Hopper>>> {
-        #[derive(serde::Deserialize)]
-        struct H {
-            id: String,
-            name: String,
-            #[serde(default)]
-            slug: Option<String>,
-            #[serde(default)]
-            public: bool,
+        let Some(list) = Self::optional(self.collect::<WireHopper>("/api/hoppers", ""))? else {
+            return Ok(None);
+        };
+        let mut out = Vec::with_capacity(list.len());
+        for h in list {
+            let count = self.hopper_total(&h.id)?;
+            out.push(h.into_hopper(count));
         }
+        Ok(Some(out))
+    }
+
+    /// `GET /api/hoppers/:id` → `total`, how many posts it holds.
+    fn hopper_total(&self, id: &str) -> Result<u32> {
         #[derive(serde::Deserialize)]
         struct Detail {
             #[serde(default)]
             total: u32,
         }
-        let Some(list) = Self::optional(self.collect::<H>("/api/hoppers", ""))? else {
-            return Ok(None);
-        };
-        let mut out = Vec::with_capacity(list.len());
-        for h in list {
-            let count = self
-                .call_as::<Detail>(
-                    "GET",
-                    &format!("/api/hoppers/{}?preview=true", enc(&h.id)),
-                    None,
-                )?
-                .total;
-            out.push(Hopper {
-                id: h.id,
-                name: h.name,
-                slug: h.slug,
-                public: h.public,
-                count,
-                description: None,
-                slug_frozen: false,
-            });
-        }
-        Ok(Some(out))
+        Ok(self
+            .call_as::<Detail>("GET", &format!("/api/hoppers/{}", enc(id)), None)?
+            .total)
     }
 
     // ---------- hoppers (studio's createHopper … removeHopperItem) ----------
 
     /// Every hopper with all its memberships and the imported items it
-    /// holds (`GET /api/hoppers`, then `GET /api/hoppers/{id}` each, without
-    /// `preview`). `None` from a server without hoppers (404).
+    /// holds (`GET /api/hoppers`, then each one's `GET
+    /// /api/hoppers/{id}/memberships`, every page). `None` from a server
+    /// without hoppers (404).
     pub fn hopper_details(&self) -> Result<Option<Vec<HopperDetail>>> {
         let Some(list) = Self::optional(self.collect::<WireHopper>("/api/hoppers", ""))? else {
             return Ok(None);
         };
         #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
         struct M {
             subscription_id: String,
             remote_id: String,
             #[serde(default)]
             added_at: String,
-        }
-        #[derive(serde::Deserialize)]
-        struct Detail {
             #[serde(default)]
-            memberships: Vec<M>,
-            #[serde(default)]
-            items: Vec<Value>,
-            #[serde(default)]
-            total: Option<u32>,
+            item: Option<Value>,
         }
         let mut out = Vec::with_capacity(list.len());
         for h in list {
-            let d: Detail = self.call_as("GET", &format!("/api/hoppers/{}", enc(&h.id)), None)?;
-            let members: Vec<HopperMember> = d
-                .memberships
-                .into_iter()
-                .map(|m| HopperMember {
+            let rows: Vec<M> =
+                self.collect(&format!("/api/hoppers/{}/memberships", enc(&h.id)), "")?;
+            let mut members = Vec::with_capacity(rows.len());
+            let mut items = Vec::new();
+            for m in rows {
+                if let Some(it) = m.item.filter(Value::is_object) {
+                    items.push(it);
+                }
+                members.push(HopperMember {
                     subscription_id: m.subscription_id,
                     remote_id: m.remote_id,
                     added_at: m.added_at,
-                })
-                .collect();
-            let count = d.total.unwrap_or(members.len() as u32);
+                });
+            }
+            let count = members.len() as u32;
             out.push(HopperDetail {
                 hopper: h.into_hopper(count),
                 members,
-                items: d.items,
+                items,
             });
         }
         Ok(Some(out))
@@ -1231,8 +1152,7 @@ impl Api {
     }
 
     /// `PUT` (`on`) or `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}`.
-    /// `sub` is `~own` for one of your own posts (studio 0.45). Both are
-    /// idempotent.
+    /// `sub` is `~own` for one of your own posts. Both are idempotent.
     pub fn set_hopper_item(&self, id: &str, sub: &str, remote_id: &str, on: bool) -> Result<()> {
         self.call(
             if on { "PUT" } else { "DELETE" },
@@ -1256,9 +1176,8 @@ pub struct HopperMember {
     pub added_at: String,
 }
 
-/// --- hoppers --- A hopper as `GET /api/hoppers/{id}` reads it: every
-/// membership, and the imported items it holds (studio's `ImportedItem`
-/// rows, for posts this Mac doesn't hold).
+/// --- hoppers --- A hopper with every membership, and the imported items
+/// it holds (studio's `ImportedItem` rows, for posts this Mac doesn't hold).
 #[derive(Debug, Clone)]
 pub struct HopperDetail {
     pub hopper: Hopper,
@@ -1266,17 +1185,17 @@ pub struct HopperDetail {
     pub items: Vec<Value>,
 }
 
-/// --- hoppers --- The contract's `Hopper` (studio 0.24+: `description`,
-/// `slug_frozen`; older servers leave them out).
+/// --- hoppers --- The contract's `Hopper`.
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WireHopper {
     id: String,
     name: String,
     #[serde(default)]
     slug: Option<String>,
-    #[serde(default, deserialize_with = "lenient_bool")]
+    #[serde(default)]
     public: bool,
-    #[serde(default, deserialize_with = "lenient_bool")]
+    #[serde(default)]
     slug_frozen: bool,
     #[serde(default)]
     description: Option<String>,
@@ -1296,16 +1215,6 @@ impl WireHopper {
     }
 }
 
-/// A boolean the old Worker fork may send as 0/1.
-fn lenient_bool<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<bool, D::Error> {
-    use serde::Deserialize;
-    Ok(match Value::deserialize(d)? {
-        Value::Bool(b) => b,
-        Value::Number(n) => n.as_i64().is_some_and(|n| n != 0),
-        _ => false,
-    })
-}
-
 /// Why a connection check failed, worded for the "Connect your blyg" sheet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectError {
@@ -1317,11 +1226,14 @@ pub enum ConnectError {
     WrongPassword,
     /// No studio sign-in at `{blyg-url}/studio/login` (404).
     NoStudio,
-    /// `GET /api/items` is 404: a blyg older than studio 0.9 without the
-    /// owner-read extensions.
+    /// `GET {blyg}/api/items/summary` is 404 although the studio answered
+    /// its capabilities: not where the owner API should be.
     MissingExtensions,
-    /// The server answers, but it's older than blygger-studio 0.9.
+    /// The studio is older than [`MIN_STUDIO`] (its private API contract
+    /// isn't 5.x, or it has none).
     Outdated,
+    /// The studio speaks a newer contract than this Burrow.
+    TooNew(String),
     /// Anything else (a 5xx, or a page that isn't a blyg's JSON).
     Other(String),
 }
@@ -1342,10 +1254,15 @@ impl std::fmt::Display for ConnectError {
                 "There's no blyg studio sign-in at that address (…/studio/login is 404). Check the URL, including any path the blyg lives under.",
             ),
             ConnectError::MissingExtensions => f.write_str(
-                "This server has no owner JSON API (GET /api/items is 404). Burrow needs blygger-studio 0.47 or later. See docs/SERVER.md.",
+                "This server has no owner API under that address (GET …/api/items/summary is 404). Check the URL, including any path the blyg lives under. See docs/SERVER.md.",
             ),
-            ConnectError::Outdated => f.write_str(
-                "Your blyg needs updating: Burrow needs blygger-studio 0.47 or later, and this one is older than 0.9. Update it, then connect again.",
+            ConnectError::Outdated => write!(
+                f,
+                "Your blyg needs updating: Burrow needs blygger-studio {MIN_STUDIO} or later. Update the studio, then connect again."
+            ),
+            ConnectError::TooNew(c) => write!(
+                f,
+                "This blyg runs studio API contract {c}, which this version of Burrow doesn't speak yet. Update Burrow (Burrow › Check for Updates…), then connect again."
             ),
             ConnectError::Other(m) => f.write_str(m),
         }
@@ -1353,7 +1270,8 @@ impl std::fmt::Display for ConnectError {
 }
 
 /// Check a blyg URL and credential before saving them: sign in (with a
-/// password), then `GET /api/items`. Returns how many items the server holds.
+/// password), check the studio's API contract (`GET
+/// {blyg}/api/capabilities`), then count its items. Returns that count.
 pub fn verify_connection(
     base_url: &str,
     cred: impl Into<Credential>,
@@ -1370,33 +1288,25 @@ pub fn verify_connection(
         }
     }
     let api = Api::new(base_url, cred);
-    match api.count_items() {
-        Ok(n) => Ok(n as usize),
-        Err(CoreError::Offline) => Err(ConnectError::Unreachable),
-        Err(CoreError::Unauthorized) if password => Err(ConnectError::WrongPassword),
-        Err(CoreError::Unauthorized) => Err(ConnectError::WrongToken),
-        Err(CoreError::NotFound) => Err(ConnectError::MissingExtensions),
-        Err(CoreError::ServerOutdated) => Err(ConnectError::Outdated),
-        Err(CoreError::Rejected {
+    let fail = |e: CoreError| match e {
+        CoreError::Offline => ConnectError::Unreachable,
+        CoreError::Unauthorized if password => ConnectError::WrongPassword,
+        CoreError::Unauthorized => ConnectError::WrongToken,
+        CoreError::NotFound => ConnectError::MissingExtensions,
+        CoreError::Rejected {
             status, message, ..
-        }) => Err(ConnectError::Other(format!(
-            "The server answered {status}: {message}"
-        ))),
-        Err(CoreError::Other(_)) => Err(ConnectError::Other(
-            "That address answered, but not like a blyg (GET /api/items didn't return JSON)."
-                .into(),
-        )),
-        Err(e) => Err(ConnectError::Other(e.to_string())),
+        } => ConnectError::Other(format!("The server answered {status}: {message}")),
+        CoreError::Other(_) => ConnectError::Other(
+            "That address answered, but not like a blyg (its owner API didn't return JSON).".into(),
+        ),
+        e => ConnectError::Other(e.to_string()),
+    };
+    match contract(api.contract_version().map_err(fail)?.as_deref()) {
+        Contract::Supported => {}
+        Contract::TooOld => return Err(ConnectError::Outdated),
+        Contract::TooNew(c) => return Err(ConnectError::TooNew(c)),
     }
-}
-
-/// `/api` is host-rooted (upstream `app.route("/api", …)`): the origin of
-/// the blyg URL, whatever its mount.
-fn api_root(base: &str) -> String {
-    match url::Url::parse(base) {
-        Ok(u) if u.has_host() => u.origin().ascii_serialization(),
-        _ => base.to_string(),
-    }
+    api.count_items().map(|n| n as usize).map_err(fail)
 }
 
 /// Reading items declare `page` origin-relative (e.g. `f/a1`); resolve it so
@@ -1419,11 +1329,13 @@ pub fn absolute_page(origin: &str, page: &str) -> Option<String> {
     }
 }
 
-fn note_body(note: Option<&str>) -> Value {
-    match note.map(str::trim).filter(|n| !n.is_empty()) {
-        Some(n) => json!({ "note": n }),
-        None => json!({}),
+/// An item command's body: the revision it's based on, and a note.
+fn command_body(revision: u64, note: Option<&str>) -> Value {
+    let mut b = json!({ "expectedRevision": revision });
+    if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
+        b["note"] = json!(n);
     }
+    b
 }
 
 /// Percent-encode a path segment.
@@ -1459,22 +1371,29 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
                 .ok()
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or(Value::Null);
+            let code_str = body.get("code").and_then(Value::as_str).unwrap_or("");
+            match (code, code_str) {
+                (409, "revision-conflict") => return Err(CoreError::RevisionConflict),
+                (409, "cursor-expired") => return Err(CoreError::CursorExpired),
+                _ => {}
+            }
             let message = body
-                .get("error")
+                .get("message")
                 .and_then(Value::as_str)
+                .filter(|m| !m.is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| format!("server returned {code}"));
-            let mut details: Vec<String> = body
-                .get("errors")
-                .and_then(Value::as_array)
+            let d = body.get("details");
+            let list = |k: &str| d.and_then(|d| d.get(k)).and_then(Value::as_array);
+            let mut details: Vec<String> = list("errors")
                 .map(|a| a.iter().map(detail).collect())
                 .unwrap_or_default();
-            // Validation failures: `issues: [{path, message}]`.
-            if let Some(issues) = body.get("issues").and_then(Value::as_array) {
+            // Validation failures: `details.issues: [{path, message}]`.
+            if let Some(issues) = list("issues") {
                 details.extend(issues.iter().map(issue));
             }
-            // An unresolvable subscribe (422): `tried: [url, …]`.
-            if let Some(tried) = body.get("tried").and_then(Value::as_array) {
+            // An unresolvable subscribe (422): `details.tried: [url, …]`.
+            if let Some(tried) = list("tried") {
                 let n = tried.len();
                 details.push(format!(
                     "tried {n} address{}",
@@ -1541,11 +1460,14 @@ pub(crate) fn retry_after(h: Option<&str>) -> u64 {
         .clamp(1, 3600)
 }
 
-/// True for failures worth retrying later (network down, server 5xx, or the
-/// blyg's work budget spent: a 429 never drops a queued change).
+/// True for failures worth retrying later (network down, server 5xx, the
+/// blyg's work budget spent, or a list that kept changing while it was
+/// read: none of them drops a queued change).
 pub fn is_transient(e: &CoreError) -> bool {
-    matches!(e, CoreError::Offline | CoreError::RateLimited { .. })
-        || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
+    matches!(
+        e,
+        CoreError::Offline | CoreError::RateLimited { .. } | CoreError::CursorExpired
+    ) || matches!(e, CoreError::Rejected { status, .. } if *status >= 500)
 }
 
 /// Upstream's `GenerationProvenance` array: `{sources: [{id, version}],
@@ -1568,37 +1490,21 @@ fn provenance_body(scopes: &[Option<ScopeProvenance>]) -> Value {
     )
 }
 
-/// A 400 that refuses the `provenance` key itself: a server older than
-/// studio 0.28, whose strict item schema doesn't know it.
-pub fn refused_provenance_key(e: &CoreError) -> bool {
-    match e {
-        CoreError::Rejected {
-            status: 400,
-            message,
-            details,
-        } => std::iter::once(message)
-            .chain(details)
-            .any(|m| m.contains("nrecognized") && m.contains("provenance")),
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::contract_supported;
+    use super::*;
 
     #[test]
-    fn contract_majors_past_one_are_refused() {
-        assert!(contract_supported("1.0.0"));
-        assert!(contract_supported("1.4.2"));
-        assert!(!contract_supported("2.0.0"));
-        assert!(!contract_supported(" 5.1.0 "));
-        // Not a version: not locked out on a guess.
-        assert!(contract_supported("next"));
-        assert!(contract_supported(""));
+    fn only_contract_five_is_spoken() {
+        assert_eq!(contract(Some("5.0.0")), Contract::Supported);
+        assert_eq!(contract(Some(" 5.3.1 ")), Contract::Supported);
+        assert_eq!(contract(Some("4.0.0")), Contract::TooOld);
+        assert_eq!(contract(Some("1.0.0")), Contract::TooOld);
+        assert_eq!(contract(None), Contract::TooOld, "no capabilities: too old");
+        assert_eq!(contract(Some("6.0.0")), Contract::TooNew("6.0.0".into()));
+        // Not a version: not something this Burrow knows how to speak.
+        assert_eq!(contract(Some("next")), Contract::TooNew("next".into()));
     }
-
-    use super::*;
 
     #[test]
     fn retry_after_reads_seconds_and_defaults_to_a_minute() {
@@ -1611,23 +1517,30 @@ mod tests {
     }
 
     #[test]
-    fn a_rate_limit_is_transient() {
+    fn a_rate_limit_and_an_expired_cursor_are_transient() {
         assert!(is_transient(&CoreError::RateLimited { retry_after: 60 }));
+        assert!(is_transient(&CoreError::CursorExpired));
+        assert!(!is_transient(&CoreError::RevisionConflict));
     }
 
     #[test]
-    fn an_unknown_provenance_key_reads_as_an_older_server() {
-        let strict = CoreError::Rejected {
-            status: 400,
-            message: "request: Unrecognized key(s) in object: 'provenance'".into(),
-            details: vec![],
-        };
-        assert!(refused_provenance_key(&strict));
-        let invalid = CoreError::Rejected {
-            status: 400,
-            message: "provenance must have one entry per TK scope".into(),
-            details: vec![],
-        };
-        assert!(!refused_provenance_key(&invalid));
+    fn the_api_lives_under_the_mount() {
+        let api = Api::new("https://blyg.example.com/blyg/", "t");
+        assert_eq!(api.api_url(), "https://blyg.example.com/blyg/api");
+        let root = Api::new("https://blyg.example.com", "t");
+        assert_eq!(root.api_url(), "https://blyg.example.com/api");
+    }
+
+    #[test]
+    fn a_command_body_carries_its_revision_and_a_trimmed_note() {
+        assert_eq!(command_body(3, None), json!({ "expectedRevision": 3 }));
+        assert_eq!(
+            command_body(3, Some("  ")),
+            json!({ "expectedRevision": 3 })
+        );
+        assert_eq!(
+            command_body(4, Some(" fixed a typo ")),
+            json!({ "expectedRevision": 4, "note": "fixed a typo" })
+        );
     }
 }

@@ -18,21 +18,29 @@ pub enum CoreError {
     Unauthorized,
     #[error("not found")]
     NotFound,
-    /// Server said no; `message` is its `error` field, `details` its `errors`.
+    /// Server said no; `message` is its `message` field, `details` its
+    /// `details` (validation issues, unresolved references).
     #[error("{message}")]
     Rejected {
         status: u16,
         message: String,
         details: Vec<String>,
     },
-    /// The server is older than Burrow's floor, blygger-studio 0.47
-    /// (`crate::floor`): a post with labelled links (`[[id | label]]`) isn't
-    /// published to it, since an older studio doesn't understand them. One
-    /// older than 0.9 gets nothing pushed or pulled: its owner API predates
-    /// the OpenAPI contract, and a 404 on a new route would read as
-    /// "deleted" and duplicate posts.
-    #[error("your blyg needs updating: Burrow needs blygger-studio 0.47 or later")]
+    /// The blyg doesn't speak the private API contract this Burrow needs
+    /// (5.x, blygger-studio 0.49.12 or later, `crate::api::CONTRACT_MAJOR`):
+    /// nothing is pushed or pulled. A 404 on a route would otherwise read
+    /// as "deleted", and a page in another shape as the end of a list.
+    #[error("your blyg needs updating: Burrow needs blygger-studio 0.49.12 or later")]
     ServerOutdated,
+    /// 409 `revision-conflict`: the post changed on the blyg after the
+    /// revision this command carried was read. Nothing was applied.
+    #[error("this post changed on your blyg since Burrow last read it")]
+    RevisionConflict,
+    /// 409 `cursor-expired`: a list changed on the blyg while it was read
+    /// page by page. The pages read so far are thrown away; the list is read
+    /// again from the start (never appended to the old pages).
+    #[error("a list changed on your blyg while Burrow was reading it")]
+    CursorExpired,
     /// Item has never reached the server (still local-only) and the op needs a server id.
     #[error("not on the server yet — still syncing")]
     NotSynced,
@@ -399,8 +407,9 @@ pub trait Backend: Send + Sync {
         None
     }
 
-    /// False once the server has answered 404 to the provenance endpoint:
-    /// text generated in the app would then publish without disclosure.
+    /// False when the server can't record the AI provenance of text
+    /// generated in the app (it would then publish without disclosure).
+    /// Every studio Burrow supports takes it with the text.
     /// The default (and a backend that hasn't found out yet) says true.
     fn provenance_available(&self) -> bool {
         true
@@ -408,8 +417,8 @@ pub trait Backend: Send + Sync {
 
     // --- reading ---
 
-    /// False once the server has shown it lacks the owner-API read
-    /// extensions (`GET /api/reading/imported` answered 404): the reading, mentions and
+    /// False once the server has shown it lacks the owner reads (`GET
+    /// /api/reading/imported` answered 404): the reading, mentions and
     /// site-settings screens then say "not available on this server" instead
     /// of showing an empty list. Additive; the default says "available".
     fn read_extensions_available(&self) -> bool {
@@ -473,23 +482,22 @@ pub trait Backend: Send + Sync {
 
     // --- about ---
 
-    /// Whether the server carries the extensions in docs/SERVER.md: `Some(false)`
-    /// for a stock blygger-studio (reading comes from upstream's own routes;
-    /// AI disclosure for app-generated text, read-state sync and upload
-    /// removal are off), `None` until a reading pull has found out.
+    /// Whether the server serves everything Burrow reads (`GET
+    /// /api/reading/imported`, studio contract 5): `Some(true)` once a
+    /// reading pull found it, `None` until then.
     fn server_extensions(&self) -> Option<bool> {
         None
     }
 
-    /// The connected server is older than blygger-studio 0.47: posts with
-    /// labelled links wait until it's updated (`crate::floor`;
-    /// `CoreEvent::ServerOutdated` says when first seen).
+    /// The connected server is older than blygger-studio 0.49.12 (its
+    /// private API contract isn't 5.x): nothing syncs until it's updated
+    /// (`CoreEvent::ServerOutdated` says when first seen).
     fn server_outdated(&self) -> bool {
         false
     }
 
-    /// Whether read state syncs with the server (the last `GET /api/reading/imported`
-    /// advertised `read_state: true`, extension 5; meta key `read_sync`).
+    /// Whether read state syncs with the server (`GET /api/reading`
+    /// advertised `readState: true`; meta key `read_sync`).
     /// For the About window. Additive; the default says no.
     fn read_state_sync(&self) -> bool {
         false

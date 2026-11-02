@@ -99,8 +99,9 @@ impl LiveBackend {
         !self.engine.reading_unavailable()
     }
 
-    /// False once the server answered 404 to the provenance endpoint: text
-    /// generated in the app would publish without disclosure there.
+    /// False only while an older Burrow's "the server can't take provenance"
+    /// mark stands (cleared by the next push with provenance): every studio
+    /// Burrow syncs with records it with the text.
     pub fn provenance_available(&self) -> bool {
         self.engine
             .store
@@ -160,9 +161,10 @@ impl LiveBackend {
         self.server_id(id)
     }
 
-    /// Best-effort refresh of one item from `GET /api/items/:id`.
+    /// Best-effort refresh of one item from `GET /api/items/:id` and its
+    /// version history.
     fn refresh(&self, id: &LocalId, sid: &str) -> Option<WireItem> {
-        let w = self.e().api.get_item(sid).ok()?;
+        let w = self.e().api.get_item_full(sid).ok()?;
         self.e().store.apply_server(id, &w).ok()?;
         Some(w)
     }
@@ -264,8 +266,7 @@ impl LiveBackend {
             }
             Some(e) => {
                 for (_, url) in &done {
-                    let media = url.rsplit('/').next().unwrap_or_default();
-                    let _ = self.delete_media(media);
+                    let _ = self.delete_media(url);
                 }
                 Err(match e {
                     CoreError::Rejected {
@@ -281,6 +282,15 @@ impl LiveBackend {
                 })
             }
         }
+    }
+
+    /// Run an item command with its revision (`Engine::with_revision`),
+    /// tracked for the status bar. An item whose text moved on the blyg
+    /// under a local edit enters conflict, and the command isn't sent.
+    fn command<T>(&self, id: &LocalId, sid: &str, f: impl Fn(u64) -> Result<T>) -> Result<T> {
+        self.e()
+            .track(self.e().with_revision(id, sid, f))?
+            .ok_or_else(conflict_err)
     }
 
     fn permalink_for(&self, kind: Kind, sid: &str) -> String {
@@ -508,6 +518,10 @@ impl LiveBackend {
     }
 }
 
+/// `meta` key prefix: a media id this Mac attached → the post's local id
+/// (removing an attachment needs its post's revision).
+const MEDIA_ITEM: &str = "media_item:";
+
 fn conflict_err() -> CoreError {
     CoreError::Rejected {
         status: 409,
@@ -713,7 +727,6 @@ impl Backend for LiveBackend {
     // --------------------------------------------------------------- remote
 
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
-        // Below the studio floor a post with labelled links waits (`crate::floor`).
         let content = self.row(id)?.item.content_md;
         self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
@@ -732,7 +745,8 @@ impl Backend for LiveBackend {
             .base_content
             .clone()
             .unwrap_or_else(|| row.item.content_md.clone());
-        let p = self.e().track(self.e().api.publish(&sid, note))?;
+        let p = self.command(id, &sid, |rev| self.e().api.publish(&sid, rev, note))?;
+        self.e().store.set_revision(id, p.revision)?;
         let permalink = self
             .refresh(id, &sid)
             .and_then(|w| w.permalink)
@@ -751,7 +765,8 @@ impl Backend for LiveBackend {
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
-        let v = self.e().track(self.e().api.withdraw(&sid, note))?;
+        let (v, revision) = self.command(id, &sid, |rev| self.e().api.withdraw(&sid, rev, note))?;
+        self.e().store.set_revision(id, revision)?;
         if self.refresh(id, &sid).is_none() {
             self.e()
                 .store
@@ -778,7 +793,8 @@ impl Backend for LiveBackend {
                 details: vec![],
             });
         }
-        self.e().track(self.e().api.pin(&sid, version))?;
+        let p = self.command(id, &sid, |rev| self.e().api.pin(&sid, rev, version))?;
+        self.e().store.set_revision(id, p.revision)?;
         self.refresh(id, &sid);
         Ok(())
     }
@@ -788,7 +804,7 @@ impl Backend for LiveBackend {
         let Some(sid) = row.item.server_id else {
             return Ok(vec![]);
         };
-        match self.e().track(self.e().api.get_item(&sid.0)) {
+        match self.e().track(self.e().api.get_item_full(&sid.0)) {
             Ok(w) => {
                 let _net = self.e().net_lock();
                 self.e().store.apply_server(id, &w)?;
@@ -817,8 +833,8 @@ impl Backend for LiveBackend {
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
         let sid = self.server_id(id)?;
         let _net = self.e().net_lock();
-        self.e().track(self.e().api.restore(&sid, version))?;
-        let w = self.e().track(self.e().api.get_item(&sid))?;
+        self.command(id, &sid, |rev| self.e().api.restore(&sid, rev, version))?;
+        let w = self.e().track(self.e().api.get_item_full(&sid))?;
         self.e().store.replace_from_server(id, &w)?;
         self.e().emit(CoreEvent::ItemsChanged);
         self.e().emit_status();
@@ -836,7 +852,7 @@ impl Backend for LiveBackend {
             });
         }
         if let Some(sid) = &row.item.server_id {
-            match self.e().track(self.e().api.delete_item(&sid.0)) {
+            match self.command(id, &sid.0, |rev| self.e().api.delete_item(&sid.0, rev)) {
                 Ok(()) | Err(CoreError::NotFound) => {}
                 Err(e) => return Err(e),
             }
@@ -854,32 +870,64 @@ impl Backend for LiveBackend {
         item: Option<&LocalId>,
         alt: Option<&str>,
     ) -> Result<MediaRef> {
-        let sid = match item {
-            // A post held for labelled links (below the studio floor) may
-            // never have reached the blyg: the image goes up unattached.
-            Some(id) => match self.ensure_on_server(id) {
-                Ok(sid) => Some(sid),
-                Err(CoreError::NotSynced) if self.e().floor_below() => None,
-                Err(e) => return Err(e),
-            },
-            None => None,
+        let m = match item {
+            Some(id) => {
+                let sid = self.ensure_on_server(id)?;
+                let _net = self.e().net_lock();
+                let m = self.command(id, &sid, |rev| {
+                    self.e()
+                        .api
+                        .upload_media(&bytes, mime, Some((&sid, rev)), alt)
+                })?;
+                if let Some(r) = m.revision {
+                    self.e().store.set_revision(id, r)?;
+                }
+                // Removing it later needs the post it's attached to.
+                self.e()
+                    .store
+                    .set_meta(&format!("{MEDIA_ITEM}{}", m.id), &id.0)?;
+                m
+            }
+            None => self
+                .e()
+                .track(self.e().api.upload_media(&bytes, mime, None, alt))?,
         };
-        let m = self
-            .e()
-            .track(self.e().api.upload_media(&bytes, mime, sid.as_deref(), alt))?;
         Ok(MediaRef {
             url: m.url,
             mime: m.mime,
         })
     }
 
+    /// An attachment is detached from its post at that post's revision, so
+    /// one this Mac attached (`MEDIA_ITEM`) goes with its post's; a loose
+    /// upload goes without one.
     fn delete_media(&self, url: &str) -> Result<()> {
-        let file = url.trim_start_matches('/').trim_start_matches("media/");
-        let id = file.split('.').next().unwrap_or(file);
-        if id.is_empty() {
-            return Err(CoreError::NotFound);
+        let id = crate::api::media::media_id(url).ok_or(CoreError::NotFound)?;
+        let key = format!("{MEDIA_ITEM}{id}");
+        let owner = self.e().store.meta(&key).map(LocalId);
+        let sid = owner
+            .as_ref()
+            .and_then(|o| self.e().store.row(o))
+            .and_then(|r| r.item.server_id)
+            .map(|s| s.0);
+        let r = match (&owner, &sid) {
+            (Some(o), Some(sid)) => {
+                let _net = self.e().net_lock();
+                self.command(o, sid, |rev| self.e().api.delete_media(&id, Some(rev)))
+                    .and_then(|rev| match rev {
+                        Some(r) => self.e().store.set_revision(o, r),
+                        None => Ok(()),
+                    })
+            }
+            _ => self
+                .e()
+                .track(self.e().api.delete_media(&id, None))
+                .map(|_| ()),
+        };
+        if matches!(r, Ok(()) | Err(CoreError::NotFound)) {
+            self.e().store.delete_meta(&key)?;
         }
-        self.e().track(self.e().api.delete_media(id))
+        r
     }
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
@@ -893,7 +941,9 @@ impl Backend for LiveBackend {
 
     fn set_responses(&self, id: &LocalId, mode: ResponsesMode) -> Result<bool> {
         let sid = self.server_id(id)?;
-        let (showing, got) = self.e().track(self.e().api.set_responses(&sid, mode))?;
+        let w = self.command(id, &sid, |rev| self.e().api.set_responses(&sid, rev, mode))?;
+        let (showing, got) = (w.shows_responses(), w.responses_mode());
+        self.e().store.set_revision(id, w.revision)?;
         self.e().store.set_responses(id, showing, got)?;
         self.e().emit(CoreEvent::ItemsChanged);
         Ok(showing)
@@ -901,7 +951,9 @@ impl Backend for LiveBackend {
 
     fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
         let sid = self.server_id(id)?;
-        let (on, got) = self.e().track(self.e().api.set_highlight(&sid, mode))?;
+        let w = self.command(id, &sid, |rev| self.e().api.set_highlight(&sid, rev, mode))?;
+        let (on, got) = (w.highlights(), w.highlight);
+        self.e().store.set_revision(id, w.revision)?;
         self.e().store.set_highlight(id, on, got)?;
         self.e().emit(CoreEvent::ItemsChanged);
         Ok(on)

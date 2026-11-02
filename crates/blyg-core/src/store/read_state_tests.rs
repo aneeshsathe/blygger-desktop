@@ -106,7 +106,7 @@ fn read_ops(s: &Store) -> Vec<(OpKind, String, String)> {
             (
                 o.kind,
                 v["sub"].as_str().unwrap().to_string(),
-                v["remote_id"].as_str().unwrap().to_string(),
+                v["remoteId"].as_str().unwrap().to_string(),
             )
         })
         .collect()

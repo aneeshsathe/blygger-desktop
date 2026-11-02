@@ -300,6 +300,13 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (hopper_id, subscription_id, remote_id)
     );
     "#,
+    // v15 studio contract 5: an item's private revision as the blyg last
+    // reported it with what this Mac holds (`base_content`), sent with every
+    // command on it (`expectedRevision`). NULL until the next read: the
+    // first command on the item reads it then.
+    r#"
+    ALTER TABLE items ADD COLUMN revision INTEGER;
+    "#,
 ];
 
 /// Returns whether any migration ran.

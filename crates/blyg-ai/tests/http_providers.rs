@@ -323,11 +323,23 @@ fn cloudflare_401_and_models() {
 #[test]
 fn blyg_server_generate() {
     let mock = Mock::start(|r| match r.route().as_str() {
+        "GET /api/items/ITEM1" => Resp::json(
+            200,
+            json!({"id":"ITEM1","kind":"fragment","status":"draft","revision":4}),
+        ),
         "POST /api/items/ITEM1/generate" => {
-            if r.json()["scope"] == 2 {
-                Resp::json(200, json!({"text":"server text","model":"claude-opus-5"}))
+            if r.json()["expectedRevision"] != 4 {
+                Resp::json(409, json!({"code":"revision-conflict","message":"stale"}))
+            } else if r.json()["scope"] == 2 {
+                Resp::json(
+                    200,
+                    json!({"text":"server text","model":"claude-opus-5","revision":5}),
+                )
             } else {
-                Resp::json(400, json!({"error":"unknown scope index"}))
+                Resp::json(
+                    400,
+                    json!({"code":"invalid-request","message":"unknown scope index"}),
+                )
             }
         }
         _ => Resp::not_found(),

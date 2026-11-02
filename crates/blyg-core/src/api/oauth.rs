@@ -222,7 +222,8 @@ pub struct Discovery {
     pub token_endpoint: String,
     pub registration_endpoint: String,
     pub revocation_endpoint: Option<String>,
-    /// The REST API's resource identifier (`{origin}/api`).
+    /// The REST API's resource identifier (`{blyg}/api`; `{origin}/api` on a
+    /// grant made before studio 0.49.7, which still refreshes).
     pub resource: String,
     /// The `scope` Burrow asks this server for: [`SCOPE`], less any scope its
     /// `scopes_supported` leaves out (an unknown one is `invalid_scope`).
@@ -280,7 +281,10 @@ pub fn discover(base_url: &str) -> Result<Option<Discovery>> {
     if !s256 {
         return Ok(None);
     }
-    // The API resource the server advertises; else upstream's `{origin}/api`.
+    // The API resource the server advertises (studio 0.49.7+: `{blyg}/api`,
+    // under the mount); else that address. A grant made for the old
+    // `{origin}/api` audience keeps working and refreshing with its own
+    // `resource` (studio 0.49.12 accepts both), so nothing is migrated.
     let metadata = format!("{}/resources/api", issuer.trim_end_matches('/'));
     let resource = get_json(&metadata)?
         .and_then(|v| {
@@ -288,7 +292,7 @@ pub fn discover(base_url: &str) -> Result<Option<Discovery>> {
                 .and_then(Value::as_str)
                 .map(str::to_string)
         })
-        .unwrap_or_else(|| format!("{}/api", super::api_root(base_url)));
+        .unwrap_or_else(|| format!("{}/api", base_url.trim_end_matches('/')));
     let scope = scope_for(
         doc.get("scopes_supported")
             .and_then(Value::as_array)

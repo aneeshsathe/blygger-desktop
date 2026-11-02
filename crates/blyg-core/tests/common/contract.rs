@@ -1,13 +1,18 @@
-//! Checks owner-API traffic against upstream's OpenAPI contract
-//! (`tests/fixtures/openapi.json`) and the Worker fork's extensions
-//! (`tests/fixtures/extensions.json`). Covers the JSON Schema keywords those
-//! files use: `type` (incl. type lists), `$ref`, `properties`, `required`,
-//! `additionalProperties`, `enum`, `anyOf`, `items`, `maxItems`, `minLength`,
-//! `minimum`, `maximum` and `exclusiveMinimum`. `format` is not checked.
+//! Checks owner-API traffic against blygger-studio's private API contract
+//! 5.0.0 (`tests/fixtures/openapi.json`, studio v0.49.12). Covers the JSON
+//! Schema keywords that file uses: `type` (incl. type lists), `$ref`,
+//! `properties`, `required`, `additionalProperties`, `enum`, `anyOf`,
+//! `allOf`, `items`, `minItems`, `maxItems`, `minLength`, `maxLength`,
+//! `minimum`, `maximum`, `exclusiveMinimum`, and `pattern` for the one
+//! pattern it uses (a `#rrggbb` colour). `format` is not checked.
+//!
+//! The contract's paths are relative to its server URL (`…/api`); callers
+//! pass whole request paths (`["api", "items", …]`), so a contract whose
+//! server URL has a path gets that path put in front of its templates.
 
 use std::sync::OnceLock;
 
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 pub struct Contract {
     doc: Value,
@@ -15,24 +20,10 @@ pub struct Contract {
     ops: Vec<(String, Vec<String>, Value)>,
 }
 
-/// Upstream's contract.
+/// The studio's private API contract (5.0.0).
 pub fn contract() -> &'static Contract {
     static C: OnceLock<Contract> = OnceLock::new();
     C.get_or_init(|| Contract::load(include_str!("../fixtures/openapi.json")))
-}
-
-/// The Worker fork's extensions (docs/SERVER.md).
-pub fn extensions() -> &'static Contract {
-    static C: OnceLock<Contract> = OnceLock::new();
-    C.get_or_init(|| Contract::load(include_str!("../fixtures/extensions.json")))
-}
-
-/// The operations Burrow uses that changed after the vendored contract, cut
-/// from studio 0.49.1's (`GET /api/reading`'s `background`, the browse
-/// routes). Requests are checked against this before `contract()`.
-pub fn studio_049() -> &'static Contract {
-    static C: OnceLock<Contract> = OnceLock::new();
-    C.get_or_init(|| Contract::load(include_str!("../fixtures/studio-0.49.json")))
 }
 
 /// The `lineage-glyph` studio extension's owner reads (studio dc632c5).
@@ -44,18 +35,35 @@ pub fn lineage_glyph() -> &'static Contract {
 impl Contract {
     fn load(text: &str) -> Contract {
         let doc: Value = serde_json::from_str(text).expect("contract JSON");
+        // `servers[0].url`'s path (`/api`), put before every template.
+        let prefix: Vec<String> = doc["servers"][0]["url"]
+            .as_str()
+            .and_then(|u| url::Url::parse(u).ok())
+            .map(|u| {
+                u.path()
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
         let mut ops = vec![];
         for (path, item) in doc["paths"].as_object().unwrap() {
-            let segs = path
-                .trim_start_matches('/')
-                .split('/')
-                .map(str::to_string)
-                .collect::<Vec<_>>();
+            let mut segs = prefix.clone();
+            segs.extend(path.trim_start_matches('/').split('/').map(str::to_string));
             for (method, op) in item.as_object().unwrap() {
                 ops.push((method.to_ascii_uppercase(), segs.clone(), op.clone()));
             }
         }
         Contract { doc, ops }
+    }
+
+    /// Every operation's `operationId`, in file order.
+    pub fn operation_ids(&self) -> Vec<String> {
+        self.ops
+            .iter()
+            .filter_map(|(_, _, op)| op["operationId"].as_str().map(str::to_string))
+            .collect()
     }
 }
 
@@ -63,9 +71,65 @@ fn is_param(seg: &str) -> bool {
     seg.starts_with('{') && seg.ends_with('}')
 }
 
+/// One part of a `multipart/form-data` body.
+pub struct Part {
+    pub name: String,
+    pub content_type: Option<String>,
+    pub data: Vec<u8>,
+}
+
+fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+    if needle.is_empty() || hay.len() < needle.len() {
+        return None;
+    }
+    (from..=hay.len() - needle.len()).find(|&i| &hay[i..i + needle.len()] == needle)
+}
+
+/// The parts of a `multipart/form-data` body, or `None` if it isn't one.
+pub fn multipart(content_type: &str, body: &[u8]) -> Option<Vec<Part>> {
+    let boundary = content_type
+        .split(';')
+        .map(str::trim)
+        .find_map(|p| p.strip_prefix("boundary="))?
+        .trim_matches('"');
+    let delim = format!("--{boundary}").into_bytes();
+    let mut parts = vec![];
+    let mut at = find(body, &delim, 0)? + delim.len();
+    loop {
+        if body[at..].starts_with(b"--") {
+            return Some(parts);
+        }
+        let head_start = at + 2; // CRLF after the delimiter
+        let head_end = find(body, b"\r\n\r\n", head_start)?;
+        let head = String::from_utf8_lossy(&body[head_start..head_end]).to_string();
+        let next = find(body, &delim, head_end)?;
+        let data = body[head_end + 4..next.saturating_sub(2)].to_vec();
+        let mut name = None;
+        let mut ctype = None;
+        for line in head.split("\r\n") {
+            let (k, v) = line.split_once(':')?;
+            if k.trim().eq_ignore_ascii_case("content-disposition") {
+                name = v
+                    .split(';')
+                    .map(str::trim)
+                    .find_map(|p| p.strip_prefix("name="))
+                    .map(|n| n.trim_matches('"').to_string());
+            } else if k.trim().eq_ignore_ascii_case("content-type") {
+                ctype = Some(v.trim().to_string());
+            }
+        }
+        parts.push(Part {
+            name: name?,
+            content_type: ctype,
+            data,
+        });
+        at = next + delim.len();
+    }
+}
+
 impl Contract {
     /// The operation for `METHOD /path`; with several, the one with the
-    /// most literal segments (`/items/{id}` loses to `/items/search`).
+    /// most literal segments (`/items/{id}` loses to `/items/summary`).
     fn op(&self, method: &str, segs: &[&str]) -> Option<&Value> {
         self.ops
             .iter()
@@ -90,7 +154,8 @@ impl Contract {
     }
 
     /// The request: the route exists, its query parameters are declared
-    /// and valid, and a JSON body matches the request schema.
+    /// and valid, and the body matches the request schema (a JSON body
+    /// fully; a multipart body by its field names).
     pub fn check_request(
         &self,
         method: &str,
@@ -116,7 +181,8 @@ impl Contract {
             self.validate(schema, &value, &format!("query.{k}"))?;
         }
         let rb = &op["requestBody"];
-        let ct = content_type.unwrap_or("").split(';').next().unwrap_or("");
+        let full_ct = content_type.unwrap_or("");
+        let ct = full_ct.split(';').next().unwrap_or("").trim();
         if body.is_empty() {
             if rb["required"] == true {
                 return Err("request body required".into());
@@ -129,10 +195,30 @@ impl Contract {
         let Some(media) = rb["content"].get(ct) else {
             return Err(format!("request content-type `{ct}` not accepted"));
         };
-        if ct == "application/json" {
-            let v: Value =
-                serde_json::from_slice(body).map_err(|e| format!("request body: {e}"))?;
-            self.validate(&media["schema"], &v, "body")?;
+        let schema = self.resolve(&media["schema"]);
+        match ct {
+            "application/json" => {
+                let v: Value =
+                    serde_json::from_slice(body).map_err(|e| format!("request body: {e}"))?;
+                self.validate(schema, &v, "body")?;
+            }
+            "multipart/form-data" => {
+                let parts = multipart(full_ct, body).ok_or("body: not multipart")?;
+                let props = schema["properties"].as_object();
+                for p in &parts {
+                    if props.is_none_or(|m| !m.contains_key(&p.name))
+                        && schema["additionalProperties"] == false
+                    {
+                        return Err(format!("body: unknown field `{}`", p.name));
+                    }
+                }
+                for k in schema["required"].as_array().into_iter().flatten() {
+                    if !parts.iter().any(|p| Some(p.name.as_str()) == k.as_str()) {
+                        return Err(format!("body: missing required `{k}`"));
+                    }
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -177,6 +263,18 @@ impl Contract {
         }
     }
 
+    /// The properties `s` declares, `allOf` branches included (for the
+    /// `additionalProperties: false` check of a composed schema).
+    fn declared<'a>(&'a self, s: &'a Value, out: &mut Map<String, Value>) {
+        let s = self.resolve(s);
+        if let Some(p) = s["properties"].as_object() {
+            out.extend(p.clone());
+        }
+        for b in s["allOf"].as_array().into_iter().flatten() {
+            self.declared(b, out);
+        }
+    }
+
     pub fn validate(&self, s: &Value, v: &Value, at: &str) -> Result<(), String> {
         let s = self.resolve(s);
         if let Some(any) = s.get("anyOf").and_then(Value::as_array) {
@@ -189,6 +287,11 @@ impl Contract {
                     "{at}: matches no anyOf branch ({})",
                     errs.join(" | ")
                 ));
+            }
+        }
+        if let Some(all) = s.get("allOf").and_then(Value::as_array) {
+            for b in all {
+                self.validate(b, v, at)?;
             }
         }
         if let Some(e) = s.get("enum").and_then(Value::as_array)
@@ -221,23 +324,42 @@ impl Contract {
                 return Err(format!("{at}: {n} <= exclusiveMinimum {m}"));
             }
         }
-        if let (Some(t), Some(m)) = (v.as_str(), s["minLength"].as_u64())
-            && (t.chars().count() as u64) < m
-        {
-            return Err(format!("{at}: shorter than {m}"));
+        if let Some(t) = v.as_str() {
+            let len = t.chars().count() as u64;
+            if let Some(m) = s["minLength"].as_u64()
+                && len < m
+            {
+                return Err(format!("{at}: shorter than {m}"));
+            }
+            if let Some(m) = s["maxLength"].as_u64()
+                && len > m
+            {
+                return Err(format!("{at}: longer than {m}"));
+            }
+            if let Some(p) = s["pattern"].as_str()
+                && !pattern_ok(p, t)
+            {
+                return Err(format!("{at}: {t:?} doesn't match {p}"));
+            }
         }
-        if let (Some(a), Some(m)) = (v.as_array(), s["maxItems"].as_u64())
-            && a.len() as u64 > m
-        {
-            return Err(format!("{at}: more than {m} items"));
-        }
-        if let (Some(a), Some(items)) = (v.as_array(), s.get("items")) {
-            for (i, x) in a.iter().enumerate() {
-                self.validate(items, x, &format!("{at}[{i}]"))?;
+        if let Some(a) = v.as_array() {
+            if let Some(m) = s["maxItems"].as_u64()
+                && a.len() as u64 > m
+            {
+                return Err(format!("{at}: more than {m} items"));
+            }
+            if let Some(m) = s["minItems"].as_u64()
+                && (a.len() as u64) < m
+            {
+                return Err(format!("{at}: fewer than {m} items"));
+            }
+            if let Some(items) = s.get("items") {
+                for (i, x) in a.iter().enumerate() {
+                    self.validate(items, x, &format!("{at}[{i}]"))?;
+                }
             }
         }
         if let Some(o) = v.as_object() {
-            let props = s["properties"].as_object();
             if let Some(req) = s["required"].as_array() {
                 for k in req.iter().filter_map(Value::as_str) {
                     if !o.contains_key(k) {
@@ -245,8 +367,10 @@ impl Contract {
                     }
                 }
             }
+            let mut props = Map::new();
+            self.declared(s, &mut props);
             for (k, x) in o {
-                match props.and_then(|p| p.get(k)) {
+                match props.get(k) {
                     Some(ps) => self.validate(ps, x, &format!("{at}.{k}"))?,
                     None => match s.get("additionalProperties") {
                         Some(Value::Bool(false)) => {
@@ -261,6 +385,16 @@ impl Contract {
             }
         }
         Ok(())
+    }
+}
+
+/// `pattern`, for the patterns the contract uses (no regex engine here).
+fn pattern_ok(p: &str, t: &str) -> bool {
+    match p {
+        "^#[0-9a-fA-F]{6}$" => {
+            t.len() == 7 && t.starts_with('#') && t[1..].chars().all(|c| c.is_ascii_hexdigit())
+        }
+        _ => true,
     }
 }
 

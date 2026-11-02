@@ -359,7 +359,11 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         let t = v.toast.as_ref().expect("a toast");
         assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
-        assert!(t.sub.as_ref().is_some_and(|s| s.contains("0.47 or later")));
+        assert!(
+            t.sub
+                .as_ref()
+                .is_some_and(|s| s.contains("0.49.12 or later"))
+        );
         assert!(
             v.render_server_notice().is_some(),
             "the status bar keeps saying it"
