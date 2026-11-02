@@ -222,6 +222,36 @@ impl Store {
         members(&self.conn()).unwrap_or_default()
     }
 
+    /// Hopper id → its posts (sub, remote id) in the hopper's own order:
+    /// `added_at` newest first, then subscription and remote id (the
+    /// studio's membership order). A membership made here carries the time
+    /// it was made until the next read of the hoppers brings the blyg's.
+    /// The studio keeps whole seconds (`…:05Z`) where Burrow keeps
+    /// milliseconds (`…:05.123Z`), so times compare to the second and
+    /// posts added in the same second follow the studio's tie order.
+    pub fn hopper_order(&self) -> HashMap<String, Vec<(String, String)>> {
+        let c = self.conn();
+        let Ok(mut st) = c.prepare_cached(
+            "SELECT hopper_id, subscription_id, remote_id FROM hopper_items \
+             ORDER BY hopper_id, substr(added_at, 1, 19) DESC, subscription_id, remote_id",
+        ) else {
+            return HashMap::new();
+        };
+        let mut out: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        if let Ok(rows) = st.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        }) {
+            for (h, s, rid) in rows.filter_map(|r| r.ok()) {
+                out.entry(h).or_default().push((s, rid));
+            }
+        }
+        out
+    }
+
     /// Posts in a hopper that this Mac doesn't hold as reading rows, as the
     /// hopper read returned them, each with every hopper it's in.
     pub fn hopper_unheld(&self) -> Vec<ReadingItem> {

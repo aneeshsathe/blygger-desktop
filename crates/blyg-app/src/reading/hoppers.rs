@@ -10,9 +10,14 @@
 //! - **Add**: Hopper › on a post (the row menu, the reading pane's chip,
 //!   `h` on the reading screen, Post › Put in Hopper… ⌥⌘P) lists every
 //!   hopper with a check; choosing one puts the post in it or takes it out,
-//!   and New Hopper… makes one and puts the post in it. Membership is local
-//!   and instant, and queued for the blyg (`Backend::set_in_hopper`):
-//!   offline, it waits in the outbox.
+//!   and New Hopper… makes one and puts the post in it. With posts picked
+//!   in the list (⌘-click, ⇧-click, ⌘A), `h`, ⌥⌘P and a picked row's menu
+//!   act on all of them: a hopper holding every one is checked (some: a
+//!   dash), and choosing it takes them all out, else puts the rest in.
+//!   Membership is local and instant, and queued for the blyg
+//!   (`Backend::set_in_hopper`): offline, it waits in the outbox.
+//! - **Order**: a hopper lists its posts in its own order, newest added
+//!   first (`Backend::hopper_order`), as the studio does.
 //! - **Manage**: a hopper's menu in the pane has Rename…, Description…,
 //!   Make Public… / Make Private and Delete Hopper…. These go to the blyg
 //!   first (`Backend::update_hopper`, `delete_hopper`) and say so when it
@@ -46,9 +51,9 @@ pub const PUBLIC_NOTE: &str = "A public hopper gets its own page on your blyg an
 /// What the name sheet is for.
 #[derive(Debug, Clone, PartialEq)]
 pub enum NameFor {
-    /// New Hopper…; then put this post in it.
+    /// New Hopper…; then put these posts in it (none: just make it).
     New {
-        then_add: Option<Key>,
+        then_add: Vec<Key>,
     },
     Rename(String),
     Describe(String),
@@ -81,6 +86,19 @@ pub fn unheld_keys(backend: &dyn Backend) -> HashSet<Key> {
     backend.hopper_unheld().iter().map(vm::key).collect()
 }
 
+/// Order `shown` (indices into `rows`) as the hopper orders its posts
+/// (`order`, newest added first). A row the hopper doesn't name (one kept
+/// listed after it left) goes last; ties keep the list's order.
+pub fn in_hopper_order(rows: &[ReadingItem], shown: &mut [usize], order: &[Key]) {
+    let rank: std::collections::HashMap<&Key, usize> =
+        order.iter().enumerate().map(|(i, k)| (k, i)).collect();
+    shown.sort_by_cached_key(|&i| {
+        rows.get(i)
+            .and_then(|r| rank.get(&vm::key(r)).copied())
+            .unwrap_or(usize::MAX)
+    });
+}
+
 /// A hopper's public page: `{blyg}/h/{slug}/`.
 pub fn public_url(blyg: &str, slug: &str) -> String {
     format!("{}/h/{slug}/", blyg.trim_end_matches('/'))
@@ -102,11 +120,38 @@ impl MainView {
     /// Hook: the actions on the root element.
     pub(super) fn hopper_actions(&self, d: Stateful<Div>, cx: &mut Context<Self>) -> Stateful<Div> {
         d.on_action(cx.listener(|this, _: &NewHopper, window, cx| {
-            this.open_hopper_name_sheet(NameFor::New { then_add: None }, window, cx)
+            this.open_hopper_name_sheet(NameFor::New { then_add: vec![] }, window, cx)
         }))
         .on_action(
             cx.listener(|this, _: &HopperPicker, window, cx| this.open_hopper_picker(window, cx)),
         )
+    }
+
+    /// What the picker acts on in the reading list: the picked posts that
+    /// can go in a hopper, in the list's order, with how the sheet names
+    /// them. `None` with nothing picked.
+    fn hopper_picks(&self) -> Option<(Vec<Key>, String)> {
+        if self.reading.view != View::Reading || self.reading.picked.is_empty() {
+            return None;
+        }
+        let keys: Vec<Key> = self
+            .reading
+            .picked
+            .targets(&self.shown_keys(), None)
+            .into_iter()
+            .filter(|k| can_hopper(self, k))
+            .collect();
+        let title = match keys.as_slice() {
+            [one] => self
+                .reading
+                .rows
+                .iter()
+                .find(|r| &vm::key(r) == one)
+                .map(|r| vm::title(&r.content_md))
+                .unwrap_or_default(),
+            many => format!("{} posts", many.len()),
+        };
+        Some((keys, title))
     }
 
     /// The post in front of you: the open one, else the selected one; on
@@ -131,8 +176,16 @@ impl MainView {
         }
     }
 
-    /// `h` / ⌥⌘P / the Hopper › chip: the picker for the post in front of you.
+    /// `h` / ⌥⌘P: the picker for the posts picked in the list, else for
+    /// the post in front of you.
     pub(crate) fn open_hopper_picker(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((keys, title)) = self.hopper_picks() {
+            if keys.is_empty() {
+                self.show_toast("These posts can't go in a hopper", None, cx);
+                return;
+            }
+            return self.open_hopper_picker_on(keys, title, window, cx);
+        }
         let Some((key, title)) = self.hopper_target() else {
             let hint = if self.reading.view == View::Posts {
                 "Open one of your published posts first"
@@ -149,9 +202,21 @@ impl MainView {
         self.open_hopper_picker_for(key, title, window, cx);
     }
 
+    /// The picker for one post (the reading pane's and the stream card's
+    /// Hopper › chip).
     pub(crate) fn open_hopper_picker_for(
         &mut self,
         key: Key,
+        title: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_hopper_picker_on(vec![key], title, window, cx)
+    }
+
+    fn open_hopper_picker_on(
+        &mut self,
+        keys: Vec<Key>,
         title: String,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -161,7 +226,7 @@ impl MainView {
         window.focus(&focus, cx);
         self.open_reading_sheet(
             RSheet::HopperPick {
-                key,
+                keys,
                 title,
                 sel: 0,
                 focus,
@@ -170,17 +235,12 @@ impl MainView {
         );
     }
 
-    /// Whether `key` is in hopper `id`.
-    pub(crate) fn in_hopper(&self, key: &Key, id: &str) -> bool {
-        self.backend
-            .hopper_members()
-            .get(key)
-            .is_some_and(|h| h.iter().any(|x| x == id))
-    }
-
-    /// Put the post in the hopper, or take it out when it's there.
-    pub(crate) fn toggle_hopper(&mut self, key: &Key, id: &str, cx: &mut Context<Self>) {
-        let on = !self.in_hopper(key, id);
+    /// Put the posts in the hopper, or take them all out when every one is
+    /// there already.
+    pub(crate) fn toggle_hopper(&mut self, keys: &[Key], id: &str, cx: &mut Context<Self>) {
+        let members = self.backend.hopper_members();
+        let held = |k: &Key| members.get(k).is_some_and(|h| h.iter().any(|x| x == id));
+        let on = !keys.iter().all(held);
         let name = self
             .reading
             .hoppers
@@ -188,28 +248,60 @@ impl MainView {
             .find(|h| h.id == id)
             .map(|h| h.name.clone())
             .unwrap_or_else(|| "the hopper".into());
-        match self.backend.set_in_hopper(id, &key.0, &key.1, on) {
-            Ok(()) => {
-                self.reading.hoppers = self.backend.hoppers();
+        let mut changed = 0;
+        let mut failed = None;
+        for k in keys.iter().filter(|k| held(k) != on) {
+            match self.backend.set_in_hopper(id, &k.0, &k.1, on) {
+                Ok(()) => changed += 1,
+                Err(e) => {
+                    failed = Some(e);
+                    break;
+                }
+            }
+        }
+        self.reading.hoppers = self.backend.hoppers();
+        match failed {
+            None => {
+                let what = match changed {
+                    1 if keys.len() == 1 => String::new(),
+                    1 => " 1 post".into(),
+                    n => format!(" {n} posts"),
+                };
                 self.show_toast(
                     if on {
-                        format!("Added to {name}")
+                        format!("Added{what} to {name}")
                     } else {
-                        format!("Removed from {name}")
+                        format!("Removed{what} from {name}")
                     },
                     None,
                     cx,
                 );
             }
-            Err(e) => self.show_toast(format!("Couldn't change the hopper: {e}"), None, cx),
+            Some(e) => self.show_toast(format!("Couldn't change the hopper: {e}"), None, cx),
         }
         cx.notify();
     }
 
-    /// A post's "Hopper ›" list in the row menu.
+    /// What a row's menu acts on: the picks when the row is among them,
+    /// else the row alone.
+    fn hopper_menu_keys(&self, key: &Key) -> Vec<Key> {
+        if self.reading.picked.contains(key) {
+            self.reading
+                .picked
+                .targets(&self.shown_keys(), None)
+                .into_iter()
+                .filter(|k| can_hopper(self, k))
+                .collect()
+        } else {
+            vec![key.clone()]
+        }
+    }
+
+    /// A post's "Hopper ›" list in the row menu (the picks', when the row
+    /// is picked). Checked: every one of them is in it.
     pub(crate) fn hopper_menu_items(&self, key: &Key) -> Vec<(String, Option<MenuCmd>, bool)> {
+        let keys = self.hopper_menu_keys(key);
         let members = self.backend.hopper_members();
-        let held = members.get(key);
         let mut v: Vec<_> = self
             .reading
             .hoppers
@@ -217,8 +309,8 @@ impl MainView {
             .map(|h| {
                 (
                     h.name.clone(),
-                    Some(MenuCmd::ToggleHopper(key.clone(), h.id.clone())),
-                    held.is_some_and(|m| m.contains(&h.id)),
+                    Some(MenuCmd::ToggleHopper(keys.clone(), h.id.clone())),
+                    held_by(&members, &keys, &h.id) == Held::All,
                 )
             })
             .collect();
@@ -227,7 +319,7 @@ impl MainView {
         }
         v.push((
             "New Hopper…".into(),
-            Some(MenuCmd::NewHopperFor(key.clone())),
+            Some(MenuCmd::NewHopperFor(keys)),
             false,
         ));
         v
@@ -290,6 +382,7 @@ impl MainView {
     /// hopper's posts.
     fn reload_hoppers(&mut self, cx: &mut Context<Self>) {
         self.reading.hoppers = self.backend.hoppers();
+        self.reading.hopper_order = self.backend.hopper_order();
         if let super::sources_vm::Source::Hopper(id) = &self.reading.source
             && !self.reading.hoppers.iter().any(|h| &h.id == id)
         {
@@ -313,24 +406,18 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(RSheet::HopperPick { key, .. }) = self.reading.sheet.as_ref() else {
+        let Some(RSheet::HopperPick { keys, .. }) = self.reading.sheet.as_ref() else {
             return;
         };
-        let key = key.clone();
+        let keys = keys.clone();
         match self.reading.hoppers.get(i).map(|h| h.id.clone()) {
             Some(id) => {
-                self.toggle_hopper(&key, &id, cx);
+                self.toggle_hopper(&keys, &id, cx);
                 if let Some(RSheet::HopperPick { sel, .. }) = self.reading.sheet.as_mut() {
                     *sel = i;
                 }
             }
-            None => self.open_hopper_name_sheet(
-                NameFor::New {
-                    then_add: Some(key),
-                },
-                window,
-                cx,
-            ),
+            None => self.open_hopper_name_sheet(NameFor::New { then_add: keys }, window, cx),
         }
     }
 
@@ -367,7 +454,7 @@ impl MainView {
     pub(super) fn render_hopper_pick(&self, sheet: &RSheet, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette.on_page();
         let RSheet::HopperPick {
-            key,
+            keys,
             title,
             sel,
             focus,
@@ -375,12 +462,7 @@ impl MainView {
         else {
             return div().into_any_element();
         };
-        let held = self
-            .backend
-            .hopper_members()
-            .get(key)
-            .cloned()
-            .unwrap_or_default();
+        let members = self.backend.hopper_members();
         let row = |i: usize, sel: bool| {
             div()
                 .id(("hopper-pick", i))
@@ -404,14 +486,18 @@ impl MainView {
                 .iter()
                 .enumerate()
                 .map(|(i, h)| {
-                    let on = held.contains(&h.id);
+                    let mark = match held_by(&members, keys, &h.id) {
+                        Held::All => "✓",
+                        Held::Some => "–",
+                        Held::None => "",
+                    };
                     row(i, i == *sel)
                         .child(
                             div()
                                 .w(px(14.))
                                 .flex_none()
                                 .text_color(p.accent)
-                                .child(if on { "✓" } else { "" }),
+                                .child(mark),
                         )
                         .child(
                             svg()
@@ -483,7 +569,11 @@ impl MainView {
                     .mb(px(8.))
                     .text_color(p.muted)
                     .truncate()
-                    .child(format!("“{title}”")),
+                    .child(if keys.len() > 1 {
+                        title.clone()
+                    } else {
+                        format!("“{title}”")
+                    }),
             )
             .when(self.reading.hoppers.is_empty(), |d| {
                 d.child(
@@ -613,7 +703,7 @@ impl MainView {
             match &w {
                 NameFor::New { then_add } => {
                     let h = backend.create_hopper(&text)?;
-                    if let Some((sub, rid)) = then_add {
+                    for (sub, rid) in then_add {
                         backend.set_in_hopper(&h.id, sub, rid, true)?;
                     }
                     Ok(h.name)
@@ -645,12 +735,15 @@ impl MainView {
                     v.close_reading_sheet(window, cx);
                     v.reload_hoppers(cx);
                     let msg = match &what {
-                        NameFor::New { then_add: Some(_) } => format!("Added to {name}"),
-                        NameFor::New { then_add: None } => format!("New hopper “{name}”"),
+                        NameFor::New { then_add } => match then_add.len() {
+                            0 => format!("New hopper “{name}”"),
+                            1 => format!("Added to {name}"),
+                            n => format!("Added {n} posts to {name}"),
+                        },
                         NameFor::Rename(_) => format!("Renamed to {name}"),
                         NameFor::Describe(_) => format!("Described {name}"),
                     };
-                    let sub = matches!(what, NameFor::New { then_add: None })
+                    let sub = matches!(&what, NameFor::New { then_add } if then_add.is_empty())
                         .then(|| "Press h on a post to put it in".into());
                     v.show_toast(msg, sub, cx);
                 }
@@ -689,7 +782,10 @@ impl MainView {
         let (heading, note, verb): (String, &str, &'static str) = match what {
             NameFor::New { then_add } => (
                 "New Hopper".into(),
-                if then_add.is_some() {
+                if then_add.len() > 1 {
+                    "A hopper collects posts, yours and others'. It's private until you make it \
+                     public; the picked posts go in it."
+                } else if then_add.len() == 1 {
                     "A hopper collects posts, yours and others'. It's private until you make it \
                      public; this post goes in it."
                 } else {
@@ -956,6 +1052,31 @@ impl MainView {
                 self.key_hint("esc", "cancel"),
             ]))
             .into_any_element()
+    }
+}
+
+/// How many of some posts a hopper holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Held {
+    All,
+    Some,
+    None,
+}
+
+/// How many of `keys` hopper `id` holds (`members`: `hopper_members`).
+pub fn held_by(
+    members: &std::collections::HashMap<Key, Vec<String>>,
+    keys: &[Key],
+    id: &str,
+) -> Held {
+    let n = keys
+        .iter()
+        .filter(|k| members.get(*k).is_some_and(|h| h.iter().any(|x| x == id)))
+        .count();
+    match n {
+        0 => Held::None,
+        n if n == keys.len() => Held::All,
+        _ => Held::Some,
     }
 }
 

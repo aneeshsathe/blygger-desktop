@@ -718,6 +718,13 @@ pub trait Backend: Send + Sync {
         Default::default()
     }
 
+    /// Hopper id → its posts as (subscription id, remote id) in the
+    /// hopper's own order: newest added first, as the studio lists them.
+    /// A post put in here waits at the top until the blyg says when. Local.
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+        Default::default()
+    }
+
     /// Posts in a hopper that aren't held as reading rows (the hopper read
     /// returned them), each with its `hoppers`. Local.
     fn hopper_unheld(&self) -> Vec<ReadingItem> {

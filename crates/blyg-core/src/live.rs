@@ -12,7 +12,7 @@ use crate::api::wire::WireItem;
 use crate::backend::*;
 use crate::model::*;
 use crate::store::Store;
-use crate::sync::{Engine, Msg, SyncOptions, spawn};
+use crate::sync::{Engine, Msg, SyncOptions, is_hopper_conflict, spawn};
 
 pub struct LiveBackend {
     engine: Arc<Engine>,
@@ -1425,6 +1425,10 @@ impl Backend for LiveBackend {
         self.e().store.hopper_unheld()
     }
 
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+        self.e().store.hopper_order()
+    }
+
     fn create_hopper(&self, name: &str) -> Result<Hopper> {
         let name = clean_hopper_name(name)?;
         let h = self.e().track(self.e().api.create_hopper(&name))?;
@@ -1451,7 +1455,14 @@ impl Backend for LiveBackend {
             }
             edit.description = Some(d.to_string());
         }
-        let h = self.e().track(self.e().api.update_hopper(id, &edit))?;
+        let h = match self.e().track(self.e().api.update_hopper(id, &edit)) {
+            Ok(h) => h,
+            // The hopper changed on the blyg while the patch was applied
+            // (studio 409): read it again, then send what's still wanted
+            // once, when that's safe.
+            Err(e) if is_hopper_conflict(&e) => return self.update_hopper_again(id, &edit),
+            Err(e) => return Err(e),
+        };
         let h = self.e().store.put_hopper(&h)?;
         self.e().emit(CoreEvent::ReadingChanged);
         Ok(h)
@@ -1481,6 +1492,101 @@ impl Backend for LiveBackend {
     }
 }
 
+impl LiveBackend {
+    /// --- hoppers --- After a 409 on `PATCH /api/hoppers/{id}`: read the
+    /// hopper as the blyg has it now (held here from then on), and send
+    /// what `edit` still changes, once, when that's safe ([`reapply`]).
+    fn update_hopper_again(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
+        let held = self.e().store.hoppers().into_iter().find(|h| h.id == id);
+        let fresh = match self.e().track(self.e().api.hopper(id)) {
+            Ok(h) => h,
+            Err(CoreError::NotFound) => {
+                self.e().store.remove_hopper(id)?;
+                self.e().emit(CoreEvent::ReadingChanged);
+                return Err(hopper_conflict_error(
+                    "This hopper was deleted on your blyg while Burrow was saving the change."
+                        .into(),
+                ));
+            }
+            Err(e) => return Err(e),
+        };
+        let stored = self.e().store.put_hopper(&fresh)?;
+        self.e().emit(CoreEvent::ReadingChanged);
+        let again = match reapply(edit, held.as_ref(), &fresh) {
+            Reapply::Done => return Ok(stored),
+            Reapply::Ask(why) => return Err(hopper_conflict_error(why)),
+            Reapply::Retry(again) => again,
+        };
+        match self.e().track(self.e().api.update_hopper(id, &again)) {
+            Ok(h) => {
+                let h = self.e().store.put_hopper(&h)?;
+                self.e().emit(CoreEvent::ReadingChanged);
+                Ok(h)
+            }
+            Err(e) if is_hopper_conflict(&e) => Err(hopper_conflict_error(format!(
+                "“{}” kept changing on your blyg, so Burrow didn't save this. It now shows the \
+                 hopper as your blyg has it; try again in a moment.",
+                fresh.name
+            ))),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// --- hoppers --- A hopper change that wasn't made, in words (`Rejected`
+/// 409, which the UI shows as is).
+fn hopper_conflict_error(message: String) -> CoreError {
+    CoreError::Rejected {
+        status: 409,
+        message,
+        details: vec![],
+    }
+}
+
+/// --- hoppers --- What to do with a hopper edit the blyg refused with 409,
+/// now that the hopper has been read again.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum Reapply {
+    /// The hopper is already as the edit wants it.
+    Done,
+    /// Send this (what the edit still changes) once more.
+    Retry(HopperEdit),
+    /// Not safe to send again; this says why.
+    Ask(String),
+}
+
+/// A name, a description and making it private are the same change against
+/// whatever the hopper is now, so they're sent again. Making it public
+/// publishes a page at the address the user was shown (its slug): sent
+/// again only while that address still holds.
+pub(crate) fn reapply(edit: &HopperEdit, held: Option<&Hopper>, fresh: &Hopper) -> Reapply {
+    let mut left = HopperEdit::default();
+    if let Some(n) = edit.name.as_ref().filter(|n| **n != fresh.name) {
+        left.name = Some(n.clone());
+    }
+    if let Some(d) = edit.description.as_ref() {
+        let want = Some(d.trim()).filter(|d| !d.is_empty());
+        if want != fresh.description.as_deref() {
+            left.description = Some(d.clone());
+        }
+    }
+    if let Some(p) = edit.public.filter(|p| *p != fresh.public) {
+        left.public = Some(p);
+    }
+    if left == HopperEdit::default() {
+        return Reapply::Done;
+    }
+    if left.public == Some(true) && held.is_some_and(|h| h.slug != fresh.slug) {
+        return Reapply::Ask(format!(
+            "“{}” changed on your blyg while Burrow was making it public, and its page would \
+             now have a different address. Burrow shows it as your blyg has it; make it public \
+             again if you still want to.",
+            fresh.name
+        ));
+    }
+    Reapply::Retry(left)
+}
+
 /// --- hoppers --- A hopper name as sent: trimmed, never empty.
 fn clean_hopper_name(name: &str) -> Result<String> {
     let n = name.trim();
@@ -1492,4 +1598,89 @@ fn clean_hopper_name(name: &str) -> Result<String> {
         });
     }
     Ok(n.to_string())
+}
+
+#[cfg(test)]
+mod hopper_conflict_tests {
+    use super::*;
+
+    fn hopper(name: &str, slug: &str, public: bool) -> Hopper {
+        Hopper {
+            id: "h1".into(),
+            name: name.into(),
+            slug: Some(slug.into()),
+            public,
+            count: 0,
+            description: None,
+            slug_frozen: public,
+        }
+    }
+
+    fn edit(f: impl FnOnce(&mut HopperEdit)) -> HopperEdit {
+        let mut e = HopperEdit::default();
+        f(&mut e);
+        e
+    }
+
+    #[test]
+    fn a_rename_or_description_is_sent_again_unless_already_so() {
+        let held = hopper("Slow", "slow", false);
+        let fresh = hopper("Slow media", "slow-media", false);
+        let rename = edit(|e| e.name = Some("Long reads".into()));
+        assert_eq!(
+            reapply(&rename, Some(&held), &fresh),
+            Reapply::Retry(rename.clone())
+        );
+        // Someone else already gave it that name: nothing to send.
+        let same = edit(|e| e.name = Some("Slow media".into()));
+        assert_eq!(reapply(&same, Some(&held), &fresh), Reapply::Done);
+        let describe = edit(|e| e.description = Some("Takes its time.".into()));
+        assert_eq!(
+            reapply(&describe, Some(&held), &fresh),
+            Reapply::Retry(describe.clone())
+        );
+        // An empty description clears it: already clear.
+        let clear = edit(|e| e.description = Some("  ".into()));
+        assert_eq!(reapply(&clear, Some(&held), &fresh), Reapply::Done);
+    }
+
+    #[test]
+    fn making_it_public_is_sent_again_only_at_the_address_shown() {
+        let held = hopper("Slow", "slow", false);
+        let public = edit(|e| e.public = Some(true));
+        // Same address: safe.
+        let fresh = hopper("Slow", "slow", false);
+        assert_eq!(
+            reapply(&public, Some(&held), &fresh),
+            Reapply::Retry(public.clone())
+        );
+        // Renamed elsewhere meanwhile: its page would be somewhere else.
+        let moved = hopper("Slower", "slower", false);
+        assert!(matches!(
+            reapply(&public, Some(&held), &moved),
+            Reapply::Ask(m) if m.contains("different address")
+        ));
+        // Made public elsewhere already.
+        let done = hopper("Slow", "slow", true);
+        assert_eq!(reapply(&public, Some(&held), &done), Reapply::Done);
+        // Making it private never publishes anything: always safe.
+        let private = edit(|e| e.public = Some(false));
+        let fresh = hopper("Slower", "slower", true);
+        assert_eq!(
+            reapply(&private, Some(&held), &fresh),
+            Reapply::Retry(private.clone())
+        );
+    }
+
+    #[test]
+    fn only_409s_count_as_a_hopper_conflict() {
+        assert!(is_hopper_conflict(&CoreError::RevisionConflict));
+        assert!(is_hopper_conflict(&hopper_conflict_error("x".into())));
+        assert!(!is_hopper_conflict(&CoreError::Offline));
+        assert!(!is_hopper_conflict(&CoreError::Rejected {
+            status: 400,
+            message: "no".into(),
+            details: vec![],
+        }));
+    }
 }

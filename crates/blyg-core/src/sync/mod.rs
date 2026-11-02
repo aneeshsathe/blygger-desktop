@@ -182,6 +182,15 @@ fn hopper_denied_message(e: &CoreError) -> String {
     )
 }
 
+/// --- hoppers --- A 409 from a hopper write (the studio's `conflict`, or
+/// a `revision-conflict`).
+pub(crate) fn is_hopper_conflict(e: &CoreError) -> bool {
+    matches!(
+        e,
+        CoreError::RevisionConflict | CoreError::Rejected { status: 409, .. }
+    )
+}
+
 /// The time allowed per pull for fetching item documents (lineage).
 const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
 
@@ -1299,11 +1308,34 @@ impl Engine {
             return self.store.drop_op(op.seq);
         };
         self.store.set_in_flight(op.seq, true)?;
-        match self
-            .api
-            .set_hopper_item(&h.hopper, &h.sub, &h.remote_id, h.on)
-        {
+        let send = || {
+            self.api
+                .set_hopper_item(&h.hopper, &h.sub, &h.remote_id, h.on)
+        };
+        let sent = match send() {
+            // The hopper changed on the blyg while this was applied (409):
+            // read it again (gone is the 404 below) and send once more, as
+            // a put or a take is the same change whatever it holds now.
+            Err(e) if is_hopper_conflict(&e) => match self.api.hopper(&h.hopper) {
+                Ok(_) => send(),
+                Err(e) => Err(e),
+            },
+            r => r,
+        };
+        match sent {
             Ok(()) | Err(CoreError::NotFound) => self.store.drop_op(op.seq),
+            // Twice: let it go, and read the hoppers whole next pull, so
+            // what's shown here comes back to what the blyg has.
+            Err(e) if is_hopper_conflict(&e) => {
+                self.store.drop_op(op.seq)?;
+                self.store.delete_meta(&format!("{CHANGES_SEEN}hoppers"))?;
+                self.emit(CoreEvent::Error(
+                    "A hopper kept changing on your blyg, so one change to it wasn't saved. \
+                     Burrow will show the hopper as your blyg has it."
+                        .into(),
+                ));
+                Ok(())
+            }
             Err(e @ CoreError::Rejected { status: 403, .. }) => {
                 self.store.set_in_flight(op.seq, false)?;
                 let first = !std::mem::replace(&mut self.state().hopper_denied, true);

@@ -15,6 +15,16 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Put several posts in a hopper at once.** With posts picked in the Reader (⌘-click, ⇧-click, ⌘A), **h**, ⌥⌘P and a picked post's **Hopper ›** menu act on all of them. A hopper holding some of them shows a dash.
+
+### Changed
+
+- **A hopper lists its posts in its own order**, the most recently added first, as on your blyg, not by post date.
+- Reading your hoppers is quicker: up to four are read at once, and they're still read only when something in them changed on your blyg.
+- **A hopper change that crosses another one on your blyg is tried again.** When the blyg says the hopper changed while a rename, description or Make Private was being saved, Burrow reads it again and sends the change once more. Make Public is sent again only if the page keeps the address Burrow showed you; otherwise Burrow says why. Putting posts in or out is retried the same way.
+
 ## [0.16.0] - 2026-11-02
 
 ### Changed

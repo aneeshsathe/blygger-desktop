@@ -65,8 +65,9 @@ you have unpublished edits, the text as it's published.
 A hopper is a collection of posts on your blyg: other people's posts and your
 own, kept together under a name. Your hoppers are listed under **Hoppers** in
 the sources pane, below Your blyg, each with how many posts it holds and a
-globe when it's public. Pick one to list its posts in the middle pane, newest
-first. Withdrawn posts aren't listed there; they stay under Background.
+globe when it's public. Pick one to list its posts in the middle pane in the
+hopper's own order: the post put in it most recently comes first, as on your
+blyg. Withdrawn posts aren't listed there; they stay under Background.
 
 **Put a post in a hopper.** With a post open or selected, press **h** (or
 ⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from its action chips or
@@ -75,6 +76,14 @@ is in. Choosing a hopper (click, ⏎, Space, or its number) puts the post in or
 takes it out, and **New Hopper…** (n) makes one and puts the post in it. Your
 own posts go in hoppers too. A change shows at once and is sent to your blyg
 in the background, so one made offline is sent when you're back online.
+
+**Several posts at once.** Pick posts in the list first (⌘-click, ⇧-click,
+or ⌘A, as for marking posts read below), then press **h**, or
+choose **Hopper ›** from a picked post's right-click menu. The picker names how
+many posts it acts on. A hopper holding all of them has a check, one holding
+some of them a dash. Choosing a hopper puts in the ones not there yet, or,
+when it already holds them all, takes them all out. **New Hopper…** makes one
+with all of them in it.
 
 **Manage a hopper** from its right-click menu:
 
@@ -89,7 +98,12 @@ in the background, so one made offline is sent when you're back online.
 
 New hoppers are made with **New Hopper…** in the sources pane's right-click
 menu, or Blyg › New Hopper…. A new hopper is private. Making, renaming and
-deleting a hopper happen on your blyg, so they need it to be reachable.
+deleting a hopper happen on your blyg, so they need it to be reachable. If the
+hopper changes on your blyg at the same moment (say, renamed in the web
+studio), Burrow reads it again and sends a rename or description once more.
+Making it public is sent again only if its page would keep the address
+Burrow showed you; otherwise Burrow says so and shows the hopper as your blyg
+now has it, and you can choose again.
 
 | | |
 |---|---|

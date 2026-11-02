@@ -113,10 +113,10 @@ pub enum MenuCmd {
     NewHopper,
     /// Show a post's "Hopper ›" list.
     HopperMenu,
-    /// Put the post in the hopper, or take it out when it's there.
-    ToggleHopper(super::vm::Key, String),
-    /// A new hopper, then put the post in it.
-    NewHopperFor(super::vm::Key),
+    /// Put the posts in the hopper, or take them out when all are there.
+    ToggleHopper(Vec<super::vm::Key>, String),
+    /// A new hopper, then put the posts in it.
+    NewHopperFor(Vec<super::vm::Key>),
     RenameHopper(String),
     DescribeHopper(String),
     /// Make Public… (asks first: it publishes a page) or Make Private.
@@ -390,18 +390,16 @@ impl MainView {
             // --- hoppers ---
             MenuCmd::HopperMenu => {}
             MenuCmd::NewHopper => self.open_hopper_name_sheet(
-                super::hoppers::NameFor::New { then_add: None },
+                super::hoppers::NameFor::New { then_add: vec![] },
                 window,
                 cx,
             ),
-            MenuCmd::NewHopperFor(key) => self.open_hopper_name_sheet(
-                super::hoppers::NameFor::New {
-                    then_add: Some(key),
-                },
+            MenuCmd::NewHopperFor(keys) => self.open_hopper_name_sheet(
+                super::hoppers::NameFor::New { then_add: keys },
                 window,
                 cx,
             ),
-            MenuCmd::ToggleHopper(key, id) => self.toggle_hopper(&key, &id, cx),
+            MenuCmd::ToggleHopper(keys, id) => self.toggle_hopper(&keys, &id, cx),
             MenuCmd::RenameHopper(id) => {
                 self.open_hopper_name_sheet(super::hoppers::NameFor::Rename(id), window, cx)
             }
