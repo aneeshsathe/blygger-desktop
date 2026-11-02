@@ -30,9 +30,15 @@ fn rows() -> usize {
     }
 }
 
-/// Budget in a release build; debug builds get 15x.
+/// Budget in a release build; debug builds get 15x. Windows gets 4x on
+/// top: its CI runners sync SQLite writes to disk several times slower
+/// (opening a post, which marks it read, took 4.3 s there against 1.8 s),
+/// and the budgets are there to catch a regression of an order of
+/// magnitude, not the runner's disk.
 fn budget(ms: u64) -> Duration {
-    Duration::from_millis(if cfg!(debug_assertions) { ms * 15 } else { ms })
+    let debug = if cfg!(debug_assertions) { 15 } else { 1 };
+    let os = if cfg!(windows) { 4 } else { 1 };
+    Duration::from_millis(ms * debug * os)
 }
 
 #[derive(Default)]
