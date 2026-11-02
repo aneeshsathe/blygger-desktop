@@ -74,31 +74,14 @@ fn the_connect_check_signs_in_and_names_a_wrong_password() {
 }
 
 #[test]
-fn a_mounted_blyg_signs_in_under_its_mount_and_finds_api_at_the_host_root() {
-    let env = Env::new();
-    let mounted = format!("{}/blyg", env.mock.url);
-    assert_eq!(verify_connection(&mounted, password()), Ok(0));
-    assert_eq!(verify_connection(&mounted, TOKEN), Ok(0));
-    let st = env.mock.state();
-    assert!(
-        st.log.iter().any(|l| l == "POST /blyg/studio/login"),
-        "{:?}",
-        st.log
-    );
-    assert!(
-        st.log.iter().any(|l| l.starts_with("GET /api/items")),
-        "{:?}",
-        st.log
-    );
-    assert!(!st.log.iter().any(|l| l.starts_with("GET /blyg/api")));
-}
-
-#[test]
 fn the_server_generation_provider_path_uses_the_same_sign_in() {
     let env = Env::new();
     env.mock.state().no_bearer = true;
     let api = Api::new(&env.mock.url, password());
     // No /generate in the mock: a 404 after signing in, not a 401.
-    assert!(matches!(api.generate("NOPE", 0), Err(CoreError::NotFound)));
+    assert!(matches!(
+        api.generate("NOPE", 0, Some(1)),
+        Err(CoreError::NotFound)
+    ));
     assert_eq!(env.mock.state().logins, 1);
 }

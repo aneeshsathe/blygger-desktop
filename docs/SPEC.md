@@ -2,13 +2,11 @@
 
 Burrow is a blygger client (called Blygger Desktop up to 0.6.0; only the
 displayed name changed, see "Naming" below). A native macOS client for a Blygger blog ("blyg") running the Blygger reference
-Worker (blygger-studio) 0.47 or later, stock and fully supported. On an older
-blyg everything syncs except posts whose text holds a labelled link or quote
-(`[[id | label]]`, `![[id | label]]`, outside code): their outbox ops and publish
-wait until the blyg is updated or the labels go (the publish sheet offers to
-write them bare; the pickers write bare there), and withdraw and pin go since
-they send no text (`blyg_core::floor`). `docs/SERVER.md` says why and what each
-version brings. Goal: **zero
+Worker (blygger-studio) 0.49.12 or later, stock and fully supported: Burrow speaks
+the studio's private API contract 5.x only (`blyg_core::api::CONTRACT_MAJOR`). On an
+older blyg (or a Worker fork) nothing syncs: local changes wait until the studio is
+updated, and Burrow says so once, with a status-bar notice. `docs/SERVER.md` has the
+details. Goal: **zero
 friction between a thought and a published post.** The feel target is
 Notational Velocity: one window, type to search, ⏎ to create, nothing ever
 waits on the network.
@@ -24,7 +22,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
 | UI | **GPUI** (Zed's framework) + `gpui-component` where it helps (text input/editor). |
 | Local data | **SQLite** via `rusqlite` (`bundled`, FTS5). Local-first: UI reads only from SQLite. DuckDB was considered and declined because this is an OLTP/tiny-write workload, and DuckDB can read the SQLite file later for analytics. |
 | Network | Blocking HTTP (`ureq`, rustls) on background threads. No tokio in the app. |
-| Auth | Base URL + a bearer: **Sign in with browser** (OAuth, PKCE, loopback redirect; studio 0.28+; the default), else an API token (Studio → More → Client access; an old Worker fork's `BLYG_OWNER_TOKEN` also works there, a stock studio has none), else the studio password. Credentials live in the **macOS Keychain** (Windows Credential Manager on Windows; `keyring` crate), never in a file. See `crates/blyg-core/src/api/oauth.rs`. |
+| Auth | Base URL + a bearer: **Sign in with browser** (OAuth, PKCE, loopback redirect; the default), else an API token (Studio → More → Client access), else the studio password. Credentials live in the **macOS Keychain** (Windows Credential Manager on Windows; `keyring` crate), never in a file. See `crates/blyg-core/src/api/oauth.rs`. |
 | Platform | macOS first; Windows (x64) is supported too, from the same code: platform code sits behind `cfg(target_os = …)`, mostly in `crates/blyg-app/src/platform.rs`, and the Windows build must keep building and passing CI (see `site/src/dev/building.md`, "Keeping Windows building"). |
 | Layout | **Side by side**: item list on the left (~38%), editor on the right. |
 | Theme | **Tufte colours** (paper `#fffff8`, ink `#111`, accent `#a4271b`; dark: `#161513` / `#e4dfd3` / `#e0775a`), follows system light/dark. Default in the mock was dark. |
@@ -193,85 +191,106 @@ media) lives in `~/Library/Application Support/org.blygger.desktop/`.
 
 ## API (owner, bearer auth)
 
-Base: the configured `blyg-url` for public pages and the studio; `/api` is host-rooted (a
-blyg at `https://host/blyg` has its API at `https://host/api`). Every `/api` call carries
-either `Authorization: Bearer <token>` (a browser sign-in's access token, a manual API token, or an old fork's extension-1 owner token) or the studio session
+Base: the configured `blyg-url` (with any mount path) for public pages, the studio and
+the API: every call is `{blyg-url}/api/…` (a blyg at `https://host/blyg` has its API at
+`https://host/blyg/api`). Every `/api` call carries either `Authorization: Bearer
+<token>` (a browser sign-in's access token or a manual API token) or the studio session
 cookie `blyg_session`, from `POST {blyg-url}/studio/login` (form field `password`; a 302
 with `Set-Cookie`; 30 days). JSON bodies are sent with `content-type: application/json`.
-Failure `401 {"error":"unauthorized"}`. Error bodies are `{error, errors?, issues?}`
-(`issues: [{path, message}]` on validation failures). A wrong method is `405`.
+Error bodies are `{code, message, details?}` (`details.issues: [{path, message}]` on
+validation failures); a wrong method is `405`.
 
-**Contract guard.** Studio's pending API rework (blygger-studio PRs #95–#100) adds
-`GET /api/capabilities` with a `contractVersion` and then breaks the private API at majors
-2–5 (REST under the mount, required observed revisions, camelCase, cursor pages). Once a
-session, before any list is read, sync asks for it (under the mount, then at the origin;
-`Api::contract_version`) and stops with "update Burrow" when the major is above
-`api::CONTRACT_MAJOR_MAX` (1), because a cursor page read with today's code would look
-complete and prune reading rows. A 404 (every studio Burrow targets) passes.
+**Contract guard.** Before any list is read, once a session, sync reads `GET
+{blyg-url}/api/capabilities` (`Api::contract_version`, authenticated) and checks its
+`contractVersion` (`api::contract`): major 5 is spoken (`CONTRACT_MAJOR`); anything
+older, or a 404 (a studio before 0.49.7, a Worker fork), is `ServerOutdated` ("Burrow
+needs blygger-studio 0.49.12 or later", `api::MIN_STUDIO`) and nothing is pushed or
+pulled; a newer major stops with "update Burrow". The connect check does the same
+(`ConnectError::Outdated` / `TooNew`).
 
 The authoritative contract is upstream blygger-studio's OpenAPI document
-(`openapi.json`, studio 0.32.1; vendored as `crates/blyg-core/tests/fixtures/openapi.json`,
-and the test mock checks all traffic against it). Its route guide is `docs/api.md` in
-https://github.com/blygger/blygger-studio. Bearer auth and the other extensions this app
-uses are in `docs/SERVER.md`. The key points:
+(`openapi.json`, contract 5.0.0 from studio v0.49.12; vendored as
+`crates/blyg-core/tests/fixtures/openapi.json`, and the test mock checks all traffic
+against it). Its route guide is `docs/api.md` in https://github.com/blygger/blygger-studio.
+The key points:
 
-- Collections (`GET /api/items`, `/subscriptions`, `/hoppers`, `/mentions`) →
-  `{items, total, offset, limit}`; page with `offset`/`limit` (at most 100).
-- Item = `{id, kind, status, version, dirty, created, updated, content_md, responses,
-  provenance, stub_of, forked_from, fork_cite}`. No permalink: the app derives
+- **Cursor pages.** Every collection → `{items, page: {limit, nextCursor}}`; `limit`
+  1–100 (`GET /api/reading` 1–50); `nextCursor: null` means exhausted; no `offset`, no
+  `total`. `Api::collect` walks one coherent acquisition from the first page to
+  `null`; only then may the caller prune rows the answer left out. A `409
+  cursor-expired` (`CoreError::CursorExpired`) drops every page read and restarts from
+  the first (`CURSOR_RESTARTS` = 3, then the error goes up and the list is left as held
+  for that pull). A restarted page is never appended to an old prefix.
+- **Revisions.** Every item carries `revision` (kept in `items.revision`, schema 15).
+  Every item command sends `expectedRevision`. A `409 revision-conflict`
+  (`CoreError::RevisionConflict`) goes through `Engine::with_revision`: re-read the
+  item and merge with conflict detection; a text that moved under a local edit enters
+  conflict; one that moved with no local edit is shown and the command is not
+  repeated (`RevisionConflict` to the caller); a revision that moved without the text
+  is retried once.
+- Resources are camelCase; `wire.rs` maps them onto the snake_case model types (the
+  store's format is unchanged).
+- Item = `{id, revision, kind, status, version, dirty, created, updated, contentMd,
+  responses, highlight, provenance, stubOf, forkedFrom, …}`. `kind` stays `fragment` or
+  `thread` after withdrawal; the state is `status`. No permalink: the app derives
   `{blyg-url}/f|t/{id}`. `responses` is `"default" | "show" | "hide"`; `default`
-  follows settings' `show_responses_default`.
-- `GET /api/items/:id` → Item + `authored_kind`, `media`, `published` and
-  `versions: Version[]` (a withdraw marker is `kind: "withdrawn"`).
-- `POST /api/items {mode: "blank", kind, content_md, stub_of?}` → `201 Item`.
+  follows settings' `showResponsesDefault`.
+- `GET /api/items/:id` → Item; `GET /api/items/:id/versions` → the version history (a
+  withdraw marker is `kind: "withdrawn"`). `GET /api/items/summary` counts them.
+- `POST /api/items {mode: "blank", kind, contentMd, stubOf?, provenance?}` → `201 Item`.
   `{mode: "fork", source: {origin, id, version}}` forks a pinned version.
-- `PATCH /api/items/:id {content_md?, kind?, stub_of?, responses?}` → Item. Unknown
-  fields are a 400. Kind changes until the first publish (409 after).
-- `POST /api/items/:id/publish {note?}` → `{ok, version, warning?}`; 400 on over-limit / bad transclusion
-- `POST /api/items/:id/withdraw {note?}`, `POST …/restore {version}`, `DELETE /api/items/:id` (drafts only)
-- `PUT /api/items/:id/versions/:version/pin` (no body) → `{ok, version, already}`
-- `POST /api/media` multipart `file` (+`item_id`, `alt`) → `201 {id, url, mime}`
+- `PATCH /api/items/:id {contentMd?, kind?, stubOf?, responses?, highlight?,
+  provenance?, expectedRevision}` → Item. Unknown fields are a 400. Kind changes until
+  the first publish (409 after).
+- `POST /api/items/:id/publish {expectedRevision, note?}` → `{ok, version, revision,
+  warning?}`; `POST …/withdraw`, `POST …/restore {version}`, `DELETE /api/items/:id`
+  (drafts only), `PUT /api/items/:id/versions/:version/pin`, `POST …/generate {scope}`:
+  each with `expectedRevision`, each answering the new `revision`.
+- `POST /api/media` multipart `file` (+`itemId` and `expectedRevision`, `alt`) → `201
+  {id, url, mime, revision?}`, `200 {…, duplicate: true}` for the same bytes on the
+  same item. `url` is absolute under the mount, `media/{id}/{sha256}.{ext}`. `DELETE
+  /api/media/:id` takes `{expectedRevision}` for an attachment (the item's), `{}`
+  otherwise; the backend keeps the item of each attachment it made (`meta`
+  `media_item:{id}`).
 - `PATCH /api/mentions/:id {hidden}`, `PUT/DELETE /api/signals/:sub/:remoteId {thumb}`
 - Subscriptions: `GET/POST /api/subscriptions`, `PATCH /api/subscriptions/:id
-  {in_blogroll?, title?, paused?}`, `DELETE …`, `POST …/resync` → `{ok, changed: n}`
-- `GET /api/settings`, `PATCH /api/settings {...}` (booleans are booleans)
-- `GET /api/mentions?direction=inbound` (`source_author_json` is a JSON string)
-- `GET /api/hoppers/:id?preview=true` → `{hopper, memberships, items, total, source_count}`;
-  without `preview`, every membership (`{subscription_id, remote_id, added_at}`, newest
-  first) and the imported items. Hopper = `{id, name, slug, public, slug_frozen,
-  description, created}`.
+  {inBlogroll?, title?, paused?}`, `DELETE …`, `POST …/resync` → `{ok, changed: n}`
+- `GET /api/settings`, `PATCH /api/settings {...}` (camelCase keys; only the keys
+  Burrow owns are sent)
+- `GET /api/mentions?direction=inbound` (`sourceAuthor` an object)
+- `GET /api/hoppers` (cursor pages of `Hopper = {id, name, slug, public, slugFrozen,
+  description, created}`); `GET /api/hoppers/:id/memberships` (cursor pages of
+  `{hopperId, subscriptionId, remoteId, addedAt, item}`, the held item an
+  `ImportedItem` or null).
 - `POST /api/hoppers {name}` → `201 Hopper`; `PATCH /api/hoppers/:id {name?, public?,
-  description?}` (a rename recomputes the slug unless `slug_frozen`; making public freezes
+  description?}` (a rename recomputes the slug unless `slugFrozen`; making public freezes
   it); `DELETE /api/hoppers/:id`. `PUT`/`DELETE /api/hoppers/:id/items/:sub/:remoteId`
   adds or removes a post (`~own` and your item's id for your own). All need `owner:manage`.
 
-**Reading** (studio 0.40+ `listImportedReading`; see `docs/SERVER.md`):
+**Reading** (`listImportedReading`; see `docs/SERVER.md`):
 
-- `GET /api/reading/imported?limit=1..100&cursor=<opaque>` → `{items, next, limit}`:
-  every imported item, newest `observedAt` first (then subscription and remote id), no
-  drops or repeats across pages. `next` is passed back as `cursor` verbatim; a bad cursor
-  or a limit out of range is 400. Rows are camelCase (`subscriptionId`, `remoteId`,
-  `subscriptionTitle`, `origin`, `kind`, `withdrawn`, `l0`, `version`, `readVersion`,
-  `created`, `updated`, `observedAt`, `contentMd`, `contentHtml` (sanitized), `author`,
-  `page` (origin-relative), `sourceUrl`, `thumb`, `hoppers`, `pinnedVersionRetained`,
-  `transclusions`, `stubOf`, `forkedFrom`, `generated`); `wire::upstream_row` maps
+- `GET /api/reading/imported?limit=1..100&cursor=<opaque>` → cursor pages: every
+  imported item, newest `observedAt` first (then subscription and remote id), no drops
+  or repeats across pages. A bad cursor or a limit out of range is 400. Rows are
+  camelCase (`subscriptionId`, `remoteId`, `subscriptionTitle`, `origin`, `kind`,
+  `withdrawn`, `l0`, `version`, `readVersion`, `created`, `updated`, `observedAt`,
+  `contentMd`, `contentHtml` (sanitized), `author`, `page` (origin-relative),
+  `sourceUrl`, `thumb`, `hoppers`, `pinnedVersionRetained`, `transclusions`, `stubOf`,
+  `forkedFrom`, `generated`); dates are ISO 8601 UTC or null. `wire::imported_row` maps
   them onto `ReadingItem` (`withdrawn` → `state: "tombstone"`). Each row's lineage is
-  the origin's own, so it is known for every row but an L0 or withdrawn one. No page
-  flags: read state is advertised on `GET /api/reading` (`read_state`,
-  `read_state_clear`), read once a session.
-- The old Worker fork's extension 3 serves the same path with snake_case rows,
-  `before=<cursor>` paging (≤ 500) and page flags (`read_state`, `read_state_clear`,
-  `lineage`). The walk's first page sends only `limit=100`, which both take; a page
-  carrying `read_state` is the fork's.
-- A studio older than 0.40 (404 here): upstream's `GET /api/reading` (offset-paged,
-  ≤ 50) lists the posts and `GET /api/imports/{sub}/{id}` reads each new or changed one.
+  the origin's own, so it is known for every row but an L0 or withdrawn one.
+- A pull is one acquisition (`Engine::fetch_reading`), up to `reading_pages` pages
+  (20); only a walk that reached `nextCursor: null` prunes rows. A walk stopped by the
+  page budget is merged without pruning; `cursor-expired` restarts it from the first page.
+- Read state is advertised on `GET /api/reading` (`readState`, `readStateClear`), read
+  once a session from `GET /api/reading?limit=1`.
 
-**Read-state sync** (studio 0.39+, see `docs/SERVER.md`): each row's
-`readVersion` (`read_version` on the fork); `PUT /api/reading/:sub/:remoteId/read
-{version, read_at?}`, `POST /api/reading/read {items: [{sub, remote_id, version,
-read_at?}]}` (≤ 500), `DELETE …/read` and `POST /api/reading/unread {items: [{sub,
-remote_id}]}`. Reads store `max(existing, version)`. The writes need the scope
-`reading:state` (`oauth::READ_STATE_SCOPE`), not `owner:manage`.
+**Read-state sync** (see `docs/SERVER.md`): each row's `readVersion`; `PUT
+/api/reading/:sub/:remoteId/read {version, readAt?}`, `POST /api/reading/read {items:
+[{sub, remoteId, version, readAt?}]}` (≤ 500), `DELETE …/read` and `POST
+/api/reading/unread {items: [{sub, remoteId}]}`. Reads store `max(existing, version)`.
+The writes need the scope `reading:state` (`oauth::READ_STATE_SCOPE`), not
+`owner:manage`. Outbox payloads queued by an older Burrow (snake_case) still decode.
 
 **A refused credential.** A `401` the credential can't recover from (after the
 password sign-in or the browser grant's renewal is retried once) stops the sync worker:
@@ -317,7 +336,7 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 
 **Posts are dated by their author, not by the import.** The list sorts newest first by the post's own `updated` (else `created`), so an author's edit moves the post up; a row says "edited 3d ago" when `updated` is more than ten minutes after `created`, else shows when it was published. `observed_at` (when your blyg imported it) is only the fallback for a post with no usable date. Dates parse as RFC 3339 or RFC 2822 (`ReadingItem::post_time`); the store keeps the normalized sort key in `reading.sort_at` (indexed).
 
-**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (studio 0.39+, or the old fork's extension 5; `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI. The writes need the bearer scope `reading:state` (studio 0.39+; kept in `oauth::READ_STATE_SCOPE`), which the browser sign-in asks for. A sign-in or token without it (one made before 0.39) gets a 403: the read ops stay queued, the rest of the outbox syncs, and Burrow says once that read state is waiting and to sign in again; the next sign-in sends what waited.
+**Read state syncs through your blyg when the server supports it.** Read state is a number per reading row: the highest version you've read. Marking a post read is always instant and local, and it marks every duplicate of the same post. When the blyg advertises read-state sync (`readState`; `docs/SERVER.md`), the same mark also queues a `read` op per row in the outbox, which is sent like any other change (offline-safe, retried, coalesced to the highest version per row). A pull merges `max(local, server)`, so read state never goes backwards. The first time a database sees the capability, it uploads everything it has read in batches, once, and records that in `meta`. So a post read on one Mac reads as read on your others, and a fresh install isn't all unread. Without the extension, read state stays on this Mac, and nothing is sent. Nothing new is shown in the UI. The writes need the bearer scope `reading:state` (kept in `oauth::READ_STATE_SCOPE`), which the browser sign-in asks for. A sign-in or token without it (one made before the scope existed) gets a 403: the read ops stay queued, the rest of the outbox syncs, and Burrow says once that read state is waiting and to sign in again; the next sign-in sends what waited.
 
 **Search, Notational Velocity style.** A search field sits above the reading list (the Posts omnibar isn't on this screen). ⌘F or `/` (with the list focused) puts the caret in it; typing filters the list live: a case-insensitive substring over the title, the author and blyg (subscription, origin) names, and the post's text (`content_md`, or the published HTML's text when an item has no Markdown), over posts **already held locally**. Nothing is fetched to search. Title matches are highlighted as in the Posts list. ↑/↓ move through the matches from the field, ⏎ goes to the list (opening the first match when nothing is open), and esc clears the search (esc on an empty field returns to the list; esc in the list with a search clears it before it leaves the screen). An empty result shows "No posts match “…”". The open post stays open while it still matches; otherwise the selection and the reader clear, so typing never opens (or marks read) anything.
 

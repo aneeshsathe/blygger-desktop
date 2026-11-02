@@ -360,9 +360,15 @@ fn chatgpt_sign_in_through_accounts_and_generate() {
 #[test]
 fn blyg_server_uses_the_owner_token() {
     let mock = Mock::start(|r| match r.route().as_str() {
-        "POST /api/items/I1/generate" => {
-            Resp::json(200, json!({"text":"t","model":"claude-opus-5"}))
-        }
+        // The provider holds no revision: it reads the item's first.
+        "GET /api/items/I1" => Resp::json(
+            200,
+            json!({"id":"I1","kind":"fragment","status":"draft","revision":7}),
+        ),
+        "POST /api/items/I1/generate" => Resp::json(
+            200,
+            json!({"text":"t","model":"claude-opus-5","revision":8}),
+        ),
         _ => Resp::not_found(),
     });
     let env = Env::new();

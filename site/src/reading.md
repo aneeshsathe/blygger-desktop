@@ -106,10 +106,9 @@ Unread*).
 
 ![Picking posts in the Reader](screenshots/reader-picks.png)
 
-**Read state syncs** between your Macs through your blyg on blygger-studio
-0.39 or later, when your sign-in allows **reading:state** (see
-[Server requirements](server.md)), and marking unread syncs too. Otherwise it stays on this Mac, and a
-post you marked unread stays unread here until you read it again.
+**Read state syncs** between your Macs through your blyg when your sign-in
+allows **reading:state** (see [Server requirements](server.md)), and marking
+unread syncs too. Otherwise it stays on this Mac.
 
 **Subscriptions** take their name from the blyg or feed, and follow it when
 it changes. Right-click one for **Rename…** (your own name, kept as you
@@ -187,8 +186,8 @@ added) and `blygger +export-opml <file>`.
 The selected post shows its actions. Each says what it makes:
 
 - **Quote into a thread**: `![[id | label]]` in a thread of yours, labelled
-  with the post's heading or title (on a blyg older than studio 0.47,
-  `![[id]]`; see [labelled links](writing.md#labelled-links)).
+  with the post's heading or title (see
+  [labelled links](writing.md#labelled-links)).
 - **Reply · new stub**: a new thread that responds to the post (a *stub*,
   Blygger's reply). It starts quoting the whole post. A line above the
   editor says what the stub is doing. To quote only part of the post, select
@@ -233,9 +232,9 @@ that web without leaving it.
   opens the profile, anywhere else in the box the post.
 - **A stub's "responds to" line** opens what it answers.
 - **An ordinary link to a blyg post** opens it in the reader too. When a post
-  opens, Burrow asks your blyg which of its links name blyg posts (studio
-  0.49 answers from its own cache), or checks the linked pages itself on an
-  older blyg. Other links open in the browser, so you keep your place.
+  opens, Burrow asks your blyg which of its links name blyg posts (the studio
+  answers from its own cache), or checks the linked pages itself when it
+  can't. Other links open in the browser, so you keep your place.
 - **A post from a blyg you don't follow** opens as a peek, read from its own
   blyg with nothing saved, under "You're not subscribed to this blyg —
   subscribe?". That link opens the Subscribe sheet with the address filled
@@ -253,10 +252,9 @@ pane beside the reader listing this walk and earlier ones, newest first,
 indented as the tree they were. Each step opens its post. **clear history**
 (click twice) empties it. Esc closes the pane.
 
-The history is private. On a blyg running studio 0.49 or later it's kept in
-your blyg's own browsing log, so the web Studio's history pane shows the
-same walks; on an older blyg, or with a sign-in that lacks `reading:state`,
-it stays on this Mac. It's never published or sent to anyone else.
+The history is private. It's kept in your blyg's own browsing log, so the
+web Studio's history pane shows the same walks; with a sign-in that lacks
+`reading:state`, it stays on this Mac. It's never published or sent to anyone else.
 
 ## Universal quoting
 

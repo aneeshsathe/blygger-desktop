@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use super::{BrowseStep, CLASSIFY_MAX, LinkTarget, NewBrowseStep, probe};
 use crate::api::browse::{BROWSE_PAGE_MAX, is_forbidden};
 use crate::api::public::PublicClient;
-use crate::backend::Result;
+use crate::backend::{CoreError, Result};
 use crate::lineage::OFF_RECHECK_MS;
 use crate::store::Store;
 use crate::sync::Engine;
@@ -156,35 +156,51 @@ pub fn history(
     now: i64,
 ) -> Result<Vec<BrowseStep>> {
     if on_server(e, st, now) {
-        let mut out: Vec<BrowseStep> = Vec::new();
-        loop {
-            let want = (limit - out.len()).min(BROWSE_PAGE_MAX);
-            if want == 0 {
+        match server_history(e, trail, offset, limit) {
+            Ok(Some(out)) => {
                 set_served(&e.store, BROWSE_META, true, now);
                 return Ok(out);
             }
-            match e.api.list_browse(trail, offset + out.len(), want) {
-                Ok(Some(page)) => {
-                    let n = page.items.len();
-                    out.extend(page.items);
-                    if n < want || (offset + out.len()) as u64 >= page.total {
-                        set_served(&e.store, BROWSE_META, true, now);
-                        return Ok(out);
-                    }
-                }
-                Ok(None) => {
-                    set_served(&e.store, BROWSE_META, false, now);
-                    break;
-                }
-                Err(err) if is_forbidden(&err) => {
-                    st.forbidden.store(true, Ordering::Relaxed);
-                    break;
-                }
-                Err(err) => return Err(err),
-            }
+            Ok(None) => set_served(&e.store, BROWSE_META, false, now),
+            Err(err) if is_forbidden(&err) => st.forbidden.store(true, Ordering::Relaxed),
+            Err(err) => return Err(err),
         }
     }
     e.store.browse_log(trail, offset, limit)
+}
+
+/// Steps `offset..offset + limit` of the server's log, newest first: one
+/// walk of its cursor pages from the start (the log has no offsets). A walk
+/// the log changed under (`CursorExpired`) is dropped and started again.
+/// `None` on 404.
+fn server_history(
+    e: &Engine,
+    trail: Option<&str>,
+    offset: usize,
+    limit: usize,
+) -> Result<Option<Vec<BrowseStep>>> {
+    let end = offset.saturating_add(limit);
+    'walk: for _ in 0..=crate::api::CURSOR_RESTARTS {
+        let mut seen: Vec<BrowseStep> = Vec::new();
+        let mut cursor: Option<String> = None;
+        while seen.len() < end {
+            let want = (end - seen.len()).min(BROWSE_PAGE_MAX);
+            match e.api.list_browse(trail, cursor.as_deref(), want) {
+                Ok(Some(page)) => {
+                    seen.extend(page.items);
+                    match page.next {
+                        Some(n) => cursor = Some(n),
+                        None => break,
+                    }
+                }
+                Ok(None) => return Ok(None),
+                Err(CoreError::CursorExpired) => continue 'walk,
+                Err(err) => return Err(err),
+            }
+        }
+        return Ok(Some(seen.into_iter().skip(offset).take(limit).collect()));
+    }
+    Err(CoreError::CursorExpired)
 }
 
 /// `Backend::clear_browse`: the server's log when it keeps one, and this

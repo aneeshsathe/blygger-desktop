@@ -37,10 +37,9 @@ doesn't update itself yet. See
 [Windows](https://aneeshsathe.github.io/blygger-desktop/install.html#windows)
 in the docs for what differs from the Mac.
 
-Burrow works with any blyg on blygger-studio 0.47 or later, stock and unpatched:
-sign in with your browser, an API token, or your studio password. On an older
-blyg everything syncs except posts with labelled links (`[[id | label]]`),
-which wait until the blyg is updated
+Burrow works with any blyg on blygger-studio 0.49.12 or later (API contract
+5), stock and unpatched: sign in with your browser, an API token, or your
+studio password. On an older blyg nothing syncs until it's updated
 ([server requirements](https://aneeshsathe.github.io/blygger-desktop/server.html)).
 No blyg? Try it on the built-in sample data.
 

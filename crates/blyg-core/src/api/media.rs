@@ -1,8 +1,9 @@
-//! Reading the blyg's own media with the owner credential (studio 0.28):
-//! `GET {base}/media/{file}` for an upload no public version uses yet is a
-//! 404 unless it carries `Authorization: Bearer` (owner:read) or the owner
-//! cookie. The credential only ever goes to the blyg's own origin, never
-//! follows a redirect, and is never logged.
+//! Reading the blyg's own media with the owner credential: `GET
+//! {blyg}/media/{id}/{sha256}.{ext}` (or a legacy `{blyg}/media/{id}.{ext}`)
+//! for an upload no public version uses yet is a 404 unless it carries
+//! `Authorization: Bearer` (owner:read) or the owner cookie. Media URLs are
+//! absolute and include the blyg's mount. The credential only ever goes to
+//! the blyg's own origin, never follows a redirect, and is never logged.
 
 use std::io::Read;
 use std::time::Duration;
@@ -32,7 +33,7 @@ impl Api {
     /// Whether `url` is media on this blyg's own origin (`…/media/<file>`),
     /// the only place the credential may go.
     pub fn is_own_media(&self, url: &str) -> bool {
-        let (Ok(u), Ok(api)) = (url::Url::parse(url), url::Url::parse(&self.api_root)) else {
+        let (Ok(u), Ok(api)) = (url::Url::parse(url), url::Url::parse(&self.base)) else {
             return false;
         };
         matches!(u.scheme(), "http" | "https")
@@ -91,9 +92,42 @@ impl Api {
     }
 }
 
+/// A media URL's id (what `DELETE /api/media/{id}` takes): the segment
+/// after `media/` in `…/media/{id}/{sha256}.{ext}` (studio 0.49.11+) or
+/// `…/media/{id}.{ext}` (older uploads); a bare id passes through.
+pub fn media_id(url: &str) -> Option<String> {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let segs: Vec<&str> = path.split('/').collect();
+    let rest = match segs.iter().rposition(|s| *s == "media") {
+        Some(i) => &segs[i + 1..],
+        None => &segs[segs.len().saturating_sub(1)..],
+    };
+    let first = rest.first().copied().unwrap_or_default();
+    // `{id}.{ext}` (legacy, or a bare `file.ext`), else the id segment.
+    let id = if rest.len() == 1 {
+        first.split('.').next().unwrap_or(first)
+    } else {
+        first
+    };
+    (!id.is_empty()).then(|| id.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_media_url_names_its_id() {
+        let digest = "https://blyg.example.com/blyg/media/M1/ab12cd.png";
+        assert_eq!(media_id(digest).as_deref(), Some("M1"));
+        assert_eq!(
+            media_id("https://blyg.example.com/media/M2.jpg").as_deref(),
+            Some("M2")
+        );
+        assert_eq!(media_id("media/M3.png").as_deref(), Some("M3"));
+        assert_eq!(media_id("M4").as_deref(), Some("M4"));
+        assert_eq!(media_id("https://blyg.example.com/media/"), None);
+    }
 
     #[test]
     fn credential_goes_only_to_the_blygs_own_media() {

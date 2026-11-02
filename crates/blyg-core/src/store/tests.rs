@@ -92,7 +92,7 @@ fn save_coalesces_into_one_op() {
     assert_eq!(ops.len(), 1, "create absorbs saves");
     assert_eq!(ops[0].kind, OpKind::Create);
     // once the create has landed, 50 more saves are one save
-    s.op_created(ops[0].seq, &id, "SID1", "x", Kind::Fragment)
+    s.op_created(ops[0].seq, &id, "SID1", "x", Kind::Fragment, 1)
         .unwrap();
     for i in 0..50 {
         s.save(&id, &"y".repeat(i + 1), 800).unwrap();
@@ -111,12 +111,14 @@ fn a_kind_change_lands_in_place() {
     let s = store();
     let id = s.create_draft(Kind::Fragment, "a", 0).unwrap();
     let seq = s.ops().unwrap()[0].seq;
-    s.op_created(seq, &id, "S1", "a", Kind::Fragment).unwrap();
+    s.op_created(seq, &id, "S1", "a", Kind::Fragment, 1)
+        .unwrap();
     s.set_kind(&id, Kind::Thread, 0).unwrap();
     let ops = s.ops().unwrap();
     assert_eq!(ops.len(), 1);
     assert_eq!(ops[0].kind, OpKind::Recreate);
-    s.op_kind_saved(ops[0].seq, &id, "a", Kind::Thread).unwrap();
+    s.op_kind_saved(ops[0].seq, &id, "a", Kind::Thread, 2)
+        .unwrap();
     assert!(s.ops().unwrap().is_empty());
     let it = s.item(&id).unwrap();
     assert_eq!(it.server_id.unwrap().0, "S1", "same server draft");
@@ -129,7 +131,8 @@ fn retirement_ops_are_not_local_edits() {
     let s = store();
     let id = s.create_draft(Kind::Fragment, "a", 0).unwrap();
     let seq = s.ops().unwrap()[0].seq;
-    s.op_created(seq, &id, "NEW", "a", Kind::Fragment).unwrap();
+    s.op_created(seq, &id, "NEW", "a", Kind::Fragment, 1)
+        .unwrap();
     // A retirement queued by a build from before studio 0.9, when a kind
     // change made a new draft and deleted the old one.
     s.conn()
@@ -274,7 +277,6 @@ fn a_server_edit_forgets_tracked_provenance() {
     let w = WireItem {
         id: "S1".into(),
         kind: "fragment".into(),
-        authored_kind: None,
         status: "draft".into(),
         version: 0,
         dirty: true,
@@ -347,7 +349,6 @@ fn discard_changes_drops_the_waiting_save() {
     let restored = |dirty: bool| WireItem {
         id: "S1".into(),
         kind: "fragment".into(),
-        authored_kind: None,
         status: "public".into(),
         version: 1,
         dirty,

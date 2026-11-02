@@ -21,6 +21,18 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.16.0",
+        items: &[
+            "Burrow now needs blygger-studio 0.49.12 or later. On an older blyg, nothing syncs \
+             until it's updated; your posts stay on this computer and are sent afterwards.",
+            "A post edited in two places is never overwritten: when it changed on your blyg \
+             too, Burrow shows both copies and you choose which to keep, or keep both.",
+            "Long reading lists come in pages, and nothing is removed from this computer until \
+             the whole list has been read.",
+        ],
+        first_step: Some("conflict"),
+    },
+    Release {
         version: "0.15.0",
         items: &[
             "Hoppers: your blyg's collections of posts, yours and others', are listed under \

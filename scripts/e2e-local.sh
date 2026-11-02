@@ -5,14 +5,12 @@
 #
 # BLYG_WORKER_DIR is the Worker's directory (the one with wrangler.jsonc and
 # node_modules; run `npm install && npm run build` there first): a
-# blygger-studio 0.47 or later (Burrow's floor). The suite passes against
-# 0.46.1 too, where the floor test checks that only labelled posts wait.
+# blygger-studio 0.49.12 or later (API contract 5.x, the only one Burrow
+# speaks).
 #
 #   BLYG_E2E_AUTH=password   sign in with the studio password, not the token
-#   BLYG_E2E_STOCK=1         a stock blygger-studio, without the extensions in
-#                            docs/SERVER.md: the tests of fork-only features
-#                            skip. Studio 0.28+ gets a minted manual token;
-#                            an older one, the password
+#   BLYG_E2E_STOCK=1         kept for older invocations; every studio Burrow
+#                            supports is stock, and gets a minted manual token
 #   BLYG_E2E_SKIP_NOTES=1    skip the markdown-notes extension's e2e
 #
 # What it does:

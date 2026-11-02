@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, MutexGuard, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::api::wire::ChangeState;
-use crate::api::{Api, is_transient, refused_provenance_key};
+use crate::api::{Api, Contract, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
@@ -22,12 +22,12 @@ use crate::util::now_ms;
 
 pub(crate) use worker::{Msg, spawn};
 
-/// `meta` key set when the server took provenance neither as the item's
-/// `provenance` field (studio 0.28+) nor through extension 4 (a 404).
-/// Cleared once a push with provenance lands.
+/// `meta` key an older Burrow set when the server couldn't take TK
+/// provenance. Every studio Burrow now syncs with takes it with the text,
+/// so it is only ever cleared (once a push with provenance lands).
 pub const PROVENANCE_UNAVAILABLE: &str = "tk_provenance_unavailable";
 
-/// `meta` key: the change epoch (`GET /api/changes`, studio 0.32+) the
+/// `meta` key: the change epoch (`GET /api/changes`) the
 /// stored revisions belong to.
 pub const CHANGES_EPOCH: &str = "changes_epoch";
 
@@ -55,26 +55,17 @@ const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
 /// owner).
 pub const SAVE_GAP: Duration = Duration::from_secs(3);
 
-/// How a push carries TK provenance (learned per session).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProvMode {
-    /// `PATCH /api/items/:id {content_md, provenance}` (studio 0.28+).
-    Field,
-    /// The server refused the field: extension 4's `PUT …/tk-provenance`.
-    Ext4,
-}
-
-/// `meta` key: "1" while the server advertises read-state sync (the last
-/// `GET /api/reading/imported` said `read_state: true`, extension 5), "0" or absent
-/// otherwise. Persisted so a read marked offline after a restart still queues.
+/// `meta` key: "1" while the server advertises read-state sync (`GET
+/// /api/reading` said `readState: true`), "0" or absent otherwise.
+/// Persisted so a read marked offline after a restart still queues.
 pub const READ_SYNC: &str = "read_sync";
 
 /// `meta` key set once this database's read state has been batch-uploaded
 /// (the first time the server advertised read-state sync).
 pub const READ_SYNC_UPLOADED: &str = "read_sync_uploaded";
 
-/// `meta` key: "1" while the server also advertises `read_state_clear`
-/// (mark unread syncs, and reads carry `read_at`).
+/// `meta` key: "1" while the server also advertises `readStateClear`
+/// (mark unread syncs, and reads carry `readAt`).
 pub const READ_CLEAR: &str = "read_clear";
 
 /// Timings. Defaults follow the spec; tests shrink them.
@@ -89,7 +80,8 @@ pub struct SyncOptions {
     /// Run the background worker thread. Tests can turn it off and drive sync
     /// with `sync_now` for determinism.
     pub start_worker: bool,
-    /// Reading list pages to fetch per pull (500 items each).
+    /// Reading list pages to read per pull (100 rows each). A list longer
+    /// than this is merged without pruning, and read again next pull.
     pub reading_pages: u32,
     /// Public item documents fetched per pull to fill in lineage (0 = none).
     pub lineage_fetches: usize,
@@ -103,16 +95,10 @@ impl Default for SyncOptions {
             backoff_initial: Duration::from_secs(2),
             backoff_max: Duration::from_secs(120),
             start_worker: true,
-            reading_pages: 4,
+            reading_pages: 20,
             lineage_fetches: 20,
         }
     }
-}
-
-enum Precheck {
-    /// Carries the provenance the server reported with the item.
-    Proceed(Option<Vec<Option<ScopeProvenance>>>),
-    Stop,
 }
 
 pub(crate) type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
@@ -129,34 +115,17 @@ struct NetState {
     backoff: Duration,
     retry_at: Option<Instant>,
     last_emitted: Option<SyncStatus>,
-    /// Server lacks `GET /api/reading/imported` (patch 3 not deployed).
+    /// Server lacks `GET /api/reading/imported`.
     reading_unavailable: bool,
     /// An outbox op is on the wire (`SyncStatus::Syncing`).
     pushing: bool,
-    /// The server proved to speak studio 0.9+'s API this session.
+    /// The server proved to speak contract 5 this session.
     compatible: bool,
-    /// The server proved older than Burrow's floor (studio 0.47, or 0.9 for
-    /// the API itself); cleared once it isn't.
+    /// The server proved older than Burrow's minimum, studio 0.49.12 (its
+    /// contract isn't 5.x); cleared once it isn't.
     outdated: bool,
-    /// The last studio-floor check (`crate::floor`): whether the blyg was
-    /// below it, and when. `None` before one this session.
-    floor: Option<(bool, Instant)>,
-    /// Reading comes from upstream's own routes (no `/reading/imported`):
-    /// `Some(true)`; `Some(false)` from the fork's; `None` not yet known.
-    stock_reading: Option<bool>,
-    /// When the stock reading list was last read end to end.
-    stock_swept: Option<Instant>,
-    /// Each stock entry's signature as last taken in (this session): a
-    /// change shows even when the timestamps (whole seconds) don't move.
-    stock_seen: std::collections::HashMap<(String, String), u64>,
-    /// The last stock reading pull left changed rows for later
-    /// (`STOCK_FETCHES`), so its revision isn't accepted yet.
-    stock_deferred: bool,
-    /// --- background --- `GET /api/reading?background=true` lists the
-    /// withdrawn entries that studio 0.49+ leaves out of the plain list:
-    /// `Some(true)`; `Some(false)` when the server ignored the parameter
-    /// (older) or refused it; `None` not yet asked this session.
-    stock_background: Option<bool>,
+    /// A reading pull found `GET /api/reading/imported` this session.
+    reading_served: bool,
     /// The server answers `GET /api/changes` (`None` before a pull).
     changes: Option<bool>,
     /// When everything was last read whole.
@@ -165,16 +134,13 @@ struct NetState {
     rate_limited: bool,
     /// A 403 is holding the outbox (its notice was sent).
     scope_blocked: bool,
-    /// How provenance travels to this server, once known.
-    prov_mode: Option<ProvMode>,
     /// When each item's last autosave push landed (`SAVE_GAP`).
     pushed: HashMap<LocalId, Instant>,
     /// The earliest time a save held back by `SAVE_GAP` may go.
     paced_until: Option<Instant>,
     /// --- read/unread --- The server refused a read-state write with 403:
-    /// a credential without `reading:state` (studio 0.39+; a sign-in made
-    /// before it), or a scoped token on a Worker that keeps those writes to
-    /// the owner. Read ops stay queued but aren't sent for the rest of the
+    /// a credential without `reading:state` (a sign-in made before the
+    /// scope existed). Read ops stay queued but aren't sent for the rest of the
     /// session (a new sign-in is a new session), and the rest of the outbox
     /// goes on without them.
     read_denied: bool,
@@ -182,10 +148,7 @@ struct NetState {
     /// 403 (a credential without `owner:manage`): those ops stay queued,
     /// unsent, for the rest of the session; nothing else waits for them.
     hopper_denied: bool,
-    /// `GET /api/reading/imported` answered in upstream's shape (studio
-    /// 0.40+): `Some(true)`; the old Worker patch 3's: `Some(false)`.
-    upstream_feed: Option<bool>,
-    /// Upstream's read-state flags (`GET /api/reading`), once read.
+    /// The read-state flags (`GET /api/reading`), once read this session.
     read_flags: Option<crate::api::wire::ReadingFlags>,
     /// The blyg refused the stored credential (401): nothing is sent or
     /// pulled on its own until a new sign-in, or a manual sync.
@@ -193,7 +156,7 @@ struct NetState {
 }
 
 /// What to say, once a session, when the blyg refuses a read-state write.
-/// A studio 0.39+ names the scope (`reading:state`) in its challenge, and
+/// The studio names the scope (`reading:state`) in its challenge, and
 /// `e` carries `oauth::missing_scope_message` (sign in again / a new token).
 fn read_denied_message(e: &CoreError) -> String {
     let why = match e {
@@ -219,36 +182,17 @@ fn hopper_denied_message(e: &CoreError) -> String {
     )
 }
 
-/// While a blyg is below the studio floor, how often the worker checks
-/// again (a manual sync checks at once).
-const FLOOR_RECHECK: Duration = Duration::from_secs(60);
-
 /// The time allowed per pull for fetching item documents (lineage).
 const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
 
-/// Meta key: the "this server is stock" notice was sent for this database.
-const STOCK_TOLD: &str = "stock_told";
-
-/// On a stock server, at most this many items are fetched one by one per
-/// pull (new or changed ones); the rest follow on the next pulls.
-const STOCK_FETCHES: usize = 100;
-/// A stock pull normally stops at the first page with nothing new; the
-/// whole list is read this often, to catch older edits and removals.
-const STOCK_SWEEP: Duration = Duration::from_secs(10 * 60);
-
-/// One pull of the stock reading list, across its walks
-/// (`Engine::stock_walk`).
-struct StockWalk<'a> {
-    subs: &'a std::collections::HashMap<String, (String, String)>,
-    thumbs: &'a std::collections::HashMap<(String, String), i8>,
-    hoppers: &'a std::collections::HashMap<(String, String), Vec<String>>,
-    /// Read to the end, not just down to the first unchanged page.
-    sweep: bool,
-    out: Vec<ReadingItem>,
-    /// Imported items fetched so far (at most `STOCK_FETCHES`).
-    fetched: usize,
-    /// Changed rows left for a later pull.
-    deferred: bool,
+/// A list read for a pull: `None` when it changed under every walk
+/// (`CursorExpired`), so this pull leaves it as held and the next reads it.
+fn settled<T>(r: Result<T>) -> Result<Option<T>> {
+    match r {
+        Ok(v) => Ok(Some(v)),
+        Err(CoreError::CursorExpired) => Ok(None),
+        Err(e) => Err(e),
+    }
 }
 
 pub(crate) struct Engine {
@@ -285,22 +229,15 @@ impl Engine {
                 pushing: false,
                 compatible: false,
                 outdated: false,
-                floor: None,
-                stock_reading: None,
-                stock_swept: None,
-                stock_seen: Default::default(),
-                stock_deferred: false,
-                stock_background: None,
+                reading_served: false,
                 changes: None,
                 full_at: None,
                 rate_limited: false,
                 scope_blocked: false,
-                prov_mode: None,
                 pushed: HashMap::new(),
                 paced_until: None,
                 read_denied: false,
                 hopper_denied: false,
-                upstream_feed: None,
                 read_flags: None,
                 signed_out: false,
             }),
@@ -531,11 +468,6 @@ impl Engine {
                 self.note_err(&e);
                 break Err(e);
             }
-            // The check may just have found the blyg below the studio floor:
-            // this op waits then, and `next_op` now passes over it.
-            if self.labels_held(&op) {
-                continue;
-            }
             self.set_pushing(true);
             let ran = self.run_op(&op);
             self.set_pushing(false);
@@ -582,136 +514,71 @@ impl Engine {
         result
     }
 
-    /// Whether the server proved older than Burrow's floor, blygger-studio
-    /// 0.47 (or 0.9, when nothing syncs), as of the last check.
+    /// Whether the server proved older than Burrow's minimum, blygger-studio
+    /// 0.49.12 (its private API contract isn't 5.x), as of the last check.
     pub fn server_outdated(&self) -> bool {
         self.state().outdated
     }
 
-    /// The blyg is below the studio floor (0.47): posts with labelled links
-    /// wait (`crate::floor`).
-    pub fn floor_below(&self) -> bool {
-        matches!(self.state().floor, Some((true, _)))
-    }
-
-    /// `op` sends a post's text, the text holds labelled links, and the blyg
-    /// is below the floor: it waits in the outbox. Read from the text as it
-    /// is now, so taking the labels out releases it on the next flush.
-    fn labels_held(&self, op: &Op) -> bool {
-        self.floor_below() && self.op_has_labels(op)
-    }
-
-    fn op_has_labels(&self, op: &Op) -> bool {
-        matches!(op.kind, OpKind::Create | OpKind::Save | OpKind::Recreate)
-            && self
-                .store
-                .row(&op.local_id)
-                .is_some_and(|r| crate::floor::has_labels(&r.item.content_md))
-    }
-
-    /// When the next op is due, passing over the ones held for labels (so
-    /// the worker doesn't wake for them).
+    /// When the next op is due, passing over the ones held for a scope this
+    /// credential lacks (so the worker doesn't wake for them).
     pub fn earliest_due(&self) -> Option<i64> {
         let held = {
             let st = self.state();
             st.read_denied || st.hopper_denied
         };
-        if !self.floor_below() && !held {
+        if !held {
             return self.store.earliest_due();
         }
-        // Ops held for labels, or for a scope this credential lacks, don't
-        // wake the worker.
         let conflicted = self.store.conflicted().unwrap_or_default();
-        let below = self.floor_below();
         self.store
             .ops()
             .ok()?
             .into_iter()
-            .filter(|o| {
-                !conflicted.contains(&o.local_id)
-                    && !(below && self.op_has_labels(o))
-                    && !self.read_held(o)
-            })
+            .filter(|o| !conflicted.contains(&o.local_id) && !self.read_held(o))
             .map(|o| o.not_before)
             .min()
     }
 
-    /// Before a post is published (`content`, its working copy): the checks
-    /// a push makes, and below the studio floor, no labelled links.
+    /// Before a post is published: the check a push makes.
     pub fn check_publish(&self, content: &str) -> Result<()> {
-        self.check_server(true)?;
-        if self.floor_below() && crate::floor::has_labels(content) {
-            return Err(CoreError::ServerOutdated);
-        }
-        Ok(())
+        let _ = content;
+        self.check_server(true)
     }
 
-    /// Make sure the server can take what Burrow sends. Two checks, each
-    /// once per session (one small read each) and again while it fails:
-    ///
-    /// - studio 0.9+'s API, before anything is pushed or pulled: on an
-    ///   older one a new route's 404 reads as "item deleted", and the push
-    ///   would re-create it;
-    /// - studio 0.47+ (`crate::floor`): an older one doesn't understand
-    ///   labelled links, so posts holding them wait (`labels_held`). Only a
-    ///   push (`push`) waits for this check's verdict.
+    /// Make sure the server speaks what Burrow sends: its private API
+    /// contract (`GET {blyg}/api/capabilities`) is 5.x, blygger-studio
+    /// 0.49.12 or later. Checked once per session (one small read), and
+    /// again while it fails, before anything is pushed or pulled: a list
+    /// in another shape would read as empty or ended, and what's held here
+    /// would be pruned. An older studio is `ServerOutdated` (said once, as
+    /// `CoreEvent::ServerOutdated`); a newer contract asks for a newer
+    /// Burrow. Nothing is sent either way, and the local copy stays.
     fn check_server(&self, push: bool) -> Result<()> {
-        if !self.state().compatible {
-            // A newer private-API contract than this Burrow speaks: stop
-            // before any list is read, because a misread page would prune
-            // what's held (`api::CONTRACT_MAJOR_MAX`). Asked once a session,
-            // with the rest of the compatibility check.
-            if let Some(c) = self.api.contract_version()?
-                && !crate::api::contract_supported(&c)
-            {
-                return Err(CoreError::Other(format!(
-                    "This blyg runs studio API contract {c}, which this version of Burrow \
-                     doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
-                     was synced, and your local copy is safe."
-                )));
-            }
-            match self.api.count_items() {
-                Ok(_) => self.state().compatible = true,
-                Err(CoreError::ServerOutdated) => {
-                    self.mark_outdated();
-                    return Err(CoreError::ServerOutdated);
-                }
-                Err(e) => return Err(e),
-            }
+        let _ = push;
+        if self.state().compatible {
+            return Ok(());
         }
-        self.check_floor(push)
+        match crate::api::contract(self.api.contract_version()?.as_deref()) {
+            Contract::Supported => {
+                let mut st = self.state();
+                st.compatible = true;
+                st.outdated = false;
+                Ok(())
+            }
+            Contract::TooOld => {
+                self.mark_outdated();
+                Err(CoreError::ServerOutdated)
+            }
+            Contract::TooNew(c) => Err(CoreError::Other(format!(
+                "This blyg runs studio API contract {c}, which this version of Burrow \
+                 doesn't speak yet. Update Burrow (Burrow › Check for Updates…); nothing \
+                 was synced, and your local copy is safe."
+            ))),
+        }
     }
 
-    /// The studio floor: checked when not yet known this session, and while
-    /// the blyg is below it at most every `FLOOR_RECHECK` (a manual sync
-    /// checks at once). A failed check decides nothing: a push waits for a
-    /// verdict, a pull goes on.
-    fn check_floor(&self, push: bool) -> Result<()> {
-        let due = match self.state().floor {
-            None => true,
-            Some((below, at)) => below && at.elapsed() >= FLOOR_RECHECK,
-        };
-        if due {
-            match self.api.studio_floor() {
-                Ok(f) => {
-                    let below = !f.meets();
-                    let mut st = self.state();
-                    st.floor = Some((below, Instant::now()));
-                    if below {
-                        drop(st);
-                        self.mark_outdated();
-                    } else {
-                        st.outdated = false;
-                    }
-                }
-                Err(e) if push && self.state().floor.is_none() => return Err(e),
-                Err(_) => {}
-            }
-        }
-        Ok(())
-    }
-
-    /// The server is below a floor: say so once (until it isn't).
+    /// The server is too old: say so once (until it isn't).
     fn mark_outdated(&self) {
         let first = !std::mem::replace(&mut self.state().outdated, true);
         if first {
@@ -732,7 +599,6 @@ impl Engine {
         let conflicted = self.store.conflicted()?;
         let now = now_ms();
         let mut blocked: HashSet<LocalId> = HashSet::new();
-        let below = self.floor_below();
         let mut st = self.state();
         st.paced_until = None;
         for op in ops {
@@ -744,12 +610,6 @@ impl Engine {
             // Read state the credential can't write waits, queued, for one
             // that can; it holds nothing else up.
             if self.read_held_locked(&st, &op) {
-                continue;
-            }
-            // Below the studio floor a post with labelled links waits; the
-            // item's later ops wait behind it.
-            if below && self.op_has_labels(&op) {
-                blocked.insert(op.local_id.clone());
                 continue;
             }
             if conflicted.contains(&op.local_id) || op.in_flight || (!force && op.not_before > now)
@@ -780,9 +640,17 @@ impl Engine {
             return self.run_hopper(op); // --- hoppers ---
         }
         if op.kind == OpKind::DeleteRemote {
+            // A draft an older Burrow retired: no row holds its revision, so
+            // it's read first.
             self.store.set_in_flight(op.seq, true)?;
-            return match self.api.delete_item(&op.payload) {
+            let r = self
+                .api
+                .get_item(&op.payload)
+                .and_then(|w| self.api.delete_item(&op.payload, w.revision));
+            return match r {
                 Ok(()) | Err(CoreError::NotFound) => self.store.drop_op(op.seq),
+                // Changed between the read and the delete: next flush.
+                Err(CoreError::RevisionConflict) => self.store.set_in_flight(op.seq, false),
                 Err(e) => Err(e),
             };
         }
@@ -823,60 +691,70 @@ impl Engine {
                 if item.server_id.is_some() {
                     return self.store.drop_op(op.seq);
                 }
-                // Studio 0.28+ takes the provenance with the text.
-                if let Some(prov) = self.create_provenance(&item.local_id, &content) {
-                    match self.api.create_item(
-                        &content,
-                        item.kind,
-                        item.stub_of.as_ref(),
-                        Some(&prov),
-                    ) {
-                        Ok(sid) => {
-                            self.state().prov_mode = Some(ProvMode::Field);
-                            self.store.op_created(
-                                op.seq,
-                                &item.local_id,
-                                &sid,
-                                &content,
-                                item.kind,
-                            )?;
-                            self.provenance_landed()?;
-                            return self.store.prov_pushed(&item.local_id, &content, &prov);
-                        }
-                        Err(e @ CoreError::Rejected { status: 400, .. }) => {
-                            if refused_provenance_key(&e) {
-                                self.state().prov_mode = Some(ProvMode::Ext4);
-                            }
-                            // Create without it; the push that follows
-                            // retries (or reports) the provenance.
-                        }
-                        Err(e) => return Err(e),
+                // The provenance goes with the text.
+                let prov = self.create_provenance(&item.local_id, &content);
+                let w = match self.api.create_item(
+                    &content,
+                    item.kind,
+                    item.stub_of.as_ref(),
+                    prov.as_deref(),
+                ) {
+                    Ok(w) => w,
+                    // The provenance itself refused (e.g. a cited source that
+                    // no longer resolves): create without it, and the push
+                    // that follows sends it again (or reports it).
+                    Err(CoreError::Rejected { status: 400, .. }) if prov.is_some() => {
+                        let w = self.api.create_item(
+                            &content,
+                            item.kind,
+                            item.stub_of.as_ref(),
+                            None,
+                        )?;
+                        self.store.op_created(
+                            op.seq,
+                            &item.local_id,
+                            &w.id,
+                            &content,
+                            item.kind,
+                            w.revision,
+                        )?;
+                        return self.store.queue_prov_push(&item.local_id);
                     }
+                    Err(e) => return Err(e),
+                };
+                self.store.op_created(
+                    op.seq,
+                    &item.local_id,
+                    &w.id,
+                    &content,
+                    item.kind,
+                    w.revision,
+                )?;
+                match prov {
+                    Some(prov) => {
+                        self.provenance_landed()?;
+                        self.store.prov_pushed(&item.local_id, &content, &prov)
+                    }
+                    // Nothing tracked to disclose yet; a later push carries it.
+                    None => self.store.queue_prov_push(&item.local_id),
                 }
-                let sid = self
-                    .api
-                    .create_item(&content, item.kind, item.stub_of.as_ref(), None)?;
-                self.store
-                    .op_created(op.seq, &item.local_id, &sid, &content, item.kind)?;
-                // The provenance follows in a combined push.
-                self.store.queue_prov_push(&item.local_id)
             }
             OpKind::Save => {
                 let Some(sid) = &item.server_id else {
                     return self.store.op_lost_server(op.seq, &item.local_id);
                 };
-                let held = match self.precheck(op, &item.local_id, &sid.0)? {
-                    Precheck::Proceed(held) => held,
-                    Precheck::Stop => return Ok(()),
-                };
-                match self.push_text(
-                    &item.local_id,
-                    &sid.0,
-                    &content,
-                    row.base_content.as_deref(),
-                    held,
-                ) {
-                    Ok(()) => self.store.op_saved(op.seq, &item.local_id, &content),
+                let base = row.base_content.clone();
+                let pushed = self.with_revision(&item.local_id, &sid.0, |rev| {
+                    self.push_text(&item.local_id, &sid.0, rev, &content, base.as_deref())
+                });
+                match pushed {
+                    Ok(Some(w)) => {
+                        self.store
+                            .op_saved(op.seq, &item.local_id, &content, w.revision)
+                    }
+                    // The blyg's text moved under this edit: the item is in
+                    // conflict now, and its ops wait for the user's choice.
+                    Ok(None) => self.store.set_in_flight(op.seq, false),
                     Err(CoreError::NotFound) => self.store.op_lost_server(op.seq, &item.local_id),
                     Err(e) => Err(e),
                 }
@@ -888,28 +766,33 @@ impl Engine {
                 if row.server_kind == Some(item.kind) {
                     return self.store.drop_op(op.seq);
                 }
-                // Retiring the old draft must not throw away an edit made elsewhere.
-                let held = match self.precheck(op, &item.local_id, &old.0)? {
-                    Precheck::Proceed(held) => held,
-                    Precheck::Stop => return Ok(()),
-                };
                 // A draft's kind can change until it is first published:
-                // one `PATCH {content_md, kind}` keeps its id. Provenance the
+                // one `PATCH {contentMd, kind}` keeps its id. Provenance the
                 // server holds is keyed to `base`; adopt it so the push that
                 // follows remaps it onto the new text.
-                if self.store.provenance(&item.local_id).scopes.is_none()
-                    && let Some(base) = &row.base_content
-                    && let Ok(Some(server)) = self.server_provenance(&old.0, held)
-                    && server.iter().any(Option::is_some)
-                {
-                    self.store.adopt_prov(&item.local_id, base, &server)?;
-                }
-                match self.api.save_item_kind(&old.0, &content, item.kind) {
-                    Ok(()) => {
-                        self.store
-                            .op_kind_saved(op.seq, &item.local_id, &content, item.kind)?;
+                let base = row.base_content.clone();
+                let saved = self.with_revision(&item.local_id, &old.0, |rev| {
+                    if self.store.provenance(&item.local_id).scopes.is_none()
+                        && let Some(base) = &base
+                        && let Some(server) = self.server_provenance(&old.0, rev)?
+                        && server.iter().any(Option::is_some)
+                    {
+                        self.store.adopt_prov(&item.local_id, base, &server)?;
+                    }
+                    self.api.save_item_kind(&old.0, rev, &content, item.kind)
+                });
+                match saved {
+                    Ok(Some(w)) => {
+                        self.store.op_kind_saved(
+                            op.seq,
+                            &item.local_id,
+                            &content,
+                            item.kind,
+                            w.revision,
+                        )?;
                         self.store.queue_prov_push(&item.local_id)
                     }
+                    Ok(None) => self.store.set_in_flight(op.seq, false),
                     Err(CoreError::NotFound) => self.store.op_lost_server(op.seq, &item.local_id),
                     Err(e) => Err(e),
                 }
@@ -920,45 +803,107 @@ impl Engine {
         }
     }
 
-    /// Push the working copy. The Worker keys TK provenance by scope
-    /// position, so when the scopes changed since `base` (what the server
-    /// holds), or tracked provenance changed, the text and the whole
-    /// provenance array go together in one write: `PATCH {content_md,
-    /// provenance}` on studio 0.28+, extension 4's `PUT …/tk-provenance` on
-    /// an older server that refuses the field. Otherwise it's a plain
-    /// `PATCH {content_md}`. `held` is the provenance the server reported
-    /// with the item (the precheck's read; `None` before studio 0.28).
+    // ------------------------------------------------------------ revisions
+
+    /// The revision to send with the next command on `id` (server id
+    /// `sid`): the one stored with what was last synced, else read now
+    /// (`GET /api/items/:id`, merged with conflict detection). `None` when
+    /// that read found the blyg's text moved under a local edit: the item is
+    /// in conflict now (`CoreEvent::Conflict` sent), and nothing is sent.
+    fn revision_for(&self, id: &LocalId, sid: &str) -> Result<Option<u64>> {
+        if let Some(r) = self.store.revision(id) {
+            return Ok(Some(r));
+        }
+        self.reread(id, sid)
+    }
+
+    /// Read the item again and merge it with conflict detection; its fresh
+    /// revision, or `None` when it entered conflict.
+    fn reread(&self, id: &LocalId, sid: &str) -> Result<Option<u64>> {
+        let w = self.api.get_item(sid)?;
+        match self.store.check_server(id, &w)? {
+            None => Ok(Some(w.revision)),
+            Some((local_id, mine, theirs)) => {
+                self.emit(CoreEvent::Conflict {
+                    local_id,
+                    mine,
+                    theirs,
+                });
+                Ok(None)
+            }
+        }
+    }
+
+    /// Run an item command that carries the item's revision
+    /// (`expectedRevision`). On 409 `revision-conflict` the item changed on
+    /// the blyg since that revision was read: it is read again and merged
+    /// with conflict detection. When the blyg's text moved under a local
+    /// edit, the item enters conflict and nothing is sent (`Ok(None)`, the
+    /// user chooses). When the text moved with no local edit, this Mac now
+    /// shows the new text and the command isn't repeated over it
+    /// (`RevisionConflict`: a publish or delete must not act on text the
+    /// user hasn't seen). Only a revision that moved without the text (an
+    /// attachment, a setting) is retried, once, with the fresh revision.
+    /// Nothing is ever sent blind over a change it didn't see.
+    pub(crate) fn with_revision<T>(
+        &self,
+        id: &LocalId,
+        sid: &str,
+        f: impl Fn(u64) -> Result<T>,
+    ) -> Result<Option<T>> {
+        let Some(rev) = self.revision_for(id, sid)? else {
+            return Ok(None);
+        };
+        let base = self.store.row(id).and_then(|r| r.base_content);
+        match f(rev) {
+            Err(CoreError::RevisionConflict) => {}
+            r => return r.map(Some),
+        }
+        let Some(rev) = self.reread(id, sid)? else {
+            return Ok(None);
+        };
+        if self.store.row(id).and_then(|r| r.base_content) != base {
+            return Err(CoreError::RevisionConflict);
+        }
+        f(rev).map(Some)
+    }
+
+    /// Push the working copy at revision `rev`. Studio keys TK provenance by
+    /// scope position, so when the scopes changed since `base` (what the
+    /// server holds), or tracked provenance changed, the text and the whole
+    /// provenance array go together in one `PATCH {contentMd, provenance}`;
+    /// otherwise it's a plain `PATCH {contentMd}`. Returns the item as
+    /// stored.
     fn push_text(
         &self,
         id: &LocalId,
         sid: &str,
+        rev: u64,
         content: &str,
         base: Option<&str>,
-        held: Option<Vec<Option<ScopeProvenance>>>,
-    ) -> Result<()> {
+    ) -> Result<crate::api::wire::WireItem> {
         let Some(n) = crate::tk::scope_count(content) else {
             // Malformed TK (mid-typing): positions mean nothing yet. The
             // tracked provenance stays dirty for the next well-formed push.
-            return self.api.save_item(sid, content);
+            return self.api.save_item(sid, rev, content);
         };
         let t = self.store.provenance(id);
         let structure = base.is_none_or(|b| crate::tk::structure_changed(b, content));
         if !t.dirty && !structure {
-            return self.api.save_item(sid, content);
+            return self.api.save_item(sid, rev, content);
         }
         let scopes = match (&t.scopes, &t.keyed_to) {
             (Some(s), Some(k)) if k == content => s.clone(),
             (Some(s), Some(k)) => crate::tk::remap(k, s, content).unwrap_or_else(|| vec![None; n]),
             _ => {
                 // Not tracked here: carry the server's own provenance (keyed
-                // to `base`, which the precheck just confirmed) over.
-                match self.server_provenance(sid, held) {
-                    Ok(Some(server)) if server.iter().any(Option::is_some) => base
+                // to `base`, which `rev` confirms it still holds) over.
+                match self.server_provenance(sid, rev)? {
+                    Some(server) if server.iter().any(Option::is_some) => base
                         .and_then(|b| crate::tk::remap(b, &server, content))
                         .unwrap_or_else(|| vec![None; n]),
                     // Nothing recorded anywhere: nothing can shift.
-                    Ok(_) | Err(CoreError::NotFound) => return self.api.save_item(sid, content),
-                    Err(e) => return Err(e),
+                    _ => return self.api.save_item(sid, rev, content),
                 }
             }
         };
@@ -968,67 +913,44 @@ impl Engine {
         } else {
             vec![None; n]
         };
-        self.push_provenance(id, sid, content, &scopes)
+        self.push_provenance(id, sid, rev, content, &scopes)
     }
 
-    /// The provenance the server holds for an item: what its read reported
-    /// (`held`, studio 0.28+), else extension 4's `GET …/tk-provenance`.
+    /// The provenance the server holds for an item, as of revision `rev`
+    /// (`GET /api/items/:id`). A newer revision there means the item moved
+    /// since `rev`: `RevisionConflict`, so the caller reads it again with
+    /// conflict detection rather than remap provenance keyed to text it
+    /// hasn't seen.
     fn server_provenance(
         &self,
         sid: &str,
-        held: Option<Vec<Option<ScopeProvenance>>>,
+        rev: u64,
     ) -> Result<Option<Vec<Option<ScopeProvenance>>>> {
-        if held.is_some() || self.state().prov_mode == Some(ProvMode::Field) {
-            return Ok(held);
+        let w = self.api.get_item(sid)?;
+        if w.revision != rev {
+            return Err(CoreError::RevisionConflict);
         }
-        match self.api.get_tk_provenance(sid) {
-            // Extension routes closed to this credential: nothing readable.
-            Err(CoreError::Rejected { status: 403, .. }) => Ok(None),
-            r => r,
-        }
+        Ok(w.server_provenance())
     }
 
-    /// Write `content` and `scopes` together, by whichever route the server
-    /// takes. A refusal of the provenance itself (e.g. a cited source that no
-    /// longer resolves) retries without the citations, then saves the text
-    /// with no disclosure and says so.
+    /// Write `content` and `scopes` together at revision `rev`. A refusal
+    /// of the provenance itself (e.g. a cited source that no longer
+    /// resolves) retries without the citations, then saves the text with no
+    /// disclosure and says so. A refused write changes nothing, so each
+    /// retry goes at the same revision.
     fn push_provenance(
         &self,
         id: &LocalId,
         sid: &str,
+        rev: u64,
         content: &str,
         scopes: &[Option<ScopeProvenance>],
-    ) -> Result<()> {
-        let field = self.state().prov_mode != Some(ProvMode::Ext4);
-        let first = if field {
-            match self.api.save_item_provenance(sid, content, scopes) {
-                Err(e) if refused_provenance_key(&e) => {
-                    // Older than studio 0.28: try extension 4.
-                    self.state().prov_mode = Some(ProvMode::Ext4);
-                    return self.push_provenance(id, sid, content, scopes);
-                }
-                Ok(()) => {
-                    self.state().prov_mode = Some(ProvMode::Field);
-                    Ok(())
-                }
-                Err(e) => Err(e),
-            }
-        } else {
-            match self.api.put_tk_provenance(sid, Some(content), scopes) {
-                // No provenance on this server at all, or not for this
-                // credential (a Worker answers scoped tokens 403 on its
-                // extension routes): disclosure isn't recordable here.
-                Err(CoreError::NotFound | CoreError::Rejected { status: 403, .. }) => {
-                    self.store.set_meta(PROVENANCE_UNAVAILABLE, "1")?;
-                    return self.api.save_item(sid, content);
-                }
-                r => r.map(|_| ()),
-            }
-        };
-        let message = match first {
-            Ok(()) => {
+    ) -> Result<crate::api::wire::WireItem> {
+        let message = match self.api.save_item_provenance(sid, rev, content, scopes) {
+            Ok(w) => {
                 self.provenance_landed()?;
-                return self.store.prov_pushed(id, content, scopes);
+                self.store.prov_pushed(id, content, scopes)?;
+                return Ok(w);
             }
             Err(CoreError::Rejected {
                 status: 400,
@@ -1036,15 +958,6 @@ impl Engine {
                 ..
             }) => message,
             Err(e) => return Err(e),
-        };
-        let send = |s: &[Option<ScopeProvenance>]| {
-            if field {
-                self.api.save_item_provenance(sid, content, s)
-            } else {
-                self.api
-                    .put_tk_provenance(sid, Some(content), s)
-                    .map(|_| ())
-            }
         };
         let bare: Vec<Option<ScopeProvenance>> = scopes
             .iter()
@@ -1055,8 +968,11 @@ impl Engine {
                 })
             })
             .collect();
-        match send(&bare) {
-            Ok(()) => self.store.prov_pushed(id, content, &bare),
+        match self.api.save_item_provenance(sid, rev, content, &bare) {
+            Ok(w) => {
+                self.store.prov_pushed(id, content, &bare)?;
+                Ok(w)
+            }
             Err(CoreError::Rejected { status: 400, .. }) => {
                 self.emit(CoreEvent::Error(format!(
                     "The blyg refused the AI provenance for this post ({message}); the text was saved without it"
@@ -1064,20 +980,22 @@ impl Engine {
                 let none = vec![None; scopes.len()];
                 // Clear what the server held, so nothing stale stays keyed
                 // to the new text; failing that, the text alone.
-                match send(&none) {
+                let w = match self.api.save_item_provenance(sid, rev, content, &none) {
                     Err(CoreError::Rejected { status: 400, .. }) => {
-                        self.api.save_item(sid, content)?
+                        self.api.save_item(sid, rev, content)?
                     }
                     r => r?,
-                }
+                };
                 // Don't retry (and re-warn) on every keystroke.
-                self.store.prov_pushed(id, content, &none)
+                self.store.prov_pushed(id, content, &none)?;
+                Ok(w)
             }
             Err(e) => Err(e),
         }
     }
 
-    /// A push with provenance landed: the server takes it after all.
+    /// A push with provenance landed: clear an older Burrow's "the server
+    /// can't take it" mark.
     fn provenance_landed(&self) -> Result<()> {
         if self.store.meta(PROVENANCE_UNAVAILABLE).is_some() {
             self.store.delete_meta(PROVENANCE_UNAVAILABLE)?;
@@ -1085,17 +1003,13 @@ impl Engine {
         Ok(())
     }
 
-    /// The provenance to send with a new item's `POST` (studio 0.28+): the
-    /// tracked provenance, keyed to `content` and valid, when it discloses
-    /// anything and the server isn't known to refuse the field.
+    /// The provenance to send with a new item's `POST`: the tracked
+    /// provenance, keyed to `content` and valid, when it discloses anything.
     fn create_provenance(
         &self,
         id: &LocalId,
         content: &str,
     ) -> Option<Vec<Option<ScopeProvenance>>> {
-        if self.state().prov_mode == Some(ProvMode::Ext4) {
-            return None;
-        }
         let t = self.store.provenance(id);
         let scopes = match (t.scopes, t.keyed_to) {
             (Some(s), Some(k)) if k == content => s,
@@ -1156,33 +1070,6 @@ impl Engine {
             .collect()
     }
 
-    /// Before overwriting the server's working copy, make sure it is still
-    /// what we last synced against. Otherwise the item enters conflict (and
-    /// its ops stay queued, blocked) instead of silently clobbering an edit
-    /// made on another device. This closes the gap between periodic pulls.
-    /// `Proceed` carries the provenance the server reported (studio 0.28+).
-    fn precheck(&self, op: &Op, id: &LocalId, sid: &str) -> Result<Precheck> {
-        match self.api.get_item(sid) {
-            Ok(w) => match self.store.check_server(id, &w)? {
-                None => Ok(Precheck::Proceed(w.server_provenance())),
-                Some((local_id, mine, theirs)) => {
-                    self.store.set_in_flight(op.seq, false)?;
-                    self.emit(CoreEvent::Conflict {
-                        local_id,
-                        mine,
-                        theirs,
-                    });
-                    Ok(Precheck::Stop)
-                }
-            },
-            Err(CoreError::NotFound) => {
-                self.store.op_lost_server(op.seq, id)?;
-                Ok(Precheck::Stop)
-            }
-            Err(e) => Err(e),
-        }
-    }
-
     // ------------------------------------------------------------ pull
 
     pub fn pull(&self) -> Result<()> {
@@ -1196,7 +1083,7 @@ impl Engine {
         r
     }
 
-    /// One pull. On studio 0.32+, `GET /api/changes` comes first and each
+    /// One pull. `GET /api/changes` comes first and each
     /// collection is fetched only when a domain it depends on moved since
     /// its last accepted fetch (everything, every `FULL_PULL_EVERY`). The
     /// revisions are captured before any data is loaded and recorded only
@@ -1212,46 +1099,51 @@ impl Engine {
                 .is_none_or(|t| t.elapsed() >= FULL_PULL_EVERY);
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
 
+        // Each list is one coherent acquisition (`Api::collect`): read to
+        // its end before anything held here is pruned. One that kept
+        // changing while it was read is left as held, and not accepted, so
+        // the next pull reads it again.
         if stale("items", ITEMS_DEPS) {
             let settings = full || !self.unchanged(&rev, "items", &["settings"]);
-            let wires = self.api.list_items_with(settings)?;
-            let out = self.store.merge_all(&wires)?;
-            for (local_id, mine, theirs) in out.conflicts {
-                self.emit(CoreEvent::Conflict {
-                    local_id,
-                    mine,
-                    theirs,
-                });
+            if let Some(wires) = settled(self.api.list_items_with(settings))? {
+                let out = self.store.merge_all(&wires)?;
+                for (local_id, mine, theirs) in out.conflicts {
+                    self.emit(CoreEvent::Conflict {
+                        local_id,
+                        mine,
+                        theirs,
+                    });
+                }
+                if out.changed {
+                    self.emit(CoreEvent::ItemsChanged);
+                }
+                self.accept(&rev, "items", ITEMS_DEPS)?;
             }
-            if out.changed {
-                self.emit(CoreEvent::ItemsChanged);
-            }
-            self.accept(&rev, "items", ITEMS_DEPS)?;
         }
 
         let mut reading_changed = false;
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
-                Ok(subs) => reading_changed |= self.store.replace_subscriptions(&subs)?,
-                Err(CoreError::NotFound) => {}
+                Ok(subs) => {
+                    reading_changed |= self.store.replace_subscriptions(&subs)?;
+                    self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
+                }
+                Err(CoreError::NotFound) => {
+                    self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?
+                }
+                Err(CoreError::CursorExpired) => {}
                 Err(e) => return Err(e),
             }
-            self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
         }
         let mut reading_err = None;
-        // Read state (extension 5) lives in a table the change counters
-        // don't watch: with it on, the reading list is always read.
-        // Upstream's own read state (studio's read-state routes, on a stock
-        // server) advances the `reading` revision, so it needs no exception.
-        let ext5_reads = {
-            let st = self.state();
-            self.read_sync_on() && st.stock_reading == Some(false) && st.upstream_feed != Some(true)
-        };
-        if stale("reading", READING_DEPS) || ext5_reads {
-            self.state().stock_deferred = false;
+        // Read state advances the `reading` revision, so it needs no
+        // exception here.
+        if stale("reading", READING_DEPS) {
             let fetched = self.fetch_reading()?;
-            let mut whole = true;
-            if let Some((items, complete)) = fetched {
+            // A list that kept changing while it was read: as held, and
+            // read again next pull.
+            let mut whole = !matches!(fetched, Reading::Changing);
+            if let Reading::Read(items, complete) = fetched {
                 let kinds = self
                     .store
                     .subscriptions()
@@ -1266,11 +1158,8 @@ impl Engine {
                         Err(e) => reading_err = Some(e),
                     }
                 }
-                // A stock pull that stopped early took in everything new
-                // (older edits wait for the next full pull's sweep); one
-                // that left changed rows for later isn't done.
-                let st = self.state();
-                whole = complete || (st.stock_reading == Some(true) && !st.stock_deferred);
+                // A walk that stopped at its page budget isn't done.
+                whole = complete;
             }
             if whole {
                 self.accept(&rev, "reading", READING_DEPS)?;
@@ -1304,9 +1193,8 @@ impl Engine {
 
     // ------------------------------------------------------------ revisions
 
-    /// `GET /api/changes`, captured before anything is loaded. `None` from
-    /// a server without it (older than studio 0.32), which is pulled whole
-    /// as before. A new epoch (the database was restored or replaced)
+    /// `GET /api/changes`, captured before anything is loaded. `None` when
+    /// it's refused or unreadable, and everything is pulled whole. A new epoch (the database was restored or replaced)
     /// forgets every stored revision, so everything is read again.
     fn revisions(&self) -> Result<Option<ChangeState>> {
         let c = match self.api.changes() {
@@ -1391,9 +1279,9 @@ impl Engine {
                     .items
                     .iter()
                     .filter_map(|v| {
-                        let sub = v.get("subscription_id")?.as_str()?;
+                        let sub = v.get("subscriptionId")?.as_str()?;
                         let (title, origin) = subs.get(sub)?;
-                        crate::api::wire::stock_row(v, title, origin, None, &[], None)
+                        crate::api::wire::imported_item_row(v, title, origin)
                     })
                     .collect(),
                 hopper: d.hopper,
@@ -1430,8 +1318,8 @@ impl Engine {
 
     // ------------------------------------------------------------ read state
 
-    /// The server syncs read state (extension 5, or upstream's read-state
-    /// routes), as of the last reading pull. Still true once a write was
+    /// The server syncs read state (`readState`), as of the last reading
+    /// pull. Still true once a write was
     /// refused with 403 (`read_denied`): marks keep queueing, and wait.
     pub fn read_sync_on(&self) -> bool {
         self.store.meta(READ_SYNC).as_deref() == Some("1")
@@ -1459,8 +1347,8 @@ impl Engine {
         Ok(())
     }
 
-    /// The server can also clear read state (`read_state_clear`): unread
-    /// syncs, and reads carry `read_at`.
+    /// The server can also clear read state (`readStateClear`): unread
+    /// syncs, and reads carry `readAt`.
     pub fn read_clear_on(&self) -> bool {
         self.read_sync_on() && self.store.meta(READ_CLEAR).as_deref() == Some("1")
     }
@@ -1543,8 +1431,8 @@ impl Engine {
     /// Run a `read` or `unread` op: with others of its kind that wait, as
     /// one batch (`POST /api/reading/read` or `/unread`, at most 500), else
     /// one `PUT` or `DELETE`. Unread ops reach the server only when it
-    /// advertises `read_state_clear`; otherwise they're dropped (unread
-    /// stays on this Mac). `read_at` goes only to such a server too.
+    /// advertises `readStateClear`; otherwise they're dropped (unread stays
+    /// on this Mac). `readAt` goes only to such a server too.
     fn run_read(&self, op: &Op) -> Result<()> {
         use crate::api::wire::{READ_BATCH_MAX, ReadMark, UnreadMark};
         let unread = op.kind == OpKind::Unread;
@@ -1655,13 +1543,13 @@ impl Engine {
             }
             Err(CoreError::NotFound) => gone(self),
             Err(e @ CoreError::Rejected { status: 403, .. }) => denied(self, &e),
-            // `read_at` refused (a strict body on a server that said it
+            // `readAt` refused (a strict body on a server that said it
             // could clear): stop sending it and retry without.
             Err(CoreError::Rejected {
                 status: 400,
                 details,
                 ..
-            }) if clear && details.iter().any(|d| d.contains("read_at")) => {
+            }) if clear && details.iter().any(|d| d.contains("readAt")) => {
                 for o in &batch {
                     self.store.set_in_flight(o.seq, false)?;
                 }
@@ -1679,76 +1567,65 @@ impl Engine {
         }
     }
 
-    /// `None` when the server doesn't have `/api/reading` yet. The flag is
-    /// true when the last page had `next: null` (the list is complete).
+    /// One acquisition of `GET /api/reading/imported`: cursor pages from the
+    /// first to `nextCursor: null`, at most `reading_pages` of them. The
+    /// read-state flags come from `GET /api/reading` (once a session).
     ///
-    /// `GET /api/reading/imported` is upstream's `listImportedReading` on a
-    /// studio 0.40+ (cursor-paged, 100 a page) or the old Worker patch 3
-    /// (`before`-paged, 500 a page); the first page tells which. Upstream
-    /// pages carry no read-state flags: those come from `GET /api/reading`.
-    fn fetch_reading(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
-        let mut all = Vec::new();
-        let mut cursor: Option<String> = None;
-        let mut upstream: Option<bool> = None;
-        let mut pages = self.opts.reading_pages.max(1);
-        let mut i = 0;
-        while i < pages {
-            let limit = if upstream == Some(false) {
-                500
-            } else {
-                crate::api::wire::UPSTREAM_READING_MAX
-            };
-            match self.api.reading(limit, cursor.as_deref(), upstream)? {
-                // No such route: upstream's older reading routes.
-                None if i == 0 => return self.fetch_reading_stock(),
-                None => {
-                    self.state().reading_unavailable = true;
-                    self.set_read_sync(false)?;
-                    return Ok(None);
+    /// When the list changes under the walk (409 `cursor-expired`), every
+    /// page read so far is dropped and the walk starts again from the first
+    /// page: a restarted first page is never appended to an old prefix. A
+    /// walk that reached the end is `complete`, and only then may rows the
+    /// answer left out be pruned. One stopped by the page budget is merged
+    /// without pruning.
+    fn fetch_reading(&self) -> Result<Reading> {
+        let flags = self.read_flags()?;
+        self.set_read_sync(flags.read_sync())?;
+        self.set_read_clear(flags.read_clear())?;
+        let pages = self.opts.reading_pages.max(1);
+        'walk: for _ in 0..=crate::api::CURSOR_RESTARTS {
+            let mut all: Vec<ReadingItem> = Vec::new();
+            let mut cursor: Option<String> = None;
+            for _ in 0..pages {
+                let page = match self
+                    .api
+                    .reading(crate::api::wire::IMPORTED_READING_MAX, cursor.as_deref())
+                {
+                    Ok(Some(p)) => p,
+                    Ok(None) => {
+                        self.state().reading_unavailable = true;
+                        self.set_read_sync(false)?;
+                        return Ok(Reading::Unavailable);
+                    }
+                    Err(CoreError::CursorExpired) => continue 'walk,
+                    Err(e) => return Err(e),
+                };
+                {
+                    let mut st = self.state();
+                    st.reading_unavailable = false;
+                    st.reading_served = true;
                 }
-                Some(page) => {
-                    {
-                        let mut st = self.state();
-                        st.reading_unavailable = false;
-                        st.stock_reading = Some(false);
-                        st.upstream_feed = Some(page.upstream);
+                // Only a server that advertises read state means it.
+                let keep = self.read_sync_on();
+                all.extend(page.items.into_iter().map(|mut it| {
+                    if !keep {
+                        it.read_version = None;
                     }
-                    if i == 0 {
-                        upstream = Some(page.upstream);
-                        if page.upstream {
-                            // A fifth of the patch's page: as many rows.
-                            pages = pages.saturating_mul(5);
-                            let flags = self.upstream_read_flags()?;
-                            self.set_read_sync(flags.read_sync())?;
-                            self.set_read_clear(flags.read_clear())?;
-                        } else {
-                            self.set_read_sync(page.read_sync())?;
-                            self.set_read_clear(page.read_clear())?;
-                        }
-                    }
-                    // Only a server that advertises read state means it.
-                    let keep = self.read_sync_on();
-                    all.extend(page.items.into_iter().map(|mut it| {
-                        if !keep {
-                            it.read_version = None;
-                        }
-                        it
-                    }));
-                    match page.next {
-                        // Opaque cursor: passed back verbatim.
-                        Some(n) => cursor = Some(n),
-                        None => return Ok(Some((all, true))),
-                    }
+                    it
+                }));
+                match page.next {
+                    // Opaque cursor: passed back verbatim.
+                    Some(n) => cursor = Some(n),
+                    None => return Ok(Reading::Read(all, true)),
                 }
             }
-            i += 1;
+            return Ok(Reading::Read(all, false));
         }
-        Ok(Some((all, false)))
+        Ok(Reading::Changing)
     }
 
-    /// Upstream's read-state flags (`GET /api/reading`), read once a session.
-    /// A server without the route keeps no read state.
-    fn upstream_read_flags(&self) -> Result<crate::api::wire::ReadingFlags> {
+    /// The read-state flags (`GET /api/reading`), read once a session. A
+    /// server without the route keeps no read state.
+    fn read_flags(&self) -> Result<crate::api::wire::ReadingFlags> {
         if let Some(f) = self.state().read_flags.clone() {
             return Ok(f);
         }
@@ -1757,195 +1634,9 @@ impl Engine {
         Ok(f)
     }
 
-    /// The reading list from a stock server: upstream's `GET /api/reading`
-    /// says which posts there are, and each new or changed one is read whole
-    /// from `GET /api/imports/{sub}/{id}`. Thumbs and hopper memberships come
-    /// from their own routes; read state stays on this Mac. Unchanged rows
-    /// are the stored ones, with fresh thumbs and hoppers.
-    fn fetch_reading_stock(&self) -> Result<Option<(Vec<ReadingItem>, bool)>> {
-        let subs: std::collections::HashMap<String, (String, String)> = self
-            .store
-            .subscriptions()
-            .into_iter()
-            .map(|s| (s.id, (s.title, s.origin)))
-            .collect();
-        let thumbs = Api::optional_of(self.api.signals())?.unwrap_or_default();
-        let hoppers = Api::optional_of(self.api.hopper_members())?.unwrap_or_default();
-        let sweep = self
-            .state()
-            .stock_swept
-            .is_none_or(|t| t.elapsed() >= STOCK_SWEEP);
-        let mut walk = StockWalk {
-            subs: &subs,
-            thumbs: &thumbs,
-            hoppers: &hoppers,
-            sweep,
-            out: Vec::new(),
-            fetched: 0,
-            deferred: false,
-        };
-        let Some(reached_end) = self.stock_walk(&mut walk, false)? else {
-            self.state().reading_unavailable = true;
-            return Ok(None);
-        };
-        // --- background --- Studio 0.49+ leaves withdrawn entries out of
-        // the plain list. Without them a tombstone would read as gone and be
-        // pruned, so ask for them too where the server lists them apart.
-        let bg_end = if self.state().stock_background != Some(false) {
-            self.stock_walk(&mut walk, true)?.unwrap_or(true)
-        } else {
-            true
-        };
-        let deferred = walk.deferred;
-        let complete = reached_end && bg_end && !deferred;
-        self.state().stock_deferred = deferred;
-        if complete {
-            self.state().stock_swept = Some(Instant::now());
-        }
-        Ok(Some((walk.out, complete)))
-    }
-
-    /// One walk of upstream's `GET /api/reading`, into `w.out`: the plain
-    /// list, or (`background`) its withdrawn entries only. `None` when the
-    /// route is missing (or, for `background`, the server doesn't list
-    /// withdrawn entries apart); else whether the walk reached the end.
-    fn stock_walk(&self, w: &mut StockWalk<'_>, background: bool) -> Result<Option<bool>> {
-        let max_pages = u64::from(self.opts.reading_pages.max(1)) * 10;
-        let mut offset = 0u64;
-        for _ in 0..max_pages {
-            let page = match self.api.stock_reading_with(offset, background) {
-                Ok(Some(p)) => p,
-                // Refused by a strict older server: it lists withdrawn
-                // entries with the rest, as before 0.49.
-                Ok(None) | Err(CoreError::Rejected { status: 400, .. }) if background => {
-                    self.state().stock_background = Some(false);
-                    return Ok(None);
-                }
-                Ok(None) => return Ok(None),
-                Err(e) => return Err(e),
-            };
-            if background {
-                if offset == 0 {
-                    // An older server ignores the parameter and sends the
-                    // whole list: a live entry in it says so.
-                    let ignored = page
-                        .items
-                        .iter()
-                        .filter_map(|e| e.imported.as_ref())
-                        .any(|i| !i.withdrawn);
-                    self.state().stock_background = Some(!ignored);
-                    if ignored {
-                        return Ok(None);
-                    }
-                }
-            } else {
-                let first = {
-                    let mut st = self.state();
-                    st.reading_unavailable = false;
-                    st.stock_reading.replace(true) != Some(true)
-                };
-                if offset == 0 {
-                    // Read state, when the server keeps it (studio's read-state
-                    // routes): `imported.readVersion` on each entry.
-                    self.set_read_sync(page.read_sync())?;
-                    self.set_read_clear(page.read_clear())?;
-                }
-                if first && self.store.meta(STOCK_TOLD).is_none() {
-                    self.store.set_meta(STOCK_TOLD, "1")?;
-                    self.emit(CoreEvent::ServerLimited);
-                }
-            }
-            let n = page.items.len() as u64;
-            let mut any_new = false;
-            for imp in page.items.into_iter().filter_map(|e| e.imported) {
-                let key = (imp.subscription_id.clone(), imp.remote_id.clone());
-                if background
-                    && (!imp.withdrawn
-                        || w.out
-                            .iter()
-                            .any(|r| r.subscription_id == key.0 && r.remote_id == key.1))
-                {
-                    continue;
-                }
-                let thumb = w.thumbs.get(&key).copied();
-                let hop = w.hoppers.get(&key).cloned().unwrap_or_default();
-                let stored = self.store.reading_row(&key.0, &key.1).map(|(r, _)| r);
-                // The importer bumps `observed_at` (and `updated`) with each
-                // version, to the second; the signature catches a change
-                // within the same second.
-                let sig = imp.signature();
-                let seen = self.state().stock_seen.get(&key).copied();
-                let changed = seen.is_some_and(|s| s != sig)
-                    || stored.as_ref().is_none_or(|r| {
-                        r.observed_at != imp.observed_at
-                            || r.updated != imp.updated
-                            || (r.state == "tombstone") != imp.withdrawn
-                            || (imp.withdrawn
-                                && r.pinned_version_retained != imp.pinned_version_retained)
-                    });
-                // What the merge takes as the server's read state.
-                let server_read = imp.read_version;
-                if !changed {
-                    self.state().stock_seen.insert(key.clone(), sig);
-                    let mut r = stored.unwrap();
-                    r.thumb = thumb;
-                    r.hoppers = hop;
-                    r.read_version = server_read;
-                    w.out.push(r);
-                    continue;
-                }
-                any_new = true;
-                if w.fetched >= STOCK_FETCHES {
-                    w.deferred = true;
-                    // keep what's held until its turn
-                    w.out.extend(stored.map(|mut r| {
-                        r.read_version = server_read;
-                        r
-                    }));
-                    continue;
-                }
-                w.fetched += 1;
-                let (title, origin) = w
-                    .subs
-                    .get(&key.0)
-                    .cloned()
-                    .unwrap_or_else(|| (imp.subscription_title.clone(), String::new()));
-                let raw = match self.api.imported(&key.0, &key.1) {
-                    Ok(v) => v,
-                    // Gone between the list and now.
-                    Err(CoreError::NotFound) => continue,
-                    Err(e) => return Err(e),
-                };
-                self.state().stock_seen.insert(key.clone(), sig);
-                match crate::api::wire::stock_row(&raw, &title, &origin, thumb, &hop, server_read) {
-                    Some(mut r) => {
-                        r.page = r
-                            .page
-                            .take()
-                            .and_then(|p| crate::api::absolute_page(&r.origin, &p));
-                        w.out.push(r);
-                    }
-                    // Doesn't read: keep what's held rather than lose it.
-                    None => w.out.extend(stored.map(|mut r| {
-                        r.read_version = server_read;
-                        r
-                    })),
-                }
-            }
-            offset += n;
-            if n == 0 || offset >= page.total {
-                return Ok(Some(true));
-            }
-            if !w.sweep && !any_new {
-                break; // nothing new this far down: the rest is as held
-            }
-        }
-        Ok(Some(false))
-    }
-
-    /// Reading rows from extension 3 or a studio before 0.18 carry no
-    /// lineage (who a post replies to or forks; upstream issue #12), so fetch
-    /// the public item document of blyg posts that haven't been looked up yet: a few per pull, newest first, within
+    /// Reading rows from an L0 or RSS-like source carry no lineage (who a
+    /// post replies to or forks), so fetch the public item document of blyg
+    /// posts that haven't been looked up yet: a few per pull, newest first, within
     /// a time budget, skipping a blyg for the rest of the pass once it fails.
     /// A fetched document is cached (the changelog cache), and the merge
     /// fills lineage from it from then on. True if any row changed.
@@ -1998,10 +1689,17 @@ impl Engine {
         self.store.merge_reading(items, complete, kinds)
     }
 
-    /// Whether the server has the fork's extensions, as of the last reading
-    /// pull (`None` before one).
+    /// Whether the server serves the imported reading list, as of the last
+    /// reading pull (`None` before one).
     pub fn server_extensions(&self) -> Option<bool> {
-        self.state().stock_reading.map(|stock| !stock)
+        let st = self.state();
+        if st.reading_served {
+            Some(true)
+        } else if st.reading_unavailable {
+            Some(false)
+        } else {
+            None
+        }
     }
 
     pub fn reading_unavailable(&self) -> bool {
@@ -2009,18 +1707,22 @@ impl Engine {
     }
 
     /// Push everything (ignoring the debounce), then pull. Bypasses backoff.
-    /// Below the studio floor it checks the version again first.
+    /// A blyg found too old is checked again first.
     pub fn sync_now(&self) -> Result<()> {
-        {
-            let mut st = self.state();
-            st.retry_at = None;
-            if let Some((true, _)) = st.floor {
-                st.floor = None;
-            }
-        }
+        self.state().retry_at = None;
         self.flush(None, true)?;
         self.pull()
     }
+}
+
+/// What one reading pull read.
+enum Reading {
+    /// The rows, and whether the walk reached the list's end.
+    Read(Vec<ReadingItem>, bool),
+    /// The server has no imported reading list.
+    Unavailable,
+    /// The list changed under every walk (`cursor-expired`): nothing taken.
+    Changing,
 }
 
 #[cfg(test)]

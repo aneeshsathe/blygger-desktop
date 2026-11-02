@@ -34,24 +34,23 @@ brings its feeds along (see the [FAQ](faq.md#can-i-bring-my-feeds-from-another-r
 
 ## Connecting your blyg
 
-Burrow works with any blyg running blygger-studio 0.47 or later, stock and
-unmodified: no server patches. On an older blyg everything syncs except posts
-with labelled links, which wait until the blyg is updated, and Burrow tells you
-so (see [Server requirements](server.md)).
+Burrow works with any blyg running blygger-studio 0.49.12 or later, stock and
+unmodified: no server patches. On an older blyg nothing syncs until it's
+updated, and Burrow tells you so (see [Server requirements](server.md)).
 No blyg yet? Try the app on the sample data.
 
 The Connect step asks for your blyg's address (such as
 `https://blyg.example.com`, including any path it lives under) and how to sign
 in:
 
-- **Sign in with browser** (the default, studio 0.28 or later): your browser
+- **Sign in with browser** (the default): your browser
   opens your studio's sign-in and asks you to allow Burrow. Burrow keeps the
   grant in your Keychain and renews it in the background; after 30 days, or
   if you revoke it in the studio (**More › Client access**), it asks you to
   sign in again.
 - **API token**: make one in your studio under **More › Client access**
-  (REST API, with every permission; allow **reading:state**, on studio 0.39+,
-  so read marks sync) and paste it. It lasts 30 days.
+  (REST API, with every permission; allow **reading:state** so read marks
+  sync) and paste it. It lasts 30 days.
 - **Studio password**, as a fallback.
 
 It checks them with the server before saving anything, and says plainly what's
@@ -61,13 +60,13 @@ wrong:
 - the password or the token is wrong, or the token lacks a permission (it
   names which);
 - there's no studio sign-in at that address;
-- the server is older than blygger-studio 0.9.
+- the server is older than blygger-studio 0.49.12 (update the studio first).
 
 The sign-in, token or password then goes in your Keychain and the address into the
-config file as `blyg-url`, and the app loads your posts. If the blyg runs a
-studio older than 0.47, Burrow says "Your blyg needs updating" as it connects
+config file as `blyg-url`, and the app loads your posts. If a connected blyg
+later runs a studio older than 0.49.12, Burrow says "Your blyg needs updating"
 (and when it starts), keeps a notice in the status bar with an **Update your
-blyg** link, and holds back only posts with labelled links until it's updated. **Burrow › Disconnect…** forgets
+blyg** link, and syncs nothing until it's updated. **Burrow › Disconnect…** forgets
 both, and can also delete the local copy.
 
 If your blyg later refuses Burrow's sign-in (a token expired or was revoked,

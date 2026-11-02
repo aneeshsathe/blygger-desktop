@@ -2,11 +2,10 @@
 //! entry (`crate::browse`): `peekItem`, `classifyLinks`, `listBrowse`,
 //! `logBrowse`, `clearBrowse`.
 //!
-//! Every path and envelope these use is in this file, on purpose: upstream
-//! means to move REST under the deployment mount and to page lists by cursor
-//! (blygger-studio PRs #97, #100), and that change should touch one place.
-//! Each route answers 404 on a studio before 0.49: `Ok(None)` here, which the
-//! caller remembers as "not served".
+//! Every path and envelope these use is in this file. The routes are under
+//! the blyg's mount (`{blyg}/api/…`), and the log is cursor-paged (studio
+//! contract 5). A 404 is `Ok(None)` here, which the caller remembers as
+//! "not served".
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -26,7 +25,8 @@ mod path {
 /// the caller's longer lists are sent in chunks.
 pub const PEEK_LINKS_MAX: usize = crate::browse::CLASSIFY_MAX;
 
-/// The server's limit on one `GET /api/browse` page.
+/// The server's limit on one `GET /api/browse` page (contract 5's
+/// maximum for every paged list but Reading).
 pub const BROWSE_PAGE_MAX: usize = 100;
 
 /// The server's limit on a step's title (`logBrowse`'s schema).
@@ -35,6 +35,7 @@ pub const BROWSE_TITLE_MAX: usize = 400;
 /// `GET /api/peek`: an item read from its own blyg without subscribing
 /// (upstream `PeekItem`). `content_html` is sanitized by the server.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PeekItem {
     pub origin: String,
     pub id: String,
@@ -76,6 +77,7 @@ struct WireLinks {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct WireStep {
     id: i64,
     at: String,
@@ -111,15 +113,8 @@ impl WireStep {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BrowsePage {
     pub items: Vec<BrowseStep>,
-    pub total: u64,
-}
-
-/// The collection envelope (`{items, total, offset, limit}`).
-#[derive(Debug, Deserialize)]
-struct WireBrowsePage {
-    items: Vec<WireStep>,
-    #[serde(default)]
-    total: Option<u64>,
+    /// The next page's cursor; `None` on the last page.
+    pub next: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,32 +159,27 @@ impl Api {
         }))
     }
 
-    /// `GET /api/browse?offset&limit[&trail]`: the browsing log, newest
-    /// first. A step with a `via` this client doesn't know is skipped.
+    /// `GET /api/browse?limit[&trail][&cursor]`: one page of the browsing
+    /// log, newest first; pass the page's `next` back as `cursor` for the
+    /// one after. A step with a `via` this client doesn't know is skipped.
     /// `None` on 404.
     pub fn list_browse(
         &self,
         trail: Option<&str>,
-        offset: usize,
+        cursor: Option<&str>,
         limit: usize,
     ) -> Result<Option<BrowsePage>> {
-        let limit = limit.clamp(1, BROWSE_PAGE_MAX);
-        let mut p = format!("{}?offset={offset}&limit={limit}", path::BROWSE);
-        if let Some(t) = trail {
-            p.push_str("&trail=");
-            p.push_str(&enc(t));
-        }
-        let got: Option<WireBrowsePage> = Self::optional(self.call_as("GET", &p, None))?;
-        Ok(got.map(|g| {
-            let total = g.total.unwrap_or(g.items.len() as u64);
-            BrowsePage {
-                items: g
-                    .items
-                    .into_iter()
-                    .filter_map(WireStep::into_step)
-                    .collect(),
-                total,
-            }
+        let limit = limit.clamp(1, BROWSE_PAGE_MAX) as u32;
+        let query = trail.map_or_else(String::new, |t| format!("trail={}", enc(t)));
+        let got: Option<super::wire::CursorPage<WireStep>> =
+            Self::optional(self.page(path::BROWSE, &query, limit, cursor))?;
+        Ok(got.map(|g| BrowsePage {
+            items: g
+                .items
+                .into_iter()
+                .filter_map(WireStep::into_step)
+                .collect(),
+            next: g.page.next_cursor,
         }))
     }
 
@@ -198,9 +188,9 @@ impl Api {
     pub fn log_browse(&self, s: &NewBrowseStep) -> Result<Option<i64>> {
         let body = json!({
             "trail": s.trail,
-            "parent_id": s.parent_id,
+            "parentId": s.parent_id,
             "origin": s.origin,
-            "remote_id": s.remote_id,
+            "remoteId": s.remote_id,
             "version": s.version.filter(|v| *v > 0),
             "via": s.via.as_str(),
             "title": s.title.as_deref().map(clip_title),

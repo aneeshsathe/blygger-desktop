@@ -85,6 +85,23 @@ first. **Published work is never deleted.** Post › Withdraw… withdraws a
 published post instead, with an optional note. Withdrawn posts stay listed as
 withdrawn, and you can't undo it, so Withdraw has no key on purpose.
 
+### Edited in two places
+
+Every change Burrow sends names the revision of the post it last saw, so
+nothing on your blyg is ever overwritten by mistake. If a post changed on your
+blyg as well (in the studio, or from another computer):
+
+- and you haven't edited it here, Burrow stops the change and shows the blyg's
+  text, so you see what changed before you act;
+- and you have edited it here, the post goes into conflict. A sheet shows both
+  copies with the differences marked: **1** keeps yours, **2** takes the
+  server's (your blyg's), **3** keeps both (yours becomes a new draft). Esc
+  puts it off; the mark in the status bar, or publishing the post, brings the
+  sheet back.
+
+A change only to something else on the post, such as an attachment added
+elsewhere, is simply sent again.
+
 ## Quick capture and scratch notes
 
 A global hotkey (⌃⌥B by default, `capture-hotkey`) opens a small panel over
@@ -203,7 +220,7 @@ target's first words. To **rename a link**, edit the words after `|`; the id
 before it is what the link points at, so leave that alone. A quote takes a
 label too, `![[id | note]]`, but there it's a **note** for you: the published
 quote shows the quoted post, not the note. The preview renders labels as
-blygger-studio 0.47 does.
+blygger-studio does.
 
 Typing `[[` anywhere outside code opens the same picker as `![[`, for a link.
 Each row leads with the post's title. ⏎ writes the labelled form, and the
@@ -222,10 +239,10 @@ title, which is what you searched for and what a reader should see. Either
 way the label is just your text, and you can change it.) **Quote into a
 thread** from Reading writes the labelled form too.
 
-Labelled links need **blygger-studio 0.47** or later. On an older blyg the
-pickers write bare links (`[[id]]`, `![[id]]`), and a post that already has a
-label waits, unsent, until the blyg is updated. Publishing it offers ⏎ to
-write its links bare and publish. See [Server requirements](server.md).
+Every studio Burrow syncs with (0.49.12 or later) understands labelled links.
+On a blyg that needs updating nothing syncs, and the pickers write bare links
+(`[[id]]`, `![[id]]`); publishing a post that has labels offers ⏎ to write
+them bare. See [Server requirements](server.md).
 
 | | |
 |---|---|

@@ -189,6 +189,11 @@ fn raw_json(v: &Option<serde_json::Value>) -> Option<String> {
     v.as_ref().filter(|v| !v.is_null()).map(|v| v.to_string())
 }
 
+/// A revision to store: 0 (not reported) is NULL, read again later.
+fn nonzero(revision: u64) -> Option<i64> {
+    (revision > 0).then_some(revision as i64)
+}
+
 fn max_str(a: &str, b: &str) -> String {
     if a >= b { a.to_string() } else { b.to_string() }
 }
@@ -653,7 +658,7 @@ impl Store {
         Ok(())
     }
 
-    /// `create` or `recreate` succeeded: `sid` now holds `sent` with `kind`.
+    /// `create` succeeded: `sid` now holds `sent` with `kind`, at `revision`.
     pub fn op_created(
         &self,
         seq: i64,
@@ -661,37 +666,47 @@ impl Store {
         sid: &str,
         sent: &str,
         kind: Kind,
+        revision: u64,
     ) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE items SET server_id = ?2, base_content = ?3, server_kind = ?4 WHERE local_id = ?1",
-            params![id.0, sid, sent, kind_str(kind)],
+            "UPDATE items SET server_id = ?2, base_content = ?3, server_kind = ?4, revision = ?5 \
+             WHERE local_id = ?1",
+            params![id.0, sid, sent, kind_str(kind), nonzero(revision)],
         )?;
         tx.execute("DELETE FROM outbox WHERE seq = ?1", [seq])?;
         tx.commit()?;
         Ok(())
     }
 
-    /// A `Recreate` landed: the server holds `sent` as `kind`.
-    pub fn op_kind_saved(&self, seq: i64, id: &LocalId, sent: &str, kind: Kind) -> Result<()> {
+    /// A `Recreate` landed: the server holds `sent` as `kind`, at `revision`.
+    pub fn op_kind_saved(
+        &self,
+        seq: i64,
+        id: &LocalId,
+        sent: &str,
+        kind: Kind,
+        revision: u64,
+    ) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE items SET base_content = ?2, server_kind = ?3 WHERE local_id = ?1",
-            params![id.0, sent, kind_str(kind)],
+            "UPDATE items SET base_content = ?2, server_kind = ?3, revision = ?4 WHERE local_id = ?1",
+            params![id.0, sent, kind_str(kind), nonzero(revision)],
         )?;
         tx.execute("DELETE FROM outbox WHERE seq = ?1", [seq])?;
         tx.commit()?;
         Ok(())
     }
 
-    pub fn op_saved(&self, seq: i64, id: &LocalId, sent: &str) -> Result<()> {
+    /// A `save` landed: the server holds `sent`, at `revision`.
+    pub fn op_saved(&self, seq: i64, id: &LocalId, sent: &str, revision: u64) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         tx.execute(
-            "UPDATE items SET base_content = ?2 WHERE local_id = ?1",
-            params![id.0, sent],
+            "UPDATE items SET base_content = ?2, revision = ?3 WHERE local_id = ?1",
+            params![id.0, sent, nonzero(revision)],
         )?;
         tx.execute("DELETE FROM outbox WHERE seq = ?1", [seq])?;
         tx.commit()?;
@@ -705,7 +720,7 @@ impl Store {
         let tx = c.transaction()?;
         tx.execute(
             "UPDATE items SET server_id = NULL, server_kind = NULL, base_content = NULL, base_updated = NULL, \
-             status = 'draft', version = 0, permalink = NULL WHERE local_id = ?1",
+             status = 'draft', version = 0, permalink = NULL, revision = NULL WHERE local_id = ?1",
             [&id.0],
         )?;
         tx.execute(
@@ -713,6 +728,29 @@ impl Store {
             [seq],
         )?;
         tx.commit()?;
+        Ok(())
+    }
+
+    /// The item's revision as the blyg last reported it with what this Mac
+    /// holds (`None`: not known yet; read it before the next command).
+    pub fn revision(&self, id: &LocalId) -> Option<u64> {
+        self.conn()
+            .query_row(
+                "SELECT revision FROM items WHERE local_id = ?1",
+                [&id.0],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .ok()
+            .flatten()
+            .map(|r| r as u64)
+    }
+
+    /// A command on the item landed and the blyg reported its new revision.
+    pub fn set_revision(&self, id: &LocalId, revision: u64) -> Result<()> {
+        self.conn().execute(
+            "UPDATE items SET revision = ?2 WHERE local_id = ?1",
+            params![id.0, nonzero(revision)],
+        )?;
         Ok(())
     }
 
@@ -1108,8 +1146,8 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
     tx.execute(
         "INSERT INTO items (local_id, server_id, kind, server_kind, status, version, dirty, content_md, created, \
          updated, permalink, stub_of, forked_from, show_responses, base_updated, base_content, \
-         responses_mode, highlight, highlight_mode) \
-         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7, ?14, ?15, ?16)",
+         responses_mode, highlight, highlight_mode, revision) \
+         VALUES (?1, ?2, ?3, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?9, ?7, ?14, ?15, ?16, ?17)",
         params![
             id.0,
             w.id,
@@ -1127,6 +1165,7 @@ fn insert_wire(tx: &Connection, w: &WireItem) -> rusqlite::Result<LocalId> {
             w.responses_mode().map(ResponsesMode::as_str),
             w.highlights(),
             w.highlight.map(ResponsesMode::as_str),
+            revision_of(w),
         ],
     )?;
     if let Some(v) = &w.versions {
@@ -1161,6 +1200,11 @@ fn put_versions(tx: &Connection, id: &LocalId, v: &[Version]) -> rusqlite::Resul
 /// `updated` when a published item's working copy is saved, and does bump it
 /// on our own draft saves, so `updated` alone gives false negatives and
 /// positives. `base_updated` is still tracked for diagnostics.
+/// The revision a server copy reports (`None`: not reported).
+fn revision_of(w: &WireItem) -> Option<i64> {
+    (w.revision > 0).then_some(w.revision as i64)
+}
+
 fn merge_one(
     tx: &Connection,
     row: &SyncRow,
@@ -1205,6 +1249,23 @@ fn merge_one(
         || w.highlight.is_some_and(|m| it.highlight_mode != Some(m))
         || it.updated != updated;
 
+    // The server's revision goes with the text it accounts for. It is kept
+    // whenever this copy has taken the server's text in: as its base, as
+    // the conflict's "theirs", or because it holds those words already. A
+    // merge without conflict detection that leaves a moved server text
+    // unseen under a local edit keeps the old revision instead, so the
+    // edit's push is refused (409) and read again with detection, rather
+    // than overwriting what it never saw.
+    let server_moved = row.base_content.as_deref() != Some(w.content_md.as_str());
+    let unseen =
+        pending && !detect && !it.conflict && server_moved && w.content_md != it.content_md;
+    if !unseen && let Some(r) = revision_of(w) {
+        tx.execute(
+            "UPDATE items SET revision = ?2 WHERE local_id = ?1",
+            params![id.0, r],
+        )?;
+    }
+
     if it.conflict {
         if row.theirs.as_deref() != Some(w.content_md.as_str()) {
             tx.execute(
@@ -1231,7 +1292,6 @@ fn merge_one(
         return Ok((changed, None));
     }
 
-    let server_moved = row.base_content.as_deref() != Some(w.content_md.as_str());
     if detect && server_moved && w.content_md != it.content_md {
         tx.execute(
             "UPDATE items SET conflict = 1, theirs_content = ?2 WHERE local_id = ?1",

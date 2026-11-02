@@ -89,6 +89,10 @@ pub enum Key {
     // --- hoppers ---
     /// The Hopper picker is open on a post (`h`, ⌥⌘P, or Hopper ›).
     HopperPicker,
+    // --- 0.16.0 ---
+    /// The sample conflict was answered: its post is no longer in conflict
+    /// (1, 2 or 3 on the sheet).
+    ConflictAnswered,
 }
 
 /// The part of the window a step highlights.
@@ -156,6 +160,9 @@ pub enum Setup {
     /// The published post with this sentence appended, so it has
     /// unpublished edits.
     Edited(&'static str),
+    /// The sample garden notes opened, then edited "on the blyg" under
+    /// them: the conflict sheet opens.
+    Conflict,
     /// Back to Posts.
     Posts,
     /// A thread draft opened (quotes go in threads).
@@ -251,6 +258,8 @@ pub const QUOTED: &str = crate::fake::reading_seed::LIN_BENCH;
 pub const GENERATED: &str = crate::fake::reading_seed::LIN_FORK;
 /// A revised sample reading post (it leads with its changelog note).
 pub const REVISED: &str = crate::fake::reading_seed::ADA_TIDES;
+/// The published sample post the conflict step edits "elsewhere".
+pub const CONFLICTED: &str = "01J9K7T";
 /// The sample reading post the stub step replies to.
 pub const STUBBED: &str = crate::fake::reading_seed::LIN_GARDENS;
 
@@ -483,6 +492,24 @@ pub const STEPS: &[Step] = &[
         pause_ms: 1600,
         settle: false,
         stay: true,
+    },
+    Step {
+        id: "conflict",
+        since: "0.16.0",
+        title: "Edited in two places? You choose",
+        caption: "Burrow saves against the version of a post it last saw. When the post \
+                  changed on your blyg as well (in the studio, or on another computer), \
+                  nothing is overwritten: Burrow shows both. 1 keeps yours, 2 takes the \
+                  server's, 3 keeps both, yours as a new draft.",
+        keys: &[Key::ConflictAnswered],
+        key_label: "1 2 3",
+        // The sheet is taller than `Region::Sheet`'s ring.
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Conflict,
+        pause_ms: 1600,
+        settle: false,
+        stay: false,
     },
     Step {
         id: "own-post",

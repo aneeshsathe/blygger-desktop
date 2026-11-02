@@ -1,9 +1,6 @@
-//! Reading list, subscriptions, signals, mentions, settings — including the
-//! patch-3 endpoints being absent (404) on an older server.
+//! Reading list, subscriptions, signals, mentions, settings.
 
 mod common;
-
-use std::time::Duration;
 
 use blyg_core::*;
 use common::*;
@@ -24,46 +21,6 @@ fn reading_item(
         "observed_at": obs, "content_md": body, "content_html": format!("<p>{body}</p>"),
         "author": { "name": "Them", "url": null }, "page": page, "thumb": null, "hoppers": []
     })
-}
-
-#[test]
-fn patch3_404_degrades_cleanly() {
-    let env = Env::new(); // reading/mentions/settings/hoppers all None → 404
-    let b = env.manual();
-    env.mock.state().add_item("fragment", "hello");
-    b.sync_now().unwrap();
-    assert_eq!(b.items().len(), 1, "items still sync");
-    assert!(b.reading().is_empty());
-    assert!(!b.reading_available());
-    assert_eq!(b.mentions().unwrap(), vec![]);
-    assert_eq!(b.server_hoppers().unwrap(), vec![]);
-    assert!(matches!(b.settings(), Err(CoreError::NotFound)));
-    assert_eq!(
-        b.sync_status(),
-        SyncStatus::Synced,
-        "a missing feature isn't a sync error"
-    );
-    assert!(
-        !env.events()
-            .iter()
-            .any(|e| matches!(e, CoreEvent::Error(_)))
-    );
-}
-
-#[test]
-fn patch3_404_with_the_worker_is_not_an_error_loop() {
-    let env = Env::new();
-    let b = env.open(SyncOptions {
-        pull_interval: Duration::from_millis(100),
-        ..fast()
-    });
-    std::thread::sleep(Duration::from_millis(550));
-    // One attempt per pull interval (~5), not a tight retry loop. (Each
-    // pull also tries upstream's /api/reading once, the stock fallback.)
-    let reads = env.mock.state().count("GET /api/reading/imported");
-    assert!((1..=8).contains(&reads), "{reads} reading requests");
-    assert_eq!(b.sync_status(), SyncStatus::Synced);
-    drop(b);
 }
 
 #[test]
@@ -108,7 +65,7 @@ fn reading_pages_with_opaque_cursor_and_absolute_pages() {
     assert!(
         st.log
             .iter()
-            .any(|l| l == "GET /api/reading/imported?limit=500&before=c%3A2"),
+            .any(|l| l.starts_with("GET /api/reading/imported?limit=100&cursor=")),
         "{:?}",
         st.log
     );
@@ -291,13 +248,13 @@ fn mentions_and_settings_when_available() {
     edited.author_bio = Some("Writes things.".into());
     b.save_settings(&edited).unwrap();
     let put = env.mock.state().settings_puts[0].clone();
-    assert_eq!(put["author_bio"], "Writes things.");
-    assert!(put.get("site_url").is_none(), "unset fields aren't sent");
-    assert_eq!(put["author_links"][0]["label"], "gh");
+    assert_eq!(put["authorBio"], "Writes things.");
+    assert!(put.get("siteUrl").is_none(), "unset fields aren't sent");
+    assert_eq!(put["authorLinks"][0]["label"], "gh");
 
     // Upstream always reports these, so they round-trip unchanged.
     assert_eq!(put["timezone"], "");
-    assert_eq!(put["show_responses_default"], false);
+    assert_eq!(put["showResponsesDefault"], false);
 
     assert_eq!(b.server_hoppers().unwrap()[0].count, 3);
 }
@@ -325,7 +282,7 @@ fn studio_0_8_settings_round_trip() {
     b.save_settings(&edited).unwrap();
     let put = env.mock.state().settings_puts[0].clone();
     assert_eq!(put["timezone"], "Europe/Lisbon");
-    assert_eq!(put["show_responses_default"], true);
+    assert_eq!(put["showResponsesDefault"], true);
 
     // Emptying it is sent, so the blyg goes back to UTC.
     edited.timezone = Some(String::new());
