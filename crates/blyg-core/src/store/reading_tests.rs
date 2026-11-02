@@ -782,3 +782,138 @@ fn background_lists_every_tombstone_newest_first() {
         .collect();
     assert_eq!(bg, ["Q", "T"]);
 }
+
+// --- performance ---
+
+fn fts_has(s: &Store, word: &str) -> bool {
+    s.conn()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM reading_fts WHERE reading_fts MATCH ?1)",
+            [format!("\"{word}\"")],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+/// A database from before v16 migrates, and from then on the text index
+/// is rewritten only when the text changes.
+#[test]
+fn text_index_follows_text_changes_only_after_migrating() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("old.db");
+    let k = kinds(&[("s", SubscriptionKind::Blyg)]);
+    let o = "https://a.example/";
+    {
+        let mut c = rusqlite::Connection::open(&path).unwrap();
+        c.pragma_update(None, "journal_mode", "WAL").unwrap();
+        super::schema::migrate_to(&mut c, 15).unwrap();
+        // A row indexed by the v15 trigger.
+        c.execute(
+            "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, state, version, json) \
+             VALUES ('s', 'OLD', 'https://a.example/', '2026-01-01T00:00:00Z', 'current', 1, \
+             '{\"content_md\": \"oldfashioned\"}')",
+            [],
+        )
+        .unwrap();
+    }
+    let s = Store::open(&path).unwrap();
+    assert_eq!(s.schema_version().unwrap(), super::schema::latest());
+    assert!(fts_has(&s, "oldfash"), "the index survives the migration");
+    let a = ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "alphabetical");
+    s.merge_reading(std::slice::from_ref(&a), true, &k).unwrap();
+    assert!(fts_has(&s, "alphabet"));
+    let before: i64 = s
+        .conn()
+        .query_row("SELECT count(*) FROM reading_fts_data", [], |r| r.get(0))
+        .unwrap();
+    // A thumb rewrites the JSON, not the text: the index isn't touched.
+    assert!(s.set_thumb("s", "A", Some(1)).unwrap());
+    let after: i64 = s
+        .conn()
+        .query_row("SELECT count(*) FROM reading_fts_data", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(before, after);
+    assert!(fts_has(&s, "alphabet"));
+    // An edit is re-indexed.
+    let mut b = a.clone();
+    b.version = 2;
+    b.content_md = "bravissimo".into();
+    s.merge_reading(&[b], true, &k).unwrap();
+    assert!(fts_has(&s, "bravis"));
+    assert!(!fts_has(&s, "alphabet"));
+}
+
+/// A pull of rows exactly as held writes nothing (and says so).
+#[test]
+fn unchanged_pull_writes_nothing() {
+    let s = store();
+    let k = kinds(&[("s", SubscriptionKind::Blyg)]);
+    let o = "https://a.example/";
+    let rows: Vec<_> = (0..20)
+        .map(|i| {
+            ri(
+                "s",
+                &format!("R{i}"),
+                o,
+                Some(&format!("{o}p/{i}")),
+                1,
+                &format!("2026-01-{:02}T00:00:00Z", i + 1),
+                "text",
+            )
+        })
+        .collect();
+    assert!(s.merge_reading(&rows, true, &k).unwrap());
+    let writes = s.conn().total_changes();
+    assert!(!s.merge_reading(&rows, true, &k).unwrap());
+    assert_eq!(s.conn().total_changes(), writes, "nothing rewritten");
+    // A changed column besides the JSON is still written.
+    let kinds_rss = kinds(&[("s", SubscriptionKind::Rss)]);
+    s.merge_reading(&rows, true, &kinds_rss).unwrap();
+    let kind: String = s
+        .conn()
+        .query_row(
+            "SELECT sub_kind FROM reading WHERE remote_id = 'R0'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kind, "rss");
+}
+
+/// The parsed-rows cache sees every kind of write: inserts, updates from
+/// any method, deletes, and a commit by another connection.
+#[test]
+fn reading_cache_follows_every_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    let k = kinds(&[("s", SubscriptionKind::Blyg)]);
+    let o = "https://a.example/";
+    let a = ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "a");
+    let b = ri("s", "B", o, None, 1, "2026-01-02T00:00:00Z", "b");
+    s.merge_reading(&[a.clone(), b.clone()], true, &k).unwrap();
+    let ids = |s: &Store| -> Vec<String> { s.reading().into_iter().map(|r| r.remote_id).collect() };
+    assert_eq!(ids(&s), ["B", "A"]);
+    // Read state, a thumb: updates through other methods.
+    s.mark_read("s", "A").unwrap();
+    s.set_thumb("s", "B", Some(1)).unwrap();
+    let r = s.reading();
+    assert_eq!(r[1].read_version, Some(1));
+    assert_eq!(r[0].thumb, Some(1));
+    // A newer date moves a row up; a row the server dropped goes.
+    let mut a2 = a.clone();
+    a2.updated = Some("2026-02-01T00:00:00Z".into());
+    s.merge_reading(&[a2], true, &k).unwrap();
+    assert_eq!(ids(&s), ["A"]);
+    // Another connection's commit (another process) is seen too.
+    {
+        let c = rusqlite::Connection::open(&path).unwrap();
+        c.execute(
+            "UPDATE reading SET read_version = NULL WHERE remote_id = 'A'",
+            [],
+        )
+        .unwrap();
+    }
+    assert_eq!(s.reading()[0].read_version, None);
+    assert_eq!(s.unread_count(), 1);
+}

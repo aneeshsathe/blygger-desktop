@@ -74,11 +74,11 @@ pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
 /// over the title, the author and origin names, and the post's text, all of
 /// it held locally (nothing is fetched to search). An empty query matches.
 pub fn matches_query(r: &ReadingItem, query: &str) -> bool {
-    let q = query.trim().to_lowercase();
+    let q = normalize_query(query);
     if q.is_empty() {
         return true;
     }
-    let has = |s: &str| s.to_lowercase().contains(&q);
+    let has = |s: &str| lower_contains(s, &q);
     let author = r.author.as_ref();
     has(&r.subscription_title)
         || has(&host(&r.origin))
@@ -86,6 +86,41 @@ pub fn matches_query(r: &ReadingItem, query: &str) -> bool {
         || has(&r.content_md)
         // Held without Markdown (some feeds): search its published text.
         || (r.content_md.trim().is_empty() && has(&html_text(&r.content_html)))
+}
+
+/// The reading search as [`matches_query`] reads it: trimmed, lowercase.
+/// Every match of a query also matches any query it contains.
+pub fn normalize_query(query: &str) -> String {
+    query.trim().to_lowercase()
+}
+
+/// `hay.to_lowercase().contains(q)` for a lowercased `q`, without
+/// lowercasing a copy of every post on every keystroke: an ASCII `q` is
+/// matched ASCII-case-insensitively in place. Only two characters
+/// lowercase to ASCII letters (the Kelvin sign to `k`, a dotted capital I
+/// to `i` + a combining dot); text holding either takes the slow path, so
+/// the answer is the same.
+pub fn lower_contains(hay: &str, q: &str) -> bool {
+    if !q.is_ascii() {
+        return hay.to_lowercase().contains(q);
+    }
+    let (h, n) = (hay.as_bytes(), q.as_bytes());
+    let Some((&first, rest)) = n.split_first() else {
+        return true;
+    };
+    let found = h.len() >= n.len()
+        && memchr::memchr2_iter(first, first.to_ascii_uppercase(), &h[..=h.len() - n.len()]).any(
+            |i| {
+                h[i + 1..i + n.len()]
+                    .iter()
+                    .zip(rest)
+                    .all(|(a, b)| a.to_ascii_lowercase() == *b)
+            },
+        );
+    found
+        || ((memchr::memmem::find(h, "\u{212A}".as_bytes()).is_some()
+            || memchr::memmem::find(h, "\u{130}".as_bytes()).is_some())
+            && hay.to_lowercase().contains(q))
 }
 
 /// Indices into `rows` of the rows the reading search shows, in order.
@@ -1403,5 +1438,37 @@ mod tests {
     #[test]
     fn link_post_is_a_plain_link() {
         assert_eq!(link_post_body(ID), format!("[[{ID}]]\n\n"));
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::lower_contains;
+
+    /// Same answers as lowercasing the text first, the edge cases included.
+    #[test]
+    fn lower_contains_matches_lowercasing() {
+        let cases = [
+            ("The Garden", "garden"),
+            ("THE GARDEN", "den"),
+            ("gardener", "gardens"),
+            ("", "a"),
+            ("abc", ""),
+            ("Café Society", "café"),
+            ("CAFÉ", "café"),
+            ("“Quoted” Words", "quoted"),
+            ("20 \u{212A}elvin", "kelvin"),
+            ("\u{130}stanbul", "i\u{307}stanbul"),
+            ("\u{130}stanbul", "stanbul"),
+            ("naïve", "naive"),
+            ("ab", "abc"),
+        ];
+        for (hay, q) in cases {
+            assert_eq!(
+                lower_contains(hay, q),
+                hay.to_lowercase().contains(q),
+                "{hay:?} / {q:?}"
+            );
+        }
     }
 }

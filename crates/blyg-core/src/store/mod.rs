@@ -41,11 +41,21 @@ impl From<rusqlite::Error> for CoreError {
     }
 }
 
+/// What the WAL is truncated to after a checkpoint (`journal_size_limit`).
+const WAL_LIMIT: i64 = 16 * 1024 * 1024;
+
 pub struct Store {
     conn: Mutex<Connection>,
     /// `items()` snapshot, stamped with the connection's `total_changes()`
     /// when it was built: any INSERT/UPDATE/DELETE since invalidates it.
     items_cache: Mutex<Option<(u64, Arc<Vec<Item>>)>>,
+    /// The reading rows, parsed, patched row by row as they're written
+    /// (`reading::Cache`): parsing every post's JSON on each read cost a
+    /// quarter of a second at a few thousand posts.
+    reading_cache: Mutex<reading::Cache>,
+    /// The `reading` rowids written since the cache last looked, from the
+    /// connection's update hook.
+    reading_dirty: Arc<Mutex<reading::Dirty>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -213,8 +223,15 @@ impl Store {
     fn init(mut conn: Connection) -> Result<Store> {
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
+        // A big write (a blyg importing its archive) grows the WAL, and a
+        // WAL never shrinks by itself: cut it back to this whenever a
+        // checkpoint has emptied it.
+        conn.pragma_update(None, "journal_size_limit", WAL_LIMIT)?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        // Room for every statement a pull repeats per row (the default 16
+        // evicts some of them on each row).
+        conn.set_prepared_statement_cache_capacity(64);
         // Purged content (withdrawn posts, dropped snapshots) is overwritten
         // on disk, not just unlinked: "local hoarding past withdrawal is
         // nonconforming" (spec §13.4).
@@ -227,8 +244,19 @@ impl Store {
         }
         // Anything marked in flight belonged to a previous process that died mid-push.
         conn.execute("UPDATE outbox SET in_flight = 0", [])?;
+        let reading_dirty = Arc::new(Mutex::new(reading::Dirty::All));
+        let dirty = reading_dirty.clone();
+        conn.update_hook(Some(
+            move |_: rusqlite::hooks::Action, _: &str, table: &str, rowid: i64| {
+                if table == "reading" {
+                    dirty.lock().unwrap_or_else(|p| p.into_inner()).mark(rowid);
+                }
+            },
+        ))?;
         Ok(Store {
             items_cache: Mutex::new(None),
+            reading_cache: Mutex::new(reading::Cache::default()),
+            reading_dirty,
             conn: Mutex::new(conn),
         })
     }

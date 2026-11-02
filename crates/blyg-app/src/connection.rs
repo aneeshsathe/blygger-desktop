@@ -715,6 +715,9 @@ impl Backend for SwitchBackend {
     fn reading(&self) -> Vec<ReadingItem> {
         self.cur().reading()
     }
+    fn unread_count(&self) -> usize {
+        self.cur().unread_count()
+    }
     fn subscriptions(&self) -> Vec<Subscription> {
         self.cur().subscriptions()
     }

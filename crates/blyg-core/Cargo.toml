@@ -18,7 +18,7 @@ sha2 = "0.10"
 base64 = "0.22"
 getrandom = "0.2"
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "hooks"] }
 toml = "1"
 url = "2"
 keyring = { version = "3.6", features = ["apple-native", "windows-native"], optional = true }

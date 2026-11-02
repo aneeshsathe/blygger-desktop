@@ -656,6 +656,10 @@ impl Backend for LiveBackend {
         self.e().store.reading()
     }
 
+    fn unread_count(&self) -> usize {
+        self.e().store.unread_count()
+    }
+
     fn subscriptions(&self) -> Vec<Subscription> {
         self.e().store.subscriptions()
     }

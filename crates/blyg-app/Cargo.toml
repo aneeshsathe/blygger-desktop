@@ -23,6 +23,8 @@ blyg-ext-inspect = { path = "../blyg-ext-inspect" }
 # gpui-component 0.6.6. We use gpui-base's unstyled textarea and draw the rest.
 gpui-kit = { version = "=0.6.6", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# The reading search's text scan (already in the tree via regex).
+memchr = "2"
 async-channel = "2"
 global-hotkey = "0.8"
 raw-window-handle = "0.6"

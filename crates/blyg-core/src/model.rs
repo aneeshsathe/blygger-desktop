@@ -723,7 +723,11 @@ impl Item {
     /// [`add_ref`]): its `stub_of`, `forked_from` and `![[id]]` quotes. A
     /// quote names no origin: it's the held post with that id, else one of
     /// yours (`own_origin`). Partial quotes aren't told apart here.
-    pub fn references(&self, own_origin: &str, held: &[ReadingItem]) -> Vec<PostRef> {
+    pub fn references<R: std::borrow::Borrow<ReadingItem>>(
+        &self,
+        own_origin: &str,
+        held: &[R],
+    ) -> Vec<PostRef> {
         use crate::profile::Relation;
         let mut out = Vec::new();
         let mut push = |origin: &str, id: &str, relation, version| {
@@ -751,6 +755,7 @@ impl Item {
         for q in crate::profile::transclusion_ids(&self.content_md) {
             let origin = held
                 .iter()
+                .map(std::borrow::Borrow::<ReadingItem>::borrow)
                 .find(|r| r.remote_id.eq_ignore_ascii_case(&q))
                 .map_or(own_origin, |r| r.origin.as_str());
             push(origin, &q, Relation::Quotes, None);

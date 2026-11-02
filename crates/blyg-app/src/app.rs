@@ -442,13 +442,8 @@ impl MainView {
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
         }
-        this.unread = this
-            .backend
-            .reading()
-            .iter()
-            // Withdrawn posts are background: never unread (studio 0.49).
-            .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
-            .count();
+        // Withdrawn posts are background: never unread (studio 0.49).
+        this.unread = this.backend.unread_count();
         let mode = crate::connection::mode(cx);
         if mode == Some(crate::connection::Mode::Live) {
             this.initial_sync(None, window, cx);
@@ -1318,13 +1313,8 @@ impl MainView {
                 theirs,
             } => self.show_conflict_sheet(local_id, &mine, &theirs, window, cx),
             CoreEvent::ReadingChanged => {
-                self.unread = self
-                    .backend
-                    .reading()
-                    .iter()
-                    // Withdrawn posts are background: never unread (studio 0.49).
-                    .filter(|r| r.is_unread() && !reading::sources_vm::is_background(r))
-                    .count();
+                // Withdrawn posts are background: never unread (studio 0.49).
+                self.unread = self.backend.unread_count();
                 // --- reading & versions ---
                 self.reading_changed(cx);
                 cx.notify();
