@@ -21,6 +21,21 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.17.0",
+        items: &[
+            "Burrow stays quick with thousands of posts in Reading: a sync that finds nothing \
+             new no longer holds up the window, and lists, search and marking posts read are \
+             many times faster.",
+            "Pick several posts and press h to put them all in a hopper at once. A hopper \
+             lists its posts in its own order, the most recently added first.",
+            "The reader follows Burrow's theme, not the Mac's. bracket-picker = quotes (or off) \
+             in the config stops typing [[ from opening the post picker.",
+            "Switching blygs is safer: nothing from the blyg you left reaches the one you're \
+             on, and the switcher keys work on Windows.",
+        ],
+        first_step: Some("hopper-several"),
+    },
+    Release {
         version: "0.16.0",
         items: &[
             "Burrow now needs blygger-studio 0.49.12 or later. On an older blyg, nothing syncs \
@@ -49,7 +64,7 @@ pub const RELEASES: &[Release] = &[
         version: "0.14.0",
         items: &[
             if cfg!(target_os = "windows") {
-                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+0, \
+                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+L, \
                  to switch, add one or sign out of one; Ctrl+Shift+1–9 jump straight to one. \
                  Each keeps its own posts and reading."
             } else {

@@ -135,6 +135,7 @@ impl MainView {
             return;
         }
         self.reading.query = q;
+        self.reading.narrow_next();
         self.reading.refilter();
         let keep = self
             .reading

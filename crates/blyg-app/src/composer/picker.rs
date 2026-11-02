@@ -50,6 +50,39 @@ impl PickKind {
     }
 }
 
+/// `bracket-picker`: which typed brackets open the picker. ⌘K always
+/// opens it; this only decides whether plain typing can (issue #53: a run
+/// of brackets in prose, `[TK]…[[…`, shouldn't pop anything up).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BracketPicker {
+    /// `[[` anywhere outside code (a link) and a line-leading `![[` (a quote).
+    #[default]
+    On,
+    /// Only a line-leading `![[`; `[[` is plain text.
+    Quotes,
+    /// Neither: typed brackets are always plain text.
+    Off,
+}
+
+impl BracketPicker {
+    pub fn from_value(v: Option<&str>) -> Self {
+        match v {
+            Some("quotes") => BracketPicker::Quotes,
+            Some("off") => BracketPicker::Off,
+            _ => BracketPicker::On,
+        }
+    }
+
+    /// Whether typing this kind's brackets may open the picker.
+    pub fn allows(self, kind: PickKind) -> bool {
+        match self {
+            BracketPicker::On => true,
+            BracketPicker::Quotes => kind == PickKind::Quote,
+            BracketPicker::Off => false,
+        }
+    }
+}
+
 /// The filters, remembered while the app runs (upstream keeps them per
 /// device): one for every editor and both forms of the picker.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -379,7 +412,7 @@ pub fn rows(
 
 #[cfg(test)]
 mod tests {
-    use super::{Filters, PickKind, insert, link_trigger, query, row_text};
+    use super::{BracketPicker, Filters, PickKind, insert, link_trigger, query, row_text};
     use blyg_core::{PickSort, PickSource};
 
     fn typed(before: &str, after: &str) -> Option<usize> {
@@ -399,6 +432,19 @@ mod tests {
         assert_eq!(typed("`code [[", "`"), None, "inline code");
         assert_eq!(typed("```\n[[", "\n```"), None, "fenced code");
         assert_eq!(link_trigger("", "[[x]]", 2), None, "a paste");
+    }
+
+    #[test]
+    fn bracket_picker_reads_the_config_value() {
+        use PickKind::{Link, Quote};
+        let on = BracketPicker::from_value(None);
+        assert_eq!(on, BracketPicker::On);
+        assert!(on.allows(Link) && on.allows(Quote));
+        let quotes = BracketPicker::from_value(Some("quotes"));
+        assert!(!quotes.allows(Link) && quotes.allows(Quote));
+        let off = BracketPicker::from_value(Some("off"));
+        assert!(!off.allows(Link) && !off.allows(Quote));
+        assert_eq!(BracketPicker::from_value(Some("bogus")), BracketPicker::On);
     }
 
     #[test]

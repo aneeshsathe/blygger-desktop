@@ -184,7 +184,12 @@ pub fn merge(theirs: Vec<ReadingItem>, mut own: Vec<ReadingItem>) -> Vec<Reading
 /// The rows that aren't yours (the lineage index counts your posts from
 /// the posts themselves).
 pub fn without_own(rows: &[ReadingItem]) -> Vec<ReadingItem> {
-    rows.iter().filter(|r| !is_own_row(r)).cloned().collect()
+    theirs(rows).into_iter().cloned().collect()
+}
+
+/// [`without_own`], borrowed: no copy of every post on every refilter.
+pub fn theirs(rows: &[ReadingItem]) -> Vec<&ReadingItem> {
+    rows.iter().filter(|r| !is_own_row(r)).collect()
 }
 
 /// Your history as the reading pane's changelog: every version with its

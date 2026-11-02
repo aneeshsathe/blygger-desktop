@@ -547,7 +547,9 @@ static READER_FONT: std::sync::Mutex<Option<FontChoice>> = std::sync::Mutex::new
 /// is set in.
 pub fn set_reader_theme(t: &Theme, writing: FontChoice) {
     let vars = if t.builtin && t.family == Family::Plain {
-        String::new()
+        // The fallback stylesheet's own colours, pinned to this theme's
+        // light or dark rather than the WebView's `prefers-color-scheme`.
+        crate::app::studio::style_cache::builtin_scheme_css(t.palette.dark)
     } else {
         format!(
             "{}:root {{ --radius: {}px; }}\n{}",

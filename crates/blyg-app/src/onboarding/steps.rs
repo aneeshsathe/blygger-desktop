@@ -89,6 +89,8 @@ pub enum Key {
     // --- hoppers ---
     /// The Hopper picker is open on a post (`h`, ⌥⌘P, or Hopper ›).
     HopperPicker,
+    /// The Hopper picker is open on several picked posts at once.
+    HopperSeveral,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -163,6 +165,8 @@ pub enum Setup {
     /// The sample garden notes opened, then edited "on the blyg" under
     /// them: the conflict sheet opens.
     Conflict,
+    /// Reading, in the Reader, with the first two posts it lists picked.
+    HopperSeveral,
     /// Back to Posts.
     Posts,
     /// A thread draft opened (quotes go in threads).
@@ -585,7 +589,7 @@ pub const STEPS: &[Step] = &[
         title: "Your blygs",
         caption: if cfg!(target_os = "windows") {
             "The name in the title bar is the blyg you're writing to. Click it, or press \
-             Ctrl+Shift+0, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
+             Ctrl+Shift+L, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
              straight to them. Each blyg keeps its own posts and reading. (The tour stays on \
              its sample blyg.)"
         } else {
@@ -595,7 +599,7 @@ pub const STEPS: &[Step] = &[
         },
         keys: &[Key::BlygSwitcher],
         key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+0"
+            "Ctrl+Shift+L"
         } else {
             "⌃⌘0"
         },
@@ -755,6 +759,23 @@ pub const STEPS: &[Step] = &[
         region: Region::Reader,
         button: None,
         setup: Setup::Hoppers,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "hopper-several",
+        since: "0.17.0",
+        title: "Several posts into a hopper",
+        caption: "Two posts are picked (⌘-click picks one more, ⇧-click a run, ⌘A the whole \
+                  list). h now acts on all of them: choosing a hopper puts in the ones it \
+                  doesn't hold yet, and a dash marks a hopper holding only some. A hopper lists \
+                  its posts as your blyg does, the most recently added first.",
+        keys: &[Key::HopperSeveral],
+        key_label: "h",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::HopperSeveral,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1035,6 +1056,7 @@ mod tests {
             Key::StubPassage,
             Key::BlygSwitcher,
             Key::HopperPicker,
+            Key::HopperSeveral,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

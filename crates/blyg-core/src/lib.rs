@@ -17,6 +17,9 @@ pub mod scratch_media;
 pub mod state;
 pub mod store;
 pub mod sync;
+/// Synthetic data at scale, for performance tests and benchmarks.
+#[doc(hidden)]
+pub mod synth;
 pub mod tk;
 mod util;
 

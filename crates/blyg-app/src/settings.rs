@@ -222,12 +222,29 @@ pub fn connect(
     if empty {
         return Err("Enter the studio password or the owner token".into());
     }
+    check_one_per_host(&url, cx)?;
     blyg_core::config::save_credential(get(cx).tokens.as_ref(), &url, cred)
         .map_err(|e| format!("Couldn't save it in the Keychain: {e}"))?;
     // --- blyg switcher --- a new blyg joins the list; the others stay.
     let changes = blyg_core::config::blygs::activate(get(cx).store.config(), &url);
     write(&changes, cx)?;
     Ok(url)
+}
+
+/// --- blyg switcher --- Refuse a second blyg on a host Burrow already
+/// knows (another port or path): it would share the first one's Keychain
+/// sign-in and database (`blygs::clash`).
+pub fn check_one_per_host(url: &str, cx: &App) -> Result<(), String> {
+    let Some(c) = cx.try_global::<AppConfig>() else {
+        return Ok(());
+    };
+    match blyg_core::config::blygs::clash(c.store.config(), url) {
+        None => Ok(()),
+        Some(known) => Err(format!(
+            "You're signed in to {known}, on the same host. Burrow keeps one blyg per host: \
+             sign out of that one first (switcher › Manage…) to use {url}."
+        )),
+    }
 }
 
 /// --- blyg switcher --- Every signed-in blyg, in the switcher's order

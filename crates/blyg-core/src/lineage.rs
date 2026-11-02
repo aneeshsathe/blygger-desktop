@@ -31,6 +31,7 @@
 
 pub(crate) mod reads;
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
@@ -325,7 +326,7 @@ fn row_refs(r: &ReadingItem) -> Vec<Edge> {
 
 /// One of your published posts' references (`Item::references`: a quote
 /// names the held post with that id, else one of yours).
-fn own_refs(i: &Item, own_origin: &str, rows: &[ReadingItem]) -> Vec<Edge> {
+fn own_refs<R: Borrow<ReadingItem>>(i: &Item, own_origin: &str, rows: &[R]) -> Vec<Edge> {
     dedupe(i.references(own_origin, rows).into_iter().map(|r| {
         (
             Peer::Post {
@@ -365,9 +366,30 @@ impl Local {
         own_origin: Option<&str>,
         mentions: &[Mention],
     ) -> Local {
+        Self::build_from(rows, own, own_origin, mentions)
+    }
+
+    /// [`Self::build`] over borrowed rows, so a subset needn't copy every
+    /// post.
+    pub fn build_borrowed(
+        rows: &[&ReadingItem],
+        own: &[Item],
+        own_origin: Option<&str>,
+        mentions: &[Mention],
+    ) -> Local {
+        Self::build_from(rows, own, own_origin, mentions)
+    }
+
+    fn build_from<R: Borrow<ReadingItem>>(
+        rows: &[R],
+        own: &[Item],
+        own_origin: Option<&str>,
+        mentions: &[Mention],
+    ) -> Local {
         let mut local = Local::default();
         let mut holders: Vec<((String, String), Vec<Edge>)> = Vec::new();
         for r in rows {
+            let r: &ReadingItem = r.borrow();
             holders.push((post_key(&r.origin, &r.remote_id), row_refs(r)));
         }
         if let Some(base) = own_origin {

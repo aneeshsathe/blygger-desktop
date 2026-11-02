@@ -181,6 +181,15 @@ pub trait Backend: Send + Sync {
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()>;
     /// Last-known reading list from the local cache (instant).
     fn reading(&self) -> Vec<ReadingItem>;
+    /// How many of `reading()`'s posts are unread; withdrawn posts are
+    /// background, never unread (studio 0.49). The live backend counts
+    /// without copying the list.
+    fn unread_count(&self) -> usize {
+        self.reading()
+            .iter()
+            .filter(|r| r.is_unread() && r.state != "tombstone")
+            .count()
+    }
     fn subscriptions(&self) -> Vec<Subscription>;
     /// Record that the user has seen the current version of a reading item
     /// (and of any duplicates of the same post). Local only. Additive; the
@@ -706,6 +715,13 @@ pub trait Backend: Send + Sync {
     /// (subscription id, remote id) → the ids of the hoppers holding that
     /// post; your own posts are `("~own", server id)`. Local.
     fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+        Default::default()
+    }
+
+    /// Hopper id → its posts as (subscription id, remote id) in the
+    /// hopper's own order: newest added first, as the studio lists them.
+    /// A post put in here waits at the top until the blyg says when. Local.
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
         Default::default()
     }
 

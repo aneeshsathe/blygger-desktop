@@ -165,6 +165,17 @@ pub const KEYS: &[KeySpec] = &[
          one for suggestions, Learn Spelling and Ignore. Code, links, addresses and blyg markup \
          are never checked. Edit › Spelling › Check Spelling While Typing toggles it.",
     ),
+    docs(
+        key(
+            "bracket-picker",
+            ValueKind::Choice(&["on", "quotes", "off"]),
+            Some("on"),
+        ),
+        "Which typed brackets open the post picker. on: typing [[ anywhere outside code opens \
+         it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only \
+         ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. \
+         off: typed brackets never open it. ⌘K always opens the picker.",
+    ),
     // --- auto-update ---
     docs(
         key(

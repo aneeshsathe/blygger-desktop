@@ -307,6 +307,26 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE items ADD COLUMN revision INTEGER;
     "#,
+    // v16 (performance): re-index a reading row's text only when its text
+    // changed, not on every write of its JSON (a thumb, a hopper, lineage
+    // filled in). Re-indexing a long post in the trigram index costs
+    // milliseconds and megabytes of WAL. Only the trigger changes; the
+    // index as stored is already right.
+    r#"
+    DROP TRIGGER reading_fts_au;
+    CREATE TRIGGER reading_fts_au AFTER UPDATE OF json ON reading
+    WHEN COALESCE(NULLIF(json_extract(old.json, '$.content_md'), ''),
+                  json_extract(old.json, '$.content_html'), '')
+         IS NOT
+         COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                  json_extract(new.json, '$.content_html'), '')
+    BEGIN
+        DELETE FROM reading_fts WHERE rowid = old.rowid;
+        INSERT INTO reading_fts(rowid, body) VALUES (new.rowid,
+            COALESCE(NULLIF(json_extract(new.json, '$.content_md'), ''),
+                     json_extract(new.json, '$.content_html'), ''));
+    END;
+    "#,
 ];
 
 /// Returns whether any migration ran.

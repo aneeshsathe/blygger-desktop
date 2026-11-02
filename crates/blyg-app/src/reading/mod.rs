@@ -64,6 +64,8 @@ mod compose_tests; // --- reading compose ---
 #[cfg(test)]
 mod own_tests; // --- own posts ---
 #[cfg(test)]
+mod perf_tests; // the reading screens at scale
+#[cfg(test)]
 mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
@@ -261,8 +263,9 @@ pub enum RSheet {
     Lineage(Box<lineage::Sheet>),
     /// --- hoppers --- Hopper › on a post: each hopper with a check.
     HopperPick {
-        key: Key,
-        /// The post, as the sheet names it.
+        /// The open post, or the posts picked in the list.
+        keys: Vec<Key>,
+        /// The post (or "3 posts"), as the sheet names it.
         title: String,
         /// The highlighted row (the hoppers, then "New Hopper…").
         sel: usize,
@@ -329,6 +332,11 @@ pub struct State {
     /// Indices into `rows` that match `query`, in display order: what the
     /// list shows and ↑/↓ move through.
     pub shown: Vec<usize>,
+    /// The last search's matches (indices into `rows`) and its normalized
+    /// query: a query typed further only searches those again.
+    searched: (String, Vec<usize>),
+    /// The next `refilter` follows typing only (the rows are as they were).
+    narrow: bool,
     // --- stream ---
     /// Stream (the default) or Reader (list + post), remembered in state.json.
     pub mode: stream_vm::ReadMode,
@@ -358,6 +366,9 @@ pub struct State {
     /// --- hoppers --- rows held only because a hopper read returned them
     /// (posts this Mac doesn't hold): listed under their hopper, nowhere else.
     pub hopper_only: HashSet<Key>,
+    /// --- hoppers --- hopper id → its posts in its own order (newest added
+    /// first): how a hopper's list is ordered.
+    pub hopper_order: HashMap<String, Vec<Key>>,
     /// What the list shows (Reader mode; the stream shows everything).
     pub source: sources_vm::Source,
     /// Which pane has the keyboard.
@@ -412,6 +423,8 @@ impl State {
             search: None,
             query: String::new(),
             shown: Vec::new(),
+            searched: Default::default(),
+            narrow: false,
             mode: stream_vm::load_mode(
                 cx.try_global::<crate::connection::Connection>()
                     .map(|c| c.data_dir.as_path()),
@@ -426,6 +439,7 @@ impl State {
             filed: backend.subscription_folders(),
             hoppers: backend.hoppers(),
             hopper_only: hoppers::unheld_keys(backend),
+            hopper_order: backend.hopper_order(),
             source: sources_vm::Source::default(),
             pane: sources_vm::Pane::default(),
             sources_open: sources::load_open(data_dir.as_deref()),
@@ -457,7 +471,7 @@ impl State {
 
     /// Recompute `shown` after `rows` or `query` changed.
     pub fn refilter(&mut self) {
-        let searched = vm::filter(&self.rows, &self.query);
+        let searched = self.search();
         // --- reader folders --- Reader lists the selected source only.
         self.shown = if self.mode == stream_vm::ReadMode::Reader {
             sources_vm::filter_source(
@@ -472,13 +486,19 @@ impl State {
             sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
         // --- hoppers --- a post only a hopper holds shows under it alone.
-        let in_hopper = self.mode == stream_vm::ReadMode::Reader
-            && matches!(self.source, sources_vm::Source::Hopper(_));
-        if !self.hopper_only.is_empty() && !in_hopper {
+        let in_hopper = match (&self.mode, &self.source) {
+            (stream_vm::ReadMode::Reader, sources_vm::Source::Hopper(h)) => Some(h),
+            _ => None,
+        };
+        if !self.hopper_only.is_empty() && in_hopper.is_none() {
             let only = &self.hopper_only;
             let rows = &self.rows;
             self.shown
                 .retain(|&i| rows.get(i).is_none_or(|r| !only.contains(&vm::key(r))));
+        }
+        // --- hoppers --- a hopper lists its posts in its own order.
+        if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
+            hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -487,12 +507,40 @@ impl State {
             self.picked.retain_shown(&keys);
         }
         // --- own posts --- your rows are counted from the posts themselves.
-        self.lineage = blyg_core::lineage::Local::build(
-            &own::without_own(&self.rows),
+        self.lineage = blyg_core::lineage::Local::build_borrowed(
+            &own::theirs(&self.rows),
             &self.own_posts,
             self.own_origin.as_deref(),
             self.mentions.ready().map(Vec::as_slice).unwrap_or(&[]),
         );
+    }
+
+    /// `vm::filter(&self.rows, &self.query)`. While the query is only typed
+    /// further (`narrow`), a row that didn't match before can't match now,
+    /// so only the last matches are searched again: each keystroke scans
+    /// fewer posts instead of every post's text.
+    fn search(&mut self) -> Vec<usize> {
+        let q = vm::normalize_query(&self.query);
+        let (prev, hits) = &self.searched;
+        let narrowing = std::mem::take(&mut self.narrow)
+            && q.contains(prev.as_str())
+            && hits.iter().all(|&i| i < self.rows.len());
+        let out = if narrowing {
+            hits.iter()
+                .copied()
+                .filter(|&i| vm::matches_query(&self.rows[i], &self.query))
+                .collect()
+        } else {
+            vm::filter(&self.rows, &self.query)
+        };
+        self.searched = (q, out.clone());
+        out
+    }
+
+    /// The next `refilter` only follows a change of `query` (the rows
+    /// haven't changed since the last one).
+    pub fn narrow_next(&mut self) {
+        self.narrow = true;
     }
 
     /// The rows the list shows (all of them without a search).
@@ -511,6 +559,51 @@ impl State {
                 .any(|m| vm::is_new_mention(m, &self.mentions_seen, now))
         })
     }
+}
+
+/// The fresh rows in the order on screen: posts not held before on top
+/// (in `fresh`'s order), then the held ones where they were, with their
+/// fresh data; the ones gone are dropped. Rows are moved, not copied
+/// (a key twice over takes copies).
+pub(crate) fn keep_order(held: &[ReadingItem], fresh: Vec<ReadingItem>) -> Vec<ReadingItem> {
+    let fresh_keys: Vec<(&str, &str)> = fresh
+        .iter()
+        .map(|n| (n.subscription_id.as_str(), n.remote_id.as_str()))
+        .collect();
+    let held_keys: HashSet<(&str, &str)> = held
+        .iter()
+        .map(|o| (o.subscription_id.as_str(), o.remote_id.as_str()))
+        .collect();
+    // The first of a key wins, as a search from the top would.
+    let mut first: HashMap<(&str, &str), usize> = HashMap::new();
+    for (i, k) in fresh_keys.iter().enumerate() {
+        first.entry(*k).or_insert(i);
+    }
+    let mut picks: Vec<usize> = (0..fresh.len())
+        .filter(|&i| !held_keys.contains(&fresh_keys[i]))
+        .collect();
+    picks.extend(held.iter().filter_map(|o| {
+        first
+            .get(&(o.subscription_id.as_str(), o.remote_id.as_str()))
+            .copied()
+    }));
+    let mut uses = vec![0usize; fresh.len()];
+    for &i in &picks {
+        uses[i] += 1;
+    }
+    drop((fresh_keys, held_keys, first));
+    let mut slots: Vec<Option<ReadingItem>> = fresh.into_iter().map(Some).collect();
+    picks
+        .into_iter()
+        .filter_map(|i| {
+            uses[i] -= 1;
+            if uses[i] == 0 {
+                slots[i].take()
+            } else {
+                slots[i].clone()
+            }
+        })
+        .collect()
 }
 
 // ================================================================ hooks
@@ -565,6 +658,7 @@ impl MainView {
         // --- hoppers ---
         r.hoppers = self.backend.hoppers();
         r.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
+        r.hopper_order = self.backend.hopper_order();
         if let sources_vm::Source::Hopper(id) = &r.source
             && !r.hoppers.iter().any(|h| &h.id == id)
         {
@@ -574,17 +668,9 @@ impl MainView {
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
-            let order = fresh;
-            let mut next: Vec<ReadingItem> = order
-                .iter()
-                .filter(|n| !r.rows.iter().any(|o| vm::key(o) == vm::key(n)))
-                .cloned()
-                .collect();
-            for old in &r.rows {
-                if let Some(n) = order.iter().find(|n| vm::key(n) == vm::key(old)) {
-                    next.push(n.clone());
-                }
-            }
+            // (Keyed lookups and moves: with thousands of rows, a pairwise
+            // scan and a copy of every post took seconds.)
+            let next = keep_order(&r.rows, fresh);
             // --- background --- the withdrawn posts stay last, newest first.
             r.rows = own::with_background(next, vec![]);
         } else {
@@ -641,6 +727,7 @@ impl MainView {
                 self.reading.filed = self.backend.subscription_folders();
                 self.reading.hoppers = self.backend.hoppers(); // --- hoppers ---
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
+                self.reading.hopper_order = self.backend.hopper_order();
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---

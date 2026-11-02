@@ -20,6 +20,7 @@
 //!   in which case only that pinned content is kept (spec §13.4).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use rusqlite::{OptionalExtension, params};
 
@@ -30,6 +31,159 @@ use crate::model::{ReadingItem, SubscriptionKind};
 struct Row {
     item: ReadingItem,
     sub_kind: Option<String>,
+}
+
+/// What changed in `reading` since the cache last looked.
+#[derive(Debug)]
+pub(super) enum Dirty {
+    /// These rowids (inserted, updated or deleted).
+    Rows(HashSet<i64>),
+    /// Anything: load it all again.
+    All,
+}
+
+impl Dirty {
+    /// More rows than this and a full load is cheaper than a patch.
+    const MAX_ROWS: usize = 2_000;
+
+    pub(super) fn mark(&mut self, rowid: i64) {
+        if let Dirty::Rows(set) = self {
+            set.insert(rowid);
+            if set.len() > Self::MAX_ROWS {
+                *self = Dirty::All;
+            }
+        }
+    }
+
+    fn take(&mut self) -> Dirty {
+        std::mem::replace(self, Dirty::Rows(HashSet::new()))
+    }
+}
+
+/// One parsed row, with what it sorts by.
+struct Cached {
+    row: Arc<Row>,
+    sort_at: String,
+}
+
+/// The parsed reading rows. Rows written through this connection are
+/// re-read one by one (`Dirty`, fed by the update hook); a commit by any
+/// other connection (`PRAGMA data_version`) reloads everything.
+#[derive(Default)]
+pub(super) struct Cache {
+    loaded: bool,
+    data_version: i64,
+    rows: HashMap<i64, Cached>,
+    /// `rows` in the list's order, until a row changes.
+    sorted: Option<Arc<Vec<Arc<Row>>>>,
+}
+
+const ROW_COLS: &str = "rowid, json, read_version, sub_kind, sort_at";
+
+fn parse_row(r: &rusqlite::Row) -> rusqlite::Result<(i64, Option<Cached>)> {
+    let rowid: i64 = r.get(0)?;
+    let json: String = r.get(1)?;
+    let rv: Option<i64> = r.get(2)?;
+    let sub_kind: Option<String> = r.get(3)?;
+    let sort_at: String = r.get(4)?;
+    let cached = serde_json::from_str::<ReadingItem>(&json)
+        .ok()
+        .map(|mut item| {
+            item.read_version = rv.map(|v| v as u32);
+            Cached {
+                row: Arc::new(Row { item, sub_kind }),
+                sort_at,
+            }
+        });
+    Ok((rowid, cached))
+}
+
+impl Cache {
+    fn refresh(&mut self, c: &rusqlite::Connection, dirty: Dirty) -> rusqlite::Result<()> {
+        let dv: i64 = c.query_row("PRAGMA data_version", [], |r| r.get(0))?;
+        let full = !self.loaded || dv != self.data_version || matches!(dirty, Dirty::All);
+        if full {
+            let mut st = c.prepare_cached(&format!("SELECT {ROW_COLS} FROM reading"))?;
+            let rows = st.query_map([], parse_row)?;
+            self.rows.clear();
+            for r in rows {
+                if let (id, Some(cached)) = r? {
+                    self.rows.insert(id, cached);
+                }
+            }
+            self.loaded = true;
+            self.data_version = dv;
+            self.sorted = None;
+            return Ok(());
+        }
+        let Dirty::Rows(ids) = dirty else {
+            return Ok(());
+        };
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<i64> = ids.into_iter().collect();
+        for chunk in ids.chunks(200) {
+            for id in chunk {
+                self.rows.remove(id);
+            }
+            let marks = vec!["?"; chunk.len()].join(",");
+            let mut st = c.prepare(&format!(
+                "SELECT {ROW_COLS} FROM reading WHERE rowid IN ({marks})"
+            ))?;
+            let rows = st.query_map(rusqlite::params_from_iter(chunk), parse_row)?;
+            for r in rows {
+                if let (id, Some(cached)) = r? {
+                    self.rows.insert(id, cached);
+                }
+            }
+        }
+        self.sorted = None;
+        Ok(())
+    }
+
+    /// The rows in the list's order: `sort_at` newest first, then
+    /// subscription and remote id (as `ORDER BY` would, bytewise).
+    fn sorted(&mut self) -> Arc<Vec<Arc<Row>>> {
+        if let Some(s) = &self.sorted {
+            return s.clone();
+        }
+        let mut v: Vec<&Cached> = self.rows.values().collect();
+        v.sort_by(|a, b| {
+            b.sort_at
+                .cmp(&a.sort_at)
+                .then_with(|| a.row.item.subscription_id.cmp(&b.row.item.subscription_id))
+                .then_with(|| a.row.item.remote_id.cmp(&b.row.item.remote_id))
+        });
+        let s = Arc::new(v.into_iter().map(|c| c.row.clone()).collect::<Vec<_>>());
+        self.sorted = Some(s.clone());
+        s
+    }
+}
+
+/// A stored row's columns, to tell whether a pulled row changes anything.
+struct Held {
+    json: String,
+    origin: String,
+    observed_at: String,
+    page: Option<String>,
+    sub_kind: Option<String>,
+    state: String,
+    version: i64,
+    sort_at: String,
+}
+
+impl Held {
+    /// The columns besides `json` already say what `it` would write.
+    fn same_columns(&self, it: &ReadingItem, sub_kind: Option<&str>, sort_at: &str) -> bool {
+        self.origin == it.origin
+            && self.observed_at == it.observed_at
+            && self.page == it.page
+            && self.sub_kind.as_deref() == sub_kind
+            && self.state == it.state
+            && self.version == i64::from(it.version)
+            && self.sort_at == sort_at
+    }
 }
 
 fn group_key(it: &ReadingItem) -> String {
@@ -57,11 +211,8 @@ fn cached_lineage(
     remote_id: &str,
 ) -> Result<Option<crate::model::Lineage>> {
     let json: Option<String> = tx
-        .query_row(
-            "SELECT json FROM remote_changelog WHERE origin = ?1 AND remote_id = ?2",
-            [origin, remote_id],
-            |r| r.get(0),
-        )
+        .prepare_cached("SELECT json FROM remote_changelog WHERE origin = ?1 AND remote_id = ?2")?
+        .query_row([origin, remote_id], |r| r.get(0))
         .optional()?;
     let log: Vec<crate::model::RemoteVersion> = json
         .and_then(|j| serde_json::from_str(&j).ok())
@@ -113,19 +264,20 @@ fn raise_read(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<bool> {
     let Some(v) = it.read_version else {
         return Ok(false);
     };
-    let n = tx.execute(
-        "UPDATE reading SET read_version = ?3, read_at = NULL, read_floor = NULL \
-         WHERE subscription_id = ?1 AND remote_id = ?2 \
-         AND (read_version IS NULL OR read_version < ?3) \
-         AND (read_floor IS NULL OR read_floor < ?3)",
-        params![it.subscription_id, it.remote_id, v],
-    )?;
+    let n = tx
+        .prepare_cached(
+            "UPDATE reading SET read_version = ?3, read_at = NULL, read_floor = NULL \
+             WHERE subscription_id = ?1 AND remote_id = ?2 \
+             AND (read_version IS NULL OR read_version < ?3) \
+             AND (read_floor IS NULL OR read_floor < ?3)",
+        )?
+        .execute(params![it.subscription_id, it.remote_id, v])?;
     Ok(n > 0)
 }
 
 /// The duplicate groups of the held rows named in `targets`; `None` when
 /// none of them is held.
-fn target_groups(rows: &[Row], targets: &[(String, String)]) -> Option<HashSet<String>> {
+fn target_groups(rows: &[Arc<Row>], targets: &[(String, String)]) -> Option<HashSet<String>> {
     let want: HashSet<(&str, &str)> = targets
         .iter()
         .map(|(s, r)| (s.as_str(), r.as_str()))
@@ -166,17 +318,27 @@ impl Store {
         for it in items {
             let kept = retainable(&tx, it)?;
             let it = &kept;
-            put_refs(&tx, it)?;
             let json = to_json(it)?;
             let sub_kind = sub_kinds.get(&it.subscription_id).map(|k| kind_str(*k));
-            let existing: Option<String> = tx
-                .query_row(
-                    "SELECT json FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
-                    [&it.subscription_id, &it.remote_id],
-                    |r| r.get(0),
-                )
-                .optional()?;
             let sort_at = it.sort_at();
+            let existing: Option<Held> = tx
+                .prepare_cached(
+                    "SELECT json, origin, observed_at, page_url, sub_kind, state, version, sort_at \
+                     FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
+                )?
+                .query_row([&it.subscription_id, &it.remote_id], |r| {
+                    Ok(Held {
+                        json: r.get(0)?,
+                        origin: r.get(1)?,
+                        observed_at: r.get(2)?,
+                        page: r.get(3)?,
+                        sub_kind: r.get(4)?,
+                        state: r.get(5)?,
+                        version: r.get(6)?,
+                        sort_at: r.get(7)?,
+                    })
+                })
+                .optional()?;
             let fields = params![
                 it.subscription_id,
                 it.remote_id,
@@ -190,18 +352,40 @@ impl Store {
                 sort_at
             ];
             if let Some(old) = existing {
-                if old != json {
+                // Most of a pull is rows exactly as held. Writing them again
+                // would re-index each post's text (`reading_fts`) and churn
+                // the WAL for nothing, with the store locked throughout.
+                if old.json != json {
                     changed = true;
+                    put_refs(&tx, it)?;
+                    tx.prepare_cached(
+                        "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
+                         version = ?8, json = ?9, sort_at = ?10 WHERE subscription_id = ?1 AND remote_id = ?2",
+                    )?
+                    .execute(fields)?;
+                } else if !old.same_columns(it, sub_kind, &sort_at) {
+                    // The references come from the JSON: unchanged too.
+                    tx.prepare_cached(
+                        "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
+                         version = ?8, sort_at = ?9 WHERE subscription_id = ?1 AND remote_id = ?2",
+                    )?
+                    .execute(params![
+                        it.subscription_id,
+                        it.remote_id,
+                        it.origin,
+                        it.observed_at,
+                        it.page,
+                        sub_kind,
+                        it.state,
+                        it.version,
+                        sort_at
+                    ])?;
                 }
-                tx.execute(
-                    "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
-                     version = ?8, json = ?9, sort_at = ?10 WHERE subscription_id = ?1 AND remote_id = ?2",
-                    fields,
-                )?;
                 changed |= raise_read(&tx, it)?;
                 continue;
             }
             changed = true;
+            put_refs(&tx, it)?;
             // Same subscription, same page, different id that the server no
             // longer lists: an RSS guid that changed on edit. Same post.
             let renamed: Option<String> = match &it.page {
@@ -288,31 +472,23 @@ impl Store {
         Ok(changed)
     }
 
-    fn reading_rows(&self) -> Vec<Row> {
+    /// Every row, parsed, in the list's order (`ORDER BY sort_at DESC,
+    /// subscription_id, remote_id`): the cache, brought up to date with
+    /// what was written since.
+    fn reading_rows(&self) -> Arc<Vec<Arc<Row>>> {
         let c = self.conn();
-        let Ok(mut st) = c.prepare_cached(
-            "SELECT json, read_version, sub_kind FROM reading \
-             ORDER BY sort_at DESC, subscription_id, remote_id",
-        ) else {
-            return vec![];
-        };
-        st.query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, Option<i64>>(1)?,
-                r.get::<_, Option<String>>(2)?,
-            ))
-        })
-        .map(|it| {
-            it.filter_map(|r| r.ok())
-                .filter_map(|(json, rv, sub_kind)| {
-                    let mut item: ReadingItem = serde_json::from_str(&json).ok()?;
-                    item.read_version = rv.map(|v| v as u32);
-                    Some(Row { item, sub_kind })
-                })
-                .collect()
-        })
-        .unwrap_or_default()
+        let dirty = self
+            .reading_dirty
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        let mut cache = self.reading_cache.lock().unwrap_or_else(|p| p.into_inner());
+        if cache.refresh(&c, dirty).is_err() {
+            // Unreadable now: start over next time.
+            *cache = Cache::default();
+            return Arc::default();
+        }
+        cache.sorted()
     }
 
     /// The reading list as the UI shows it: newest first by the post's own
@@ -320,28 +496,17 @@ impl Store {
     /// per post.
     pub fn reading(&self) -> Vec<ReadingItem> {
         let rows = self.reading_rows();
-        // group key → index into `out` (position = the group's newest row)
-        let mut slot: HashMap<String, usize> = HashMap::new();
-        let mut out: Vec<Row> = Vec::new();
-        for row in rows {
-            let it = &row.item;
-            if it.state == "tombstone" && it.thumb.is_none() && it.hoppers.is_empty() {
-                continue;
-            }
-            let key = group_key(it);
-            match slot.get(&key) {
-                None => {
-                    slot.insert(key, out.len());
-                    out.push(row);
-                }
-                Some(&i) => {
-                    if better(&row, &out[i]) {
-                        out[i] = row;
-                    }
-                }
-            }
-        }
-        out.into_iter().map(|r| r.item).collect()
+        listed(&rows).into_iter().map(|r| r.item.clone()).collect()
+    }
+
+    /// How many of [`Self::reading`]'s posts are unread (withdrawn ones
+    /// never are), without copying any of them.
+    pub fn unread_count(&self) -> usize {
+        let rows = self.reading_rows();
+        listed(&rows)
+            .into_iter()
+            .filter(|r| r.item.is_unread() && r.item.state != "tombstone")
+            .count()
     }
 
     /// --- background --- Withdrawn posts only (studio 0.49's Background
@@ -356,8 +521,8 @@ impl Store {
             .map(|r| group_key(&r.item))
             .collect();
         let mut slot: HashMap<String, usize> = HashMap::new();
-        let mut out: Vec<Row> = Vec::new();
-        for row in rows {
+        let mut out: Vec<&Row> = Vec::new();
+        for row in rows.iter() {
             if row.item.state != "tombstone" {
                 continue;
             }
@@ -371,13 +536,13 @@ impl Store {
                     out.push(row);
                 }
                 Some(&i) => {
-                    if better(&row, &out[i]) {
+                    if better(row, out[i]) {
                         out[i] = row;
                     }
                 }
             }
         }
-        out.into_iter().map(|r| r.item).collect()
+        out.into_iter().map(|r| r.item.clone()).collect()
     }
 
     /// Mark a reading item, and every duplicate of the same post, as read at
@@ -597,6 +762,33 @@ impl Store {
         tx.commit()?;
         Ok(true)
     }
+}
+
+/// The rows [`Store::reading`] lists, in order: withdrawn ones only when
+/// signalled or hoppered, one per post (`group_key`), the `better` copy.
+fn listed(rows: &[Arc<Row>]) -> Vec<&Row> {
+    // group key → index into `out` (position = the group's newest row)
+    let mut slot: HashMap<String, usize> = HashMap::new();
+    let mut out: Vec<&Row> = Vec::new();
+    for row in rows {
+        let it = &row.item;
+        if it.state == "tombstone" && it.thumb.is_none() && it.hoppers.is_empty() {
+            continue;
+        }
+        match slot.entry(group_key(it)) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(out.len());
+                out.push(row);
+            }
+            std::collections::hash_map::Entry::Occupied(e) => {
+                let i = *e.get();
+                if better(row, out[i]) {
+                    out[i] = row;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Which of two rows for the same post to show: the blyg-kind subscription

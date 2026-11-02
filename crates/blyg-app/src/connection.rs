@@ -10,6 +10,7 @@
 //!   your blyg" sheet succeeds.
 
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 
 use blyg_core::config::TokenStore;
@@ -28,6 +29,18 @@ pub enum Mode {
 pub struct SwitchBackend {
     inner: RwLock<(Arc<dyn Backend>, Mode)>,
     sink: Mutex<Option<Sink>>,
+    /// --- blyg switcher --- Bumped on every switch. Each backend's events
+    /// carry the generation it was swapped in at and are dropped once it's
+    /// no longer current: a blyg switched away from finishes its last sync
+    /// pass on its own thread, and that pass's status, conflicts, errors or
+    /// sign-out must never reach the views of the blyg now on screen.
+    generation: Arc<AtomicU64>,
+    /// --- blyg switcher --- The data folder of the live backend inside,
+    /// as it was opened (`set_live_dir`). Not derived from its `base_url`:
+    /// that's the public origin from the blyg's permalinks, whose host can
+    /// differ from the address it was opened with (a custom domain), and
+    /// would mark the wrong folder as closing.
+    live_dir: Mutex<Option<std::path::PathBuf>>,
 }
 
 impl SwitchBackend {
@@ -35,6 +48,25 @@ impl SwitchBackend {
         Arc::new(SwitchBackend {
             inner: RwLock::new((inner, mode)),
             sink: Mutex::new(None),
+            generation: Arc::new(AtomicU64::new(0)),
+            live_dir: Mutex::new(None),
+        })
+    }
+
+    /// --- blyg switcher --- Record the data folder the live backend inside
+    /// was opened on (`None` for any other backend).
+    pub fn set_live_dir(&self, dir: Option<std::path::PathBuf>) {
+        *self.live_dir.lock().unwrap_or_else(|p| p.into_inner()) = dir;
+    }
+
+    /// `sink`, for the backend current at generation `generation`: silent
+    /// once another backend has been swapped in.
+    fn gated(&self, sink: Sink, generation: u64) -> Box<dyn Fn(CoreEvent) + Send + Sync> {
+        let current = self.generation.clone();
+        Box::new(move |e| {
+            if current.load(Ordering::SeqCst) == generation {
+                sink(e)
+            }
         })
     }
 
@@ -61,12 +93,13 @@ impl SwitchBackend {
         after: impl FnOnce() + Send + 'static,
     ) {
         let sink = self.sink.lock().unwrap_or_else(|p| p.into_inner()).clone();
-        if let Some(s) = &sink {
-            let s = s.clone();
-            next.set_event_sink(Box::new(move |e| s(e)));
-        }
         let old = {
             let mut g = self.inner.write().unwrap_or_else(|p| p.into_inner());
+            // Silence the outgoing backend before the new one can speak.
+            let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+            if let Some(s) = &sink {
+                next.set_event_sink(self.gated(s.clone(), generation));
+            }
             std::mem::replace(&mut *g, (next.clone(), mode))
         };
         if let Some(s) = sink {
@@ -277,7 +310,7 @@ pub fn go_live(url: &str, cx: &mut gpui_kit::App) -> Result<bool> {
     let (switch, root) = (conn.switch.clone(), conn.data_dir.clone());
     match open_blyg(url, cx)? {
         Some((next, mode)) => {
-            swap(&switch, &root, next, mode, || {});
+            swap(&switch, &root, next, mode, Some(url), || {});
             crate::refresh_menus(cx); // --- blyg switcher ---
             Ok(true)
         }
@@ -308,21 +341,26 @@ fn open_blyg(url: &str, cx: &gpui_kit::App) -> Result<Option<(Arc<dyn Backend>, 
     Ok(open_live(&conn.data_dir, url, &tokens)?.map(|b| (b, Mode::Live)))
 }
 
-/// Swap in `next`. The live backend going out is marked closing until its
-/// sync thread has finished (`after` runs first), so reopening that blyg
-/// right away waits for it instead of running two sync workers on one
-/// database.
+/// Swap in `next` (opened for `url`). The live backend going out is marked
+/// closing until its sync thread has finished (`after` runs first), so
+/// reopening that blyg right away waits for it instead of running two sync
+/// workers on one database.
 fn swap(
     switch: &SwitchBackend,
     root: &Path,
     next: Arc<dyn Backend>,
     mode: Mode,
+    url: Option<&str>,
     after: impl FnOnce() + Send + 'static,
 ) {
-    let old_dir = (switch.mode() == Mode::Live)
-        .then(|| switch.current().base_url())
-        .flatten()
-        .map(|u| blygs::data_dir_for(root, &u));
+    let next_dir = url
+        .filter(|_| mode == Mode::Live)
+        .map(|u| blygs::data_dir_for(root, u));
+    let old_dir = std::mem::replace(
+        &mut *switch.live_dir.lock().unwrap_or_else(|p| p.into_inner()),
+        next_dir,
+    )
+    .filter(|_| switch.mode() == Mode::Live);
     if let Some(d) = &old_dir {
         closing::start(d);
     }
@@ -367,7 +405,7 @@ pub fn switch_to(url: &str, cx: &mut gpui_kit::App) -> std::result::Result<Switc
     };
     let cfg = crate::settings::get(cx).store.config().clone();
     crate::settings::write(&blygs::activate(&cfg, url), cx)?;
-    swap(&switch, &root, next, mode, || {});
+    swap(&switch, &root, next, mode, Some(url), || {});
     crate::refresh_menus(cx);
     Ok(Switched::Changed)
 }
@@ -476,12 +514,13 @@ pub fn disconnect_blyg(
             None => None,
         };
         match target {
-            Some((b, m)) => swap(&switch, &root, b, m, wipe),
+            Some((b, m)) => swap(&switch, &root, b, m, next.as_deref(), wipe),
             None if switch.mode() != Mode::Fake => swap(
                 &switch,
                 &root,
                 Arc::new(Disconnected),
                 Mode::Disconnected,
+                None,
                 wipe,
             ),
             None => {}
@@ -707,13 +746,19 @@ impl Backend for SwitchBackend {
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>) {
         let sink: Sink = Arc::from(sink);
         *self.sink.lock().unwrap_or_else(|p| p.into_inner()) = Some(sink.clone());
-        self.cur().set_event_sink(Box::new(move |e| sink(e)));
+        // Under the read lock, so no switch slips in between.
+        let g = self.inner.read().unwrap_or_else(|p| p.into_inner());
+        let generation = self.generation.load(Ordering::SeqCst);
+        g.0.set_event_sink(self.gated(sink, generation));
     }
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()> {
         self.cur().resolve_conflict(id, how)
     }
     fn reading(&self) -> Vec<ReadingItem> {
         self.cur().reading()
+    }
+    fn unread_count(&self) -> usize {
+        self.cur().unread_count()
     }
     fn subscriptions(&self) -> Vec<Subscription> {
         self.cur().subscriptions()
@@ -913,6 +958,9 @@ impl Backend for SwitchBackend {
     fn hopper_unheld(&self) -> Vec<ReadingItem> {
         self.cur().hopper_unheld()
     }
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+        self.cur().hopper_order()
+    }
     fn create_hopper(&self, name: &str) -> Result<Hopper> {
         self.cur().create_hopper(name)
     }
@@ -997,6 +1045,58 @@ mod tests {
         // Events from the new backend reach the same sink.
         let id = sw.create_draft(Kind::Fragment, "hello").unwrap();
         assert!(sw.item(&id).is_some());
+    }
+
+    /// --- blyg switcher --- A blyg switched away from may still be
+    /// finishing a sync pass; nothing it says reaches the window after.
+    #[test]
+    fn a_backend_switched_away_from_is_silenced() {
+        // Two real backends on real SQLite, pointed at a closed local port:
+        // every sync fails fast and says so through the sink.
+        let open = |dir: &Path| -> Arc<LiveBackend> {
+            let opts = blyg_core::SyncOptions {
+                start_worker: false,
+                ..Default::default()
+            };
+            Arc::new(
+                LiveBackend::open_with(
+                    dir,
+                    "http://127.0.0.1:9",
+                    blyg_core::api::auth::Credential::Token("t".into()),
+                    opts,
+                )
+                .unwrap(),
+            )
+        };
+        let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let (one, two) = (open(d1.path()), open(d2.path()));
+        let sw = SwitchBackend::new(one.clone(), Mode::Live);
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let s2 = seen.clone();
+        sw.set_event_sink(Box::new(move |e| s2.lock().unwrap().push(e)));
+        let _ = one.sync_now();
+        assert!(
+            !seen.lock().unwrap().is_empty(),
+            "the current backend speaks"
+        );
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        sw.switch(two.clone(), Mode::Live, move || tx.send(()).unwrap());
+        rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        seen.lock().unwrap().clear();
+        // `one` is still alive here (as it is while its last pass finishes).
+        let _ = one.sync_now();
+        assert_eq!(*seen.lock().unwrap(), vec![], "the old blyg is silent");
+        let _ = two.sync_now();
+        assert!(!seen.lock().unwrap().is_empty(), "the new one speaks");
+
+        // A new sink (the window re-registering) goes to the current one
+        // only: the old one stays silent.
+        let fresh = Arc::new(Mutex::new(Vec::new()));
+        let f2 = fresh.clone();
+        sw.set_event_sink(Box::new(move |e| f2.lock().unwrap().push(e)));
+        let _ = one.sync_now();
+        assert!(fresh.lock().unwrap().is_empty());
     }
 
     #[test]
