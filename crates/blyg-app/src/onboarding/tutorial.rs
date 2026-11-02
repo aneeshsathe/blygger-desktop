@@ -473,6 +473,13 @@ impl MainView {
                 ),
             ),
             (Key::SlotSheet, self.ext.slots.sheet.is_some()),
+            // --- 0.16.0 ---
+            (
+                Key::ConflictAnswered,
+                self.backend
+                    .conflict_texts(&LocalId(steps::CONFLICTED.into()))
+                    .is_none(),
+            ),
             (
                 Key::NotesVault,
                 self.ext_lib_showing() && {
@@ -756,6 +763,15 @@ impl MainView {
                     let new = format!("{} {sentence}", old.trim_end());
                     let end = new.len();
                     self.splice_editor(&old, &new, Some(end), window, cx);
+                }
+            }
+            Setup::Conflict => {
+                self.tutorial_tidy(window, cx);
+                self.studio_set_view(ViewMode::Write, cx);
+                self.tutorial_open(steps::CONFLICTED, window, cx);
+                // Its sheet opens through the Conflict event, as a real one.
+                if let Some(f) = &self.fake {
+                    f.trigger_conflict(&LocalId(steps::CONFLICTED.into()));
                 }
             }
             Setup::Posts => {

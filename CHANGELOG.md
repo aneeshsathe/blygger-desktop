@@ -15,6 +15,26 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-02
+
+### Changed
+
+- **Burrow now needs blygger-studio 0.49.12 or later** (its API contract 5). On an older blyg nothing syncs, and Burrow says "Your blyg needs updating". Your posts stay on this computer and are sent once the blyg is updated. Connecting to an older blyg is refused with the same message, and a blyg newer than Burrow understands asks you to update Burrow. This includes stock studios 0.46–0.49.11 and patched Worker forks.
+- **Saving checks the post's revision.** Burrow sends the revision it last saw with every change instead of checking the post before each save. If the post changed on your blyg as well and you haven't edited it here, the change stops and the blyg's text shows. If you have edited it here, the post goes into conflict and you choose, so the blyg's text is never overwritten. A change only to something else on the post, such as an attachment added elsewhere, is retried.
+- **Lists are read in pages.** Burrow reads up to 20 pages of 100 per pull and removes nothing locally until it has read a whole list to its end. A list that changes while it's being read is read again from the start, and a longer reading list is completed on the next pull.
+- The blyg's API is found through its capabilities, under the blyg's own path, so a blyg mounted under a path works without a host-root `/api`. Sign-ins issued for the older host-root address keep refreshing.
+- Media URLs are absolute.
+- A post marked unread on another device is unread here too.
+- The tour has a step on posts edited in two places.
+
+### Removed
+
+- Support for older studio API shapes: offset paging with totals, the Worker-fork extension routes (client provenance, the stock reading walk, `before`-paged imported reading) and the 0.47 labelled-links fallback.
+
+### Known issues
+
+- Burrow can only remove attachments it uploaded itself. Removing an attachment needs the post's revision, and the studio's media API doesn't say which post an attachment is on. Reported upstream as blygger/blygger-studio#103.
+
 ## [0.15.0] - 2026-11-01
 
 ### Added

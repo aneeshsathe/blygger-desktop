@@ -712,6 +712,19 @@ fn do_step(e: &mut Env, id: &str) {
         "stub-passage" => quote_a_passage(e),
         // --- hoppers ---
         "hoppers" => e.cx.simulate_keystrokes("h"),
+        "conflict" => {
+            // The sheet opens through the fake's Conflict event.
+            for _ in 0..50 {
+                e.cx.run_until_parked();
+                if e.view.read_with(e.cx, |v, _| {
+                    matches!(v.sheet, Some(crate::app::Sheet::Conflict { .. }))
+                }) {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            e.cx.simulate_keystrokes("1");
+        }
         other => panic!("no way to do step {other}"),
     }
     e.cx.run_until_parked();
