@@ -203,7 +203,7 @@ target's first words. To **rename a link**, edit the words after `|`; the id
 before it is what the link points at, so leave that alone. A quote takes a
 label too, `![[id | note]]`, but there it's a **note** for you: the published
 quote shows the quoted post, not the note. The preview renders labels as
-blygger-studio 0.47 does.
+blygger-studio does.
 
 Typing `[[` anywhere outside code opens the same picker as `![[`, for a link.
 Each row leads with the post's title. ⏎ writes the labelled form, and the
@@ -222,10 +222,10 @@ title, which is what you searched for and what a reader should see. Either
 way the label is just your text, and you can change it.) **Quote into a
 thread** from Reading writes the labelled form too.
 
-Labelled links need **blygger-studio 0.47** or later. On an older blyg the
-pickers write bare links (`[[id]]`, `![[id]]`), and a post that already has a
-label waits, unsent, until the blyg is updated. Publishing it offers ⏎ to
-write its links bare and publish. See [Server requirements](server.md).
+Every studio Burrow syncs with (0.49.12 or later) understands labelled links.
+On a blyg that needs updating nothing syncs, and the pickers write bare links
+(`[[id]]`, `![[id]]`); publishing a post that has labels offers ⏎ to write
+them bare. See [Server requirements](server.md).
 
 | | |
 |---|---|

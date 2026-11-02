@@ -19,13 +19,11 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes. Burrow 0.13 needs blygger-studio 0.47 or later, stock and unpatched.
+Yes. Burrow 0.16 needs blygger-studio 0.49.12 or later, stock and unpatched.
 Sign in with your browser, an API token from the studio's Client access page,
-or your studio password. On an older blyg everything syncs except posts with
-labelled links (`[[id | label]]`), which an older studio doesn't understand:
-they wait until the blyg is updated, and publishing one offers to write the
-links bare. See
-[Server requirements](server.md).
+or your studio password. On an older blyg nothing syncs: your posts stay on
+your Mac, and Burrow says the blyg needs updating, then sends everything once
+it is. See [Server requirements](server.md).
 
 ### Is my data safe? Where is it?
 
@@ -80,17 +78,15 @@ or the toolbar. See [Discard changes](writing.md#discard-changes).
 The link's **label**: `[[id | Gardens, not streams]]` reads "Gardens, not
 streams" on the published page. Edit it to rename the link. The `[[` picker
 writes it for you, from the post's heading or title. In a quote,
-`![[id | note]]`, it's a note only you see. Labels need blygger-studio 0.47;
-on an older blyg the picker writes bare links. See
+`![[id | note]]`, it's a note only you see. See
 [Labelled links](writing.md#labelled-links).
 
-### Why is a post waiting with "labelled links need studio 0.47"?
+### Why does Burrow say "Your blyg needs updating"?
 
-Your blyg runs a studio older than 0.47, which can't show labelled links, so
-Burrow holds that post (and only that post) until the blyg is updated.
-Publishing it offers ⏎ to write its links bare and publish now. Burrow's
-status bar has an **Update your blyg** link. See
-[Server requirements](server.md).
+Your blyg runs a studio older than 0.49.12 (or a patched Worker), whose API
+Burrow no longer speaks, so nothing syncs until the blyg is updated. Your posts
+and changes stay on your Mac and are sent once it is. Burrow's status bar has
+an **Update your blyg** link. See [Server requirements](server.md).
 
 ### Why won't my quote go in?
 
@@ -110,7 +106,7 @@ Studio shows.
 ### Do I need to sign in again after updating?
 
 Usually not. Only if your sign-in was made before your blyg ran
-blygger-studio 0.39, and you read on more than one Mac: studio 0.39 keeps read
+blygger-studio 0.39, and you read on more than one Mac: the studio keeps read
 state behind its own permission (`reading:state`), which an older sign-in
 doesn't have. Until you sign in again, posts you read are marked read on
 this Mac and wait to be sent; everything else syncs as usual, and Burrow says

@@ -97,34 +97,32 @@ span. Core therefore:
 - carries it along on every plain `save` (`tk::remap`: scopes are matched by
   instruction, in order; a scope whose output was rewritten entirely by hand
   loses it; malformed mid-typing text keeps the old keying until it parses);
-- pushes text and provenance together, `PATCH /api/items/:id {content_md,
-  provenance}` (studio 0.28+; `POST /api/items` carries it on create too),
+- pushes text and provenance together, `PATCH /api/items/:id {contentMd,
+  provenance, expectedRevision}` (`POST /api/items` carries it on create too),
   whenever the scope structure changed since `base_content` or the tracked
   provenance changed, else a plain PATCH. Missing source versions are filled
   from the store (upstream requires them). Provenance the server holds but this
   client never saw (another client, the Worker's own `/generate`) comes from
-  the precheck's `Item.provenance` and is remapped first;
-- falls back to extension 4 (`PUT/GET …/tk-provenance`) only when the server
-  refuses the `provenance` key with a strict 400 (pre-0.28, learned per
-  session); a 404 or 403 there means not recordable (plain PATCH, and
-  `LiveBackend::provenance_available()` turns false until a provenance push
-  lands); a 400 retries without sources, then clears it, saves the text and
-  emits an `Error` event;
+  `GET /api/items/:id`'s `provenance` at the revision being written (a
+  different revision is a `RevisionConflict`, re-read) and is remapped first;
+- a 400 on the provenance retries without sources, then clears it, saves the
+  text and emits an `Error` event;
 - forgets tracked provenance when the server's text replaces ours (pull,
   take-server, restore: the Worker clears its cache on restore).
 
 ## Connecting
 
-`api::verify_connection(url, token)` is the Connect sheet's check:
-`GET /api/items` with the token. It maps a transport failure to
-`ConnectError::Unreachable`, 401 to `WrongToken`, 404 to `MissingExtensions`
-(a server older than blygger-studio 0.9), a pre-0.9 answer to `Outdated`, and
-anything else to `Other`. A studio 0.9 or later but older than 0.47 connects:
-the sync engine's studio-floor check (`floor.rs`, `Api::studio_floor`: the
-manifest's `generator`, else a `/api/search` probe for `label`) then holds
-the outbox ops and publish of posts whose text has labelled links
-(`floor::has_labels`; publish answers `CoreError::ServerOutdated`), and
-everything else syncs.
+`api::verify_connection(url, token)` is the Connect sheet's check: `GET
+{blyg-url}/api/capabilities` with the credential, then `GET
+/api/items/summary` for the count. It maps a transport failure to
+`ConnectError::Unreachable`, 401 to `WrongToken` (or `WrongPassword`), a
+contract below 5 or no capabilities route to `Outdated` ("needs
+blygger-studio 0.49.12 or later"), a contract above 5 to `TooNew`, a 404 on
+the count to `MissingExtensions`, and anything else to `Other`. The sync
+engine makes the same contract check once a session before it reads or
+writes anything (`Engine::check_server`): too old marks the blyg outdated
+(`CoreEvent::ServerOutdated`, once) and every sync answers
+`CoreError::ServerOutdated` until it's updated; nothing is pushed or pulled.
 
 ## Extension keys
 
@@ -155,11 +153,8 @@ cd <worker dir> && npm install && npm run build   # studio 0.10+ builds its SPA
 BLYG_WORKER_DIR=<worker dir> scripts/e2e-local.sh
 ```
 
-The Worker is a stock blygger-studio 0.47 or later (set `BLYG_E2E_STOCK=1`; the
-few tests of the old fork's extensions then skip), or a fork carrying them. Against
-an older studio (checked at 0.46.1) the suite passes too, and
-`studio_floor_holds_labelled_posts_below_0_47` checks that only posts with
-labelled links wait there. The script derives a local-only wrangler config (no routes, no
+The Worker is a stock blygger-studio 0.49.12 or later (API contract 5; set
+`BLYG_E2E_STOCK=1`). The script derives a local-only wrangler config (no routes, no
 Workers AI binding, so nothing billed), random dev secrets including a
 throwaway `BLYG_OWNER_TOKEN`, and scratch D1/R2 state. It starts two instances
 (the second is a blyg to subscribe to) and stops only what it started. The
@@ -167,9 +162,11 @@ suite never calls `POST /api/items/:id/generate`. It covers bearer-token
 connect, reads, autosave, publish, withdraw, pin and restore, kind changes,
 uploads and their dedupe and removal, a 409 conflict from a direct API edit,
 offline queueing, subscriptions and reading, read-state sync between two
-clients, and AI provenance disclosure. Raw replies are checked against
-`openapi.json`. Last green: 44/44 (plus the markdown-notes extension's 2) against
-stock studio 0.46.1 (2026-10-13).
+clients, AI provenance disclosure, and contract 5's cursor walks (pruning only
+after `nextCursor: null`, a restart from the first page on `cursor-expired`)
+and revisions (`revision-conflict` never overwrites). Raw replies are checked
+against `openapi.json`. Last green: 61/61 (plus the markdown-notes extension's
+2) against stock studio 0.49.12 (2026-11-01).
 
 ## Reading list
 

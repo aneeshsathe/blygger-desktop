@@ -1,128 +1,114 @@
 # Server requirements
 
-Burrow talks to a blyg's **owner API**. Since studio 0.9, the upstream reference Worker
-(https://github.com/blygger/blygger-studio) documents that API as an OpenAPI contract
-(`openapi.json`; route guide in its `docs/api.md`). Burrow 0.13 and later need
-**blygger-studio 0.47 or later**; it is tested end to end against **studio 0.49.1** (and 0.48.0, without the 0.49 routes).
-Every route the app shares with upstream is checked against `openapi.json` in its tests
-(`crates/blyg-core/tests/fixtures/`).
-
-**Why 0.47.** Burrow's `[[` picker writes labelled links, `[[id | label]]`, and a studio
-older than 0.47 doesn't understand the label: published there, the link would come out
-as literal text or broken. On an older blyg (studio 0.9 or later) everything syncs as
-usual except **posts with labelled links**, which wait until the blyg is updated. It says
-so once, keeps a status-bar notice with an **Update your blyg** link, and shows the same
-in the About window. See [Labelled links on an older blyg](#labelled-links-on-an-older-blyg)
-and [Updating an older server](#updating-an-older-server).
+Burrow talks to a blyg's **owner API**: blygger-studio's private authoring and reading
+API (https://github.com/blygger/blygger-studio), documented as an OpenAPI contract
+(`openapi.json`; route guide in its `docs/api.md`). Burrow 0.16 and later speak
+**API contract 5.x only**, which means **blygger-studio 0.49.12 or later**. It is tested
+end to end against **studio 0.49.12** (contract 5.0.0), and every route it uses is
+checked against that `openapi.json` in its tests (`crates/blyg-core/tests/fixtures/`).
 
 **A stock blygger-studio is fully supported.** Nothing in this app needs a patched
-server: writing, publishing, versions, pins, subscriptions, mentions, settings, the
-reading list, read state across Macs, lineage and AI disclosure all run on upstream's
-own routes.
+server: writing, publishing, versions, pins, media, subscriptions, mentions, settings,
+the reading list, read state across Macs, hoppers, lineage, AI disclosure and the
+browsing log all run on upstream's own routes. The old Worker fork's extensions are no
+longer spoken; a fork must move to a stock studio.
 
-## How Burrow checks the version
+## How Burrow checks the contract
 
-When it connects, and once a session after that (then every minute, or on a manual sync,
-while the blyg is too old):
+When it connects, and before syncing (once a session, then on every sync while the
+blyg is too old):
 
-1. `GET {blyg-url}/blyg.json`, the public manifest. A studio's says
-   `generator: "blygger-studio/<version>"`; Burrow compares that version with 0.47.0. It
-   is the only manifest key that tells 0.46 from 0.47: both send `blyg: "0.4"`. Upstream
-   says the same: "Your running version is the `generator` in `blyg.json`".
-2. Another implementation's generator, a version Burrow can't read, or no manifest:
-   one `GET /api/search?limit=1`. Since 0.47 each hit carries a `label` (the text the
-   picker writes); a hit without one is an older studio.
-3. No hit to look at (an empty blyg), or no search route: Burrow can't tell, and
-   doesn't lock the blyg out on a guess. It is treated as new enough.
+1. `GET {blyg-url}/api/capabilities`, under the blyg's **mount** (a blyg served at
+   `https://blyg.example.com/blyg/` answers at `https://blyg.example.com/blyg/api/…`).
+   It is authenticated, so a refused credential stops the check (`401`), never passing
+   as "an older studio".
+2. Its `contractVersion` decides: **major 5** is spoken. Anything older, or no
+   capabilities route (a `404`: a studio before 0.49.7, or a Worker fork), is too old.
+   A newer major is a contract this Burrow doesn't know yet.
+3. A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
 
-A failed check (offline, a 5xx) decides nothing: changes wait for a verdict.
+**Too old:** nothing is pushed or pulled. Burrow says "Your blyg needs updating" once
+(on connecting, or when it starts), keeps a status-bar notice with an **Update your
+blyg** link while it lasts, and shows the same in the About window. Every local change
+stays on this Mac and syncs once the studio is updated; Burrow notices on the next sync
+(a manual sync checks at once). The connect sheet refuses such a blyg with "update your
+studio to 0.49.12 or later".
 
-## Labelled links on an older blyg
-
-Below 0.47 a post waits when its text holds a labelled link or quote, `[[id | label]]`
-or `![[id | label]]`, with a label that isn't empty and outside code (inline, fenced or
-indented code is text to the studio too). Burrow reads that with the studio's own
-grammar (`blyg_core::floor::has_labels`).
-
-- **What waits:** that post's edits (its creation and saves stay in the outbox) and its
-  publish. The list shows it with a tooltip on its pill, "Waiting: labelled links need
-  studio 0.47". Publishing it opens a sheet: "This post has labelled links, which your
-  blyg can't show until it's updated to studio 0.47." **⏎** writes them as bare `[[id]]`
-  / `![[id]]` (which every studio understands; code is left alone) and publishes.
-  **esc** leaves the post as it is.
-- **What goes:** every other post, as usual. Withdraw and pin of any post go too: they
-  don't send the text. So do restore, image uploads (into a post that hasn't reached
-  the blyg yet, unattached), forks (the blyg copies the source itself; the fork then
-  waits like any post if its text has labels), subscriptions, read marks and settings.
-- **Generated text:** a `[TK]` scope's output is part of the post and the studio renders
-  it like the rest, so a labelled link there holds the post too. So does a labelled
-  source in a `[TK]` instruction.
-- **Checked on every flush, from the text as it is now:** removing the labels releases
-  the post, and the next sync sends it. When the blyg is updated, Burrow notices within
-  a minute (or at once on a manual sync) and sends what waited.
-- **New links:** on such a blyg the `[[` picker and ⌘K write the bare form, so nothing new
-  waits.
+**Too new:** nothing syncs either, and Burrow asks to be updated.
 
 ## Signing in
 
-- **Sign in with the browser** (studio 0.28+, the default): Burrow registers itself as
-  an OAuth client of your blyg, opens the studio's consent page, and keeps the grant (a
-  one-hour access token, renewed with a rotating refresh token until the grant ends, at
-  most 30 days after your studio sign-in) in your Keychain. Signing out revokes it.
-- Or make an **API token** in Studio → More → Client access (REST API, every permission: read, draft,
-  publish, manage, and on studio 0.39+ `reading:state`; it lasts 30 days) and paste it.
-  A token missing a permission gets a 403 that names it.
-- On an older studio, or as a fallback, the **studio password**: Burrow signs in at
-  `{blyg-url}/studio/login` like the browser does, keeps the session cookie in memory
-  only (the password is in your Keychain), and signs in again when the session ends.
+- **Sign in with the browser** (the default): Burrow registers itself as an OAuth client
+  of your blyg, opens the studio's consent page, and keeps the grant (a one-hour access
+  token, renewed with a rotating refresh token until the grant ends, at most 30 days
+  after your studio sign-in) in your Keychain. Signing out revokes it. The protected
+  resource is `{blyg-url}/api` (under the mount). A grant made by an older Burrow for
+  the host-rooted `{origin}/api` keeps refreshing as it was issued; nothing is migrated.
+- Or make an **API token** in Studio → More → Client access (REST API, every permission:
+  read, draft, publish, manage and `reading:state`; it lasts 30 days) and paste it. A
+  token missing a permission gets a 403 that names it.
+- Or the **studio password**: Burrow signs in at `{blyg-url}/studio/login` like the
+  browser does, keeps the session cookie in memory only (the password is in your
+  Keychain), and signs in again when the session ends.
 
-A stock studio has no owner token in its environment: that was the old Worker fork's
-extension 1 (`BLYG_OWNER_TOKEN`). When a blyg stops taking a saved credential (a revoked
-or expired token, an ended sign-in, or such an owner token after the blyg moved to a
-stock studio), every call answers `401`. Burrow then stops syncing (no retries), keeps
-every queued change, and opens the sign-in sheet once, browser first. Signing in again
-sends what waited.
+When a blyg stops taking a saved credential (a revoked or expired token, an ended
+sign-in), every call answers `401`. Burrow then stops syncing (no retries), keeps every
+queued change, and opens the sign-in sheet once, browser first. Signing in again sends
+what waited.
 
-## What each studio version brings
+## Contract 5 essentials
 
-| Feature | Stock studio |
-|---|---|
-| Reading list | **0.40+:** `GET /api/reading/imported` (`listImportedReading`): every imported post with its Markdown, author, thumb, hoppers, read state, transclusions and lineage, keyset-paged by an opaque `cursor`, 100 a page. **0.9–0.39:** built from `GET /api/reading` (which posts there are) plus `GET /api/imports/{sub}/{id}` for each new or changed one, with thumbs and hoppers from `/api/signals` and each hopper; slower. |
-| Read state across Macs | **0.39+** (`reading:state` scope), unread too; see [Read-state sync](#read-state-sync). Older: stays on each Mac. |
-| Who a post replies to, or forks | **0.18+** sends it with each post (on 0.40+ with its `cited`). Older: Burrow fetches it from the author's blyg, a few posts per sync. |
-| AI disclosure for text generated **in Burrow** | **0.28+:** each TK scope's provenance goes with the text (`PATCH /api/items/:id {content_md, provenance}`, and on `POST /api/items`); on 0.41+ a remote source carries its `origin`. Older: before publishing such text Burrow says it will go out without the disclosure, and lets you cancel. Generation on the blyg's own server records its disclosure itself. |
-| Removing an image you pasted, then deleted | **0.26+.** Older: it stays on the server. |
-| Syncing every 15 s on change counters | **0.32+** (`GET /api/changes`). Older: read whole every 60 s. |
-| Which links in a post name a blyg item | **0.49+:** `POST /api/peek/links`. Older: Burrow probes the pages itself; see [Following links](#following-links-studio-049). |
-| Browsing history shared with the web Studio | **0.49+:** `GET/POST/DELETE /api/browse`. Older: kept on this Mac. |
+- **Where:** every call is `{blyg-url}/api/…`, the mount included; Burrow no longer looks
+  for `/api` at the host root.
+- **Resources are camelCase** (`contentMd`, `stubOf`, `subscriptionId`, `readVersion`,
+  `showResponsesDefault`, …). An item's `kind` stays `fragment` or `thread` after
+  withdrawal; its state is in `status`.
+- **Errors** are `{code, message, details?}`. Burrow shows `message`, and the entries of
+  `details.issues` (validation failures) as details. `code` decides two cases:
+  `revision-conflict` and `cursor-expired` (both `409`).
+- **Media URLs are absolute**, under the mount; new uploads are
+  `{blyg-url}/media/{id}/{sha256}.{ext}`. `POST /api/media` answers `200 {…, duplicate:
+  true}` for identical bytes on the same item.
 
-Below 0.47 the "Older" columns still apply to what syncs. Burrow 0.12 and earlier also
-showed a sheet listing a pre-0.40 studio's limits; 0.13's floor replaced it with the
-update notice.
+### Cursor pages
 
-### Shapes worth knowing (studio 0.40+)
+Every collection answers `{items, page: {limit, nextCursor}}`. `nextCursor: null` means
+the list is exhausted; the cursor is opaque and passed back verbatim. `limit` is 1–100
+(`GET /api/reading`: 1–50); `offset` and `total` are gone (an `offset` is a `400`).
 
-- `GET /api/reading/imported?limit=1..100&cursor=…` → `{items, next, limit}`. Rows are
-  camelCase (`subscriptionId`, `remoteId`, `withdrawn`, `l0`, `version`, `readVersion`,
-  `observedAt`, `contentMd`, `contentHtml` (sanitized), `author` `{name, url}`, `page`,
-  `sourceUrl`, `thumb`, `hoppers`, `transclusions`, `stubOf`, `forkedFrom`, `generated`),
-  newest `observedAt` first, with no drops or repeats across pages. A `limit` out of range
-  or a cursor the server didn't issue is `400`; `before` is not accepted. There are no
-  page-level flags: read state is advertised on `GET /api/reading` (`read_state`,
-  `read_state_clear`), and each row's lineage is the origin's own (null when none).
-- `GET /api/settings` carries many keys Burrow doesn't use (`custom_theme*`, `font`,
-  `feed_order`, `front_page`, `posts_path`, `links_*`, `setup`, `defaults`,
-  `feed_orders`, …). Burrow ignores them, and its `PATCH` sends only the keys it owns.
-- Mentions may have `relation: "source"` (0.41: generated text drew on your post).
-- Hopper routes take `~own` as the subscription with your own item's id (0.45).
-- `GET /api/reading` leaves withdrawn entries (yours and the blygs you read) out
-  unless `background=true`, which lists only them (0.49). Burrow reads this route
-  only on a studio without `/api/reading/imported` (before 0.40); there it also
-  walks `background=true`, so a withdrawn post stays a tombstone instead of
-  reading as gone. A server that ignores the parameter (it sends live entries
-  back) is remembered for the session and asked once.
+- **One coherent acquisition.** Burrow reads a list from its first page to
+  `nextCursor: null` before it acts on what's missing: **local rows are pruned only
+  after a walk reached its end.** A walk stopped early (the reading list's page budget,
+  20 pages of 100 a pull) is merged without pruning and read again next pull.
+- **`409 cursor-expired`** (the list changed between two pages): every page read so far
+  is thrown away and the walk starts again from the first page; a restarted page is
+  never appended to the old prefix. After three restarts the list is left as held for
+  this pull, and the next pull reads it again.
+- Burrow pages with `limit=100` (the reading flags read `GET /api/reading?limit=1`).
 
-## Following links (studio 0.49)
+### Revisions
+
+Every item carries `revision`. Every command on an item sends the revision it was based
+on, `expectedRevision`: saves (`PATCH /api/items/:id`), publish, withdraw, pin, restore,
+delete, generate, attaching media (`POST /api/media` with `itemId`) and detaching it
+(`DELETE /api/media/:id`). Burrow keeps each item's revision with what it last synced
+(store schema 15).
+
+On **`409 revision-conflict`** the item changed on the blyg since Burrow read it:
+
+- Burrow reads the item again and merges it with conflict detection. If the text moved
+  under a local edit, the post enters conflict (mine / theirs) and nothing is sent; you
+  choose.
+- If the text moved with no local edit, this Mac now shows the new text, and the command
+  is **not** repeated over it (a publish or delete never acts on text you haven't seen);
+  the command fails with "this post changed on your blyg since Burrow last read it".
+- If only the revision moved (an attachment or a setting made elsewhere), the command
+  goes once more with the fresh revision.
+
+Nothing is ever sent blind over a change Burrow didn't see. Burrow 0.15 and earlier read
+each item before every save to the same end; contract 5 makes that a single round-trip.
+
+## Following links
 
 The reader follows a quoted layer, a stub's target or an ordinary link that names
 a blyg item into the reader, and keeps a private log of the walk. The routes Burrow
@@ -134,8 +120,7 @@ at most 40 URLs a call; Burrow sends longer lists in chunks) answers
 studio looks at each page's §5.8 `<link rel="alternate" type="application/json">`
 item document and remembers the answer for a week.
 
-Where the route isn't served (a 404, or the `403` a studio before 0.49 gives a
-bearer for a POST route it doesn't know), Burrow remembers that for six hours and
+Where the route isn't served (a 404 or 403), Burrow remembers that for six hours and
 classifies the links itself, by the studio's own rules (`src/peek.ts`):
 
 1. a permalink of your own blyg (`{origin}f/{id}/` or `t/{id}/`) is that post;
@@ -151,82 +136,65 @@ network failure (offline, a 5xx) is asked again next time. No token ever goes to
 another host.
 
 **The browsing log.** One walk is a *trail* (8–64 characters, made by Burrow); each
-step names the step it was reached from (`parent_id`), so the log is a tree.
+step names the step it was reached from (`parentId`), so the log is a tree.
 
 | Call | Body / query | Success |
 |---|---|---|
-| `GET /api/browse` | `offset`, `limit` (≤ 100), `trail?` | `{items: [{id, at, trail, parent_id, origin, remote_id, version, via, title}], total, offset, limit}`, newest first |
-| `POST /api/browse` | `{trail, parent_id?, origin, remote_id, version?, via, title?}`; `via` is `start`, `stub`, `quote`, `link` or `back`; `title` ≤ 400 (the studio keeps 160) | `201 {id}` |
+| `GET /api/browse` | `cursor?`, `limit` (≤ 100), `trail?` | `{items: [{id, at, trail, parentId, origin, remoteId, version, via, title}], page}`, newest first |
+| `POST /api/browse` | `{trail, parentId?, origin, remoteId, version?, via, title?}`; `via` is `start`, `stub`, `quote`, `link` or `back`; `title` ≤ 400 (the studio keeps 160) | `201 {id}` |
 | `DELETE /api/browse` | `trail?` (none: everything) | `{ok: true}` |
 
-The writes need `reading:state`. Steps are best-effort: they are sent from a
-background thread, never through the outbox, and one that can't be sent (offline) is
-dropped. Where the studio has no log (a 404), Burrow keeps it in the local
-`browse_log` table (the same columns) and asks the studio again after six hours. A
-`403` (a credential without `reading:state`, or a studio before 0.49) keeps the log
-on this Mac until the next launch or sign-in. Clearing clears both. The log is never
-sent anywhere else and never appears on a public page.
+The history pane reads the log page by page from the newest step. The writes need
+`reading:state`. Steps are best-effort: they are sent from a background thread, never
+through the outbox, and one that can't be sent (offline) is dropped. Where the studio
+has no log (a 404), Burrow keeps it in the local `browse_log` table (the same columns)
+and asks the studio again after six hours. A `403` (a credential without
+`reading:state`) keeps the log on this Mac until the next launch or sign-in. Clearing
+clears both. The log is never sent anywhere else and never appears on a public page.
 
-`GET /api/peek?origin&id` (an item read from its own blyg, not stored) is in the API
-client for completeness; Burrow reads item documents itself (`public_item`).
+## The reading list
 
-## Legacy: the old Worker fork's extensions
+`GET /api/reading/imported?limit=1..100&cursor=…` (`listImportedReading`): every
+imported post with its Markdown, author, thumb, hoppers, read state, transclusions and
+lineage, newest `observedAt` first, with no drops or repeats across pages. Rows are
+camelCase (`subscriptionId`, `remoteId`, `withdrawn`, `l0`, `version`, `readVersion`,
+`observedAt`, `contentMd`, `contentHtml` (sanitized), `author` `{name, url}`, `page`,
+`sourceUrl`, `thumb`, `hoppers`, `transclusions`, `stubOf`, `forkedFrom`, `generated`);
+dates are ISO 8601 UTC or null. Each row's lineage is the origin's own (null when none).
 
-Before upstream had all of the above, the maintainer's Worker fork carried extensions.
-Burrow still speaks them where it is cheap, so a fork keeps working, but **a stock studio
-needs none of them**.
-
-| # | Extension | Now |
-|---|---|---|
-| 1 | Bearer-token owner auth with the Worker secret `BLYG_OWNER_TOKEN`. | Superseded by studio 0.28's OAuth and manual tokens. Such a token still goes in the "API token" field on a fork; a stock studio refuses it (`401`, see above). |
-| 2 | Owner JSON reads. | Upstream since 0.9; retired. |
-| 3 | `GET /api/reading/imported?limit&before=<cursor>` → `{items, next, read_state, read_state_clear, lineage}` with snake_case rows, at most 500 a page. | Upstream since 0.40 under the same path with its own shape (above). Burrow tells them apart on the walk's first page (which sends only `limit=100`, taken by both): a page with the fork's `read_state` flag is the fork's, and later pages use `before`; otherwise `cursor`. |
-| 4 | `PUT /api/items/:id/tk-provenance`. | Retired by studio 0.28's `provenance` on `PATCH /api/items/:id`; used only when a server refuses that field. |
-| 5 | Read-state sync. | Upstream since 0.39 (below), same write routes and bodies. |
-
-Upstream's scoped tokens may not reach a fork's own extension routes.
+`GET /api/reading` (the studio's own list, also your own posts) leaves withdrawn entries
+out unless `background=true`, which lists only them. Burrow reads it only for its
+read-state flags.
 
 ## Read-state sync
 
-Upstream since studio 0.39, read and unread (clearing read state leaves a tombstone
-against stale reads); before that it was the fork's extension 5, with the same write
-routes and bodies. The server keeps, per reading row, the highest version
-the owner has read. It never lowers that value on a read, so every read write is
-idempotent and replay-safe; only a clear resets it.
+The server keeps, per reading row, the highest version the owner has read. It never
+lowers that value on a read, so every read write is idempotent and replay-safe; only a
+clear ("mark unread") resets it, leaving a tombstone against stale reads.
 
-**Capability.**
-
-- Upstream: `GET /api/reading` answers with top-level `read_state: true` (and
-  `read_state_clear: true`), and each imported entry carries `readVersion` (an integer,
-  or `null` when unread) and `version`, the version held. On 0.40+ the same `readVersion`
-  is on every `GET /api/reading/imported` row; Burrow reads the flags from
-  `GET /api/reading?limit=1` once a session.
-- The fork: `GET /api/reading/imported` answers `{items, next, read_state: true}`, and
-  each item carries `read_version`.
-
-The app reads the read version only when `read_state` is `true`.
+**Capability.** `GET /api/reading` answers with top-level `readState: true` and
+`readStateClear: true`; Burrow reads them from `GET /api/reading?limit=1` once a session.
+Each imported row carries `readVersion` (an integer, or `null` when unread) and
+`version`, the version held. The app reads the read version only when `readState` is
+`true`.
 
 **Writes** (owner auth, like every `/api` call). **Scope:** these four writes
 (`markRead`, `markUnread`, `markReadBatch`, `markUnreadBatch`) need the bearer scope
-**`reading:state`**; `owner:manage` alone is refused with `403 insufficient_scope`. The
-app spells the name in one place, `READ_STATE_SCOPE` in
-`crates/blyg-core/src/api/oauth.rs`. The browser sign-in asks for it when the studio
-lists it in `scopes_supported` (an older studio would refuse the whole request for a
-scope it doesn't know). A client registered before (Burrow 0.10) is reused; the studio
-grants it the new scope.
+**`reading:state`**; `owner:manage` alone is refused with `403`. The app spells the name
+in one place, `READ_STATE_SCOPE` in `crates/blyg-core/src/api/oauth.rs`. The browser
+sign-in asks for it when the studio lists it in `scopes_supported`. A client registered
+before (Burrow 0.10) is reused; the studio grants it the new scope.
 
 | Call | Body | Success | Errors |
 |---|---|---|---|
-| `PUT /api/reading/:sub/:remoteId/read` | `{version: integer ≥ 1, read_at?}` | `200 {ok: true, stored: bool, read_version: n \| null}`. Stores `max(existing, version)`. For an unknown subscription or item, or a read older than the row's last clear: `stored: false`, nothing written. | `400` bad body, `401`, `403` |
-| `POST /api/reading/read` | `{items: [{sub, remote_id, version, read_at?}]}`, at most 500 | `200 {ok: true, received: n}`. The same max-merge per row. Unknown or stale rows are skipped. | `400` for any malformed entry or more than 500 entries (nothing is written), `401`, `403` |
-| `DELETE /api/reading/:sub/:remoteId/read` | none | `200 {ok: true, stored: false, read_version: null}`. Clears the row and records `unread_at` (the server's time). Idempotent. | `401`, `403` |
-| `POST /api/reading/unread` | `{items: [{sub, remote_id}]}`, at most 500 | `200 {ok: true, received: n}`, all or nothing. | `400`, `401`, `403` |
+| `PUT /api/reading/:sub/:remoteId/read` | `{version: integer ≥ 1, readAt?}` | `200 {ok: true, stored: bool, readVersion: n \| null}`. Stores `max(existing, version)`. For an unknown subscription or item, or a read older than the row's last clear: `stored: false`, nothing written. | `400` bad body, `401`, `403` |
+| `POST /api/reading/read` | `{items: [{sub, remoteId, version, readAt?}]}`, at most 500 | `200 {ok: true, received: n}`. The same max-merge per row. Unknown or stale rows are skipped. | `400` for any malformed entry or more than 500 entries (nothing is written), `401`, `403` |
+| `DELETE /api/reading/:sub/:remoteId/read` | none | `200 {ok: true, stored: false, readVersion: null}`. Clears the row and records when (the server's time). Idempotent. | `401`, `403` |
+| `POST /api/reading/unread` | `{items: [{sub, remoteId}]}`, at most 500 | `200 {ok: true, received: n}`, all or nothing. | `400`, `401`, `403` |
 
-`read_at` (ISO-8601 with an offset, e.g. `2026-10-06T12:00:00Z`) is sent only to a
-server that advertises `read_state_clear`: a read earlier than the row's `unread_at` is
-ignored, so a queued read can't undo a later "mark unread" from another device. Upstream
-bodies are strict, so the app **never** sends `read_at` to a server that doesn't
-advertise the flag. Upstream's `400` body is `{error, issues: [{path, message}]}`.
+`readAt` (ISO 8601 UTC, e.g. `2026-10-06T12:00:00Z`) is when the read was made on this
+Mac: a read earlier than the row's last clear is ignored, so a queued read can't undo a
+later "mark unread" from another device.
 
 Unknown rows are acknowledged, never `404`, because the app reads a `404` from these
 endpoints as "this server doesn't keep read state".
@@ -234,38 +202,30 @@ endpoints as "this server doesn't keep read state".
 **What the app does:**
 
 - Marking posts read or unread is instant and local: one post, a selection (⌘-click,
-  ⇧-click, ⌘A in the Reader's list; r / u, or the row's menu), or the open post. On a
-  server with the capability it also queues one op per reading row (duplicates of the
-  same post, too) in the outbox, so marks survive going offline and restarting. A row has
-  at most one waiting op, and the last action wins: an unread replaces a waiting read and
-  the other way round; repeated reads coalesce to the highest version.
+  ⇧-click, ⌘A in the Reader's list; r / u, or the row's menu), or the open post. It also
+  queues one op per reading row (duplicates of the same post, too) in the outbox, so
+  marks survive going offline and restarting. A row has at most one waiting op, and the
+  last action wins: an unread replaces a waiting read and the other way round; repeated
+  reads coalesce to the highest version. Ops queued by an older Burrow (snake_case
+  bodies) are still read and sent in the new shape.
 - Several waiting ops go as one `POST /api/reading/read` or `/unread` (500 per call), so
   marking a whole list is one write against the owner budget; a single mark is one
   `PUT` or `DELETE`.
-- A read carries `read_at`: when it was marked on this Mac, kept with the row until the
-  server confirms it (reads from before this was tracked count as the epoch, so any clear
-  wins over them). A `PUT` the server answers `stored: false` because of a later clear
-  takes the server's state: the row is unread here too.
+- A `PUT` the server answers `stored: false` because of a later clear takes the server's
+  state: the row is unread here too.
 - A pull sets the local value to `max(local, server)`, except that a row marked unread
-  here ignores server read versions at or below the one it was read at (its *floor*). On
-  a server with `read_state_clear`, a row this Mac had confirmed but the server now
-  reports lower or unread was cleared on another device, and it becomes unread here; a
-  row read here that the server hasn't got is queued again (with its `read_at`).
-- **Unread without `read_state_clear`** (the fork's extension 5) stays on
-  this Mac: no unread op is sent, and the floor keeps the server's old read version from
-  re-marking the row read on every pull. Reading the post again ends it. If the server
-  later gains `read_state_clear`, those local unreads are sent then.
+  here ignores server read versions at or below the one it was read at (its *floor*). A
+  row this Mac had confirmed but the server now reports lower or unread was cleared on
+  another device, and it becomes unread here; a row read here that the server hasn't
+  got is queued again (with its `readAt`).
 - The first time a database sees the capability, the app batch-uploads every read version
   it holds (500 per call) and records that in its `meta` table.
-- A `403` on a write (a sign-in or token without `reading:state`, such as one made before
-  studio 0.39) holds read state for the rest of the session: the ops stay queued (nothing
-  is dropped), new marks keep queueing, and the rest of the outbox syncs as usual. The app
-  says so once, with the server's reason: sign in with the browser again (or make a new
-  token with `reading:state`). It doesn't retry until the next sign-in or launch, which
-  sends what waited.
-- **Without the capability**, read state stays on this Mac. The app makes no requests to
-  these endpoints and shows no errors. A `404` from them turns sync off and drops anything
-  queued.
+- A `403` on a write (a sign-in or token without `reading:state`) holds read state for
+  the rest of the session: the ops stay queued (nothing is dropped), new marks keep
+  queueing, and the rest of the outbox syncs as usual. The app says so once, with the
+  server's reason: sign in with the browser again (or make a new token with
+  `reading:state`). It doesn't retry until the next sign-in or launch, which sends what
+  waited.
 
 **Privacy.** Read state is owner-only. No public page, feed, `blyg.json`, item document
 or export reads it. It holds only numbers (and the time of a clear) keyed by subscription
@@ -280,95 +240,82 @@ which Burrow's sign-in already asks for.
 
 | Call | Body | Success |
 |---|---|---|
-| `GET /api/hoppers` | `offset`, `limit` | `{items: [Hopper], total, offset, limit}`, created first |
-| `GET /api/hoppers/{id}` | | `{hopper, memberships: [{subscription_id, remote_id, added_at}], items, total, source_count}` |
+| `GET /api/hoppers` | `cursor?`, `limit` | `{items: [Hopper], page}`, created first |
+| `GET /api/hoppers/{id}/memberships` | `cursor?`, `limit` | `{items: [{hopperId, subscriptionId, remoteId, addedAt, item}], page}` |
 | `POST /api/hoppers` | `{name}` | `201 Hopper` |
 | `PATCH /api/hoppers/{id}` | `{name?, public?, description?}` (description ≤ 280; empty clears it) | `Hopper` |
 | `DELETE /api/hoppers/{id}` | | `{ok: true}` |
 | `PUT /api/hoppers/{id}/items/{sub}/{remoteId}` | | `{ok: true}` |
 | `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}` | | `{ok: true}` |
 
-`Hopper` is `{id, name, slug, public, slug_frozen, description, created}`. Your own
-posts are members with the subscription `~own` and the item's id (0.45); the studio
-takes any of your items there, and a public hopper's page shows only the published
-ones. A rename recomputes the slug until the hopper is first made public, which
-freezes it. A public hopper has a page at `{mount}/h/{slug}/`, listed under
-Collections on the homepage and archive and never in the feed.
+`Hopper` is `{id, name, slug, public, slugFrozen, description, created}`. Your own posts
+are members with the subscription `~own` and the item's id; the studio takes any of
+your items there, and a public hopper's page shows only the published ones. A rename
+recomputes the slug until the hopper is first made public, which freezes it. A public
+hopper has a page at `{mount}/h/{slug}/`, listed under Collections on the homepage and
+archive and never in the feed.
 
 The list and each hopper's memberships are read on the first sync and whenever the
-`hoppers` counter of `GET /api/changes` moves (one request per hopper). Adding and
+`hoppers` counter of `GET /api/changes` moves (one walk per hopper). Adding and
 removing posts go through the outbox, so they wait while offline; a `404` drops the
 change, and a `403` (a credential without `owner:manage`) holds the hopper changes
 until the next launch or sign-in without blocking the rest. Making, renaming,
 publishing and deleting a hopper are direct calls that need the blyg to answer.
 
-## Also used when present
+## Other shapes worth knowing
 
-- `POST /api/media` answering `200 {…, duplicate: true}` for identical bytes on
-  the same item. Not upstream (upstream issue #7).
-- `DELETE /api/media/:id` (removes an upload) is upstream since studio 0.16,
-  answering `{ok, outcome: "deleted" | "detached"}`. On an older server it 404s, and
-  an abandoned paste leaves its file there.
-
-## What the app uses from upstream
-
-These follow `openapi.json` exactly. The differences from the pre-0.9 API that
-mattered here:
-
-- Collections answer `{items, total, offset, limit}`; the app pages with
-  `offset`/`limit` (100 a page).
-- Items are created with `POST /api/items {mode: "blank" | "fork", …}`, which
-  answers `201` with the item. `POST /api/fork` is gone.
-- Edits are `PATCH /api/items/:id {content_md?, kind?, responses?}`. A draft's kind
-  changes in place until its first publish, so changing it no longer makes a new
-  draft. Unknown fields are a 400.
-- Pins are `PUT /api/items/:id/versions/:version/pin`, with no body.
+- Items are created with `POST /api/items {mode: "blank" | "fork", …}`, which answers
+  `201` with the item (its first `revision`). Edits are `PATCH /api/items/:id
+  {contentMd?, kind?, responses?, highlight?, provenance?, expectedRevision}`; unknown
+  fields are a `400`. A draft's kind changes in place until its first publish.
+- Each TK scope's provenance (AI disclosure for text generated **in Burrow**) goes with
+  the text, on `POST /api/items` and `PATCH /api/items/:id`. Generation on the blyg's own
+  server (`POST /api/items/:id/generate {scope, expectedRevision}`) records its
+  disclosure itself.
+- Pins are `PUT /api/items/:id/versions/:version/pin {expectedRevision}`. An item's
+  version history is `GET /api/items/:id/versions`.
 - An item's `responses` is `"default" | "show" | "hide"`. The app works out whether a
-  page shows responses from that and settings' `show_responses_default`.
+  page shows responses from that and the settings' `showResponsesDefault`.
 - Items carry no permalink. The app uses `{blyg-url}/f/{id}` (`t/` for threads);
   `blyg-url` includes any mount path.
-- Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention
-  hiding and subscription edits are `PATCH` too.
-- Errors are `{error, errors?, issues?}`. The app shows `issues` (validation
-  failures) as details.
+- `GET /api/settings` carries many keys Burrow doesn't use (`customTheme*`, `font`,
+  `feedOrder`, `frontPage`, `postsPath`, `links*`, `setup`, `defaults`, `feedOrders`, …).
+  Burrow ignores them, and its `PATCH` sends only the keys it owns.
+- Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention hiding
+  and subscription edits are `PATCH` too.
+- Mentions may have `relation: "source"` (generated text drew on your post).
+- `DELETE /api/media/:id` removes an upload, answering `{ok, outcome: "deleted" |
+  "detached", revision?}`. It takes a JSON body: `{expectedRevision}` for an attachment
+  (the post's revision), `{}` for a loose upload. Burrow remembers which post each
+  attachment it made belongs to, so it can remove it at that post's revision.
 
 ## Degrading gracefully
 
 - **A saved credential the blyg refuses (`401`):** sync stops (no retries), queued
   changes stay queued, and the sign-in sheet opens once, browser first.
-- **Older than studio 0.47:** Burrow says "Your blyg needs updating" once (on
-  connecting, or when Burrow starts), with a status-bar notice and an **Update your
-  blyg** link while it lasts, and the same in the About window. Posts with labelled
-  links wait in the outbox; everything else syncs. See
-  [Labelled links on an older blyg](#labelled-links-on-an-older-blyg).
-- **A server older than studio 0.9:** the connect sheet refuses it, and a blyg already
-  connected isn't read from either: on such a server a new route's 404 would read as
-  "deleted" and duplicate your posts. Burrow recognises it by `GET /api/items`
-  answering without `total` (or 404).
-- **Studio older than 0.40:** the reading list is built from upstream's older routes
-  (see above).
-- **Older than studio 0.28:** before publishing text that was generated
-  in the app, the app warns that it will go out **without** AI disclosure, and lets you cancel.
-- **Studio 0.32+ (`GET /api/changes`):** each sync first reads the change counters and
-  fetches only the collections whose domains moved (everything, every 10 minutes), so the
-  app syncs every 15 s instead of every 60 s. An older server is read whole every 60 s.
-- **Work budgets (studio 0.28+):** a `429` keeps the change queued and retries after
-  `Retry-After`; the app says "The blyg asked Burrow to slow down". Autosave pushes for
-  one post are at least 3 s apart, about 20 writes a minute at most.
-- **Older than studio 0.39:** read state stays on each Mac.
+- **Older than studio 0.49.12 (a contract before 5):** nothing syncs; see
+  [How Burrow checks the contract](#how-burrow-checks-the-contract).
+- **Change counters (`GET /api/changes`):** each sync first reads the counters and
+  fetches only the collections whose domains moved (everything, every 10 minutes), so
+  the app syncs every 15 s.
+- **Work budgets:** a `429` keeps the change queued and retries after `Retry-After`; the
+  app says "The blyg asked Burrow to slow down". Autosave pushes for one post are at
+  least 3 s apart, about 20 writes a minute at most.
+- **A list that keeps changing while it's read** (`cursor-expired` three times running):
+  left as held for this pull, read again on the next.
 
 ## Updating an older server
 
 Follow upstream's
 [Releases and upgrading](https://github.com/blygger/blygger-studio#releases-and-upgrading):
-read the changelog entries between your version and 0.47 (or later), each with its
+read the changelog entries between your version and 0.49.12 (or later), each with its
 **Migrations:** line. Coming from 0.8 or earlier, start with
 [Upgrading to Blygger Studio 0.11](https://github.com/blygger/blygger-studio/blob/main/docs/upgrading-to-0.11.md),
 which covers source and Worker-archive installs, the database migration, and
-path-mounted blygs. A fork that carries the legacy extensions doesn't need them: a
-stock studio is fully supported. Once the blyg is updated, Burrow notices within a
-minute (or at once on a manual sync) and sends what waited; there's nothing else to do
-in the app.
+path-mounted blygs. A Worker fork that carried the old extensions moves to a stock
+studio; Burrow needs none of them. Once the blyg is updated, Burrow notices on its next
+sync (or at once on a manual sync) and sends what waited; there's nothing else to do in
+the app.
 
 ## Optional: server-side generation with Gemma 4
 
@@ -379,6 +326,5 @@ uses whatever the Worker is configured to use.
 ## Status
 
 Upstream's plan (its `docs/migration.md` §3) was for this app to run on the documented
-API alone, with OAuth in place of extension 1. As of studio 0.40 it does: reading rows
-(#11, #61), lineage in them (#12) and read state are upstream. Only the media
-`duplicate` reply (#7) is still a fork's.
+API alone, with OAuth in place of the fork's owner token. As of contract 5 it does,
+entirely: Burrow 0.16 speaks nothing else.
