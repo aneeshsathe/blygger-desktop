@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **cross-post can post to Bluesky and Farcaster too.** The bundled cross-post extension gains two macros, **Cross-post to Bluesky…** and **Cross-post to Farcaster…**, each run in the browser pane where you signed in by hand, with the same two confirmation sheets as Substack Notes. Each site is its own grant (`extension-allow = cross-post browser.automate:https://bsky.app`, `…:https://farcaster.xyz`), so the others are never offered until you allow them. The note fits each site's own limit: 300 characters on Bluesky (`bluesky-max-chars`) and 320 bytes of UTF-8 on Farcaster (`farcaster-max-bytes`, 1024 for a long cast). No API key, app password or signer is involved. Both recipes are `tested = "unverified"` until someone runs them against the live sites. A cross-post is a copy and is not yet recorded on your blyg: the protocol's `syndication` member (blygger-spec 0.4 §16.14, decision #98) is where it will go once your blyg can store it.
+
 ## [0.20.0] - 2026-11-07
 
 ### Added
