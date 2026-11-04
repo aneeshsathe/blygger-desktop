@@ -53,6 +53,18 @@ pub const CONTRACT_MAJOR: u64 = 5;
 /// The oldest blygger-studio Burrow syncs with, for messages.
 pub const MIN_STUDIO: &str = "0.49.12";
 
+/// Whether a studio's `contractVersion` takes `wholeBlyg` on `POST
+/// /api/subscriptions` (5.1.0, studio 0.50.0). Its body is strict, so a
+/// 5.0 studio answers 400 to the key.
+pub fn takes_whole_blyg(version: &str) -> bool {
+    let mut parts = version.trim().split('.').map(|p| p.parse::<u64>().ok());
+    match (parts.next().flatten(), parts.next().flatten()) {
+        (Some(CONTRACT_MAJOR), Some(minor)) => minor >= 1,
+        (Some(major), _) => major > CONTRACT_MAJOR,
+        _ => false,
+    }
+}
+
 /// What Burrow makes of a studio's `contractVersion`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Contract {
@@ -92,6 +104,9 @@ pub struct Api {
     session: Mutex<Option<String>>,
     /// What items resolve against, from settings as last read or written.
     site: Mutex<Option<Site>>,
+    /// Whether `POST /api/subscriptions` takes `wholeBlyg` (contract 5.1+),
+    /// once the capabilities were read.
+    whole_blyg: Mutex<Option<bool>>,
 }
 
 /// The settings an item's derived fields depend on.
@@ -152,6 +167,7 @@ impl Api {
             cred: cred.into(),
             session: Mutex::new(None),
             site: Mutex::new(None),
+            whole_blyg: Mutex::new(None),
         }
     }
 
@@ -733,8 +749,37 @@ impl Api {
         Ok(subs.into_iter().map(Subscription::from).collect())
     }
 
+    /// Whether this studio takes `wholeBlyg`, read once from its
+    /// capabilities. A failed read answers false and is tried again next time.
+    fn whole_blyg(&self) -> bool {
+        if let Some(w) = *self.whole_blyg.lock().unwrap() {
+            return w;
+        }
+        match self.contract_version() {
+            Ok(v) => {
+                let w = v.as_deref().is_some_and(takes_whole_blyg);
+                *self.whole_blyg.lock().unwrap() = Some(w);
+                w
+            }
+            Err(_) => false,
+        }
+    }
+
+    /// `{url}` for `POST /api/subscriptions`, with `wholeBlyg: true` where
+    /// the studio takes it. A URL that names one of a blyg's public hoppers
+    /// otherwise proposes (and confirms) a hopper subscription, which Burrow
+    /// doesn't model: it follows the whole blyg instead (spec 0.4 §16.12
+    /// rule 4). The key changes nothing for any other URL.
+    fn subscribe_body(&self, url: &str) -> Value {
+        let mut body = json!({ "url": url });
+        if self.whole_blyg() {
+            body["wholeBlyg"] = json!(true);
+        }
+        body
+    }
+
     pub fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
-        let v = self.call("POST", "/api/subscriptions", Some(json!({ "url": url })))?;
+        let v = self.call("POST", "/api/subscriptions", Some(self.subscribe_body(url)))?;
         let s = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
         let kind = if s("kind").as_deref() == Some("rss") {
             SubscriptionKind::Rss
@@ -757,7 +802,8 @@ impl Api {
 
     /// `POST /api/subscriptions {url, confirm:true, title?}` → new subscription id.
     pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<String> {
-        let mut body = json!({ "url": url, "confirm": true });
+        let mut body = self.subscribe_body(url);
+        body["confirm"] = json!(true);
         if let Some(t) = title {
             body["title"] = json!(t);
         }
@@ -1596,6 +1642,16 @@ mod tests {
         assert_eq!(contract(Some("4.0.0")), Contract::TooOld);
         assert_eq!(contract(Some("1.0.0")), Contract::TooOld);
         assert_eq!(contract(None), Contract::TooOld, "no capabilities: too old");
+        assert!(
+            !takes_whole_blyg("5.0.0"),
+            "studio 0.49: strict body, no key"
+        );
+        assert!(takes_whole_blyg("5.1.0"));
+        assert!(takes_whole_blyg(" 5.2.0 "));
+        assert!(takes_whole_blyg("6.0.0"));
+        assert!(!takes_whole_blyg("5"));
+        assert!(!takes_whole_blyg("4.9.0"));
+        assert!(!takes_whole_blyg("next"));
         assert_eq!(contract(Some("6.0.0")), Contract::TooNew("6.0.0".into()));
         // Not a version: not something this Burrow knows how to speak.
         assert_eq!(contract(Some("next")), Contract::TooNew("next".into()));

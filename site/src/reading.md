@@ -3,6 +3,8 @@
 ⌘R opens reading: the posts from the blygs and feeds your blyg follows. ⌘R
 again goes back to your own posts. Subscriptions (⇧⌘S, or Blyg ›
 Subscribe…) are kept on your blyg, so every studio sees the same list.
+Pasting the address of one of a blyg's public hoppers (its page or its feed)
+follows the whole blyg.
 
 ## The stream
 
