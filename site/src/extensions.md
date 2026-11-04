@@ -67,10 +67,12 @@ extension-setting = markdown-notes poll-ms=5000
 
 ## cross-post
 
-cross-post puts a post you've published on Substack Notes too: its opening
-paragraph and the link back to your blyg. It runs in Burrow's browser pane,
-where you're signed in to Substack, and it never posts without you clicking
-Post.
+cross-post puts a post you've published on Substack Notes, Bluesky or
+Farcaster too: its opening paragraph and the link back to your blyg. It runs
+in Burrow's browser pane, where you're signed in to each site yourself, and it
+never posts without you clicking Post (or Cast). It needs no API key, app
+password or Farcaster signer: it fills in the same composer you would use by
+hand.
 
 ### Turning it on
 
@@ -79,31 +81,41 @@ extension = cross-post
 extension-allow = cross-post items.read
 extension-allow = cross-post ui
 extension-allow = cross-post browser.automate:https://substack.com
+extension-allow = cross-post browser.automate:https://bsky.app
+extension-allow = cross-post browser.automate:https://farcaster.xyz
 ```
 
-The last line is the one that matters: it lets cross-post fill in, and when
-you confirm, click Post on substack.com, signed in as you. It names that one
-site exactly, so it can't act anywhere else. If you leave the `extension-allow`
-lines out, Burrow asks for them the first time it starts cross-post.
+The `browser.automate` lines are the ones that matter. Each lets cross-post
+fill in, and when you confirm, click Post on that one site, signed in as you.
+Each names its site exactly, so it can't act anywhere else, and each is
+granted on its own: keep only the lines for the sites you post to, and the
+others are never offered. If you leave the `extension-allow` lines out, Burrow
+asks for them the first time it starts cross-post.
 
-Sign in to Substack **once, by hand**, in the browser pane: press ⇧⌘P and
-pick **Open Substack Notes** (or View › Open Browser… and type
-`substack.com`). The pane remembers it (on macOS 14 or
-later; on older macOS, sign in before each run). cross-post never
-signs in for you, never sees your sign-in, and stops with "Sign in to Substack
-in this pane" if you're signed out.
+Sign in to each site **once, by hand**, in the browser pane: press ⇧⌘P and
+pick **Open Substack Notes**, **Open Bluesky** or **Open Farcaster** (or View ›
+Open Browser… and type the address). The pane remembers it (on macOS 14 or
+later; on older macOS, sign in before each run). cross-post never signs in
+for you and never sees your sign-in. It stops with "Sign in to Substack Notes
+in this pane" (or Bluesky) if you're signed out. On Farcaster, a signed-out
+run stops at its second step because the composer never opens, and nothing is
+cast.
 
 ### Cross-posting
 
 With a published post open, press ⇧⌘P and pick **Cross-post to Substack
-Notes…**. Every run shows **two confirmation sheets**, and no setting skips
-them:
+Notes…**, **Cross-post to Bluesky…** or **Cross-post to Farcaster…**. Every
+run shows **two confirmation sheets**, and no setting skips them:
 
 1. **The text.** You see the note it will post, and can edit it. Continue
-   opens your Substack home feed in the pane, clicks "What's on your mind?",
-   and puts the text in the note composer that opens.
-2. **Post this to Substack Notes?** You see what the notes box now holds. Post
-   clicks Substack's Post button; you can also click Post yourself, or cancel.
+   opens the site's composer in the pane and puts the text in it. On Substack
+   that means your home feed and "What's on your mind?". On Bluesky it is
+   Bluesky's own compose link, `bsky.app/intent/compose`. On Farcaster it is
+   the web client's compose link, `farcaster.xyz/~/compose`. The text always
+   goes in by pasting, never in the address.
+2. **Post this to the site?** You see what the composer now holds. Post
+   clicks the site's Post button (Cast, on Farcaster); you can also click it
+   yourself, or cancel.
 
 The run uses the same side pane as a link you click, with the sheets beside
 it so you can see the page. You can fold the pane (esc, ×, or ⇧⌘B) while it
@@ -116,35 +128,56 @@ yourself, or the run stopped with a problem).
 
 The note is the post's first paragraph of prose (headings, quotes, images and
 code are skipped, and Markdown marks are taken out), a blank line, and the
-link. The whole note is at most 280 characters, the link included, counted as
-a reader counts them (an emoji is one, and is never cut in half); the
-paragraph is cut on a word boundary with "…" to fit. Two settings change it:
+link. The paragraph is cut on a word boundary with "…" so that the whole note,
+link included, fits the site's limit:
+
+| Site | Limit | Counted as | Setting |
+|---|---|---|---|
+| Substack Notes | 280 | characters as a reader counts them (an emoji is one, and is never cut in half) | `max-chars` |
+| Bluesky | 300 | characters as a reader counts them, as Bluesky does | `bluesky-max-chars` |
+| Farcaster | 320 | bytes of UTF-8, as Farcaster does (an "é" is two, an emoji up to 25); never cut inside a character | `farcaster-max-bytes` |
+
+Settings change it. The template is shared by all three sites:
 
 ```text
 # the note: {{excerpt}}, {{title}} and {{permalink}}; \n is a line break
 extension-setting = cross-post template={{title}}\n\n{{excerpt}}\n\n{{permalink}}
-# the longest note, link included (default 280)
+# the longest Substack note, link included (default 280)
 extension-setting = cross-post max-chars=500
+# the longest Bluesky post (default 300, Bluesky's own limit)
+extension-setting = cross-post bluesky-max-chars=300
+# the longest cast, in bytes (default 320; 1024 if your account can send long casts)
+extension-setting = cross-post farcaster-max-bytes=1024
 ```
 
 ### Before you rely on it
 
-- **The recipe was last checked on 2026-10-09** (`tested = "2026-10-09"`):
-  it opens Substack's home feed, clicks "What's on your mind?", pastes into
-  the composer that opens, and clicks its Post button. Substack can change its
-  page at any time. When a step doesn't find what it looks for, the run stops, says
-  which step, and **nothing is posted**. `blygger +list-extensions` shows each
-  macro's `tested` value. The extension's `macro.log` (in Burrow's data
-  folder, under `extensions/cross-post/`) then lists the text boxes and
-  buttons the page did have (tags, classes, labels such as "Post"; never the
-  page's text or yours), so the recipe can be fixed. Start Burrow with
-  `BLYGGER_MACRO_TRACE=1` to log that after every step.
+- **The Substack recipe was last checked on 2026-10-09** (`tested =
+  "2026-10-09"`): it opens Substack's home feed, clicks "What's on your
+  mind?", pastes into the composer that opens, and clicks its Post button.
+- **The Bluesky and Farcaster recipes haven't been run against the live sites
+  yet** (`tested = "unverified"`). Bluesky's compose link is documented by
+  Bluesky, and its selectors come from the markup of Bluesky's open-source web
+  app. Farcaster's come from its web client's compose dialog. Farcaster
+  changed hands in October 2026 and is being renamed, so its web client's
+  address or buttons may change.
+- Any site can change its page at any time. When a step doesn't find what it
+  looks for, the run stops, says which step, and **nothing is posted**.
+  `blygger +list-extensions` shows each macro's `tested` value. The
+  extension's `macro.log` (in Burrow's data folder, under
+  `extensions/cross-post/`) then lists the text boxes and buttons the page did
+  have (tags, classes, labels such as "Post"; never the page's text or yours),
+  so the recipe can be fixed. Start Burrow with `BLYGGER_MACRO_TRACE=1` to log
+  that after every step.
 - **One post per click.** cross-post posts once each time you confirm. It
   never posts on a schedule, in the background, or again by itself, and it
-  waits at least 60 seconds between two runs.
-- **It's your account.** cross-post acts as you on Substack, the same as if
-  you typed and clicked yourself. If Substack limits or acts on an account
-  for automated posting, that's your risk; check its terms.
+  waits at least 60 seconds between two runs on the same site.
+- **A cross-post is a copy, not a link that follows the post.** Publishing a
+  new version or withdrawing the post on your blyg leaves the copy on Substack,
+  Bluesky or Farcaster as it was. Edit or delete it there by hand.
+- **It's your account.** cross-post acts as you on each site, the same as if
+  you typed and clicked yourself. If a site limits or acts on an account for
+  automated posting, that's your risk; check its terms.
 
 ## reading-time and inspect
 
