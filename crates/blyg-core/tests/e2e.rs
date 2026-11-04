@@ -133,9 +133,19 @@ fn public_json(url: &str) -> Value {
 /// Owner call made directly (as the web studio or another device would),
 /// with the token or a studio session. `/api` is host-rooted.
 fn owner(method: &str, base: &str, path: &str, body: Option<Value>) -> (u16, Value) {
-    let e = e2e();
+    owner_as(&e2e().cred, method, base, path, body)
+}
+
+/// [`owner`] with a given credential (`cred_b()` for `url_b()`).
+fn owner_as(
+    cred: &Credential,
+    method: &str,
+    base: &str,
+    path: &str,
+    body: Option<Value>,
+) -> (u16, Value) {
     let req = agent().request(method, &format!("{base}{path}"));
-    let req = match &e.cred {
+    let req = match cred {
         Credential::Token(t) => req.set("authorization", &format!("Bearer {t}")),
         Credential::OAuth(s) => req.set(
             "authorization",
@@ -4322,6 +4332,92 @@ impl Drop for DropHopper<'_> {
     fn drop(&mut self) {
         let _ = self.0.delete_hopper(&self.1);
     }
+}
+
+/// Puts a blyg's `hopperFeeds` setting back as it was.
+struct HopperFeeds(Credential, String, Value);
+
+impl Drop for HopperFeeds {
+    fn drop(&mut self) {
+        let body = json!({ "hopperFeeds": self.2 });
+        let _ = owner_as(&self.0, "PATCH", &self.1, "/api/settings", Some(body));
+    }
+}
+
+/// Turn `hopperFeeds` on at `base`, putting it back on drop.
+fn hopper_feeds_on(cred: Credential, base: &str) -> HopperFeeds {
+    let (st, v) = owner_as(&cred, "GET", base, "/api/settings", None);
+    assert_eq!(st, 200, "settings: {v}");
+    let was = v.get("hopperFeeds").cloned().unwrap_or(json!(false));
+    let body = json!({ "hopperFeeds": true });
+    let (st, v) = owner_as(&cred, "PATCH", base, "/api/settings", Some(body));
+    assert_eq!(st, 200, "hopperFeeds on: {v}");
+    HopperFeeds(cred, base.to_string(), was)
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_public_hoppers_address_follows_the_whole_blyg() {
+    let e = e2e();
+    let (_, caps) = owner("GET", &e.url, "/api/capabilities", None);
+    let version = caps["contractVersion"].as_str().unwrap_or("").to_string();
+    if !api::takes_whole_blyg(&version) {
+        eprintln!("skipped: contract {version} has no hopper subscriptions (before studio 0.50)");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    // `b` lists its public hoppers; `a` resolves them (studio 0.50 and 0.51
+    // only with the setting on; always from ROADMAP row 100).
+    let _b_feeds = hopper_feeds_on(cred_b(), &src_url);
+    let _a_feeds = hopper_feeds_on(e.cred.clone(), &e.url);
+    let t = tag("whole-blyg");
+    let h = source.create_hopper(&format!("{t} picks")).unwrap();
+    let _gone = DropHopper(&source, h.id.clone());
+    let edit = HopperEdit {
+        public: Some(true),
+        ..Default::default()
+    };
+    let h = source.update_hopper(&h.id, &edit).unwrap();
+    let page = format!("{src_url}/h/{}/", h.slug.as_deref().expect("a public slug"));
+
+    // Without the key, the studio proposes a hopper subscription.
+    let (st, raw) = owner(
+        "POST",
+        &e.url,
+        "/api/subscriptions",
+        Some(json!({ "url": page })),
+    );
+    assert_eq!(st, 200, "{raw}");
+    assert_eq!(
+        raw["kind"], "hopper",
+        "the hopper's page resolves as a hopper: {raw}"
+    );
+
+    // Burrow previews and follows the whole blyg.
+    let p = me.preview_subscription(&page).unwrap();
+    assert_eq!(p.kind, SubscriptionKind::Blyg);
+    assert!(
+        !p.title.contains(&t),
+        "the blyg's title, not the hopper's: {}",
+        p.title
+    );
+    let sub = me.subscribe(&page, None).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    assert_eq!(sub.kind, SubscriptionKind::Blyg);
+    let (st, v) = owner(
+        "GET",
+        &e.url,
+        &format!("/api/subscriptions/{}", sub.id),
+        None,
+    );
+    assert_eq!(st, 200, "{v}");
+    assert!(
+        v["hopperFeedUrl"].is_null(),
+        "a whole-blyg subscription: {v}"
+    );
 }
 
 fn held_hopper(b: &LiveBackend, id: &str) -> Option<Hopper> {

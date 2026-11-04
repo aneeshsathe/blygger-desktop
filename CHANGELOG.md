@@ -15,6 +15,12 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-11-03
+
+### Fixed
+
+- **Subscribing to a blyg's public hopper page or feed follows the whole blyg.** On studio 0.50 and later, that address can otherwise give a subscription to just that hopper, which Burrow can't show yet. Burrow now asks for the whole blyg in the preview, in the subscription itself, and in OPML imports. It only asks studios that understand the request (contract 5.1 or later), so studio 0.49 is unaffected.
+
 ## [0.17.0] - 2026-11-02
 
 ### Added
