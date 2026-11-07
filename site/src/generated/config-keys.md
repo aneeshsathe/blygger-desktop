@@ -92,6 +92,38 @@ Where a link clicked in a post opens: app opens it in Burrow's browser pane (fro
 Block ads and trackers in the browser pane, with uBlock Origin's default filter lists (downloaded about once a week; a small built-in list until then). The shield button turns it off for one site. false turns it off everywhere.
 
 
+### `chat-tab`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+Show the #thicket chat tab beside the views in the title bar. Experimental: it may be removed. The tab chats in #thicket, a channel for Burrow users on Libera.Chat (an IRC network). Nothing connects to Libera.Chat until you set it up in the tab (sign in, or create an account). false hides the tab and disconnects. Settings (⌘,) toggles it.
+
+
+### `chat-nick`
+
+- **Values:** text
+- **Default:** unset
+
+Your Libera.Chat nick (also your account name), e.g. chat-nick = ada_example. The chat tab writes it when you finish setting up, and then signs in on its own each time Burrow opens (SASL over TLS). The password is in the macOS Keychain, never in this file. Unset: the tab shows its setup and connects to nothing.
+
+
+### `chat-server`
+
+- **Values:** text
+- **Default:** `irc.libera.chat:6697`
+
+The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Chat is supported for now.
+
+
+### `chat-notifications`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+A system notification when someone mentions your nick in #thicket (or messages you) while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) toggles it.
+
+
 ### `font-family-writing`
 
 - **Values:** text

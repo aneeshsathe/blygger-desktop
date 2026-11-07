@@ -108,6 +108,9 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+// --- chat --- (the experimental #thicket tab; hooks marked the same way)
+#[path = "chat/mod.rs"]
+pub(crate) mod chat;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -291,6 +294,8 @@ pub struct MainView {
     ext: extensions::Extensions,
     // --- new post --- ⌘N's fresh editor, until it's left
     new_post: Option<new_post::NewPost>,
+    // --- chat ---
+    chat: chat::Chat,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -431,8 +436,9 @@ impl MainView {
             watch_stamp: 0,
             now: chrono::Utc::now(),
             first_frame: Some(launched),
-            ai: Default::default(), // --- AI ---
-            new_post: None,         // --- new post ---
+            ai: Default::default(),   // --- AI ---
+            new_post: None,           // --- new post ---
+            chat: Default::default(), // --- chat ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -444,6 +450,7 @@ impl MainView {
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
+        this.chat_init(window, cx); // --- chat ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -632,6 +639,7 @@ impl MainView {
         }
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
+        self.chat_reload(window, cx); // --- chat ---
         self.show_toast(msg, None, cx);
     }
 
@@ -2151,6 +2159,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.chat_actions(d, cx)) // --- chat ---
             .size_full()
             .relative()
             .flex()
@@ -3902,6 +3911,7 @@ impl MainView {
                     .into_any_element(),
             ))
             .child(self.render_buttons_setting(cx)) // --- buttons ---
+            .child(self.render_chat_setting(cx)) // --- chat ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

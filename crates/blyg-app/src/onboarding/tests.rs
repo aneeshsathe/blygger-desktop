@@ -641,6 +641,9 @@ fn do_step(e: &mut Env, id: &str) {
         "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
         "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
         "shelf" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-b")),
+        "chat" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
+        } // --- chat ---
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

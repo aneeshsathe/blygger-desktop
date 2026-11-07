@@ -107,6 +107,9 @@ pub enum View {
     Reading,
     Mentions,
     Subscriptions,
+    /// --- chat --- the experimental #thicket tab (not in `ALL`: it's drawn
+    /// after the views, and only while `chat-tab` is on).
+    Chat,
 }
 
 impl View {
@@ -123,6 +126,7 @@ impl View {
             View::Reading => "Reading",
             View::Mentions => "Mentions",
             View::Subscriptions => "Subscriptions",
+            View::Chat => "#thicket", // --- chat ---
         }
     }
 
@@ -132,6 +136,7 @@ impl View {
             View::Reading => "⌘R",
             View::Mentions => "⇧⌘M",
             View::Subscriptions => "⇧⌘S",
+            View::Chat => "⇧⌘I", // --- chat ---
         }
     }
 }
@@ -746,6 +751,11 @@ impl MainView {
                 }
             }
             View::Mentions => self.load_mentions(cx),
+            // --- chat ---
+            View::Chat => {
+                self.chat_opened(window, cx);
+                return;
+            }
             View::Subscriptions => {
                 self.reading.subs = self.backend.subscriptions();
                 // --- reader folders --- the folder chooser on each row.
@@ -842,6 +852,7 @@ impl MainView {
             .text_size(px(11.5))
             .text_color(p.muted)
             .children(tabs)
+            .children(self.render_chat_tab(cx)) // --- chat ---
             .into_any_element()
     }
 
@@ -854,6 +865,8 @@ impl MainView {
     ) -> Option<AnyElement> {
         let inner = match self.reading.view {
             View::Posts => return None,
+            // --- chat --- its own screen, outside the reading keys.
+            View::Chat => return Some(self.render_chat_screen(cx)),
             View::Reading => self.render_reading_screen(body_font, cx),
             View::Mentions => self.render_mentions_screen(cx),
             View::Subscriptions => self.render_subscriptions_screen(cx),

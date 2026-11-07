@@ -208,6 +208,33 @@ pub const KEYS: &[KeySpec] = &[
          button turns it off for one site. false turns it off everywhere.",
     ),
     // --- end browser ---
+    // --- chat --- (experimental: the #thicket tab; may be removed)
+    docs(
+        key("chat-tab", ValueKind::Bool, Some("true")),
+        "Show the #thicket chat tab beside the views in the title bar. Experimental: it may be \
+         removed. The tab chats in #thicket, a channel for Burrow users on Libera.Chat (an IRC \
+         network). Nothing connects to Libera.Chat until you set it up in the tab (sign in, or \
+         create an account). false hides the tab and disconnects. Settings (⌘,) toggles it.",
+    ),
+    docs(
+        key("chat-nick", ValueKind::Text, None),
+        "Your Libera.Chat nick (also your account name), e.g. chat-nick = ada_example. The chat \
+         tab writes it when you finish setting up, and then signs in on its own each time \
+         Burrow opens (SASL over TLS). The password is in the macOS Keychain, never in this \
+         file. Unset: the tab shows its setup and connects to nothing.",
+    ),
+    docs(
+        key("chat-server", ValueKind::Text, Some("irc.libera.chat:6697")),
+        "The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Chat is \
+         supported for now.",
+    ),
+    docs(
+        key("chat-notifications", ValueKind::Bool, Some("true")),
+        "A system notification when someone mentions your nick in #thicket (or messages you) \
+         while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) \
+         toggles it.",
+    ),
+    // --- end chat ---
     docs(
         key("font-family-writing", ValueKind::Text, Some("Literata")),
         "Font for the editor and preview. Run `blygger +list-fonts` to see the choices.",

@@ -18,6 +18,7 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Added
 
 - **The shelf.** ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the top of the Write list, marked 📚, in your order. ⌘B opens the shelf: 1–9 or ⏎ opens a post, ⌥↑/⌥↓ reorder, ⌫ takes one off. Any post of yours can be shelved. The shelf is kept on this computer for now (store schema v17); syncing it waits on blygger-studio#135. On Windows the keys are Ctrl+B and Ctrl+Alt+B.
+- **#thicket chat (experimental; it may be removed).** A tab beside the views (⇧⌘I, Blyg › #thicket Chat) keeps you in #thicket, a channel for Burrow users on Libera.Chat (IRC). Setup signs in with an existing Libera.Chat account (SASL PLAIN over TLS), or creates one (NickServ REGISTER, then the emailed VERIFY code); nothing connects until you do. The password goes in the Keychain (`irc:libera:<nick>`), the nick in `chat-nick`, and Burrow signs in on its own after that, reconnecting with backoff. The tab has the log (joins and parts kept quiet, `/me`), a user list with operators first, an unread dot and count, a stronger @ mark and a system notification when you're mentioned (`chat-notifications`). Settings › Chat hides it (`chat-tab`, on by default). The protocol is the new `blyg-irc` crate, written for Burrow (no tokio, no GPL code). On Windows the key is Ctrl+Shift+I, and only the tab's marks show for mentions.
 
 ## [0.17.1] - 2026-11-03
 

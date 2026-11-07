@@ -26,6 +26,11 @@ pub const RELEASES: &[Release] = &[
             "The shelf: ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the \
              top of the list, marked 📚. ⌘B opens the shelf; 1–9 opens a post on it, ⌥↑/⌥↓ \
              reorder it. It's kept on this Mac for now.",
+            // --- chat ---
+            "#thicket (⇧⌘I), an experimental chat tab: talk with other Burrow users on \
+             Libera.Chat (IRC), with unread and mention marks and a notification when you're \
+             mentioned. Nothing connects until you set it up, Settings hides it, and it may \
+             be removed.",
         ],
         first_step: Some("shelf"),
     },

@@ -94,6 +94,9 @@ pub enum Key {
     // --- shelf ---
     /// A post was put on the shelf or taken off (⌥⌘B).
     Shelf,
+    // --- chat ---
+    /// The #thicket chat tab came to the front (⇧⌘I or the tab).
+    Chat,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -525,6 +528,34 @@ pub const STEPS: &[Step] = &[
         region: Region::List,
         button: None,
         setup: Setup::EnsureOpen,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- chat --- the setup screen only: the tour never connects.
+    Step {
+        id: "chat",
+        since: "0.18.0",
+        title: "#thicket, an experimental chat",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), \
+             beside the views. It's experimental and may be removed. Sign in or create an \
+             account there when you like: nothing connects until you do, and Settings hides \
+             the tab."
+        } else {
+            "⇧⌘I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), beside the \
+             views. It's experimental and may be removed. Sign in or create an account there \
+             when you like: nothing connects until you do, and Settings hides the tab."
+        },
+        keys: &[Key::Chat],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+I"
+        } else {
+            "⇧⌘I"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1090,6 +1121,7 @@ mod tests {
             Key::HopperPicker,
             Key::HopperSeveral,
             Key::Shelf,
+            Key::Chat, // --- chat ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
