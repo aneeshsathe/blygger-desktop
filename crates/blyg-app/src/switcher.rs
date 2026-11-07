@@ -300,14 +300,20 @@ impl MainView {
         }
     }
 
-    /// Save the editor's text if the backend doesn't have it yet.
+    /// Save the editor's text if it holds an edit the window hasn't saved.
+    ///
+    /// Measured against `current`, the text the window last loaded into the
+    /// editor or saved from it, never against the store: the store can be
+    /// newer than the editor (a save that didn't come from this editor, a
+    /// pull's merge whose refresh, `requery_later`, hasn't landed yet), and
+    /// saving the editor then would put its stale text back over the newer
+    /// one, and push that.
     fn flush_editor(&mut self, cx: &mut Context<Self>) {
-        let Some(cur) = self.current.clone() else {
-            return;
-        };
-        let text = self.editor.read(cx).value().to_string();
-        let stored = self.backend.item(&cur.local_id).map(|i| i.content_md);
-        if stored.as_deref() != Some(text.as_str()) {
+        let unsaved = self
+            .current
+            .as_ref()
+            .is_some_and(|cur| cur.content_md != self.editor.read(cx).value().as_ref());
+        if unsaved {
             self.after_edit(cx);
         }
     }

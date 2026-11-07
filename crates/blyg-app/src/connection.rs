@@ -709,6 +709,23 @@ impl Backend for SwitchBackend {
     fn save_if_base(&self, id: &LocalId, content_md: &str, base_hash: &str) -> Result<()> {
         self.cur().save_if_base(id, content_md, base_hash)
     }
+    /// The inner backend's own off-thread write (`LiveBackend`'s typing
+    /// writer), not the trait default's `save` on the UI thread.
+    fn save_typing(&self, id: &LocalId, content_md: &str) -> Result<()> {
+        self.cur().save_typing(id, content_md)
+    }
+    fn own_item(&self, server_id: &str) -> Option<Item> {
+        self.cur().own_item(server_id)
+    }
+    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        self.cur().reading_with_id(remote_id)
+    }
+    fn save_scratch_media(&self, bytes: &[u8], mime: &str) -> Result<String> {
+        self.cur().save_scratch_media(bytes, mime)
+    }
+    fn scratch_media_file(&self, url: &str) -> Option<std::path::PathBuf> {
+        self.cur().scratch_media_file(url)
+    }
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()> {
         self.cur().set_kind(id, kind)
     }
@@ -1186,5 +1203,24 @@ mod tests {
             "{stale:?}"
         );
         assert_eq!(sw.item(&id).unwrap().content_md, "second");
+    }
+
+    /// Every additive `Backend` method with a default the inner backend
+    /// overrides is forwarded, not answered by the default.
+    #[test]
+    fn additive_calls_reach_the_inner_backend() {
+        let fake = Arc::new(
+            crate::fake::FakeBackend::with_timing(crate::fake::Timing::instant())
+                .without_media_cache(),
+        );
+        let sw = SwitchBackend::new(fake.clone(), Mode::Fake);
+        let id = sw.create_draft(Kind::Fragment, "first").unwrap();
+        sw.save_typing(&id, "typed").unwrap();
+        assert_eq!(fake.item(&id).unwrap().content_md, "typed");
+        let url = sw
+            .save_scratch_media(b"\x89PNG\r\n\x1a\n", "image/png")
+            .expect("the inner backend keeps local images");
+        assert_eq!(sw.scratch_media_file(&url), fake.scratch_media_file(&url));
+        assert!(sw.scratch_media_file(&url).is_some());
     }
 }
