@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).
+
 ## [0.18.0] - 2026-11-07
 
 ### Added

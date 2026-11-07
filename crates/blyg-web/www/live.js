@@ -1,5 +1,5 @@
 // Live mode: Burrow on the owner's own blyg. Served from the blyg at
-// /burrow/, the page reaches the owner API at /api on the same origin. The
+// /burrow/, the page reaches the owner API at {mount}/api on the same origin. The
 // Studio session cookie (HttpOnly, so this page never sees it) is the only
 // credential: there's no token, nothing is stored, and nothing is logged.
 // Every request goes through `call`, which refuses anything that isn't a
@@ -17,6 +17,20 @@ import { $, S, esc, now, load, persist, toast } from './core.js';
 
 const API = '/api/';
 
+/** The blyg's mount: the app is served at {mount}/burrow/, the owner API at
+    {mount}/api and the Studio at {mount}/studio. Empty for a blyg at the
+    host root. Paths here (and from the Rust) are mount-relative `/api/…`. */
+export const MOUNT = (() => {
+  const p = location.pathname;
+  const i = p.lastIndexOf('/burrow/');
+  return i > 0 ? p.slice(0, i) : '';
+})();
+
+// The sign-in link follows the mount too.
+for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
+  a.href = `${MOUNT}/studio/login?return_to=${encodeURIComponent(`${MOUNT}/burrow/`)}`;
+}
+
 /** Whether `path` is a same-origin owner-API path (and nothing else). */
 export function apiPath(path) {
   return typeof path === 'string' && path.startsWith(API) && !/\/\.\.?(\/|$)|\\|\/\/|^[a-z]+:/i.test(path);
@@ -28,7 +42,7 @@ export async function call(method, path, body) {
   const headers = { accept: 'application/json' };
   if (body !== undefined && body !== null) headers['content-type'] = 'application/json';
   try {
-    const res = await fetch(path, {
+    const res = await fetch(MOUNT + path, {
       method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', mode: 'same-origin',
       body: body !== undefined && body !== null ? JSON.stringify(body) : undefined,
     });

@@ -11,7 +11,7 @@ It runs in one of two modes, and says which:
 
 - **Live**, when it's served from a blyg at `/burrow/`, beside `/studio`
   (proposed upstream in blygger-studio#139). It works on your own posts and
-  reading list through the owner API at `/api` on the same origin, signed in
+  reading list through the owner API at `{mount}/api` (beside `{mount}/burrow/`; `/api` for a blyg at the host root) on the same origin, signed in
   by your Studio session cookie. There's no token and nothing to configure.
   Signed out, it asks you to sign in at Studio.
 - **Demo** everywhere else: invented sample posts kept in the browser
@@ -27,7 +27,7 @@ It runs in one of two modes, and says which:
 - **Detection.** `GET /api/capabilities`: a contract 5 answer is a blyg; a
   401 with the blyg's `WWW-Authenticate` challenge is a blyg you aren't
   signed in to; anything else (a 404 from a static server) is the demo.
-- **Requests.** Only same-origin `/api/…` paths, with
+- **Requests.** Only same-origin `{mount}/api/…` paths, with
   `credentials: 'same-origin'`. The Worker refuses a cookie request whose
   `Origin` or `Sec-Fetch-Site` is cross-site; the page's own requests pass.
 - **Contract 5.7.0.** Lists are read page by page to `nextCursor: null`
