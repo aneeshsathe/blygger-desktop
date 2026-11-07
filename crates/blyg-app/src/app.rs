@@ -114,6 +114,9 @@ pub(crate) mod lineage_strip;
 // --- hover cards --- (what a [[id]] is, on hover; hooks marked the same way)
 #[path = "hover_card.rs"]
 pub(crate) mod hover_card;
+// --- chat --- (the experimental #thicket tab; hooks marked the same way)
+#[path = "chat/mod.rs"]
+pub(crate) mod chat;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -301,6 +304,8 @@ pub struct MainView {
     lineage_strip: lineage_strip::State,
     // --- hover cards ---
     hover: hover_card::State,
+    // --- chat ---
+    chat: chat::Chat,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -445,6 +450,7 @@ impl MainView {
             new_post: None,                    // --- new post ---
             lineage_strip: Default::default(), // --- lineage ---
             hover: Default::default(),         // --- hover cards ---
+            chat: Default::default(),          // --- chat ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -456,6 +462,7 @@ impl MainView {
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
+        this.chat_init(window, cx); // --- chat ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -644,6 +651,7 @@ impl MainView {
         }
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
+        self.chat_reload(window, cx); // --- chat ---
         self.show_toast(msg, None, cx);
     }
 
@@ -2166,6 +2174,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.chat_actions(d, cx)) // --- chat ---
             .size_full()
             .relative()
             .flex()
@@ -3919,6 +3928,7 @@ impl MainView {
                     .into_any_element(),
             ))
             .child(self.render_buttons_setting(cx)) // --- buttons ---
+            .child(self.render_chat_setting(cx)) // --- chat ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

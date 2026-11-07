@@ -58,6 +58,7 @@
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
+| ⇧⌘I | #thicket chat on Libera.Chat (experimental; again: back to posts) | Blyg › #thicket Chat (Experimental) |
 | ⇧⌘H | Browsing history beside the reading pane: where following links took you (private) | Blyg › Browsing History |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
 | ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |

@@ -71,6 +71,8 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- shelf ---
 use crate::app::shelf::{ShowShelf, ToggleShelf};
+// --- chat ---
+use crate::app::chat::ShowChat;
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -720,6 +722,15 @@ pub fn mac_table() -> Vec<Keybind> {
             ReaderBack,
             "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
             "Blyg › Back"
+        ),
+        // --- chat --- the experimental #thicket tab (I for IRC; ⌘I is the
+        // profile sheet).
+        kb!(
+            "cmd-shift-i",
+            Main,
+            ShowChat,
+            "#thicket chat on Libera.Chat (experimental; again: back to posts)",
+            Some("Blyg › #thicket Chat (Experimental)")
         ),
         kb!(
             "cmd-shift-h",

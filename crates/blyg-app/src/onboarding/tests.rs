@@ -654,6 +654,9 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the sample quotes a post");
             v.hover_show(d, cx)
         }),
+        "chat" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
+        } // --- chat ---
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

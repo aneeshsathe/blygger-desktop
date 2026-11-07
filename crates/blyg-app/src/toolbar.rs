@@ -538,7 +538,19 @@ impl MainView {
             })
             .sum::<f32>()
             + 2. * (Screen::ALL.len() as f32 - 1.)
-            + 12.;
+            + 12.
+            // --- chat --- the #thicket tab after the views: its name, the
+            // "experimental" badge (8.5 px, 4 px a side) and room for a mark.
+            + if self.chat_tab_on(cx) {
+                self.text_width("#thicket", 11.5, FontWeight::NORMAL, "Inter", window)
+                    + self.text_width("experimental", 8.5, FontWeight::NORMAL, "Inter", window)
+                    + 18.
+                    + 8.
+                    + 4.
+                    + 30.
+            } else {
+                0.
+            };
         let title = self.text_width(&self.title, 12., FontWeight::MEDIUM, ui, window)
             + super::switcher::title_extra(cx); // --- blyg switcher ---
         let w = f32::from(window.viewport_size().width);

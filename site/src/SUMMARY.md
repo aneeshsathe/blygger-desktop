@@ -13,6 +13,7 @@
 - [Themes](themes.md)
 - [Extensions](extensions.md)
   - [Community extensions](generated/community-extensions.md)
+- [#thicket chat (experimental)](chat.md)
 
 # Reference
 

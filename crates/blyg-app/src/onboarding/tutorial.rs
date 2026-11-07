@@ -600,6 +600,7 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
+        let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -626,6 +627,7 @@ impl MainView {
             self.close_profile(window, cx);
         }
         self.ext_tour_close_sheets(window, cx);
+        self.chat_tour_tidy(); // --- chat ---
     }
 
     /// Reading, in `mode`, nothing open, the search cleared.

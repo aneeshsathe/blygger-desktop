@@ -1,0 +1,24 @@
+[package]
+name = "blyg-irc"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "A small blocking IRC client (TLS, SASL PLAIN, one channel) for Burrow's experimental chat tab"
+
+[dependencies]
+# TLS on a plain blocking socket: the same rustls (ring backend) ureq uses.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# The system's trusted roots (macOS Keychain, Windows certificate store).
+# Not webpki-roots, whose root list is CDLA-Permissive-2.0.
+rustls-native-certs = "0.8"
+base64 = "0.22"
+
+[features]
+# The in-process IRC server the tests use (src/testserver.rs).
+test-server = []
+
+[dev-dependencies]
+# A self-signed certificate for the in-process test server.
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+# The integration tests use the test server (the crate itself, with it on).
+blyg-irc = { path = ".", features = ["test-server"] }

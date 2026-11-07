@@ -506,6 +506,30 @@ impl Config {
         self.get("spellcheck") != Some("false")
     }
 
+    // --- chat --- (experimental)
+    /// `chat-tab`: show the #thicket tab (on unless `false`).
+    pub fn chat_tab(&self) -> bool {
+        self.get("chat-tab") != Some("false")
+    }
+
+    /// `chat-nick`: the Libera.Chat nick and account, once set up.
+    pub fn chat_nick(&self) -> Option<&str> {
+        self.get("chat-nick")
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+    }
+
+    /// `chat-server`: `host:port`, over TLS.
+    pub fn chat_server(&self) -> &str {
+        self.get("chat-server").unwrap_or("irc.libera.chat:6697")
+    }
+
+    /// `chat-notifications`: notify about mentions (on unless `false`).
+    pub fn chat_notifications(&self) -> bool {
+        self.get("chat-notifications") != Some("false")
+    }
+    // --- end chat ---
+
     pub fn font_family_writing(&self) -> &str {
         self.get("font-family-writing").unwrap_or("Literata")
     }

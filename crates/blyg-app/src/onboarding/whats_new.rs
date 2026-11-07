@@ -46,6 +46,18 @@ pub const RELEASES: &[Release] = &[
                  or link in the Stream) to see what it is; “label it” names an unlabelled \
                  link. ⌘-click opens the post."
             },
+            // --- chat ---
+            if cfg!(target_os = "windows") {
+                "#thicket (Ctrl+Shift+I), an experimental chat tab: talk with other Burrow users on \
+                 Libera.Chat (IRC), with unread and mention marks and a notification when \
+                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
+                 and it may be removed."
+            } else {
+                "#thicket (⇧⌘I), an experimental chat tab: talk with other Burrow users on \
+                 Libera.Chat (IRC), with unread and mention marks and a notification when \
+                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
+                 and it may be removed."
+            },
         ],
         first_step: Some("shelf"),
     },
