@@ -32,7 +32,7 @@ impl MainView {
             // --- blyg switcher --- a window macOS isn't showing (screenshot
             // runs never activate) may not redraw by itself: draw it a few
             // times so a window capture shows the last step.
-            if scenario.starts_with("switch") {
+            if scenario.starts_with("switch") || scenario.starts_with("aa-") {
                 for _ in 0..4 {
                     step(300).await;
                     let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -248,6 +248,8 @@ impl MainView {
             (s, n) if s.starts_with("notes-") => self.notes_demo(s, n, window, cx),
             // --- extensions --- (ext-consent, ext-palette, ext-notes, ext-manage)
             (s, n) if s.starts_with("ext-") => self.ext_demo(s, n, window, cx),
+            // --- access-ai --- (aa-access, aa-confirm, aa-token, aa-ai, aa-publish; access.rs)
+            (s, n) if s.starts_with("aa-") => self.access_ai_demo(s, n, window, cx),
             _ => {}
         }
     }

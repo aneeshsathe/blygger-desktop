@@ -4,7 +4,8 @@
 //!   access token and a rotating refresh token, sent as
 //!   `Authorization: Bearer` and renewed as it goes (see `oauth`).
 //! - **API token**: a manual token the owner makes in Studio → More →
-//!   Client access (studio 0.28+; 30 days, not renewable), or an old
+//!   Client access, or Burrow's Blyg › Client Access… (`access_ai`; studio
+//!   0.28+; 30 days, not renewable), or an old
 //!   Worker fork's `BLYG_OWNER_TOKEN` (a stock studio has none, and answers
 //!   such a token with 401). Sent as `Authorization: Bearer`.
 //! - **Password**, which works on any blygger-studio: the studio's own

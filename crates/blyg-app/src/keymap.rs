@@ -71,6 +71,10 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- shelf ---
 use crate::app::shelf::{ShowShelf, ToggleShelf};
+// --- access-ai ---
+use crate::app::access::ShowClientAccess;
+use crate::app::note_ai::DraftChangeNote;
+use crate::app::server_ai::ShowServerAi;
 // --- chat ---
 use crate::app::chat::ShowChat;
 // --- terminal ---
@@ -755,6 +759,25 @@ pub fn mac_table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- access-ai --- client access and the blyg's own AI (studio 0.56)
+        menu_only!(
+            ShowClientAccess,
+            "Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any",
+            "Blyg › Client Access…"
+        ),
+        menu_only!(
+            ShowServerAi,
+            "AI on your blyg: a model per function, house style, change notes, the change classifier",
+            "Blyg › AI on Your Blyg…"
+        ),
+        kb!(
+            "alt-cmd-n",
+            MainInput,
+            DraftChangeNote,
+            "Publish sheet: draft the version note with your blyg's AI",
+            Some("Post › Draft a Change Note")
+        ),
+        // --- end access-ai ---
         // --- stream --- (issue #1) the reading screen's two modes; the
         // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
         kb!(
@@ -1166,6 +1189,9 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     ("ctrl-cmd-7", "ctrl-shift-7"),
     ("ctrl-cmd-8", "ctrl-shift-8"),
     ("ctrl-cmd-9", "ctrl-shift-9"),
+    // --- access-ai --- Ctrl+Alt+N is AltGr+N, which types a letter on some
+    // layouts (Polish ń): drafting a change note is Ctrl+Shift+E there.
+    ("alt-cmd-n", "ctrl-shift-e"),
 ];
 
 /// The pure part of `platform_key`.
@@ -1405,6 +1431,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
+    let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

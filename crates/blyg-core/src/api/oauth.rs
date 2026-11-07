@@ -207,7 +207,7 @@ pub fn missing_scope_message(required: &[String], granted: Option<&str>) -> Stri
             "The blyg refused: Burrow's sign-in lacks {named}. Sign in with the browser again and allow every permission."
         ),
         None => format!(
-            "The blyg refused: this token lacks {named}. Make a new one in Studio → More → Client access, for the REST API, with {MANUAL_TOKEN_PERMISSIONS}."
+            "The blyg refused: this token lacks {named}. Make a new one in Blyg › Client Access… (or Studio → More → Client access), for the REST API, with {MANUAL_TOKEN_PERMISSIONS}."
         ),
     }
 }
