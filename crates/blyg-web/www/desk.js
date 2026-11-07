@@ -12,6 +12,9 @@ import {
 // --- web-reading ---
 import { deskSources, opened, wrUse } from './web-reading.js';
 // --- end web-reading ---
+// --- web-writing ---
+import * as Wr from './writing.js';
+// --- end web-writing ---
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
 
@@ -168,7 +171,7 @@ function askPublish() {
     S.B.sync_phase('syncing'); render();
     win.querySelector('#sync span').textContent = 'publishing…';
     setTimeout(async () => {
-      const r = await finishPublish(JSON.parse(S.B.publish(note, now())));
+      const r = await finishPublish(Wr.withNote(JSON.parse(S.B.publish(note, now())), note)); // --- web-writing ---
       if (r.action === 'published') {
         await persist();
         S.B.sync_phase('synced');
@@ -177,9 +180,11 @@ function askPublish() {
       } else { S.B.sync_phase(S.live ? 'error' : 'synced'); outcome(r); render(); }
     }, S.live ? 0 : 650);
   });
+  Wr.publishSheet($('#sheet'), $('#note')); // --- web-writing ---
 }
 function askDelete() {
   const o = outcome(S.B.delete_check(), shakeEl());
+  if (o.action === 'ask_withdraw') { Wr.askWithdraw(); return; } // --- web-writing ---
   if (o.action !== 'confirm') return;
   openSheet(`<h4>${esc(o.title)}</h4><p>${esc(o.body)}</p>
     <div class="sk"><span><kbd>⏎</kbd> delete</span><span><kbd>esc</kbd> cancel</span></div>`,
@@ -346,7 +351,15 @@ export function initDesk() {
     else if (name === 'shelf') toggleShelf();
     else if (name === 'preview') togglePreview();
     else if (name === 'publish') askPublish();
+    else Wr.W.barTool(name); // --- web-writing ---
   }));
+  // --- web-writing ---
+  Wr.attachEditor(ed);
+  Wr.setWritingHooks('desk', { openEditor: () => openSelected(), afterDelete: () => render({ loadEditor: true }) });
+  $('#d-wmenu').addEventListener('click', () => Wr.openPostMenu());
+  $('#d-wfork').addEventListener('click', () => Wr.askFork(rcur));
+  $('#d-wset').addEventListener('click', () => Wr.openSettings());
+  // --- end web-writing ---
   $$('.views [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
   // reading
@@ -372,6 +385,8 @@ export function initDesk() {
   // `e.code` because ⌥ changes `e.key` on a Mac (⌥N is "˜").
   document.addEventListener('keydown', (e) => {
     if (sheetOpen || !S.B || S.layout !== 'desk') return;
+    if (S.writing?.isOpen()) return; // --- web-writing ---
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.code === 'KeyY') { e.preventDefault(); hud(['⌃', '⇧', 'Y']); Wr.openHistory(); return; } // --- web-writing ---
     const mod = e.metaKey || e.ctrlKey || e.altKey;
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;

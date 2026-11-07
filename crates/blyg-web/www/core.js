@@ -285,6 +285,11 @@ export const BAR_PAGES = [
   { name: 'Post', tools: [
     ['shelf', '📚', 'Shelve or unshelve'], ['preview', '👁', 'Preview'], ['hide', '⌄', 'Hide the keyboard'] ] },
 ];
+// --- web-writing --- The image tool uploads one (www/writing.js); the
+// last page gains TK generation on the blyg and the post's ⋯ menu.
+BAR_PAGES[2].tools[3] = ['upload', '🖼', 'Image: upload one, with alt text'];
+BAR_PAGES[3].tools.unshift(['more', '⋯', 'This post: image, versions, TK, withdraw'], ['gen', '✦', 'Generate the TK text on your blyg']);
+// --- end web-writing ---
 
 /** Build the bar into `host`. `act(name)` runs a tool; returns the bar. */
 export function editorBar(host, act) {

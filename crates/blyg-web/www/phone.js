@@ -14,6 +14,9 @@ import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
 import { phoneChip, opened, wrUse } from './web-reading.js';
 // --- end web-reading ---
+// --- web-writing ---
+import * as Wr from './writing.js';
+// --- end web-writing ---
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
@@ -197,6 +200,7 @@ function askPublish() {
   $('#p-pubH').textContent = `Publish “${o.title}” as v${o.next_version}`;
   $('#p-pubNote').value = '';
   sheet('sh-pub');
+  Wr.publishSheet($('#sh-pub'), $('#p-pubNote')); // --- web-writing ---
 }
 function doPublish() {
   const note = $('#p-pubNote').value;
@@ -204,7 +208,7 @@ function doPublish() {
   S.B.sync_phase('syncing'); render();
   $('#p-sync span').textContent = 'publishing…';
   setTimeout(async () => {
-    const r = await finishPublish(JSON.parse(S.B.publish(note, now())));
+    const r = await finishPublish(Wr.withNote(JSON.parse(S.B.publish(note, now())), note)); // --- web-writing ---
     if (r.action === 'published') {
       await persist();
       S.B.sync_phase('synced');
@@ -229,6 +233,7 @@ function togglePreview() {
   render();
 }
 function barTool(name) {
+  if (Wr.W.barTool(name)) return; // --- web-writing ---
   if (name === 'link') openPicker(false);
   else if (name === 'quote') openPicker(true);
   else if (name === 'kind') { const o = outcome(S.B.toggle_kind(now()), $('.edstat')); if (o.action === 'toast') touched(); }
@@ -394,6 +399,13 @@ export function initPhone() {
   $('#p-shelfBtn').addEventListener('click', toggleShelf);
   $('#p-prevBtn').addEventListener('click', togglePreview);
   editorBar($('#p-bar'), (tool) => runTool(tool, ta, barTool));
+  // --- web-writing ---
+  Wr.attachEditor(ta);
+  Wr.setWritingHooks('phone', { openEditor: () => openEditor(), afterDelete: () => leaveEditor() });
+  $('#p-wmenu').addEventListener('click', () => Wr.openPostMenu());
+  $('#p-wfork').addEventListener('click', () => Wr.askFork(readKey));
+  $('#p-wset').addEventListener('click', () => { closeSheet({ refocus: false }); Wr.openSettings(); });
+  // --- end web-writing ---
 
   // the link/quote sheet
   $('#p-linkQ').addEventListener('input', () => renderPicks($('#p-linkList'), $('#p-linkQ').value));

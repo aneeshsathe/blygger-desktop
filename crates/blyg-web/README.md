@@ -217,10 +217,12 @@ discovery), so publish test posts without links.
 
 ## What's missing
 
-Profiles, mentions, subscriptions, version history (⌘Y), AI/TK
-generation, image paste and upload, the in-app browser, extensions,
-settings, withdrawing a post and the full editor's scroll sync aren't
-here. Conflicts offer mine-or-theirs, not a merge.
+Profiles, folders, trails, the in-app browser, extensions, the app's own
+preferences and the full editor's scroll sync aren't here. Conflicts offer
+mine-or-theirs, not a merge. (Versions, withdraw, forks, TK generation,
+images, the blyg's settings, `@` mentions, subscriptions, mentions, hopper
+management, thumbs, peek and history are: see "Writing on your blyg" and
+the reading sections in `site/src/dev/web.md`.)
 
 ## Why not the real GPUI window?
 
