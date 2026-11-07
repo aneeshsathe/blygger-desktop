@@ -164,6 +164,9 @@ struct State {
     browse: Vec<blyg_core::browse::BrowseStep>,
     // --- shelf --- in order; may name posts since deleted.
     shelf: Vec<LocalId>,
+    // --- trails --- (trail, its stops in order), in order.
+    trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
+    trail_seq: u64,
 }
 
 pub struct FakeBackend {
@@ -346,7 +349,9 @@ impl FakeBackend {
                 reading_sends: Vec::new(),
                 folder_seq: 0,
                 browse: Vec::new(),
-                shelf: Vec::new(), // --- shelf ---
+                shelf: Vec::new(),  // --- shelf ---
+                trails: Vec::new(), // --- trails ---
+                trail_seq: 0,
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -1823,6 +1828,144 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
+    // --- trails --- the same rules as the store (store/trails.rs).
+    fn trails(&self) -> Vec<blyg_core::Trail> {
+        self.lock()
+            .trails
+            .iter()
+            .map(|(t, s)| blyg_core::Trail {
+                stops: s.len(),
+                ..t.clone()
+            })
+            .collect()
+    }
+
+    fn create_trail(&self, name: &str) -> Result<blyg_core::Trail> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "A trail needs a name.".into(),
+                details: vec![],
+            });
+        }
+        let mut st = self.lock();
+        st.trail_seq += 1;
+        let t = blyg_core::Trail {
+            id: format!("trail-{}", st.trail_seq),
+            name: name.into(),
+            stops: 0,
+        };
+        st.trails.push((t.clone(), Vec::new()));
+        Ok(t)
+    }
+
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        let mut st = self.lock();
+        let t = st.trails.iter_mut().find(|(t, _)| t.id == id);
+        let Some((t, _)) = t else {
+            return Err(CoreError::NotFound);
+        };
+        t.name = name.trim().to_string();
+        Ok(())
+    }
+
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        self.lock().trails.retain(|(t, _)| t.id != id);
+        Ok(())
+    }
+
+    fn trail_stops(&self, trail: &str) -> Vec<blyg_core::TrailStop> {
+        let mut st = self.lock();
+        let withdrawn: Vec<bool> = st
+            .trails
+            .iter()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, stops)| stops.iter().map(|s| fake_withdrawn(&st, s)).collect())
+            .unwrap_or_default();
+        let Some((_, stops)) = st.trails.iter_mut().find(|(t, _)| t.id == trail) else {
+            return vec![];
+        };
+        for (s, w) in stops.iter_mut().zip(withdrawn) {
+            s.withdrawn = w;
+            if w {
+                s.title = None;
+            }
+        }
+        stops.clone()
+    }
+
+    fn add_trail_stop(&self, trail: &str, stop: &blyg_core::TrailStop) -> Result<usize> {
+        let mut st = self.lock();
+        if fake_withdrawn(&st, stop) {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "That post was withdrawn.".into(),
+                details: vec![],
+            });
+        }
+        let Some((_, stops)) = st.trails.iter_mut().find(|(t, _)| t.id == trail) else {
+            return Err(CoreError::NotFound);
+        };
+        let why = stop.why.trim().to_string();
+        if let Some(i) = stops.iter().position(|s| s.key() == stop.key()) {
+            if !why.is_empty() {
+                stops[i].why = why;
+            }
+            return Ok(i);
+        }
+        stops.push(blyg_core::TrailStop {
+            why,
+            withdrawn: false,
+            ..stop.clone()
+        });
+        Ok(stops.len() - 1)
+    }
+
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        let mut st = self.lock();
+        let s = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .and_then(|(_, s)| s.get_mut(index))
+            .ok_or(CoreError::NotFound)?;
+        s.why = why.trim().to_string();
+        Ok(())
+    }
+
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        let mut st = self.lock();
+        let stops = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, s)| s)
+            .ok_or(CoreError::NotFound)?;
+        if index >= stops.len() {
+            return Err(CoreError::NotFound);
+        }
+        stops.remove(index);
+        Ok(())
+    }
+
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        let mut st = self.lock();
+        let stops = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, s)| s)
+            .ok_or(CoreError::NotFound)?;
+        if from >= stops.len() {
+            return Err(CoreError::NotFound);
+        }
+        let s = stops.remove(from);
+        let to = to.min(stops.len());
+        stops.insert(to, s);
+        Ok(())
+    }
+
     // --- reader folders --- the same rules as the store (folders.rs).
     fn folders(&self) -> Vec<Folder> {
         let mut v = self.lock().rd.folders.clone();
@@ -2285,6 +2428,22 @@ fn shows_responses(mode: ResponsesMode, default: bool) -> bool {
         ResponsesMode::Default => default,
         ResponsesMode::Show => true,
         ResponsesMode::Hide => false,
+    }
+}
+
+/// --- trails --- Is the post a stop names withdrawn here?
+fn fake_withdrawn(st: &State, s: &blyg_core::TrailStop) -> bool {
+    if s.subscription_id == blyg_core::OWN_SUBSCRIPTION {
+        st.items.iter().any(|i| {
+            i.server_id.as_ref().is_some_and(|x| x.0 == s.remote_id)
+                && i.status == Status::Withdrawn
+        })
+    } else {
+        st.rd.reading.iter().any(|r| {
+            r.subscription_id == s.subscription_id
+                && r.remote_id == s.remote_id
+                && r.state == "tombstone"
+        })
     }
 }
 

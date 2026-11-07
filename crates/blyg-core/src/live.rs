@@ -1479,6 +1479,44 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
+    // --- trails --- local only: the store, nothing queued.
+
+    fn trails(&self) -> Vec<crate::trails::Trail> {
+        self.e().store.trails()
+    }
+
+    fn create_trail(&self, name: &str) -> Result<crate::trails::Trail> {
+        self.e().store.create_trail(name)
+    }
+
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        self.e().store.rename_trail(id, name)
+    }
+
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        self.e().store.delete_trail(id)
+    }
+
+    fn trail_stops(&self, trail: &str) -> Vec<crate::trails::TrailStop> {
+        self.e().store.trail_stops(trail)
+    }
+
+    fn add_trail_stop(&self, trail: &str, stop: &crate::trails::TrailStop) -> Result<usize> {
+        self.e().store.add_trail_stop(trail, stop)
+    }
+
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        self.e().store.set_trail_why(trail, index, why)
+    }
+
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        self.e().store.remove_trail_stop(trail, index)
+    }
+
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        self.e().store.move_trail_stop(trail, from, to)
+    }
+
     // --- quote targets ---
 
     fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {

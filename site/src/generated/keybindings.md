@@ -53,6 +53,11 @@
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
 | ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
 | ⌥⌘B | Put the open post on your shelf, or take it off | Post › Put on Shelf / Take Off |
+| ⌥⌘T | Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops) | Blyg › Publish Trail… |
+| ⌥⌘K | Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading) | Post › Put on Quote Tray |
+| ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
+| ⌥⌘[ | Split view: the keyboard to the left post | View › Left Post |
+| ⌥⌘] | Split view: the keyboard to the right post | View › Right Post |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |

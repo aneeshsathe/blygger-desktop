@@ -628,6 +628,66 @@ pub trait Backend: Send + Sync {
 
     // --- end shelf ---
 
+    // --- trails ---
+    // Paths through posts you chose to keep (`crate::trails`): ordered
+    // stops with a "why" each. Local only (this store), never sent to the
+    // blyg; publishing one is an ordinary draft. Additive; the defaults know
+    // no trails and refuse changes, so implementors compile.
+
+    /// Every trail, in order, with its stop count.
+    fn trails(&self) -> Vec<crate::trails::Trail> {
+        Vec::new()
+    }
+
+    /// A new, empty trail. `Rejected{400}` for an empty name.
+    fn create_trail(&self, name: &str) -> Result<crate::trails::Trail> {
+        let _ = name;
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        let _ = (id, name);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// Delete a trail (the posts are untouched).
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// A trail's stops in order; a withdrawn post's stop is a tombstone
+    /// with no title.
+    fn trail_stops(&self, trail: &str) -> Vec<crate::trails::TrailStop> {
+        let _ = trail;
+        Vec::new()
+    }
+
+    /// Add a post at the end of a trail (or update the why of one already
+    /// on it); its index. A withdrawn post is refused.
+    fn add_trail_stop(&self, trail: &str, stop: &crate::trails::TrailStop) -> Result<usize> {
+        let _ = (trail, stop);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        let _ = (trail, index, why);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        let _ = (trail, index);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// Move the stop at `from` to `to` (clamped).
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        let _ = (trail, from, to);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    // --- end trails ---
+
     // --- quote targets ---
     // Opening a quote's (or a stub's, or a fork's) original that isn't held
     // here: its public files, fetched unauthenticated with `PublicClient`

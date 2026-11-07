@@ -121,6 +121,7 @@ fn the_sources_pane_lists_hoppers_under_background(cx: &mut TestAppContext) {
                 ),
                 Entry::Folder { folder, .. } => format!("[{}]", folder.name),
                 Entry::Sub { sub, .. } => sub.title,
+                Entry::Trail(t) => format!("⤳ {}", t.name), // --- trails ---
             })
             .collect()
     });

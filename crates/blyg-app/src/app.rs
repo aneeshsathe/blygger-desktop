@@ -112,6 +112,24 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+
+// --- tangles --- trails, the quote tray and drag-to-quote, split view
+// (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
+#[path = "split.rs"]
+pub(crate) mod split;
+#[cfg(test)]
+#[path = "split_tests.rs"]
+mod split_tests;
+#[path = "trails.rs"]
+pub(crate) mod trails;
+#[cfg(test)]
+#[path = "trails_tests.rs"]
+mod trails_tests;
+#[path = "tray.rs"]
+pub(crate) mod tray;
+#[cfg(test)]
+#[path = "tray_tests.rs"]
+mod tray_tests;
 // --- lineage --- (the open post's lineage under the editor; hooks marked the same way)
 #[path = "lineage_strip.rs"]
 pub(crate) mod lineage_strip;
@@ -325,6 +343,10 @@ pub struct MainView {
     hover: hover_card::State,
     // --- chat ---
     chat: chat::Chat,
+    // --- tray --- quotes picked up, not placed yet
+    tray: tray::Tray,
+    // --- split --- a second post beside the one being written
+    split: split::Split,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -471,6 +493,15 @@ impl MainView {
             lineage_strip: Default::default(), // --- lineage ---
             hover: Default::default(),         // --- hover cards ---
             chat: Default::default(),          // --- chat ---
+            // --- tray ---
+            tray: tray::Tray::load(
+                Self::tray_data_dir(cx),
+                blyg_url
+                    .as_deref()
+                    .and_then(crate::vm::url_host)
+                    .unwrap_or_default(),
+            ),
+            split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -2234,6 +2265,8 @@ impl Render for MainView {
         self.studio_frame(window, cx);
         self.browser_frame(window, cx); // --- browser ---
         self.notes_frame(cx); // --- notes ---
+        self.tray_frame(cx); // --- tray ---
+        self.split_frame(cx); // --- split ---
         // --- reading compose ---
         self.compose_frame(window, cx);
         // --- end reading compose ---
@@ -2247,11 +2280,12 @@ impl Render for MainView {
         } else {
             viewport.width - list_w - px(1.)
         };
-        let pane_w = if show_preview {
+        let pane_w = if show_preview && !self.split.is_open() {
             (rest / 2.).floor()
         } else {
             rest
         };
+        let pane_w = self.split_pane_w(pane_w); // --- split ---
         // --- end full editor ---
         let list_len = if stacked {
             ListLength::Height((viewport.height * 0.34).round())
@@ -2335,6 +2369,9 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.trails_actions(d, cx)) // --- trails ---
+            .map(|d| self.tray_actions(d, cx)) // --- tray ---
+            .map(|d| self.split_actions(d, cx)) // --- split ---
             .map(|d| self.chat_actions(d, cx)) // --- chat ---
             .size_full()
             .relative()
@@ -2381,18 +2418,25 @@ impl Render for MainView {
                                 .flex_row()
                                 .child(match self.render_own_versions(&body_font, size, cx) {
                                     Some(v) => v,
-                                    None => self
-                                        .render_editor_pane(&body_font, size, side_pad, cx)
-                                        .into_any_element(),
+                                    // --- split --- the right post beside it
+                                    None => self.split_wrap(
+                                        self.render_editor_pane(&body_font, size, side_pad, cx)
+                                            .into_any_element(),
+                                        cx,
+                                    ),
                                 })
                                 // --- full editor --- (not beside ⌘Y's history,
                                 // whose body is the reader's WebView)
-                                .when(show_preview && self.reading.own.is_none(), |d| {
-                                    d.child(self.studio_pane(&p))
-                                }),
+                                .when(
+                                    show_preview
+                                        && self.reading.own.is_none()
+                                        && !self.split.is_open(), // --- split ---
+                                    |d| d.child(self.studio_pane(&p)),
+                                ),
                         ),
                 ),
             })
+            .children(self.render_tray(cx)) // --- tray ---
             .child(self.render_status_bar(cx))
             .children(self.render_browser_pane(cx)) // --- browser ---
             .children(self.render_notes_drawer(cx)) // --- notes ---
@@ -2401,6 +2445,7 @@ impl Render for MainView {
             .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
             .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
+            .children(self.render_trail_publish(cx)) // --- trails ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
             .children(onboarding) // --- onboarding ---
@@ -2552,6 +2597,7 @@ impl MainView {
         };
         div()
             .id("omnibar")
+            .map(|d| self.omnibar_quote_drop(d, cx)) // --- tray ---
             .h(px(OMNI_H))
             .flex_none()
             .flex()
@@ -2914,6 +2960,7 @@ impl MainView {
                     cx.stop_propagation();
                 }
             }))
+            .map(|d| self.editor_quote_drop(d, cx)) // --- tray ---
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 let imgs: Vec<_> = paths
                     .paths()

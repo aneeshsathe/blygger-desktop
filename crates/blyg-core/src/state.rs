@@ -59,6 +59,27 @@ pub struct AppState {
     /// show blygs whose database isn't open.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub blyg_cards: std::collections::BTreeMap<String, BlygCard>,
+    // --- tangles ---
+    /// --- tray --- Posts picked up to quote and not placed yet, per blyg
+    /// (by host), in the order they were picked up.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub quote_tray: std::collections::BTreeMap<String, Vec<TrayEntry>>,
+    /// --- split --- The left post's share of the editor column in split
+    /// view, in thousandths, when the user dragged the divider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_left: Option<u32>,
+}
+
+/// --- tray --- A post waiting in the quote tray: what the picker writes
+/// for it (`![[id | label]]`), its title, and where it's from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TrayEntry {
+    pub id: String,
+    pub label: String,
+    pub title: String,
+    /// The reading row's subscription (`~own` for yours).
+    pub subscription_id: String,
 }
 
 /// --- blyg switcher --- A blyg as the switcher shows it.

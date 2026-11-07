@@ -105,6 +105,13 @@ pub enum Key {
     // --- chat ---
     /// The #thicket chat tab came to the front (⇧⌘I or the tab).
     Chat,
+    // --- tangles ---
+    /// A post is going on a trail (`t`: the why field is open), or ⌥⌘T.
+    Trail,
+    /// A post went on the quote tray (`q` or ⌥⌘K).
+    Tray,
+    /// ⌥⌘⏎: a post opened beside the one being written.
+    Split,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -227,6 +234,9 @@ pub enum Setup {
     Consent,
     /// The Subscriptions screen (⇧⌘S).
     Subscriptions,
+    /// --- tangles --- Posts, the sample draft open and then the versioned
+    /// post (so ⌥⌘⏎ has a post to put beside).
+    Pair,
 }
 
 /// One step of the tour.
@@ -637,6 +647,82 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- tangles --- trails, the quote tray, split view.
+    Step {
+        id: "trails",
+        since: "0.18.0",
+        title: "Keep a trail",
+        caption: if cfg!(target_os = "windows") {
+            "A trail is a path through posts you chose to keep. t adds the selected post, with a \
+             word on why (⏎ keeps it, esc skips); Shift+T starts another trail. The trail bar \
+             walks it, and Ctrl+Alt+T writes it as a thread of quotes in a new draft: nothing \
+             is published until you publish it."
+        } else {
+            "A trail is a path through posts you chose to keep. t adds the selected post, with a \
+             word on why (⏎ keeps it, esc skips); ⇧T starts another trail. The trail bar walks \
+             it, and ⌥⌘T writes it as a thread of quotes in a new draft: nothing is published \
+             until you publish it."
+        },
+        keys: &[Key::Trail],
+        key_label: "t",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "quote-tray",
+        since: "0.18.0",
+        title: "Pick it up, quote it later",
+        caption: if cfg!(target_os = "windows") {
+            "q (or Ctrl+Alt+K) puts the post on the quote tray, the strip above the status bar. \
+             Ctrl+K lists the tray first when you quote, and you can drag a tray chip, a stream \
+             post or a Reader row straight into a post: a quote in a thread, a link in a \
+             fragment. Dropped on the search box, it starts a new thread."
+        } else {
+            "q (or ⌥⌘K) puts the post on the quote tray, the strip above the status bar. ⌘K \
+             lists the tray first when you quote, and you can drag a tray chip, a stream post or \
+             a Reader row straight into a post: a quote in a thread, a link in a fragment. \
+             Dropped on the omnibar, it starts a new thread."
+        },
+        keys: &[Key::Tray],
+        key_label: "q",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "split-view",
+        since: "0.18.0",
+        title: "Two posts side by side",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+Enter puts the selected post beside the one you were writing: yours in a \
+             second editor that saves on its own, anyone else's read-only. Ctrl+Alt+[ and \
+             Ctrl+Alt+] move between them, the divider drags, × closes it."
+        } else {
+            "⌥⌘⏎ puts the selected post beside the one you were writing: yours in a second \
+             editor that saves on its own, anyone else's read-only. ⌥⌘[ and ⌥⌘] move between \
+             them, the divider drags, × closes it."
+        },
+        keys: &[Key::Split],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+Enter"
+        } else {
+            "⌥⌘⏎"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Pair,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end tangles ---
     Step {
         id: "conflict",
         since: "0.16.0",
@@ -1201,7 +1287,10 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat, // --- chat ---
+            Key::Chat,  // --- chat ---
+            Key::Trail, // --- tangles ---
+            Key::Tray,
+            Key::Split,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

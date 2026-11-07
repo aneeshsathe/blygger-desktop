@@ -55,6 +55,19 @@ link without a label offers **label it**, which writes the post's title in as
 the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
 post says so. The card only shows what this Mac already holds.
 
+### Two posts side by side
+
+**⌥⌘⏎** (Post › Open Beside) opens the selected post beside the one you're
+writing: a reply and its source, two drafts that should be one, a fork and
+its original. Your own post opens in a second editor that saves on its own
+and has its own status line. Anyone else's opens read-only; drag its header
+into your post to quote it. **⌥⌘[** and **⌥⌘]** (View › Left Post / Right
+Post) move between them, the divider drags (Burrow remembers where), and ×
+or ⌥⌘⏎ again closes the right side. From Reading, ⌥⌘⏎ goes to Posts with
+the post you were reading beside the one you were writing.
+
+On Windows the keys are Ctrl+Alt+Enter and Ctrl+Alt+[ / ].
+
 ## Fragments and threads
 
 A blyg holds two kinds of post:

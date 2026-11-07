@@ -973,6 +973,45 @@ impl Backend for SwitchBackend {
     fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
         self.cur().set_in_hopper(hopper, sub_id, remote_id, on)
     }
+    // --- shelf --- (was missing: through the switcher the shelf read empty
+    // and refused changes)
+    fn shelf(&self) -> Vec<LocalId> {
+        self.cur().shelf()
+    }
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        self.cur().set_on_shelf(id, on)
+    }
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        self.cur().move_on_shelf(id, index)
+    }
+    // --- trails ---
+    fn trails(&self) -> Vec<blyg_core::Trail> {
+        self.cur().trails()
+    }
+    fn create_trail(&self, name: &str) -> Result<blyg_core::Trail> {
+        self.cur().create_trail(name)
+    }
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        self.cur().rename_trail(id, name)
+    }
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        self.cur().delete_trail(id)
+    }
+    fn trail_stops(&self, trail: &str) -> Vec<blyg_core::TrailStop> {
+        self.cur().trail_stops(trail)
+    }
+    fn add_trail_stop(&self, trail: &str, stop: &blyg_core::TrailStop) -> Result<usize> {
+        self.cur().add_trail_stop(trail, stop)
+    }
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        self.cur().set_trail_why(trail, index, why)
+    }
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        self.cur().remove_trail_stop(trail, index)
+    }
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        self.cur().move_trail_stop(trail, from, to)
+    }
     // --- browse ---
     fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
         self.cur().classify_links(urls)

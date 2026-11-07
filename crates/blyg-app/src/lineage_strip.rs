@@ -538,8 +538,19 @@ impl MainView {
                         format!("{who} · {words}")
                     };
                     let en = e.clone();
+                    // --- tray --- a row can be dragged into the post as a quote.
+                    let drag = crate::app::tray::DraggedQuote {
+                        id: e.id.clone(),
+                        title: e.title.clone(),
+                        label: None,
+                        key: e
+                            .own
+                            .then(|| (blyg_core::OWN_SUBSCRIPTION.to_string(), e.id.clone())),
+                        from_tray: false,
+                    };
                     div()
                         .id((key, i))
+                        .map(|d| crate::app::tray::draggable(d, drag))
                         .flex()
                         .items_center()
                         .gap(px(6.))

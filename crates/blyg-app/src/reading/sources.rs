@@ -235,7 +235,7 @@ impl MainView {
 
     /// Everything the pane lists now.
     pub(crate) fn source_entries(&self) -> Vec<Entry> {
-        sources_vm::entries(
+        let e = sources_vm::entries(
             &self.reading.hoppers,
             &self.reading.folders,
             &self.reading.filed,
@@ -243,7 +243,8 @@ impl MainView {
             &self.reading.rows,
             &self.reading.collapsed,
             self.now,
-        )
+        );
+        crate::app::trails::with_trails(e, &self.reading.trails.list) // --- trails ---
     }
 
     /// Show `source`'s posts in the list. The open post stays when it's
@@ -1183,12 +1184,25 @@ impl MainView {
     /// The header line above the list: the selected source's name.
     pub(super) fn render_source_title(&self) -> AnyElement {
         let p = self.palette.on_page();
-        let label = sources_vm::source_label(
-            &self.reading.source,
-            &self.reading.folders,
-            &self.reading.subs,
-            &self.reading.hoppers,
-        );
+        let label = match &self.reading.source {
+            // --- trails --- the trail's name.
+            Source::Trail(id) => self
+                .reading
+                .trails
+                .list
+                .iter()
+                .find(|t| &t.id == id)
+                .map_or_else(
+                    || "Trail".into(),
+                    |t| format!("{} {}", crate::app::trails::GLYPH, t.name),
+                ),
+            s => sources_vm::source_label(
+                s,
+                &self.reading.folders,
+                &self.reading.subs,
+                &self.reading.hoppers,
+            ),
+        };
         div()
             .id("list-source")
             .flex_none()
@@ -1353,6 +1367,25 @@ impl MainView {
                 }))
                 .into_any_element(),
             // --- hoppers --- a hopper: its count, and whether it's public.
+            // --- trails --- a trail: its stops in its order.
+            Entry::Trail(t) => {
+                let id = t.id.clone();
+                row(SharedString::from(format!("src-trail-{}", t.id)))
+                    .child(
+                        div()
+                            .flex_none()
+                            .w(px(14.))
+                            .child(crate::app::trails::GLYPH),
+                    )
+                    .child(div().flex_1().min_w_0().truncate().child(t.name.clone()))
+                    .child(count(t.stops))
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        window.focus(&this.reading.focus, cx);
+                        this.set_pane(Pane::Sources, cx);
+                        this.select_trail(&id, cx);
+                    }))
+                    .into_any_element()
+            }
             Entry::Hopper(h) => {
                 let (id1, id2) = (h.id.clone(), h.id.clone());
                 row(SharedString::from(format!("src-hopper-{}", h.id)))

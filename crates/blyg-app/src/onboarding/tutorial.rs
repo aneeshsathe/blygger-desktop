@@ -534,6 +534,9 @@ impl MainView {
             ),
             (Key::LineageMap, self.lineage_map_open()),
             (Key::HoverCard, self.hover_card_shown()), // --- hover cards ---
+            // --- tangles ---
+            (Key::Trail, self.reading.trails.field.is_some()),
+            (Key::Tray, !self.tray.items.is_empty()),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -601,6 +604,10 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
         let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
+        // --- tangles ---
+        let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
+        let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
+        let d = on!(d, crate::app::split::OpenBeside, Key::Split);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -676,6 +683,12 @@ impl MainView {
                 self.set_query_text(q, window, cx);
                 self.mode = EditMode::Search;
                 self.omni.update(cx, |s, cx| s.focus(window, cx));
+            }
+            // --- tangles --- a post to write beside, then the one to open.
+            Setup::Pair => {
+                self.tutorial_tidy(window, cx);
+                self.tutorial_open(steps::DRAFT, window, cx);
+                self.tutorial_open(steps::VERSIONED, window, cx);
             }
             Setup::EnsureOpen => {
                 self.tutorial_tidy(window, cx);
