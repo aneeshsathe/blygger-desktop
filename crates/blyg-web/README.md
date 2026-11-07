@@ -78,12 +78,23 @@ runs the bindings natively. Those tests and the included `vm.rs`,
 - ⌘L focuses the omnibar. A theme menu offers Burrow's ten built-in themes.
   The page also has stacked or side-by-side layouts, an offline switch
   ("offline · N changes waiting") and a reset to the sample data.
+- **An action row over the editor** names what you can do with the open
+  post, with its key in the tooltip: 📚 Shelve (⌥⌘B), 👁 Preview (⌘E),
+  🖼 Image, ✦ Write TK, and, when they apply, ✎ Make draft (⌘D),
+  ⟲ Versions (⌃⇧Y), ↺ Discard changes (⌥⌘Z), ⊘ Withdraw… and ✕ Delete
+  draft… (⇧⌘⌫). Destructive ones still ask first.
 
-- Posts | Reading (⌃1 / ⌃2). Reading lists what you read, newest first,
+- Posts | Reading | ⚙ Blyg (⌃1 / ⌃2 / ⌃3). Reading lists what you read, newest first,
   with unread dots and lineage glyphs. Open a post to read it with its
   lineage (what it replies to, quotes or forks, and who drew on it). From
   there: ❝ Quote, ↩ Reply, ⊕ Hopper, [[ Copy link, mark unread, A− / A+.
-  Hold a sentence to quote, reply to or link just that passage.
+  Hold a sentence to quote, reply to or link just that passage. The
+  sources pane starts with ＋ Subscribe, ☷ Subscriptions, @ Mentions,
+  ⊕ Hoppers, ⌕ Peek and ⟲ History.
+- **Blyg** (⌃3) is one labelled list of what isn't about the post in front
+  of you: your blyg's Settings, Mentions, Hoppers, Subscribe,
+  Subscriptions, Peek at a post, History, your shelf, the theme, and in
+  the demo the offline switch and the reset (`www/hub.js`).
 - The shelf: 📚 marks shelved posts, which come first, with a line under
   them. ⌥⌘B shelves or unshelves the open post, ⌘B lists the shelf. It
   holds 50 at most.
@@ -98,22 +109,32 @@ wherever Burrow uses ⌘.
 
 Under 700px wide the page is a phone app, after the approved prototype:
 
-- **Bottom tabs** Write · Read · Shelf, and a floating **＋** for quick
-  capture. Capture is a bottom sheet with the 1000-character counter,
+- **Bottom tabs** Write · Read · Shelf · Blyg, and a floating **＋** for
+  quick capture. Capture is a bottom sheet with the 1000-character counter,
   **Keep as note** (a scratch note) and **Publish** (offline, it's kept).
 - **Write**: a search box ("Search or start a post"; no match offers
   "＋ Start …"), the shelf strip, then Posts. Hold a post to shelve it.
+- **The editor's top bar** names its buttons: 📚 Shelf, 👁 Preview and
+  ⋯ Post (the post's sheet: image, TK, versions, withdraw, discard,
+  delete).
 - **The editor bar** rides above the on-screen keyboard. It's paged, like
   Apple Notes' tool screens: swipe it sideways and it snaps a page at a
   time, with dots under it, and Publish stays at the right.
-  Page 1: [[ link · ❝ quote · ◦⇄≡ · TK · 📚 · 👁.
-  Page 2: bold, italic, heading, bullets, numbers, block quote, code.
-  Page 3: code block, web link, image, rule, strikethrough, hide keyboard.
+  Page 1: [[ link · ❝ quote · ◦⇄≡ · TK.
+  Page 2: bold, italic, heading, bullets, numbers, block quote.
+  Page 3: code, code block, web link, image, rule, strikethrough.
+  Page 4: ⋯ Post · ✦ Write TK · ⌄ Done (hides the keyboard).
   Tools don't take focus, so the keyboard stays up.
-- **Read**: the stream. Swipe a card right to mark it read; swipe it left
-  for ❝ Quote · ↩ Reply · ⊕ Hopper; tap to read. "● N" shows only unread.
-  In a post, **hold a sentence** for ❝ Quote · ↩ Reply to this · [[ Link.
-  A reply is a stub thread quoting just that passage.
+- **Read**: the stream. Under the search, a row of named buttons:
+  ☰ Sources · ＋ Subscribe · ☷ Subscriptions · @ Mentions · ⊕ Hoppers ·
+  ⌕ Peek · ⟲ History. Swipe a card right to mark it read; swipe it left
+  for ❝ Quote · ↩ Reply · ⊕ Hopper; tap to read. "● N unread" shows only
+  unread. A post you read has a row of its own: ❝ Quote · ↩ Reply ·
+  ⊕ Hopper · [[ Copy link · ● Unread · ⑂ Fork. **Hold a sentence** for
+  ❝ Quote · ↩ Reply to this · [[ Link. A reply is a stub thread quoting
+  just that passage.
+- **Blyg**: the same labelled list as the desk's Blyg view, with the
+  theme chosen in place.
 - Text is sized in rem, so the system text size (Dynamic Type on iOS) and
   A− / A+ reflow the reader. Safe-area insets, 44px tap targets and
   `prefers-reduced-motion` are respected. The system back gesture closes

@@ -155,6 +155,9 @@ fn publishing_makes_the_next_version() {
     );
     let v = view(&b);
     assert_eq!(v["current"]["version"], "public v1");
+    // The editor's action row: published, nothing to discard yet.
+    assert_eq!(v["current"]["published"], true);
+    assert_eq!(v["current"]["has_edits"], false);
     assert_eq!(
         outcome(b.publish_check())["message"],
         "Already published as v1"
@@ -163,6 +166,8 @@ fn publishing_makes_the_next_version() {
     // --- web-writing --- they're withdrawn instead, confirmed.
     assert_eq!(outcome(b.delete_check())["action"], "ask_withdraw");
     // --- end web-writing ---
+    b.edit("first version, edited", NOW);
+    assert_eq!(view(&b)["current"]["has_edits"], true);
 }
 
 #[test]

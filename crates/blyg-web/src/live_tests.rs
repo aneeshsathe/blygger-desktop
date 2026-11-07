@@ -685,10 +685,13 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
         live,
         include_str!("../www/core.js"),
         include_str!("../www/app.js"),
+        include_str!("../www/hub.js"),
     ] {
         assert!(!src.contains("document.cookie"));
         assert!(!src.to_lowercase().contains("authorization"));
     }
+    // The Blyg list only opens other screens: it fetches nothing itself.
+    assert!(!include_str!("../www/hub.js").contains("fetch("));
 }
 
 // ---------------------------------------------------------------- speed (0.18.1)

@@ -200,6 +200,10 @@ struct Current {
     conflict: Option<live::ConflictView>,
     /// Live mode: an edit the blyg hasn't got yet.
     pending: bool,
+    /// Published at least once (v1 or later): versions, withdraw.
+    published: bool,
+    /// Published, with edits since (Discard changes applies).
+    has_edits: bool,
 }
 
 #[derive(Serialize)]
@@ -460,6 +464,8 @@ impl Burrow {
                 stub_of: None,
                 conflict: None,
                 pending: false,
+                published: false,
+                has_edits: false,
             }),
             (_, Some(it)) => {
                 let chars = it.char_count();
@@ -480,6 +486,8 @@ impl Burrow {
                     stub_of: self.stub_label(&it),
                     conflict: self.conflict_view(&it.local_id),
                     pending: it.pending_sync,
+                    published: it.version > 0,
+                    has_edits: vm::has_unpublished_edits(&it),
                     content: it.content_md,
                 })
             }

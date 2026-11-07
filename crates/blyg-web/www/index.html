@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="phone.css">
 <!-- --- web-reading --- --><link rel="stylesheet" href="web-reading.css"><!-- --- end web-reading --- -->
 <!-- web-writing --><link rel="stylesheet" href="writing.css"><!-- end web-writing -->
+<link rel="stylesheet" href="hub.css">
 <script type="importmap">{ "imports": { "env": "./env.js" } }</script>
 </head>
 <body>
@@ -36,7 +37,6 @@
     </span>
     <button type="button" class="ghost demo-only" id="offline" aria-pressed="false">Go offline</button>
     <button type="button" class="ghost demo-only" id="reset">Reset sample data</button>
-    <!-- web-writing --><button type="button" class="ghost" id="d-wset" title="Your blyg’s title, author, links and defaults">⚙ Your blyg</button><!-- end web-writing -->
   </div>
 </header>
 
@@ -47,6 +47,7 @@
       <span class="seg views" role="tablist" aria-label="View">
         <button type="button" role="tab" data-view="posts" class="on" title="Posts (⌃1)">Posts</button>
         <button type="button" role="tab" data-view="reading" title="Reading (⌃2)">Reading <b id="d-unread"></b></button>
+        <button type="button" role="tab" data-view="blyg" title="Your blyg: settings, mentions, hoppers, subscriptions, theme (⌃3)">⚙ Blyg</button>
       </span>
       <span class="glass" aria-hidden="true">⌕</span>
       <input id="omni" placeholder="Search or start writing…" autocomplete="off" spellcheck="false" aria-label="Search or start writing">
@@ -55,6 +56,7 @@
     <div class="body" id="pbody">
       <div class="list" id="list" role="listbox" aria-label="Posts"></div>
       <div class="edwrap" id="edwrap">
+        <div class="pacts" id="d-pacts" role="toolbar" aria-label="This post"></div>
         <div class="stubof" id="d-stubof" hidden></div>
         <div class="conflict" id="d-conflict" role="alert" hidden></div>
         <div class="edpanes">
@@ -83,13 +85,13 @@
         <div class="pmenu" id="d-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
       </div>
     </div>
+    <div class="body bbody" id="bbody" hidden><div class="bscroll" id="d-hub"></div></div>
     <div class="sb" id="sb">
       <button type="button" class="kind" id="kind" title="Fragment ⇄ thread (⌘T)"></button>
       <span class="cnt" id="cnt"></span>
       <span class="ban" id="ban"></span>
       <span class="sync" id="sync"><b></b><span></span></span>
       <span class="ver" id="ver"></span>
-      <!-- web-writing --><button type="button" class="kind" id="d-wmenu" title="This post: image, versions, TK, withdraw (⌃⇧Y versions)">⋯ Post</button><!-- end web-writing -->
     </div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -104,7 +106,8 @@
     <kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd> delete draft · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>Z</kbd> discard changes ·
     <kbd>⌘</kbd><kbd>K</kbd> link · <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> quote ·
     <kbd>⌘</kbd><kbd>B</kbd> shelf · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> shelve or unshelve ·
-    <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading
+    <kbd>⌃</kbd><kbd>⇧</kbd><kbd>Y</kbd> versions ·
+    <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading · <kbd>⌃</kbd><kbd>3</kbd> Blyg
     <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
   </p>
 </main>
@@ -114,7 +117,7 @@
 <div id="phone" class="papp">
   <!-- WRITE -->
   <section class="pview" id="v-write" aria-label="Write">
-    <div class="ptop"><h1 class="pt">Burrow</h1><span class="modebadge" id="p-mode"></span><button type="button" class="ic" id="p-theme" aria-label="Theme" title="Theme">◐</button></div>
+    <div class="ptop"><h1 class="pt">Burrow</h1><span class="modebadge" id="p-mode"></span></div>
     <label class="psearch">⌕ <input id="p-q" type="search" placeholder="Search or start a post" autocomplete="off" enterkeyhint="go" aria-label="Search or start a post"></label>
     <div class="pscroll" id="p-writeScroll">
       <div class="plbl">📚 Shelf</div>
@@ -126,7 +129,7 @@
 
   <!-- EDITOR -->
   <section class="pview off-r" id="v-edit" aria-label="Editor">
-    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><!-- web-writing --><button type="button" class="ic" id="p-wmenu" aria-label="This post" title="This post">⋯</button><!-- end web-writing --><button type="button" class="ic" id="p-shelfBtn" aria-label="Shelve" title="Shelve">📚</button><button type="button" class="ic" id="p-prevBtn" aria-label="Preview" title="Preview">👁</button></div>
+    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><button type="button" class="ic lbl" id="p-shelfBtn" aria-pressed="false" title="Shelve or unshelve"><span aria-hidden="true">📚</span> Shelf</button><button type="button" class="ic lbl" id="p-prevBtn" aria-pressed="false" title="Preview"><span aria-hidden="true">👁</span> Preview</button><!-- web-writing --><button type="button" class="ic lbl" id="p-wmenu" title="This post: image, TK, versions, withdraw, discard, delete"><span aria-hidden="true">⋯</span> Post</button><!-- end web-writing --></div>
     <div class="stubof" id="p-stubof" hidden></div>
     <div class="conflict" id="p-conflict" role="alert" hidden></div>
     <div class="ped">
@@ -139,8 +142,11 @@
 
   <!-- READ -->
   <section class="pview off-r" id="v-read" aria-label="Reading">
-    <div class="ptop"><h1 class="pt">Reading</h1><button type="button" class="ic" id="p-unreadOnly" aria-pressed="false" title="Unread only">● 0</button><!-- --- web-reading --- --><button type="button" class="ic" id="p-wrSources" aria-label="Sources, subscriptions and more" title="Sources and more">☰</button><!-- --- end web-reading --- --></div>
+    <div class="ptop"><h1 class="pt">Reading</h1><button type="button" class="ic lbl" id="p-unreadOnly" aria-pressed="false" title="Unread only">● 0</button></div>
     <label class="psearch">⌕ <input id="p-rq" type="search" placeholder="Search what you read" autocomplete="off" aria-label="Search what you read"></label>
+    <!-- --- web-reading --- --><div class="pstrip" id="p-wrBar" role="toolbar" aria-label="Sources and subscriptions">
+      <button type="button" data-go="sources">☰ Sources</button><button type="button" data-go="subscribe">＋ Subscribe</button><button type="button" data-go="subs">☷ Subscriptions</button><button type="button" data-go="mentions">@ Mentions</button><button type="button" data-go="hoppers">⊕ Hoppers</button><button type="button" data-go="peek-url">⌕ Peek</button><button type="button" data-go="history">⟲ History</button>
+    </div><!-- --- end web-reading --- -->
     <!-- --- web-reading --- --><div class="wr-chip" id="p-wrChip" hidden></div><!-- --- end web-reading --- -->
     <div class="pscroll" id="p-stream"></div>
   </section>
@@ -148,16 +154,25 @@
   <!-- POST -->
   <section class="pview off-r" id="v-post" aria-label="Post">
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
-      <button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button>
-      <button type="button" class="ic" id="p-replyBtn" aria-label="Reply" title="Reply">↩</button><button type="button" class="ic" id="p-hopBtn" aria-label="Hopper" title="Hopper">⊕</button><!-- web-writing --><button type="button" class="ic" id="p-wfork" aria-label="Fork a pinned version" title="Fork">⑂</button><!-- end web-writing --></div>
+      <button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
+    <div class="pstrip" id="p-pacts" role="toolbar" aria-label="This post">
+      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
+    </div>
     <div class="pscroll"><article class="post" id="p-postBody"></article></div>
     <div class="pmenu" id="p-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
+  </section>
+
+  <!-- BLYG: settings, mentions, hoppers, subscriptions, theme (hub.js) -->
+  <section class="pview off-r" id="v-blyg" aria-label="Blyg">
+    <div class="ptop"><h1 class="pt">Blyg</h1></div>
+    <div class="pscroll" id="p-hub"></div>
   </section>
 
   <nav class="tabs" id="p-tabs" aria-label="Sections">
     <button type="button" class="tab on" data-tab="write"><span aria-hidden="true">✎</span>Write</button>
     <button type="button" class="tab" data-tab="read"><span aria-hidden="true">❦</span>Read <b class="tabn" id="p-tabn"></b></button>
     <button type="button" class="tab" data-tab="shelf"><span aria-hidden="true">📚</span>Shelf</button>
+    <button type="button" class="tab" data-tab="blyg"><span aria-hidden="true">⚙</span>Blyg</button>
   </nav>
   <button type="button" class="fab" id="p-fab" aria-label="Quick capture" title="Quick capture">＋</button>
 
@@ -174,9 +189,6 @@
   <div class="psheet" id="sh-shelf" role="dialog" aria-label="Your shelf"><div class="grab"></div><h4>📚 Your shelf</h4><div class="pscroll sheetlist" id="p-shelfSheet"></div>
     <div class="row2"><span>▲▼ reorder · ✕ takes it off · 50 at most</span></div></div>
   <div class="psheet" id="sh-hop" role="dialog" aria-label="Hoppers"><div class="grab"></div><h4>⊕ Put it in a hopper</h4><div class="pscroll sheetlist" id="p-hopList"></div></div>
-  <div class="psheet" id="sh-theme" role="dialog" aria-label="Theme"><div class="grab"></div><h4>Theme</h4><div class="pscroll sheetlist" id="p-themeList"></div>
-    <div class="row2 demo-only"><button type="button" id="p-offline">Go offline</button><button type="button" id="p-reset">Reset sample data</button></div>
-    <!-- web-writing --><div class="row2"><button type="button" id="p-wset">⚙ Your blyg: title, author, links</button></div><!-- end web-writing --></div>
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>
   <div class="ploading" id="p-loading">Loading Burrow…</div>
 </div>

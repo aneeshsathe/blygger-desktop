@@ -16,6 +16,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+- **Burrow in a browser: nothing hides behind a corner menu.** On a phone a fourth tab, **Blyg**, lists your blyg's Settings, Mentions, Hoppers, Subscribe, Subscriptions, Peek, History, your shelf and the theme by name; the Read tab has a row of named buttons under its search (☰ Sources, ＋ Subscribe, Subscriptions, Mentions, Hoppers, Peek, History); a post you read has ❝ Quote, ↩ Reply, ⊕ Hopper, [[ Copy link, ● Unread and ⑂ Fork in a row; the editor's top bar says 📚 Shelf, 👁 Preview and ⋯ Post. On a desk a **⚙ Blyg** view (⌃3) holds the same list, an action row over the editor names Shelve, Preview, Image, Write TK, Versions, Make draft, Discard, Withdraw and Delete (each with its key), and the sources pane starts with Subscribe and the rest. Every shortcut still works, and destructive actions still ask first.
+
 ## [0.19.0] - 2026-11-07
 
 Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.

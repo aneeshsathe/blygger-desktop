@@ -1,0 +1,73 @@
+/* Where things are: the Blyg hub (hub.js; the phone's fourth tab, the
+   desk's Blyg view), the rows of named actions (the desk's over the
+   editor, the phone's under a post you read and under the Read tab's
+   search) and the labelled buttons in the phone's top bars. Colours from
+   Burrow's themes (--c-*). */
+
+/* ---------------------------------------------------------------- the hub */
+.hub { max-width: 44rem; margin: 0 auto; padding: .25rem max(1rem, env(safe-area-inset-right)) 2rem max(1rem, env(safe-area-inset-left));
+  font: 1rem/1.35 var(--ui, Inter, -apple-system, system-ui, sans-serif); color: var(--c-ink); }
+.hub section { margin-top: 1rem; }
+.hub-h { margin: 0 0 .35rem; font: 600 .7rem/1 var(--ui, Inter, system-ui, sans-serif); letter-spacing: .08em; text-transform: uppercase; color: var(--c-muted); }
+.hub-mode { margin: .25rem 0 0; font-size: .82rem; color: var(--c-muted); }
+.hub-mode .modebadge { margin-left: 0; }
+.hub-row { display: flex; align-items: center; gap: .75rem; width: 100%; min-height: 52px; padding: .55rem .5rem; text-align: left; cursor: pointer;
+  border: 0; border-top: 1px solid var(--c-line); background: none; color: inherit; font: inherit; border-radius: 0; }
+.hub section .hub-row:last-child { border-bottom: 1px solid var(--c-line); }
+.hub-row:hover, .hub-row:focus-visible { background: color-mix(in srgb, var(--c-sel) 70%, transparent); }
+.hub-ico { flex: none; width: 2rem; height: 2rem; border-radius: 8px; display: inline-grid; place-items: center; font-size: 1.05rem;
+  background: color-mix(in srgb, var(--c-accent) 12%, transparent); color: var(--c-accent); }
+.hub-l { flex: 1; min-width: 0; }
+.hub-l b { display: block; font-weight: 600; }
+.hub-l small { display: block; color: var(--c-muted); font-size: .8rem; }
+.hub-key { flex: none; }
+.hub-go { flex: none; color: var(--c-muted); font-size: 1.2rem; }
+.hub-themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: .4rem; }
+.hub-theme { text-align: left; min-height: 48px; padding: .4rem .6rem; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-bg);
+  color: var(--c-ink); font: .9rem/1.25 var(--ui, Inter, system-ui, sans-serif); cursor: pointer; }
+.hub-theme small { display: block; color: var(--c-muted); font-size: .72rem; }
+.hub-theme.on { border-color: var(--c-accent); color: var(--c-accent); }
+.hub-acts { display: flex; gap: .5rem; flex-wrap: wrap; }
+.hub-btn { min-height: 44px; padding: 0 .9rem; border: 1px solid var(--c-line); border-radius: 10px; background: var(--c-bg); color: var(--c-ink);
+  font: .9rem var(--ui, Inter, system-ui, sans-serif); cursor: pointer; }
+.hub-btn[aria-pressed="true"] { border-color: var(--c-accent); color: var(--c-accent); }
+.hub-note { font-size: .8rem; color: var(--c-muted); margin: .4rem 0 0; }
+
+/* desk: the Blyg view fills the window body */
+.bbody { display: block; overflow: auto; }
+.bbody[hidden] { display: none; }
+.bscroll { padding: 8px 0 24px; }
+#desk .hub { font-size: 14px; }
+#desk .hub-row { min-height: 46px; }
+
+/* ---------------------------------------------------------------- desk: the editor's action row */
+.pacts { flex: none; display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 5px 10px; border-bottom: 1px solid var(--wline); background: var(--wbg); }
+.pacts[hidden] { display: none; }
+.pacts button { border: 1px solid transparent; background: none; color: var(--wink); font: 12.5px Inter, system-ui, sans-serif; padding: 4px 8px; border-radius: 6px; min-height: 28px; }
+.pacts button:hover:not(:disabled) { border-color: var(--wline); color: var(--wacc); }
+.pacts button[aria-pressed="true"] { border-color: var(--wacc); color: var(--wacc); }
+.pacts button:disabled { opacity: .45; cursor: default; }
+
+/* desk: Subscribe and the rest at the top of the sources pane */
+.wr-more { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 8px; border-bottom: 1px solid var(--c-line); margin-bottom: 6px; }
+.wr-more button { flex: 1 1 auto; border: 1px solid var(--c-line); background: var(--c-bg); color: var(--c-ink); text-align: center; font: 500 11.5px Inter, system-ui, sans-serif;
+  padding: 4px 6px; border-radius: 6px; min-height: 28px; white-space: nowrap; }
+.wr-more button:hover { border-color: var(--c-accent); color: var(--c-accent); background: var(--c-bg); }
+.wr-more button.pri { background: var(--c-accent); border-color: var(--c-accent); color: #fff; }
+
+/* ---------------------------------------------------------------- phone */
+/* Labelled buttons in the top bars: an icon and a word. */
+#phone .ic.lbl { font-size: .9rem; padding: .35rem .55rem; white-space: nowrap; }
+#phone .ic.lbl span { font-size: 1rem; }
+/* A row of named actions that scrolls sideways when it doesn't fit. */
+.pstrip { flex: none; display: flex; gap: .4rem; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
+  padding: 0 max(1rem, env(safe-area-inset-right)) .5rem max(1rem, env(safe-area-inset-left)); }
+.pstrip::-webkit-scrollbar { display: none; }
+.pstrip button { flex: none; min-height: 44px; padding: 0 .85rem; border: 1px solid var(--c-line); border-radius: 22px; background: var(--c-bg);
+  color: var(--c-ink); font: .88rem var(--ui, system-ui); cursor: pointer; white-space: nowrap; }
+.pstrip button:active { background: var(--c-sel); }
+#v-post .pstrip { border-bottom: 1px solid var(--c-line); }
+/* Four tabs: a little tighter. */
+#phone .tab { font-size: .7rem; }
+/* The hub is for settling things, not capturing them: no ＋ over its list. */
+#phone[data-view="blyg"] .fab { display: none; }
