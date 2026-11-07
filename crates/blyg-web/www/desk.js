@@ -9,6 +9,9 @@ import {
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
+// --- web-reading ---
+import { deskSources, opened, wrUse } from './web-reading.js';
+// --- end web-reading ---
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
 
@@ -99,6 +102,7 @@ function renderReading() {
     : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`);
   host.querySelector('.card.cur')?.classList.remove('cur');
   if (rcur) host.querySelector(`.card[data-key="${CSS.escape(rcur)}"]`)?.classList.add('cur');
+  deskSources(); // --- web-reading --- the sources pane --- end web-reading ---
 }
 
 // ---------------------------------------------------------------- preview
@@ -249,6 +253,7 @@ function openReading(key) {
   if (!p) return;
   rcur = key;
   renderPost($('#d-post'), p);
+  opened(key, $('#d-post')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#d-ractions').hidden = false;
   $('#d-rpane .rscroll').scrollTop = 0;
   persist();
@@ -286,6 +291,7 @@ function readAction(a, key = rcur, passage = '') {
 
 // ---------------------------------------------------------------- events
 export function initDesk() {
+  wrUse('desk', { openReading: (k) => { setView('reading'); openReading(k); } }); // --- web-reading --- --- end web-reading ---
   omni.addEventListener('focus', () => { if (view === 'posts') { mode = 'search'; render(); } });
   omni.addEventListener('input', () => {
     if (view === 'reading') { rq = omni.value; rlimit = RPAGE; $('#d-stream').scrollTop = 0; render(); return; }

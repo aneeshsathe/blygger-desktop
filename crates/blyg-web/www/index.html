@@ -16,6 +16,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="phone.css">
+<!-- --- web-reading --- --><link rel="stylesheet" href="web-reading.css"><!-- --- end web-reading --- -->
 <script type="importmap">{ "imports": { "env": "./env.js" } }</script>
 </head>
 <body>
@@ -62,6 +63,7 @@
       </div>
     </div>
     <div class="body rbody" id="rbody" hidden>
+      <!-- --- web-reading --- the sources pane --><nav class="wr-sources" id="d-wr-sources" aria-label="Sources"></nav><!-- --- end web-reading --- -->
       <div class="list rlist" id="d-stream" aria-label="What you read"></div>
       <div class="rpane" id="d-rpane">
         <div class="ractions" id="d-ractions" hidden>
@@ -133,8 +135,9 @@
 
   <!-- READ -->
   <section class="pview off-r" id="v-read" aria-label="Reading">
-    <div class="ptop"><h1 class="pt">Reading</h1><button type="button" class="ic" id="p-unreadOnly" aria-pressed="false" title="Unread only">● 0</button></div>
+    <div class="ptop"><h1 class="pt">Reading</h1><button type="button" class="ic" id="p-unreadOnly" aria-pressed="false" title="Unread only">● 0</button><!-- --- web-reading --- --><button type="button" class="ic" id="p-wrSources" aria-label="Sources, subscriptions and more" title="Sources and more">☰</button><!-- --- end web-reading --- --></div>
     <label class="psearch">⌕ <input id="p-rq" type="search" placeholder="Search what you read" autocomplete="off" aria-label="Search what you read"></label>
+    <!-- --- web-reading --- --><div class="wr-chip" id="p-wrChip" hidden></div><!-- --- end web-reading --- -->
     <div class="pscroll" id="p-stream"></div>
   </section>
 
@@ -172,6 +175,17 @@
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>
   <div class="ploading" id="p-loading">Loading Burrow…</div>
 </div>
+
+<!-- --- web-reading --- sources, subscriptions, mentions, hoppers, peek, history -->
+<div class="wr-panel" id="wr-panel" hidden>
+  <div class="wr-scrim" data-wr-close></div>
+  <section class="wr-box" role="dialog" aria-modal="true" aria-labelledby="wr-h">
+    <header class="wr-head"><button type="button" class="wr-back" id="wr-back" aria-label="Back" hidden>‹</button><h2 id="wr-h"></h2><button type="button" class="wr-x" data-wr-close aria-label="Close">✕</button></header>
+    <div class="wr-body" id="wr-body"></div>
+  </section>
+</div>
+<input type="file" id="wr-opml-file" accept=".opml,.xml,text/xml,application/xml,text/x-opml" hidden>
+<!-- --- end web-reading --- -->
 
 <!-- ================================================================ sign in (live) -->
 <div class="signin" id="signin" role="dialog" aria-modal="true" aria-labelledby="signin-h" hidden>

@@ -13,6 +13,9 @@ import { $, S, now, load, pref, applyTheme } from './core.js';
 import * as live from './live.js';
 import { initDesk, render as renderDesk, showDesk, deskEditorFocused } from './desk.js';
 import { initPhone, render as renderPhone, showPhone } from './phone.js';
+// --- web-reading ---
+import { initWebReading } from './web-reading.js';
+// --- end web-reading ---
 
 const narrow = matchMedia('(max-width: 700px)');
 function chooseLayout() {
@@ -56,6 +59,7 @@ async function openStore() {
     chooseLayout();
     initDesk();
     initPhone();
+    initWebReading(); // --- web-reading --- --- end web-reading ---
     (S.layout === 'phone' ? showPhone : showDesk)();
     narrow.addEventListener('change', () => {
       chooseLayout();

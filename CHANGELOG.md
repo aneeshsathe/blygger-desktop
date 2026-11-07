@@ -32,6 +32,11 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Threads, Fragments and Thumbed down** smart feeds in the Reader (Studio's lenses and disliked list).
 - **Alt text for images.** After a pasted or dropped image uploads, Burrow asks what it shows and writes it as the image's alt text.
 - **Copy Link** (Post › Copy Link): the open post's address, yours or the one you're reading.
+- **Burrow in a browser reads as Studio does.** The Read side gets its sources: on a desk a pane left of the stream, on a phone ☰ on the Read tab. Choose a smart feed (All unread, Today, Thumbed, All, Background), Mentions, a hopper or a subscription, and Threads or Fragments; a line under the phone's search says what shows. Withdrawn posts show in Background only, as in the app.
+- **Subscriptions in a browser:** subscribe with a preview, see how each one is doing (checked when, paused, or having trouble and why), rename, pause and resume, put it on your blogroll, read it again, unsubscribe, check all now, and import or export OPML.
+- **Mentions in a browser:** responses to your posts grouped under each post (hide one, or show it again), the Webmentions you sent with their state, and Accept Webmentions.
+- **Hoppers in a browser:** make, rename, describe, make public or private, and delete one. **Thumbs:** 👍 / 👎 under a post you read.
+- **Peek in a browser:** open a post from a blyg you don't follow by its address, or by tapping a link to it in a post you read, without subscribing; History lists what you peeked at.
 
 ## [0.18.1] - 2026-11-07
 

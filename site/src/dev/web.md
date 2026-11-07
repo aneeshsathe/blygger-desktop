@@ -56,6 +56,53 @@ It runs in one of two modes, and says which:
 - The shelf stays in the browser until the studio has one
   (blygger-studio#135).
 
+<!-- --- web-reading --- -->
+## Reading: sources, subscriptions, mentions, hoppers
+
+The Read side does what Studio's does (0.19.0):
+
+- **Sources.** On a desk, a pane left of the stream; on a phone, ☰ on the
+  Read tab, with a "Showing …" line under the search (✕ shows everything
+  again). The smart feeds (All unread, Today, Thumbed, All, Background) with
+  their private counts, Mentions (posts that mention you, as the blyg's
+  `GET /api/reading?mentions=true` lens says, else worked out from what is
+  held), your hoppers and your subscriptions, each with a dot when there's
+  something to read, and the Threads / Fragments lens. The rules are the
+  app's `reading/sources_vm.rs`, compiled unchanged; withdrawn posts show in
+  Background only, as in the app.
+- **Subscriptions.** Subscribe with a preview (a blyg's or a feed's address;
+  `wholeBlyg` on a 5.1+ studio, so a hopper's address follows the whole
+  blyg), each subscription's state (checked when, paused, or "having
+  trouble" with its failed checks and the last error the studio flagged),
+  rename (or give it back its own name), pause and resume, blogroll on or
+  off, read again (resync), unsubscribe, check all now, OPML import (a file
+  you pick; the feeds you follow already are marked, and it subscribes to
+  the rest one at a time, waiting out a 429) and OPML export.
+- **Mentions.** Responses to your posts, grouped under the post (newest
+  first, a dot for new ones, never a count), each with its source and
+  state; hide one or show it again; what you sent (outbound Webmentions with
+  their state and last error); and Accept Webmentions (`acceptMentions`).
+- **Hoppers.** Make, rename, describe (280 characters), make public (with
+  its `/h/{slug}/` page) or private, delete (its posts stay).
+- **Thumbs.** 👍 / 👎 under a post you read (`PUT`/`DELETE
+  /api/signals/{sub}/{id}`), shown at once and taken back if the blyg
+  refuses; Thumbed lists the 👍 ones.
+- **Peek.** A post's address on a blyg you don't follow opens in a panel
+  (`POST /api/peek/links`, then `GET /api/peek`), with "Subscribe to …". A
+  post you hold opens in the reader instead. Links in posts you read that
+  are blyg posts open in Peek too (one `POST /api/peek/links` per post,
+  after it's shown). Each peek is logged to the studio's history (`POST
+  /api/browse`), which History lists and can clear.
+
+In the demo the same screens change the sample data in the browser and
+send nothing. None of it adds work on start or on a keystroke: a list is
+read when its screen first opens (and again after a minute or so), the
+sources pane is drawn only with the reading view, and the stream's filter
+is one pass over the rows it already orders. The code is
+`src/web_reading.rs` (rules, requests, answers) and `www/web-reading.js`
+(drawing), with hook lines marked `--- web-reading ---` in the shared files.
+<!-- --- end web-reading --- -->
+
 ## Staying fast with thousands of posts
 
 A blyg can hold hundreds of your posts and thousands to read, and a phone
