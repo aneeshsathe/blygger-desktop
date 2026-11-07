@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-ext-reading-time", "crates/blyg-ext-inspect", "crates/blyg-irc", "crates/blyg-app"]
+members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-ext-reading-time", "crates/blyg-ext-inspect", "crates/blyg-irc", "crates/blyg-app", "crates/blyg-web"]
 
 [workspace.package]
 edition = "2024"
@@ -16,6 +16,16 @@ keywords = ["blygger", "blog", "gpui", "macos", "writing"]
 [profile.release]
 lto = "thin"
 codegen-units = 1
+strip = true
+
+# blyg-web's WebAssembly build (crates/blyg-web/serve.sh): smallest code,
+# whole-program LTO. Panics already abort on wasm32-unknown-unknown.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
 strip = true
 
 [profile.dev.package."*"]
