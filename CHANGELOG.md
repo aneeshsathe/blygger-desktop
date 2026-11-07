@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
+Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.
+
 ### Added
 
 - **Client access.** Blyg › Client Access… lists every app and token that can act as you on your blyg (browser sign-ins, MCP apps, manual API tokens) with what each may do and when it ends; Burrow's own sign-in is marked "this Burrow". `n` makes a manual token (a name, REST API or MCP, its permissions): it appears once with Copy and Burrow never keeps it. ⌫ revokes one and ⇧⌫ revokes them all, after a confirmation that warns when this Burrow would be signed out. Your blyg serves client access to its own sign-in only, so with a browser sign-in or a token Burrow asks for the studio password once and keeps that sign-in in memory until it quits. The docs no longer send you to the studio for this.
@@ -31,13 +35,13 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Signals.** Blyg › Signals… lists your likes, your dislikes and your private activity log (thumbs, hoppers, stubs, forks, quotes). Never published, never counted.
 - **Threads, Fragments and Thumbed down** smart feeds in the Reader (Studio's lenses and disliked list).
 - **Alt text for images.** After a pasted or dropped image uploads, Burrow asks what it shows and writes it as the image's alt text.
+- **The tour** teaches the new Blyg menu: Site…, Contacts…, Stale Quotes… and Client Access…, from the what's-new card.
 - **Copy Link** (Post › Copy Link): the open post's address, yours or the one you're reading.
 - **Burrow in a browser reads as Studio does.** The Read side gets its sources: on a desk a pane left of the stream, on a phone ☰ on the Read tab. Choose a smart feed (All unread, Today, Thumbed, All, Background), Mentions, a hopper or a subscription, and Threads or Fragments; a line under the phone's search says what shows. Withdrawn posts show in Background only, as in the app.
 - **Subscriptions in a browser:** subscribe with a preview, see how each one is doing (checked when, paused, or having trouble and why), rename, pause and resume, put it on your blogroll, read it again, unsubscribe, check all now, and import or export OPML.
 - **Mentions in a browser:** responses to your posts grouped under each post (hide one, or show it again), the Webmentions you sent with their state, and Accept Webmentions.
 - **Hoppers in a browser:** make, rename, describe, make public or private, and delete one. **Thumbs:** 👍 / 👎 under a post you read.
 - **Peek in a browser:** open a post from a blyg you don't follow by its address, or by tapping a link to it in a post you read, without subscribing; History lists what you peeked at.
-<!-- web-writing -->
 - **Burrow in a browser writes like Studio** (live on your blyg, phone and desk):
   - **Images**: from the file picker, the phone's photo picker, a paste or a drop, with alt text, uploaded to your blyg and placed where the caret was. Large images are made smaller first.
   - **Versions** of your post: the list, each one as published or as a word diff against now, restore, and pin (confirmed by typing *pin*). **Withdraw** is here too, confirmed, with an optional note.
@@ -46,7 +50,6 @@ teaches something new in the tour, set the newest entry's `version` in
   - The **publish sheet** drafts a change note and suggests the kind of change when your blyg has the models set; you edit and confirm both.
   - **Settings**: your blyg's title, author, bio, links, addresses, time zone and writing defaults, saved when you press Save.
   - **`@handle`s**: your contacts in the `@` list, and the preview shows a contact's mention as the published page does.
-<!-- end web-writing -->
 
 ## [0.18.1] - 2026-11-07
 

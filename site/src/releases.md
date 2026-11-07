@@ -5,6 +5,60 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.19.0
+
+Burrow now does what Studio does, so you can run your blyg from Burrow alone,
+on your Mac or PC and in a browser. The tour's new steps start at Blyg › Site….
+
+### Running your blyg (Blyg menu)
+
+- **Site…**: your blyg's public pages. Pick the theme (one of Studio's, or
+  design your own with a live preview and contrast warnings), the typeface,
+  a front page, the home page's order, the posts path, the menus on every
+  page, your avatar and addresses, collection feeds, and which of Studio's
+  extensions are on. When your blyg's studio has an update, the status bar
+  says so. Nothing changes on your blyg until you press Save.
+- **Contacts…**: your blyg's address book. Search, add, edit, check and
+  remove people. Post › Add Author to Contacts… adds whoever wrote the post
+  in front of you, and subscribing to a blyg offers to add it. An `@handle`
+  in the preview shows as the link your blyg publishes.
+- **Client Access…**: every app and token that can act as you on your blyg,
+  Burrow included. Make a token (shown once) or revoke any of them.
+- **AI on Your Blyg…**: your blyg's own AI (a model per job, house style,
+  automatic change notes), apart from Burrow's own AI in Settings › AI.
+  When it's set up, the publish sheet drafts the version note (⌥⌘N) and
+  says whether the change looks like a typo, minor or major. You edit and
+  confirm both.
+- **Stale Quotes…**: threads whose quoted posts have newer versions are
+  marked ↻ in Posts; this sheet refreshes their quotes. `is:stale-quote`
+  finds them in the search.
+- **Signals…**: your likes, dislikes and private activity log, with no counts.
+
+### Reading and writing
+
+- Mentions has **Received** and **Sent**: the Webmentions your blyg sent and
+  where each one stands.
+- Subscriptions show when each was last polled and why one is failing.
+- New smart feeds: **Thumbed down**, **Threads** and **Fragments**.
+- ⌘Y shows **Changes from vN**: a word diff between versions of your post.
+- A pasted or dropped image asks for its **alt text**. **Post › Copy Link**
+  copies a post's address.
+
+### Burrow in a browser
+
+The web app (at `/burrow/` on your blyg) does most of what Studio does, and
+stays fast on a phone:
+
+- **Reading**: sources (smart feeds, Mentions, hoppers, subscriptions) with a
+  Threads / Fragments lens; subscriptions (subscribe with a preview, pause,
+  rename, check now, unsubscribe, OPML import and export); mentions received
+  and sent; hoppers (make, rename, describe, public or private, delete);
+  👍 / 👎; Peek at a post from a blyg you don't follow; your browsing history.
+- **Writing**: images with alt text (photo picker, paste, drop); versions (as
+  published, a word diff, restore, pin); withdraw; fork a pinned version; TK
+  generation; the publish sheet's drafted note and kind of change; your
+  blyg's settings; your contacts in the `@` list.
+
 ## Burrow 0.18.1
 
 A patch release: fixes, nothing new to learn.

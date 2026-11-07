@@ -2224,7 +2224,19 @@ fn no_redirects() -> ureq::Agent {
 /// authorize page, and allow every permission it offers. Returns where the
 /// studio sends the browser next (the loopback callback).
 fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
-    let session = auth::login(base, password).expect("studio sign-in");
+    // Other tests sign in with the password too and can spend the studio's
+    // sign-in budget (429): wait it out.
+    let t0 = Instant::now();
+    let session = loop {
+        match auth::login(base, password) {
+            Err(CoreError::Rejected { status: 429, .. })
+                if t0.elapsed() < Duration::from_secs(90) =>
+            {
+                std::thread::sleep(Duration::from_secs(5))
+            }
+            r => break r.expect("studio sign-in"),
+        }
+    };
     let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
     let page = no_redirects()
         .get(authorize_url)
@@ -5848,6 +5860,7 @@ fn signals_list_thumbs_and_activity() {
     let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a heron"), None);
     let b = manual(d1.path());
     let sub = b.subscribe(&src_url, Some("Signals source")).unwrap();
+    let _unsub = Unsub(&b, sub.id.clone());
     sync_until_held(&b, &[&rid]);
     b.signal(&sub.id, &rid, Some(-1)).unwrap();
 

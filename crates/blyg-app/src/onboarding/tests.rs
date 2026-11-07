@@ -685,6 +685,13 @@ fn do_step(e: &mut Env, id: &str) {
         "serendipity" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
         // --- tangles ---
         "trails" => e.cx.simulate_keystrokes("t"),
+        // --- studio parity (0.19.0) --- menu items (no keys).
+        "site" => e.cx.dispatch_action(crate::app::site::ShowSite),
+        "contacts-book" => {
+            e.cx.dispatch_action(crate::app::reading::contacts::ShowContacts)
+        }
+        "stale-quotes" => e.cx.dispatch_action(crate::app::upkeep::ShowStaleQuotes),
+        "client-access" => e.cx.dispatch_action(crate::app::access::ShowClientAccess),
         "quote-tray" => e.cx.simulate_keystrokes("q"),
         "split-view" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-enter"))

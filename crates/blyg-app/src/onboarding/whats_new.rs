@@ -22,6 +22,10 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.19.0",
+        first_step: Some("site"),
+    },
+    Release {
         version: "0.18.0",
         first_step: Some("shelf"),
     },

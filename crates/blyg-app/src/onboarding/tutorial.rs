@@ -541,6 +541,20 @@ impl MainView {
             // --- tangles ---
             (Key::Trail, self.reading.trails.field.is_some()),
             (Key::Tray, !self.tray.items.is_empty()),
+            // --- studio parity (0.19.0) ---
+            (Key::SiteSheet, self.site.sheet.is_some()),
+            (
+                Key::ContactsSheet,
+                matches!(self.sheet, Some(super::Sheet::Contacts(_))),
+            ),
+            (
+                Key::StaleQuotes,
+                matches!(self.sheet, Some(super::Sheet::StaleQuotes(_))),
+            ),
+            (
+                Key::ClientAccess,
+                matches!(self.sheet, Some(super::Sheet::ClientAccess(_))),
+            ),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
