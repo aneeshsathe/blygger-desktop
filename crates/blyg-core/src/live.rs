@@ -1,10 +1,13 @@
 //! `LiveBackend`: the real `Backend`, over the SQLite store, the owner API and
 //! the sync worker.
 
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::JoinHandle;
+use std::time::Duration;
 
 use crate::api::Api;
 use crate::api::public::{PublicClient, not_pinned};
@@ -24,6 +27,104 @@ pub struct LiveBackend {
     probe: PublicClient,
     /// --- browse --- Session state of the browsing log.
     browse: crate::browse::reads::BrowseState,
+    /// Saves from typing (`Backend::save_typing`), and the thread that
+    /// writes them.
+    typing: Arc<Typing>,
+    writer: Mutex<Option<JoinHandle<()>>>,
+}
+
+/// Saves from typing, written to the store by a thread of their own so a
+/// keystroke never waits on SQLite (a transaction, and behind it whatever
+/// a pull is merging). The newest text per item wins: while one write
+/// runs, the keystrokes after it collapse into the next. Until its write
+/// has landed an item's text is here, and every read of the item through
+/// `LiveBackend` sees it (`item` lays it over the stored row; everything
+/// else writes it first, `LiveBackend::e`).
+#[derive(Default)]
+struct Typing {
+    /// The newest unwritten text per item.
+    pending: Mutex<HashMap<LocalId, Arc<str>>>,
+    /// Signalled when `pending` gains a text, or on shutdown.
+    wake: Condvar,
+    /// Held while texts are written, so two writers (the thread, and a
+    /// `settle` on another thread) never put one item's texts in the wrong
+    /// order.
+    write: Mutex<()>,
+    stop: AtomicBool,
+}
+
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
+impl Typing {
+    /// Write every pending text. A text stays pending until it's written,
+    /// so `item` never reads the store between the two. Returns whether
+    /// anything was written.
+    fn write(&self, engine: &Engine, tx: &Mutex<Sender<Msg>>) -> bool {
+        let _order = lock(&self.write);
+        let batch: Vec<(LocalId, Arc<str>)> = lock(&self.pending)
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if batch.is_empty() {
+            return false;
+        }
+        for (id, text) in &batch {
+            if let Err(e) = engine.store.save(id, text, engine.debounce_ms()) {
+                engine.emit(CoreEvent::Error(format!("Couldn't save: {e}")));
+            }
+        }
+        {
+            let mut pending = lock(&self.pending);
+            for (id, text) in &batch {
+                if pending.get(id).is_some_and(|t| Arc::ptr_eq(t, text)) {
+                    pending.remove(id);
+                }
+            }
+        }
+        if let Ok(tx) = tx.lock() {
+            let _ = tx.send(Msg::Wake);
+        }
+        engine.emit_status();
+        true
+    }
+}
+
+/// The typing writer: writes whatever is pending as soon as it's there;
+/// after a pause (the push debounce) re-indexes the text it wrote for
+/// search (`Store::flush_fts`).
+fn spawn_writer(engine: Arc<Engine>, typing: Arc<Typing>, tx: Sender<Msg>) -> JoinHandle<()> {
+    let tx = Mutex::new(tx);
+    let pause = Duration::from_millis(engine.debounce_ms().max(1) as u64);
+    std::thread::Builder::new()
+        .name("blyg-typing".into())
+        .spawn(move || {
+            let mut unindexed = false;
+            loop {
+                {
+                    let mut pending = lock(&typing.pending);
+                    while pending.is_empty() && !typing.stop.load(Ordering::SeqCst) {
+                        let (p, timeout) = typing
+                            .wake
+                            .wait_timeout(pending, pause)
+                            .unwrap_or_else(|p| p.into_inner());
+                        pending = p;
+                        if timeout.timed_out() && pending.is_empty() && unindexed {
+                            drop(pending);
+                            let _ = engine.store.flush_fts();
+                            unindexed = false;
+                            pending = lock(&typing.pending);
+                        }
+                    }
+                    if pending.is_empty() {
+                        return; // stopped, and nothing left to write
+                    }
+                }
+                unindexed |= typing.write(&engine, &tx);
+            }
+        })
+        .expect("spawn typing writer")
 }
 
 pub const DB_FILE: &str = "blygger.db";
@@ -69,8 +170,12 @@ impl LiveBackend {
         engine.scratch_dir = scratch_dir;
         let engine = Arc::new(engine);
         let (tx, rx) = channel();
+        let typing = Arc::new(Typing::default());
+        let writer = spawn_writer(engine.clone(), typing.clone(), tx.clone());
         let worker = start.then(|| spawn(engine.clone(), rx));
         LiveBackend {
+            typing,
+            writer: Mutex::new(Some(writer)),
             engine,
             public: PublicClient::new(),
             tx: Mutex::new(tx),
@@ -133,8 +238,18 @@ impl LiveBackend {
         self.engine.emit_status();
     }
 
+    /// The engine, with any typed text written first (`Typing`): what
+    /// follows reads or changes the store as the user last left it.
     fn e(&self) -> &Engine {
+        self.settle();
         &self.engine
+    }
+
+    /// Write pending typed text now, on this thread.
+    fn settle(&self) {
+        if !lock(&self.typing.pending).is_empty() {
+            self.typing.write(&self.engine, &self.tx);
+        }
     }
 
     fn row(&self, id: &LocalId) -> Result<crate::store::SyncRow> {
@@ -532,6 +647,12 @@ fn conflict_err() -> CoreError {
 
 impl Drop for LiveBackend {
     fn drop(&mut self) {
+        self.settle();
+        self.typing.stop.store(true, Ordering::SeqCst);
+        self.typing.wake.notify_all();
+        if let Some(h) = self.writer.lock().ok().and_then(|mut w| w.take()) {
+            let _ = h.join();
+        }
         self.send(Msg::Shutdown);
         if let Some(h) = self.worker.lock().ok().and_then(|mut w| w.take()) {
             let _ = h.join();
@@ -550,8 +671,16 @@ impl Backend for LiveBackend {
         self.e().store.search(query)
     }
 
+    /// Laid over with typed text not yet written: no wait on the writer.
+    /// `pending` is held across the read, so a text the writer is landing
+    /// right now is either still pending (laid over) or already stored.
     fn item(&self, id: &LocalId) -> Option<Item> {
-        self.e().store.item(id)
+        let pending = lock(&self.typing.pending);
+        let item = self.engine.store.item(id)?;
+        match pending.get(id) {
+            Some(text) => Some(crate::store::saved_locally(&item, text)),
+            None => Some(item),
+        }
     }
 
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
@@ -578,6 +707,14 @@ impl Backend for LiveBackend {
             .store
             .save(id, content_md, self.e().debounce_ms())?;
         self.wake();
+        Ok(())
+    }
+
+    /// Handed to the typing writer; returns at once. A write that fails
+    /// is reported as `CoreEvent::Error`.
+    fn save_typing(&self, id: &LocalId, content_md: &str) -> Result<()> {
+        lock(&self.typing.pending).insert(id.clone(), Arc::from(content_md));
+        self.typing.wake.notify_one();
         Ok(())
     }
 
@@ -626,23 +763,24 @@ impl Backend for LiveBackend {
     }
 
     fn sync_status(&self) -> SyncStatus {
-        self.e().status()
+        self.engine.status()
     }
 
     /// The public origin (where `media/…` lives): learned from the
     /// server's permalinks, which carry the deployment's mount; the API base
     /// until the first one arrives (the same thing for a root mount).
     fn base_url(&self) -> Option<String> {
+        // Asked on every preview render: never waits on the typing writer.
         let origin = self
-            .e()
+            .engine
             .store
             .public_origin()
-            .unwrap_or_else(|| self.e().api.base_url().to_string());
+            .unwrap_or_else(|| self.engine.api.base_url().to_string());
         Some(origin.trim_end_matches('/').to_string())
     }
 
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>) {
-        self.e().set_sink(Arc::from(sink));
+        self.engine.set_sink(Arc::from(sink));
     }
 
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()> {
@@ -652,16 +790,28 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
+    // The reading list and subscriptions don't hold your own posts' text:
+    // no need to wait for the typing writer.
     fn reading(&self) -> Vec<ReadingItem> {
-        self.e().store.reading()
+        self.engine.store.reading()
     }
 
     fn unread_count(&self) -> usize {
-        self.e().store.unread_count()
+        self.engine.store.unread_count()
+    }
+
+    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        self.engine.store.reading_with_id(remote_id)
+    }
+
+    /// Typed text not yet written is laid over, as in `item`.
+    fn own_item(&self, server_id: &str) -> Option<Item> {
+        let id = self.engine.store.local_id_for_server(server_id)?;
+        self.item(&id)
     }
 
     fn subscriptions(&self) -> Vec<Subscription> {
-        self.e().store.subscriptions()
+        self.engine.store.subscriptions()
     }
 
     fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {

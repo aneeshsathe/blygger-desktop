@@ -206,9 +206,65 @@ pub fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// `hay.to_lowercase().contains(q)` for an already-lowercase `q`, without
+/// lowercasing (allocating a copy of) `hay` when `q` is ASCII. The two
+/// characters whose lowercase is ASCII but which aren't (`K` the Kelvin
+/// sign, `İ`) fall back to the allocating test, so the answer is the same.
+pub fn lower_contains(hay: &str, q: &str) -> bool {
+    if !q.is_ascii() {
+        return hay.to_lowercase().contains(q);
+    }
+    let (h, n) = (hay.as_bytes(), q.as_bytes());
+    let Some((&first, rest)) = n.split_first() else {
+        return true;
+    };
+    let upper = first.to_ascii_uppercase();
+    let found = h.len() >= n.len()
+        && h[..=h.len() - n.len()]
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| **b == first || **b == upper)
+            .any(|(i, _)| {
+                h[i + 1..i + n.len()]
+                    .iter()
+                    .zip(rest)
+                    .all(|(a, b)| a.to_ascii_lowercase() == *b)
+            });
+    found
+        || ((hay.contains('\u{212A}') || hay.contains('\u{130}')) && hay.to_lowercase().contains(q))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lower_contains_is_lowercase_then_contains() {
+        let cases = [
+            ("The Garden", "garden"),
+            ("THE GARDEN", "den"),
+            ("gardener", "gardens"),
+            ("", "a"),
+            ("abc", ""),
+            ("Café Society", "café"),
+            ("CAFÉ", "café"),
+            ("“Quoted” Words", "quoted"),
+            ("20 \u{212A}elvin", "kelvin"),
+            ("\u{130}stanbul", "i\u{307}stanbul"),
+            ("\u{130}stanbul", "stanbul"),
+            ("naïve", "naive"),
+            ("ab", "abc"),
+            ("xAbAbc", "abc"),
+            ("a", "a"),
+        ];
+        for (hay, q) in cases {
+            assert_eq!(
+                lower_contains(hay, q),
+                hay.to_lowercase().contains(q),
+                "{hay:?} / {q:?}"
+            );
+        }
+    }
 
     #[test]
     fn iso_format() {

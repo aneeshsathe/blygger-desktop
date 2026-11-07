@@ -136,6 +136,15 @@ pub trait Backend: Send + Sync {
     fn create_draft(&self, kind: Kind, content_md: &str) -> Result<LocalId>;
     /// Save the working copy. Debounced push to `PUT /api/items/:id`.
     fn save(&self, id: &LocalId, content_md: &str) -> Result<()>;
+    /// `save` from a keystroke: the same save, but it may land a moment
+    /// later, written on another thread, so typing never waits on the
+    /// store. Every read through this backend sees it at once (`item`
+    /// lays it over the stored row; other calls write it first). A write
+    /// that fails is reported as `CoreEvent::Error`. Additive; the
+    /// default is `save`.
+    fn save_typing(&self, id: &LocalId, content_md: &str) -> Result<()> {
+        self.save(id, content_md)
+    }
     /// Fragment ⇄ thread. Before first publish this is free (we recreate the
     /// draft server-side if needed); after publish the server decides.
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()>;
@@ -181,6 +190,23 @@ pub trait Backend: Send + Sync {
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()>;
     /// Last-known reading list from the local cache (instant).
     fn reading(&self) -> Vec<ReadingItem>;
+    /// Your own item whose server id is `server_id`, as `items()` has it.
+    /// Additive; the default searches `items()`, the live backend looks it
+    /// up (the preview's resolver asks for one id at a time).
+    fn own_item(&self, server_id: &str) -> Option<Item> {
+        self.items()
+            .into_iter()
+            .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == server_id))
+    }
+    /// `reading()`'s rows whose `remote_id` is `remote_id`, in its order.
+    /// Additive; the default filters `reading()`, the live backend without
+    /// copying the rest.
+    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        self.reading()
+            .into_iter()
+            .filter(|r| r.remote_id == remote_id)
+            .collect()
+    }
     /// How many of `reading()`'s posts are unread; withdrawn posts are
     /// background, never unread (studio 0.49). The live backend counts
     /// without copying the list.

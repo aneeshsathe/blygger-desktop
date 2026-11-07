@@ -19,6 +19,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 - **The shelf.** ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the top of the Write list, marked 📚, in your order. ⌘B opens the shelf: 1–9 or ⏎ opens a post, ⌥↑/⌥↓ reorder, ⌫ takes one off. Any post of yours can be shelved. The shelf is kept on this computer for now (store schema v17); syncing it waits on blygger-studio#135. On Windows the keys are Ctrl+B and Ctrl+Alt+B.
 
+### Changed
+
+- **Typing and searching stay smooth at any size.** A keystroke no longer waits on the local database: your text is saved on a background thread, the search index catches up after a pause, and the preview and the omnibar's search run off the main thread. In a 20,000-character thread with the preview up, over 2,000 posts, a keystroke went from about 50 ms (up to 150 ms) of main-thread work to under a millisecond; an omnibar keystroke from up to 55 ms to under one. Your own posts are read through a second database connection, so nothing you do waits on a sync, and a big reading-list pull is merged in small steps (store schema v18).
+
 ## [0.17.1] - 2026-11-03
 
 ### Fixed

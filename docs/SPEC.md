@@ -207,6 +207,32 @@ are the contract. Changing them is the orchestrator's call. An agent who needs
 a change says so in its final report and doesn't make it unilaterally.
 (Adding *private* helpers is fine.)
 
+Threads and the keystroke path (the typing budget is a quarter frame of UI-thread work per
+keystroke, at 2,000 posts and a 20k-character thread: `blyg-app/src/posts_perf_tests.rs`):
+- **Typing never touches SQLite on the UI thread.** The editor saves with
+  `Backend::save_typing`: `LiveBackend` keeps the newest text per item in memory and a
+  `blyg-typing` thread writes it (newest wins; keystrokes typed during a write collapse into the
+  next). Until it lands, `item` lays the text over the stored row and every other call writes it
+  first, so nothing ever reads an older text; closing the backend writes what's left. A failed
+  write is a `CoreEvent::Error`. The app works out the list row's new state itself
+  (`store::saved_locally`) rather than reading it back. The writer, not the UI, emits the sync
+  status after a save.
+- **The trigram index of your posts is brought up to date lazily** (schema v18): a changed text
+  only notes what the index still holds (`items_fts_stale`); `Store::flush_fts` re-indexes after a
+  typing pause, after each pull and at open. Searches (the omnibar, the picker) treat noted rows
+  as unindexed and check their text directly, so they never miss a word.
+- **Two connections.** The store's writes, and the reading list's cache, use one connection; the
+  reads of your own posts the UI makes (the list, search, one item, the picker, the sync status,
+  the public origin) use a second, read-only one, so they never wait for a pull's merge (WAL). A
+  pulled reading list is merged 250 rows per transaction, so nothing waits seconds behind it.
+- **The omnibar searches off the UI thread**, newest keystroke wins (a generation number);
+  until its results are back the list shows the previous query's, and ⏎, ↑/↓, opening a post
+  or focusing the editor finish the search first so they act on what was typed. A sync's
+  `ItemsChanged` refreshes the list the same way.
+- **The preview's resolver is built on the render thread**, after the typing pause, and looks
+  up only the ids the text names (`Backend::own_item`, `Backend::reading_with_id`), copying
+  neither list.
+
 Configuration: one Ghostty-style plain-text file, `~/.config/blygger/config` (list every key with
 `blygger +show-config --default --docs`). Secrets live in the Keychain. App state (SQLite db, caches,
 media) lives in `~/Library/Application Support/org.blygger.desktop/`.

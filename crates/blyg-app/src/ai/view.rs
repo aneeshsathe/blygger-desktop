@@ -190,7 +190,8 @@ impl MainView {
         {
             return self.backend.save_with_provenance(id, text, &scopes);
         }
-        self.backend.save(id, text)
+        // A keystroke: written off the UI thread (`Backend::save_typing`).
+        self.backend.save_typing(id, text)
     }
 
     /// Before the publish sheet: warn if this would publish generated text
