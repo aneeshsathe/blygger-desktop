@@ -355,6 +355,17 @@ impl FakeBackend {
         }
     }
 
+    /// --- hover cards --- Tests: give a post a server id of the blyg
+    /// alphabet (the seed's are placeholders the bracket grammar won't
+    /// read).
+    #[cfg(test)]
+    pub fn set_server_id(&self, id: &LocalId, server: &str) {
+        let mut st = self.lock();
+        if let Some(it) = st.items.iter_mut().find(|i| &i.local_id == id) {
+            it.server_id = Some(ServerId(server.into()));
+        }
+    }
+
     /// Tests: keep uploads in memory only (don't touch the data dir).
     #[cfg(test)]
     pub fn without_media_cache(mut self) -> Self {

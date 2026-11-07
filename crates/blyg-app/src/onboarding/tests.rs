@@ -641,6 +641,19 @@ fn do_step(e: &mut Env, id: &str) {
         "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
         "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
         "shelf" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-b")),
+        // --- lineage ---
+        "lineage-writing" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
+        "neighbourhood" => e.cx.simulate_keystrokes("-"),
+        // --- hover cards --- the pointer resting on the sample's quote (what
+        // the delay ends in; a pointer can't rest headless).
+        "hover-cards" => e.view.update(e.cx, |v, cx| {
+            let text = v.editor.read(cx).value().to_string();
+            let d = crate::app::hover_card::directives(&text)
+                .into_iter()
+                .next()
+                .expect("the sample quotes a post");
+            v.hover_show(d, cx)
+        }),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

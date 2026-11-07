@@ -36,6 +36,25 @@ The shelf is kept on this Mac (on Windows, this computer; the keys are
 Ctrl+B and Ctrl+Alt+B). It's not the same as pinning a version in ⌘Y, which
 is public and permanent.
 
+### Lineage while you write
+
+Under the editor, one quiet line shows what the open post is part of: its
+lineage glyph, how many posts it **draws on** (quotes, the post it replies
+to or forks) and how many known here **draw on it**, and how many posts it
+links to. A draft's line follows its text as you add or remove a quote. Click
+the line to see the posts by name; click one to open it, yours in the editor
+and anyone else's in Reading. **⌘J** (Ctrl+J on Windows) opens the full
+lineage view for a published post, as in Reading; on a draft it opens the
+lists.
+
+### Hover cards
+
+Rest the pointer on a `[[…]]` or `![[…]]` in your text and a card says what
+it points at: the title, who wrote it, the version and its first lines. A
+link without a label offers **label it**, which writes the post's title in as
+the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
+post says so. The card only shows what this Mac already holds.
+
 ## Fragments and threads
 
 A blyg holds two kinds of post:

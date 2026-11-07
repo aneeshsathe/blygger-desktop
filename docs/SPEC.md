@@ -82,6 +82,36 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   dropped; change domain `shelf`; 404 below 5.8). Burrow moves onto it once
   released, keeping scratch notes and unsynced drafts local. Named "shelf", never "pin": a pin is
   a public, permanent version pin (§ Versions & pins).
+- **Lineage while writing** (`lineage_strip.rs`; proposal 2, 2026-11-06): under
+  the editor on Posts, one quiet 26px line for the open post: its lineage
+  glyph (the same `lineage_vm::Glyph` as the stream's, counted by the same
+  rules) and "draws on N · drawn on by M", plus "links to K posts" when its
+  text has `[[id]]` links (listed, never counted: the glyph counts forks,
+  stubs and quotes only, rule 1's exception). Nothing named, nothing shown. A
+  published post's sides come from `lineage::Local` (reading rows, your
+  published posts, verified mentions of yours, the same sources as the
+  Reading lineage); a draft's "draws on" is read live from its text
+  (`Item::references`), re-derived only when its references change (a
+  fingerprint of its directive ids, not every keystroke). A click on the line
+  opens three short lists (Draws on / Drawn on by / Links to, five each); a row
+  opens the post: yours in the editor, anyone else's in Reading (a held row at
+  once, else the token-less public fetch, as "open original" does). **⌘J** on
+  Posts opens the lineage sheet for your own published post; on a draft it
+  opens the lists. Built on the main thread from the Reading view's rows when
+  they're loaded, else off it (`Backend::reading`, `items`).
+- **Hover cards and ⌘-click** (`hover_card.rs`; proposal 4, 2026-11-06): resting
+  the pointer (350 ms) on a `[[id]]`, `[[id | label]]` or `![[id | label]]` in
+  the editor shows a card: title, author or "You", version, the first lines,
+  and for an unlabelled link to a live post **label it**, which writes the
+  target's title as the label (`[[id | title]]`). ⌘-click (Ctrl-click on
+  Windows) opens the target: your own post in the editor, anyone else's in
+  Reading through "open original". The card reads only what this Mac holds
+  (your posts, then reading rows); it never fetches. A withdrawn post shows as
+  withdrawn, with no excerpt and no "label it". A quote of an older version of
+  someone else's post shows the held current text with "Quoted at vN; this is
+  vM": an unpinned past version is never shown. The stream's quote boxes and
+  `[[id]]` links show the same card as a tooltip. The WebView reader pane
+  doesn't (its clicks already open the original).
 - **Reading actions on your own post** (`reading/own.rs`): a published post of
   yours shows a row of chips above the editor, "Your post · vN ·" then **Reply ·
   new stub** (⌥⌘R), **Quote into a thread** (⌥⌘Q) and **Link post · new
@@ -355,6 +385,8 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 **Responses: who quoted, stubbed or forked a post** (`reading/responses.rs`, issue #7). A list, never a count: who · "quoted this" / "stubbed this" / "forked this" · when, each opening that post. Two sources: for your own posts, the verified, unhidden mentions (`GET /api/mentions`), listed under the post in ⌘Y and in the reading pane when your own post is open there; for anyone's post, "seen in your network": reading rows, and your own published posts, whose `transclusions`, `stub_of` or `forked_from` point at it (`Backend::responses`, an index lookup on the derived `reading_refs` table, schema v6, rewritten on every upsert; a quote without an origin is from the quoting post's own blyg). One response per post: a stub thread both stubs and quotes its target, which is one act, so the strongest relation wins (fork > stub > quote), and a quote with a `selector` marks it partial ("stubbed a passage of this"; `reading_refs.partial`, schema v9). This is the one-hop lineage blygger-studio's lineage view computes server-side (studio PR #35, `GET /api/lineage`), with the same rules, from what this Mac holds. The list sits at the bottom of the reading pane, and stays a list without a count; in the stream the lineage glyph (below) marks a post that has any.
 
 **Lineage** (`reading/lineage.rs`, model `lineage_vm.rs`; mock `docs/prototype/lineage.html`). A **glyph** beside each stream post's name replaces the old "↩": lines in from the left are the kinds of post it draws on, lines out to the right the kinds that draw on it, in fixed slots (fork, reply, quote; amber, accent, green), dotted when every one of that kind is of a passage, then **"up · down"**: how many it draws on and how many known here draw on it (rule 1's lineage exception, 2026-10-09). The counts are blygger-studio's `lineage-glyph` extension's (studio PR #53, ported from commit dc632c5 in `blyg-core/src/lineage.rs`): one reference per (post, target), fork > stub > quote, a `{url}` stub counts as an ancestor, a bare quote means the quoting post's own blyg; descendants are held posts that reference it, one per post, plus, for your own posts, verified mentions (hidden ones too) from posts not already counted. Plain totals, uncapped, as the studio prints them; the tooltip gives the counts by kind in words. **Where the numbers come from:** on a node that serves the extension (`GET /api/ext/lineage-glyph/summaries` and `/lineage`, `owner:read`), from it: summaries for the reading rows (50 keys a request, by reading entry key `imported:["sub","id"]`) and the graph for ⌘J, cached in the store's `lineage_cache` (fresh for 30 s, the studio's `FRESH_MS`; asked again when the reading list changes or opens). Whether it's served is found out by asking: a 404 means "not enabled there", silently, remembered for six hours (meta `lineage_glyph`), and its cached answers are dropped. Otherwise, and offline before any answer, Burrow counts from what this Mac holds with the same rules (`lineage::Local`). **⌘J** (or a click on the glyph) opens the lineage sheet: the post in a hexagon, what it draws on above, what draws on it below ("what your blyg knows" when the node served the graph, else "what this Mac holds": reading rows, your published posts, verified mentions of your posts), at most five a row around the selection, with the count each way beside the hexagon and on the side list's headings. A `{url}` stub is a neighbour that's a page, not a post: `o` opens it in the browser and it can't be the centre. Arrows move; ⏎ on a neighbour makes it the centre and ⌫ walks back; `o` opens the selected post in the reader; esc closes. **Space** (or ⏎) on the centre opens the **ring**: the reader's actions in blygger-studio's compass positions (right Fork, lower right Reply, lower left Quote, left Link post, upper left Versions, upper right Open). A letter (f r q l v o) previews the action: a dashed node where its result would go, and the same four facts for every action (a response? the author told? their words in yours? shown under their post?). Each of Fork, Reply and Quote shows how many of that kind are already known ("R · 2"), and the panel says so in words. ⏎ or the same letter again does it; esc backs out a layer at a time. The ring uses existing actions only. Opening a post from the sheet (`o`, Versions) goes through the reader's own open, so a held post is marked read as a click in the list marks it (`Backend::mark_read`; subject to change in review). Until 2026-10-09 Burrow's glyph showed kinds only while the web Studio's showed counts; both now show the same numbers.
+
+**The neighbourhood map** (`reading/neighbourhood.rs`, view `neighbourhood_view.rs`; proposal 3, 2026-11-06). In the lineage sheet, **−** zooms out to two hops: five rows, the centre in the middle, what it draws on one and two rows above, what draws on it one and two rows below. Nodes are hexagons coloured by their relation to the node they hang off (fork amber, reply accent, quote green; dotted when of a passage), dashed for the second hop, shaded for your own posts; a held cross-link between neighbours is drawn too. The second hop is read from what this Mac holds (`lineage::Local::up`/`down` of each first-hop node), never fetched, and capped at seven a row and 21 a side ("+N" for the rest), so the map stays a constant size at thousands of reading posts. Keyboard only: arrows move (between rows to the nearest place), ⏎ on a node makes it the centre (on the centre, back to the list), ⌫ walks back, **o** opens the selected post (a page in the browser), **+** returns to the list, esc closes. The side panel names the selected post, its author and relation, and says when it isn't held here.
 
 **Posts are dated by their author, not by the import.** The list sorts newest first by the post's own `updated` (else `created`), so an author's edit moves the post up; a row says "edited 3d ago" when `updated` is more than ten minutes after `created`, else shows when it was published. `observed_at` (when your blyg imported it) is only the fallback for a post with no usable date. Dates parse as RFC 3339 or RFC 2822 (`ReadingItem::post_time`); the store keeps the normalized sort key in `reading.sort_at` (indexed).
 

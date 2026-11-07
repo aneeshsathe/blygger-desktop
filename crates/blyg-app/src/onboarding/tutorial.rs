@@ -526,6 +526,14 @@ impl MainView {
                         Some(crate::app::reading::RSheet::HopperPick { keys, .. }) if keys.len() > 1
                     ),
             ),
+            // --- lineage ---
+            (
+                Key::LineageStrip,
+                self.reading.view == crate::app::reading::View::Posts
+                    && (self.lineage_strip.open || self.lineage_open()),
+            ),
+            (Key::LineageMap, self.lineage_map_open()),
+            (Key::HoverCard, self.hover_card_shown()), // --- hover cards ---
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
