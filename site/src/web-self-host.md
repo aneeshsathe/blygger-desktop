@@ -124,7 +124,9 @@ ls static/burrow/index.html static/burrow/sw.js static/burrow/pkg
 ```
 
 Replace the whole folder on every update. Don't merge an old build with a new
-one.
+one. Commit `static/` to the deploy repo: besides keeping the build with the
+config that serves it, the blyg's own tests (vitest reads `wrangler.jsonc`)
+need the assets directory to exist.
 
 ## 4. Tell the Worker to serve them
 
@@ -167,9 +169,15 @@ npx wrangler deploy
 
 Only static files change, and D1 isn't touched. If the owner wants a backup
 anyway, `npx wrangler d1 export <database> --remote --output backup.sql`
-before deploying (use the database name from `wrangler.jsonc`).
+before deploying (use the database name from `wrangler.jsonc`). On the free
+plan the export sometimes fails with "Authentication error [code: 10000]";
+run `npx wrangler whoami` and try again.
 
 ## 6. Check it
+
+Files added by a deploy can return 404 for about 20 seconds afterwards. If a
+check fails right after deploying, wait a little and run it again before
+calling it broken.
 
 ```sh
 H=https://blyg.example.com   # the blyg's host, no path
