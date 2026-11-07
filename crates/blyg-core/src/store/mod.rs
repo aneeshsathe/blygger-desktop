@@ -1489,6 +1489,8 @@ mod read_state_tests; // --- read/unread ---
 #[cfg(test)]
 mod hoppers_tests; // --- hoppers ---
 
-mod loose_tests;
 #[cfg(test)]
-mod nearby_tests; // --- nearby --- // --- loose ends ---
+mod nearby_tests; // --- nearby ---
+
+#[cfg(test)]
+mod loose_tests; // --- loose ends ---
