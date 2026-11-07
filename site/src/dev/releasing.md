@@ -48,8 +48,12 @@ optional; the workflow's header lists their secrets.
 - `Burrow-<version>-windows-x64.zip` and the version-less
   `Burrow-windows-x64.zip` (built by `scripts/package-windows.ps1`: a
   `Burrow\` folder with `blygger.exe` and its licenses);
+- `Burrow-web-<version>.zip` and the version-less `Burrow-web.zip`: the web
+  app (`crates/blyg-web`, built by `serve.sh --build-only`), as one
+  `burrow/` folder, for owners who serve it from their blyg
+  ([Burrow on your own blyg](../web-self-host.md));
 - `SHA256SUMS`, signed as `SHA256SUMS.sig`, covering every zip and dmg above,
-  the Windows ones included (the macOS updater only reads its own zip's line);
+  the Windows and web ones included (the macOS updater only reads its own zip's line);
 - for now, `Blygger-<version>-macos-universal.zip` and
   `Blygger-macos-universal.zip`: the same signed app in a folder called
   `Blygger.app`, because that's the only asset 0.6.0 and earlier can update

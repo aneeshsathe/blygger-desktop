@@ -72,7 +72,8 @@ lists.
 
 ### Nearby thoughts
 
-A rail on the editor's right shows up to five of your own published posts,
+A drawer at the window's right edge, beside the editor, shows up to five of
+your own published posts,
 and posts you hold from blygs you follow, that say what the paragraph you're
 writing says, with the phrase you share (or the closest passage) under each.
 It looks again a moment after you stop typing, or when you move to another
@@ -84,7 +85,12 @@ paragraph.
   after the word at the caret.
 - **⌥⇧⏎** quotes it as `![[id | title]]` on a new line after the paragraph
   (threads only).
-- **⌥⌘U** shows or hides the rail.
+- **⌥⌘U**, or the **Nearby** tab at the window's right edge, opens or
+  closes the drawer. It's closed until you open it (nothing is matched
+  meanwhile) and stays open until you close it (its ×, its tab or ⌥⌘U);
+  the tab leaves the keyboard in your draft. Drag its left edge to resize
+  it (a double-click resets it). Burrow remembers whether it was open and
+  how wide.
 
 On Windows the keys are Alt+Up/Alt+Down, Alt+Enter, Alt+Shift+Enter and
 Ctrl+Alt+U. Posts you already link or quote aren't offered again, and
@@ -127,7 +133,8 @@ writing: a reply and its source, two drafts that should be one, a fork and
 its original. Your own post opens in a second editor that saves on its own
 and has its own status line. Anyone else's opens read-only; drag its header
 into your post to quote it. **⌥⌘[** and **⌥⌘]** (View › Left Post / Right
-Post) move between them, the divider drags (Burrow remembers where), and ×
+Post) move between them, the divider drags (Burrow remembers where; a
+double-click centres it), and ×
 or ⌥⌘⏎ again closes the right side. From Reading, ⌥⌘⏎ goes to Posts with
 the post you were reading beside the one you were writing.
 
@@ -325,6 +332,9 @@ and video. Click a paragraph in the preview to jump to it.
 - ⌘2 **Preview**: the list, the editor and the preview.
 - ⌘3 **Full editor**: the editor and the preview, with the list hidden.
 - ⌘E toggles the preview in place.
+- Drag the divider between the editor and the preview to give either more
+  room (each keeps a usable minimum); a double-click centres it. Burrow
+  remembers where you left it.
 
 ### Focus mode
 

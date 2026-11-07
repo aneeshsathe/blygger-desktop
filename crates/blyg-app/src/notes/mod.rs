@@ -1,10 +1,12 @@
 //! --- notes --- The notes drawer (docs/SPEC.md § Notes drawer).
 //!
-//! A scratchpad that slides in over the right edge of the window while you
-//! read (⇧⌘N, View › Notes): running notes, links to posts and pages, and
-//! quoted selections, for writing better posts later. It never adds a layout
-//! column: it's an overlay, and the web views it overlaps are cut off at its
-//! edge (they draw above GPUI).
+//! A pane docked at the right edge of the window (⇧⌘N, View › Notes):
+//! running notes, links to posts and pages, quoted selections, and the
+//! markdown-notes library, to read while you write. It's a layout column
+//! beside the editor (and the reading screens), not an overlay: clicking or
+//! typing elsewhere never closes it. Closing is explicit (its ×, or ⇧⌘N
+//! while it has the keyboard); esc only hands the keyboard back. Its width
+//! drags, and the width and whether it's open are kept in `state.json`.
 //!
 //! It's backed by an ordinary scratch note (local only, in the Posts list
 //! with its `scratch` pill; ⌘D makes it a draft). One rolling note titled
@@ -33,8 +35,17 @@ pub use quote::QuoteToDraft;
 
 use crate::vm;
 
-/// The drawer's width.
+/// The pane's width until the user drags its edge.
 pub const WIDTH: f32 = 380.;
+
+/// The narrowest the pane gets.
+pub const MIN_WIDTH: f32 = 280.;
+
+/// The widest the pane gets (a note reads badly wider than this anyway).
+pub const MAX_WIDTH: f32 = 760.;
+
+/// The pane never takes more than this share of the window.
+pub const MAX_SHARE: f32 = 0.6;
 
 /// How long the slide in (and out) takes.
 pub const SLIDE_MS: u64 = 180;
@@ -236,6 +247,23 @@ pub fn is_notes_title(title: &str) -> bool {
     title.trim().starts_with(TITLE)
 }
 
+// ------------------------------------------------------------ layout
+
+/// The pane's widths (`side::Span`): its default, and the range a drag of
+/// its left edge keeps it in.
+pub const SPAN: crate::app::side::Span = crate::app::side::Span {
+    default: WIDTH,
+    min: MIN_WIDTH,
+    max: MAX_WIDTH,
+};
+
+/// The side padding that keeps a note's lines a readable length in a pane
+/// `pane_w` wide at `font_size` (about 66 characters at most).
+pub fn side_pad(pane_w: f32, font_size: f32) -> f32 {
+    let measure = font_size * 33.;
+    ((pane_w - measure) / 2.).max(18.)
+}
+
 // ------------------------------------------------------------ state
 
 /// The drawer's state (a field of `MainView`).
@@ -258,9 +286,15 @@ pub struct Notes {
     return_focus: Option<FocusHandle>,
     /// The header's ⋯ menu.
     menu: bool,
-    /// A mouse press outside the drawer: it closes once the click is over,
-    /// unless the click was an add action ("→ Notes"), which disarms it.
-    outside_click: bool,
+    /// The width the user chose (dragged), before [`dock_width`] fits it to
+    /// the window.
+    pub width: f32,
+    /// The width it's drawn at (set each frame, from the window).
+    pub dock_w: f32,
+    /// It was open when the app last closed: open it at launch.
+    pub reopen: bool,
+    /// The latest drag of its edge (the width is saved once dragging stops).
+    width_gen: u64,
     /// When it last started to slide in or out (the browser pane's room
     /// follows it).
     moved: Option<std::time::Instant>,
@@ -271,6 +305,11 @@ pub struct Notes {
 
 impl Notes {
     pub fn new(data_dir: Option<std::path::PathBuf>) -> Notes {
+        let state = data_dir
+            .as_deref()
+            .map(blyg_core::state::AppState::load)
+            .unwrap_or_default();
+        let width = SPAN.restore(state.notes_width);
         Notes {
             open: false,
             closing: false,
@@ -283,7 +322,10 @@ impl Notes {
             focus: None,
             return_focus: None,
             menu: false,
-            outside_click: false,
+            width,
+            dock_w: width,
+            reopen: state.notes_open,
+            width_gen: 0,
             moved: None,
             loading: false,
             data_dir,
@@ -295,16 +337,27 @@ impl Notes {
         self.open || self.closing
     }
 
-    /// The drawer's left edge while it's drawn, for a window `width` wide:
-    /// native views are cut off there.
-    pub fn left_edge(&self, width: Pixels) -> Option<Pixels> {
-        self.drawn().then(|| (width - px(WIDTH)).max(px(0.)))
+    /// How much of the window's width the pane takes (its final place;
+    /// [`Self::room_at`] follows the slide): the rest of the layout, and the
+    /// browser pane, fit to its left.
+    pub fn room(&self) -> Pixels {
+        if self.open { px(self.dock_w) } else { px(0.) }
     }
 
-    /// How far the browser pane moves in from the right to make room for
-    /// the drawer (its final place; `drawer::wrap_browser` animates it).
-    pub fn room(&self) -> Pixels {
-        if self.open { px(WIDTH) } else { px(0.) }
+    /// Fit the chosen width to a window `window_w` wide (each frame).
+    pub fn fit(&mut self, window_w: f32) {
+        self.dock_w = SPAN.fit(self.width, window_w, MAX_SHARE);
+    }
+
+    /// Persist whether it's open and its width (`state.json`).
+    fn save_layout(&self) {
+        if let Some(d) = &self.data_dir {
+            let (open, w) = (self.open, SPAN.saved(self.width));
+            let _ = blyg_core::state::AppState::update(d, |s| {
+                s.notes_open = open;
+                s.notes_width = w;
+            });
+        }
     }
 
     /// [`Self::room`] at `now`, part way through a slide.
@@ -318,10 +371,11 @@ impl Notes {
             return px(target);
         }
         let eased = 1.0 - (1.0 - t).powi(5); // ease_out_quint, as the drawer
+        let w = self.dock_w;
         px(if self.open {
-            eased * WIDTH
+            eased * w
         } else {
-            (1. - eased) * WIDTH
+            (1. - eased) * w
         })
     }
 

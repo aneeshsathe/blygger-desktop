@@ -15,6 +15,7 @@ import { deskSources, opened, wrUse } from './web-reading.js';
 // --- web-writing ---
 import * as Wr from './writing.js';
 // --- end web-writing ---
+import { drawHub, hubUse } from './hub.js';
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
 
@@ -22,7 +23,7 @@ let V;                 // the last view
 let shownId;           // the item the editor holds
 let previewing = false;
 let mode = 'search';   // 'search' | 'edit'
-let view = 'posts';    // 'posts' | 'reading'
+let view = 'posts';    // 'posts' | 'reading' | 'blyg'
 let rq = '';           // the reading search
 let rcur = null;       // the open reading post's key
 let rkeys = [];        // the reading list, in order
@@ -31,8 +32,8 @@ let rkeys = [];        // the reading list, in order
 export function render({ loadEditor = false } = {}) {
   if (!S.B) return;
   V = JSON.parse(S.B.view(now()));
-  $('#wtitle').textContent = view === 'reading' ? 'Reading' : V.title;
-  if (S.layout === 'desk') document.title = view === 'reading' ? 'Reading · Burrow' : V.title;
+  $('#wtitle').textContent = view === 'reading' ? 'Reading' : view === 'blyg' ? 'Blyg' : V.title;
+  if (S.layout === 'desk') document.title = view === 'reading' ? 'Reading · Burrow' : view === 'blyg' ? 'Blyg · Burrow' : V.title;
   $('#hint').textContent = view === 'posts' && mode === 'search' ? V.hint : '';
 
   list.innerHTML = V.rows.length
@@ -84,8 +85,45 @@ export function render({ loadEditor = false } = {}) {
   sy.className = 'sync ' + V.sync_dot;
   sy.querySelector('span').textContent = V.sync;
   $('#ver').textContent = c ? `${c.shelved ? '📚 ' : ''}${c.version}` : '';
+  postActions(c);
   if (previewing) schedulePreview();
   renderReading();
+  if (view === 'blyg') drawHub($('#d-hub'), V);
+}
+
+/** The action row over the editor: what you can do with this post, by
+    name, each with its key in the tooltip. Drawn from the view alone (no
+    extra call into Burrow), and only replaced when it changes, so a
+    keystroke costs a string compare here. */
+function postActions(c) {
+  const host = $('#d-pacts');
+  const b = (act, label, title, { on, pressed } = {}) =>
+    `<button type="button" data-pa="${act}" title="${esc(title)}"${pressed !== undefined ? ` aria-pressed="${pressed}"` : ''}${on === false ? ' disabled' : ''}>${label}</button>`;
+  const real = c && c.status !== 'new';
+  const html = !c ? '' : [
+    b('shelf', c.shelved ? '📚 Shelved' : '📚 Shelve', 'Shelve or unshelve (⌥⌘B)', { pressed: c.shelved, on: real }),
+    b('preview', '👁 Preview', 'Preview beside the editor (⌘E)', { pressed: previewing }),
+    b('image', '🖼 Image', 'Add an image, with alt text', { on: real }),
+    b('gen', '✦ Write TK', 'Have your blyg write this post’s [TK] scopes', { on: real }),
+    c.status === 'scratch' ? b('draft', '✎ Make draft', 'Keep this note as a draft (⌘D)') : '',
+    c.published ? b('history', '⟲ Versions', 'Versions: view, diff, restore, pin (⌃⇧Y)') : '',
+    c.has_edits ? b('discard', '↺ Discard changes', `Back to the published version (⌥⌘Z)`) : '',
+    c.status === 'public' ? b('withdraw', '⊘ Withdraw…', 'Take it back from your blyg (confirmed)') : '',
+    real && !c.published ? b('delete', c.status === 'scratch' ? '✕ Delete note…' : '✕ Delete draft…', 'Gone for good, after a confirmation (⇧⌘⌫)') : '',
+  ].join('');
+  host.hidden = !html;
+  draw(host, html);
+}
+function postAction(a) {
+  if (a === 'shelf') toggleShelf();
+  else if (a === 'preview') togglePreview();
+  else if (a === 'image') Wr.pickImage();
+  else if (a === 'gen') Wr.openTk();
+  else if (a === 'draft') makeDraft();
+  else if (a === 'history') Wr.openHistory();
+  else if (a === 'discard') askDiscard();
+  else if (a === 'withdraw') Wr.askWithdraw();
+  else if (a === 'delete') askDelete();
 }
 
 // The stream is drawn a page at a time; more as you scroll or step past
@@ -248,9 +286,10 @@ function setView(v) {
   $$('.views [data-view]').forEach((b) => { b.classList.toggle('on', b.dataset.view === v); b.setAttribute('aria-selected', String(b.dataset.view === v)); });
   $('#pbody').hidden = v !== 'posts';
   $('#rbody').hidden = v !== 'reading';
+  $('#bbody').hidden = v !== 'blyg';
   $('#sb').style.visibility = v === 'posts' ? '' : 'hidden';
-  omni.placeholder = v === 'posts' ? 'Search or start writing…' : 'Search what you read…';
-  omni.value = v === 'posts' ? V?.query ?? '' : rq;
+  omni.placeholder = v === 'posts' ? 'Search or start writing…' : v === 'reading' ? 'Search what you read…' : 'Search your posts…';
+  omni.value = v === 'posts' ? V?.query ?? '' : v === 'reading' ? rq : '';
   render();
 }
 function openReading(key) {
@@ -299,10 +338,12 @@ export function initDesk() {
   wrUse('desk', { openReading: (k) => { setView('reading'); openReading(k); } }); // --- web-reading --- --- end web-reading ---
   omni.addEventListener('focus', () => { if (view === 'posts') { mode = 'search'; render(); } });
   omni.addEventListener('input', () => {
+    if (view === 'blyg') setView('posts');
     if (view === 'reading') { rq = omni.value; rlimit = RPAGE; $('#d-stream').scrollTop = 0; render(); return; }
     S.B.set_query(omni.value); render({ loadEditor: true });
   });
   omni.addEventListener('keydown', (e) => {
+    if (view === 'blyg' && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter')) setView('posts');
     if (view === 'reading') {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
@@ -356,10 +397,11 @@ export function initDesk() {
   // --- web-writing ---
   Wr.attachEditor(ed);
   Wr.setWritingHooks('desk', { openEditor: () => openSelected(), afterDelete: () => render({ loadEditor: true }) });
-  $('#d-wmenu').addEventListener('click', () => Wr.openPostMenu());
   $('#d-wfork').addEventListener('click', () => Wr.askFork(rcur));
-  $('#d-wset').addEventListener('click', () => Wr.openSettings());
   // --- end web-writing ---
+  $('#d-pacts').addEventListener('mousedown', (e) => { if (e.target.closest('button') && document.activeElement === ed) e.preventDefault(); });
+  $('#d-pacts').addEventListener('click', (e) => { const b = e.target.closest('[data-pa]'); if (b && !b.disabled) postAction(b.dataset.pa); });
+  hubUse('desk', { shelf: () => askShelf(), offline: () => setOffline(!S.B.is_offline()), reset: () => resetData() });
   $$('.views [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
   // reading
@@ -391,6 +433,7 @@ export function initDesk() {
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;
     if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(['⌃', code.slice(-1)]); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
+    else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(['⌃', '3']); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
     else if (mod && e.key === 'Enter') { e.preventDefault(); hud(['⌘', '⏎']); askPublish(); }
     else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(['⇧', '⌘', '⌫']); askDelete(); }
     else if (mod && e.altKey && cmd && code === 'KeyZ') { e.preventDefault(); hud(['⌥', '⌘', 'Z']); askDiscard(); }
@@ -424,10 +467,9 @@ export function initDesk() {
 /** Shared by both layouts' chrome. */
 export function setOffline(off) {
   const pending = S.B.set_offline(off);
-  for (const b of [$('#offline'), $('#p-offline')]) {
-    b.setAttribute('aria-pressed', String(off));
-    b.textContent = off ? 'Go online' : 'Go offline';
-  }
+  const b = $('#offline');
+  b.setAttribute('aria-pressed', String(off));
+  b.textContent = off ? 'Go online' : 'Go offline';
   if (off) toast('Offline. Keep writing: nothing is lost.');
   else if (pending) { toast(`Back online · ${pending} change${pending === 1 ? '' : 's'} synced`); touched(); }
   else toast('Back online');

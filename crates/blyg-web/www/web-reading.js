@@ -11,8 +11,10 @@
 // through live.js `call` (same-origin /api/ only). Nothing here runs on
 // start or on a keystroke: a list is read when its screen first opens.
 //
-// Desk: a sources pane left of the stream. Phone: ☰ on the Read tab opens
-// the same list as a sheet, with the rest under "More" in it.
+// Desk: a sources pane left of the stream, with Subscribe, Subscriptions,
+// Mentions, Hoppers, Peek and History named at its top. Phone: the same
+// names in a row under the Read tab's search ("☰ Sources" opens the list
+// as a sheet). Both layouts also list them on the Blyg tab (hub.js).
 
 import { Pager } from './pkg/blyg_web.js';
 import { $, $$, S, esc, now, persist, toast, isPhone } from './core.js';
@@ -125,16 +127,16 @@ function sourcesHtml(d, { manage = true } = {}) {
       : '';
     return `<button type="button" class="wr-src${r.on ? ' on' : ''}" data-src="${esc(r.key)}" aria-pressed="${r.on}">${icon}<span class="wr-l">${esc(r.label)}${r.note ? `<small class="${/trouble/i.test(r.note) ? 'bad' : ''}">${esc(r.note)}</small>` : ''}</span>${mark}</button>`;
   }).join('');
-  return `<div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
-    ${rows}
-    ${manage ? `<div class="wr-h">More</div><div class="wr-more">
-      <button type="button" data-go="subscribe">＋ Subscribe</button>
-      <button type="button" data-go="subs">Subscriptions</button>
-      <button type="button" data-go="mentions">Mentions</button>
-      <button type="button" data-go="hoppers">Hoppers</button>
-      <button type="button" data-go="peek-url">Peek at a post</button>
-      <button type="button" data-go="history">History</button>
-    </div>` : ''}`;
+  return `${manage ? `<div class="wr-more" role="toolbar" aria-label="Subscriptions and more">
+      <button type="button" class="pri" data-go="subscribe">＋ Subscribe</button>
+      <button type="button" data-go="subs">☷ Subscriptions</button>
+      <button type="button" data-go="mentions">@ Mentions</button>
+      <button type="button" data-go="hoppers">⊕ Hoppers</button>
+      <button type="button" data-go="peek-url">⌕ Peek</button>
+      <button type="button" data-go="history">⟲ History</button>
+    </div>` : ''}
+    <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
+    ${rows}`;
 }
 function chooseSource(key) {
   S.B.wr_set_source(key);
@@ -245,7 +247,7 @@ const loadingP = '<p class="wr-muted">Reading it from the blyg…</p>';
 const SCREENS = {
   sources() {
     ensure('subs', 120_000);
-    return `<div class="wr-sources in-sheet">${sourcesHtml(JSON.parse(S.B.wr_sources(now())))}</div>`;
+    return `<div class="wr-sources in-sheet">${sourcesHtml(JSON.parse(S.B.wr_sources(now())), { manage: false })}</div>`;
   },
 
   subs() {
@@ -633,8 +635,8 @@ export function initWebReading() {
     const o = JSON.parse(S.B.wr_opml(text));
     go('opml', { opml: o, text });
   });
-  // Phone: ☰ on the Read tab, and the "Showing …" line's ✕.
-  $('#p-wrSources')?.addEventListener('click', () => go('sources'));
+  // Phone: the row under the Read tab's search, and the "Showing …" line's ✕.
+  $('#p-wrBar')?.addEventListener('click', (e) => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
   $('#p-wrChip')?.addEventListener('click', (e) => {
     if (e.target.closest('[data-clear]')) { S.B.wr_clear_source(); $('#p-stream').scrollTop = 0; S.render(); }
     else go('sources');

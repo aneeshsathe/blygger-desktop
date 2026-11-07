@@ -9,6 +9,7 @@
 - [Writing and publishing](writing.md)
 - [Reading, quoting and responses](reading.md)
 - [Notes and the browser](notes-and-browser.md)
+- [Burrow on your own blyg (web app)](web-self-host.md)
 - [AI helpers](ai.md)
 - [Themes](themes.md)
 - [Extensions](extensions.md)

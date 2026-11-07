@@ -475,6 +475,14 @@ impl MainView {
                     .h_full()
                     .cursor_col_resize()
                     .bg(p.line)
+                    // --- side --- a double-click centres it.
+                    .on_click(cx.listener(|this, e: &ClickEvent, _, cx| {
+                        if e.click_count() == 2 {
+                            this.split.left = 0.5;
+                            this.split.save_width();
+                            cx.notify();
+                        }
+                    }))
                     .on_drag(DraggedDivider, |_, _, _, cx| cx.new(|_| DraggedDivider)),
             )
             .child(div().flex_1().min_w_0().h_full().child(right))

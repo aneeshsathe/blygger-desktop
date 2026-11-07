@@ -1,5 +1,5 @@
 // Burrow on a phone (700px wide or less), after the approved prototype:
-// bottom tabs Write · Read · Shelf and a ＋ for quick capture; the editor
+// bottom tabs Write · Read · Shelf · Blyg and a ＋ for quick capture; the editor
 // with its paged bar riding on the keyboard; the reading stream you swipe
 // (right: read; left: quote, reply, hopper) and posts whose sentences you
 // can hold. Every rule is Burrow's Rust; this draws and forwards.
@@ -8,7 +8,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
+  swipeCards, cardHtml, draw, onNearEnd, settle,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -17,10 +17,11 @@ import { phoneChip, opened, wrUse } from './web-reading.js';
 // --- web-writing ---
 import * as Wr from './writing.js';
 // --- end web-writing ---
+import { drawHub, hubUse } from './hub.js';
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
-let pview = 'write';     // 'write' | 'edit' | 'read' | 'post'
+let pview = 'write';     // 'write' | 'edit' | 'read' | 'post' | 'blyg'
 let shownId = null;      // the item the editor holds
 let previewing = false;
 let unreadOnly = false;
@@ -35,7 +36,7 @@ function show(v, { push = true } = {}) {
   const was = pview;
   pview = v;
   app.dataset.view = v;
-  for (const n of ['write', 'edit', 'read', 'post']) {
+  for (const n of ['write', 'edit', 'read', 'post', 'blyg']) {
     const el = $('#v-' + n);
     el.classList.remove('off-r', 'off-l');
     if (n === v) { el.removeAttribute('inert'); continue; }
@@ -91,7 +92,6 @@ export function render({ loadEditor = false } = {}) {
     const ban = $('#p-ban');
     ban.textContent = c.banner || c.new_post || '';
     ban.className = 'flex' + (c.banner ? ' over' : '');
-    $('#p-shelfBtn').className = 'ic ' + (c.shelved ? 'on' : 'off');
     $('#p-shelfBtn').setAttribute('aria-pressed', String(c.shelved));
     const so = $('#p-stubof');
     so.hidden = !c.stub_of; so.textContent = c.stub_of ?? '';
@@ -106,6 +106,7 @@ export function render({ loadEditor = false } = {}) {
   sy.querySelector('span').textContent = V.sync;
 
   renderStream();
+  if (pview === 'blyg') drawHub($('#p-hub'), V);
 }
 
 /** Write: the shelf strip, then the posts (shelved first, a line under). */
@@ -130,7 +131,7 @@ function renderStream() {
   const reading = pview === 'read';
   const R = JSON.parse(S.B.reading_page(now(), $('#p-rq').value, unreadOnly, reading ? streamN : 0));
   const u = $('#p-unreadOnly');
-  u.textContent = `● ${R.unread}`;
+  u.textContent = `● ${R.unread} unread`;
   u.setAttribute('aria-pressed', String(unreadOnly));
   u.setAttribute('aria-label', unreadOnly ? `Showing unread only (${R.unread}); show all` : `${R.unread} unread; show only those`);
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
@@ -176,6 +177,7 @@ function closeSheet({ refocus = true } = {}) {
 // ---------------------------------------------------------------- write
 function openEditor({ caretEnd = true } = {}) {
   previewing = false; app.classList.remove('previewing'); pv.hidden = true;
+  $('#p-prevBtn').setAttribute('aria-pressed', 'false');
   show('edit');
   render({ loadEditor: true });
   if (caretEnd) {
@@ -230,6 +232,7 @@ function togglePreview() {
   pv.hidden = !previewing;
   pv._shown = null;
   if (previewing) { ta.blur(); showPreview(pv); }
+  $('#p-prevBtn').setAttribute('aria-pressed', String(previewing));
   render();
 }
 function barTool(name) {
@@ -404,8 +407,12 @@ export function initPhone() {
   Wr.setWritingHooks('phone', { openEditor: () => openEditor(), afterDelete: () => leaveEditor() });
   $('#p-wmenu').addEventListener('click', () => Wr.openPostMenu());
   $('#p-wfork').addEventListener('click', () => Wr.askFork(readKey));
-  $('#p-wset').addEventListener('click', () => { closeSheet({ refocus: false }); Wr.openSettings(); });
   // --- end web-writing ---
+  hubUse('phone', {
+    shelf: () => { renderShelfSheet(); sheet('sh-shelf'); },
+    offline: () => setOffline(!S.B.is_offline()),
+    reset: async () => { readKey = null; await resetData(); show('write'); },
+  });
 
   // the link/quote sheet
   $('#p-linkQ').addEventListener('input', () => renderPicks($('#p-linkList'), $('#p-linkQ').value));
@@ -479,8 +486,17 @@ export function initPhone() {
     else hopperSheet(key);
   });
   $('#p-back2').addEventListener('click', () => show('read'));
-  $('#p-replyBtn').addEventListener('click', () => reply(readKey));
-  $('#p-hopBtn').addEventListener('click', () => hopperSheet(readKey));
+  // The post's action row, by name: what swiping a card and holding a
+  // sentence also offer.
+  $('#p-pacts').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pa]'); if (!b || !readKey) return;
+    const a = b.dataset.pa;
+    if (a === 'quote') quote(readKey);
+    else if (a === 'reply') reply(readKey);
+    else if (a === 'hopper') hopperSheet(readKey);
+    else if (a === 'link') copyText(S.B.link_markup(readKey)).then((ok) => toast(ok ? 'Link copied · paste it into a post' : 'Couldn’t reach the clipboard'));
+    else if (a === 'unread') { outcome(S.B.set_read(readKey, false)); persist(); renderStream(); }
+  });
   $('#p-smaller').addEventListener('click', () => textSize(-0.1));
   $('#p-bigger').addEventListener('click', () => textSize(0.1));
   $('#p-postBody').addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) openReading(g.dataset.goto); });
@@ -496,20 +512,6 @@ export function initPhone() {
     persist(); renderStream();
   });
 
-  // theme, offline, reset
-  $('#p-theme').addEventListener('click', () => {
-    $('#p-themeList').innerHTML = S.themes.map((t) => `<button type="button" class="opt2${t.id === S.theme?.id ? ' on' : ''}" data-theme="${esc(t.id)}">${t.id === S.theme?.id ? '✓ ' : ''}${esc(t.name)}<small>${esc(t.family)} · ${t.dark ? 'dark' : 'light'}</small></button>`).join('');
-    sheet('sh-theme');
-  });
-  $('#p-themeList').addEventListener('click', (e) => {
-    const b = e.target.closest('[data-theme]'); if (!b) return;
-    applyTheme(b.dataset.theme, [document.documentElement]);
-    pv._shown = null;
-    closeSheet({ refocus: false });
-    S.render();
-  });
-  $('#p-offline').addEventListener('click', () => { closeSheet({ refocus: false }); setOffline(!S.B.is_offline()); });
-  $('#p-reset').addEventListener('click', async () => { closeSheet({ refocus: false }); readKey = null; await resetData(); show('write'); });
   app.dataset.view = 'write';
 }
 

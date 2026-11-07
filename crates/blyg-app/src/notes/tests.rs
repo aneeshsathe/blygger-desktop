@@ -179,7 +179,7 @@ mod ui {
 
     use blyg_core::config::MemoryTokenStore;
     use blyg_core::{Backend, ConfigStore, Kind, Status};
-    use gpui_kit::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext, px};
+    use gpui_kit::{Bounds, Entity, Focusable as _, Pixels, TestAppContext, VisualTestContext, px};
 
     use crate::app::MainView;
     use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
@@ -385,7 +385,7 @@ mod ui {
     }
 
     #[gpui_kit::test]
-    fn cmd_shift_n_toggles_and_esc_closes(cx: &mut TestAppContext) {
+    fn cmd_shift_n_toggles_and_esc_goes_back_to_writing(cx: &mut TestAppContext) {
         let (view, fake, _, cx) = setup(cx);
         let before = fake.items().len();
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
@@ -404,17 +404,169 @@ mod ui {
         assert!(!is_open(&view, cx));
         slide_out(cx);
         assert!(cx.debug_bounds("notes-drawer").is_none(), "gone");
-        // esc with the drawer's editor focused closes it too.
+        // esc with the pane's editor focused hands the keyboard back; the
+        // pane stays open beside what you're writing.
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         assert!(is_open(&view, cx));
+        assert!(has_keyboard(&view, cx));
         cx.simulate_keystrokes("escape");
         settle(cx);
+        assert!(is_open(&view, cx), "esc doesn't close it");
+        assert!(!has_keyboard(&view, cx), "the keyboard went back");
+        // Open without the keyboard: ⇧⌘N gives it the keyboard (it stays)...
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
+        settle(cx);
+        assert!(is_open(&view, cx) && has_keyboard(&view, cx));
+        // ...and with the keyboard in it, closes it. The menu item's
+        // action is the same.
+        cx.dispatch_action(crate::app::notes::ToggleNotes);
+        settle(cx);
         assert!(!is_open(&view, cx));
-        // The menu item's action is the same.
         cx.dispatch_action(crate::app::notes::ToggleNotes);
         settle(cx);
         assert!(is_open(&view, cx));
+        // × closes it.
+        slide_out(cx);
+        let close = cx.debug_bounds("notes-close").expect("its ×");
+        cx.simulate_click(close.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        assert!(!is_open(&view, cx));
+    }
+
+    fn has_keyboard(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+        view.update_in(cx, |v, window, cx| v.notes.has_keyboard(window, cx))
+    }
+
+    /// The point of the pane: write in the draft while it's open. A click in
+    /// the editor and typing there leave it open; esc in the pane puts the
+    /// keyboard back in the draft, where it was.
+    #[gpui_kit::test]
+    fn the_pane_stays_open_while_you_write(cx: &mut TestAppContext) {
+        let (view, fake, _, cx) = setup(cx);
+        let id = fake.create_draft(Kind::Fragment, "Draft.").unwrap();
+        view.update_in(cx, |v, window, cx| {
+            v.open(&id, window, cx);
+            v.editor.update(cx, |s, cx| {
+                s.set_selected_range(6..6, cx);
+                s.focus(window, cx);
+            });
+        });
+        settle(cx);
+        cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
+        settle(cx);
+        cx.simulate_input("a note");
+        settle(cx);
+        assert!(notes_text(&view, cx).ends_with("a note"));
+        // esc: back to the draft, at its caret.
+        cx.simulate_keystrokes("escape");
+        settle(cx);
+        cx.simulate_input(" More.");
+        settle(cx);
+        assert_eq!(fake.item(&id).unwrap().content_md, "Draft. More.");
+        assert!(is_open(&view, cx), "still open beside the draft");
+        // A click in the editor: still open.
+        slide_out(cx);
+        let pane = cx.debug_bounds("editor-pane").expect("the editor");
+        cx.simulate_click(pane.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        assert!(is_open(&view, cx), "a click elsewhere never closes it");
+        // The editor fits left of it (a column, not an overlay).
+        let drawer = cx.debug_bounds("notes-drawer").expect("drawn");
+        let pane = cx.debug_bounds("editor-pane").expect("the editor");
+        assert!(
+            pane.right() <= drawer.left() + px(0.5),
+            "{pane:?} {drawer:?}"
+        );
+    }
+
+    /// The tab bar's Notes tab opens the pane without taking the keyboard
+    /// from the editor, and closes it again.
+    #[gpui_kit::test]
+    fn the_notes_tab_opens_it_beside_the_editor(cx: &mut TestAppContext) {
+        let (view, fake, _, cx) = setup(cx);
+        let id = fake.create_draft(Kind::Fragment, "Draft.").unwrap();
+        view.update_in(cx, |v, window, cx| {
+            v.open(&id, window, cx);
+            v.editor.update(cx, |s, cx| s.focus(window, cx));
+        });
+        settle(cx);
+        let tab = cx.debug_bounds("side-tab-notes").expect("the tab");
+        cx.simulate_click(tab.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        assert!(is_open(&view, cx));
+        assert!(!has_keyboard(&view, cx), "the editor kept the keyboard");
+        let editor_focused = view.update_in(cx, |v, window, cx| {
+            v.editor.read(cx).focus_handle(cx).is_focused(window)
+        });
+        assert!(editor_focused);
+        slide_out(cx);
+        let tab = cx.debug_bounds("side-tab-notes").expect("the tab");
+        cx.simulate_click(tab.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        assert!(!is_open(&view, cx));
+    }
+
+    /// The pane's left edge drags its width (in range), and a double-click
+    /// puts the default back.
+    #[gpui_kit::test]
+    fn the_panes_edge_drags_and_resets(cx: &mut TestAppContext) {
+        let (view, _, _, cx) = setup(cx);
+        cx.simulate_resize(gpui_kit::size(px(1400.), px(900.)));
+        view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
+        slide_out(cx);
+        // The dock's grow animation runs on the real clock, and a drag
+        // can't start on an element that's still animating in.
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        settle(cx);
+        let edge = cx.debug_bounds("notes-edge").expect("its edge");
+        let from = edge.center();
+        cx.simulate_mouse_move(from, None, gpui_kit::Modifiers::none());
+        settle(cx);
+        cx.simulate_mouse_down(
+            from,
+            gpui_kit::MouseButton::Left,
+            gpui_kit::Modifiers::none(),
+        );
+        // The first move starts the drag; the next one moves it.
+        for _ in 0..2 {
+            cx.simulate_mouse_move(
+                gpui_kit::point(from.x - px(120.), from.y),
+                Some(gpui_kit::MouseButton::Left),
+                gpui_kit::Modifiers::none(),
+            );
+        }
+        cx.simulate_mouse_up(
+            gpui_kit::point(from.x - px(120.), from.y),
+            gpui_kit::MouseButton::Left,
+            gpui_kit::Modifiers::none(),
+        );
+        settle(cx);
+        let w = view.read_with(cx, |v, _| v.notes.width);
+        assert!((w - 500.).abs() < 4., "dragged 120 wider: {w}");
+        let drawer = cx.debug_bounds("notes-drawer").expect("drawn");
+        let edge_w = crate::app::side::EDGE_W;
+        assert!((f32::from(drawer.size.width) + edge_w - w).abs() < 1.);
+        // A double-click on the edge: the default.
+        let edge = cx.debug_bounds("notes-edge").expect("its edge");
+        cx.simulate_event(gpui_kit::MouseDownEvent {
+            position: edge.center(),
+            button: gpui_kit::MouseButton::Left,
+            modifiers: gpui_kit::Modifiers::none(),
+            click_count: 2,
+            first_mouse: false,
+        });
+        cx.simulate_event(gpui_kit::MouseUpEvent {
+            position: edge.center(),
+            button: gpui_kit::MouseButton::Left,
+            modifiers: gpui_kit::Modifiers::none(),
+            click_count: 2,
+        });
+        settle(cx);
+        assert_eq!(
+            view.read_with(cx, |v, _| v.notes.width),
+            crate::app::notes::WIDTH
+        );
     }
 
     #[gpui_kit::test]
@@ -637,7 +789,7 @@ mod ui {
         let viewport = cx.update(|window, _| window.viewport_size().width);
         view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
         settle(cx);
-        let edge = viewport - px(crate::app::notes::WIDTH);
+        let edge = viewport - px(crate::app::notes::WIDTH) - px(crate::app::side::TAB_BAR_W);
         let f = *log.borrow().browser_frames.last().unwrap();
         assert!(
             f.origin.x + f.size.width <= edge + px(0.5),
@@ -694,9 +846,9 @@ mod ui {
         }
     }
 
-    /// "→ Notes" clicked while the drawer is out isn't a click away: it
-    /// adds, and the drawer stays put (no slide out and back in). A click
-    /// anywhere else still closes it.
+    /// "→ Notes" clicked while the pane is out adds, and the pane stays put
+    /// (no slide out and back in). A click anywhere else leaves it open
+    /// too: closing is explicit.
     #[gpui_kit::test]
     fn clicking_an_add_action_keeps_the_drawer_out(cx: &mut TestAppContext) {
         let (view, _, _, cx) = setup(cx);
@@ -714,14 +866,14 @@ mod ui {
             assert_eq!(v.notes.shown, shown, "no new slide-in");
             assert!(v.notes.text(cx).contains("![["), "added");
         });
-        // A click on the stream, away from any action: closes it.
+        // A click on the stream, away from any action: still open.
         let row = cx.debug_bounds("stream-actions").expect("row");
         cx.simulate_click(
             gpui_kit::point(row.left() + px(4.), row.top() - px(30.)),
             gpui_kit::Modifiers::none(),
         );
         settle(cx);
-        assert!(!is_open(&view, cx), "closed by a click outside");
+        assert!(is_open(&view, cx), "a click outside doesn't close it");
     }
 
     #[gpui_kit::test]
@@ -732,18 +884,19 @@ mod ui {
         view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
         settle(cx);
         assert!(view.read_with(cx, |v, _| v.reading.opened.is_some()));
-        // Open: esc is the drawer's; the side pane stays.
+        // With the keyboard in the notes: esc is the pane's (it hands the
+        // keyboard back and stays open); the side pane stays.
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
         settle(cx);
         cx.simulate_keystrokes("escape");
         settle(cx);
-        assert!(!is_open(&view, cx));
+        assert!(is_open(&view, cx));
         assert!(
             view.read_with(cx, |v, _| v.reading.opened.is_some()),
-            "only the drawer closed"
+            "the side pane stays"
         );
-        slide_out(cx);
-        // Closed: esc goes to the stream, which closes its side pane.
+        // The keyboard back on the stream: esc goes to it, which closes its
+        // side pane.
         cx.simulate_keystrokes("escape");
         settle(cx);
         view.read_with(cx, |v, _| {

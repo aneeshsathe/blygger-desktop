@@ -870,9 +870,9 @@ pub const STEPS: &[Step] = &[
         since: "0.18.0",
         title: "Nearby thoughts, while you write",
         caption: if cfg!(target_os = "windows") {
-            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the              phrase you share, Alt+Shift+Enter quotes the post (threads). Ctrl+Alt+U shows or              hides the rail; Settings › Nearby can add a small model on this computer that              matches meaning, not just words."
+            "Ctrl+Alt+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words."
         } else {
-            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share,              ⌥⇧⏎ quotes the post (threads). ⌥⌘U shows or hides the rail; Settings › Nearby can              add a small model on this Mac that matches meaning, not just words."
+            "⌥⌘U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share, ⌥⇧⏎ quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this Mac that matches meaning, not just words."
         },
         keys: &[Key::Nearby],
         key_label: if cfg!(target_os = "windows") {
@@ -1304,10 +1304,12 @@ pub const STEPS: &[Step] = &[
         id: "notes",
         since: "0.4.0",
         title: "Notes while you read",
-        caption: "⇧⌘N slides in the Notes drawer. Reading notes are running notes, kept on \
-                  this Mac as a scratch note; → Notes, at the bottom of a post, adds the post \
-                  to them. Select a passage in a post: ⇧⌘D, or the pill beside it, quotes it \
-                  in your draft. The drawer's Notes tab is next.",
+        caption: "⇧⌘N, or the Notes tab at the right edge, opens the notes beside what you're \
+                  reading or writing; they stay open until you close them, and esc takes you \
+                  back to your draft. Reading notes are running notes, kept on this Mac as a \
+                  scratch note; → Notes, at the bottom of a post, adds the post to them. Select \
+                  a passage in a post: ⇧⌘D, or the pill beside it, quotes it in your draft. The \
+                  pane's Notes tab is next.",
         keys: &[Key::Notes],
         key_label: "⇧⌘N",
         region: Region::ReaderPost,
@@ -1501,6 +1503,36 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end studio parity ---
+    // --- side dock (0.20.0) --- notes and Nearby beside the draft.
+    Step {
+        id: "side-dock",
+        since: "0.20.0",
+        title: "Notes beside your draft",
+        caption: if cfg!(target_os = "windows") {
+            "The tabs at the right edge open your notes and Nearby beside the editor, and \
+             they stay open while you write. Ctrl+Shift+N moves into the notes, esc comes \
+             back to your draft. Drag a pane's edge, or the line between the editor and \
+             the preview, to resize; a double-click resets it. Press Ctrl+Shift+N."
+        } else {
+            "The tabs at the right edge open your notes and Nearby beside the editor, and \
+             they stay open while you write. ⇧⌘N moves into the notes, esc comes back to \
+             your draft. Drag a pane's edge, or the line between the editor and the \
+             preview, to resize; a double-click resets it. Press ⇧⌘N."
+        },
+        keys: &[Key::Notes],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+N"
+        } else {
+            "⇧⌘N"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end side dock ---
     Step {
         id: "done",
         since: "0.1.0",

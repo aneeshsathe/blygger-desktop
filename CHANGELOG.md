@@ -16,6 +16,16 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-07
+
+### Added
+
+- Each release includes the web app as `Burrow-web-<version>.zip`, covered by the signed `SHA256SUMS`, and a new page, "Burrow on your own blyg", walks an owner (or their AI agent) through serving it at `/burrow/` on their own blyg: verify, unzip into the Worker's static assets, deploy, check.
+- **Burrow in a browser: nothing hides behind a corner menu.** On a phone a fourth tab, **Blyg**, lists your blyg's Settings, Mentions, Hoppers, Subscribe, Subscriptions, Peek, History, your shelf and the theme by name; the Read tab has a row of named buttons under its search (☰ Sources, ＋ Subscribe, Subscriptions, Mentions, Hoppers, Peek, History); a post you read has ❝ Quote, ↩ Reply, ⊕ Hopper, [[ Copy link, ● Unread and ⑂ Fork in a row; the editor's top bar says 📚 Shelf, 👁 Preview and ⋯ Post. On a desk a **⚙ Blyg** view (⌃3) holds the same list, an action row over the editor names Shelve, Preview, Image, Write TK, Versions, Make draft, Discard, Withdraw and Delete (each with its key), and the sources pane starts with Subscribe and the rest. Every shortcut still works, and destructive actions still ask first.
+- **Notes stay open while you write.** The notes drawer is now a pane docked at the window's right edge, beside the editor and the reading screens, instead of an overlay: clicking or typing in your draft no longer closes it. esc puts the keyboard back in your draft and leaves the notes open; ⇧⌘N moves back into them, and closes them from inside; × closes them too. A markdown-notes note stays open where you were in it, Quote into post / Copy verbatim put it in your draft at the caret, the text keeps a readable line length, the pane's left edge drags (a double-click resets it), and whether it's open and how wide are remembered across launches.
+- **Side tabs: Notes and Nearby.** A slim tab bar at the window's right edge opens the notes and **Nearby thoughts**, which is now a drawer too: closed until you open it (its tab or ⌥⌘U), open until you close it, resizable, and remembered. A tab leaves the keyboard in your draft; Nearby's keys, hover cards and click-to-pick work as before. Focus mode hides the tab bar.
+- **Resize the editor and the preview.** The divider between the editor and ⌘E's preview drags (each keeps a usable minimum); a double-click centres it, as it now does in split view, and Burrow remembers where you left it.
+
 ## [0.19.0] - 2026-11-07
 
 Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.

@@ -1,10 +1,14 @@
-//! --- nearby --- Nearby thoughts: a rail on the editor's right that shows
-//! up to five of your own published posts, and posts you hold from blygs
-//! you follow, that say the same thing as the paragraph under the caret.
-//! ⌥↑/⌥↓ choose without leaving the text, ⌥⏎ writes `[[id | phrase]]` over
-//! the phrase they share (or `[[id | title]]` at the caret when they share
-//! meaning, not words), ⌥⇧⏎ writes `![[id | title]]` on a new line after
-//! the paragraph (threads only). ⌥⌘U shows or hides the rail.
+//! --- nearby --- Nearby thoughts: a drawer at the window's right edge
+//! (`side.rs`, beside the editor) that shows up to five of your own
+//! published posts, and posts you hold from blygs you follow, that say the
+//! same thing as the paragraph under the caret. ⌥↑/⌥↓ choose without
+//! leaving the text, ⌥⏎ writes `[[id | phrase]]` over the phrase they share
+//! (or `[[id | title]]` at the caret when they share meaning, not words),
+//! ⌥⇧⏎ writes `![[id | title]]` on a new line after the paragraph (threads
+//! only). It's closed until you open it: its tab in the side tab bar, or
+//! ⌥⌘U, opens it; it stays open until its ×, its tab or ⌥⌘U closes it.
+//! Its left edge drags (a double-click resets it). Whether it's open and
+//! its width are kept in `state.json`. Nothing is matched while it's closed.
 //!
 //! What "the same thing" means is the `nearby-embedder` key:
 //! - none (the default): shared phrases, through the trigram indexes.
@@ -49,8 +53,16 @@ gpui_kit::actions!(
 pub const DEBOUNCE: Duration = Duration::from_millis(300);
 /// How long after a store change the index catches up.
 pub const REINDEX_DELAY: Duration = Duration::from_secs(2);
-/// The rail's width.
+/// The rail's width until its edge is dragged.
 pub const RAIL_W: f32 = 236.;
+/// The rail's widths: its default and the range a drag keeps it in.
+pub const SPAN: super::side::Span = super::side::Span {
+    default: RAIL_W,
+    min: 200.,
+    max: 440.,
+};
+/// The rail never takes more than this share of the window.
+pub const MAX_SHARE: f32 = 0.35;
 /// How long after a failed index build the rail tries again.
 pub const RETRY_INDEX: Duration = Duration::from_secs(30);
 
@@ -103,8 +115,16 @@ struct Shared {
 /// The window's rail state.
 #[derive(Default)]
 pub struct State {
-    /// ⌥⌘U hid it (remembered in state.json).
-    pub hidden: bool,
+    /// The drawer is open (⌥⌘U, its tab; remembered in state.json).
+    pub open: bool,
+    /// The width the user chose (dragged).
+    pub width: f32,
+    /// The latest drag of its edge (the width is saved once it stops).
+    width_gen: u64,
+    /// The window's width this frame (`side.rs` fits the drawer to it).
+    pub window_w: f32,
+    /// The width it takes this frame (0 when it's not on screen).
+    pub dock_w: f32,
     /// The caret when last looked at (the watch ignores a blink).
     last_cursor: Option<(usize, Option<String>)>,
     /// What the rail shows (at most `engine::SHOWN`).
@@ -287,14 +307,16 @@ impl MainView {
             .map(|c| c.data_dir.clone())
     }
 
-    /// Hook (new): whether the rail was left hidden, and a watch on the
-    /// caret, so moving to another paragraph refreshes the rail as typing
-    /// does.
+    /// Hook (new): whether the drawer was left open and how wide, and a
+    /// watch on the caret, so moving to another paragraph refreshes the
+    /// rail as typing does.
     pub(super) fn nearby_init(&mut self, cx: &mut Context<Self>) {
-        self.nearby.hidden = self
+        let state = self
             .nearby_data_dir(cx)
             .map(|d| blyg_core::state::AppState::load(&d))
-            .is_some_and(|s| s.nearby_hidden);
+            .unwrap_or_default();
+        self.nearby.open = state.nearby_open;
+        self.nearby.width = SPAN.restore(state.nearby_width);
         let editor = self.editor.clone();
         self.nearby.observe = Some(cx.observe(&editor, |this, _, cx| {
             let cur = this.editor.read(cx).cursor();
@@ -320,19 +342,64 @@ impl MainView {
         }
     }
 
-    /// The rail is on screen: Posts, a post open, `nearby` not off, not
-    /// hidden.
+    /// The rail is on screen: it's open and [`Self::nearby_available`].
     pub(crate) fn nearby_shown(&self, cx: &App) -> bool {
-        !self.nearby.hidden
-            && self.reading.view == reading::View::Posts
-            && self.current.is_some()
-            && mode(cx) != "off"
+        self.nearby.open && self.nearby_available(cx)
+    }
+
+    /// The rail can show (its tab is in the tab bar): Posts, a post open,
+    /// `nearby` not off.
+    pub(crate) fn nearby_available(&self, cx: &App) -> bool {
+        self.reading.view == reading::View::Posts && self.current.is_some() && mode(cx) != "off"
+    }
+
+    /// --- side --- The width the drawer takes this frame (0 when it's not
+    /// on screen).
+    pub(crate) fn nearby_dock_w(&self, cx: &App) -> f32 {
+        if !self.nearby_shown(cx) {
+            return 0.;
+        }
+        let window_w = self.nearby.window_w;
+        SPAN.fit(self.nearby.width, window_w, MAX_SHARE)
+    }
+
+    /// --- side --- Set the drawer's width (saved once it stops changing).
+    pub(crate) fn nearby_set_width(&mut self, w: f32, cx: &mut Context<Self>) {
+        if (w - self.nearby.width).abs() < 0.5 {
+            return;
+        }
+        self.nearby.width = w;
+        self.nearby.width_gen += 1;
+        let gen_ = self.nearby.width_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(super::side::SAVE_MS))
+                .await;
+            let _ = this.update(cx, |v, cx| {
+                if v.nearby.width_gen == gen_ {
+                    v.nearby_save_layout(cx);
+                }
+            });
+        })
+        .detach();
+        cx.notify();
+    }
+
+    /// Persist whether the drawer is open, and its width.
+    fn nearby_save_layout(&self, cx: &App) {
+        if let Some(d) = self.nearby_data_dir(cx) {
+            let (open, w) = (self.nearby.open, SPAN.saved(self.nearby.width));
+            let _ = blyg_core::state::AppState::update(&d, |s| {
+                s.nearby_open = open;
+                s.nearby_width = w;
+            });
+        }
     }
 
     /// Hook (editor change): look again after a pause. One timer, re-armed
     /// by every keystroke; nothing else happens on the keystroke.
     pub(super) fn nearby_typed(&mut self, cx: &mut Context<Self>) {
-        if self.nearby.hidden {
+        if !self.nearby.open {
             return;
         }
         self.nearby.timer = Some(cx.spawn(async move |this, cx| {
@@ -351,7 +418,7 @@ impl MainView {
             CoreEvent::ReadingChanged => self.nearby.stamp_held += 1,
             _ => return,
         }
-        if self.nearby.embedder.is_none() || self.nearby.hidden {
+        if self.nearby.embedder.is_none() || !self.nearby.open {
             return;
         }
         self.nearby.reindex = Some(cx.spawn(async move |this, cx| {
@@ -891,7 +958,7 @@ impl MainView {
             )
     }
 
-    /// ⌥⌘U: show or hide the rail.
+    /// ⌥⌘U (or its tab): open or close the drawer.
     pub(crate) fn nearby_toggle(&mut self, cx: &mut Context<Self>) {
         if mode(cx) == "off" {
             self.show_toast(
@@ -901,12 +968,15 @@ impl MainView {
             );
             return;
         }
-        self.nearby.hidden = !self.nearby.hidden;
-        let hidden = self.nearby.hidden;
-        if let Some(d) = self.nearby_data_dir(cx) {
-            let _ = blyg_core::state::AppState::update(&d, |s| s.nearby_hidden = hidden);
-        }
-        if !hidden {
+        self.nearby_set_open(!self.nearby.open, cx);
+    }
+
+    /// Open or close the drawer (and remember it).
+    pub(crate) fn nearby_set_open(&mut self, open: bool, cx: &mut Context<Self>) {
+        self.nearby.open = open;
+        self.nearby.hover = None;
+        self.nearby_save_layout(cx);
+        if open {
             self.nearby_query(cx);
         }
         cx.notify();
@@ -922,7 +992,7 @@ impl MainView {
 
     fn nearby_move(&mut self, delta: isize, cx: &mut Context<Self>) {
         let n = self.nearby.rows.len();
-        if n == 0 || self.nearby.hidden {
+        if n == 0 || !self.nearby.open {
             cx.propagate();
             return;
         }
@@ -1217,7 +1287,7 @@ impl MainView {
 
     // ------------------------------------------------------------ render
 
-    /// Hook (editor pane): the rail, right of the text.
+    /// Hook (`side.rs`): the drawer, docked right of the editor.
     pub(super) fn render_nearby_rail(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if !self.nearby_shown(cx) {
             return None;
@@ -1297,11 +1367,13 @@ impl MainView {
             div()
                 .id("nearby-rail")
                 .debug_selector(|| "nearby-rail".into())
+                .relative()
                 .flex_none()
-                .w(px(RAIL_W))
+                .w(px(self.nearby_dock_w(cx)))
                 .h_full()
                 .flex()
                 .flex_col()
+                .bg(p.editor)
                 .border_l_1()
                 .border_color(p.line)
                 // A click on the rail leaves the keyboard with the editor
@@ -1322,9 +1394,27 @@ impl MainView {
                         .flex_col()
                         .child(
                             div()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(10.5))
-                                .child("NEARBY"),
+                                .flex()
+                                .items_center()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_size(px(10.5))
+                                        .child("NEARBY"),
+                                )
+                                .child(
+                                    div()
+                                        .id("nearby-close")
+                                        .debug_selector(|| "nearby-close".into())
+                                        .px(px(4.))
+                                        .cursor_pointer()
+                                        .hover(|h| h.text_color(p.ink))
+                                        .child("×")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.nearby_set_open(false, cx)
+                                        })),
+                                ),
                         )
                         .child(
                             div()
@@ -1357,6 +1447,15 @@ impl MainView {
                         .debug_selector(|| "nearby-status".into())
                         .child(self.nearby_status_words()),
                 )
+                // --- side --- its left edge drags; a double-click resets it.
+                .child(div().absolute().top_0().bottom_0().left(px(-2.)).child(
+                    super::side::edge_handle(
+                        "nearby-edge",
+                        super::side::Which::Nearby,
+                        &p,
+                        cx.listener(|this, _, _, cx| this.nearby_set_width(RAIL_W, cx)),
+                    ),
+                ))
                 .into_any_element(),
         )
     }
