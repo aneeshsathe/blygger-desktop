@@ -125,6 +125,14 @@ pub(crate) mod chat;
 #[path = "terminal/mod.rs"]
 pub(crate) mod terminal;
 
+// --- loose ends --- the omnibar's operators' summary over the list.
+#[path = "loose_ends.rs"]
+pub(crate) mod loose_ends;
+
+// --- capture --- a web address pasted into the omnibar.
+#[path = "capture_link.rs"]
+pub(crate) mod capture_link;
+
 pub const CONTEXT: &str = "Blygger";
 
 /// Every binding lives in `keymap::table()`.
@@ -265,6 +273,7 @@ pub struct MainView {
     list: ListModel,
     /// The omnibar's search running off the UI thread (`query_typed`).
     search: OmniSearch,
+    loose_ends: loose_ends::LooseEnds, // --- loose ends ---
     list_scroll: UniformListScrollHandle,
     current: Option<Item>,
     mode: Mode,
@@ -441,6 +450,7 @@ impl MainView {
             assist, // --- composer ---
             list: ListModel::default(),
             search: OmniSearch::default(),
+            loose_ends: Default::default(), // --- loose ends ---
             list_scroll: UniformListScrollHandle::new(),
             current: None,
             mode: Mode::Search,
@@ -484,6 +494,7 @@ impl MainView {
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
+        this.loose_ends_refresh(cx); // --- loose ends ---
         this.studio_init(window, cx);
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
@@ -1185,6 +1196,7 @@ impl MainView {
     ) {
         self.reload_shelf(); // --- shelf ---
         self.list.refresh(results);
+        self.loose_ends_refresh(cx); // --- loose ends ---
         self.new_post_sync_selection(); // --- new post ---
         // Refresh the current item's metadata without clobbering the editor.
         if let Some(cur) = self.current.as_ref().map(|c| c.local_id.clone()) {
@@ -1374,6 +1386,7 @@ impl MainView {
             InputEvent::PressEnter { .. } => match self.settle_search(window, cx).list.enter() {
                 EnterAction::Open(id) => self.open(&id, window, cx),
                 EnterAction::Create(seed) => self.create_from(&seed, window, cx),
+                EnterAction::LinkFragment(url) => self.capture_link(url, window, cx), // --- capture ---
                 EnterAction::Nothing => {}
             },
             InputEvent::Blur => {}
@@ -2625,11 +2638,11 @@ impl MainView {
         };
         if count == 0 {
             let q = self.list.trimmed_query().to_string();
-            let msg = if q.is_empty() {
-                "Nothing here yet. Type to start writing.".to_string()
-            } else {
-                format!("No matches. Press ⏎ to start “{q}”.")
-            };
+            // --- loose ends --- / --- capture --- operators and addresses.
+            let msg = self
+                .list
+                .empty_message()
+                .unwrap_or_else(|| "Nothing here yet. Type to start writing.".to_string());
             return base.child(
                 div()
                     .relative()
@@ -2649,20 +2662,26 @@ impl MainView {
                     ),
             );
         }
-        base.child(
-            uniform_list(
-                "items",
-                count,
-                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                    range
-                        .map(|ix| this.render_row(ix, lsize, cx))
-                        .collect::<Vec<_>>()
-                }),
+        // --- loose ends --- the summary in words, over the rows.
+        base.flex()
+            .flex_col()
+            .children(self.render_loose_ends(cx))
+            .child(
+                uniform_list(
+                    "items",
+                    count,
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        range
+                            .map(|ix| this.render_row(ix, lsize, cx))
+                            .collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(&self.list_scroll)
+                .w_full()
+                .flex_1()
+                .min_h_0(),
             )
-            .track_scroll(&self.list_scroll)
-            .size_full(),
-        )
-        .children(crate::ornament::scroll_edge(&self.theme))
+            .children(crate::ornament::scroll_edge(&self.theme))
     }
 
     fn render_row(&self, ix: usize, lsize: f32, cx: &mut Context<Self>) -> AnyElement {

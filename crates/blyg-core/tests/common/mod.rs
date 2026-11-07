@@ -158,6 +158,17 @@ pub struct State {
     pub cursor_epoch: u64,
     /// `http://127.0.0.1:port`, for absolute URLs.
     pub origin: String,
+    // --- contacts --- (studio 0.56, contract 5.7.0; not in the 5.0.0
+    // fixture, so tests that use these mark the paths unchecked)
+    /// What `GET /api/capabilities` says instead of `CONTRACT_VERSION`.
+    pub contract_version: Option<String>,
+    /// `GET /api/contacts` (`None`: not served, 404).
+    pub contacts: Option<Vec<Value>>,
+    /// Handles a publish reports as `unresolvedHandles`.
+    pub unresolved_handles: Vec<String>,
+    /// `(sub, remote id)` of the rows `GET /api/reading?mentions=true`
+    /// lists (`None`: the parameter isn't served, 400).
+    pub mention_keys: Option<Vec<(String, String)>>,
     tick: u64,
     next_id: u64,
 }
@@ -1012,7 +1023,11 @@ fn route(req: &Req, s: &mut State) -> (u16, Value) {
     // The studio validates every input first (unknown fields, `offset`, a
     // missing `expectedRevision`, ...): 400 before anything happens.
     let c = contract::contract();
+    // --- contacts --- a 5.7.0 parameter the 5.0.0 fixture doesn't know.
+    let newer = req.query_param("mentions").is_some()
+        && s.unchecked.iter().any(|p| req.path.starts_with(p.as_str()));
     if c.knows(&req.method, &segs)
+        && !newer
         && let Err(e) = c.check_request(
             &req.method,
             &segs,
@@ -1043,7 +1058,7 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
             (
                 200,
                 json!({
-                    "contractVersion": CONTRACT_VERSION,
+                    "contractVersion": s.contract_version.as_deref().unwrap_or(CONTRACT_VERSION),
                     "endpoints": { "publicBase": format!("{o}/"), "studio": format!("{o}/studio"),
                         "api": format!("{o}/api"), "issuer": o, "mcp": format!("{o}/mcp"),
                         "media": format!("{o}/media") },
@@ -1237,10 +1252,13 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
                     let note = body.get("note").cloned().unwrap_or(Value::Null);
                     let v = version_json(it, it.version, &now, note, false);
                     it.versions.push(v);
-                    (
-                        200,
-                        json!({ "ok": true, "revision": it.revision, "version": it.version }),
-                    )
+                    let mut out =
+                        json!({ "ok": true, "revision": it.revision, "version": it.version });
+                    // --- contacts ---
+                    if !s.unresolved_handles.is_empty() {
+                        out["unresolvedHandles"] = json!(s.unresolved_handles);
+                    }
+                    (200, out)
                 }
                 "withdraw" => {
                     if it.status == "withdrawn" {
@@ -1540,8 +1558,35 @@ fn dispatch(req: &Req, s: &mut State, segs: &[&str]) -> Reply {
             s.settings = Some(stored);
             (200, next)
         }
+        // --- contacts --- the owner's address book (contract 5.7.0).
+        ("GET", ["api", "contacts"]) => match &s.contacts {
+            Some(c) => (
+                200,
+                json!({ "items": c, "page": { "limit": 100, "nextCursor": null } }),
+            ),
+            None => return Err(not_found()),
+        },
         // ---- reading
         ("GET", ["api", "reading"]) => {
+            // --- contacts --- `mentions=true` (contract 5.7.0).
+            if req.query_param("mentions").as_deref() == Some("true") {
+                let Some(keys) = s.mention_keys.clone() else {
+                    return Err(invalid("unknown query parameter: mentions"));
+                };
+                let rows: Vec<Value> = reading_rows(s)
+                    .into_iter()
+                    .filter(|r| {
+                        let (a, b) = row_key(r);
+                        keys.iter().any(|(x, y)| *x == a && *y == b)
+                    })
+                    .collect();
+                let all: Vec<Value> = rows.iter().map(|r| reading_entry(s, r)).collect();
+                return Ok((
+                    200,
+                    json!({ "items": all, "page": { "limit": 50, "nextCursor": null },
+                        "readState": true, "readStateClear": true }),
+                ));
+            }
             let sub = req.query_param("sub");
             let kind = req.query_param("kind");
             let hopper = req.query_param("hopper");

@@ -32,6 +32,7 @@ pub(crate) mod lineage_vm;
 mod list;
 mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -406,6 +407,8 @@ pub struct State {
     pub browse: browse::Browse,
     /// --- reading compose --- the compose box.
     pub compose: compose::Compose,
+    /// --- contacts --- the Mentions smart feed's posts.
+    pub mentioned: mentions_feed::Feed,
 }
 
 impl State {
@@ -470,6 +473,7 @@ impl State {
                     .clone()
                     .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
             ),
+            mentioned: Default::default(), // --- contacts ---
         }
         .refiltered()
     }
@@ -495,6 +499,10 @@ impl State {
         } else {
             sources_vm::stream_rows(&self.rows, &searched) // --- background ---
         };
+        // --- contacts --- the Mentions feed lists what it holds.
+        if self.mode == stream_vm::ReadMode::Reader && self.source == sources_vm::Source::Mentions {
+            self.shown = self.mentions_shown(&searched);
+        }
         // --- hoppers --- a post only a hopper holds shows under it alone.
         let in_hopper = match (&self.mode, &self.source) {
             (stream_vm::ReadMode::Reader, sources_vm::Source::Hopper(h)) => Some(h),

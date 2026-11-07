@@ -16,6 +16,7 @@ mod hoppers; // --- hoppers ---
 pub use hoppers::{FetchedHopper, HOPPERS_KNOWN, HopperOp, hopper_key};
 mod lineage; // --- lineage counts ---
 pub use lineage::Served as LineageServed;
+mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
@@ -1482,3 +1483,6 @@ mod read_state_tests; // --- read/unread ---
 
 #[cfg(test)]
 mod hoppers_tests; // --- hoppers ---
+
+#[cfg(test)]
+mod loose_tests; // --- loose ends ---

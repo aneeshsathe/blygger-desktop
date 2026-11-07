@@ -20,6 +20,7 @@ mod about; // --- about ---
 mod ai;
 mod app;
 mod capture;
+mod capture_service; // --- capture --- Services (macOS), clipboard chip (Windows)
 mod cli;
 mod composer; // --- composer --- (@-mentions and spellcheck)
 mod connection;
@@ -211,6 +212,7 @@ fn main() -> ExitCode {
         });
         refresh_menus(cx); // --- blyg switcher --- (Blyg › Switch To lists them)
         capture::init(backend.clone(), &prefs, cx);
+        capture_service::init(cx); // --- capture ---
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
         about::init(cx); // --- about ---

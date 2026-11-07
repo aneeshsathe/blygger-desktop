@@ -132,6 +132,14 @@ pub const DB_FILE: &str = "blygger.db";
 /// How long a fetched public changelog is trusted before refetching.
 pub const CHANGELOG_TTL_MS: i64 = 2 * 60 * 1000;
 
+/// --- contacts --- the address book as last fetched (JSON), and whether
+/// the blyg served it ("1"/"0").
+const CONTACTS_META: &str = "contacts.json";
+const CONTACTS_SERVED_META: &str = "contacts.served";
+
+/// --- loose ends --- your posts a verified mention names, as last fetched.
+const MENTIONED_META: &str = "loose_ends.mentioned";
+
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
     /// blyg at `base_url`.
@@ -668,7 +676,59 @@ impl Backend for LiveBackend {
     }
 
     fn search(&self, query: &str) -> Vec<Item> {
-        self.e().store.search(query)
+        // --- loose ends --- operators filter; the words search as ever.
+        let store = &self.e().store;
+        crate::loose::search(
+            query,
+            |q| store.search(q),
+            || store.items(),
+            || self.loose_facts(),
+        )
+    }
+
+    // --- contacts ---
+    fn contacts(&self) -> Vec<crate::contacts::Contact> {
+        self.engine
+            .store
+            .meta(CONTACTS_META)
+            .and_then(|j| serde_json::from_str(&j).ok())
+            .unwrap_or_default()
+    }
+
+    fn refresh_contacts(&self) -> Result<()> {
+        let got = self.e().track(self.e().api.contacts())?;
+        let store = &self.engine.store;
+        store.set_meta(CONTACTS_SERVED_META, if got.is_some() { "1" } else { "0" })?;
+        let json = serde_json::to_string(&got.unwrap_or_default())
+            .map_err(|e| CoreError::Other(e.to_string()))?;
+        store.set_meta(CONTACTS_META, &json)
+    }
+
+    fn rewrites_handles(&self) -> bool {
+        self.engine.store.meta(CONTACTS_SERVED_META).as_deref() == Some("1")
+    }
+
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.e()
+            .track(self.e().api.reading_mentions())
+            .ok()
+            .flatten()
+    }
+
+    // --- capture ---
+    fn page_title(&self, url: &str) -> Option<String> {
+        let (html, _) = self.public.get_page(url, 256 * 1024).ok()?;
+        crate::api::public::html_title(&html)
+    }
+
+    // --- loose ends ---
+    fn loose_facts(&self) -> crate::loose::Facts {
+        let store = &self.engine.store;
+        let mut f = store.loose_facts(self.base_url().as_deref());
+        if let Some(ids) = store.meta(MENTIONED_META) {
+            f.inbound.extend(ids.split_whitespace().map(str::to_string));
+        }
+        f
     }
 
     /// Laid over with typed text not yet written: no wait on the writer.
@@ -909,10 +969,18 @@ impl Backend for LiveBackend {
             .store
             .after_publish(id, p.version, &permalink, &published)?;
         self.e().emit(CoreEvent::ItemsChanged);
+        // --- contacts --- handles the blyg left as written.
+        let warning = match (
+            p.warning,
+            crate::contacts::unresolved_warning(&p.unresolved_handles),
+        ) {
+            (Some(w), Some(u)) => Some(format!("{w} · {u}")),
+            (w, u) => w.or(u),
+        };
         Ok(PublishOutcome {
             version: p.version,
             permalink,
-            warning: p.warning,
+            warning,
         })
     }
 
@@ -1286,7 +1354,18 @@ impl Backend for LiveBackend {
     }
 
     fn mentions(&self) -> Result<Vec<Mention>> {
-        Ok(self.e().track(self.e().api.mentions())?.unwrap_or_default())
+        let v = self.e().track(self.e().api.mentions())?.unwrap_or_default();
+        // --- loose ends --- the posts a verified mention names, kept for
+        // `is:orphan` (the mentions themselves stay on the blyg).
+        let mut ids: Vec<String> = v
+            .iter()
+            .filter(|m| m.status == "verified")
+            .map(|m| m.target_item_id.to_ascii_lowercase())
+            .collect();
+        ids.sort();
+        ids.dedup();
+        let _ = self.engine.store.set_meta(MENTIONED_META, &ids.join(" "));
+        Ok(v)
     }
 
     fn set_mention_hidden(&self, mention_id: &str, hidden: bool) -> Result<()> {

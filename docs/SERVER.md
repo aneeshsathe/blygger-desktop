@@ -284,6 +284,10 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
 - Pause and resume are `PATCH /api/subscriptions/:id {paused}`. Settings, mention hiding
   and subscription edits are `PATCH` too.
 - Mentions may have `relation: "source"` (generated text drew on your post).
+- Contract 5.7.0 (studio 0.56), asked for only when the capabilities say 5.7 or later:
+  `GET /api/contacts` (the owner's address book, `{handle, name, origin}`), publish's
+  `unresolvedHandles` (it rewrites `@handle` to an h-card link), and `mentions=true` on
+  `GET /api/reading`. The repo's OpenAPI fixture is still 5.0.0.
 - `DELETE /api/media/:id` removes an upload, answering `{ok, outcome: "deleted" |
   "detached", revision?}`. It takes a JSON body: `{expectedRevision}` for an attachment
   (the post's revision), `{}` for a loose upload. Burrow remembers which post each

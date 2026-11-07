@@ -41,6 +41,8 @@ const ICON_THUMB: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0
 const ICON_ALL: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8.5 6.5h11M8.5 12h11M8.5 17.5h11"/><circle cx="4.5" cy="6.5" r=".8" fill="currentColor"/><circle cx="4.5" cy="12" r=".8" fill="currentColor"/><circle cx="4.5" cy="17.5" r=".8" fill="currentColor"/></svg>"#;
 /// --- background --- withdrawn posts: an archive box.
 const ICON_BACKGROUND: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M3.5 5h17v4h-17z"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9"/><path d="M10 13h4"/></svg>"#;
+/// --- contacts --- Mentions: an at sign.
+const ICON_MENTIONS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.6"/><path d="M15.6 12v1.6a2.4 2.4 0 0 0 4.8 0V12a8.4 8.4 0 1 0-3.3 6.7"/></svg>"#;
 /// --- own posts --- "Your blyg": a house.
 const ICON_OWN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/></svg>"#;
 const ICON_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.2h8.5A1.5 1.5 0 0 1 21 8.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>"#;
@@ -235,7 +237,7 @@ impl MainView {
 
     /// Everything the pane lists now.
     pub(crate) fn source_entries(&self) -> Vec<Entry> {
-        sources_vm::entries(
+        let mut e = sources_vm::entries(
             &self.reading.hoppers,
             &self.reading.folders,
             &self.reading.filed,
@@ -243,7 +245,24 @@ impl MainView {
             &self.reading.rows,
             &self.reading.collapsed,
             self.now,
-        )
+        );
+        // --- contacts --- Mentions, right under All unread.
+        let r = &self.reading;
+        let unread = r.mentioned.has_unread(&r.rows, r.own_origin.as_deref());
+        let at = e
+            .iter()
+            .position(|x| {
+                matches!(
+                    x,
+                    Entry::Smart {
+                        smart: Smart::Unread,
+                        ..
+                    }
+                )
+            })
+            .map_or(e.len(), |i| i + 1);
+        e.insert(at, Entry::Mentions { unread });
+        e
     }
 
     /// Show `source`'s posts in the list. The open post stays when it's
@@ -252,6 +271,7 @@ impl MainView {
     pub(crate) fn select_source(&mut self, source: Source, cx: &mut Context<Self>) {
         if self.reading.source != source {
             self.reading.source = source;
+            self.load_reading_mentions(cx); // --- contacts ---
             self.reading.sticky.clear();
             self.reading.refilter();
             let keep = self
@@ -1335,6 +1355,26 @@ impl MainView {
                     }))
                     .into_any_element()
             }
+            // --- contacts --- Mentions: a dot, never a count.
+            Entry::Mentions { unread } => row(SharedString::from("src-mentions"))
+                .debug_selector(|| "src-mentions".into())
+                .child(icon(ICON_MENTIONS))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .child(sources_vm::MENTIONS_LABEL),
+                )
+                .when(unread, |d| {
+                    d.child(div().flex_none().size(px(6.)).rounded_full().bg(p.accent))
+                })
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    window.focus(&this.reading.focus, cx);
+                    this.set_pane(Pane::Sources, cx);
+                    this.select_source(Source::Mentions, cx);
+                }))
+                .into_any_element(),
             // --- own posts --- your published posts: no count, no dot.
             Entry::Own => row(SharedString::from("src-own"))
                 .debug_selector(|| "src-own".into())

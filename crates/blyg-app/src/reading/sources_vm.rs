@@ -59,6 +59,9 @@ pub enum Source {
     Own,
     /// --- hoppers --- a hopper id: the posts in it, theirs and yours.
     Hopper(String),
+    /// --- contacts --- the held posts that mention you
+    /// (`mentions_feed`).
+    Mentions,
 }
 
 impl Default for Source {
@@ -142,6 +145,8 @@ pub fn in_source(
         Source::Sub(s) => &r.subscription_id == s,
         Source::Own => super::own::is_own_row(r),
         Source::Hopper(h) => r.hoppers.iter().any(|x| x == h),
+        // --- contacts --- needs the feed's keys: `State::mentions_shown`.
+        Source::Mentions => false,
     }
 }
 
@@ -198,6 +203,8 @@ pub enum Entry {
     /// --- hoppers --- one of your hoppers, with how many posts it holds
     /// (the blyg's count, not unread: a hopper is a collection).
     Hopper(Hopper),
+    /// --- contacts --- "Mentions", under All unread: a dot, never a count.
+    Mentions { unread: bool },
 }
 
 impl Entry {
@@ -210,6 +217,7 @@ impl Entry {
             Entry::Sub { sub, .. } => Some(Source::Sub(sub.id.clone())),
             Entry::Own => Some(Source::Own),
             Entry::Hopper(h) => Some(Source::Hopper(h.id.clone())),
+            Entry::Mentions { .. } => Some(Source::Mentions), // --- contacts ---
         }
     }
 }
@@ -364,8 +372,12 @@ pub fn source_label(
             .map(sub_name)
             .unwrap_or_else(|| "Subscription".into()),
         Source::Own => super::own::OWN_LABEL.into(),
+        Source::Mentions => MENTIONS_LABEL.into(), // --- contacts ---
     }
 }
+
+/// --- contacts --- The Mentions feed's name.
+pub const MENTIONS_LABEL: &str = "Mentions";
 
 /// What the list says when the selected source has nothing to show.
 pub fn empty_label(source: &Source) -> &'static str {
@@ -381,6 +393,7 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
         Source::Hopper(_) => "Nothing in this hopper yet. Press h on a post to put it here.",
+        Source::Mentions => "No post you hold mentions you yet.", // --- contacts ---
     }
 }
 
@@ -438,6 +451,7 @@ mod tests {
                 }
                 Entry::Own => "Your blyg".into(),
                 Entry::Hopper(h) => format!("▤ {}", h.name),
+                Entry::Mentions { .. } => "Mentions".into(),
             })
             .collect();
         assert_eq!(

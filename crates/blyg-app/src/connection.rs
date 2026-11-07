@@ -695,6 +695,25 @@ impl Backend for SwitchBackend {
     fn search(&self, q: &str) -> Vec<Item> {
         self.cur().search(q)
     }
+    // --- contacts ---
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        self.cur().contacts()
+    }
+    fn refresh_contacts(&self) -> blyg_core::Result<()> {
+        self.cur().refresh_contacts()
+    }
+    fn rewrites_handles(&self) -> bool {
+        self.cur().rewrites_handles()
+    }
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.cur().reading_mentions()
+    }
+    fn page_title(&self, url: &str) -> Option<String> {
+        self.cur().page_title(url) // --- capture ---
+    }
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        self.cur().loose_facts() // --- loose ends ---
+    }
     fn item(&self, id: &LocalId) -> Option<Item> {
         self.cur().item(id)
     }

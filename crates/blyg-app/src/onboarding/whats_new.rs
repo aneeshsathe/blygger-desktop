@@ -68,6 +68,22 @@ pub const RELEASES: &[Release] = &[
                  agent, git or wrangler. It gets nothing of Burrow's (no token, no BLYGGER_* \
                  variable); ⇧⌘T sends the editor's selection to it, quoted."
             },
+            // --- capture ---
+            "Loose ends: the search reads is:orphan, is:draft, is:stale, is:leaf, has:tk, \
+             links:, quotes:, kind: and v:. With the search empty, a quiet line over the list \
+             says what's loose, in words (2 orphans · 1 ungenerated TK); a click filters.",
+            if cfg!(target_os = "windows") {
+                "Capture from anywhere: paste a web address into the search and ⏎ starts a \
+                 fragment with that link, titled from the page. Quick capture offers text you \
+                 just copied as a “quote clipboard” chip."
+            } else {
+                "Capture from anywhere: select text in any app and choose Services › Capture \
+                 in Burrow to open quick capture with it quoted. A web address pasted into the \
+                 search starts a fragment with that link, titled from the page."
+            },
+            "Your contacts come first in the @ list; where your blyg turns @handle into a \
+             link (studio 0.56), picking one writes @handle, and publish says which handles \
+             it couldn't resolve. Reading has a Mentions feed under All unread.",
         ],
         first_step: Some("shelf"),
     },

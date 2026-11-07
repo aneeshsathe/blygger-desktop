@@ -6,6 +6,28 @@ The omnibar filters your posts as you type. ↑/↓ previews each post, ⏎ open
 it, and ⏎ with no match starts a new draft seeded with what you typed. ⌘L
 comes back to the omnibar from anywhere, and so does esc from the editor.
 
+**Loose ends.** The search also reads a few operators, alone or with words:
+
+| Operator | Lists |
+|---|---|
+| `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
+| `is:draft` / `is:stale` | drafts / drafts untouched for a month |
+| `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
+| `has:tk` | posts with a `[TK]` not generated yet |
+| `links:<id or host>` | posts that link to that post (the first characters of its id do) or to that site |
+| `quotes:<id or host>` | posts that quote, reply to or fork it |
+| `kind:thread`, `kind:fragment`, `v:2` | by kind, by published version (`v:0`: never published) |
+
+`is:draft tide` lists drafts that mention tides. ⏎ never starts a post from
+operators alone. With the search empty, a quiet line over the list says
+what's loose, in words ("2 orphans · 1 ungenerated TK"); click a part to list
+those posts.
+
+**A web address.** Paste one into the search and, when no post has it, ⏎
+starts a fragment with that link, titled from the page (fetched once, without
+your token). An address of a blyg post you hold starts a thread quoting it,
+`![[id]]`, instead.
+
 **⌘N** (Post › New Post) opens an empty editor with the caret in it. Your
 search and the list stay as they were. What you type is a **scratch note**,
 kept on this Mac and saved as you go; the status bar says "New note · saved
@@ -151,6 +173,14 @@ Scratch notes show in the main list with a `scratch` pill, are searchable and
 editable, and ⌘D or ⌘⏎ there promotes them too. Images pasted into a scratch
 note stay on your Mac until it's promoted, when they're uploaded.
 
+**Capture from anywhere.** On a Mac, select text in any app and choose
+Services › **Capture in Burrow** (in the app's menu, or the right-click menu):
+the panel opens with it quoted, and the page's address under it when the app
+sends one (some browsers do). To give it a key, use System Settings ›
+Keyboard › Keyboard Shortcuts › Services. On Windows, text you copied in the
+last ten seconds shows in the panel as a **quote clipboard** chip; click it to
+quote it. It's never put in for you.
+
 - `capture-default = draft` makes esc save a draft instead.
 - `new-note = scratch` makes the omnibar create scratch notes too, and
   `new-note = draft` makes ⌘N start drafts. Unset, ⌘N starts a scratch note
@@ -164,9 +194,13 @@ note stay on your Mac until it's promoted, when they're uploaded.
 
 - **Paste a link over text.** Select some text and paste a web address to link
   it, as in WordPress: the text becomes `[text](address)`.
-- **Mentions.** Type `@` to pick from the blygs you know (subscriptions,
-  blogroll, authors you read). It inserts a plain link to that blyg, since
-  Blygger has no handles.
+- **Mentions.** Type `@` to pick from the blygs you know: the people in your
+  blyg's address book first (studio 0.56's contacts), then subscriptions,
+  blogroll and authors you read. Where your blyg turns `@handle` into a link
+  when it publishes (studio 0.56), picking a contact writes `@handle`, and
+  the popup shows the link it becomes; publish tells you about any handle it
+  couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
+  notifies no one.
 - **Images.** Paste or drop an image to upload it; it goes into the text
   where you pasted it, and the preview shows it. Until a published post shows
   it, an upload is private on studio 0.28 or later: only you (and Burrow,

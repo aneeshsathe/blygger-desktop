@@ -131,8 +131,42 @@ pub trait Backend: Send + Sync {
     /// Newest-updated first.
     fn items(&self) -> Vec<Item>;
     /// Case-insensitive match over content; same order as `items`. Empty query = `items()`.
+    /// --- loose ends --- operators (`is:orphan`, `has:tk`, …,
+    /// `crate::loose`) filter what the remaining words find.
     fn search(&self, query: &str) -> Vec<Item>;
+    /// --- loose ends --- what `is:orphan` and `quotes:<host>` need beyond
+    /// the posts: local reads only (instant, any thread).
+    fn loose_facts(&self) -> crate::loose::Facts {
+        crate::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading())
+    }
     fn item(&self, id: &LocalId) -> Option<Item>;
+    /// --- contacts --- The owner's address book as last fetched (local,
+    /// instant). Empty when the blyg doesn't serve contacts.
+    fn contacts(&self) -> Vec<crate::contacts::Contact> {
+        Vec::new()
+    }
+    /// --- contacts --- Fetch the address book again (blocking).
+    fn refresh_contacts(&self) -> Result<()> {
+        Ok(())
+    }
+    /// --- contacts --- Whether publish rewrites `@handle` to a link here
+    /// (contract 5.7, as last seen).
+    fn rewrites_handles(&self) -> bool {
+        false
+    }
+    /// --- contacts --- `(subscription id, remote id)` of the held posts
+    /// that mention you, from the blyg's mentions lens (blocking). `None`
+    /// when it isn't served.
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        None
+    }
+    /// --- capture --- A web page's `<title>`, fetched once with the
+    /// token-less public client (blocking). `None`: not served, not HTML,
+    /// or no title.
+    fn page_title(&self, url: &str) -> Option<String> {
+        let _ = url;
+        None
+    }
     fn create_draft(&self, kind: Kind, content_md: &str) -> Result<LocalId>;
     /// Save the working copy. Debounced push to `PUT /api/items/:id`.
     fn save(&self, id: &LocalId, content_md: &str) -> Result<()>;
