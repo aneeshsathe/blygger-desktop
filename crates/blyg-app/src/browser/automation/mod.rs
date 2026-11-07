@@ -968,7 +968,7 @@ impl MainView {
             return None;
         }
         let width = b.viewport_width();
-        let left = b.left_edge(width - self.notes.room());
+        let left = b.left_edge(width - self.side_room());
         (f32::from(left) >= SHEET_ROOM_MIN).then(|| width - left)
     }
 

@@ -174,6 +174,12 @@ pub(crate) mod serendipity;
 // --- nearby --- (Nearby thoughts: the rail beside the editor; hooks marked the same way)
 #[path = "nearby/mod.rs"]
 pub(crate) mod nearby;
+// --- side --- (the side drawers, their tab bar, the editor | preview divider)
+#[path = "side.rs"]
+pub(crate) mod side;
+#[cfg(test)]
+#[path = "side_tests.rs"]
+mod side_tests;
 
 // --- loose ends --- the omnibar's operators' summary over the list.
 #[path = "loose_ends.rs"]
@@ -416,6 +422,7 @@ pub struct MainView {
     // --- split --- a second post beside the one being written
     split: split::Split,
     nearby: nearby::State,              // --- nearby ---
+    side: side::Side,                   // --- side ---
     site: site::State,                  // --- site ---
     contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
     upkeep: upkeep::Upkeep,             // --- upkeep ---
@@ -581,6 +588,10 @@ impl MainView {
                     .unwrap_or_default(),
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
+            side: side::Side::new(
+                cx.try_global::<crate::connection::Connection>()
+                    .map(|c| c.data_dir.clone()),
+            ), // --- side ---
             nearby: Default::default(),                        // --- nearby ---
             site: Default::default(),                          // --- site ---
             contacts: Default::default(),                      // --- contacts ---
@@ -618,6 +629,7 @@ impl MainView {
         {
             this.open_connect(window, cx);
         }
+        this.notes_reopen(window, cx); // --- notes ---
         this
     }
 
@@ -2392,8 +2404,10 @@ impl Render for MainView {
         self.studio_frame(window, cx);
         self.focus_frame(window, cx); // --- focus ---
         self.serendipity_frame(cx); // --- serendipity ---
-        self.browser_frame(window, cx); // --- browser ---
-        self.notes_frame(cx); // --- notes ---
+        self.notes_frame(window, cx); // --- notes ---
+        self.nearby.window_w = f32::from(window.viewport_size().width); // --- side ---
+        self.nearby.dock_w = self.nearby_dock_w(cx); // --- side ---
+        self.browser_frame(window, cx); // --- browser --- (after the drawers fit)
         self.tray_frame(cx); // --- tray ---
         self.split_frame(cx); // --- split ---
         // --- reading compose ---
@@ -2402,15 +2416,20 @@ impl Render for MainView {
         let show_list = self.studio.view.list_visible();
         let show_preview = self.studio.view.preview_visible();
         let viewport = window.viewport_size();
+        // --- side --- the docked drawers and the tab bar take the right.
+        let content_w =
+            (viewport.width - self.side_room_at(cx.background_executor().now())).max(px(0.));
         let stacked = self.prefs.layout == LayoutPref::Stacked;
-        let list_w = (viewport.width * if show_preview { 0.24 } else { 0.38 }).round();
+        let list_w = (content_w * if show_preview { 0.24 } else { 0.38 }).round();
         let rest = if stacked || !show_list {
-            viewport.width
+            content_w
         } else {
-            viewport.width - list_w - px(1.)
+            content_w - list_w - px(1.)
         };
-        let pane_w = if show_preview && !self.split.is_open() {
-            (rest / 2.).floor()
+        let preview_beside = show_preview && self.reading.own.is_none() && !self.split.is_open();
+        let pane_w = if preview_beside {
+            // --- side --- the editor's share of the row (its divider drags)
+            (rest * self.side_preview_share(rest)).floor()
         } else {
             rest
         };
@@ -2537,61 +2556,72 @@ impl Render for MainView {
             .children(crate::platform::menu_button(p, cx)) // Windows menu
             .child(self.render_view_switcher(cx)) // --- reading & versions ---
             .children(self.render_toolbar(toolbar, &ui_font, cx)) // --- buttons ---
-            .children(self.render_problems(cx))
-            // --- reading & versions: other screens replace omnibar + list + editor
-            .map(|d| match self.render_reading_body(&body_font, cx) {
-                Some(body) => d.child(body),
-                // --- focus --- (the omnibar only while ⌘L has it)
-                None => d
-                    .when(!self.focus_hides_omnibar(), |d| {
-                        d.child(self.render_omnibar(&ui_font, size, cx))
-                    })
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_h_0()
-                            .flex()
-                            .when(stacked, |d| d.flex_col())
-                            .when(!stacked, |d| d.flex_row())
-                            .when(show_list, |d| {
-                                d.child(self.render_list(list_len, &ui_font, cx))
+            // --- side --- the screen, with the docked drawers (notes,
+            // Nearby) and their tab bar to its right.
+            .map(|d| {
+                let main = div()
+                    .size_full()
+                    .flex()
+                    .flex_col()
+                    .children(self.render_problems(cx))
+                    // --- reading & versions: other screens replace omnibar + list + editor
+                    .map(|d| match self.render_reading_body(&body_font, cx) {
+                        Some(body) => d.child(body),
+                        // --- focus --- (the omnibar only while ⌘L has it)
+                        None => d
+                            .when(!self.focus_hides_omnibar(), |d| {
+                                d.child(self.render_omnibar(&ui_font, size, cx))
                             })
                             .child(
                                 div()
                                     .flex_1()
-                                    .min_w_0()
                                     .min_h_0()
                                     .flex()
-                                    .flex_row()
-                                    .child(match self.render_own_versions(&body_font, size, cx) {
-                                        Some(v) => v,
-                                        // --- split --- the right post beside it
-                                        None => self.split_wrap(
-                                            self.render_editor_pane(&body_font, size, side_pad, cx)
-                                                .into_any_element(),
-                                            cx,
-                                        ),
+                                    .when(stacked, |d| d.flex_col())
+                                    .when(!stacked, |d| d.flex_row())
+                                    .when(show_list, |d| {
+                                        d.child(self.render_list(list_len, &ui_font, cx))
                                     })
-                                    // --- full editor --- (not beside ⌘Y's history,
-                                    // whose body is the reader's WebView)
-                                    .when(
-                                        show_preview
-                                            && self.reading.own.is_none()
-                                            && !self.split.is_open(), // --- split ---
-                                        |d| d.child(self.studio_pane(&p)),
-                                    ),
+                                    .child({
+                                        let editor =
+                                            match self.render_own_versions(&body_font, size, cx) {
+                                                Some(v) => v,
+                                                // --- split --- the right post beside it
+                                                None => self.split_wrap(
+                                                    self.render_editor_pane(
+                                                        &body_font, size, side_pad, cx,
+                                                    )
+                                                    .into_any_element(),
+                                                    cx,
+                                                ),
+                                            };
+                                        let row =
+                                            div().flex_1().min_w_0().min_h_0().flex().flex_row();
+                                        // --- full editor --- (not beside ⌘Y's history,
+                                        // whose body is the reader's WebView); --- side ---
+                                        // the divider between them drags.
+                                        if preview_beside {
+                                            let preview = self.studio_pane(&p);
+                                            row.child(
+                                                self.side_preview_row(editor, preview, rest, cx),
+                                            )
+                                        } else {
+                                            row.child(editor)
+                                        }
+                                    }),
                             ),
-                    ),
+                    })
+                    .children(self.render_terminal(window, cx)) // --- terminal ---
+                    .children(self.render_tray(cx)) // --- tray ---
+                    .into_any_element();
+                d.child(self.side_row(main, cx))
             })
-            .children(self.render_terminal(window, cx)) // --- terminal ---
-            .children(self.render_tray(cx)) // --- tray ---
             // --- focus --- a hairline in place of the status bar
             .map(|d| match self.render_focus_bar(cx) {
                 Some(bar) => d.child(bar),
                 None => d.child(self.render_status_bar(cx)),
             })
             .children(self.render_browser_pane(cx)) // --- browser ---
-            .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
@@ -3086,29 +3116,25 @@ impl MainView {
             .children(self.render_stub_bar(cx))
             .child(
                 // --- nearby --- the rail sits right of the text.
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .h_full()
-                            .relative()
-                            .child(gpui_kit::base::input::Textarea::new(&self.editor))
-                            .children(margins)
-                            .child(self.assist.clone()) // --- composer ---
-                            .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
-                            .children(self.render_focus_fade(cx)) // --- focus ---
-                            .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
-                    )
-                    .children(self.render_nearby_rail(cx)), // --- nearby ---
+                div().flex_1().min_h_0().flex().child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .h_full()
+                        .relative()
+                        .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                        .children(margins)
+                        .child(self.assist.clone()) // --- composer ---
+                        .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
+                        .children(self.render_focus_fade(cx)) // --- focus ---
+                        .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
+                ), // --- nearby --- (the rail is a side drawer now: `side.rs`)
             )
             .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
         div()
             .id("editor-pane")
+            .debug_selector(|| "editor-pane".into())
             .flex_1()
             .min_w_0()
             .min_h_0()

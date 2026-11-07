@@ -11,7 +11,7 @@ use gpui_kit::base::input::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{CONTEXT, PostRef, SLIDE_MS, TITLE, WIDTH};
+use super::{CONTEXT, PostRef, SLIDE_MS, TITLE};
 use crate::app::scratch::MakeDraft;
 use crate::app::{MainView, Publish, TITLEBAR_H};
 use crate::composer::AssistKey;
@@ -21,11 +21,15 @@ use crate::vm; // --- themes --- dividers
 gpui_kit::actions!(
     blygger,
     [
-        /// ⇧⌘N: open or close the notes drawer; with text selected in a
-        /// post or page on screen, quote it into the notes.
+        /// ⇧⌘N: open the notes pane and give it the keyboard (with text
+        /// selected in a post or page on screen, quote it into the notes);
+        /// with the keyboard already in it, close it.
         ToggleNotes
     ]
 );
+
+/// How long after the last move of a drag the width is saved.
+const SAVE_WIDTH_MS: u64 = crate::app::side::SAVE_MS;
 
 /// --- onboarding --- The user's notes while the tutorial runs.
 pub(crate) struct NotesPark {
@@ -91,14 +95,16 @@ impl MainView {
         .detach();
     }
 
-    /// ⇧⌘N / View › Notes.
+    /// ⇧⌘N / View › Notes, as ⌃` is for the terminal: closed, or open
+    /// without the keyboard, it opens (or stays) and takes the keyboard;
+    /// with the keyboard in it, it closes.
     pub(crate) fn toggle_notes(
         &mut self,
         _: &ToggleNotes,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.notes.open {
+        if self.notes.open && self.notes.has_keyboard(window, cx) {
             self.close_notes(window, cx);
             return;
         }
@@ -127,7 +133,6 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.notes.outside_click = false; // an add action, not a click away
         let Some(src) = src else {
             return self.notes_fallback(then, window, cx);
         };
@@ -243,7 +248,6 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.notes.outside_click = false;
         self.open_notes(window, cx);
         let Some(editor) = self.notes.editor.clone() else {
             return;
@@ -357,9 +361,27 @@ impl MainView {
         }
     }
 
-    /// Show the drawer, with the keyboard in it and the caret at the end.
+    /// Show the pane, with the keyboard in it and the caret at the end.
     pub(crate) fn open_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.notes_show(true, window, cx);
+    }
+
+    /// Hook (launch): the pane was open when the app last closed: open it
+    /// again, leaving the keyboard where it is. Not under the first-run
+    /// flow or the tour.
+    pub(crate) fn notes_reopen(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.notes.reopen && self.onboarding.flow.is_none() && self.onboarding.tutorial.is_none()
+        {
+            self.notes_show(false, window, cx);
+        }
+        self.notes.reopen = false;
+    }
+
+    /// Show the pane; `take_keyboard`: with the keyboard in it (the note's
+    /// caret at the end, or the library's open note or search box).
+    fn notes_show(&mut self, take_keyboard: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.notes_ensure(window, cx);
+        let was_open = self.notes.open;
         if !self.notes.open {
             // Promoted, deleted or edited elsewhere since: follow the store.
             if let Some(id) = self.notes.id.clone()
@@ -371,14 +393,6 @@ impl MainView {
                 self.notes.id = None;
             }
             self.notes_load_text(window, cx);
-            let inside = self
-                .notes
-                .focus
-                .as_ref()
-                .is_some_and(|f| f.contains_focused(window, cx));
-            if !inside {
-                self.notes.return_focus = window.focused(cx);
-            }
             if !self.notes.closing {
                 self.notes.shown += 1;
             }
@@ -387,20 +401,68 @@ impl MainView {
         self.notes.open = true;
         self.notes.closing = false;
         self.notes.close_gen += 1;
-        if let Some(editor) = self.notes.editor.clone()
-            && !self.ext_lib_showing()
-        {
-            editor.update(cx, |s, cx| {
-                s.focus(window, cx);
-                let end = s.text().len();
-                s.set_selected_range(end..end, cx);
-            });
+        if !was_open && !self.notes_in_tour() {
+            self.notes.save_layout();
+        }
+        if take_keyboard {
+            let inside = self.notes.has_keyboard(window, cx);
+            if !inside {
+                self.notes.return_focus = window.focused(cx);
+            }
+            if self.ext_lib_showing() {
+                // --- extensions --- the open note (it keeps its caret and
+                // scroll), else the search box.
+                self.ext_lib_focus(window, cx);
+            } else if let Some(editor) = self.notes.editor.clone() {
+                editor.update(cx, |s, cx| {
+                    s.focus(window, cx);
+                    // Coming in from elsewhere: the caret at the end, where
+                    // the next note goes.
+                    if !inside {
+                        let end = s.text().len();
+                        s.set_selected_range(end..end, cx);
+                    }
+                });
+            }
         }
         cx.notify();
     }
 
-    /// esc, ⇧⌘N or a click outside: slide it back. The keyboard goes back
-    /// where it was, if the drawer had it.
+    /// The tour is running (its pane writes nothing to `state.json`).
+    fn notes_in_tour(&self) -> bool {
+        self.onboarding.tutorial.is_some()
+    }
+
+    /// esc in the pane: the keyboard goes back where it was (or to the post
+    /// being written); the pane stays open beside it.
+    pub(crate) fn notes_leave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.notes.has_keyboard(window, cx) {
+            return;
+        }
+        self.notes.menu = false;
+        match self.notes.return_focus.take() {
+            Some(f) => window.focus(&f, cx),
+            None => self.notes_focus_main(window, cx),
+        }
+        cx.notify();
+    }
+
+    /// The keyboard to the main area: the post being written on Posts,
+    /// else the screen.
+    fn notes_focus_main(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        use crate::app::reading::View;
+        if self.reading.view == View::Posts && self.current.is_some() {
+            self.mode = crate::app::Mode::Edit;
+            self.editor.update(cx, |s, cx| s.focus(window, cx));
+        } else if self.reading.view != View::Posts {
+            window.focus(&self.reading.focus, cx);
+        } else {
+            window.focus(&self.focus, cx);
+        }
+    }
+
+    /// × or ⇧⌘N (with the keyboard in it): slide it away. The keyboard goes
+    /// back where it was, if the pane had it.
     pub(crate) fn close_notes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self.notes.open {
             return;
@@ -415,6 +477,9 @@ impl MainView {
         self.notes.moved = Some(cx.background_executor().now());
         self.notes.menu = false;
         self.notes.close_gen += 1;
+        if !self.notes_in_tour() {
+            self.notes.save_layout();
+        }
         let gen_ = self.notes.close_gen;
         cx.spawn(async move |this, cx| {
             cx.background_executor()
@@ -431,12 +496,31 @@ impl MainView {
         if had_keyboard {
             match self.notes.return_focus.take() {
                 Some(f) => window.focus(&f, cx),
-                None if self.reading.view != crate::app::reading::View::Posts => {
-                    window.focus(&self.reading.focus, cx)
-                }
-                None => window.focus(&self.focus, cx),
+                None => self.notes_focus_main(window, cx),
             }
         }
+        cx.notify();
+    }
+
+    /// Set the pane's chosen width (saved once it stops changing).
+    pub(crate) fn notes_set_width(&mut self, w: f32, cx: &mut Context<Self>) {
+        if (w - self.notes.width).abs() < 0.5 {
+            return;
+        }
+        self.notes.width = w;
+        self.notes.width_gen += 1;
+        let gen_ = self.notes.width_gen;
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(Duration::from_millis(SAVE_WIDTH_MS))
+                .await;
+            let _ = this.update(cx, |v, _| {
+                if v.notes.width_gen == gen_ && !v.notes_in_tour() {
+                    v.notes.save_layout();
+                }
+            });
+        })
+        .detach();
         cx.notify();
     }
 
@@ -666,8 +750,11 @@ impl MainView {
 
     // ------------------------------------------------------------ render
 
-    /// Per frame, before layout: the editor follows the palette and fonts.
-    pub(crate) fn notes_frame(&mut self, cx: &mut Context<Self>) {
+    /// Per frame, before layout: the pane fits the window, and the editor
+    /// follows the palette and fonts and keeps its lines a readable length.
+    pub(crate) fn notes_frame(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.notes.fit(f32::from(window.viewport_size().width));
+        let pad = px(self.notes_side_pad());
         let p = self.palette;
         if let Some(a) = &self.notes.assist {
             let font = self.prefs.ui().family;
@@ -690,11 +777,17 @@ impl MainView {
                 s.set_editor_paddings(Edges {
                     top: px(12.),
                     bottom: px(24.),
-                    left: px(18.),
-                    right: px(18.),
+                    left: pad,
+                    right: pad,
                 });
             });
         }
+    }
+
+    /// The side padding of the pane's editors (the reading notes, the
+    /// library's open note): a readable line length however wide it is.
+    pub(crate) fn notes_side_pad(&self) -> f32 {
+        super::side_pad(self.notes.dock_w, (self.prefs.font_size - 2.).max(12.))
     }
 
     /// The drawer, over the right edge of everything below the title bar.
@@ -858,7 +951,7 @@ impl MainView {
             .map(|d| {
                 if !selected {
                     return d.child(crate::keymap::hint(
-                        "→ Notes on a post or page adds it · esc or ⇧⌘N closes",
+                        "→ Notes on a post or page adds it · esc back to writing",
                     ));
                 }
                 d.child(
@@ -891,116 +984,151 @@ impl MainView {
             }))
             .child(Textarea::new(&editor))
             .child(assist);
-        // --- extensions ---
+        // --- extensions --- "Reading notes | Notes" when a library runs.
         let tabs = self.render_ext_tabs(cx);
         let library = self.render_ext_library(cx);
-        let w = WIDTH;
+        // The pane's bar: its tabs (or its name), the way back to writing,
+        // and ×.
+        let bar = div()
+            .id("notes-bar")
+            .flex_none()
+            .px(px(12.))
+            .pt(px(7.))
+            .pb(px(5.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .map(|d| match tabs {
+                Some(t) => d.child(div().flex_1().min_w_0().child(t)),
+                None => d.child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_size(px(10.5))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .text_color(p.muted)
+                        .child("NOTES"),
+                ),
+            })
+            .child(
+                div()
+                    .id("notes-close")
+                    .debug_selector(|| "notes-close".into())
+                    .flex_none()
+                    .px(px(4.))
+                    .cursor_pointer()
+                    .text_color(p.muted)
+                    .hover(|h| h.text_color(p.ink))
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            crate::app::reading::Tip(
+                                crate::keymap::hint("Close the notes · ⇧⌘N").into(),
+                            )
+                        })
+                        .into()
+                    })
+                    .child("×")
+                    .on_click(cx.listener(|this, _, window, cx| this.close_notes(window, cx))),
+            );
+        let w = n.dock_w;
+        let inner = div()
+            .id("notes-drawer")
+            .debug_selector(|| "notes-drawer".into())
+            .key_context(CONTEXT)
+            .track_focus(&focus)
+            .relative()
+            .flex_none()
+            .w(px(w - crate::app::side::EDGE_W))
+            .h_full()
+            .flex()
+            .flex_col()
+            .bg(p.bg)
+            .text_color(p.ink)
+            .rule_l(&p)
+            .font_family(SharedString::from(self.prefs.ui().family))
+            // --- composer --- the mention popup / spelling menu keys first.
+            .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
+                this.notes_route_key(AssistKey::Up, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &MoveDown, window, cx| {
+                this.notes_route_key(AssistKey::Down, window, cx);
+            }))
+            .capture_action(cx.listener(|this, _: &IndentInline, window, cx| {
+                this.notes_route_key(AssistKey::Tab, window, cx);
+            }))
+            .capture_action(cx.listener(|this, a: &Enter, window, cx| {
+                if !a.secondary {
+                    this.notes_route_key(AssistKey::Enter, window, cx);
+                }
+            }))
+            .capture_action(cx.listener(|this, _: &Paste, window, cx| {
+                if this.ext_lib_showing() {
+                    return; // --- extensions --- the note editor's own paste
+                }
+                if let Some(a) = &this.notes.assist {
+                    a.update(cx, |a, _| a.note_paste());
+                }
+                if this.notes_paste_link(window, cx) {
+                    cx.stop_propagation();
+                }
+            }))
+            // esc: the popup's, then the menu's, then back to writing (the
+            // pane stays open).
+            .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                if this.notes_route_key(AssistKey::Escape, window, cx) {
+                    return;
+                }
+                cx.stop_propagation();
+                if this.notes.menu {
+                    this.notes.menu = false;
+                    cx.notify();
+                } else {
+                    this.notes_leave(window, cx);
+                }
+            }))
+            // esc with the keyboard on the pane but not in its editor.
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                let k = &ev.keystroke;
+                let m = &k.modifiers;
+                if k.key == "escape" && !(m.platform || m.control || m.alt || m.shift) {
+                    cx.stop_propagation();
+                    this.notes_leave(window, cx);
+                }
+            }))
+            // ⌘D and ⌘⏎ work on the notes, not the Posts selection.
+            .on_action(
+                cx.listener(|this, _: &MakeDraft, window, cx| this.notes_make_draft(window, cx)),
+            )
+            .on_action(cx.listener(|this, _: &Publish, window, cx| {
+                this.notes_open_in_editor(window, cx);
+                this.publish(window, cx);
+            }))
+            .child(bar)
+            .map(|d| match library {
+                Some((h, b, f)) => d.child(h).child(b).child(f),
+                None => d.child(header).child(notes_body).child(footer),
+            });
+        // --- side --- its left edge drags; a double-click resets it.
+        let edge = crate::app::side::edge_handle(
+            "notes-edge",
+            crate::app::side::Which::Notes,
+            &p,
+            cx.listener(|this, _, _, cx| this.notes_set_width(super::WIDTH, cx)),
+        );
+        // Docked: a column that opens (and closes) by growing from the
+        // right; the layout to its left follows.
         Some(
             div()
-                .id("notes-drawer")
-                .debug_selector(|| "notes-drawer".into())
-                .key_context(CONTEXT)
-                .track_focus(&focus)
-                .occlude()
-                .absolute()
-                .top(px(TITLEBAR_H))
-                .bottom_0()
-                .right_0()
-                .w(px(WIDTH))
+                .id("notes-dock")
+                .flex_none()
+                .h_full()
+                .overflow_hidden()
                 .flex()
-                .flex_col()
-                .bg(p.bg)
-                .text_color(p.ink)
-                .rule_l(&p)
-                .shadow_lg()
-                .font_family(SharedString::from(self.prefs.ui().family))
-                // --- composer --- the mention popup / spelling menu keys first.
-                .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
-                    this.notes_route_key(AssistKey::Up, window, cx);
-                }))
-                .capture_action(cx.listener(|this, _: &MoveDown, window, cx| {
-                    this.notes_route_key(AssistKey::Down, window, cx);
-                }))
-                .capture_action(cx.listener(|this, _: &IndentInline, window, cx| {
-                    this.notes_route_key(AssistKey::Tab, window, cx);
-                }))
-                .capture_action(cx.listener(|this, a: &Enter, window, cx| {
-                    if !a.secondary {
-                        this.notes_route_key(AssistKey::Enter, window, cx);
-                    }
-                }))
-                .capture_action(cx.listener(|this, _: &Paste, window, cx| {
-                    if this.ext_lib_showing() {
-                        return; // --- extensions --- the note editor's own paste
-                    }
-                    if let Some(a) = &this.notes.assist {
-                        a.update(cx, |a, _| a.note_paste());
-                    }
-                    if this.notes_paste_link(window, cx) {
-                        cx.stop_propagation();
-                    }
-                }))
-                .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                    if this.notes_route_key(AssistKey::Escape, window, cx) {
-                        return;
-                    }
-                    cx.stop_propagation();
-                    if this.notes.menu {
-                        this.notes.menu = false;
-                        cx.notify();
-                    } else {
-                        this.close_notes(window, cx);
-                    }
-                }))
-                // esc with the keyboard on the drawer but not in its editor.
-                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                    let k = &ev.keystroke;
-                    let m = &k.modifiers;
-                    if k.key == "escape" && !(m.platform || m.control || m.alt || m.shift) {
-                        cx.stop_propagation();
-                        this.close_notes(window, cx);
-                    }
-                }))
-                // ⌘D and ⌘⏎ work on the notes, not the Posts selection.
-                .on_action(
-                    cx.listener(|this, _: &MakeDraft, window, cx| {
-                        this.notes_make_draft(window, cx)
-                    }),
-                )
-                .on_action(cx.listener(|this, _: &Publish, window, cx| {
-                    this.notes_open_in_editor(window, cx);
-                    this.publish(window, cx);
-                }))
-                // A click outside closes it, once the click is over: a click
-                // on an add action ("→ Notes") disarms this and keeps it open.
-                .on_mouse_down_out(cx.listener(|this, _, _, _| {
-                    this.notes.outside_click = this.notes.open;
-                }))
-                .on_mouse_up_out(
-                    MouseButton::Left,
-                    cx.listener(|this, _, window, cx| {
-                        if !this.notes.outside_click {
-                            return;
-                        }
-                        // After this event's own handlers (the click) have run.
-                        cx.spawn_in(window, async move |this, cx| {
-                            let _ = this.update_in(cx, |v, window, cx| {
-                                if v.notes.outside_click {
-                                    v.notes.outside_click = false;
-                                    v.close_notes(window, cx);
-                                }
-                            });
-                        })
-                        .detach();
-                    }),
-                )
-                // --- extensions --- "Reading notes | Notes" when a library
-                // runs; its tab replaces the header, body and footer.
-                .children(tabs)
-                .map(|d| match library {
-                    Some((h, b, f)) => d.child(h).child(b).child(f),
-                    None => d.child(header).child(notes_body).child(footer),
-                })
+                .flex_row()
+                .justify_end()
+                .w(px(w))
+                .child(edge)
+                .child(inner)
                 .with_animation(
                     ElementId::NamedInteger(
                         if closing { "notes-out" } else { "notes-in" }.into(),
@@ -1009,11 +1137,21 @@ impl MainView {
                     Animation::new(Duration::from_millis(SLIDE_MS)).with_easing(ease_out_quint()),
                     move |d, t| {
                         let v = if closing { 1.0 - t } else { t };
-                        d.right(px(-(1.0 - v) * w))
+                        d.w(px(v * w))
                     },
                 )
                 .into_any_element(),
         )
+    }
+
+    /// The tab bar's Notes tab: open the pane without taking the keyboard
+    /// (read beside what you're writing; click in it to write), or close it.
+    pub(crate) fn notes_tab_click(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.notes.open {
+            self.close_notes(window, cx);
+        } else {
+            self.notes_show(false, window, cx);
+        }
     }
 
     /// Hook: the browser pane inside a box whose right edge meets the
@@ -1031,7 +1169,7 @@ impl MainView {
             .top(px(TITLEBAR_H))
             .bottom_0()
             .left_0()
-            .right(self.notes.room_at(now))
+            .right(self.side_room_at(now))
             .child(pane)
             .into_any_element()
     }

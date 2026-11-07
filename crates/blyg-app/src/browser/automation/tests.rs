@@ -1702,7 +1702,10 @@ mod ui {
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
             let right = v.macro_sheet_right().expect("beside the pane");
-            let pane_w = 1400. * crate::app::browser::view::SLIDE_WIDTH;
+            // --- side --- the pane stops at the side tab bar; the sheet's
+            // margin is the pane and the bar.
+            let tabs = crate::app::side::TAB_BAR_W;
+            let pane_w = 1400. - (1400. - tabs) * (1. - crate::app::browser::view::SLIDE_WIDTH);
             assert!(
                 (f32::from(right) - pane_w).abs() < 1.5,
                 "the sheet's right margin is the pane: {right:?}"

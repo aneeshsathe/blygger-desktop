@@ -1004,7 +1004,7 @@ impl MainView {
         if !self.browser.open {
             return None;
         }
-        let room_w = w - f32::from(self.notes.room());
+        let room_w = w - f32::from(self.side_room());
         let left = f32::from(self.browser.left_edge(px(room_w)));
         let top = crate::app::TITLEBAR_H;
         let pane = (left, top, room_w - left, h - top);
@@ -1041,9 +1041,13 @@ impl MainView {
         self.browser.viewport_w = window.viewport_size().width;
         // --- notes --- the pane makes room for the drawer (`notes_wrap_browser`),
         // and the drawer cuts the web views off at its edge too.
-        let room = self.notes.room();
+        let room = self.side_room();
         let edge = showing.then(|| self.browser.left_edge(self.browser.viewport_w - room));
-        let notes_edge = self.notes.left_edge(self.browser.viewport_w);
+        let side = self.side_room();
+        let notes_edge = self
+            .notes
+            .drawn()
+            .then(|| (self.browser.viewport_w - side).max(px(0.)));
         self.browser.placed.borrow_mut().set_clip(notes_edge);
         let edge = match (edge, notes_edge) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -1201,7 +1205,7 @@ impl MainView {
                         if full {
                             return d.into_any_element();
                         }
-                        let w = f32::from(b.viewport_w - self.notes.room()) * SLIDE_WIDTH;
+                        let w = f32::from(b.viewport_w - self.side_room()) * SLIDE_WIDTH;
                         d.with_animation(
                             ElementId::NamedInteger("browser-slide".into(), b.shown),
                             Animation::new(Duration::from_millis(180))
