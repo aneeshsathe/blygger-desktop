@@ -1,0 +1,36 @@
+[package]
+name = "blyg-web"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Burrow in a browser: Burrow's own Rust (model, view-model, renderer) compiled to WebAssembly"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The model types (`Item`, `Kind`, `Status`, …) and `plain_title`. Without
+# the Keychain; nothing here opens the SQLite store or the network.
+blyg-core = { path = "../blyg-core", default-features = false }
+# The studio preview, exactly as the native app renders it.
+blyg-render = { path = "../blyg-render" }
+# `crates/blyg-app/src/studio/sanitize.rs` (included read-only) cleans quoted
+# snapshots with it, as the app does.
+ammonia = "4"
+url = "2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "=0.2.128"
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+# blyg-core's ids use getrandom 0.2, which needs the `js` backend in a browser.
+getrandom = { version = "0.2", features = ["js"] }
+# The same for ring, which blyg-core's HTTP client (`ureq`, never called
+# here) links through rustls.
+ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"] }
+rustls-pki-types = { version = "1", features = ["web"] }
+# The `Local` time zone (the list's "Sep 22") comes from the browser.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "wasmbind"] }
+console_error_panic_hook = "0.1.7"

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Burrow (web)</title>
+<meta name="description" content="Burrow, a blygger client, running its own Rust code compiled to WebAssembly, on invented sample data.">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">{ "imports": { "env": "./env.js" } }</script>
+</head>
+<body>
+<header class="page">
+  <h1>Burrow <span>in a browser</span></h1>
+  <p class="sub">Burrow's own Rust (its model, view-model and Markdown renderer) compiled to WebAssembly. Invented sample data, kept in this browser. Nothing is sent anywhere.</p>
+  <div class="controls">
+    <label>Theme <select id="theme"></select></label>
+    <span class="seg" role="group" aria-label="Layout">
+      <button type="button" class="ghost on" data-layout="stacked">Stacked</button>
+      <button type="button" class="ghost" data-layout="side">Side by side</button>
+    </span>
+    <button type="button" class="ghost" id="offline" aria-pressed="false">Go offline</button>
+    <button type="button" class="ghost" id="reset">Reset sample data</button>
+  </div>
+</header>
+
+<main>
+  <div class="win" id="win">
+    <div class="tb"><i></i><i></i><i></i><div class="t" id="wtitle">Burrow</div></div>
+    <div class="omni">
+      <span class="glass" aria-hidden="true">⌕</span>
+      <input id="omni" placeholder="Search or start writing…" autocomplete="off" spellcheck="false" aria-label="Search or start writing">
+      <span class="hint" id="hint"></span>
+    </div>
+    <div class="body">
+      <div class="list" id="list" role="listbox" aria-label="Posts"></div>
+      <div class="edwrap" id="edwrap">
+        <textarea class="ed" id="ed" spellcheck="true" aria-label="Editor"></textarea>
+        <iframe class="pv" id="pv" title="Preview" sandbox="allow-scripts allow-popups"></iframe>
+      </div>
+    </div>
+    <div class="sb" id="sb">
+      <button type="button" class="kind" id="kind" title="Fragment ⇄ thread (⌘T)"></button>
+      <span class="cnt" id="cnt"></span>
+      <span class="ban" id="ban"></span>
+      <span class="sync" id="sync"><b></b><span></span></span>
+      <span class="ver" id="ver"></span>
+    </div>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="hud" id="hud" aria-hidden="true"></div>
+    <div class="loading" id="loading">Loading Burrow…</div>
+  </div>
+
+  <p class="keys">
+    <kbd>⏎</kbd> open or create · <kbd>↑</kbd><kbd>↓</kbd> move · <kbd>esc</kbd> back to search ·
+    <kbd>⌘</kbd><kbd>N</kbd> new post · <kbd>⌘</kbd><kbd>L</kbd> search · <kbd>⌘</kbd><kbd>⏎</kbd> publish ·
+    <kbd>⌘</kbd><kbd>T</kbd> fragment ⇄ thread · <kbd>⌘</kbd><kbd>E</kbd> preview · <kbd>⌘</kbd><kbd>D</kbd> make draft ·
+    <kbd>⇧</kbd><kbd>⌘</kbd><kbd>⌫</kbd> delete draft · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>Z</kbd> discard changes
+    <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. Publishing goes to a pretend blyg at blyg.example.com.</span>
+  </p>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
