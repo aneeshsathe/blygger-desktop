@@ -23,6 +23,9 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).
+- **Nearby thoughts: the keys work after a click.** Clicking a rail row handed the keyboard to the window, so ⌥↑/⌥↓, ⌥⏎ and ⌥⇧⏎ did nothing until you clicked back into the text. A click now chooses the row and leaves the editor in charge.
+- **Nearby thoughts: hover a row to see the post.** Resting the pointer on a row shows a card left of the rail with the post's title, who wrote it and its first lines, like the editor's link hover cards.
+- **Nearby thoughts: no stuck or misleading status.** When building the index failed (an endpoint that was down, say), the footer switched to "By meaning" at the next pause with no index behind it and never tried again. It now keeps saying "Shared phrases only: why" and retries at most every 30 seconds while you write. Settings › Nearby says "Starts when you write in a post" before anything is loaded, and an empty rail with nothing to match says so.
 
 ## [0.18.0] - 2026-11-07
 

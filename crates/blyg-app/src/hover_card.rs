@@ -124,7 +124,7 @@ impl Card {
     }
 }
 
-fn kind_word(k: Kind) -> &'static str {
+pub(crate) fn kind_word(k: Kind) -> &'static str {
     match k {
         Kind::Fragment => "◦ fragment",
         Kind::Thread => "≡ thread",
@@ -145,6 +145,11 @@ pub fn excerpt_of(md: &str, html: &str) -> Option<String> {
     {
         text = rest.trim_start().to_string();
     }
+    clip_excerpt(&text)
+}
+
+/// Plain text as a card's excerpt: one line, cut at [`EXCERPT_CHARS`].
+pub fn clip_excerpt(text: &str) -> Option<String> {
     let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
     if text.is_empty() {
         return None;
@@ -378,7 +383,7 @@ pub struct State {
 }
 
 /// The card's look, shared by the editor's card and the stream's tooltip.
-fn card_body(card: &Card, p: Palette, ui_font: SharedString) -> Div {
+pub(crate) fn card_body(card: &Card, p: Palette, ui_font: SharedString) -> Div {
     div()
         .w(px(300.))
         .p(px(10.))

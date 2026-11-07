@@ -30,6 +30,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use blyg_core::config::Change;
 use blyg_embed::download::POTION_BASE_8M;
@@ -50,6 +51,8 @@ pub const DEBOUNCE: Duration = Duration::from_millis(300);
 pub const REINDEX_DELAY: Duration = Duration::from_secs(2);
 /// The rail's width.
 pub const RAIL_W: f32 = 236.;
+/// How long after a failed index build the rail tries again.
+pub const RETRY_INDEX: Duration = Duration::from_secs(30);
 
 /// Tests (and only tests): an embedder instead of the configured one, and
 /// where models are kept.
@@ -134,6 +137,12 @@ pub struct State {
     corpus: Corpus,
     /// The last build's numbers (tests, the footer's tooltip).
     pub built: Option<engine::Built>,
+    /// When the last index build failed (a retry waits [`RETRY_INDEX`]).
+    index_failed_at: Option<Instant>,
+    /// The row whose card shows (its id), and the one the mouse is resting
+    /// on while the delay runs.
+    pub hover: Option<String>,
+    hover_wait: Option<(String, Task<()>)>,
 }
 
 fn lock(m: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
@@ -375,6 +384,7 @@ impl MainView {
         self.nearby.embedder = None;
         self.nearby.loading = None;
         self.nearby.indexing = None;
+        self.nearby.index_failed_at = None;
         self.nearby.cancel.store(true, Ordering::Relaxed);
         self.nearby.cancel = Arc::new(AtomicBool::new(false));
         lock(&self.nearby.shared).index = None;
@@ -545,9 +555,13 @@ impl MainView {
                     Ok(b) => {
                         v.nearby.status = Status::Ready;
                         v.nearby.built = Some(b);
+                        v.nearby.index_failed_at = None;
                     }
                     Err(blyg_embed::EmbedError::Model(m)) if m == "cancelled" => {}
-                    Err(e) => v.nearby.status = Status::Failed(e.to_string()),
+                    Err(e) => {
+                        v.nearby.status = Status::Failed(e.to_string());
+                        v.nearby.index_failed_at = Some(cx.background_executor().now());
+                    }
                 }
                 if v.nearby.index_dirty {
                     v.nearby_reindex(cx);
@@ -644,18 +658,30 @@ impl MainView {
                 }
                 v.nearby.para = Some(para.clone());
                 v.nearby.corpus = c;
+                let indexed = lock(&v.nearby.shared).index.is_some();
                 if let Some(f) = failed {
                     v.nearby.status = Status::Failed(f);
                 } else if matches!(v.nearby.status, Status::Failed(_))
+                    && indexed
                     && v.nearby.embedder.is_some()
                     && v.nearby.indexing.is_none()
                     && v.nearby.loading.is_none()
                 {
-                    // The endpoint answers again.
+                    // The endpoint answers again (and there's an index to
+                    // ask: without one, nothing is matched by meaning).
                     v.nearby.status = Status::Ready;
                 }
                 v.nearby_set_rows(rows, cx);
-                if changed && v.nearby.embedder.is_some() {
+                // An index build that failed (the endpoint was down, say)
+                // is tried again, at most every RETRY_INDEX, rather than
+                // leaving the rail on shared phrases for the session.
+                let retry = !indexed
+                    && v.nearby.indexing.is_none()
+                    && v.nearby.loading.is_none()
+                    && v.nearby.index_failed_at.is_some_and(|at| {
+                        cx.background_executor().now().duration_since(at) >= RETRY_INDEX
+                    });
+                if (changed || retry) && v.nearby.embedder.is_some() {
                     v.nearby_reindex(cx);
                 }
                 if rerank_on(cx) {
@@ -672,7 +698,139 @@ impl MainView {
         self.nearby.sel = was
             .and_then(|id| self.nearby.rows.iter().position(|s| s.id == id))
             .unwrap_or(0);
+        self.nearby_hover_keep();
         cx.notify();
+    }
+
+    // ------------------------------------------------------------ hover
+
+    /// The mouse entered (or left) row `i`: after a moment its card shows
+    /// the post (title, who, its first lines), as a link's hover card does
+    /// in the editor.
+    fn nearby_hover(&mut self, id: String, hovered: bool, cx: &mut Context<Self>) {
+        if !hovered {
+            if self
+                .nearby
+                .hover_wait
+                .as_ref()
+                .is_some_and(|(w, _)| *w == id)
+            {
+                self.nearby.hover_wait = None;
+            }
+            if self.nearby.hover.as_ref() == Some(&id) {
+                self.nearby.hover = None;
+                cx.notify();
+            }
+            return;
+        }
+        if self.nearby.hover.as_ref() == Some(&id)
+            || self
+                .nearby
+                .hover_wait
+                .as_ref()
+                .is_some_and(|(w, _)| *w == id)
+        {
+            return;
+        }
+        if self.nearby.hover.take().is_some() {
+            cx.notify();
+        }
+        let shown = id.clone();
+        let task = cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(super::hover_card::DELAY)
+                .await;
+            let _ = this.update(cx, |v, cx| {
+                v.nearby.hover_wait = None;
+                if v.nearby.rows.iter().any(|s| s.id == shown) {
+                    v.nearby.hover = Some(shown);
+                    cx.notify();
+                }
+            });
+        });
+        self.nearby.hover_wait = Some((id, task));
+    }
+
+    /// A card for a row that left the rail goes with it.
+    fn nearby_hover_keep(&mut self) {
+        let rows = &self.nearby.rows;
+        if self
+            .nearby
+            .hover
+            .as_ref()
+            .is_some_and(|h| !rows.iter().any(|s| s.id == *h))
+        {
+            self.nearby.hover = None;
+        }
+        if self
+            .nearby
+            .hover_wait
+            .as_ref()
+            .is_some_and(|(h, _)| !rows.iter().any(|s| s.id == *h))
+        {
+            self.nearby.hover_wait = None;
+        }
+    }
+
+    /// The card for a row: the post as this Mac holds it.
+    pub(crate) fn nearby_card(&self, s: &Suggestion) -> super::hover_card::Card {
+        use super::hover_card::{Card, Place, clip_excerpt, kind_word};
+        let doc = self.nearby.corpus.docs().find(|d| d.key == s.key);
+        let text = doc.map(|d| d.text.as_str()).unwrap_or_default();
+        Card {
+            id: s.id.clone(),
+            title: s.title.clone(),
+            meta: format!("{} · {}", s.who, kind_word(s.kind)),
+            excerpt: clip_excerpt(text),
+            note: None,
+            place: match s.key.strip_prefix("own:") {
+                Some(local) => Place::Own(LocalId(local.to_string())),
+                None => Place::Held {
+                    origin: String::new(),
+                },
+            },
+            label_it: None,
+            quote: false,
+        }
+    }
+
+    /// The hovered row's card, left of the rail (it sits at the window's
+    /// right edge).
+    fn render_nearby_card(&self, s: &Suggestion) -> Option<AnyElement> {
+        if self.nearby.hover.as_ref() != Some(&s.id) {
+            return None;
+        }
+        let p = self.palette;
+        let font = SharedString::from(self.theme.chrome_font(&self.prefs));
+        let card = self.nearby_card(s);
+        let body = super::hover_card::card_body(&card, p, font)
+            .id("nearby-card")
+            .debug_selector(|| "nearby-card".into())
+            .occlude()
+            .child(
+                div()
+                    .mt(px(2.))
+                    .text_size(px(10.5))
+                    .text_color(p.muted)
+                    .child(crate::keymap::hint("⌥⏎ links it · ⌥⇧⏎ quotes it")),
+            );
+        Some(
+            div()
+                .absolute()
+                .top_0()
+                .left_0()
+                .child(
+                    deferred(
+                        anchored()
+                            .anchor(Anchor::TopRight)
+                            .offset(point(px(-12.), px(-5.)))
+                            .snap_to_window_with_margin(px(8.))
+                            .child(body),
+                    )
+                    .with_priority(1),
+                )
+                .into_any_element(),
+        )
     }
 
     /// `nearby-rerank = on`: the AI provider orders the candidates, once
@@ -871,6 +1029,7 @@ impl MainView {
             .nearby
             .sel
             .min(self.nearby.rows.len().saturating_sub(1));
+        self.nearby_hover_keep();
         let from = if s.own {
             "yours".to_string()
         } else {
@@ -900,6 +1059,11 @@ impl MainView {
     /// Words for the footer and Settings.
     pub(crate) fn nearby_status_words(&self) -> String {
         let pct = |d: u64, t: u64| (d * 100).checked_div(t).unwrap_or(0);
+        if self.nearby.source.is_none() {
+            // Nothing is loaded until the rail is first asked (a post open
+            // in Posts): say so, rather than "shared phrases" for a model.
+            return "Starts when you write in a post".into();
+        }
         match &self.nearby.status {
             Status::Phrases => "Matching shared phrases".into(),
             Status::Downloading => {
@@ -1075,12 +1239,23 @@ impl MainView {
                 .py(px(5.))
                 .rounded(px(5.))
                 .cursor_pointer()
+                .relative()
                 .when(on, |d| d.bg(p.sel))
                 .hover(|d| d.bg(p.sel.opacity(0.6)))
-                .on_click(cx.listener(move |this, _, _, cx| {
+                .on_hover({
+                    let id = s.id.clone();
+                    cx.listener(move |this, hovered: &bool, _, cx| {
+                        this.nearby_hover(id.clone(), *hovered, cx)
+                    })
+                })
+                .on_click(cx.listener(move |this, _, window, cx| {
                     this.nearby.sel = i;
+                    // The keys act from the editor: keep it (or put it back)
+                    // in charge of the keyboard.
+                    this.editor.update(cx, |e, cx| e.focus(window, cx));
                     cx.notify();
                 }))
+                .children(self.render_nearby_card(s))
                 .child(
                     div()
                         .truncate()
@@ -1099,12 +1274,18 @@ impl MainView {
                         .child(s.why.clone()),
                 )
         });
+        let nothing_held = self.nearby.para.is_some()
+            && self.nearby.corpus.own.is_empty()
+            && self.nearby.corpus.held.is_empty();
         let empty = self.nearby.rows.is_empty().then(|| {
             div()
                 .px(px(8.))
                 .py(px(6.))
                 .text_size(px(11.))
-                .child(if self.nearby.para.is_none() {
+                .child(if nothing_held {
+                    "Nothing to match yet: your published posts, and posts from blygs you \
+                     follow, show up here."
+                } else if self.nearby.para.is_none() {
                     "Nothing yet. Write a few words; your posts that say the same thing show up here."
                 } else if semantic {
                     "Nothing nearby for this paragraph."
@@ -1123,6 +1304,10 @@ impl MainView {
                 .flex_col()
                 .border_l_1()
                 .border_color(p.line)
+                // A click on the rail leaves the keyboard with the editor
+                // (the window's own focus would take it, and ⌥↑/⌥↓/⌥⏎/⌥⇧⏎
+                // act only while the editor has it).
+                .on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
                 .font_family(chrome)
                 .text_size(px(11.5))
                 .line_height(relative(1.3))
