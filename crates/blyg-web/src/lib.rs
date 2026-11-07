@@ -30,6 +30,10 @@ mod read_api;
 pub mod seed;
 pub mod store;
 pub mod theme;
+// --- web-writing ---
+pub mod composer;
+pub mod writing;
+// --- end web-writing ---
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
@@ -254,6 +258,9 @@ enum Outcome {
         id: String,
         version: u32,
     },
+    // --- web-writing --- a published post: withdraw it (confirmed) instead.
+    AskWithdraw,
+    // --- end web-writing ---
 }
 
 fn status_name(s: Status) -> &'static str {
@@ -296,6 +303,9 @@ pub struct Burrow {
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
     excerpts: std::cell::RefCell<std::collections::HashMap<String, (u32, String)>>,
+    // --- web-writing --- settings, contacts, uploads, versions read.
+    writing: writing::Writing,
+    // --- end web-writing ---
 }
 
 #[wasm_bindgen]
@@ -333,6 +343,7 @@ impl Burrow {
             reading_dirty: false,
             changes: None,
             excerpts: Default::default(),
+            writing: Default::default(), // --- web-writing ---
         }
     }
 
@@ -774,11 +785,8 @@ impl Burrow {
                     vm::truncate_chars(&vm::item_title(&it), 48)
                 ),
             },
-            vm::Discard::Withdraw => Outcome::Toast {
-                message:
-                    "Published posts are never deleted. Withdraw is in the Post menu of the app."
-                        .into(),
-            },
+            // --- web-writing --- published posts are withdrawn, not deleted.
+            vm::Discard::Withdraw => Outcome::AskWithdraw,
             vm::Discard::AlreadyWithdrawn => Outcome::Toast {
                 message: "Already withdrawn".into(),
             },
@@ -915,7 +923,17 @@ impl Burrow {
         } else {
             StoreResolver::empty(&opts.mount)
         };
-        blyg_render::render_preview(md, render_kind(kind), &resolver, &opts)
+        // --- web-writing --- `@handle` → its contact's link, then its
+        // h-card; this page's uploads from their thumbnails.
+        let handles = self.w_before_render(md);
+        let src = handles.as_ref().map_or(md, |(t, _)| t.as_str());
+        let mut out = blyg_render::render_preview(src, render_kind(kind), &resolver, &opts);
+        self.w_after_render(
+            &mut out.html,
+            handles.as_ref().map_or(&[], |(_, u)| u.as_slice()),
+        );
+        out
+        // --- end web-writing ---
     }
 
     /// For tests: the open post's id.

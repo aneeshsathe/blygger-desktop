@@ -16,6 +16,7 @@
 <link rel="apple-touch-icon" href="icons/icon-180.png">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="phone.css">
+<!-- web-writing --><link rel="stylesheet" href="writing.css"><!-- end web-writing -->
 <script type="importmap">{ "imports": { "env": "./env.js" } }</script>
 </head>
 <body>
@@ -34,6 +35,7 @@
     </span>
     <button type="button" class="ghost demo-only" id="offline" aria-pressed="false">Go offline</button>
     <button type="button" class="ghost demo-only" id="reset">Reset sample data</button>
+    <!-- web-writing --><button type="button" class="ghost" id="d-wset" title="Your blyg’s title, author, links and defaults">⚙ Your blyg</button><!-- end web-writing -->
   </div>
 </header>
 
@@ -70,6 +72,7 @@
           <button type="button" data-ra="hopper" title="Put it in a hopper">⊕ Hopper</button>
           <button type="button" data-ra="link" title="Copy a [[link]] to it">[[ Copy link</button>
           <button type="button" data-ra="unread" title="Mark unread">● Unread</button>
+          <!-- web-writing --><button type="button" id="d-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
           <span class="flex"></span>
           <button type="button" data-ra="smaller" aria-label="Smaller text">A−</button>
           <button type="button" data-ra="bigger" aria-label="Larger text">A+</button>
@@ -84,6 +87,7 @@
       <span class="ban" id="ban"></span>
       <span class="sync" id="sync"><b></b><span></span></span>
       <span class="ver" id="ver"></span>
+      <!-- web-writing --><button type="button" class="kind" id="d-wmenu" title="This post: image, versions, TK, withdraw (⌃⇧Y versions)">⋯ Post</button><!-- end web-writing -->
     </div>
     <div class="sheet" id="sheet" role="dialog" aria-modal="true"></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -120,7 +124,7 @@
 
   <!-- EDITOR -->
   <section class="pview off-r" id="v-edit" aria-label="Editor">
-    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><button type="button" class="ic" id="p-shelfBtn" aria-label="Shelve" title="Shelve">📚</button><button type="button" class="ic" id="p-prevBtn" aria-label="Preview" title="Preview">👁</button></div>
+    <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><!-- web-writing --><button type="button" class="ic" id="p-wmenu" aria-label="This post" title="This post">⋯</button><!-- end web-writing --><button type="button" class="ic" id="p-shelfBtn" aria-label="Shelve" title="Shelve">📚</button><button type="button" class="ic" id="p-prevBtn" aria-label="Preview" title="Preview">👁</button></div>
     <div class="stubof" id="p-stubof" hidden></div>
     <div class="conflict" id="p-conflict" role="alert" hidden></div>
     <div class="ped">
@@ -142,7 +146,7 @@
   <section class="pview off-r" id="v-post" aria-label="Post">
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
       <button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button>
-      <button type="button" class="ic" id="p-replyBtn" aria-label="Reply" title="Reply">↩</button><button type="button" class="ic" id="p-hopBtn" aria-label="Hopper" title="Hopper">⊕</button></div>
+      <button type="button" class="ic" id="p-replyBtn" aria-label="Reply" title="Reply">↩</button><button type="button" class="ic" id="p-hopBtn" aria-label="Hopper" title="Hopper">⊕</button><!-- web-writing --><button type="button" class="ic" id="p-wfork" aria-label="Fork a pinned version" title="Fork">⑂</button><!-- end web-writing --></div>
     <div class="pscroll"><article class="post" id="p-postBody"></article></div>
     <div class="pmenu" id="p-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
   </section>
@@ -168,7 +172,8 @@
     <div class="row2"><span>▲▼ reorder · ✕ takes it off · 50 at most</span></div></div>
   <div class="psheet" id="sh-hop" role="dialog" aria-label="Hoppers"><div class="grab"></div><h4>⊕ Put it in a hopper</h4><div class="pscroll sheetlist" id="p-hopList"></div></div>
   <div class="psheet" id="sh-theme" role="dialog" aria-label="Theme"><div class="grab"></div><h4>Theme</h4><div class="pscroll sheetlist" id="p-themeList"></div>
-    <div class="row2 demo-only"><button type="button" id="p-offline">Go offline</button><button type="button" id="p-reset">Reset sample data</button></div></div>
+    <div class="row2 demo-only"><button type="button" id="p-offline">Go offline</button><button type="button" id="p-reset">Reset sample data</button></div>
+    <!-- web-writing --><div class="row2"><button type="button" id="p-wset">⚙ Your blyg: title, author, links</button></div><!-- end web-writing --></div>
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>
   <div class="ploading" id="p-loading">Loading Burrow…</div>
 </div>

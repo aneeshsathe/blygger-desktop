@@ -160,7 +160,9 @@ fn publishing_makes_the_next_version() {
         "Already published as v1"
     );
     // Published posts are never deleted.
-    assert_eq!(outcome(b.delete_check())["action"], "toast");
+    // --- web-writing --- they're withdrawn instead, confirmed.
+    assert_eq!(outcome(b.delete_check())["action"], "ask_withdraw");
+    // --- end web-writing ---
 }
 
 #[test]

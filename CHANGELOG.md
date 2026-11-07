@@ -16,6 +16,19 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+<!-- web-writing -->
+- **Burrow in a browser writes like Studio** (live on your blyg, phone and desk):
+  - **Images**: from the file picker, the phone's photo picker, a paste or a drop, with alt text, uploaded to your blyg and placed where the caret was. Large images are made smaller first.
+  - **Versions** of your post: the list, each one as published or as a word diff against now, restore, and pin (confirmed by typing *pin*). **Withdraw** is here too, confirmed, with an optional note.
+  - **Fork** a pinned version, yours or one from a blyg you read, into a new draft.
+  - **TK generation** on your blyg, from the ✦ sheet.
+  - The **publish sheet** drafts a change note and suggests the kind of change when your blyg has the models set; you edit and confirm both.
+  - **Settings**: your blyg's title, author, bio, links, addresses, time zone and writing defaults, saved when you press Save.
+  - **`@handle`s**: your contacts in the `@` list, and the preview shows a contact's mention as the published page does.
+<!-- end web-writing -->
+
 ## [0.18.1] - 2026-11-07
 
 ### Changed

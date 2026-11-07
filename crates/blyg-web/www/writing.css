@@ -1,0 +1,79 @@
+/* --- web-writing --- The writing sheet (www/writing.js): a bottom sheet on
+   a phone, a panel over the window on a desk; the @ list; the publish
+   sheet's note and change kind. Only the theme's colour tokens. */
+.w-scrim{position:fixed;inset:0;background:rgba(0,0,0,.28);z-index:69}
+.w-sheet{position:fixed;z-index:70;background:var(--c-bg);color:var(--c-ink);font:14px/1.45 Inter,-apple-system,system-ui,sans-serif;
+  display:flex;flex-direction:column;gap:.35rem;overflow:auto;overscroll-behavior:contain;box-shadow:0 18px 40px -12px var(--c-shadow,rgba(0,0,0,.35))}
+html[data-layout="desk"] .w-sheet{left:50%;top:8vh;transform:translateX(-50%);width:min(560px,92vw);max-height:84vh;border:1px solid var(--c-line);border-radius:10px;padding:16px 18px}
+html[data-layout="phone"] .w-sheet{left:0;right:0;bottom:0;max-height:88dvh;border-radius:16px 16px 0 0;
+  padding:.5rem max(1rem,env(safe-area-inset-right)) calc(1rem + env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left))}
+.w-scrim[hidden],.w-sheet[hidden],.w-at[hidden]{display:none}
+.w-grab{width:38px;height:5px;border-radius:3px;background:var(--c-line);margin:0 auto .4rem;flex:none}
+html[data-layout="desk"] .w-grab{display:none}
+.w-sheet h4{margin:0 0 .2rem;font:600 .95rem Inter,system-ui,sans-serif}
+.w-sheet p{margin:0 0 .3rem}
+.w-muted,.w-sheet small{color:var(--c-muted)}
+.w-sheet small{font-size:.78rem}
+.w-err{color:var(--c-over,#b3261e);margin:.2rem 0}
+.w-flex{flex:1}
+.w-row{display:flex;gap:.5rem;align-items:center;margin-top:.5rem;flex-wrap:wrap}
+.w-sheet button{border:1px solid var(--c-line);background:var(--c-bg);color:var(--c-ink);border-radius:8px;padding:.35rem .8rem;font:.88rem Inter,system-ui,sans-serif;cursor:pointer;min-height:34px}
+html[data-layout="phone"] .w-sheet button{min-height:44px;border-radius:10px}
+.w-sheet button:disabled{opacity:.45;cursor:default}
+.w-sheet button.pri{background:var(--c-accent);border-color:var(--c-accent);color:#fff}
+.w-sheet button.danger{background:var(--c-over,#b3261e);border-color:var(--c-over,#b3261e);color:#fff}
+.w-list{display:flex;flex-direction:column}
+.w-sheet .w-opt{display:block;width:100%;text-align:left;border:0;border-top:1px solid var(--c-line);border-radius:0;background:none;padding:.55rem .2rem;font-size:.95rem}
+.w-opt small{display:block}
+html[data-layout] .w-sheet .w-opt{border-radius:0;min-height:44px}
+#ws-links{font-family:Inter,system-ui,sans-serif}
+.w-lbl{display:block;font:600 .8rem Inter,system-ui,sans-serif;margin-top:.45rem}
+.w-lbl small{display:block;font-weight:400}
+.w-in,.w-ta{width:100%;box-sizing:border-box;border:1px solid var(--c-line);border-radius:8px;background:var(--c-bg);color:var(--c-ink);padding:.45rem .6rem;font:max(16px,.95rem) Inter,system-ui,sans-serif;outline:none}
+html[data-layout="desk"] .w-in,html[data-layout="desk"] .w-ta{font-size:14px}
+.w-in:focus,.w-ta:focus{border-color:var(--c-accent)}
+.w-ta{min-height:6rem;resize:vertical;font-family:var(--fbody,Georgia,serif)}
+.w-ta.short{min-height:3.6rem}
+.w-check{display:flex;gap:.5rem;align-items:center;margin-top:.45rem}
+.w-fs{border:1px solid var(--c-line);border-radius:8px;margin:.6rem 0 0;padding:.2rem .7rem .6rem}
+.w-fs legend{font:600 .8rem Inter,system-ui,sans-serif;padding:0 .3rem}
+.w-img{display:flex;gap:.6rem;align-items:center}
+.w-img img{max-width:96px;max-height:96px;border-radius:6px;object-fit:cover;border:1px solid var(--c-line)}
+/* versions */
+.w-ver{border-top:1px solid var(--c-line);padding:.5rem 0}
+.w-vh{display:flex;gap:.4rem;align-items:baseline}
+.w-badge{font-size:.72rem;border:1px solid var(--c-line);border-radius:999px;padding:0 .45rem;color:var(--c-muted)}
+.w-badge.pin{color:var(--c-accent);border-color:var(--c-accent)}
+.w-note{color:var(--c-muted);font-size:.85rem;margin:.1rem 0 .3rem}
+.w-acts{display:flex;gap:.35rem;flex-wrap:wrap}
+.w-sheet .w-acts button{padding:.15rem .6rem;min-height:30px;font-size:.8rem}
+html[data-layout="phone"] .w-sheet .w-acts button{min-height:38px}
+.w-seg{display:flex;gap:.3rem}
+.w-sheet .w-seg button.on{border-color:var(--c-accent);color:var(--c-accent)}
+.w-frame{width:100%;height:min(60vh,520px);border:1px solid var(--c-line);border-radius:8px;background:var(--c-bg)}
+.w-diff{white-space:pre-wrap;overflow-wrap:anywhere;font:.92rem/1.55 var(--fbody,Georgia,serif);border:1px solid var(--c-line);border-radius:8px;padding:.6rem .7rem;max-height:min(60vh,520px);overflow:auto}
+.w-diff ins,.w-sheet p ins{background:color-mix(in srgb,var(--c-green,#2e7d32) 24%,transparent);text-decoration:none}
+.w-diff del,.w-sheet p del{background:color-mix(in srgb,var(--c-over,#b3261e) 18%,transparent);text-decoration:line-through}
+/* TK */
+.w-tk{display:flex;gap:.5rem;align-items:center;border-top:1px solid var(--c-line);padding:.45rem 0}
+.w-tk span{flex:1;min-width:0}
+.w-tk small{display:block}
+.w-sheet code{font:.85em ui-monospace,Menlo,monospace}
+/* the publish sheet's drafted note and change kind */
+.w-pub{display:flex;flex-direction:column;gap:.3rem;margin:0 0 .4rem;font:.8rem Inter,system-ui,sans-serif;color:var(--c-muted)}
+.w-cats{display:flex;gap:.3rem;align-items:center;flex-wrap:wrap}
+.w-chip{border:1px solid var(--c-line);background:none;color:var(--c-ink);border-radius:999px;padding:.15rem .6rem;font:.78rem Inter,system-ui,sans-serif;cursor:pointer;min-height:30px}
+#phone .w-chip{min-height:36px}
+.w-chip.on{border-color:var(--c-accent);color:var(--c-accent);font-weight:600}
+.w-noterow{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.w-noterow button{border:1px solid var(--c-line);background:none;color:var(--c-ink);border-radius:8px;padding:.15rem .6rem;font:.8rem Inter,system-ui,sans-serif;cursor:pointer;min-height:30px}
+#phone .w-noterow button{min-height:40px}
+/* the @ list */
+.w-at{position:fixed;z-index:72;background:var(--c-bg);color:var(--c-ink);border:1px solid var(--c-line);border-radius:10px;box-shadow:0 10px 30px -10px var(--c-shadow,rgba(0,0,0,.35));
+  max-height:min(240px,40vh);overflow:auto;font:14px Inter,system-ui,sans-serif;padding:.2rem}
+.w-at button{display:block;width:100%;text-align:left;border:0;background:none;color:inherit;padding:.4rem .55rem;border-radius:7px;cursor:pointer;font:inherit;min-height:36px}
+.w-at button small{display:block;color:var(--c-muted);font-size:.75rem}
+.w-at button.on{background:var(--c-sel,rgba(0,0,0,.06))}
+.w-at p{margin:.4rem .55rem}
+@media (prefers-reduced-motion:reduce){.w-sheet{transition:none}}
+/* --- end web-writing --- */
