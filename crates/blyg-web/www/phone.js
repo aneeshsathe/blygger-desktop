@@ -6,6 +6,7 @@
 
 import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
+  finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, cardHtml, applyTheme,
 } from './core.js';
@@ -71,8 +72,12 @@ export function render({ loadEditor = false } = {}) {
   const c = V.current;
   if (pview === 'edit' && c) {
     const id = c.id ?? '(new)';
-    if (loadEditor || id !== shownId || (document.activeElement !== ta && ta.value !== c.content)) {
-      if (ta.value !== c.content) ta.value = c.content;
+    if (loadEditor || id !== shownId || ta.value !== c.content && (document.activeElement !== ta || S.live)) {
+      if (ta.value !== c.content) {
+        const [a, b] = [ta.selectionStart, ta.selectionEnd];
+        ta.value = c.content;
+        if (document.activeElement === ta && id === shownId) ta.setSelectionRange(a, b);
+      }
       ta.placeholder = c.status === 'new' ? 'Write something…' : '';
       shownId = id;
     }
@@ -87,8 +92,12 @@ export function render({ loadEditor = false } = {}) {
     $('#p-shelfBtn').setAttribute('aria-pressed', String(c.shelved));
     const so = $('#p-stubof');
     so.hidden = !c.stub_of; so.textContent = c.stub_of ?? '';
+    conflictBanner($('#p-conflict'), c, () => { render({ loadEditor: true }); touched(); });
     if (previewing) schedulePreview();
   }
+  $('#p-mode').textContent = V.mode === 'live' ? 'Live' : 'Demo';
+  $('#p-mode').title = V.mode_label;
+  $('#p-mode').className = 'modebadge ' + V.mode;
   const sy = $('#p-sync');
   sy.className = 'psync ' + V.sync_dot;
   sy.querySelector('span').textContent = V.sync;
@@ -170,14 +179,14 @@ function doPublish() {
   S.B.sync_phase('syncing'); render();
   $('#p-sync span').textContent = 'publishing…';
   setTimeout(async () => {
-    const r = JSON.parse(S.B.publish(note, now()));
+    const r = await finishPublish(JSON.parse(S.B.publish(note, now())));
     if (r.action === 'published') {
       await persist();
       S.B.sync_phase('synced');
       render({ loadEditor: true });
       publishedToast(r);
     } else outcome(r);
-  }, 450);
+  }, S.live ? 0 : 450);
 }
 function openPicker(quote) {
   pickMode = quote ? 'quote' : 'link';
@@ -379,12 +388,13 @@ export function initPhone() {
     const el = $('#p-capCnt'); el.textContent = c.label; el.className = c.level || '';
   }
   capTa.addEventListener('input', capCount);
-  const capture = (publish) => {
+  const capture = async (publish) => {
     const text = capTa.value;
-    const o = JSON.parse(S.B.capture(text, publish, now()));
+    let o = JSON.parse(S.B.capture(text, publish, now()));
     if (o.action === 'toast' && /Nothing/.test(o.message)) { shake($('#sh-cap')); toast(esc(o.message)); return; }
     capTa.blur();
     closeSheet({ refocus: false });
+    if (o.action === 'remote_publish') { render(); o = await finishPublish(o); }
     if (o.action === 'published') {
       publishedToast(o);
       persist();

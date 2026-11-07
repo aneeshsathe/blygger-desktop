@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <title>Burrow</title>
-<meta name="description" content="Burrow, a blygger client, running its own Rust code compiled to WebAssembly, on invented sample data.">
+<meta name="description" content="Burrow, a blygger client, running its own Rust code compiled to WebAssembly: on your own blyg, or on invented sample data.">
 <meta name="theme-color" content="#f6f3e7">
 <meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
@@ -24,21 +24,22 @@
 <div id="desk">
 <header class="page">
   <h1>Burrow <span>in a browser</span></h1>
-  <p class="sub">Burrow's own Rust (its model, view-models and Markdown renderer) compiled to WebAssembly. Invented sample data, kept in this browser. Nothing is sent anywhere. On a phone it becomes a phone app.</p>
+  <p class="sub demo-only">Burrow's own Rust (its model, view-models and Markdown renderer) compiled to WebAssembly. Invented sample data, kept in this browser. Nothing is sent anywhere. On a phone it becomes a phone app.</p>
+  <p class="sub live-only">Your own posts on this blyg, through your Studio session. Edits are kept in this browser at once and reach the blyg after you pause; offline, they wait. Publishing happens only when you choose it.</p>
   <div class="controls">
     <label>Theme <select id="theme"></select></label>
     <span class="seg" role="group" aria-label="Layout">
       <button type="button" class="ghost on" data-layout="stacked">Stacked</button>
       <button type="button" class="ghost" data-layout="side">Side by side</button>
     </span>
-    <button type="button" class="ghost" id="offline" aria-pressed="false">Go offline</button>
-    <button type="button" class="ghost" id="reset">Reset sample data</button>
+    <button type="button" class="ghost demo-only" id="offline" aria-pressed="false">Go offline</button>
+    <button type="button" class="ghost demo-only" id="reset">Reset sample data</button>
   </div>
 </header>
 
 <main>
   <div class="win" id="win">
-    <div class="tb"><i></i><i></i><i></i><div class="t" id="wtitle">Burrow</div></div>
+    <div class="tb"><i></i><i></i><i></i><div class="t" id="wtitle">Burrow</div><span class="modebadge" id="d-mode"></span></div>
     <div class="omni">
       <span class="seg views" role="tablist" aria-label="View">
         <button type="button" role="tab" data-view="posts" class="on" title="Posts (⌃1)">Posts</button>
@@ -52,6 +53,7 @@
       <div class="list" id="list" role="listbox" aria-label="Posts"></div>
       <div class="edwrap" id="edwrap">
         <div class="stubof" id="d-stubof" hidden></div>
+        <div class="conflict" id="d-conflict" role="alert" hidden></div>
         <div class="edpanes">
           <textarea class="ed" id="ed" spellcheck="true" aria-label="Editor"></textarea>
           <iframe class="pv" id="pv" title="Preview" sandbox="allow-scripts allow-popups"></iframe>
@@ -97,7 +99,7 @@
     <kbd>⌘</kbd><kbd>K</kbd> link · <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> quote ·
     <kbd>⌘</kbd><kbd>B</kbd> shelf · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> shelve or unshelve ·
     <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading
-    <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. Publishing goes to a pretend blyg at blyg.example.com.</span>
+    <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
   </p>
 </main>
 </div>
@@ -106,7 +108,7 @@
 <div id="phone" class="papp">
   <!-- WRITE -->
   <section class="pview" id="v-write" aria-label="Write">
-    <div class="ptop"><h1 class="pt">Burrow</h1><button type="button" class="ic" id="p-theme" aria-label="Theme" title="Theme">◐</button></div>
+    <div class="ptop"><h1 class="pt">Burrow</h1><span class="modebadge" id="p-mode"></span><button type="button" class="ic" id="p-theme" aria-label="Theme" title="Theme">◐</button></div>
     <label class="psearch">⌕ <input id="p-q" type="search" placeholder="Search or start a post" autocomplete="off" enterkeyhint="go" aria-label="Search or start a post"></label>
     <div class="pscroll" id="p-writeScroll">
       <div class="plbl">📚 Shelf</div>
@@ -120,6 +122,7 @@
   <section class="pview off-r" id="v-edit" aria-label="Editor">
     <div class="ptop"><button type="button" class="ic back" id="p-back">‹ Posts</button><span class="flex"></span><button type="button" class="ic" id="p-shelfBtn" aria-label="Shelve" title="Shelve">📚</button><button type="button" class="ic" id="p-prevBtn" aria-label="Preview" title="Preview">👁</button></div>
     <div class="stubof" id="p-stubof" hidden></div>
+    <div class="conflict" id="p-conflict" role="alert" hidden></div>
     <div class="ped">
       <textarea id="p-ta" spellcheck="true" autocapitalize="sentences" aria-label="Editor"></textarea>
       <iframe class="ppv" id="p-pv" title="Preview" sandbox="allow-scripts allow-popups" hidden></iframe>
@@ -165,9 +168,20 @@
     <div class="row2"><span>▲▼ reorder · ✕ takes it off · 50 at most</span></div></div>
   <div class="psheet" id="sh-hop" role="dialog" aria-label="Hoppers"><div class="grab"></div><h4>⊕ Put it in a hopper</h4><div class="pscroll sheetlist" id="p-hopList"></div></div>
   <div class="psheet" id="sh-theme" role="dialog" aria-label="Theme"><div class="grab"></div><h4>Theme</h4><div class="pscroll sheetlist" id="p-themeList"></div>
-    <div class="row2"><button type="button" id="p-offline">Go offline</button><button type="button" id="p-reset">Reset sample data</button></div></div>
+    <div class="row2 demo-only"><button type="button" id="p-offline">Go offline</button><button type="button" id="p-reset">Reset sample data</button></div></div>
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>
   <div class="ploading" id="p-loading">Loading Burrow…</div>
+</div>
+
+<!-- ================================================================ sign in (live) -->
+<div class="signin" id="signin" role="dialog" aria-modal="true" aria-labelledby="signin-h" hidden>
+  <div class="box">
+    <h2 id="signin-h">Sign in at Studio</h2>
+    <p id="signin-why">Burrow uses your Studio session. Sign in at Studio, then come back to this tab.</p>
+    <p class="acts"><a class="pri" href="/studio/login?return_to=%2Fburrow%2F" target="_blank" rel="opener">Sign in at Studio</a>
+      <button type="button" id="signin-retry">I've signed in</button></p>
+    <p class="muted">Nothing you wrote here is lost: it waits in this browser until you're back.</p>
+  </div>
 </div>
 
 <script type="module" src="app.js"></script>

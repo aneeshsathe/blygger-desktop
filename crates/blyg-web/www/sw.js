@@ -18,12 +18,23 @@ self.addEventListener('activate', (e) => {
   })());
 });
 
-// Cache first: everything here is versioned by BUILD. Anything else from
-// this origin is fetched and kept; other origins are left alone. A page
+/** Whether this worker may answer `url` at all: only this app's own files,
+    under its scope (/burrow/ on a blyg). Never the owner API, the Studio
+    or anything else on the origin: a worker sees every fetch its pages
+    make, wherever it goes, so its scope alone wouldn't keep /api/ out. */
+function mine(url) {
+  const u = new URL(url);
+  if (u.origin !== location.origin) return false;
+  if (/^\/(api|studio)(\/|$)/.test(u.pathname)) return false;
+  return u.href.startsWith(self.registration.scope);
+}
+
+// Cache first: everything here is versioned by BUILD. Anything else of
+// this app's is fetched and kept; nothing outside it is touched. A page
 // load with no network gets the cached shell.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
-  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
+  if (req.method !== 'GET' || !mine(req.url)) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, { ignoreSearch: true });

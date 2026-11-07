@@ -5,6 +5,7 @@
 
 import {
   $, $$, S, now, esc, persist, pref, touched, toast, outcome, publishedToast, copyText,
+  finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, cardHtml, applyTheme,
 } from './core.js';
@@ -42,8 +43,15 @@ export function render({ loadEditor = false } = {}) {
     ed.value = '';
     ed.placeholder = `⏎ creates a new draft: “${V.query.trim()}”`;
     shownId = null;
-  } else if (c && (loadEditor || id !== shownId || (document.activeElement !== ed && ed.value !== c.content))) {
-    if (ed.value !== c.content) ed.value = c.content;
+  } else if (c && (loadEditor || id !== shownId || ed.value !== c.content && (document.activeElement !== ed || S.live))) {
+    // Live, a change from outside (the blyg's copy, a conflict choice)
+    // reaches the editor even while it has focus: every keystroke is in
+    // the store at once, so a difference can only come from there.
+    if (ed.value !== c.content) {
+      const [a, b] = [ed.selectionStart, ed.selectionEnd];
+      ed.value = c.content;
+      if (document.activeElement === ed && id === shownId) ed.setSelectionRange(a, b);
+    }
     ed.placeholder = c.status === 'new' ? 'Write something…' : '';
     shownId = id;
   } else if (!c) {
@@ -52,6 +60,9 @@ export function render({ loadEditor = false } = {}) {
   const so = $('#d-stubof');
   so.hidden = !c?.stub_of;
   so.textContent = c?.stub_of ?? '';
+  conflictBanner($('#d-conflict'), c, () => { render({ loadEditor: true }); touched(); });
+  $('#d-mode').textContent = V.mode_label;
+  $('#d-mode').className = 'modebadge ' + V.mode;
 
   // status bar
   $('#kind').textContent = c ? c.kind_label : '';
@@ -144,14 +155,14 @@ function askPublish() {
     S.B.sync_phase('syncing'); render();
     win.querySelector('#sync span').textContent = 'publishing…';
     setTimeout(async () => {
-      const r = JSON.parse(S.B.publish(note, now()));
+      const r = await finishPublish(JSON.parse(S.B.publish(note, now())));
       if (r.action === 'published') {
         await persist();
         S.B.sync_phase('synced');
         render({ loadEditor: true });
         publishedToast(r);
-      }
-    }, 650);
+      } else { S.B.sync_phase(S.live ? 'error' : 'synced'); outcome(r); render(); }
+    }, S.live ? 0 : 650);
   });
 }
 function askDelete() {
@@ -166,7 +177,7 @@ function askDiscard() {
   if (o.action !== 'confirm') return;
   openSheet(`<h4>${esc(o.title)}</h4><p>${esc(o.body)}</p>
     <div class="sk"><span><kbd>⏎</kbd> discard</span><span><kbd>esc</kbd> keep the edits</span></div>`,
-  () => { closeSheet(); outcome(S.B.discard(now())); render({ loadEditor: true }); touched(); });
+  async () => { closeSheet(); outcome(await finishDiscard(JSON.parse(S.B.discard(now())))); render({ loadEditor: true }); touched(); });
 }
 function makeDraft() {
   const o = outcome(S.B.make_draft(now()), shakeEl());

@@ -4,9 +4,13 @@ Try Burrow's main window in a browser tab, or Burrow as a phone app (any
 window 700px wide or less, or the installed web app). The rules come from Burrow's own
 Rust, compiled to WebAssembly: what the omnibar matches, what ⏎ does, the
 counter, the labels, when a post may be published, deleted or discarded, and
-the Markdown preview. A small page of plain ES modules draws the window. It
-runs on the invented sample posts that `BLYGGER_FAKE=1` uses and stores
-them in this browser (IndexedDB). Nothing is sent anywhere.
+the Markdown preview. A small page of plain ES modules draws the window.
+
+Served from a blyg at `/burrow/`, it runs **live** on your own posts and
+reading list (see [Live mode](#live-mode)). Anywhere else it's the
+**demo**: the invented sample posts that `BLYGGER_FAKE=1` uses, stored in
+this browser (IndexedDB), with nothing sent anywhere. The header says
+which.
 
 ```sh
 ./crates/blyg-web/serve.sh            # build, then serve on http://127.0.0.1:8787/
@@ -40,6 +44,7 @@ won't work.
 | Sample reading (subscriptions, posts, hoppers) | `crates/blyg-app/src/fake_reading.rs` | compiled unchanged (`#[path]`) |
 | Shelf (📚, 50 at most, shelved first), read state, hoppers, reply stubs | the `shelf` branch's behaviour | `src/store.rs`, `src/read_api.rs` |
 | Store (search, create, save, kind, scratch notes, publish, delete, discard) | `fake.rs`'s behaviour | `src/store.rs` |
+| Live mode: owner-API requests, answers, paging, error mapping; the outbox and conflicts | `blyg_core::api` (wire types, `contract`, `imported_row`) | `src/api.rs`, `src/live.rs` (the page's `live.js` only fetches) |
 
 `src/lib.rs` exports one class, `Burrow`, whose methods take and return
 plain strings and numbers (JSON for views), so `cargo test -p blyg-web`
@@ -128,14 +133,91 @@ and icons, and each build replaces the last. Once opened, Burrow opens with
 no network. Your posts stay in IndexedDB, not in the worker's cache.
 Installing needs https, or `localhost` / `127.0.0.1`.
 
+The worker caches only this app's files under its scope. It passes every
+other request, `/api/` and `/studio/` above all, straight to the network
+(a worker sees every fetch its pages make, wherever it goes, so scope alone
+wouldn't keep the API out).
+
+## Live mode
+
+Served from a blyg at `/burrow/`, the page shares an origin with the
+Studio (`/studio`) and the owner API (`/api`, at the host root), so it uses
+the Studio's session cookie (`HttpOnly`, `SameSite=Lax`, `Path=/`): there's
+no CORS, no token and nothing to configure, and the page never sees the
+cookie.
+
+- **Which mode.** `GET /api/capabilities` decides (`api::detect`): a
+  contract 5 answer is a blyg; a 401 with the blyg's `WWW-Authenticate`
+  challenge is a blyg you aren't signed in to ("Sign in at Studio" opens
+  `/studio/login` in a new tab; come back and the page catches up); any
+  other answer (a static server's 404) is the demo. No answer at all, with
+  a live store already in this browser, opens that store offline.
+- **Only `/api/`.** Every request goes through `live.js`'s `call`, which
+  refuses anything but a same-origin `/api/…` path, with
+  `credentials: 'same-origin'`. The Worker refuses a cookie request whose
+  `Origin` isn't its own or whose `Sec-Fetch-Site` is `cross-site` (403);
+  the page's own requests pass. Nothing logs a header.
+- **Contract 5.7.0.** `src/api.rs` builds the requests and reads the
+  answers on blyg-core's wire types (`WireItem`, `CursorPage`,
+  `imported_row`, `contract`): errors are `{code, message, details}`
+  (401 → sign in, 409 `revision-conflict`, 409 `cursor-expired`, 429
+  with `Retry-After`, validation `details.issues`); lists are read page by
+  page to `nextCursor: null` (`Pager`), and an expired cursor drops what
+  was read and starts over (at most `CURSOR_RESTARTS` times), so a list is
+  never partial.
+- **What it reads.** `GET /api/settings` (`siteUrl`, for permalinks),
+  `/api/items`, `/api/reading/imported` and `/api/hoppers`, on start,
+  after reconnecting, and when the tab comes back after a minute.
+- **What it writes.** `POST /api/items` (a new draft, or a reply stub
+  with `stubOf`), `PATCH /api/items/{id}` (`expectedRevision`,
+  `contentMd`, and `kind` until first published), `DELETE` a draft,
+  `POST …/publish` (`expectedRevision`, `note`; only from the publish
+  sheet or capture's Publish), `POST …/restore` (Discard changes),
+  `PUT`/`DELETE /api/reading/{sub}/{id}/read` and
+  `PUT`/`DELETE /api/hoppers/{id}/items/{sub}/{id}`. Scratch notes stay
+  in the browser until ⌘D makes them drafts, as natively. The shelf stays
+  in the browser (the studio has none yet, blygger-studio#135).
+- **The outbox** (`src/live.rs`). Every keystroke is in the store at once
+  and persisted (IndexedDB key `live`; the demo's is `store`, so they
+  never mix). About 800 ms after typing stops, the outbox sends what waits:
+  each edited item once, with the revision its edit was based on; then
+  draft deletes, read marks and hopper changes. Typing while a save is in
+  flight keeps the item pending for the next send. Offline (no answer, or
+  the browser says so), the status bar says "offline · N changes waiting";
+  the outbox survives a reload and replays when the blyg answers (the
+  `online` event, the tab coming back, or every 20 s).
+- **Conflicts.** A 409 `revision-conflict` stops that item, fetches the
+  blyg's copy and keeps it beside yours: a banner over the editor shows
+  its revision and opening words, with **Keep mine** (yours is sent, based
+  on their revision) and **Use theirs**. Nothing is overwritten without
+  that choice. A fresh list never overwrites an item with unsent edits; an
+  item deleted elsewhere under an edit keeps your text as a new draft; a
+  draft deleted here but changed elsewhere isn't deleted.
+
+### Developing against a local blyg
+
+Never against a real one. Run the Worker locally with throwaway state
+(`wrangler dev` on port 8790), build, then:
+
+```sh
+./crates/blyg-web/serve.sh --build-only
+python3 crates/blyg-web/dev-proxy.py      # http://localhost:8791/burrow/
+```
+
+`dev-proxy.py` serves `dist/` at `/burrow/` and forwards everything else
+to the local Worker with the browser's own `Host`, `Origin` and
+`Sec-Fetch-*` headers, so the same-origin guard behaves as on a blyg (a
+cross-origin request is still refused). It refuses a non-loopback
+upstream. Sign in at `http://localhost:8791/studio/login`. Publishing on
+the local Worker still fetches the URLs a post links to (webmention
+discovery), so publish test posts without links.
+
 ## What's missing
 
 Profiles, mentions, subscriptions, version history (⌘Y), AI/TK
 generation, image paste and upload, the in-app browser, extensions,
-settings, conflict resolution and the full editor's scroll sync aren't
-here. There's no connection to a blyg. A "connect to a local `wrangler dev`
-studio" mode would need the owner API from the browser, which means CORS on
-the Worker and a token held by the page. Neither exists, so it isn't built.
+settings, withdrawing a post and the full editor's scroll sync aren't
+here. Conflicts offer mine-or-theirs, not a merge.
 
 ## Why not the real GPUI window?
 
@@ -176,6 +258,7 @@ stripped). Measured on the module after `wasm-bindgen`:
 | `release` profile | 3,649,271 | 1,327,435 | 958,684 |
 | `release` + `wasm-opt -Oz` | 3,361,353 | 1,341,089 | 980,660 |
 | `wasm-release` (what `serve.sh` ships) | 3,056,642 | 1,104,967 | 832,204 |
+| `wasm-release` with live mode (`api`, `live`) | 3,251,424 | 1,168,940 | 875,655 |
 | `wasm-release` + `wasm-opt -Oz` | 2,762,061 | 1,153,243 | 866,324 |
 
 `wasm-opt` (Binaryen 116, from the pinned `wasm-opt` crate) makes the raw

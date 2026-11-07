@@ -11,7 +11,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use crate::reading::vm as rvm;
-use crate::{Burrow, Outcome, at, json, rfc, seed, vm};
+use crate::{Burrow, Outcome, at, json, rfc, vm};
 
 /// One reading row's key, `"subscription id|remote id"`.
 pub fn key_of(r: &ReadingItem) -> String {
@@ -181,8 +181,13 @@ impl Burrow {
 
     fn set_read_state(&mut self, key: &str, read: Option<u32>) {
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key) {
+            let changed = r.read_version != read;
             r.read_version = read;
             self.store.read.insert(key.to_string(), read);
+            if changed {
+                self.queue_read(key, read);
+                self.store.live.reading = self.rd.rows.clone();
+            }
         }
     }
 }
@@ -437,6 +442,7 @@ impl Burrow {
             true
         };
         self.store.hopped.insert(key.to_string(), r.hoppers.clone());
+        self.queue_hop(key, hopper, added);
         json(&Outcome::Toast {
             message: if added {
                 format!("In {name}")
@@ -594,6 +600,13 @@ impl Burrow {
         let id = self
             .store
             .insert(kind, text, Status::Draft, &now, now_ms as i64);
+        if self.is_live() {
+            self.refresh();
+            return json(&Outcome::RemotePublish {
+                id: id.0,
+                note: None,
+            });
+        }
         let done = self.store.publish(&id, None, &now);
         self.refresh();
         match done {
@@ -607,7 +620,7 @@ impl Burrow {
     }
 
     /// For the phone's editor: the sample blyg's address for a permalink.
-    pub fn origin() -> String {
-        seed::ORIGIN.to_string()
+    pub fn origin(&self) -> String {
+        self.origin_str()
     }
 }
