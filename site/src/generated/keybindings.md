@@ -71,7 +71,8 @@
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
 | ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
-| ⇧⌘P | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
+| ⇧⌘P | Command palette: every action, theme, font, blyg, hopper and post, by name | View › Command Palette… |
+| ⌥⌘F | Focus mode: the line you're on stays put, the rest steps back (esc leaves) | View › Focus |
 
 ### While typing in the editor or a text field
 
@@ -121,3 +122,4 @@
 | Version, build, updates and connection info | Burrow › About Burrow |
 | Version, build, updates and connection info | Help › About Burrow |
 | Browser pane: open it with the address field ready (macOS) | View › Open Browser… |
+| Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |

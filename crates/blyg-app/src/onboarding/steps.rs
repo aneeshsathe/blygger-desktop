@@ -108,6 +108,13 @@ pub enum Key {
     // --- terminal ---
     /// The terminal pane was shown or hidden (⌃`).
     Terminal,
+    // --- flow ---
+    /// The command palette opened (⇧⌘P, View › Command Palette…).
+    Palette,
+    /// Focus mode turned on (⌥⌘F, View › Focus).
+    Focus,
+    /// Serendipity's card is showing in ⌘N's empty editor.
+    Serendipity,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -671,6 +678,94 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end terminal ---
+    // --- flow ---
+    Step {
+        id: "palette",
+        since: "0.18.0",
+        title: "Every command, by name",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
+             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
+             Changes); each row shows its key. Enter runs it, Ctrl+Enter runs it and keeps \
+             the palette open, and the last ten come first."
+        } else {
+            "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
+             your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
+             each row shows its key. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and \
+             the last ten come first."
+        },
+        keys: &[Key::Palette],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+P"
+        } else {
+            "⇧⌘P"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "focus",
+        since: "0.18.0",
+        title: "Focus: the line stays put",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+F is focus mode: the editor alone, the line you're typing on held \
+             a little above the middle, the paragraphs you're not in dimmed, and a hairline \
+             with the sync dot and this sitting's words. Esc brings everything back; \
+             focus-line and focus-fade in the config file tune it."
+        } else {
+            "⌥⌘F is focus mode: the editor alone, the line you're typing on held a little \
+             above the middle, the paragraphs you're not in dimmed, and a hairline with the \
+             sync dot and this sitting's words. esc brings everything back; focus-line and \
+             focus-fade in the config file tune it."
+        },
+        keys: &[Key::Focus],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+F"
+        } else {
+            "⌥⌘F"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::EnsureOpen,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "serendipity",
+        since: "0.18.0",
+        title: "An old thought, if you like",
+        caption: if cfg!(target_os = "windows") {
+            "Serendipity is off until you turn it on: Settings (Ctrl+,) › Serendipity, or \
+             serendipity = own in the config file. Then a new post's empty editor shows one \
+             of your older posts, often one nothing links to yet: q quotes it, l links it, o \
+             opens it, r shows another, and typing sends it away. Press Ctrl+N to see one \
+             from the samples."
+        } else {
+            "Serendipity is off until you turn it on: Settings (⌘,) › Serendipity, or \
+             serendipity = own in the config file. Then ⌘N's empty editor shows one of your \
+             older posts, often one nothing links to yet: q quotes it, l links it, o opens \
+             it, r shows another, and typing sends it away. Press ⌘N to see one from the \
+             samples."
+        },
+        keys: &[Key::Serendipity],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+N"
+        } else {
+            "⌘N"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end flow ---
     Step {
         id: "conflict",
         since: "0.16.0",
@@ -1107,12 +1202,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "extensions",
         since: "0.10.0",
-        title: "Extensions: ⇧⌘P",
-        caption: "⇧⌘P lists what your extensions offer here: their commands, Browse for each \
-                  notes folder, and Manage extensions…. Burrow asks before one may do anything, \
-                  and none can publish or see your sign-in.",
+        title: "Extensions",
+        caption: "Post › Extensions… lists what your extensions offer here: their commands, \
+                  Browse for each notes folder, and Manage extensions…; the command palette \
+                  has them too. Burrow asks before one may do anything, and none can publish \
+                  or see your sign-in.",
         keys: &[Key::ExtPalette],
-        key_label: "⇧⌘P",
+        key_label: "Post menu",
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1235,8 +1331,11 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat,     // --- chat ---
-            Key::Terminal, // --- terminal ---
+            Key::Chat,        // --- chat ---
+            Key::Terminal,    // --- terminal ---
+            Key::Palette,     // --- flow ---
+            Key::Focus,       // --- flow ---
+            Key::Serendipity, // --- flow ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

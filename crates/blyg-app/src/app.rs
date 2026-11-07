@@ -124,6 +124,20 @@ pub(crate) mod chat;
 // --- terminal --- (the experimental terminal pane; hooks marked the same way)
 #[path = "terminal/mod.rs"]
 pub(crate) mod terminal;
+// --- flow --- (the command palette, focus mode, serendipity, delight;
+// hooks marked `// --- palette ---`, `// --- focus ---`, `// --- serendipity ---`,
+// `// --- delight ---`)
+#[path = "palette.rs"]
+pub(crate) mod command_palette;
+#[path = "delight.rs"]
+pub(crate) mod delight;
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
+#[path = "focus.rs"]
+pub(crate) mod focus;
+#[path = "serendipity.rs"]
+pub(crate) mod serendipity;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -330,6 +344,12 @@ pub struct MainView {
     chat: chat::Chat,
     // --- terminal ---
     terminal: terminal::Dock,
+    // --- flow ---
+    cmd_palette: command_palette::State,
+    focus_mode: focus::State,
+    serendipity: serendipity::State,
+    delight: delight::Delight,
+    // --- end flow ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -477,6 +497,11 @@ impl MainView {
             hover: Default::default(),         // --- hover cards ---
             chat: Default::default(),          // --- chat ---
             terminal: Default::default(),      // --- terminal ---
+            // --- flow ---
+            cmd_palette: Default::default(),
+            focus_mode: Default::default(),
+            serendipity: Default::default(),
+            delight: Default::default(),
             _tasks: tasks,
             _subs: subs,
         };
@@ -1658,6 +1683,7 @@ impl MainView {
                 match result {
                     Ok(out) => {
                         v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
+                        v.delight_published(&id, cx); // --- delight ---
                         let head = match &note_opt {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
@@ -2239,6 +2265,8 @@ impl Render for MainView {
 
         // --- full editor: which panes are on screen (⌘1/⌘2/⌘3/⌘E) ---
         self.studio_frame(window, cx);
+        self.focus_frame(window, cx); // --- focus ---
+        self.serendipity_frame(cx); // --- serendipity ---
         self.browser_frame(window, cx); // --- browser ---
         self.notes_frame(cx); // --- notes ---
         // --- reading compose ---
@@ -2267,6 +2295,7 @@ impl Render for MainView {
         };
         let measure = px(size * 36.0);
         let side_pad = ((pane_w - measure) / 2.).max(px(34.));
+        let (top_pad, bottom_pad) = self.focus_pads(cx).unwrap_or((px(26.), px(40.))); // --- focus ---
 
         // Project the palette + measure onto the editor each frame (cheap: copies).
         let assist_font = self.prefs.ui().family;
@@ -2285,8 +2314,8 @@ impl Render for MainView {
                 ..Default::default()
             });
             s.set_editor_paddings(Edges {
-                top: px(26.),
-                bottom: px(40.),
+                top: top_pad,       // --- focus ---
+                bottom: bottom_pad, // --- focus ---
                 left: side_pad,
                 right: side_pad,
             });
@@ -2305,7 +2334,7 @@ impl Render for MainView {
         }
 
         // --- buttons --- how the toolbar fits (None: show-buttons = false)
-        let toolbar = self.toolbar_fit(window, cx);
+        let toolbar = self.toolbar_fit(window, cx).filter(|_| !self.focus_on()); // --- focus ---
         let show_title = toolbar.as_ref().is_none_or(|(fit, _)| fit.title());
         div()
             .id("blygger")
@@ -2344,6 +2373,8 @@ impl Render for MainView {
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
             .map(|d| self.chat_actions(d, cx)) // --- chat ---
             .map(|d| self.terminal_actions(d, cx)) // --- terminal ---
+            .map(|d| self.palette_actions(d, cx)) // --- palette ---
+            .map(|d| self.focus_actions(d, cx)) // --- focus ---
             .size_full()
             .relative()
             .flex()
@@ -2370,44 +2401,54 @@ impl Render for MainView {
             // --- reading & versions: other screens replace omnibar + list + editor
             .map(|d| match self.render_reading_body(&body_font, cx) {
                 Some(body) => d.child(body),
-                None => d.child(self.render_omnibar(&ui_font, size, cx)).child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .when(stacked, |d| d.flex_col())
-                        .when(!stacked, |d| d.flex_row())
-                        .when(show_list, |d| {
-                            d.child(self.render_list(list_len, &ui_font, cx))
-                        })
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .min_h_0()
-                                .flex()
-                                .flex_row()
-                                .child(match self.render_own_versions(&body_font, size, cx) {
-                                    Some(v) => v,
-                                    None => self
-                                        .render_editor_pane(&body_font, size, side_pad, cx)
-                                        .into_any_element(),
-                                })
-                                // --- full editor --- (not beside ⌘Y's history,
-                                // whose body is the reader's WebView)
-                                .when(show_preview && self.reading.own.is_none(), |d| {
-                                    d.child(self.studio_pane(&p))
-                                }),
-                        ),
-                ),
+                // --- focus --- (the omnibar only while ⌘L has it)
+                None => d
+                    .when(!self.focus_hides_omnibar(), |d| {
+                        d.child(self.render_omnibar(&ui_font, size, cx))
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .when(stacked, |d| d.flex_col())
+                            .when(!stacked, |d| d.flex_row())
+                            .when(show_list, |d| {
+                                d.child(self.render_list(list_len, &ui_font, cx))
+                            })
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .min_h_0()
+                                    .flex()
+                                    .flex_row()
+                                    .child(match self.render_own_versions(&body_font, size, cx) {
+                                        Some(v) => v,
+                                        None => self
+                                            .render_editor_pane(&body_font, size, side_pad, cx)
+                                            .into_any_element(),
+                                    })
+                                    // --- full editor --- (not beside ⌘Y's history,
+                                    // whose body is the reader's WebView)
+                                    .when(show_preview && self.reading.own.is_none(), |d| {
+                                        d.child(self.studio_pane(&p))
+                                    }),
+                            ),
+                    ),
             })
             .children(self.render_terminal(window, cx)) // --- terminal ---
-            .child(self.render_status_bar(cx))
+            // --- focus --- a hairline in place of the status bar
+            .map(|d| match self.render_focus_bar(cx) {
+                Some(bar) => d.child(bar),
+                None => d.child(self.render_status_bar(cx)),
+            })
             .children(self.render_browser_pane(cx)) // --- browser ---
             .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
+            .children(self.render_cmd_palette(&ui_font, cx)) // --- palette ---
             .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(profile_overlay) // --- profiles ---
@@ -2649,18 +2690,22 @@ impl MainView {
                     ),
             );
         }
+        // --- delight --- the list crossfades on a blyg switch.
         base.child(
-            uniform_list(
-                "items",
-                count,
-                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                    range
-                        .map(|ix| this.render_row(ix, lsize, cx))
-                        .collect::<Vec<_>>()
-                }),
-            )
-            .track_scroll(&self.list_scroll)
-            .size_full(),
+            self.delight_list(
+                uniform_list(
+                    "items",
+                    count,
+                    cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
+                        range
+                            .map(|ix| this.render_row(ix, lsize, cx))
+                            .collect::<Vec<_>>()
+                    }),
+                )
+                .track_scroll(&self.list_scroll)
+                .size_full()
+                .into_any_element(),
+            ),
         )
         .children(crate::ornament::scroll_edge(&self.theme))
     }
@@ -2706,7 +2751,8 @@ impl MainView {
                     .bg(self.palette.side_line),
             )
         });
-        crate::ornament::row(&self.theme, row, selected)
+        let settle_id = item.local_id.clone(); // --- delight ---
+        let el = crate::ornament::row(&self.theme, row, selected)
             .on_click(cx.listener(move |this, _, window, cx| this.open(&id, window, cx)))
             .child(
                 div()
@@ -2832,7 +2878,8 @@ impl MainView {
                     })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
-            .map(|cell| crate::ornament::row_wrap(&self.theme, cell))
+            .map(|cell| crate::ornament::row_wrap(&self.theme, cell));
+        self.delight_row(el, &settle_id) // --- delight ---
     }
 
     fn render_editor_pane(
@@ -2886,7 +2933,9 @@ impl MainView {
                     .child(gpui_kit::base::input::Textarea::new(&self.editor))
                     .children(margins)
                     .child(self.assist.clone()) // --- composer ---
-                    .map(|d| self.hover_card_editor(d, cx)), // --- hover cards ---
+                    .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
+                    .children(self.render_focus_fade(cx)) // --- focus ---
+                    .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
             )
             .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
@@ -2902,9 +2951,14 @@ impl MainView {
             .line_height(relative(1.6))
             // --- composer --- the mention popup / spelling menu keys come first.
             .map(|d| self.composer_keys(d, cx))
+            .map(|d| self.serendipity_keys(d, cx)) // --- serendipity ---
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 if this.sheet.is_none() {
                     cx.stop_propagation();
+                    // --- focus --- esc leaves focus mode first.
+                    if this.focus_escape(window, cx) {
+                        return;
+                    }
                     // --- AI --- esc cancels a running generation first.
                     if !this.ai_escape(window, cx) {
                         this.back_to_search(window, cx);
@@ -3064,7 +3118,7 @@ impl MainView {
                 )
                 .into_any_element()
         } else {
-            dot_el.into_any_element()
+            self.delight_dot(dot_el, dot_color) // --- delight ---
         };
 
         let bar = div()
@@ -3093,16 +3147,20 @@ impl MainView {
                         )
                         .child(vm::kind_label(item.kind)),
                 )
+                // --- delight --- the counter's colour eases.
                 .child(
-                    div()
-                        .when(level == vm::Level::Warn, |d| {
-                            d.text_color(self.palette.on_status_text(p.warn))
-                        })
-                        .when(level == vm::Level::Over, |d| {
-                            d.text_color(self.palette.on_status_text(p.over))
-                                .font_weight(FontWeight::SEMIBOLD)
-                        })
-                        .child(count),
+                    self.delight_counter(
+                        div()
+                            .when(level == vm::Level::Over, |d| {
+                                d.font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .child(count),
+                        match level {
+                            vm::Level::Warn => self.palette.on_status_text(p.warn),
+                            vm::Level::Over => self.palette.on_status_text(p.over),
+                            _ => p.muted,
+                        },
+                    ),
                 )
             })
             // --- full editor ---
@@ -4099,6 +4157,7 @@ impl MainView {
             ))
             .child(self.render_buttons_setting(cx)) // --- buttons ---
             .child(self.render_chat_setting(cx)) // --- chat ---
+            .child(self.render_flow_settings(cx)) // --- flow ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

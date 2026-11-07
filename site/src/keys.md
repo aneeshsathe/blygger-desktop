@@ -10,6 +10,12 @@ a letter on some layouts): use Menu › Post › Discard Changes… or the toolb
 The app's tooltips, menu and `+list-keybinds` show the Windows
 keys.
 
+**⇧⌘P** opens the command palette: every action below, plus themes, fonts,
+blygs, hoppers, extension commands and your posts, found by typing part of a
+name. Each row shows its key, so it's also a way to learn them. ⏎ runs a row,
+⌘⏎ runs it and keeps the palette open. Focus mode (⌥⌘F) is Ctrl+Shift+F on
+Windows, because Ctrl+Alt is AltGr there.
+
 ⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply · new stub, Quote into a thread, Link post) act on
 the post in front of you: in Reading the open post, else the selected one; in
 Posts your own published post.

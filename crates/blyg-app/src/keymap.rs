@@ -87,6 +87,9 @@ use crate::app::browser::{
 };
 // --- browser macros ---
 use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
+// --- flow ---
+use crate::app::command_palette::ShowPalette;
+use crate::app::focus::ToggleFocus;
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -955,12 +958,28 @@ pub fn mac_table() -> Vec<Keybind> {
         // --- end notes ---
         // --- extensions --- the commands extensions add, their libraries,
         // and Manage extensions.
+        // The commands, libraries and Manage extensions are the command
+        // palette's Extensions group too (⇧⌘P).
+        menu_only!(
+            ShowExtensions,
+            "Extensions: run an extension's command, browse its notes, manage them",
+            "Post › Extensions…"
+        ),
+        // --- palette --- every action, theme, font, blyg, hopper and post
         kb!(
             "cmd-shift-p",
             Main,
-            ShowExtensions,
-            "Extensions: run an extension's command, browse its notes, manage them",
-            Some("Post › Extensions…")
+            ShowPalette,
+            "Command palette: every action, theme, font, blyg, hopper and post, by name",
+            Some("View › Command Palette…")
+        ),
+        // --- focus --- (Ctrl+Shift+F on Windows, see WINDOWS_OVERRIDES)
+        kb!(
+            "alt-cmd-f",
+            Main,
+            ToggleFocus,
+            "Focus mode: the line you're on stays put, the rest steps back (esc leaves)",
+            Some("View › Focus")
         ),
     ]
 }
@@ -1031,6 +1050,9 @@ pub fn platform_key(key: &'static str) -> &'static str {
 /// Redo in every Windows text field (and gpui-base's `Input` binds it).
 const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     ("cmd-y", "ctrl-shift-y"),
+    // --- focus --- Ctrl+Alt+F is AltGr+F, which types a bracket on some
+    // layouts (Hungarian `[`): focus mode is Ctrl+Shift+F there.
+    ("alt-cmd-f", "ctrl-shift-f"),
     // --- blyg switcher --- ⌃⌘<digit> would fold into Ctrl+<digit>, the views.
     // Ctrl+Shift+0 never reaches an app on Windows set up with more than one
     // input language (it's the system's language hotkey; GPUI's Windows
@@ -1284,6 +1306,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
+    let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

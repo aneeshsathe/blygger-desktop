@@ -366,6 +366,7 @@ impl CaptureView {
                 cx.notify();
                 return;
             }
+            crate::app::delight::play(crate::app::delight::Sound::Capture, cx); // --- delight ---
             refresh_main(cx);
         }
         self.close(window, cx);

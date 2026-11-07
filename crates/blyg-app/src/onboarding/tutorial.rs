@@ -534,6 +534,10 @@ impl MainView {
             ),
             (Key::LineageMap, self.lineage_map_open()),
             (Key::HoverCard, self.hover_card_shown()), // --- hover cards ---
+            // --- flow ---
+            (Key::Palette, self.cmd_palette.open.is_some()),
+            (Key::Focus, self.focus_on()),
+            (Key::Serendipity, self.serendipity_shown(cx)),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -630,6 +634,22 @@ impl MainView {
         self.ext_tour_close_sheets(window, cx);
         self.chat_tour_tidy(); // --- chat ---
         self.terminal_tour_tidy(window, cx); // --- terminal ---
+        // --- flow --- the palette closed, focus mode left.
+        if self.cmd_palette.open.is_some() {
+            self.close_palette(window, cx);
+        }
+        if self.focus_on() {
+            self.leave_focus(window, cx);
+        }
+    }
+
+    /// --- flow --- Whether the tour is on the step `id` (serendipity's step
+    /// shows the card on the samples, whatever the config says).
+    pub(crate) fn tutorial_on_step(&self, id: &str) -> bool {
+        self.onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| !t.done && STEPS.get(t.step).is_some_and(|s| s.id == id))
     }
 
     /// Reading, in `mode`, nothing open, the search cleared.
@@ -1031,6 +1051,10 @@ impl MainView {
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
             "extensions" => self.ext_toggle_palette(window, cx),
+            // --- flow ---
+            "palette" => self.toggle_palette(window, cx),
+            "focus" => self.enter_focus(window, cx),
+            "serendipity" => self.start_new_post(window, cx),
             "manage" => {
                 self.ext.overlay = None;
                 self.ext_open_manage(window, cx);

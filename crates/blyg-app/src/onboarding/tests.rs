@@ -658,6 +658,12 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
         } // --- chat ---
         "terminal" => e.cx.simulate_keystrokes(&crate::keymap::keys("ctrl-`")), // --- terminal ---
+        // --- flow ---
+        "palette" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
+        }
+        "focus" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-f")),
+        "serendipity" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
@@ -708,9 +714,8 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-c"))
         }
         "cross-post" => e.cx.simulate_keystrokes("escape"),
-        "extensions" => {
-            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
-        }
+        // The Post menu's item (the palette has ⇧⌘P now).
+        "extensions" => e.cx.dispatch_action(crate::app::extensions::ShowExtensions),
         // Manage extensions… is the palette's last row.
         "manage" => e.cx.simulate_keystrokes("up enter"),
         "consent" => {
