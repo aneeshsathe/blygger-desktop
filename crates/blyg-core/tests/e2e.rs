@@ -5093,3 +5093,267 @@ fn contacts_and_handles_round_trip() {
         owner("DELETE", &e.url, &format!("/api/contacts/{cid}"), None);
     }
 }
+
+// --- contacts --- Burrow managing the book, the h-card a handle publishes
+// as, Mentions › Sent, and each subscription's poll status (studio 0.56).
+
+fn nonce() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos()
+}
+
+/// The add, edit, check and remove the Contacts sheet makes, with the
+/// studio's own checks coming back as its words.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn contacts_are_added_edited_checked_and_removed() {
+    use blyg_core::contacts::ContactInput;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let handle = format!("rue{}", nonce());
+    let input = ContactInput {
+        handle: format!("@{handle}"),
+        name: "Rue Marlow".into(),
+        url: "https://rue.example.org".into(),
+    };
+    let made = b.create_contact(&input).expect("create");
+    assert_eq!(made.handle, handle);
+    assert!(!made.id.is_empty(), "the studio's id: {made:?}");
+    assert_eq!(made.name.as_deref(), Some("Rue Marlow"));
+    // The local copy follows at once, so the @ popup offers it.
+    assert!(b.contacts().iter().any(|c| c.id == made.id));
+
+    match b.create_contact(&input) {
+        Err(CoreError::Rejected { status: 409, .. }) => {}
+        r => panic!("a second @{handle} is refused: {r:?}"),
+    }
+    let http = ContactInput {
+        handle: format!("{handle}x"),
+        url: "http://rue.example.org".into(),
+        ..input.clone()
+    };
+    assert!(
+        matches!(
+            b.create_contact(&http),
+            Err(CoreError::Rejected { status: 400, .. })
+        ),
+        "an http address is refused"
+    );
+
+    let edited = b
+        .update_contact(
+            &made.id,
+            &ContactInput {
+                name: "Rue M.".into(),
+                ..input.clone()
+            },
+        )
+        .expect("update");
+    assert_eq!(edited.name.as_deref(), Some("Rue M."));
+    let held = b.contacts();
+    let held = held.iter().find(|c| c.id == made.id).expect("still held");
+    assert_eq!(held.name.as_deref(), Some("Rue M."));
+
+    // Checking a page that can't be read: the studio says so and the
+    // contact stays as it was.
+    let unreadable = b
+        .create_contact(&ContactInput {
+            handle: format!("{handle}u"),
+            name: "Nobody".into(),
+            url: "https://127.0.0.1:9/".into(),
+        })
+        .expect("create");
+    match b.resolve_contact(&unreadable.id) {
+        Err(CoreError::Rejected { message, .. }) => {
+            assert!(message.contains("could not read"), "{message}")
+        }
+        Ok(c) => assert!(c.checked_ids().is_empty(), "{c:?}"),
+        Err(e) => panic!("resolve: {e}"),
+    }
+
+    for id in [&made.id, &unreadable.id] {
+        b.delete_contact(id).expect("delete");
+    }
+    assert!(!b.contacts().iter().any(|c| c.handle.starts_with(&handle)));
+    // Removing one already gone is fine (another device got there first).
+    b.delete_contact(&made.id).expect("delete twice");
+}
+
+/// The preview's h-card (blyg-render `handles.rs`) is the markup the
+/// studio publishes, byte for byte, and `contentMd` carries the link.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_handle_publishes_as_the_h_card_the_preview_shows() {
+    use blyg_core::contacts::ContactInput;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let handle = format!("kit{}", nonce());
+    let c = b
+        .create_contact(&ContactInput {
+            handle: handle.clone(),
+            name: "Kit".into(),
+            url: "https://kit.example.org".into(),
+        })
+        .expect("create");
+    let (_, sid) = published(
+        &b,
+        Kind::Fragment,
+        &format!("{} Tea with @{handle} today.", tag("hcard")),
+        None,
+    );
+    let card = "<span class=\"h-card\"><a class=\"u-url\" \
+                href=\"https://kit.example.org\">@<span class=\"p-name\">Kit</span></a></span>";
+    let doc = public_json(&format!("{}/items/{sid}.json", e2e().url));
+    let html = doc["content_html"].as_str().unwrap_or_default();
+    assert!(html.contains(card), "{doc}");
+
+    // The preview makes the same card for the same text.
+    struct Book(blyg_render::HandleCard, String);
+    impl blyg_render::Resolver for Book {
+        fn resolve(&self, _id: &str) -> blyg_render::Resolution {
+            blyg_render::Resolution::NotFound
+        }
+        fn contact(&self, h: &str) -> Option<blyg_render::HandleCard> {
+            (h == self.1).then(|| self.0.clone())
+        }
+    }
+    let book = Book(
+        blyg_render::HandleCard {
+            name: "Kit".into(),
+            url: "https://kit.example.org".into(),
+            ids: vec![],
+        },
+        handle.clone(),
+    );
+    let preview = blyg_render::render_preview(
+        &format!("Tea with @{handle} today."),
+        blyg_render::Kind::Fragment,
+        &book,
+        &blyg_render::RenderOpts::default(),
+    );
+    assert!(preview.html.contains(card), "{}", preview.html);
+    b.delete_contact(&c.id).expect("delete");
+}
+
+/// Publishing a stub queues a Webmention to the quoted post: Burrow reads
+/// it back as a Sent row with its status. The summary and the groups are
+/// served (5.2+), and a response's source answers for each mention.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn sent_mentions_summary_groups_and_sources_are_read() {
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let (_, rid) = published(&source, Kind::Fragment, &tag("sent"), None);
+    let sub = me.subscribe(&src_url, Some("Sent to")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let it = reading_item(&me, &rid).expect("held");
+    let of = RemoteRef {
+        origin: it.origin.clone(),
+        id: rid.clone(),
+        version: it.version,
+        cited: None,
+    };
+    let stub = me
+        .create_stub(&of, &format!("![[{rid}]]\n\nA reply."))
+        .unwrap();
+    me.sync_now().unwrap();
+    me.publish(&stub, None).expect("publish the stub");
+    let mine = sid_of(&me, &stub);
+
+    let mut sent = Vec::new();
+    wait_until("the outbound row", Duration::from_secs(15), || {
+        sent = me
+            .outbound_mentions()
+            .expect("outbound")
+            .expect("served")
+            .into_iter()
+            .filter(|o| o.item_id == mine)
+            .collect();
+        !sent.is_empty()
+    });
+    let o = &sent[0];
+    assert_eq!(o.version, 1, "{o:?}");
+    assert!(o.target.contains(&rid), "{o:?}");
+    assert!(
+        ["pending", "sent", "failed", "no_endpoint"].contains(&o.status.as_str()),
+        "{o:?}"
+    );
+    let summary = me.mention_summary().expect("summary").expect("served");
+    assert!(summary.outbound >= 1, "{summary:?}");
+
+    let groups = source.mention_groups().expect("groups").expect("served");
+    for g in &groups {
+        assert!(!g.target_item_id.is_empty(), "{g:?}");
+    }
+    for m in source.mentions().expect("mentions").iter().take(3) {
+        assert!(
+            source.mention_source(&m.id).expect("source").is_some(),
+            "served for {}",
+            m.id
+        );
+    }
+    assert_eq!(
+        source
+            .mention_source("no-such-mention")
+            .expect("a 404 is None"),
+        None
+    );
+}
+
+/// A subscription carries the studio's poll status (`lastPollAt`,
+/// `failCount`, `flags`), and reading the list again picks it up.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn subscriptions_carry_their_poll_status() {
+    let e = e2e();
+    let src_url = url_b();
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+    let sub = me.subscribe(&src_url, Some("Polled")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[]);
+    me.refresh_subscriptions().expect("refresh");
+    let s = me
+        .subscriptions()
+        .into_iter()
+        .find(|s| s.id == sub.id)
+        .expect("held");
+    let (st, v) = owner("GET", &e.url, "/api/subscriptions?limit=100", None);
+    assert_eq!(st, 200, "{v}");
+    let rows = v["items"]
+        .as_array()
+        .or_else(|| v["subscriptions"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    let row = rows
+        .iter()
+        .find(|r| r["id"] == sub.id.as_str())
+        .unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(
+        s.poll.last_poll_at.as_deref(),
+        row["lastPollAt"].as_str(),
+        "{row}"
+    );
+    assert_eq!(
+        s.poll.fail_count as f64,
+        row["failCount"].as_f64().unwrap_or(0.0)
+    );
+    assert_eq!(
+        s.poll.flags.len(),
+        row["flags"].as_array().map_or(0, |f| f.len())
+    );
+    // The offer's seed: the manifest's author, else the blyg itself.
+    if let Some(seed) = me.contact_seed(&s.origin, &s.title) {
+        assert!(
+            !seed.name.is_empty() && seed.url.starts_with("http"),
+            "{seed:?}"
+        );
+    }
+}
+// --- end contacts ---

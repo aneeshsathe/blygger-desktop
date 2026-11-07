@@ -275,6 +275,8 @@ enum Sheet {
     Blygs(switcher::BlygSheet),
     // --- shelf --- ⌘B: the posts you keep to hand.
     Shelf(shelf::ShelfSheet),
+    // --- contacts --- Blyg › Contacts…, or an offer to add someone.
+    Contacts(Box<reading::contacts::ContactsSheet>),
 }
 
 struct Toast {
@@ -384,7 +386,8 @@ pub struct MainView {
     tray: tray::Tray,
     // --- split --- a second post beside the one being written
     split: split::Split,
-    nearby: nearby::State, // --- nearby ---
+    nearby: nearby::State,              // --- nearby ---
+    contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -548,6 +551,7 @@ impl MainView {
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             nearby: Default::default(),                        // --- nearby ---
+            contacts: Default::default(),                      // --- contacts ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -2427,6 +2431,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -3451,6 +3456,7 @@ impl MainView {
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
+            Sheet::Contacts(s) => self.render_contacts_sheet(s, cx), // --- contacts ---
             Sheet::Publish {
                 title,
                 next_version,

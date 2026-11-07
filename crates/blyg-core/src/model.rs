@@ -246,6 +246,35 @@ pub struct Subscription {
     /// null}` hands it back. Absent from servers before 0.30 (false).
     #[serde(default)]
     pub title_follows_source: bool,
+    /// --- contacts --- The blyg's last poll of it: when, how many in a row
+    /// failed, and its flags (Studio's subscription Inspector).
+    #[serde(default)]
+    pub poll: SubscriptionPoll,
+}
+
+/// --- contacts --- A subscription's poll status, as the studio keeps it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SubscriptionPoll {
+    /// `lastPollAt` (RFC 3339); `None`: never polled.
+    #[serde(default)]
+    pub last_poll_at: Option<String>,
+    /// Polls failed in a row (`failCount`).
+    #[serde(default)]
+    pub fail_count: u32,
+    /// `flags`: `{type, at, detail}`, e.g. a site mismatch.
+    #[serde(default)]
+    pub flags: Vec<SubscriptionFlag>,
+}
+
+/// --- contacts --- One of a subscription's flags.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct SubscriptionFlag {
+    #[serde(rename = "type", default)]
+    pub kind: String,
+    #[serde(default)]
+    pub at: String,
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 /// Result of `POST /api/subscriptions` without `confirm` — what the URL resolved to.

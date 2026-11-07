@@ -54,6 +54,8 @@ use crate::app::reading::compose::FocusCompose;
 use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 // --- hoppers ---
 use crate::app::reading::hoppers::{HopperPicker, NewHopper};
+// --- contacts ---
+use crate::app::reading::contacts::{AddAuthorToContacts, ShowContacts};
 
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
@@ -1060,6 +1062,19 @@ pub fn mac_table() -> Vec<Keybind> {
             "Extensions: run an extension's command, browse its notes, manage them",
             "Post › Extensions…"
         ),
+        // --- contacts --- the address book (Studio's Settings › contacts)
+        // and "add author to address book"; menu items, no keys of their own.
+        menu_only!(
+            ShowContacts,
+            "Contacts: your address book of @handles (add, edit, check, remove)",
+            "Blyg › Contacts…"
+        ),
+        menu_only!(
+            AddAuthorToContacts,
+            "Add the author of the post you're reading to your contacts",
+            "Post › Add Author to Contacts…"
+        ),
+        // --- end contacts ---
         // --- palette --- every action, theme, font, blyg, hopper and post
         kb!(
             "cmd-shift-p",

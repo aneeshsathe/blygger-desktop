@@ -494,6 +494,7 @@ mod tests {
             handle: "lin".into(),
             name: Some("Lin Okafor".into()),
             origin: "https://lin.example.org".into(),
+            ..Default::default() // --- contacts ---
         }];
         let src = |rewrites| Sources {
             subscriptions: &subs,
@@ -596,6 +597,7 @@ mod tests {
             status: "active".into(),
             in_blogroll: blogroll,
             title_follows_source: true,
+            poll: Default::default(),
         }
     }
 

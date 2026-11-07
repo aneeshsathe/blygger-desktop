@@ -65,6 +65,14 @@ pub trait Resolver {
     fn resolve_link(&self, id: &str) -> Resolution {
         self.resolve(id)
     }
+
+    /// --- contacts --- The contact an `@handle` names (any case), when the
+    /// blyg rewrites handles at publish. The default knows nobody, so every
+    /// `@handle` stays literal prose, as on a blyg without contacts.
+    fn contact(&self, handle: &str) -> Option<crate::HandleCard> {
+        let _ = handle;
+        None
+    }
 }
 
 /// A resolver that knows nothing (every quote is unresolved).

@@ -715,6 +715,78 @@ impl Backend for LiveBackend {
             .flatten()
     }
 
+    // --- contacts --- managing the book: each change, then the local copy
+    // read again (a failed re-read keeps the old copy; the change stands).
+    fn create_contact(
+        &self,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let made = self.e().track(self.e().api.create_contact(c))?;
+        let _ = self.refresh_contacts();
+        Ok(made)
+    }
+
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let made = self.e().track(self.e().api.update_contact(id, c))?;
+        let _ = self.refresh_contacts();
+        Ok(made)
+    }
+
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        self.e().track(self.e().api.delete_contact(id))?;
+        let _ = self.refresh_contacts();
+        Ok(())
+    }
+
+    fn resolve_contact(&self, id: &str) -> Result<crate::contacts::Contact> {
+        let c = self.e().track(self.e().api.resolve_contact(id))?;
+        let _ = self.refresh_contacts();
+        Ok(c)
+    }
+
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<crate::contacts::ContactSeed> {
+        // `{origin}blyg.json` is always the manifest; its `author` names
+        // the person. Unreadable: the subscription's title and origin.
+        let author = url::Url::parse(origin)
+            .and_then(|u| u.join("blyg.json"))
+            .ok()
+            .and_then(|u| self.public.get_json(u.as_str()).ok())
+            .and_then(|m| serde_json::from_value::<Author>(m.get("author")?.clone()).ok());
+        let seed = crate::contacts::ContactSeed::from_author(author.as_ref(), title, origin);
+        crate::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+
+    fn outbound_mentions(&self) -> Result<Option<Vec<crate::outbound::OutboundMention>>> {
+        self.e().track(self.e().api.outbound_mentions())
+    }
+
+    fn mention_summary(&self) -> Result<Option<crate::outbound::MentionSummary>> {
+        self.e().track(self.e().api.mention_summary())
+    }
+
+    fn mention_groups(&self) -> Result<Option<Vec<crate::outbound::MentionGroup>>> {
+        self.e().track(self.e().api.mention_groups())
+    }
+
+    fn mention_source(&self, id: &str) -> Result<Option<crate::outbound::MentionSource>> {
+        self.e().track(self.e().api.mention_source(id))
+    }
+
+    fn refresh_subscriptions(&self) -> Result<()> {
+        let subs = self.e().track(self.e().api.list_subscriptions())?;
+        if self.e().store.replace_subscriptions(&subs)? {
+            self.e().emit(CoreEvent::ReadingChanged);
+        }
+        Ok(())
+    }
+    // --- end contacts ---
+
     // --- capture ---
     fn page_title(&self, url: &str) -> Option<String> {
         let (html, _) = self.public.get_page(url, 256 * 1024).ok()?;
@@ -1259,6 +1331,7 @@ impl Backend for LiveBackend {
                     status: "active".into(),
                     in_blogroll: false,
                     title_follows_source: title.is_none(),
+                    poll: Default::default(),
                 };
                 let mut all = self.e().store.subscriptions();
                 all.push(s.clone());

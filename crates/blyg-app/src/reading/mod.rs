@@ -33,6 +33,12 @@ mod list;
 mod marks; // --- read/unread ---
 mod mentions;
 pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
+// --- contacts --- the address book, the Mentions screen's Sent side, and
+// the Subscriptions screen's poll status (a child here: it uses the
+// screens' helpers).
+#[path = "../contacts/mod.rs"]
+pub(crate) mod contacts;
+// --- end contacts ---
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -786,6 +792,7 @@ impl MainView {
                 self.reading.folders = self.backend.folders();
                 self.reading.filed = self.backend.subscription_folders();
                 self.reading.unsub_confirm = None;
+                self.refresh_poll_status(cx); // --- contacts --- poll status
             }
         }
         window.focus(&self.reading.focus, cx);

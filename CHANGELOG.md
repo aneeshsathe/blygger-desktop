@@ -15,6 +15,13 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Contacts** (Blyg › Contacts…, studio 0.56): search, add, edit and remove the people in your blyg's address book, and **Check page** to have your blyg read their `rel=me` links. **Post › Add Author to Contacts…** fills in a reading post's author, and subscribing to a blyg offers to add it.
+- **`@handle` in the preview** shows as the contact's link, the same h-card your blyg publishes.
+- **Mentions › Sent:** the Webmentions your blyg sent for your posts, and where each delivery stands (sent, pending, failed with the reason, no endpoint). **Reply** on a received response opens a stub of it, or offers to subscribe to its blyg first. Received mentions are ordered by your post, as your blyg groups them.
+- **Subscriptions show their poll status:** when your blyg last polled each one, failed polls in a row, and any flag it raised.
+
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).

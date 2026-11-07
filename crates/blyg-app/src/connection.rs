@@ -705,9 +705,56 @@ impl Backend for SwitchBackend {
     fn rewrites_handles(&self) -> bool {
         self.cur().rewrites_handles()
     }
+    fn keeps_contacts(&self) -> bool {
+        self.cur().keeps_contacts()
+    }
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.cur().reading_mentions()
     }
+    // --- contacts --- managing the book, Mentions › Sent, poll status
+    fn create_contact(
+        &self,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().create_contact(c)
+    }
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().update_contact(id, c)
+    }
+    fn delete_contact(&self, id: &str) -> blyg_core::Result<()> {
+        self.cur().delete_contact(id)
+    }
+    fn resolve_contact(&self, id: &str) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().resolve_contact(id)
+    }
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<blyg_core::contacts::ContactSeed> {
+        self.cur().contact_seed(origin, title)
+    }
+    fn outbound_mentions(
+        &self,
+    ) -> blyg_core::Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
+        self.cur().outbound_mentions()
+    }
+    fn mention_summary(&self) -> blyg_core::Result<Option<blyg_core::outbound::MentionSummary>> {
+        self.cur().mention_summary()
+    }
+    fn mention_groups(&self) -> blyg_core::Result<Option<Vec<blyg_core::outbound::MentionGroup>>> {
+        self.cur().mention_groups()
+    }
+    fn mention_source(
+        &self,
+        id: &str,
+    ) -> blyg_core::Result<Option<blyg_core::outbound::MentionSource>> {
+        self.cur().mention_source(id)
+    }
+    fn refresh_subscriptions(&self) -> blyg_core::Result<()> {
+        self.cur().refresh_subscriptions()
+    }
+    // --- end contacts ---
     fn page_title(&self, url: &str) -> Option<String> {
         self.cur().page_title(url) // --- capture ---
     }

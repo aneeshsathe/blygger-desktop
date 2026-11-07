@@ -1236,6 +1236,7 @@ mod tests {
             status: "active".into(),
             in_blogroll: false,
             title_follows_source: true,
+            poll: Default::default(),
         };
         let mut r = ReadingItem {
             subscription_id: "s".into(),

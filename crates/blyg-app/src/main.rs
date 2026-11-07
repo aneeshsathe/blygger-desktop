@@ -422,6 +422,11 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
                 MenuItem::action("Put in Hopper…", app::reading::hoppers::HopperPicker),
+                // --- contacts ---
+                MenuItem::action(
+                    "Add Author to Contacts…",
+                    app::reading::contacts::AddAuthorToContacts,
+                ),
                 // --- shelf ---
                 MenuItem::action("Shelf…", app::shelf::ShowShelf),
                 MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
@@ -480,6 +485,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
+                MenuItem::action("Contacts…", app::reading::contacts::ShowContacts), // --- contacts ---
                 // --- chat ---
                 MenuItem::action("#thicket Chat (Experimental)", app::chat::ShowChat),
                 MenuItem::separator(),

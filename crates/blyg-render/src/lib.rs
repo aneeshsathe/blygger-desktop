@@ -18,6 +18,7 @@
 mod embeds;
 mod emph;
 mod grammar;
+mod handles; // --- contacts --- `@handle` → h-card
 mod linemap;
 mod linkify;
 mod links;
@@ -36,6 +37,7 @@ pub use grammar::{
     DirectiveRef, LinkRef, directive_ref, label_text, link_refs, link_source,
     strip_generated_grammar,
 };
+pub use handles::HandleCard; // --- contacts ---
 pub use links::{
     anchor_label, excerpt_from_html, link_label, normalize_selection, plain_text_from_html,
     selection_text,
@@ -164,6 +166,11 @@ pub fn render_preview(
     } else {
         md
     };
+    // --- contacts --- `@handle` becomes its contact's link first, as the
+    // studio's preview and publish do (`consumeHandles`); the links become
+    // h-cards with the `[[id]]` tokens below (`withMentionCards`).
+    let handles = handles::consume(md, &|h| resolver.contact(h));
+    let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);
     let src = linemap::Mapped::identity(md);
@@ -194,10 +201,30 @@ pub fn render_preview(
     // body's, then each generated block's, resolved over the block's own
     // Markdown and the block rendered again (`resolveBlockLinks`, studio 0.48).
     let mut seq = 0;
-    let (link_doc, links) = links::resolve(&annotated.doc, resolver, &opts.mount, &mut seq);
+    let (mut link_doc, mut links) = links::resolve(&annotated.doc, resolver, &opts.mount, &mut seq);
+    // --- contacts --- each mention link → a token for its h-card.
+    let mention_tokens = |text: &mut String, l: &mut links::Links, seq: &mut usize| {
+        for (literal, card) in &handles.cards {
+            l.add_literal(text, literal, card, seq);
+        }
+    };
+    if !handles.cards.is_empty() {
+        let mut text = link_doc.text.clone();
+        mention_tokens(&mut text, &mut links, &mut seq);
+        link_doc = link_doc.with_text(text);
+    }
     let mut link_docs = vec![links];
     for (block, (_, text, line)) in blocks.iter_mut().zip(&annotated.blocks) {
-        let (md, l) = links::resolve_block(text, *line, resolver, &opts.mount, &mut seq);
+        let (mut md, mut l) = links::resolve_block(text, *line, resolver, &opts.mount, &mut seq);
+        if handles
+            .cards
+            .iter()
+            .any(|(lit, _)| text.contains(lit.as_str()))
+        {
+            let mut t = md.take().unwrap_or_else(|| text.clone());
+            mention_tokens(&mut t, &mut l, &mut seq);
+            md = Some(t);
+        }
         if let Some(md) = md {
             let (html, _) = markdown::render(&md, None);
             block.html = format!("<div class=\"blyg-tk-gen\">{html}</div>");

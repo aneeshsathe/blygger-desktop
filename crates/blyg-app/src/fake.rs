@@ -21,6 +21,9 @@ pub mod reading_seed;
 // --- profiles ---
 #[path = "fake_profiles.rs"]
 pub mod profile_seed;
+// --- contacts ---
+#[path = "fake_contacts.rs"]
+pub mod contacts_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -167,6 +170,8 @@ struct State {
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
+    // --- contacts --- the address book and what the blyg sent.
+    book: contacts_seed::Book,
 }
 
 pub struct FakeBackend {
@@ -352,6 +357,7 @@ impl FakeBackend {
                 shelf: Vec::new(),  // --- shelf ---
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
+                book: Default::default(), // --- contacts ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -676,6 +682,14 @@ impl FakeBackend {
         id
     }
 
+    // --- contacts ---
+    /// Pretend the blyg rewrites `@handle` at publish (studio 0.56).
+    #[cfg(test)]
+    pub fn set_rewrites_handles(&self, on: bool) {
+        self.lock().book.rewrites = on;
+    }
+    // --- end contacts ---
+
     /// Pretend the server lacks (or has) the owner-API read extensions.
     #[cfg(test)]
     pub fn set_read_extensions(&self, on: bool) {
@@ -874,16 +888,128 @@ impl Backend for FakeBackend {
         )
     }
 
-    // --- contacts --- a one-entry sample address book (a blyg the
-    // sample reading holds). The sample blyg is pre-0.56: it doesn't
-    // rewrite handles, so picking the contact writes the plain link.
+    // --- contacts --- a sample address book (a blyg the sample reading
+    // holds; `contacts_seed`). The sample blyg keeps contacts as studio
+    // 0.56 does, but rewrites `@handle` only when a test asks
+    // (`set_rewrites_handles`), so picking a contact writes the plain link.
     fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
-        vec![blyg_core::contacts::Contact {
-            handle: "lin".into(),
-            name: Some("Lin".into()),
-            origin: crate::fake::reading_seed::LIN.into(),
-        }]
+        self.lock().book.contacts.clone()
     }
+
+    fn rewrites_handles(&self) -> bool {
+        self.lock().book.rewrites
+    }
+
+    fn keeps_contacts(&self) -> bool {
+        true
+    }
+
+    fn create_contact(
+        &self,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.create(c)
+    }
+
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.update(id, c)
+    }
+
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        thread::sleep(self.timing.network);
+        self.lock().book.delete(id)
+    }
+
+    fn resolve_contact(&self, id: &str) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.resolve(id)
+    }
+
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<blyg_core::contacts::ContactSeed> {
+        // The sample blygs' manifests name their author as the title.
+        let seed = blyg_core::contacts::ContactSeed::from_author(None, title, origin);
+        blyg_core::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+
+    fn outbound_mentions(&self) -> Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
+        thread::sleep(self.timing.network);
+        self.read_guard()?;
+        Ok(Some(self.lock().book.outbound.clone()))
+    }
+
+    fn mention_summary(&self) -> Result<Option<blyg_core::outbound::MentionSummary>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let mut groups: Vec<&str> = st
+            .rd
+            .mentions
+            .iter()
+            .map(|m| m.target_item_id.as_str())
+            .collect();
+        groups.sort();
+        groups.dedup();
+        Ok(Some(blyg_core::outbound::MentionSummary {
+            inbound: st.rd.mentions.len() as u64,
+            outbound: st.book.outbound.len() as u64,
+            groups: groups.len() as u64,
+        }))
+    }
+
+    fn mention_groups(&self) -> Result<Option<Vec<blyg_core::outbound::MentionGroup>>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let mut ms: Vec<&Mention> = st.rd.mentions.iter().collect();
+        ms.sort_by(|a, b| b.verified_at.cmp(&a.verified_at));
+        let mut out: Vec<blyg_core::outbound::MentionGroup> = Vec::new();
+        for m in ms {
+            if !out.iter().any(|g| g.target_item_id == m.target_item_id) {
+                out.push(blyg_core::outbound::MentionGroup {
+                    target_item_id: m.target_item_id.clone(),
+                    verified_at: m.verified_at.clone().unwrap_or_default(),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(Some(out))
+    }
+
+    fn mention_source(&self, id: &str) -> Result<Option<blyg_core::outbound::MentionSource>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let m = st
+            .rd
+            .mentions
+            .iter()
+            .find(|m| m.id == id)
+            .ok_or(CoreError::NotFound)?;
+        let holder = m.source_id.as_ref().and_then(|sid| {
+            st.rd
+                .reading
+                .iter()
+                .find(|r| &r.remote_id == sid)
+                .map(|r| r.subscription_id.clone())
+        });
+        let subscription = m.source_origin.as_ref().and_then(|o| {
+            st.rd
+                .subs
+                .iter()
+                .find(|s| blyg_core::profile::same_origin(&s.origin, o))
+                .map(|s| (s.id.clone(), s.title.clone()))
+        });
+        Ok(Some(blyg_core::outbound::MentionSource {
+            holder,
+            subscription,
+        }))
+    }
+    // --- end contacts ---
 
     // --- capture --- a page on the sample blog has a title; others none.
     fn page_title(&self, url: &str) -> Option<String> {
@@ -1147,7 +1273,9 @@ impl Backend for FakeBackend {
             status: "active".into(),
             in_blogroll: false,
             title_follows_source: true,
+            poll: Default::default(),
         });
+        contacts_seed::poll(&mut v); // --- contacts ---
         v
     }
 
@@ -1477,6 +1605,7 @@ impl Backend for FakeBackend {
                 status: "active".into(),
                 in_blogroll: false,
                 title_follows_source: true,
+                poll: Default::default(),
             };
             st.rd.subs.push(sub.clone());
             sub

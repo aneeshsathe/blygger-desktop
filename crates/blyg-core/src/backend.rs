@@ -160,6 +160,73 @@ pub trait Backend: Send + Sync {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         None
     }
+    /// --- contacts --- Whether the blyg keeps an address book Burrow can
+    /// manage (the Contacts sheet). Contract 5.7 serves both together.
+    fn keeps_contacts(&self) -> bool {
+        self.rewrites_handles()
+    }
+    // --- contacts --- managing the book (blocking; the local copy follows
+    // each change), the Mentions screen's other reads, and the poll status.
+    /// `POST /api/contacts`. `NotFound`: the blyg keeps no contacts.
+    fn create_contact(
+        &self,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let _ = c;
+        Err(CoreError::NotFound)
+    }
+    /// `PATCH /api/contacts/{id}`.
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let _ = (id, c);
+        Err(CoreError::NotFound)
+    }
+    /// `DELETE /api/contacts/{id}`.
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+    /// `POST /api/contacts/{id}/resolve`: the blyg reads the contact's page
+    /// for the identifiers it vouches for.
+    fn resolve_contact(&self, id: &str) -> Result<crate::contacts::Contact> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+    /// What to offer after subscribing to a blyg: its author's name and
+    /// address from `{origin}blyg.json`, else `title` and `origin`
+    /// (blocking, bounded). `None` when the book already holds it.
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<crate::contacts::ContactSeed> {
+        let seed = crate::contacts::ContactSeed::from_author(None, title, origin);
+        crate::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+    /// `GET /api/mentions?direction=outbound`: the Webmentions your blyg
+    /// sent. `Ok(None)`: not served.
+    fn outbound_mentions(&self) -> Result<Option<Vec<crate::outbound::OutboundMention>>> {
+        Ok(None)
+    }
+    /// `GET /api/mentions/summary`. `Ok(None)`: not served.
+    fn mention_summary(&self) -> Result<Option<crate::outbound::MentionSummary>> {
+        Ok(None)
+    }
+    /// `GET /api/mention-groups`. `Ok(None)`: not served.
+    fn mention_groups(&self) -> Result<Option<Vec<crate::outbound::MentionGroup>>> {
+        Ok(None)
+    }
+    /// `GET /api/mentions/{id}/source`. `Ok(None)`: not served.
+    fn mention_source(&self, id: &str) -> Result<Option<crate::outbound::MentionSource>> {
+        let _ = id;
+        Ok(None)
+    }
+    /// Read the subscriptions again now (their poll status), blocking.
+    fn refresh_subscriptions(&self) -> Result<()> {
+        Ok(())
+    }
+    // --- end contacts ---
     /// --- capture --- A web page's `<title>`, fetched once with the
     /// token-less public client (blocking). `None`: not served, not HTML,
     /// or no title.
