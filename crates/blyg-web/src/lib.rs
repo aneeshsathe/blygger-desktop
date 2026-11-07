@@ -30,6 +30,9 @@ mod read_api;
 pub mod seed;
 pub mod store;
 pub mod theme;
+// --- web-reading ---
+pub mod web_reading;
+// --- end web-reading ---
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
@@ -296,6 +299,9 @@ pub struct Burrow {
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
     excerpts: std::cell::RefCell<std::collections::HashMap<String, (u32, String)>>,
+    // --- web-reading --- sources, subscriptions, mentions, peek.
+    wr: web_reading::WebReading,
+    // --- end web-reading ---
 }
 
 #[wasm_bindgen]
@@ -333,6 +339,9 @@ impl Burrow {
             reading_dirty: false,
             changes: None,
             excerpts: Default::default(),
+            // --- web-reading ---
+            wr: Default::default(),
+            // --- end web-reading ---
         }
     }
 

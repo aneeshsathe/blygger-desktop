@@ -11,6 +11,9 @@ import {
   swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
+// --- web-reading ---
+import { phoneChip, opened, wrUse } from './web-reading.js';
+// --- end web-reading ---
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
@@ -129,6 +132,7 @@ function renderStream() {
   u.setAttribute('aria-label', unreadOnly ? `Showing unread only (${R.unread}); show all` : `${R.unread} unread; show only those`);
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
   if (!reading) return;
+  phoneChip(); // --- web-reading --- what the stream shows --- end web-reading ---
   draw($('#p-stream'), R.rows.length
     ? R.rows.map(cardHtml).join('') + (R.total > R.rows.length ? `<p class="stream-more">${R.total - R.rows.length} more…</p>` : '')
     : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
@@ -261,6 +265,7 @@ function openReading(key) {
   if (!p) return;
   readKey = key;
   renderPost($('#p-postBody'), p);
+  opened(key, $('#p-postBody')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#v-post .pscroll').scrollTop = 0;
   persist();
   show('post');
@@ -322,6 +327,7 @@ function trackViewport() {
 // ---------------------------------------------------------------- events
 export function initPhone() {
   trackViewport();
+  wrUse('phone', { openReading }); // --- web-reading --- --- end web-reading ---
   // The app never scrolls as a whole: focusing a field in a sheet or view
   // that is still sliding in would otherwise scroll it out of place.
   for (const el of [app, ...$$('.pview', app)]) el.addEventListener('scroll', () => { el.scrollTop = 0; el.scrollLeft = 0; });
