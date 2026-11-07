@@ -30,9 +30,11 @@ impl Api {
         let mut out = Vec::new();
         let mut cursor: Option<String> = None;
         for _ in 0..MAX_PAGES {
+            // Studio 0.56 answers the whole book, unpaged; a later one may
+            // page it.
             let path = match &cursor {
-                Some(c) => format!("/api/contacts?limit=100&cursor={}", enc(c)),
-                None => "/api/contacts?limit=100".to_string(),
+                Some(c) => format!("/api/contacts?cursor={}", enc(c)),
+                None => "/api/contacts".to_string(),
             };
             let v = match Self::optional(self.call("GET", &path, None))? {
                 Some(v) => v,

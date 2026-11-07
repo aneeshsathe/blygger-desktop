@@ -58,7 +58,8 @@ pub fn parse_contacts(v: &Value) -> Vec<Contact> {
             Some(Contact {
                 handle: s("handle")?.trim_start_matches('@').to_string(),
                 name: s("name"),
-                origin: s("origin")?,
+                // Studio 0.56 calls it `url` (the person's address).
+                origin: s("url").or_else(|| s("origin"))?,
             })
         })
         .collect()
