@@ -45,12 +45,14 @@ use crate::app::MainView;
 
 pub(crate) use library::Library;
 pub(crate) use sheets::Overlay;
+pub(crate) use sheets::RowAction; // --- palette ---
 
 gpui_kit::actions!(
     blygger,
     [
-        /// ⇧⌘P: the Extensions palette (its commands, its libraries, and
-        /// "Manage extensions…").
+        /// Post › Extensions…: the Extensions palette (its commands, its
+        /// libraries, and "Manage extensions…"). ⇧⌘P's command palette
+        /// lists the same rows as its Extensions group.
         ShowExtensions
     ]
 );

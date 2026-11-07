@@ -55,6 +55,16 @@ link without a label offers **label it**, which writes the post's title in as
 the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
 post says so. The card only shows what this Mac already holds.
 
+### Serendipity
+
+Off unless you turn it on: Settings › Serendipity, or `serendipity = own` in
+the config file. Then ⌘N's empty editor shows one of your own published
+posts, more often one nothing links to yet, or one from this week in an
+earlier year, and never the same one twice in a month. While the editor is
+still empty, **q** quotes it into the new post, **l** links to it, **o** opens
+it and **r** shows another; the first thing you type sends it away.
+`serendipity = on` also offers posts from the blygs you read.
+
 ## Fragments and threads
 
 A blyg holds two kinds of post:
@@ -191,6 +201,16 @@ and video. Click a paragraph in the preview to jump to it.
 - ⌘2 **Preview**: the list, the editor and the preview.
 - ⌘3 **Full editor**: the editor and the preview, with the list hidden.
 - ⌘E toggles the preview in place.
+
+### Focus mode
+
+⌥⌘F (View › Focus; Ctrl+Shift+F on Windows) leaves just the editor. The line
+you're typing on stays put, a little above the middle of the window
+(`focus-line`, 0.1–0.9, default 0.45), and the paragraphs you aren't in are
+dimmed (`focus-fade = off` keeps them plain). The only chrome is a hairline at
+the bottom with the sync dot and how many words you've written this sitting;
+hover it for the status bar. That count is never stored. esc brings everything
+back, and ⌘L still reaches the omnibar.
 
 ![An image in the preview](screenshots/image-preview.png)
 

@@ -235,6 +235,46 @@ pub const KEYS: &[KeySpec] = &[
          toggles it.",
     ),
     // --- end chat ---
+    // --- flow --- focus mode, serendipity, sounds
+    docs(
+        key(
+            "focus-line",
+            ValueKind::Number { min: 0.1, max: 0.9 },
+            Some("0.45"),
+        ),
+        "Focus mode (⌥⌘F, View › Focus) keeps the line you're typing on at this height in the \
+         editor, as a fraction from the top: 0.45 is a little above the middle, 0.1 near the \
+         top, 0.9 near the bottom. The text scrolls under it.",
+    ),
+    docs(
+        key(
+            "focus-fade",
+            ValueKind::Choice(&["paragraph", "off"]),
+            Some("paragraph"),
+        ),
+        "In focus mode, paragraph dims every paragraph but the one you're in, so it reads at \
+         about a third; off leaves the text as it is.",
+    ),
+    docs(
+        key(
+            "serendipity",
+            ValueKind::Choice(&["off", "own", "on"]),
+            Some("off"),
+        ),
+        "Serendipity: ⌘N's empty editor shows one of your older posts, an orphan (nothing \
+         links to it) or one from this week in another year, never a withdrawn one, and not \
+         the same one again within a month. q quotes it, l links it, o opens it, r shows \
+         another, until you type. own shows your own posts only; on also shows posts you've \
+         read from your subscriptions; off (the default) shows nothing. Settings (⌘,) has \
+         it too.",
+    ),
+    docs(
+        key("sounds", ValueKind::Choice(&["off", "quiet"]), Some("off")),
+        "quiet plays a soft macOS system sound when a post is published and when quick \
+         capture keeps a note; never while you type. off (the default) is silent. Burrow \
+         plays no sounds on Windows.",
+    ),
+    // --- end flow ---
     docs(
         key("font-family-writing", ValueKind::Text, Some("Literata")),
         "Font for the editor and preview. Run `blygger +list-fonts` to see the choices.",

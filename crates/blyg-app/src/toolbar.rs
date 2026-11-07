@@ -438,7 +438,7 @@ pub fn button_element(
 }
 
 impl MainView {
-    fn toolbar_facts(&self, cx: &App) -> Facts<'_> {
+    pub(crate) fn toolbar_facts(&self, cx: &App) -> Facts<'_> {
         let ai_enabled = cx
             .try_global::<crate::ai::AiGlobal>()
             .is_some_and(|g| g.test_provider.is_some())

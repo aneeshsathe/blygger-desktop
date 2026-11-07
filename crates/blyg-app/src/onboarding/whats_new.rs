@@ -58,6 +58,45 @@ pub const RELEASES: &[Release] = &[
                  you're mentioned. Nothing connects until you set it up, Settings hides it, \
                  and it may be removed."
             },
+            // --- flow ---
+            if cfg!(target_os = "windows") {
+                "The command palette (Ctrl+Shift+P): every action, theme, font, blyg, hopper and \
+                 post by name, each with its key; Enter runs it, Ctrl+Enter keeps the palette \
+                 open. Extensions are its Extensions group, and Post › Extensions… still lists \
+                 them."
+            } else {
+                "The command palette (⇧⌘P): every action, theme, font, blyg, hopper and post by \
+                 name, each with its key; ⏎ runs it, ⌘⏎ keeps the palette open. Extensions are \
+                 its Extensions group, and Post › Extensions… still lists them."
+            },
+            if cfg!(target_os = "windows") {
+                "Focus mode (Ctrl+Shift+F, View › Focus): just the editor, the line you're on \
+                 held steady, other paragraphs dimmed, a hairline with the sync dot and this \
+                 sitting's words. Esc leaves; focus-line and focus-fade tune it."
+            } else {
+                "Focus mode (⌥⌘F, View › Focus): just the editor, the line you're on held \
+                 steady, other paragraphs dimmed, a hairline with the sync dot and this \
+                 sitting's words. esc leaves; focus-line and focus-fade tune it."
+            },
+            if cfg!(target_os = "windows") {
+                "Serendipity, off unless you turn it on (Settings › Serendipity): a new post's \
+                 empty editor shows one of your older posts; q quotes, l links, o opens, r \
+                 another, and typing sends it away."
+            } else {
+                "Serendipity, off unless you turn it on (Settings › Serendipity): ⌘N's empty \
+                 editor shows one of your older posts; q quotes, l links, o opens, r another, \
+                 and typing sends it away."
+            },
+            if cfg!(target_os = "windows") {
+                "Small motion: a published post's row settles, the sync dot and the counter ease \
+                 between colours, the list crossfades when you switch blygs. Windows' \
+                 animation setting isn't read yet; BLYGGER_REDUCE_MOTION=1 turns it off."
+            } else {
+                "Small motion: a published post's row settles, the sync dot and the counter ease \
+                 between colours, the list crossfades when you switch blygs (none of it with \
+                 Reduce Motion on). sounds = quiet adds a quiet system sound on publish and \
+                 capture."
+            },
         ],
         first_step: Some("shelf"),
     },

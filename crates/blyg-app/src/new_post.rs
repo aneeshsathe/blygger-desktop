@@ -84,6 +84,7 @@ impl MainView {
             s.set_placeholder(placeholder(flavor), window, cx);
             s.focus(window, cx);
         });
+        self.serendipity_offer(cx); // --- serendipity ---
         cx.notify();
     }
 

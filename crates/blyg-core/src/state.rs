@@ -59,6 +59,16 @@ pub struct AppState {
     /// show blygs whose database isn't open.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub blyg_cards: std::collections::BTreeMap<String, BlygCard>,
+    // --- flow ---
+    /// The command palette's (⇧⌘P) last commands, newest first (ids such
+    /// as `action:Publish`, `theme:cutaway`), shown when its field is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub palette_recent: Vec<String>,
+    /// Serendipity: the posts ⌘N's empty editor has shown, with when (Unix
+    /// seconds), so one isn't shown again within a month.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub serendipity_seen: std::collections::BTreeMap<String, u64>,
+    // --- end flow ---
 }
 
 /// --- blyg switcher --- A blyg as the switcher shows it.

@@ -124,6 +124,38 @@ The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Cha
 A system notification when someone mentions your nick in #thicket (or messages you) while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) toggles it.
 
 
+### `focus-line`
+
+- **Values:** a number from 0.1 to 0.9
+- **Default:** `0.45`
+
+Focus mode (⌥⌘F, View › Focus) keeps the line you're typing on at this height in the editor, as a fraction from the top: 0.45 is a little above the middle, 0.1 near the top, 0.9 near the bottom. The text scrolls under it.
+
+
+### `focus-fade`
+
+- **Values:** `paragraph`, `off`
+- **Default:** `paragraph`
+
+In focus mode, paragraph dims every paragraph but the one you're in, so it reads at about a third; off leaves the text as it is.
+
+
+### `serendipity`
+
+- **Values:** `off`, `own`, `on`
+- **Default:** `off`
+
+Serendipity: ⌘N's empty editor shows one of your older posts, an orphan (nothing links to it) or one from this week in another year, never a withdrawn one, and not the same one again within a month. q quotes it, l links it, o opens it, r shows another, until you type. own shows your own posts only; on also shows posts you've read from your subscriptions; off (the default) shows nothing. Settings (⌘,) has it too.
+
+
+### `sounds`
+
+- **Values:** `off`, `quiet`
+- **Default:** `off`
+
+quiet plays a soft macOS system sound when a post is published and when quick capture keeps a note; never while you type. off (the default) is silent. Burrow plays no sounds on Windows.
+
+
 ### `font-family-writing`
 
 - **Values:** text

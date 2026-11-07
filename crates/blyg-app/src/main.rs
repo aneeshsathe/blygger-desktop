@@ -499,6 +499,10 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("List + Editor + Preview", app::studio::ViewSplit),
                 MenuItem::action("Full Editor", app::studio::ViewStudio),
                 MenuItem::action("Preview", app::TogglePreview),
+                MenuItem::action("Focus", app::focus::ToggleFocus), // --- focus ---
+                MenuItem::separator(),
+                // --- palette ---
+                MenuItem::action("Command Palette…", app::command_palette::ShowPalette),
                 MenuItem::separator(),
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),
