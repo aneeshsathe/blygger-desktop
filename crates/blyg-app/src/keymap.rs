@@ -712,7 +712,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-u",
             Main,
             ToggleNearby,
-            "Nearby thoughts: show or hide the rail of your posts that say what this paragraph says",
+            "Nearby thoughts: open or close the drawer of your posts that say what this paragraph says",
             Some("View › Nearby Thoughts")
         ),
         kb!(
@@ -1092,7 +1092,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-n",
             Main,
             ToggleNotes,
-            "Notes drawer: open or close it (quotes a selected passage)",
+            "Notes pane: open it and move into it, or close it from inside (quotes a selected passage)",
             Some("View › Notes")
         ),
         // Universal quoting: from the browser pane, the reading pane or the

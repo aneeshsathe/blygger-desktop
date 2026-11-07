@@ -1,13 +1,29 @@
 # Notes and the browser
 
-## The notes drawer
+## The notes pane
 
-**Notes while you read** (⇧⌘N, or View › Notes). A drawer slides in over the
-right edge of the window, over the stream, the Reader, the browser pane or
-your posts, with one rolling scratchpad, "Reading notes". Like any
+**Notes to read while you write** (⇧⌘N, View › Notes, or the **Notes** tab at
+the window's right edge). The notes open in a pane docked at the right of the
+window, beside the editor, the stream, the Reader or the browser pane: the
+rest of the window fits to its left, so nothing is covered, and clicking or
+typing in your draft never closes it.
+
+- **Moving between them.** ⇧⌘N opens the pane and puts the keyboard in it;
+  **esc** puts the keyboard back where it was (your draft, at its caret) and
+  leaves the pane open; ⇧⌘N again from your draft goes back into the notes.
+- **Closing** is up to you: the pane's **×**, its tab, or ⇧⌘N while the
+  keyboard is in it.
+- **The Notes tab** opens or closes the pane without taking the keyboard
+  from your draft, for reading beside it; click in the pane to write there.
+- **Its width.** Drag its left edge (a double-click puts the default back).
+  The text keeps a readable line length however wide you make it.
+- **It remembers** which note is open and where you'd scrolled while you
+  work, and whether it was open and how wide across launches.
+
+It holds one rolling scratchpad, "Reading notes". Like any
 [scratch note](writing.md#quick-capture-and-scratch-notes) it stays on your
 Mac until you make it a draft (⌘D), and it's listed in your posts with a
-`scratch` pill. esc or a click outside slides it away again.
+`scratch` pill.
 
 Adding to it:
 
@@ -17,19 +33,19 @@ Adding to it:
 - with text selected in a post or a web page, ⇧⌘N (or → Notes) adds it as a
   quote with its source.
 
-The drawer's header has **⌘D → draft**, **Open in editor**, and ⋯ › **New
+The pane's header has **⌘D → draft**, **Open in editor**, and ⋯ › **New
 notes page** (a fresh page; the old one stays in your posts). ⌘⏎ opens it in
-the editor with the publish sheet. The drawer's editor has @-mentions,
+the editor with the publish sheet. The pane's editor has @-mentions,
 spellcheck and paste-a-link-over-a-selection, and its footer says when ⇧⌘D
 will quote your selection into your draft (see
 [Universal quoting](reading.md#universal-quoting)).
 
-![The notes drawer over the stream](screenshots/notes-drawer.png)
+![The notes pane, with a markdown-notes note open, and Nearby beside a draft](screenshots/notes-drawer.png)
 
 ### Your Markdown notes: the Notes tab
 
 With the bundled [markdown-notes](extensions.md#markdown-notes) extension
-turned on, the drawer has two tabs: **Reading notes** and **Notes**. The Notes
+turned on, the pane has two tabs: **Reading notes** and **Notes**. The Notes
 tab opens folders of Markdown notes (Obsidian vaults, say), as many as you
 like:
 
@@ -39,7 +55,9 @@ like:
   beside the chosen folder's path, forgets it: the folder and its notes stay
   where they are;
 - search, browse, open a note to edit it, or **Quote into post** / **Copy
-  verbatim** to put it (or the selected part) in your draft.
+  verbatim** to put it (or the selected part) in your draft at its caret.
+  The note stays open in the pane, where you were in it, so you can keep
+  reading it while you write.
 
 There's no default folder. Until you choose one, the tab says so and offers
 **Choose a folder…**. **Settings › Notes folders** lists the same folders,

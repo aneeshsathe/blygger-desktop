@@ -46,6 +46,14 @@ pub struct AppState {
     /// --- notes --- The scratch note the notes drawer writes to (a local id).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub notes_note: Option<String>,
+    /// --- notes --- The notes pane was open when the app last closed (it
+    /// opens again on the next launch).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub notes_open: bool,
+    /// --- notes --- The notes pane's width in points, when the user
+    /// dragged its edge.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub notes_width: Option<u32>,
     /// --- extensions --- The notes drawer's chosen markdown-notes vault
     /// (a library id: `notes`, `notes.<label>`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -54,9 +62,21 @@ pub struct AppState {
     /// box and not yet posted or saved (kept across views and restarts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compose_draft: Option<String>,
-    /// --- nearby --- The Nearby thoughts rail was hidden (⌥⌘U).
+    /// --- nearby --- The Nearby thoughts rail was hidden (⌥⌘U), up to
+    /// 0.19: no longer read (the rail is a drawer, closed until opened).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub nearby_hidden: bool,
+    /// --- side --- The Nearby thoughts drawer was open when the app last
+    /// closed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub nearby_open: bool,
+    /// --- side --- The Nearby drawer's width in points, when dragged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nearby_width: Option<u32>,
+    /// --- side --- The editor's share of the editor | preview row, in
+    /// thousandths, when the divider was dragged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_left: Option<u32>,
     /// --- blyg switcher --- What each signed-in blyg looked like when it
     /// was last active (its name and avatar), by host, so the switcher can
     /// show blygs whose database isn't open.

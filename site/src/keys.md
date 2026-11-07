@@ -44,7 +44,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 | `[[` | Link a post; ⏎ inserts `[[… \| label]]` |
 | @ | Mention a blyg |
 
-**Quick capture and the notes drawer**
+**Quick capture and the notes pane**
 
 | Key | What it does |
 |---|---|

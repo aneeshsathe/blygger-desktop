@@ -58,7 +58,7 @@
 | ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
 | ⌥⌘[ | Split view: the keyboard to the left post | View › Left Post |
 | ⌥⌘] | Split view: the keyboard to the right post | View › Right Post |
-| ⌥⌘U | Nearby thoughts: show or hide the rail of your posts that say what this paragraph says | View › Nearby Thoughts |
+| ⌥⌘U | Nearby thoughts: open or close the drawer of your posts that say what this paragraph says | View › Nearby Thoughts |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
@@ -75,7 +75,7 @@
 | ⌥⌘→ | Tutorial: next step |  |
 | ⌥⌘← | Tutorial: previous step |  |
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
-| ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
+| ⇧⌘N | Notes pane: open it and move into it, or close it from inside (quotes a selected passage) | View › Notes |
 | ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
 | ⇧⌘P | Command palette: every action, theme, font, blyg, hopper and post, by name | View › Command Palette… |
 | ⌥⌘F | Focus mode: the line you're on stays put, the rest steps back (esc leaves) | View › Focus |

@@ -1122,7 +1122,9 @@ impl MainView {
     /// `render` uses.
     pub(super) fn tutorial_region(&self, region: Region, window: &Window) -> Option<Rect> {
         let vp = window.viewport_size();
-        let (w, h) = (f32::from(vp.width), f32::from(vp.height));
+        let (full, h) = (f32::from(vp.width), f32::from(vp.height));
+        // --- side --- the screens fit left of the docked drawers and tabs.
+        let w = self.tutorial_content_w(full);
         let top = TITLEBAR_H;
         let body_top = top + OMNI_H;
         let body_h = (h - STATUS_H - body_top).max(0.);
@@ -1136,7 +1138,7 @@ impl MainView {
             w - list_w - 1.
         };
         let pane_w = if show_preview {
-            (rest / 2.).floor()
+            (rest * self.side_preview_share(px(rest))).floor()
         } else {
             rest
         };
@@ -1163,13 +1165,18 @@ impl MainView {
             Region::List => list?,
             Region::Editor => editor,
             Region::Counter => (0., h - STATUS_H, 230., STATUS_H),
-            Region::Sheet => ((w - 468.) / 2., top, 468., 132.),
+            Region::Sheet => ((full - 468.) / 2., top, 468., 132.),
             Region::NotesDrawer => {
                 if !self.notes.drawn() {
                     return None;
                 }
-                let nw = crate::app::notes::WIDTH;
-                ((w - nw).max(0.), top, nw.min(w), h - top)
+                let nw = self.notes.dock_w;
+                (
+                    w + self.nearby.dock_w,
+                    top,
+                    nw.min(full),
+                    h - top - STATUS_H,
+                )
             }
             Region::ScreenHeader => {
                 if self.reading.view == View::Posts {
@@ -1178,10 +1185,10 @@ impl MainView {
                 (0., top, w, OMNI_H)
             }
             Region::MacroRun => {
-                if let Some([_, chrome]) = self.browser_rects(w, h) {
+                if let Some([_, chrome]) = self.browser_rects(full, h) {
                     chrome
                 } else if self.browser.automation.folded_run(self.browser.open) {
-                    (0., h - STATUS_H, w, STATUS_H)
+                    (0., h - STATUS_H, full, STATUS_H)
                 } else {
                     return None;
                 }
@@ -1190,17 +1197,20 @@ impl MainView {
             | Region::StreamPost
             | Region::Reader
             | Region::ReaderPost
-            | Region::Compose
-            | Region::BrowserChrome => return self.tutorial_reading_region(region, w, h),
+            | Region::Compose => return self.tutorial_reading_region(region, w, h),
+            Region::BrowserChrome => return self.browser_rects(full, h).map(|[_, c]| c),
         })
+    }
+
+    /// --- side --- The width the screens get in a window `full` wide: left
+    /// of the docked drawers and the tab bar.
+    fn tutorial_content_w(&self, full: f32) -> f32 {
+        (full - f32::from(self.side_room())).max(0.)
     }
 
     /// The reading screen's regions (the same layout rules as
     /// `render_reading_screen`, `render_stream_body` and the three panes).
     fn tutorial_reading_region(&self, region: Region, w: f32, h: f32) -> Option<Rect> {
-        if region == Region::BrowserChrome {
-            return self.browser_rects(w, h).map(|[_, chrome]| chrome);
-        }
         if self.reading.view != View::Reading || !self.reading.available {
             return None;
         }
@@ -1305,7 +1315,10 @@ impl MainView {
             return true;
         }
         let vp = window.viewport_size();
-        let (w, h) = (f32::from(vp.width), f32::from(vp.height));
+        let (w, h) = (
+            self.tutorial_content_w(f32::from(vp.width)),
+            f32::from(vp.height),
+        );
         let left = match self.reading.mode {
             ReadMode::Stream => Some(w - stream_pane_w(w)),
             ReadMode::Reader => self
@@ -1318,17 +1331,16 @@ impl MainView {
     /// What covers the panes right now: the browser pane, the notes drawer
     /// and the stream's side pane (a ring around a pane under one of them
     /// would draw over it).
-    fn tutorial_overlays(&self, region: Region, w: f32, h: f32) -> Vec<Rect> {
+    fn tutorial_overlays(&self, region: Region, full: f32, h: f32) -> Vec<Rect> {
         let mut v = Vec::new();
         if !matches!(region, Region::BrowserChrome | Region::MacroRun)
-            && let Some([pane, _]) = self.browser_rects(w, h)
+            && let Some([pane, _]) = self.browser_rects(full, h)
         {
             v.push(pane);
         }
-        if self.notes.drawn() && region != Region::NotesDrawer {
-            let nw = crate::app::notes::WIDTH;
-            v.push(((w - nw).max(0.), TITLEBAR_H, nw, h - TITLEBAR_H));
-        }
+        // --- side --- the notes pane is docked: nothing under it, but the
+        // stream's side pane sits left of it.
+        let w = self.tutorial_content_w(full);
         if self.reading.view == View::Reading
             && self.reading.mode == ReadMode::Stream
             && self.reading.opened.is_some()

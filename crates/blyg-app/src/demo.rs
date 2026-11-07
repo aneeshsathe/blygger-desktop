@@ -254,6 +254,8 @@ impl MainView {
             (s, n) if s.starts_with("br-") => self.browser_demo(s, n, window, cx),
             // --- notes --- (notes-open, notes-after-add, notes-over-browser, notes-posts)
             (s, n) if s.starts_with("notes-") => self.notes_demo(s, n, window, cx),
+            // --- side --- (side-writing, side-preview)
+            (s, n) if s.starts_with("side-") => self.side_demo(s, n, window, cx),
             // --- extensions --- (ext-consent, ext-palette, ext-notes, ext-manage)
             (s, n) if s.starts_with("ext-") => self.ext_demo(s, n, window, cx),
             // --- access-ai --- (aa-access, aa-confirm, aa-token, aa-ai, aa-publish; access.rs)

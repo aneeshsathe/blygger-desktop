@@ -930,16 +930,18 @@ fn the_ring_steps_aside_for_the_drawer_the_browser_and_popups(cx: &mut TestAppCo
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
 
-    // The notes drawer slides over the post pane the notes step rings.
+    // --- side --- The notes pane docks beside the post pane the notes step
+    // rings: the ring moves left of it, never under it.
     enter(&mut e, "notes");
     assert!(ring_now(&mut e, Region::ReaderPost).is_some());
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"));
     e.cx.run_until_parked();
     assert!(e.view.read_with(e.cx, |v, _| v.notes.open));
-    assert_eq!(
-        ring_now(&mut e, Region::ReaderPost),
-        None,
-        "under the drawer"
+    let ring = ring_now(&mut e, Region::ReaderPost).expect("beside the pane");
+    let drawer = e.cx.debug_bounds("notes-drawer").expect("the pane");
+    assert!(
+        ring.0 + ring.2 <= f32::from(drawer.left()) + 1.,
+        "{ring:?} under {drawer:?}"
     );
 
     // The browser pane covers the Reader, but its own step rings it.

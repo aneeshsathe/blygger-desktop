@@ -870,9 +870,9 @@ pub const STEPS: &[Step] = &[
         since: "0.18.0",
         title: "Nearby thoughts, while you write",
         caption: if cfg!(target_os = "windows") {
-            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the              phrase you share, Alt+Shift+Enter quotes the post (threads). Ctrl+Alt+U shows or              hides the rail; Settings › Nearby can add a small model on this computer that              matches meaning, not just words."
+            "Ctrl+Alt+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words."
         } else {
-            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share,              ⌥⇧⏎ quotes the post (threads). ⌥⌘U shows or hides the rail; Settings › Nearby can              add a small model on this Mac that matches meaning, not just words."
+            "⌥⌘U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share, ⌥⇧⏎ quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this Mac that matches meaning, not just words."
         },
         keys: &[Key::Nearby],
         key_label: if cfg!(target_os = "windows") {
@@ -1304,10 +1304,12 @@ pub const STEPS: &[Step] = &[
         id: "notes",
         since: "0.4.0",
         title: "Notes while you read",
-        caption: "⇧⌘N slides in the Notes drawer. Reading notes are running notes, kept on \
-                  this Mac as a scratch note; → Notes, at the bottom of a post, adds the post \
-                  to them. Select a passage in a post: ⇧⌘D, or the pill beside it, quotes it \
-                  in your draft. The drawer's Notes tab is next.",
+        caption: "⇧⌘N, or the Notes tab at the right edge, opens the notes beside what you're \
+                  reading or writing; they stay open until you close them, and esc takes you \
+                  back to your draft. Reading notes are running notes, kept on this Mac as a \
+                  scratch note; → Notes, at the bottom of a post, adds the post to them. Select \
+                  a passage in a post: ⇧⌘D, or the pill beside it, quotes it in your draft. The \
+                  pane's Notes tab is next.",
         keys: &[Key::Notes],
         key_label: "⇧⌘N",
         region: Region::ReaderPost,

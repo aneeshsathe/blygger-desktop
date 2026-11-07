@@ -294,7 +294,7 @@ impl MainView {
     }
 
     /// The keyboard to the open note's editor, else the search box.
-    fn ext_lib_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn ext_lib_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let lib = &self.ext.lib;
         if lib.note.is_some()
             && let Some(e) = lib.editor.clone()
@@ -910,6 +910,7 @@ impl MainView {
             None if self.ext_notes_on() => ("Notes".into(), super::NOTES.into()),
             None => return None,
         };
+        let tip: SharedString = format!("From the {ext} extension").into();
         let p = self.palette;
         let theme = &*self.theme;
         let on = self.ext.lib.tab;
@@ -930,9 +931,6 @@ impl MainView {
         };
         Some(
             div()
-                .flex_none()
-                .px(px(14.))
-                .pt(px(8.))
                 .flex()
                 .items_center()
                 .gap(px(6.))
@@ -941,11 +939,15 @@ impl MainView {
                         cx.listener(|this, _, window, cx| this.ext_lib_tab(false, window, cx)),
                     ),
                 )
-                .child(tab("notes-tab-library", title, on).on_click(
-                    cx.listener(|this, _, window, cx| this.ext_lib_tab(true, window, cx)),
-                ))
-                .child(div().flex_1())
-                .child(div().text_size(px(10.5)).text_color(p.muted).child(ext))
+                .child(
+                    tab("notes-tab-library", title, on)
+                        .tooltip(move |_, cx| {
+                            cx.new(|_| crate::app::reading::Tip(tip.to_string())).into()
+                        })
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.ext_lib_tab(true, window, cx)),
+                        ),
+                )
                 .into_any_element(),
         )
     }
@@ -1009,6 +1011,7 @@ impl MainView {
 
         // ---------------------------------------------------- an open note
         if let Some(note) = &self.ext.lib.note {
+            let pad = self.notes_side_pad();
             let dirty = self.ext.lib.dirty(cx);
             let stale = note.stale;
             let header = div()
@@ -1127,11 +1130,12 @@ impl MainView {
                     caret: p.caret(),
                     ..Default::default()
                 });
+                // --- side --- a readable line length however wide the pane.
                 s.set_editor_paddings(Edges {
                     top: px(12.),
                     bottom: px(24.),
-                    left: px(18.),
-                    right: px(18.),
+                    left: px(pad),
+                    right: px(pad),
                 });
             });
             return Some((header, body, footer));

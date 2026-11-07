@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+- **Notes stay open while you write.** The notes drawer is now a pane docked at the window's right edge, beside the editor and the reading screens, instead of an overlay: clicking or typing in your draft no longer closes it. esc puts the keyboard back in your draft and leaves the notes open; ⇧⌘N moves back into them, and closes them from inside; × closes them too. A markdown-notes note stays open where you were in it, Quote into post / Copy verbatim put it in your draft at the caret, the text keeps a readable line length, the pane's left edge drags (a double-click resets it), and whether it's open and how wide are remembered across launches.
+- **Side tabs: Notes and Nearby.** A slim tab bar at the window's right edge opens the notes and **Nearby thoughts**, which is now a drawer too: closed until you open it (its tab or ⌥⌘U), open until you close it, resizable, and remembered. A tab leaves the keyboard in your draft; Nearby's keys, hover cards and click-to-pick work as before. Focus mode hides the tab bar.
+- **Resize the editor and the preview.** The divider between the editor and ⌘E's preview drags (each keeps a usable minimum); a double-click centres it, as it now does in split view, and Burrow remembers where you left it.
+
 ## [0.19.0] - 2026-11-07
 
 Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.

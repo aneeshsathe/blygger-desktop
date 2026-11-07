@@ -470,6 +470,9 @@ fn setup_with<'a>(
         MainView::new(backend, None, prefs, Instant::now(), window, cx)
     });
     cx.run_until_parked();
+    // The drawer is closed until opened (its tab, ⌥⌘U): these tests read it.
+    view.update(cx, |v, _| v.nearby.open = true);
+    cx.run_until_parked();
     live.set_event_sink(Box::new(|_| {}));
     (view, live, drafts, cx)
 }
@@ -790,4 +793,51 @@ fn a_failed_index_says_so_and_is_tried_again(cx: &mut TestAppContext) {
     );
     let rows = rail(&view, cx);
     assert!(rows.contains(&R1.to_string()), "{rows:?}");
+}
+
+// ------------------------------------------------------------ the drawer
+
+/// Nearby is a side drawer: closed until its tab (or ⌥⌘U) opens it, with
+/// nothing matched meanwhile; the tab leaves the keyboard in the editor,
+/// and its × closes it again.
+#[gpui_kit::test]
+fn the_drawer_is_closed_until_its_tab_opens_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, (thread, _), cx) = setup(dir.path(), None, cx);
+    view.update(cx, |v, _| v.nearby.open = false);
+    write(
+        &view,
+        cx,
+        &thread,
+        "# A\n\nThe tide pools at dusk once more",
+    );
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-rail").is_none(), "closed");
+    assert!(rail(&view, cx).is_empty(), "nothing matched while closed");
+    let tab = cx.debug_bounds("side-tab-nearby").expect("its tab");
+    cx.simulate_click(tab.center(), gpui_kit::Modifiers::none());
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-rail").is_some(), "open");
+    assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+    let focused = view.update_in(cx, |v, window, cx| {
+        v.editor.read(cx).focus_handle(cx).is_focused(window)
+    });
+    assert!(focused, "the tab left the keyboard in the editor");
+    // The keys work at once, from the editor.
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-enter"));
+    cx.run_until_parked();
+    assert!(editor(&view, cx).contains(&format!("[[{POOLS} | ")));
+    // × closes it.
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let close = cx.debug_bounds("nearby-close").expect("its ×");
+    cx.simulate_click(close.center(), gpui_kit::Modifiers::none());
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-rail").is_none());
+    assert!(!view.read_with(cx, |v, _| v.nearby.open));
 }

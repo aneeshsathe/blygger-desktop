@@ -67,7 +67,7 @@ details.
 |---|---|
 | ![The stream](screenshots/stream.png) | ![The three-pane Reader with folders](screenshots/reader-three-pane.png) |
 | ![A post's lineage (⌘J)](screenshots/lineage.png) | ![The action ring](screenshots/lineage-ring.png) |
-| ![The notes drawer over the stream](screenshots/notes-drawer.png) | ![Spelling suggestions](screenshots/spellcheck.png) |
+| ![The notes pane beside a draft](screenshots/notes-drawer.png) | ![Spelling suggestions](screenshots/spellcheck.png) |
 | ![Picking a blyg after @](screenshots/mention-picker.png) | ![Dark theme](screenshots/dark.png) |
 | ![Quick capture](screenshots/quick-capture.png) | ![Publish sheet](screenshots/publish-sheet.png) |
 | ![Conflict resolution](screenshots/conflict.png) | ![Toolbar, with a disabled button's reason](screenshots/toolbar.png) |
