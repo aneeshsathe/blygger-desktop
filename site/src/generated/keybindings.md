@@ -89,6 +89,7 @@
 | ⌥↓ | Nearby thoughts: the row below (typing in the editor) |  |
 | ⌥⏎ | Nearby thoughts: link the chosen post over the phrase it shares ([[id \| phrase]]) |  |
 | ⌥⇧⏎ | Nearby thoughts: quote the chosen post on a new line (![[id \| title]], threads only) |  |
+| ⌥⌘N | Publish sheet: draft the version note with your blyg's AI | Post › Draft a Change Note |
 
 ### In the browser pane
 
@@ -123,6 +124,8 @@
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
+| Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |
+| AI on your blyg: a model per function, house style, change notes, the change classifier | Blyg › AI on Your Blyg… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
 | Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |

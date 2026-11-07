@@ -975,6 +975,16 @@ impl Backend for LiveBackend {
     // --------------------------------------------------------------- remote
 
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
+        // --- access-ai --- one publish path, with or without the extras.
+        self.publish_with(id, note, &crate::access_ai::PublishExtras::default())
+    }
+
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &crate::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
         let content = self.row(id)?.item.content_md;
         self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
@@ -993,7 +1003,13 @@ impl Backend for LiveBackend {
             .base_content
             .clone()
             .unwrap_or_else(|| row.item.content_md.clone());
-        let p = self.command(id, &sid, |rev| self.e().api.publish(&sid, rev, note))?;
+        let p = self.command(id, &sid, |rev| {
+            if *extras == crate::access_ai::PublishExtras::default() {
+                self.e().api.publish(&sid, rev, note)
+            } else {
+                self.e().api.publish_with(&sid, rev, note, extras) // --- access-ai ---
+            }
+        })?;
         self.e().store.set_revision(id, p.revision)?;
         let permalink = self
             .refresh(id, &sid)
@@ -1809,6 +1825,71 @@ impl Backend for LiveBackend {
         }
         Ok(())
     }
+
+    // --- access-ai --- Client access goes with the studio session, never
+    // through `track`: its 401 means "the studio password is needed", not
+    // "Burrow's own sign-in ended".
+    fn access_gate(&self) -> crate::access_ai::AccessGate {
+        self.e().api.access_gate()
+    }
+
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        self.e().api.access_sign_in(password)
+    }
+
+    fn own_client_id(&self) -> Option<String> {
+        self.e().api.own_client_id()
+    }
+
+    fn authorizations(&self) -> Result<Vec<crate::access_ai::Authorization>> {
+        self.e().api.authorizations()
+    }
+
+    fn create_authorization(
+        &self,
+        new: &crate::access_ai::NewAuthorization,
+    ) -> Result<crate::access_ai::NewToken> {
+        self.e().api.create_authorization(new)
+    }
+
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        self.e().api.revoke_authorization(id)
+    }
+
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        self.e().api.revoke_all_authorizations()
+    }
+
+    fn ai_models(&self) -> Result<crate::access_ai::AiModels> {
+        self.e()
+            .track(self.e().api.ai_models())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn server_ai_settings(&self) -> Result<crate::access_ai::ServerAiSettings> {
+        self.e()
+            .track(self.e().api.server_ai_settings())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn save_server_ai_settings(&self, s: &crate::access_ai::ServerAiSettings) -> Result<()> {
+        self.e()
+            .track(self.e().api.put_server_ai_settings(s))
+            .map(|_| ())
+    }
+
+    fn draft_note(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.draft_note(&sid, rev))
+    }
+
+    fn classify_change(&self, id: &LocalId) -> Result<crate::access_ai::ChangeClass> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.classify_change(&sid, rev))
+    }
+    // --- end access-ai ---
 }
 
 impl LiveBackend {

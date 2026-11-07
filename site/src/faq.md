@@ -20,8 +20,9 @@ rename it while it isn't running. See
 ### Can I use Burrow with a stock Blygger blog?
 
 Yes. Burrow 0.16 needs blygger-studio 0.49.12 or later, stock and unpatched.
-Sign in with your browser, an API token from the studio's Client access page,
-or your studio password. On an older blyg nothing syncs: your posts stay on
+Sign in with your browser, an API token from the studio's Client access page
+(or, once connected, Burrow's **Blyg › Client Access…**), or your studio
+password. On an older blyg nothing syncs: your posts stay on
 your Mac, and Burrow says the blyg needs updating, then sends everything once
 it is. See [Server requirements](server.md).
 
@@ -112,8 +113,9 @@ doesn't have. Until you sign in again, posts you read are marked read on
 this Mac and wait to be sent; everything else syncs as usual, and Burrow says
 once that read state is waiting. To sign in again: **Burrow › Disconnect…**
 (keep the local copy), then connect with **Sign in with browser** and allow
-every permission. With an API token, make a new one in the studio's **More ›
-Client access** that includes reading:state.
+every permission. With an API token, make a new one that includes
+reading:state in **Blyg › Client Access…** (or the studio's **More › Client
+access**).
 
 ### Why did Burrow open the sign-in sheet by itself?
 
@@ -122,7 +124,21 @@ or was revoked, a browser sign-in ended, or the server changed (a blyg that
 moved from the old patched Worker to a stock studio no longer takes the
 old owner token). Burrow stops syncing rather than retrying, keeps every
 change on your Mac, and says why. Sign in with your browser, or paste a new
-token from the studio's **More › Client access**, and what waited is sent.
+token (made in the studio's **More › Client access**, or in another Burrow
+connected to the blyg, under **Blyg › Client Access…**), and what waited is
+sent.
+
+### Who can act as me on my blyg? How do I revoke a token?
+
+**Blyg › Client Access…** lists every app and token that can act as you:
+browser sign-ins (Burrow's own is marked "this Burrow"), MCP apps and manual
+API tokens, with what each may do and when it ends. ⌫ revokes the highlighted
+one and ⇧⌫ revokes them all, each after a confirmation that warns when this
+Burrow would be signed out too. `n` makes a new token: a name, REST API or
+MCP, and its permissions (read only, to start). The token appears once, with
+Copy; Burrow never keeps it. Your blyg shows client access to its own sign-in
+only, so if Burrow signs in with the browser or a token it asks for the
+studio password once, and keeps that sign-in in memory until it quits.
 
 ### Can I bring my feeds from another reader?
 

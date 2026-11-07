@@ -105,6 +105,16 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "ShowVersions" => &["history", "versions", "restore"],
         "QuotePicker" => &["quote", "transclude", "link"],
         "ShowShelf" => &["bookshelf", "favourites", "favorites"],
+        // --- access-ai ---
+        "ShowClientAccess" => &["tokens", "api token", "oauth", "revoke", "grants", "mcp"],
+        "ShowServerAi" => &[
+            "models",
+            "house style",
+            "classifier",
+            "change notes",
+            "server ai",
+        ],
+        "DraftChangeNote" => &["version note", "changelog", "ai note"],
         "ShowBlygSwitcher" => &["switch", "account", "blogs"],
         "ShowChat" => &["irc", "thicket"],
         "FocusSearch" => &["find", "search", "omnibar"],

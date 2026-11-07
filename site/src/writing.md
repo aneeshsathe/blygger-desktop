@@ -162,6 +162,26 @@ post leaves it `public v3 · unpublished edits` until you publish again, and
 its row in Posts gets the edit mark. Hover either to see both ways out: ⌘⏎
 publishes the edits as v4, ⌥⌘Z discards them. The published and pinned marks
 say what they mean on hover too.
+### Your blyg's AI in the publish sheet
+
+When your blyg has its own AI set up (**Blyg › AI on Your Blyg…**), the
+publish sheet for a second version on offers two helpers. Neither publishes
+anything, and neither holds publishing up:
+
+- **Draft a note** (⌥⌘N, or Post › Draft a Change Note): your blyg's
+  change-notes model writes the version note from what changed and puts it in
+  the field, to edit or keep. With "Draft automatically" on, an empty note is
+  drafted as the sheet opens. A note published exactly as drafted is marked
+  as generated in the changelog; edit it and it's yours.
+- **The change classifier**: your blyg labels the change *typo*, *minor* or
+  *major*, quietly under the field. Click another label to change it, or the
+  chosen one to clear it. With "Start the note with it" on, the label leads
+  the note (`minor: …`) in the field, where you see the note as it will
+  publish. The label is kept with the version on your blyg, privately:
+  readers see it only as words in your note.
+
+On Windows the key is Ctrl+Shift+E.
+
 **Versions** (⌘Y) lists every version of your post with its note. Open any of
 them and **Restore** it into the editor; publishing it makes a new version,
 since versions never go backwards.

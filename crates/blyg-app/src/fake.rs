@@ -21,6 +21,9 @@ pub mod reading_seed;
 // --- profiles ---
 #[path = "fake_profiles.rs"]
 pub mod profile_seed;
+// --- access-ai ---
+#[path = "fake_access_ai.rs"]
+pub mod access_ai_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -167,6 +170,8 @@ struct State {
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
+    // --- access-ai --- client access and the blyg's AI settings.
+    access_ai: access_ai_seed::Seed,
 }
 
 pub struct FakeBackend {
@@ -352,6 +357,7 @@ impl FakeBackend {
                 shelf: Vec::new(),  // --- shelf ---
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
+                access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -583,6 +589,18 @@ impl FakeBackend {
     }
 
     // ------------------------------------------------------------ test hooks
+
+    #[cfg(test)]
+    /// --- access-ai --- the last `publish_with`'s extras.
+    pub fn last_publish_extras(&self) -> Option<blyg_core::access_ai::PublishExtras> {
+        self.lock().access_ai.last_extras
+    }
+
+    #[cfg(test)]
+    /// --- access-ai --- the blyg's AI settings, changed in place (tests).
+    pub fn set_server_ai(&self, f: impl FnOnce(&mut blyg_core::access_ai::ServerAiSettings)) {
+        f(&mut self.lock().access_ai.ai);
+    }
 
     pub fn is_offline(&self) -> bool {
         self.lock().offline
@@ -2409,6 +2427,216 @@ impl Backend for FakeBackend {
         }
         Ok(())
     }
+
+    // --- access-ai --- as a browser sign-in: client access needs the
+    // studio password once (any but "wrong").
+    fn access_gate(&self) -> blyg_core::access_ai::AccessGate {
+        if self.lock().access_ai.session {
+            blyg_core::access_ai::AccessGate::Ready
+        } else {
+            blyg_core::access_ai::AccessGate::NeedsPassword
+        }
+    }
+
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        if password.is_empty() || password == "wrong" {
+            return Err(CoreError::Unauthorized);
+        }
+        self.lock().access_ai.session = true;
+        Ok(())
+    }
+
+    fn own_client_id(&self) -> Option<String> {
+        Some(access_ai_seed::OWN_CLIENT.to_string())
+    }
+
+    fn authorizations(&self) -> Result<Vec<blyg_core::access_ai::Authorization>> {
+        self.remote_guard()?;
+        let st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        Ok(st.access_ai.authorizations.clone())
+    }
+
+    fn create_authorization(
+        &self,
+        new: &blyg_core::access_ai::NewAuthorization,
+    ) -> Result<blyg_core::access_ai::NewToken> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        let name = new.name.trim();
+        if name.is_empty() || name.chars().count() > 100 || new.scope.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "a name (1–100 characters) and at least one permission".into(),
+                details: vec![],
+            });
+        }
+        st.access_ai.seq += 1;
+        let n = st.access_ai.seq;
+        let now = Utc::now().timestamp();
+        let a = blyg_core::access_ai::Authorization {
+            id: format!("gr-new-{n}"),
+            client_id: format!("cl-new-{n}"),
+            name: name.to_string(),
+            manual: true,
+            resource: match new.resource {
+                blyg_core::access_ai::TokenResource::Api => format!("{ORIGIN}/api"),
+                blyg_core::access_ai::TokenResource::Mcp => format!("{ORIGIN}/mcp"),
+            },
+            scope: new.scope.clone(),
+            created_at: now,
+            expires_at: Some(now + 30 * 86_400),
+        };
+        st.access_ai.authorizations.push(a.clone());
+        Ok(blyg_core::access_ai::NewToken {
+            authorization: a,
+            access_token: format!("fake-token-{n}-0123456789abcdef"),
+            expires_in: 30 * 86_400,
+        })
+    }
+
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        st.access_ai.authorizations.retain(|a| a.id != id);
+        Ok(())
+    }
+
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        st.access_ai.authorizations.clear();
+        Ok(())
+    }
+
+    fn ai_models(&self) -> Result<blyg_core::access_ai::AiModels> {
+        self.remote_guard()?;
+        Ok(self.lock().access_ai.models.clone())
+    }
+
+    fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
+        self.remote_guard()?;
+        Ok(self.lock().access_ai.ai.clone())
+    }
+
+    fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let ai = &mut st.access_ai.ai;
+        // Only the keys sent change, as a PATCH.
+        for f in blyg_core::access_ai::AiFunction::ALL {
+            if let Some(v) = s.model(f) {
+                *ai.model_mut(f) = Some(v.trim().to_string());
+            }
+        }
+        let keep = |to: &mut Option<String>, from: &Option<String>| {
+            if let Some(v) = from {
+                *to = Some(v.trim().to_string());
+            }
+        };
+        keep(&mut ai.style_prompt, &s.style_prompt);
+        keep(&mut ai.feed_prompt, &s.feed_prompt);
+        if s.auto_change_notes.is_some() {
+            ai.auto_change_notes = s.auto_change_notes;
+        }
+        if s.change_category_in_note.is_some() {
+            ai.change_category_in_note = s.change_category_in_note;
+        }
+        Ok(())
+    }
+
+    fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let st = self.lock();
+        let model = st.access_ai.ai.model_changelog.clone().unwrap_or_default();
+        if model.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "no change-notes model is set: choose one in Blyg › AI on Your Blyg"
+                    .into(),
+                details: vec![],
+            });
+        }
+        let item = st
+            .items
+            .iter()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        if item.version == 0 {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "a first version has no previous version to describe".into(),
+                details: vec![],
+            });
+        }
+        Ok(blyg_core::access_ai::DraftedNote {
+            note: "Tightened the opening and added a closing example.".into(),
+            model,
+        })
+    }
+
+    fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let st = self.lock();
+        let model = st.access_ai.ai.model_classify.clone().unwrap_or_default();
+        if model.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "the change classifier is off: choose a decision model in Settings → AI"
+                    .into(),
+                details: vec![],
+            });
+        }
+        let item = st
+            .items
+            .iter()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        if item.version == 0 {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "a first version has no previous version to compare".into(),
+                details: vec![],
+            });
+        }
+        Ok(blyg_core::access_ai::ChangeClass {
+            category: Some(blyg_core::access_ai::ChangeCategory::Minor),
+            probability: Some(0.82),
+            model: Some(model),
+            reason: None,
+        })
+    }
+
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &blyg_core::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        let out = self.publish(id, note)?;
+        self.lock().access_ai.last_extras = Some(*extras);
+        Ok(out)
+    }
+    // --- end access-ai ---
 }
 
 /// --- hoppers --- Each row's `hoppers` from the memberships.

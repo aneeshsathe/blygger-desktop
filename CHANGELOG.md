@@ -15,6 +15,12 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Client access.** Blyg › Client Access… lists every app and token that can act as you on your blyg (browser sign-ins, MCP apps, manual API tokens) with what each may do and when it ends; Burrow's own sign-in is marked "this Burrow". `n` makes a manual token (a name, REST API or MCP, its permissions): it appears once with Copy and Burrow never keeps it. ⌫ revokes one and ⇧⌫ revokes them all, after a confirmation that warns when this Burrow would be signed out. Your blyg serves client access to its own sign-in only, so with a browser sign-in or a token Burrow asks for the studio password once and keeps that sign-in in memory until it quits. The docs no longer send you to the studio for this.
+- **AI on your blyg.** Blyg › AI on Your Blyg… sets your blyg's own AI as the studio's Settings › AI does: a model per function from the studio's model list (TK generation, change notes, the change classifier, Smart Feed scoring), each provider's key status, the house style added to every `[TK]` generated on the blyg, automatic change notes, and whether the classifier's label starts the note. Separate from Burrow's own providers (Settings › AI), as the sheet says.
+- **Your blyg's AI in the publish sheet.** From a post's second version on, when your blyg offers them: "Draft a note" (⌥⌘N, Post › Draft a Change Note; Ctrl+Shift+E on Windows) fills the version note from what changed, and the change classifier labels the change typo, minor or major, quietly under the field (a click changes or clears it). You edit and confirm; nothing blocks publishing. A note published exactly as drafted is marked as generated, and the label you keep is stored with the version, privately.
+
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).

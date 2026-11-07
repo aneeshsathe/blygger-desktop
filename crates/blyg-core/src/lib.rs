@@ -1,6 +1,7 @@
 //! blyg-core: everything that isn't pixels. API client, local SQLite store,
 //! outbox + sync worker, and the `Backend` trait the UI talks to.
 
+pub mod access_ai; // --- access-ai ---
 pub mod api;
 pub mod backend;
 pub mod browse; // --- browse ---

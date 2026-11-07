@@ -1116,6 +1116,55 @@ impl Backend for SwitchBackend {
     ) -> Option<blyg_core::lineage::LineageGraph> {
         self.cur().cached_lineage_graph(centre)
     }
+    // --- access-ai ---
+    fn access_gate(&self) -> blyg_core::access_ai::AccessGate {
+        self.cur().access_gate()
+    }
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        self.cur().access_sign_in(password)
+    }
+    fn own_client_id(&self) -> Option<String> {
+        self.cur().own_client_id()
+    }
+    fn authorizations(&self) -> Result<Vec<blyg_core::access_ai::Authorization>> {
+        self.cur().authorizations()
+    }
+    fn create_authorization(
+        &self,
+        new: &blyg_core::access_ai::NewAuthorization,
+    ) -> Result<blyg_core::access_ai::NewToken> {
+        self.cur().create_authorization(new)
+    }
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        self.cur().revoke_authorization(id)
+    }
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        self.cur().revoke_all_authorizations()
+    }
+    fn ai_models(&self) -> Result<blyg_core::access_ai::AiModels> {
+        self.cur().ai_models()
+    }
+    fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
+        self.cur().server_ai_settings()
+    }
+    fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
+        self.cur().save_server_ai_settings(s)
+    }
+    fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        self.cur().draft_note(id)
+    }
+    fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
+        self.cur().classify_change(id)
+    }
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &blyg_core::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        self.cur().publish_with(id, note, extras)
+    }
+    // --- end access-ai ---
 }
 
 #[cfg(test)]

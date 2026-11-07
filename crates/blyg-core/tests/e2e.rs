@@ -5093,3 +5093,201 @@ fn contacts_and_handles_round_trip() {
         owner("DELETE", &e.url, &format!("/api/contacts/{cid}"), None);
     }
 }
+
+// --- access-ai --- client access and AI on the blyg (studio 0.56)
+
+/// Client access answers the studio's own sign-in only: with a bearer it
+/// needs the password; then a token can be made (scoped as asked, shown
+/// once), listed and revoked. Revoke-all isn't run here: it would sign out
+/// the token every other test uses.
+#[test]
+#[ignore]
+fn client_access_lists_makes_and_revokes_a_token() {
+    use blyg_core::access_ai::{AccessGate, NewAuthorization, TokenResource};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let password = std::env::var("BLYG_E2E_OWNER_PASSWORD").expect("BLYG_E2E_OWNER_PASSWORD");
+    if matches!(e.cred, Credential::Password(_)) {
+        assert_eq!(b.access_gate(), AccessGate::Ready);
+    } else {
+        assert_eq!(b.access_gate(), AccessGate::NeedsPassword);
+        assert!(matches!(b.authorizations(), Err(CoreError::Unauthorized)));
+        // The studio refuses a bearer here, whatever its scopes.
+        let (st, _) = owner("GET", &e.url, "/api/authorizations", None);
+        assert_eq!(st, 401);
+        assert!(matches!(
+            b.access_sign_in("not the password"),
+            Err(CoreError::Unauthorized)
+        ));
+        b.access_sign_in(&password).expect("studio sign-in");
+        assert_eq!(b.access_gate(), AccessGate::Ready);
+    }
+    // With the password, several sign-ins in a second can spend the
+    // studio's sign-in budget (429): wait it out.
+    let t0 = Instant::now();
+    let before = loop {
+        match b.authorizations() {
+            Err(CoreError::Rejected { status: 429, .. })
+                if t0.elapsed() < Duration::from_secs(90) =>
+            {
+                std::thread::sleep(Duration::from_secs(5))
+            }
+            r => break r.expect("list"),
+        }
+    };
+    assert!(
+        before.iter().any(|a| a.manual),
+        "the suite's own minted token is listed: {before:?}"
+    );
+
+    let name = tag("e2e-tool");
+    let made = b
+        .create_authorization(&NewAuthorization {
+            name: name.clone(),
+            scope: vec!["owner:read".into()],
+            resource: TokenResource::Api,
+        })
+        .expect("make a token");
+    assert!(!format!("{made:?}").contains(&made.access_token));
+    assert_eq!(made.authorization.name, name);
+    assert!(made.authorization.manual);
+    assert_eq!(made.authorization.scope, ["owner:read"]);
+    assert!(made.expires_in > 0);
+    let token = Credential::Token(made.access_token.clone());
+    // It reads, and may not draft.
+    let (st, _) = owner_as(&token, "GET", &e.url, "/api/capabilities", None);
+    assert_eq!(st, 200);
+    let (st, _) = owner_as(
+        &token,
+        "POST",
+        &e.url,
+        "/api/items",
+        Some(json!({ "kind": "fragment", "contentMd": "nope" })),
+    );
+    assert_eq!(st, 403, "read-only");
+    let listed = b.authorizations().unwrap();
+    assert!(listed.iter().any(|a| a.id == made.authorization.id));
+
+    b.revoke_authorization(&made.authorization.id)
+        .expect("revoke");
+    let after = b.authorizations().unwrap();
+    assert!(after.iter().all(|a| a.id != made.authorization.id));
+    assert_eq!(after.len(), before.len());
+    let (st, _) = owner_as(&token, "GET", &e.url, "/api/capabilities", None);
+    assert_eq!(st, 401, "a revoked token is refused");
+    // The suite's own credential still works.
+    assert!(b.sync_now().is_ok());
+}
+
+/// The blyg's AI settings and helpers: the model list, a partial save that
+/// leaves other settings alone, the classifier (off: 409; on, with no
+/// provider reachable locally: a null category with a reason, never an
+/// error), a change-notes model with no key (refused, not a crash), and a
+/// publish that carries `noteGenerated` and the confirmed category.
+#[test]
+#[ignore]
+fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
+    use blyg_core::access_ai::{AiFunction, ChangeCategory, PublishExtras, ServerAiSettings};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let models = b.ai_models().expect("GET /api/ai/models");
+    assert!(!models.providers.is_empty(), "{models:?}");
+    assert!(!models.for_function(AiFunction::Classify).is_empty());
+    assert!(!models.for_function(AiFunction::Tk).is_empty());
+    let original = b.server_ai_settings().expect("settings");
+    assert!(original.model_tk.is_some() && original.auto_change_notes.is_some());
+    let title_before = owner("GET", &e.url, "/api/settings", None).1["siteTitle"].clone();
+
+    // A partial save: only what's set is sent.
+    let decision = models.for_function(AiFunction::Classify)[0].id.clone();
+    let text_model = models.for_function(AiFunction::Tk)[0].id.clone();
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_tk: Some(text_model.clone()),
+        style_prompt: Some(" e2e house style ".into()),
+        model_classify: Some(String::new()),
+        model_changelog: Some(String::new()),
+        ..Default::default()
+    })
+    .expect("save");
+    let now = b.server_ai_settings().unwrap();
+    assert_eq!(now.model(AiFunction::Tk), Some(text_model.as_str()));
+    assert_eq!(now.style_prompt.as_deref(), Some("e2e house style"));
+    assert_eq!(now.auto_change_notes, original.auto_change_notes);
+    assert_eq!(
+        owner("GET", &e.url, "/api/settings", None).1["siteTitle"],
+        title_before,
+        "other settings untouched"
+    );
+    assert!(!now.helpers().classify && !now.helpers().draft);
+
+    // A v2 to classify.
+    let t = tag("ai-extras");
+    let (id, sid) = published(&b, Kind::Fragment, &format!("{t} first words"), None);
+    b.save(&id, &format!("{t} first words, and a few more"))
+        .unwrap();
+    b.sync_now().unwrap();
+    match b.classify_change(&id) {
+        Err(CoreError::Rejected {
+            status: 409,
+            message,
+            ..
+        }) => {
+            assert!(message.contains("classifier is off"), "{message}")
+        }
+        other => panic!("classifier off: {other:?}"),
+    }
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_classify: Some(decision.clone()),
+        model_changelog: Some(text_model.clone()),
+        ..Default::default()
+    })
+    .unwrap();
+    let c = b
+        .classify_change(&id)
+        .expect("a classification, even a null one");
+    if c.category.is_none() {
+        assert!(c.reason.is_some(), "a null category says why: {c:?}");
+    }
+    // No provider key on a local studio: the draft is refused, plainly.
+    match b.draft_note(&id) {
+        Ok(d) => assert!(!d.note.is_empty()),
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("note-draft: {other:?}"),
+    }
+
+    let out = b
+        .publish_with(
+            &id,
+            Some("minor: a few more words"),
+            &PublishExtras {
+                note_generated: true,
+                change_category: Some(Some(ChangeCategory::Minor)),
+            },
+        )
+        .expect("publish with extras");
+    assert_eq!(out.version, 2);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["changelog"][1]["note"], "minor: a few more words");
+    assert_eq!(doc["changelog"][1]["generated"], true, "{doc}");
+    let (st, vs) = owner("GET", &e.url, &format!("/api/items/{sid}/versions"), None);
+    assert_eq!(st, 200);
+    let v2 = vs["items"]
+        .as_array()
+        .and_then(|a| a.iter().find(|v| v["version"] == 2))
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert_eq!(v2["changeClass"]["category"], "minor", "{vs}");
+    assert_eq!(
+        v2["changeClass"]["overridden"],
+        c.category != Some(ChangeCategory::Minor)
+    );
+    // A category never reaches the public document as a field.
+    assert!(!doc.to_string().contains("changeClass"));
+
+    // Put the settings back.
+    b.save_server_ai_settings(&original).unwrap();
+}
+// --- end access-ai ---

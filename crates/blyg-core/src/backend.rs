@@ -977,4 +977,93 @@ pub trait Backend: Send + Sync {
         }
         out
     }
+
+    // --- access-ai --- client access and AI on the blyg (studio 0.56,
+    // contract 5.7; `crate::access_ai`). Remote and blocking, except
+    // `access_gate` and `own_client_id`.
+
+    /// Whether client access can be managed now, or needs the studio
+    /// password first (the studio serves it to its own sign-in only).
+    fn access_gate(&self) -> crate::access_ai::AccessGate {
+        crate::access_ai::AccessGate::Unavailable
+    }
+
+    /// Sign in to the studio for client access (memory only, never saved).
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        let _ = password;
+        Err(CoreError::NotFound)
+    }
+
+    /// The OAuth client id this Burrow signs in with (a browser sign-in),
+    /// to mark its own grant.
+    fn own_client_id(&self) -> Option<String> {
+        None
+    }
+
+    /// Every grant that can act as the owner.
+    fn authorizations(&self) -> Result<Vec<crate::access_ai::Authorization>> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Make a manual API token; it's in the answer once.
+    fn create_authorization(
+        &self,
+        new: &crate::access_ai::NewAuthorization,
+    ) -> Result<crate::access_ai::NewToken> {
+        let _ = new;
+        Err(CoreError::NotFound)
+    }
+
+    /// Revoke one grant.
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Revoke every client's access.
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        Err(CoreError::NotFound)
+    }
+
+    /// The blyg's model list and providers (`GET /api/ai/models`).
+    fn ai_models(&self) -> Result<crate::access_ai::AiModels> {
+        Err(CoreError::NotFound)
+    }
+
+    /// The blyg's AI settings.
+    fn server_ai_settings(&self) -> Result<crate::access_ai::ServerAiSettings> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Save the blyg's AI settings (only the keys that are `Some`).
+    fn save_server_ai_settings(&self, s: &crate::access_ai::ServerAiSettings) -> Result<()> {
+        let _ = s;
+        Err(CoreError::NotFound)
+    }
+
+    /// Draft a change note for the post's next version on the blyg, from
+    /// its working copy (pushed first). Never publishes.
+    fn draft_note(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Classify the change the post's next version makes.
+    fn classify_change(&self, id: &LocalId) -> Result<crate::access_ai::ChangeClass> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Publish with the note's provenance and the confirmed category. A
+    /// backend without them publishes as [`Backend::publish`].
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &crate::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        let _ = extras;
+        self.publish(id, note)
+    }
+    // --- end access-ai ---
 }

@@ -112,6 +112,17 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+// --- access-ai --- client access, AI on the blyg, the publish sheet's AI
+// (hooks marked the same way)
+#[path = "access.rs"]
+pub(crate) mod access;
+#[cfg(test)]
+#[path = "access_ai_tests.rs"]
+mod access_ai_tests;
+#[path = "note_ai.rs"]
+pub(crate) mod note_ai;
+#[path = "server_ai.rs"]
+pub(crate) mod server_ai;
 
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
@@ -207,6 +218,8 @@ enum Sheet {
         title: String,
         next_version: u32,
         note: Entity<InputState>,
+        /// --- access-ai --- the blyg's draft note and change classifier.
+        ai: note_ai::NoteAi,
     },
     /// Publishing a post with labelled links to a blyg below studio 0.47
     /// (`server_notice::HELD_*`): `⏎` writes them bare and publishes.
@@ -275,6 +288,9 @@ enum Sheet {
     Blygs(switcher::BlygSheet),
     // --- shelf --- ⌘B: the posts you keep to hand.
     Shelf(shelf::ShelfSheet),
+    // --- access-ai --- Blyg › Client Access… and Blyg › AI on Your Blyg…
+    ClientAccess(Box<access::ClientAccessSheet>),
+    ServerAi(Box<server_ai::ServerAiSheet>),
 }
 
 struct Toast {
@@ -1606,6 +1622,7 @@ impl MainView {
                 self.do_publish(text, window, cx);
             }
             Some(Sheet::Connect { .. }) => self.submit_connect(window, cx),
+            Some(Sheet::ServerAi(_)) => self.save_server_ai(window, cx), // --- access-ai ---
             // --- browser macros --- Never publish under a macro's sheet: its
             // own ⌘⏎ (MacroContinue, keymap.rs) continues the run.
             Some(Sheet::MacroPreview(_) | Sheet::MacroPost(_)) => {}
@@ -1670,7 +1687,9 @@ impl MainView {
                     title,
                     next_version,
                     note,
+                    ai: Default::default(), // --- access-ai ---
                 });
+                self.note_ai_start(next_version, window, cx); // --- access-ai ---
                 cx.notify();
             }
         }
@@ -1700,12 +1719,13 @@ impl MainView {
     }
 
     fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Publish { id, .. }) = self.sheet.take() else {
+        let Some(Sheet::Publish { id, ai, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
+        let extras = ai.extras(&note); // --- access-ai ---
         let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
-        self.start_publish(id, note_opt, window, cx);
+        self.start_publish_with(id, note_opt, extras, window, cx);
     }
 
     fn start_publish(
@@ -1715,13 +1735,32 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.start_publish_with(id, note_opt, Default::default(), window, cx);
+    }
+
+    /// --- access-ai --- `start_publish` with the note's provenance and the
+    /// confirmed change category.
+    fn start_publish_with(
+        &mut self,
+        id: LocalId,
+        note_opt: Option<String>,
+        extras: blyg_core::access_ai::PublishExtras,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.publishing = true;
         cx.notify();
         let backend = self.backend.clone();
         let task = cx.background_spawn({
             let id = id.clone();
             let note = note_opt.clone();
-            async move { scratch::publish_via(&*backend, &id, note.as_deref()) }
+            async move {
+                if extras == Default::default() {
+                    scratch::publish_via(&*backend, &id, note.as_deref())
+                } else {
+                    backend.publish_with(&id, note.as_deref(), &extras) // --- access-ai ---
+                }
+            }
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
@@ -2381,6 +2420,8 @@ impl Render for MainView {
             Some(Sheet::Settings { hotkey, .. }) => vec![hotkey],
             Some(Sheet::Connect { url, token, .. }) => vec![url, token],
             Some(Sheet::Withdraw { note, .. }) => vec![note], // --- delete & withdraw ---
+            Some(Sheet::ClientAccess(s)) => s.inputs(),       // --- access-ai ---
+            Some(Sheet::ServerAi(s)) => s.inputs(),           // --- access-ai ---
             _ => vec![],
         };
         for input in [&self.omni].into_iter().chain(sheet_inputs) {
@@ -2427,6 +2468,9 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.access_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -3451,6 +3495,8 @@ impl MainView {
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
+            Sheet::ClientAccess(s) => self.render_access_sheet(s, cx), // --- access-ai ---
+            Sheet::ServerAi(s) => self.render_server_ai_sheet(s, cx), // --- access-ai ---
             Sheet::Publish {
                 title,
                 next_version,
@@ -3475,6 +3521,7 @@ impl MainView {
                     .child(input_box(
                         gpui_kit::base::input::Input::new(note).into_any_element(),
                     ))
+                    .children(self.render_note_ai(cx)) // --- access-ai ---
                     .child(keys_row(vec![
                         key_hint("⏎", "publish"),
                         key_hint("esc", "cancel"),

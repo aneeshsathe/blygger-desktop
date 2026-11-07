@@ -63,6 +63,27 @@ British spelling."). See [Configuration](config.md#ai-provider).
 Each generating helper writes its text as a TK span, so the preview tints it
 and it's disclosed like any gap.
 
+## AI on your blyg
+
+Your blyg can have AI of its own, separate from Burrow's: models that run on
+the blyg, for things the blyg does. **Blyg › AI on Your Blyg…** sets them, as
+the studio's Settings › AI does:
+
+| Row | What it does |
+|---|---|
+| TK generation | The model that fills `[TK]` gaps on the blyg, and the **house style** added to every one of them. |
+| Change notes | The model that drafts version notes, and **Draft automatically** (an empty note is drafted when you publish). |
+| Change classifier | A decision model (Clef, Jev) that labels each new version typo, minor or major, and whether the label **starts the note**. Off unless you choose one. |
+| Smart Feed | A model and a scoring prompt, saved now for the studio's coming Smart Feed. |
+
+↑/↓ choose a row, ←/→ change its model (or flip its switch; Space too),
+"other…" types any model id, ⌘⏎ saves. The sheet lists each provider with
+whether its key is set: keys are Worker secrets, set with `wrangler`, never
+through Burrow. The model list is your studio's `models.json`. How the
+helpers appear when you publish: [Writing](writing.md#your-blygs-ai-in-the-publish-sheet).
+
+Burrow's own providers (above) never use these, and these never use Burrow's.
+
 ## Nearby thoughts: what is sent where
 
 The Nearby rail (see [Writing](writing.md#nearby-thoughts)) needs no AI.

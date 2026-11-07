@@ -405,6 +405,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Find…", app::FocusSearch),
                 MenuItem::separator(),
                 MenuItem::action("Publish…", app::Publish),
+                MenuItem::action("Draft a Change Note", app::note_ai::DraftChangeNote), // --- access-ai ---
                 MenuItem::action("Make Draft", app::scratch::MakeDraft),
                 MenuItem::action("Fragment ⇄ Thread", app::ToggleKind),
                 MenuItem::action("Open on the Web", app::OpenPermalink),
@@ -494,6 +495,9 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::opml::ExportOpml,
                 ),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
+                // --- access-ai ---
+                MenuItem::action("Client Access…", app::access::ShowClientAccess),
+                MenuItem::action("AI on Your Blyg…", app::server_ai::ShowServerAi),
                 // --- profiles ---
                 MenuItem::separator(),
                 MenuItem::action("Profile", app::profiles::ShowProfile),
