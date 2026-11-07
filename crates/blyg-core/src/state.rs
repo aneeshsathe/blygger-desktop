@@ -54,6 +54,9 @@ pub struct AppState {
     /// box and not yet posted or saved (kept across views and restarts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compose_draft: Option<String>,
+    /// --- nearby --- The Nearby thoughts rail was hidden (⌥⌘U).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub nearby_hidden: bool,
     /// --- blyg switcher --- What each signed-in blyg looked like when it
     /// was last active (its name and avatar), by host, so the switcher can
     /// show blygs whose database isn't open.

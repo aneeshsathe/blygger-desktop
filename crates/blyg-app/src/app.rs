@@ -156,6 +156,9 @@ mod flow_tests;
 pub(crate) mod focus;
 #[path = "serendipity.rs"]
 pub(crate) mod serendipity;
+// --- nearby --- (Nearby thoughts: the rail beside the editor; hooks marked the same way)
+#[path = "nearby/mod.rs"]
+pub(crate) mod nearby;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -372,6 +375,7 @@ pub struct MainView {
     tray: tray::Tray,
     // --- split --- a second post beside the one being written
     split: split::Split,
+    nearby: nearby::State, // --- nearby ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -533,6 +537,7 @@ impl MainView {
                     .unwrap_or_default(),
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
+            nearby: Default::default(),                        // --- nearby ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -545,6 +550,7 @@ impl MainView {
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
         this.chat_init(window, cx); // --- chat ---
+        this.nearby_init(cx); // --- nearby ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -735,6 +741,7 @@ impl MainView {
         self.ext_reload(window, cx); // --- extensions ---
         self.chat_reload(window, cx); // --- chat ---
         self.terminal_reload(window, cx); // --- terminal ---
+        self.nearby_reload(cx); // --- nearby ---
         self.show_toast(msg, None, cx);
     }
 
@@ -1460,6 +1467,7 @@ impl MainView {
                 // and `[[` the link picker.
                 let typed = self.typed_picker(cx);
                 self.after_edit(cx);
+                self.nearby_typed(cx); // --- nearby ---
                 if let Some((kind, typed)) = typed {
                     self.open_picker_from_typing(kind, typed, window, cx);
                 }
@@ -1471,6 +1479,7 @@ impl MainView {
     fn on_core_event(&mut self, ev: CoreEvent, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(ev, CoreEvent::ItemsChanged | CoreEvent::ReadingChanged) {
             self.lineage_strip.stale(); // --- lineage ---
+            self.nearby_store_changed(&ev, cx); // --- nearby ---
         }
         match ev {
             CoreEvent::ItemsChanged => {
@@ -2412,6 +2421,7 @@ impl Render for MainView {
             .map(|d| self.terminal_actions(d, cx)) // --- terminal ---
             .map(|d| self.palette_actions(d, cx)) // --- palette ---
             .map(|d| self.focus_actions(d, cx)) // --- focus ---
+            .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
             .size_full()
             .relative()
             .flex()
@@ -2972,16 +2982,25 @@ impl MainView {
             // --- stub quotes --- a stub's hint line and passage chooser.
             .children(self.render_stub_bar(cx))
             .child(
+                // --- nearby --- the rail sits right of the text.
                 div()
                     .flex_1()
                     .min_h_0()
-                    .relative()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
-                    .children(margins)
-                    .child(self.assist.clone()) // --- composer ---
-                    .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
-                    .children(self.render_focus_fade(cx)) // --- focus ---
-                    .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
+                    .flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .relative()
+                            .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                            .children(margins)
+                            .child(self.assist.clone()) // --- composer ---
+                            .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
+                            .children(self.render_focus_fade(cx)) // --- focus ---
+                            .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
+                    )
+                    .children(self.render_nearby_rail(cx)), // --- nearby ---
             )
             .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
@@ -4205,6 +4224,7 @@ impl MainView {
             .child(self.render_buttons_setting(cx)) // --- buttons ---
             .child(self.render_chat_setting(cx)) // --- chat ---
             .child(self.render_flow_settings(cx)) // --- flow ---
+            .child(self.render_nearby_setting(cx)) // --- nearby ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

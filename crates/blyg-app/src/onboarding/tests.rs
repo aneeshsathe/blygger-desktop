@@ -670,6 +670,7 @@ fn do_step(e: &mut Env, id: &str) {
         "split-view" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-enter"))
         }
+        "nearby" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-u")), // --- nearby ---
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

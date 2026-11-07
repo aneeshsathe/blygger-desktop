@@ -1,0 +1,18 @@
+[package]
+name = "blyg-embed"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Nearby thoughts: text embeddings for Burrow (a static model2vec model in pure Rust, plus the Embedder trait)"
+
+[dependencies]
+serde_json = "1"
+# The model's pinned checksums.
+sha2 = "0.10"
+# BERT's normalizer strips accents after NFD (already in the tree via url).
+unicode-normalization = "0.1"
+# The one-time model download (the same client stack as blyg-core).
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+
+[dev-dependencies]
+tempfile = "3"

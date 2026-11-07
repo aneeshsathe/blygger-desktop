@@ -63,6 +63,18 @@ British spelling."). See [Configuration](config.md#ai-provider).
 Each generating helper writes its text as a TK span, so the preview tints it
 and it's disclosed like any gap.
 
+## Nearby thoughts: what is sent where
+
+The Nearby rail (see [Writing](writing.md#nearby-thoughts)) needs no AI.
+What leaves your computer depends on the settings:
+
+| Setting | What is sent, and where |
+| --- | --- |
+| `nearby-embedder = none` (default) | Nothing. Phrases are matched in the local search index. |
+| `nearby-embedder = local` | One download of the model (about 31 MB, from Hugging Face, pinned and checked). After that, nothing. |
+| `nearby-embedder = endpoint` | The paragraph you're writing, and the text of your published posts and the posts you hold, to `nearby-endpoint` (no key is sent). Use a server you run, such as Ollama on this computer. |
+| `nearby-rerank = on` | The paragraph, and the titles and a short excerpt of up to ten candidate posts, to your AI provider (`ai-provider`). Off by default. |
+
 ## Disclosure
 
 Generated text is always disclosed as generated when you publish. Burrow

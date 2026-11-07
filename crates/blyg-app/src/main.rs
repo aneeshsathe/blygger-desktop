@@ -512,6 +512,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::separator(),
                 // --- palette ---
                 MenuItem::action("Command Palette…", app::command_palette::ShowPalette),
+                MenuItem::action("Nearby Thoughts", app::nearby::ToggleNearby), // --- nearby ---
                 MenuItem::separator(),
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),

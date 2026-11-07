@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 blyg-core = { path = "../blyg-core" }
 blyg-ai = { path = "../blyg-ai" }
+blyg-embed = { path = "../blyg-embed" } # --- nearby ---
 # --- extensions --- (the host, and the bundled extensions, markdown-notes and
 # cross-post, run as `blygger +ext <name>`)
 blyg-ext = { path = "../blyg-ext" }

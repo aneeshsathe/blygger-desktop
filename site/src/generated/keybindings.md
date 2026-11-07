@@ -58,6 +58,7 @@
 | ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
 | ⌥⌘[ | Split view: the keyboard to the left post | View › Left Post |
 | ⌥⌘] | Split view: the keyboard to the right post | View › Right Post |
+| ⌥⌘U | Nearby thoughts: show or hide the rail of your posts that say what this paragraph says | View › Nearby Thoughts |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
@@ -84,6 +85,10 @@
 | Key | What it does | Menu |
 |---|---|---|
 | ⌘⏎ | Publish… | Post › Publish… |
+| ⌥↑ | Nearby thoughts: the row above (typing in the editor) |  |
+| ⌥↓ | Nearby thoughts: the row below (typing in the editor) |  |
+| ⌥⏎ | Nearby thoughts: link the chosen post over the phrase it shares ([[id \| phrase]]) |  |
+| ⌥⇧⏎ | Nearby thoughts: quote the chosen post on a new line (![[id \| title]], threads only) |  |
 
 ### In the browser pane
 

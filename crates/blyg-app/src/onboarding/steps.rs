@@ -122,6 +122,9 @@ pub enum Key {
     Tray,
     /// ⌥⌘⏎: a post opened beside the one being written.
     Split,
+    // --- nearby ---
+    /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
+    Nearby,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -852,6 +855,29 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end tangles ---
+    // --- nearby --- the rail beside the sample thread.
+    Step {
+        id: "nearby",
+        since: "0.18.0",
+        title: "Nearby thoughts, while you write",
+        caption: if cfg!(target_os = "windows") {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the              phrase you share, Alt+Shift+Enter quotes the post (threads). Ctrl+Alt+U shows or              hides the rail; Settings › Nearby can add a small model on this computer that              matches meaning, not just words."
+        } else {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share,              ⌥⇧⏎ quotes the post (threads). ⌥⌘U shows or hides the rail; Settings › Nearby can              add a small model on this Mac that matches meaning, not just words."
+        },
+        keys: &[Key::Nearby],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+U"
+        } else {
+            "⌥⌘U"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::StudioSample,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "conflict",
         since: "0.16.0",
@@ -1422,10 +1448,10 @@ mod tests {
             Key::Palette,     // --- flow ---
             Key::Focus,       // --- flow ---
             Key::Serendipity, // --- flow ---
-            Key::Chat,        // --- chat ---
             Key::Trail,       // --- tangles ---
             Key::Tray,
             Key::Split,
+            Key::Nearby, // --- nearby ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

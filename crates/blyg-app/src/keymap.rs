@@ -81,6 +81,8 @@ use crate::app::trails::PublishTrail;
 use crate::app::tray::AddToTray;
 // --- split ---
 use crate::app::split::{FocusLeftPost, FocusRightPost, OpenBeside};
+// --- nearby ---
+use crate::app::nearby::{NearbyDown, NearbyLink, NearbyQuote, NearbyUp, ToggleNearby};
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -693,6 +695,45 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("View › Right Post")
         ),
         // --- end split ---
+        // --- nearby --- the rail beside the editor. ⌥↑/⌥↓/⌥⏎/⌥⇧⏎ out-rank
+        // the text field (gpui-base binds none of them) and pass through
+        // when the rail has nothing to offer.
+        kb!(
+            "alt-cmd-u",
+            Main,
+            ToggleNearby,
+            "Nearby thoughts: show or hide the rail of your posts that say what this paragraph says",
+            Some("View › Nearby Thoughts")
+        ),
+        kb!(
+            "alt-up",
+            MainInput,
+            NearbyUp,
+            "Nearby thoughts: the row above (typing in the editor)",
+            None
+        ),
+        kb!(
+            "alt-down",
+            MainInput,
+            NearbyDown,
+            "Nearby thoughts: the row below (typing in the editor)",
+            None
+        ),
+        kb!(
+            "alt-enter",
+            MainInput,
+            NearbyLink,
+            "Nearby thoughts: link the chosen post over the phrase it shares ([[id | phrase]])",
+            None
+        ),
+        kb!(
+            "alt-shift-enter",
+            MainInput,
+            NearbyQuote,
+            "Nearby thoughts: quote the chosen post on a new line (![[id | title]], threads only)",
+            None
+        ),
+        // --- end nearby ---
         menu_only!(
             SubscribeTo,
             "Subscribe to a blyg or feed",

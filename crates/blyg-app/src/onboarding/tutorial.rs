@@ -613,6 +613,10 @@ impl MainView {
         let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
         let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
         let d = on!(d, crate::app::split::OpenBeside, Key::Split);
+        // --- nearby ---
+        let d = on!(d, crate::app::nearby::ToggleNearby, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyDown, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyLink, Key::Nearby);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 

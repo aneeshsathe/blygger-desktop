@@ -15,6 +15,7 @@ mod folders; // --- reader folders ---
 mod hoppers; // --- hoppers ---
 pub use hoppers::{FetchedHopper, HOPPERS_KNOWN, HopperOp, hopper_key};
 mod lineage; // --- lineage counts ---
+mod nearby; // --- nearby ---
 pub use lineage::Served as LineageServed;
 mod pick;
 mod provenance;
@@ -1486,3 +1487,6 @@ mod read_state_tests; // --- read/unread ---
 
 #[cfg(test)]
 mod hoppers_tests; // --- hoppers ---
+
+#[cfg(test)]
+mod nearby_tests; // --- nearby ---

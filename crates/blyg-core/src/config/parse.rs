@@ -506,6 +506,44 @@ impl Config {
         self.get("spellcheck") != Some("false")
     }
 
+    // --- nearby ---
+    /// `nearby`: `on`, `titles` or `off` (unknown values: `on`).
+    pub fn nearby(&self) -> &str {
+        match self.get("nearby") {
+            Some(v @ ("titles" | "off")) => v,
+            _ => "on",
+        }
+    }
+
+    /// `nearby-embedder`: `local`, `endpoint` or `none`.
+    pub fn nearby_embedder(&self) -> &str {
+        match self.get("nearby-embedder") {
+            Some(v @ ("local" | "endpoint")) => v,
+            _ => "none",
+        }
+    }
+
+    /// `nearby-endpoint`, if set.
+    pub fn nearby_endpoint(&self) -> Option<&str> {
+        self.get("nearby-endpoint")
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    }
+
+    /// `nearby-endpoint-model`.
+    pub fn nearby_endpoint_model(&self) -> &str {
+        self.get("nearby-endpoint-model")
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("nomic-embed-text")
+    }
+
+    /// `nearby-rerank`: on only when `on`.
+    pub fn nearby_rerank(&self) -> bool {
+        self.get("nearby-rerank") == Some("on")
+    }
+    // --- end nearby ---
+
     // --- chat --- (experimental)
     /// `chat-tab`: show the #thicket tab (on unless `false`).
     pub fn chat_tab(&self) -> bool {
