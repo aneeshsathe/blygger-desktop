@@ -27,6 +27,7 @@ impl MainView {
             });
         })
         .detach();
+        self.load_mention_extras(cx); // --- contacts --- group order, Sent
     }
 
     /// Mentions as listed, grouped by your post: (title, local id, show
@@ -47,6 +48,7 @@ impl MainView {
             .filter(|m| self.reading.show_hidden || !m.hidden)
             .collect();
         ms.sort_by(|a, b| b.first_seen.cmp(&a.first_seen));
+        self.order_by_mention_groups(&mut ms); // --- contacts ---
         let rows = ms
             .into_iter()
             .map(|m| (vm::mention_row(m, &self.reading.mentions_seen, self.now), m))
@@ -169,17 +171,26 @@ impl MainView {
             }))
             .into_any_element();
         let available = self.reading.available && self.reading.mentions != Load::Unavailable;
-        let header = self.screen_header(
-            "Mentions",
-            self.mentions_hint(),
-            if available {
-                vec![toggle_hidden]
-            } else {
-                vec![]
-            },
-        );
+        // --- contacts --- Received | Sent.
+        let sent = self.contacts.sent.showing;
+        let mut actions = if available {
+            self.mentions_side_chips(cx)
+        } else {
+            vec![]
+        };
+        let hint = if sent && available {
+            "the mentions your blyg sent for your posts' links · esc back".to_string()
+        } else {
+            self.mentions_hint()
+        };
+        // --- end contacts ---
+        if available && !sent {
+            actions.push(toggle_hidden);
+        }
+        let header = self.screen_header("Mentions", hint, actions);
         let body: AnyElement = match &self.reading.mentions {
             _ if !available => self.unavailable(),
+            _ if sent => self.render_sent(cx), // --- contacts ---
             Load::Idle | Load::Loading => self.muted_note("Loading mentions…"),
             Load::Failed(e) => self.muted_note(format!("Couldn't load mentions: {e}")),
             _ => {
@@ -324,6 +335,7 @@ impl MainView {
             )
             // --- end profiles ---
             .child(div().text_size(px(11.5)).text_color(p.muted).child(r.when))
+            .children(self.mention_reply_chip(&r.id, cx)) // --- contacts --- Reply
             .child(
                 self.chip(
                     format!("hide-{}", r.id),

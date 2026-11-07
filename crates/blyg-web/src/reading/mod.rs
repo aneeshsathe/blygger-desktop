@@ -19,8 +19,22 @@ pub enum View {
 pub mod own {
     /// `crates/blyg-app/src/reading/own.rs`.
     pub const FORK_OWN: bool = true;
+    // --- web-reading --- what `sources_vm.rs` reads of `own.rs`.
+    pub const OWN: &str = "~own";
+    pub const OWN_LABEL: &str = "Your blyg";
+    pub fn is_own_row(r: &blyg_core::ReadingItem) -> bool {
+        r.subscription_id == OWN
+    }
+    // --- end web-reading ---
 }
 
 #[path = "../../../blyg-app/src/reading/vm.rs"]
 #[allow(dead_code)]
 pub mod vm;
+
+// --- web-reading --- the Reader's sources pane rules (smart feeds,
+// Background, hoppers, subscriptions), compiled unchanged.
+#[path = "../../../blyg-app/src/reading/sources_vm.rs"]
+#[allow(dead_code)]
+pub mod sources_vm;
+// --- end web-reading ---

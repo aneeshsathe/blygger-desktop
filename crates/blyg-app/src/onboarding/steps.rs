@@ -118,6 +118,15 @@ pub enum Key {
     // --- tangles ---
     /// A post is going on a trail (`t`: the why field is open), or ⌥⌘T.
     Trail,
+    // --- studio parity (0.19.0) ---
+    /// Blyg › Site… is open.
+    SiteSheet,
+    /// Blyg › Contacts… is open.
+    ContactsSheet,
+    /// Blyg › Stale Quotes… is open.
+    StaleQuotes,
+    /// Blyg › Client Access… is open.
+    ClientAccess,
     /// A post went on the quote tray (`q` or ⌥⌘K).
     Tray,
     /// ⌥⌘⏎: a post opened beside the one being written.
@@ -1423,6 +1432,75 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: false,
     },
+    // --- studio parity (0.19.0) --- running the blyg from Burrow.
+    Step {
+        id: "site",
+        since: "0.19.0",
+        title: "Your blyg's public site",
+        caption: "Your blyg's public pages have their own look. Blyg › Site… picks the \
+                  theme (or designs your own, with a preview), the typeface, a front page, \
+                  the menu on every page and your avatar. Nothing changes on your blyg \
+                  until you press Save.",
+        keys: &[Key::SiteSheet],
+        key_label: "Blyg › Site…",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "contacts-book",
+        since: "0.19.0",
+        title: "Your contacts, kept here",
+        caption: "Blyg › Contacts… is your blyg's address book: add, edit, check and \
+                  remove the people you write about as @handles. Post › Add Author to \
+                  Contacts… adds whoever wrote the post in front of you, and subscribing \
+                  to a blyg offers to add it.",
+        keys: &[Key::ContactsSheet],
+        key_label: "Blyg › Contacts…",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "stale-quotes",
+        since: "0.19.0",
+        title: "Quotes that fell behind",
+        caption: "When a post you quoted gets a new version, your thread shows ↻ in the \
+                  list. Blyg › Stale Quotes… lists those threads and refreshes their \
+                  quotes: a new version of your thread, with a note you can edit.",
+        keys: &[Key::StaleQuotes],
+        key_label: "Blyg › Stale Quotes…",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "client-access",
+        since: "0.19.0",
+        title: "Who can act as you",
+        caption: "Blyg › Client Access… lists every app and token that can act as you on \
+                  your blyg, Burrow included. Make a token (shown once) or revoke any of \
+                  them. If your blyg has its own AI, Blyg › AI on Your Blyg… sets it up, \
+                  and the publish sheet can draft a version note for you to edit.",
+        keys: &[Key::ClientAccess],
+        key_label: "Blyg › Client Access…",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end studio parity ---
     Step {
         id: "done",
         since: "0.1.0",

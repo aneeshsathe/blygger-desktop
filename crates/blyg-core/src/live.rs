@@ -715,6 +715,78 @@ impl Backend for LiveBackend {
             .flatten()
     }
 
+    // --- contacts --- managing the book: each change, then the local copy
+    // read again (a failed re-read keeps the old copy; the change stands).
+    fn create_contact(
+        &self,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let made = self.e().track(self.e().api.create_contact(c))?;
+        let _ = self.refresh_contacts();
+        Ok(made)
+    }
+
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let made = self.e().track(self.e().api.update_contact(id, c))?;
+        let _ = self.refresh_contacts();
+        Ok(made)
+    }
+
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        self.e().track(self.e().api.delete_contact(id))?;
+        let _ = self.refresh_contacts();
+        Ok(())
+    }
+
+    fn resolve_contact(&self, id: &str) -> Result<crate::contacts::Contact> {
+        let c = self.e().track(self.e().api.resolve_contact(id))?;
+        let _ = self.refresh_contacts();
+        Ok(c)
+    }
+
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<crate::contacts::ContactSeed> {
+        // `{origin}blyg.json` is always the manifest; its `author` names
+        // the person. Unreadable: the subscription's title and origin.
+        let author = url::Url::parse(origin)
+            .and_then(|u| u.join("blyg.json"))
+            .ok()
+            .and_then(|u| self.public.get_json(u.as_str()).ok())
+            .and_then(|m| serde_json::from_value::<Author>(m.get("author")?.clone()).ok());
+        let seed = crate::contacts::ContactSeed::from_author(author.as_ref(), title, origin);
+        crate::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+
+    fn outbound_mentions(&self) -> Result<Option<Vec<crate::outbound::OutboundMention>>> {
+        self.e().track(self.e().api.outbound_mentions())
+    }
+
+    fn mention_summary(&self) -> Result<Option<crate::outbound::MentionSummary>> {
+        self.e().track(self.e().api.mention_summary())
+    }
+
+    fn mention_groups(&self) -> Result<Option<Vec<crate::outbound::MentionGroup>>> {
+        self.e().track(self.e().api.mention_groups())
+    }
+
+    fn mention_source(&self, id: &str) -> Result<Option<crate::outbound::MentionSource>> {
+        self.e().track(self.e().api.mention_source(id))
+    }
+
+    fn refresh_subscriptions(&self) -> Result<()> {
+        let subs = self.e().track(self.e().api.list_subscriptions())?;
+        if self.e().store.replace_subscriptions(&subs)? {
+            self.e().emit(CoreEvent::ReadingChanged);
+        }
+        Ok(())
+    }
+    // --- end contacts ---
+
     // --- capture ---
     fn page_title(&self, url: &str) -> Option<String> {
         let (html, _) = self.public.get_page(url, 256 * 1024).ok()?;
@@ -728,6 +800,13 @@ impl Backend for LiveBackend {
         if let Some(ids) = store.meta(MENTIONED_META) {
             f.inbound.extend(ids.split_whitespace().map(str::to_string));
         }
+        // --- upkeep --- the threads `GET /freshness` last named.
+        f.stale_quotes = self
+            .e()
+            .cached_freshness()
+            .into_iter()
+            .map(|t| t.id.to_ascii_lowercase())
+            .collect();
         f
     }
 
@@ -975,6 +1054,16 @@ impl Backend for LiveBackend {
     // --------------------------------------------------------------- remote
 
     fn publish(&self, id: &LocalId, note: Option<&str>) -> Result<PublishOutcome> {
+        // --- access-ai --- one publish path, with or without the extras.
+        self.publish_with(id, note, &crate::access_ai::PublishExtras::default())
+    }
+
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &crate::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
         let content = self.row(id)?.item.content_md;
         self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
@@ -993,7 +1082,13 @@ impl Backend for LiveBackend {
             .base_content
             .clone()
             .unwrap_or_else(|| row.item.content_md.clone());
-        let p = self.command(id, &sid, |rev| self.e().api.publish(&sid, rev, note))?;
+        let p = self.command(id, &sid, |rev| {
+            if *extras == crate::access_ai::PublishExtras::default() {
+                self.e().api.publish(&sid, rev, note)
+            } else {
+                self.e().api.publish_with(&sid, rev, note, extras) // --- access-ai ---
+            }
+        })?;
         self.e().store.set_revision(id, p.revision)?;
         let permalink = self
             .refresh(id, &sid)
@@ -1259,6 +1354,7 @@ impl Backend for LiveBackend {
                     status: "active".into(),
                     in_blogroll: false,
                     title_follows_source: title.is_none(),
+                    poll: Default::default(),
                 };
                 let mut all = self.e().store.subscriptions();
                 all.push(s.clone());
@@ -1510,6 +1606,37 @@ impl Backend for LiveBackend {
         let (p, _) = self.e().store.cached_profile(&key)?;
         Some(self.finish_profile(p))
     }
+
+    // --- site ---
+
+    fn site_config(&self) -> Result<crate::site::SiteConfig> {
+        self.e()
+            .track(self.e().api.site_config())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn save_site_config(
+        &self,
+        base: &crate::site::SiteConfig,
+        next: &crate::site::SiteConfig,
+    ) -> Result<crate::site::SiteConfig> {
+        let patch = next.patch(base);
+        if patch.is_empty() {
+            return Ok(next.clone());
+        }
+        let mut saved = self.e().track(self.e().api.put_site_config(patch))?;
+        saved.update = self.e().api.cached_studio_update();
+        Ok(saved)
+    }
+
+    fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
+        self.engine.api.cached_studio_update()
+    }
+
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
+        self.engine.api.refresh_studio_update(force)
+    }
+    // --- end site ---
 
     // --- about ---
 
@@ -1809,6 +1936,153 @@ impl Backend for LiveBackend {
         }
         Ok(())
     }
+
+    // --- access-ai --- Client access goes with the studio session, never
+    // through `track`: its 401 means "the studio password is needed", not
+    // "Burrow's own sign-in ended".
+    fn access_gate(&self) -> crate::access_ai::AccessGate {
+        self.e().api.access_gate()
+    }
+
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        self.e().api.access_sign_in(password)
+    }
+
+    fn own_client_id(&self) -> Option<String> {
+        self.e().api.own_client_id()
+    }
+
+    fn authorizations(&self) -> Result<Vec<crate::access_ai::Authorization>> {
+        self.e().api.authorizations()
+    }
+
+    fn create_authorization(
+        &self,
+        new: &crate::access_ai::NewAuthorization,
+    ) -> Result<crate::access_ai::NewToken> {
+        self.e().api.create_authorization(new)
+    }
+
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        self.e().api.revoke_authorization(id)
+    }
+
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        self.e().api.revoke_all_authorizations()
+    }
+
+    fn ai_models(&self) -> Result<crate::access_ai::AiModels> {
+        self.e()
+            .track(self.e().api.ai_models())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn server_ai_settings(&self) -> Result<crate::access_ai::ServerAiSettings> {
+        self.e()
+            .track(self.e().api.server_ai_settings())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn save_server_ai_settings(&self, s: &crate::access_ai::ServerAiSettings) -> Result<()> {
+        self.e()
+            .track(self.e().api.put_server_ai_settings(s))
+            .map(|_| ())
+    }
+
+    fn draft_note(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.draft_note(&sid, rev))
+    }
+
+    fn classify_change(&self, id: &LocalId) -> Result<crate::access_ai::ChangeClass> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.classify_change(&sid, rev))
+    }
+    // --- end access-ai ---
+    // --- upkeep --- stale quotes, signals, a version's words.
+
+    fn cached_stale_quotes(&self) -> Vec<crate::upkeep::ThreadFreshness> {
+        self.e().cached_freshness()
+    }
+
+    fn stale_quotes(&self) -> Result<Vec<crate::upkeep::ThreadFreshness>> {
+        match self.e().track(self.e().fetch_freshness())? {
+            Some((list, changed)) => {
+                if changed {
+                    self.e().emit(CoreEvent::ItemsChanged);
+                }
+                Ok(list)
+            }
+            None => Err(CoreError::Other(
+                "your blyg doesn't check quotes (update it)".into(),
+            )),
+        }
+    }
+
+    fn quote_freshness(&self, id: &LocalId) -> Result<crate::upkeep::ThreadFreshness> {
+        let sid = self.server_id(id)?;
+        self.e().track(self.e().api.item_freshness(&sid, true))
+    }
+
+    /// A refresh is a publish of the published words: the item's version,
+    /// permalink and base move as after `publish`; its text doesn't.
+    fn refresh_quotes(&self, id: &LocalId, note: Option<&str>) -> Result<crate::upkeep::Refreshed> {
+        let sid = self.server_id(id)?;
+        let _net = self.e().net_lock();
+        let row = self.row(id)?;
+        let published = row
+            .base_content
+            .clone()
+            .unwrap_or_else(|| row.item.content_md.clone());
+        let r = self.command(id, &sid, |rev| self.e().api.refresh_quotes(&sid, rev, note))?;
+        self.e().store.set_revision(id, r.revision)?;
+        let permalink = self
+            .refresh(id, &sid)
+            .and_then(|w| w.permalink)
+            .or(row.item.permalink.clone())
+            .unwrap_or_else(|| self.permalink_for(row.item.kind, &sid));
+        self.e()
+            .store
+            .after_publish(id, r.version, &permalink, &published)?;
+        // The thread is current now; the next pull confirms it.
+        let rest: Vec<_> = self
+            .e()
+            .cached_freshness()
+            .into_iter()
+            .filter(|t| !t.id.eq_ignore_ascii_case(&sid))
+            .collect();
+        self.e().keep_freshness(rest)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(r)
+    }
+
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        let sid = self.server_id(id)?;
+        let v = self.e().track(self.e().api.item_version(&sid, version))?;
+        Ok(if v.kind == "withdrawn" {
+            String::new()
+        } else {
+            v.content_md
+        })
+    }
+
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Thumb>> {
+        self.e().track(self.e().api.thumbs(thumb, cursor))
+    }
+
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Interaction>> {
+        self.e().track(self.e().api.interactions(cursor))
+    }
+    // --- end upkeep ---
 }
 
 impl LiveBackend {

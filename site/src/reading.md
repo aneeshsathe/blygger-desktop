@@ -30,9 +30,12 @@ revised leads with its latest changelog note,
 ## The Reader
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
-(All unread, Today, Thumbed, All, Background, then **Your blyg**, your
-**hoppers**, your folders and the rest), the posts from that source in the
-middle, and the post on the right.
+(All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
+Background, then **Your blyg**, your **hoppers**, your folders and the rest),
+the posts from that source in the middle, and the post on the right.
+
+- **Threads** and **Fragments** list only that kind of post; **Thumbed
+  down** lists the posts you gave a 👎.
 
 - **Mentions**, under All unread, lists the posts you hold that mention you:
   ones that quote or reply to your posts, or link to your blyg (or, on studio
@@ -137,6 +140,10 @@ it changes. Right-click one for **Rename…** (your own name, kept as you
 set it), **Use the Blyg's Own Name** to hand it back, and **Check Now**.
 **⇧⌘R** (Blyg › Check All Feeds Now) asks your blyg to poll every
 subscription at once.
+Each subscription on the Subscriptions screen says when your blyg last
+polled it and, in the alert colour, how many polls in a row failed and any
+flag the blyg raised on it (a feed answering for another site, say). The
+screen reads them again each time you open it.
 
 | | |
 |---|---|
@@ -271,7 +278,15 @@ The selected post shows its actions. Each says what it makes:
   descends from pins, so on the current version Fork is greyed out and its
   tooltip says where to find a pin.
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
-- **Open on web**, and 👍 / 👎.
+- **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
+
+### Signals
+
+**Blyg › Signals…** is your private record: the posts you liked, the ones
+you disliked, and an activity log of what you did (thumbs, hoppers, stubs,
+forks and quotes), newest first. Nothing in it is published, and it shows no
+counts. 1–3 switch lists, and ⏎ opens a post in Reading when you still hold
+it.
 
 ![Reading a post](screenshots/reading.png)
 
@@ -425,6 +440,14 @@ hashes, and its JSON).
 quoted, stubbed or forked which post, and when. You can hide one, and your own
 posts list their mentions under them in ⌘Y and in the reading pane.
 
+**Sent** beside **Received** lists the Webmentions your blyg sent for your
+posts: which version of which post, the page it pointed at, and where the
+delivery stands (sent, pending with its next try, failed with the reason, or
+no endpoint on the other side). **Reply** on a response opens a stub of it
+when your blyg holds that post, and otherwise offers to subscribe to its
+blyg first. Received mentions are grouped by your post, as your blyg orders
+them.
+
 Your blyg decides whether a post's public page shows its responses. In
 **Site settings** (Blyg › Site Settings…), **Show responses by default** sets
 it for the whole blyg, on blygs that report it. On the Mentions screen, each
@@ -434,6 +457,44 @@ links, the time zone for dates on your pages, and **Accept mentions**, on
 blygs that report them.
 
 ![Mentions](screenshots/mentions.png)
+
+## Your blyg's public site
+
+**Blyg › Site…** sets up the rest of your blyg's public site, as Studio's
+settings page does (each section shows when your blyg's studio offers it):
+
+- **Appearance:** the theme your pages use (Auto, Paper, Cream, Slate,
+  Solarized Light and Dark, Nord, or your own), with a preview. **Custom**
+  is Studio's theme editor: eight colours, a name, and an optional dark
+  companion for readers in dark mode, with a warning when text would be
+  hard to read. The **typeface** is one of eight that are already on your
+  readers' devices. (Burrow's own look is in Settings, not here.)
+- **Home page:** newest first or pace-layered, a **front page** (one of your
+  published threads in place of the latest items) and the **posts path**
+  where the latest items live (`/posts/` unless you change it).
+- **Links:** the main menu on every page: where it sits, the threads it
+  lists first, your own links, and the standard ones.
+- **Profile:** your **avatar** (Upload…), the address your name links to,
+  and the blyg's canonical address.
+- **Network:** an RSS feed for each public collection (hopper).
+- **Updates:** whether your blyg checks for new studio releases. When there
+  is one, the status bar says so quietly, with a link to the release notes.
+- **Extensions:** your studio's own extensions, on or off.
+
+Nothing reaches your blyg until **Save** (⌘⏎). If your blyg refuses
+something, the sheet says why in its words.
+## Contacts
+
+On studio 0.56 or later, your blyg keeps an address book, and **Blyg ›
+Contacts…** manages it: search, add, edit and remove people by handle, name
+and https address. **Check page** asks your blyg to read the address's
+`rel=me` links and keep them as the contact's other addresses; if it can't
+read the page, it says why and the contact still works.
+
+**Post › Add Author to Contacts…** on a reading post fills in its author's
+name and address (or says they're already there as `@handle`), and
+subscribing to a blyg offers to add it. A handle in your writing becomes a
+link to that person when your blyg publishes it.
 
 ## Profiles
 

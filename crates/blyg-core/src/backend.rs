@@ -160,6 +160,73 @@ pub trait Backend: Send + Sync {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         None
     }
+    /// --- contacts --- Whether the blyg keeps an address book Burrow can
+    /// manage (the Contacts sheet). Contract 5.7 serves both together.
+    fn keeps_contacts(&self) -> bool {
+        self.rewrites_handles()
+    }
+    // --- contacts --- managing the book (blocking; the local copy follows
+    // each change), the Mentions screen's other reads, and the poll status.
+    /// `POST /api/contacts`. `NotFound`: the blyg keeps no contacts.
+    fn create_contact(
+        &self,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let _ = c;
+        Err(CoreError::NotFound)
+    }
+    /// `PATCH /api/contacts/{id}`.
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &crate::contacts::ContactInput,
+    ) -> Result<crate::contacts::Contact> {
+        let _ = (id, c);
+        Err(CoreError::NotFound)
+    }
+    /// `DELETE /api/contacts/{id}`.
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+    /// `POST /api/contacts/{id}/resolve`: the blyg reads the contact's page
+    /// for the identifiers it vouches for.
+    fn resolve_contact(&self, id: &str) -> Result<crate::contacts::Contact> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+    /// What to offer after subscribing to a blyg: its author's name and
+    /// address from `{origin}blyg.json`, else `title` and `origin`
+    /// (blocking, bounded). `None` when the book already holds it.
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<crate::contacts::ContactSeed> {
+        let seed = crate::contacts::ContactSeed::from_author(None, title, origin);
+        crate::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+    /// `GET /api/mentions?direction=outbound`: the Webmentions your blyg
+    /// sent. `Ok(None)`: not served.
+    fn outbound_mentions(&self) -> Result<Option<Vec<crate::outbound::OutboundMention>>> {
+        Ok(None)
+    }
+    /// `GET /api/mentions/summary`. `Ok(None)`: not served.
+    fn mention_summary(&self) -> Result<Option<crate::outbound::MentionSummary>> {
+        Ok(None)
+    }
+    /// `GET /api/mention-groups`. `Ok(None)`: not served.
+    fn mention_groups(&self) -> Result<Option<Vec<crate::outbound::MentionGroup>>> {
+        Ok(None)
+    }
+    /// `GET /api/mentions/{id}/source`. `Ok(None)`: not served.
+    fn mention_source(&self, id: &str) -> Result<Option<crate::outbound::MentionSource>> {
+        let _ = id;
+        Ok(None)
+    }
+    /// Read the subscriptions again now (their poll status), blocking.
+    fn refresh_subscriptions(&self) -> Result<()> {
+        Ok(())
+    }
+    // --- end contacts ---
     /// --- capture --- A web page's `<title>`, fetched once with the
     /// token-less public client (blocking). `None`: not served, not HTML,
     /// or no title.
@@ -912,6 +979,43 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    // --- site --- The public site's settings Studio sets up (theme, font,
+    // front page, links menus, avatar, collection feeds, update alerts,
+    // extensions; `crate::site`). Additive: the defaults say "not here".
+
+    /// Read them (with the studio's extensions and update state).
+    /// `NotFound` when the server has no settings route.
+    fn site_config(&self) -> Result<crate::site::SiteConfig> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Save what differs between `next` and `base` (as last read); answers
+    /// the stored settings. A refusal is `Rejected` with the server's words.
+    fn save_site_config(
+        &self,
+        base: &crate::site::SiteConfig,
+        next: &crate::site::SiteConfig,
+    ) -> Result<crate::site::SiteConfig> {
+        let _ = (base, next);
+        Err(CoreError::Other(
+            "site settings aren't supported here".into(),
+        ))
+    }
+
+    /// The studio's update state as last read: local, instant. `None`
+    /// until read, when not served, or with update alerts off.
+    fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
+        None
+    }
+
+    /// Read the update state again if it's older than six hours (`force`:
+    /// now). Network; call it off the UI thread.
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
+        let _ = force;
+        Ok(None)
+    }
+    // --- end site ---
+
     // --- nearby --- Nearby thoughts' index and phrase search, local only
     // (nothing here touches the network). Additive: the defaults keep no
     // vectors (the app embeds again each run) and search in memory.
@@ -977,4 +1081,159 @@ pub trait Backend: Send + Sync {
         }
         out
     }
+
+    // --- access-ai --- client access and AI on the blyg (studio 0.56,
+    // contract 5.7; `crate::access_ai`). Remote and blocking, except
+    // `access_gate` and `own_client_id`.
+
+    /// Whether client access can be managed now, or needs the studio
+    /// password first (the studio serves it to its own sign-in only).
+    fn access_gate(&self) -> crate::access_ai::AccessGate {
+        crate::access_ai::AccessGate::Unavailable
+    }
+
+    /// Sign in to the studio for client access (memory only, never saved).
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        let _ = password;
+        Err(CoreError::NotFound)
+    }
+
+    /// The OAuth client id this Burrow signs in with (a browser sign-in),
+    /// to mark its own grant.
+    fn own_client_id(&self) -> Option<String> {
+        None
+    }
+
+    /// Every grant that can act as the owner.
+    fn authorizations(&self) -> Result<Vec<crate::access_ai::Authorization>> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Make a manual API token; it's in the answer once.
+    fn create_authorization(
+        &self,
+        new: &crate::access_ai::NewAuthorization,
+    ) -> Result<crate::access_ai::NewToken> {
+        let _ = new;
+        Err(CoreError::NotFound)
+    }
+
+    /// Revoke one grant.
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Revoke every client's access.
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        Err(CoreError::NotFound)
+    }
+
+    /// The blyg's model list and providers (`GET /api/ai/models`).
+    fn ai_models(&self) -> Result<crate::access_ai::AiModels> {
+        Err(CoreError::NotFound)
+    }
+
+    /// The blyg's AI settings.
+    fn server_ai_settings(&self) -> Result<crate::access_ai::ServerAiSettings> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Save the blyg's AI settings (only the keys that are `Some`).
+    fn save_server_ai_settings(&self, s: &crate::access_ai::ServerAiSettings) -> Result<()> {
+        let _ = s;
+        Err(CoreError::NotFound)
+    }
+
+    /// Draft a change note for the post's next version on the blyg, from
+    /// its working copy (pushed first). Never publishes.
+    fn draft_note(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Classify the change the post's next version makes.
+    fn classify_change(&self, id: &LocalId) -> Result<crate::access_ai::ChangeClass> {
+        let _ = id;
+        Err(CoreError::NotFound)
+    }
+
+    /// Publish with the note's provenance and the confirmed category. A
+    /// backend without them publishes as [`Backend::publish`].
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &crate::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        let _ = extras;
+        self.publish(id, note)
+    }
+    // --- end access-ai ---
+    // --- upkeep --- Studio's maintenance surfaces (`crate::upkeep`): stale
+    // quotes and their refresh, your signals and activity log, and one of
+    // your versions' words for a word diff. All additive with defaults.
+
+    /// Your threads with a stale or blocking quote, as the blyg last said
+    /// (local, instant; empty until asked). The list's marker and
+    /// `is:stale-quote` read it.
+    fn cached_stale_quotes(&self) -> Vec<crate::upkeep::ThreadFreshness> {
+        Vec::new()
+    }
+
+    /// Remote: `GET /freshness`, stalest first, remembered for
+    /// [`Backend::cached_stale_quotes`].
+    fn stale_quotes(&self) -> Result<Vec<crate::upkeep::ThreadFreshness>> {
+        Err(CoreError::Other(
+            "checking quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: one published thread's quotes, asking their blygs for their
+    /// newest versions (`GET /items/{id}/freshness`).
+    fn quote_freshness(&self, id: &LocalId) -> Result<crate::upkeep::ThreadFreshness> {
+        let _ = id;
+        Err(CoreError::Other(
+            "checking quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: republish the thread's published words with its stale quotes
+    /// re-baked (`POST /items/{id}/refresh`): a new version, the same words.
+    /// Refused (409) while the blyg's working copy has unpublished edits.
+    fn refresh_quotes(&self, id: &LocalId, note: Option<&str>) -> Result<crate::upkeep::Refreshed> {
+        let _ = (id, note);
+        Err(CoreError::Other(
+            "refreshing quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: the words of one of your published versions (`GET
+    /// /items/{id}/versions/{v}`). A withdrawal marker has none (empty).
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        let _ = (id, version);
+        Err(CoreError::Other(
+            "reading an old version isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: one page of your thumbs (`thumb` 1 liked, -1 disliked).
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Thumb>> {
+        let _ = (thumb, cursor);
+        Err(CoreError::Other("signals aren't supported here".into()))
+    }
+
+    /// Remote: one page of your private activity log, newest first.
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Interaction>> {
+        let _ = cursor;
+        Err(CoreError::Other("signals aren't supported here".into()))
+    }
+    // --- end upkeep ---
 }

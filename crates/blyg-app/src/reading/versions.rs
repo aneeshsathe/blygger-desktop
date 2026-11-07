@@ -470,7 +470,9 @@ impl MainView {
                                             }))
                                             .into_any_element(),
                                     }
-                                })),
+                                }))
+                                // --- upkeep --- "Changes from vN": a word diff.
+                                .children(self.upkeep_diff_chip(&own.id, list, v, cx)),
                         )
                     })
                     .into_any_element()
@@ -539,7 +541,11 @@ impl MainView {
                 .text_color(p.muted)
                 .child("The working copy, with unpublished edits")
         });
-        let body: AnyElement = if is_current && self.studio.reader.active() {
+        // --- upkeep --- the word diff, while "Changes from vN" is on.
+        let diff = self.upkeep_diff_body(&own.id, sel, body_font, size);
+        let body: AnyElement = if let Some(diff) = diff {
+            diff
+        } else if is_current && self.studio.reader.active() {
             self.reader_pane(&p)
         } else if is_current {
             div().flex_1().into_any_element()

@@ -32,7 +32,10 @@ impl MainView {
             // --- blyg switcher --- a window macOS isn't showing (screenshot
             // runs never activate) may not redraw by itself: draw it a few
             // times so a window capture shows the last step.
-            if scenario.starts_with("switch") {
+            if scenario.starts_with("switch")
+                || scenario.starts_with("aa-")
+                || scenario.starts_with("site-")
+            {
                 for _ in 0..4 {
                     step(300).await;
                     let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
@@ -59,6 +62,11 @@ impl MainView {
     }
 
     fn demo_step(&mut self, scenario: &str, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+        // --- upkeep ---
+        if self.upkeep_demo_step(scenario, n, window, cx) {
+            return;
+        }
+        // --- end upkeep ---
         match (scenario, n) {
             // Live filter with highlighted matches, ↓ previews the next row.
             ("search", 0) => self.set_query_text("the", window, cx),
@@ -248,6 +256,12 @@ impl MainView {
             (s, n) if s.starts_with("notes-") => self.notes_demo(s, n, window, cx),
             // --- extensions --- (ext-consent, ext-palette, ext-notes, ext-manage)
             (s, n) if s.starts_with("ext-") => self.ext_demo(s, n, window, cx),
+            // --- access-ai --- (aa-access, aa-confirm, aa-token, aa-ai, aa-publish; access.rs)
+            (s, n) if s.starts_with("aa-") => self.access_ai_demo(s, n, window, cx),
+            // --- site --- (site-appearance, site-custom, site-home, site-links, …)
+            (s, n) if s.starts_with("site-") => self.site_demo(s, n, window, cx),
+            // --- contacts --- (ct-book, ct-author, ct-sent, ct-subs; contacts/demo.rs)
+            (s, n) if s.starts_with("ct-") => self.contacts_demo(s, n, window, cx),
             _ => {}
         }
     }

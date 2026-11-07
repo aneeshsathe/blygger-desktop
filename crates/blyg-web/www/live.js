@@ -40,11 +40,14 @@ export function apiPath(path) {
 export async function call(method, path, body) {
   if (!apiPath(path)) throw new Error('Burrow only talks to this blyg’s own /api/');
   const headers = { accept: 'application/json' };
-  if (body !== undefined && body !== null) headers['content-type'] = 'application/json';
+  // --- web-writing --- A FormData body (an image upload) goes as multipart.
+  const form = typeof FormData !== 'undefined' && body instanceof FormData;
+  // --- end web-writing ---
+  if (body !== undefined && body !== null && !form) headers['content-type'] = 'application/json';
   try {
     const res = await fetch(MOUNT + path, {
       method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', mode: 'same-origin',
-      body: body !== undefined && body !== null ? JSON.stringify(body) : undefined,
+      body: form ? body : body !== undefined && body !== null ? JSON.stringify(body) : undefined,
     });
     return { status: res.status, body: await res.text(), retryAfter: res.headers.get('retry-after') ?? undefined, www: res.headers.has('www-authenticate') };
   } catch {
@@ -79,10 +82,17 @@ export async function start(online) {
   if (online) {
     const st = await call('GET', '/api/settings');
     if (st.status === 200) base = Burrow.public_base(st.body, location.origin);
+    // --- web-writing --- The settings, for the publish sheet's AI offer.
+    if (st.status === 200) S.wSettings = st.body;
+    // --- end web-writing ---
   }
   S.B = Burrow.new_live(now(), await load('live'), await load('live-reading'), online ? base : '');
   if (!online) S.B.set_offline(true);
   hooks();
+  // --- web-writing --- Settings now; contacts once the page has drawn.
+  if (S.wSettings) { S.B.w_set_settings(S.wSettings); S.wSettings = null; }
+  if (online) setTimeout(() => S.writing?.liveStarted(), 1500);
+  // --- end web-writing ---
 }
 
 let lastRefresh = 0;
@@ -206,9 +216,13 @@ async function backOnline() {
     capture's Publish). Returns an Outcome, as the demo's publish does. */
 export async function publish(o) {
   await flush();
-  const pr = JSON.parse(S.B.live_publish_request(o.id, o.note ?? ''));
+  // --- web-writing --- With a drafted note or a change kind (o.ex), the
+  // request says so (noteGenerated, changeCategory); the blyg's warnings show.
+  const pr = JSON.parse(o.ex && S.writing ? S.writing.publishRequest(o) : S.B.live_publish_request(o.id, o.note ?? ''));
+  // --- end web-writing ---
   if (pr.error) return { action: 'toast', message: pr.error };
   const r = await call(pr.req.method, pr.req.path, pr.req.body);
+  S.writing?.publishWarning(r); // --- web-writing ---
   return await afterCommand(o.id, r, o.note ?? '');
 }
 

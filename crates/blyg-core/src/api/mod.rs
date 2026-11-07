@@ -20,6 +20,7 @@
 //! non-2xx → `Rejected{status, message, details}` (`details` from the
 //! contract's `details.issues`, `details.errors` and `details.tried`).
 
+pub mod access_ai; // --- access-ai --- (client access, AI on the blyg)
 pub mod auth;
 pub mod browse; // --- browse --- (studio 0.49)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
@@ -27,6 +28,12 @@ pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
 pub mod public;
+// --- site ---
+pub mod site;
+// --- end site ---
+// --- upkeep --- stale quotes, signals, a version's text
+pub mod upkeep;
+// --- end upkeep ---
 pub mod wire;
 
 use std::io::Read;

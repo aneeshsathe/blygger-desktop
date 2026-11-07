@@ -2224,7 +2224,19 @@ fn no_redirects() -> ureq::Agent {
 /// authorize page, and allow every permission it offers. Returns where the
 /// studio sends the browser next (the loopback callback).
 fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
-    let session = auth::login(base, password).expect("studio sign-in");
+    // Other tests sign in with the password too and can spend the studio's
+    // sign-in budget (429): wait it out.
+    let t0 = Instant::now();
+    let session = loop {
+        match auth::login(base, password) {
+            Err(CoreError::Rejected { status: 429, .. })
+                if t0.elapsed() < Duration::from_secs(90) =>
+            {
+                std::thread::sleep(Duration::from_secs(5))
+            }
+            r => break r.expect("studio sign-in"),
+        }
+    };
     let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
     let page = no_redirects()
         .get(authorize_url)
@@ -5092,4 +5104,796 @@ fn contacts_and_handles_round_trip() {
     if let Some(cid) = c["id"].as_str() {
         owner("DELETE", &e.url, &format!("/api/contacts/{cid}"), None);
     }
+}
+
+// --- access-ai --- client access and AI on the blyg (studio 0.56)
+
+/// Client access answers the studio's own sign-in only: with a bearer it
+/// needs the password; then a token can be made (scoped as asked, shown
+/// once), listed and revoked. Revoke-all isn't run here: it would sign out
+/// the token every other test uses.
+#[test]
+#[ignore]
+fn client_access_lists_makes_and_revokes_a_token() {
+    use blyg_core::access_ai::{AccessGate, NewAuthorization, TokenResource};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let password = std::env::var("BLYG_E2E_OWNER_PASSWORD").expect("BLYG_E2E_OWNER_PASSWORD");
+    if matches!(e.cred, Credential::Password(_)) {
+        assert_eq!(b.access_gate(), AccessGate::Ready);
+    } else {
+        assert_eq!(b.access_gate(), AccessGate::NeedsPassword);
+        assert!(matches!(b.authorizations(), Err(CoreError::Unauthorized)));
+        // The studio refuses a bearer here, whatever its scopes.
+        let (st, _) = owner("GET", &e.url, "/api/authorizations", None);
+        assert_eq!(st, 401);
+        assert!(matches!(
+            b.access_sign_in("not the password"),
+            Err(CoreError::Unauthorized)
+        ));
+        b.access_sign_in(&password).expect("studio sign-in");
+        assert_eq!(b.access_gate(), AccessGate::Ready);
+    }
+    // With the password, several sign-ins in a second can spend the
+    // studio's sign-in budget (429): wait it out.
+    let t0 = Instant::now();
+    let before = loop {
+        match b.authorizations() {
+            Err(CoreError::Rejected { status: 429, .. })
+                if t0.elapsed() < Duration::from_secs(90) =>
+            {
+                std::thread::sleep(Duration::from_secs(5))
+            }
+            r => break r.expect("list"),
+        }
+    };
+    assert!(
+        before.iter().any(|a| a.manual),
+        "the suite's own minted token is listed: {before:?}"
+    );
+
+    let name = tag("e2e-tool");
+    let made = b
+        .create_authorization(&NewAuthorization {
+            name: name.clone(),
+            scope: vec!["owner:read".into()],
+            resource: TokenResource::Api,
+        })
+        .expect("make a token");
+    assert!(!format!("{made:?}").contains(&made.access_token));
+    assert_eq!(made.authorization.name, name);
+    assert!(made.authorization.manual);
+    assert_eq!(made.authorization.scope, ["owner:read"]);
+    assert!(made.expires_in > 0);
+    let token = Credential::Token(made.access_token.clone());
+    // It reads, and may not draft.
+    let (st, _) = owner_as(&token, "GET", &e.url, "/api/capabilities", None);
+    assert_eq!(st, 200);
+    let (st, _) = owner_as(
+        &token,
+        "POST",
+        &e.url,
+        "/api/items",
+        Some(json!({ "kind": "fragment", "contentMd": "nope" })),
+    );
+    assert_eq!(st, 403, "read-only");
+    let listed = b.authorizations().unwrap();
+    assert!(listed.iter().any(|a| a.id == made.authorization.id));
+
+    b.revoke_authorization(&made.authorization.id)
+        .expect("revoke");
+    let after = b.authorizations().unwrap();
+    assert!(after.iter().all(|a| a.id != made.authorization.id));
+    assert_eq!(after.len(), before.len());
+    let (st, _) = owner_as(&token, "GET", &e.url, "/api/capabilities", None);
+    assert_eq!(st, 401, "a revoked token is refused");
+    // The suite's own credential still works.
+    assert!(b.sync_now().is_ok());
+}
+
+/// The blyg's AI settings and helpers: the model list, a partial save that
+/// leaves other settings alone, the classifier (off: 409; on, with no
+/// provider reachable locally: a null category with a reason, never an
+/// error), a change-notes model with no key (refused, not a crash), and a
+/// publish that carries `noteGenerated` and the confirmed category.
+#[test]
+#[ignore]
+fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
+    use blyg_core::access_ai::{AiFunction, ChangeCategory, PublishExtras, ServerAiSettings};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let models = b.ai_models().expect("GET /api/ai/models");
+    assert!(!models.providers.is_empty(), "{models:?}");
+    assert!(!models.for_function(AiFunction::Classify).is_empty());
+    assert!(!models.for_function(AiFunction::Tk).is_empty());
+    let original = b.server_ai_settings().expect("settings");
+    assert!(original.model_tk.is_some() && original.auto_change_notes.is_some());
+    let title_before = owner("GET", &e.url, "/api/settings", None).1["siteTitle"].clone();
+
+    // A partial save: only what's set is sent.
+    let decision = models.for_function(AiFunction::Classify)[0].id.clone();
+    let text_model = models.for_function(AiFunction::Tk)[0].id.clone();
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_tk: Some(text_model.clone()),
+        style_prompt: Some(" e2e house style ".into()),
+        model_classify: Some(String::new()),
+        model_changelog: Some(String::new()),
+        ..Default::default()
+    })
+    .expect("save");
+    let now = b.server_ai_settings().unwrap();
+    assert_eq!(now.model(AiFunction::Tk), Some(text_model.as_str()));
+    assert_eq!(now.style_prompt.as_deref(), Some("e2e house style"));
+    assert_eq!(now.auto_change_notes, original.auto_change_notes);
+    assert_eq!(
+        owner("GET", &e.url, "/api/settings", None).1["siteTitle"],
+        title_before,
+        "other settings untouched"
+    );
+    assert!(!now.helpers().classify && !now.helpers().draft);
+
+    // A v2 to classify.
+    let t = tag("ai-extras");
+    let (id, sid) = published(&b, Kind::Fragment, &format!("{t} first words"), None);
+    b.save(&id, &format!("{t} first words, and a few more"))
+        .unwrap();
+    b.sync_now().unwrap();
+    match b.classify_change(&id) {
+        Err(CoreError::Rejected {
+            status: 409,
+            message,
+            ..
+        }) => {
+            assert!(message.contains("classifier is off"), "{message}")
+        }
+        other => panic!("classifier off: {other:?}"),
+    }
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_classify: Some(decision.clone()),
+        model_changelog: Some(text_model.clone()),
+        ..Default::default()
+    })
+    .unwrap();
+    let c = b
+        .classify_change(&id)
+        .expect("a classification, even a null one");
+    if c.category.is_none() {
+        assert!(c.reason.is_some(), "a null category says why: {c:?}");
+    }
+    // No provider key on a local studio: the draft is refused, plainly.
+    match b.draft_note(&id) {
+        Ok(d) => assert!(!d.note.is_empty()),
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("note-draft: {other:?}"),
+    }
+
+    let out = b
+        .publish_with(
+            &id,
+            Some("minor: a few more words"),
+            &PublishExtras {
+                note_generated: true,
+                change_category: Some(Some(ChangeCategory::Minor)),
+            },
+        )
+        .expect("publish with extras");
+    assert_eq!(out.version, 2);
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["changelog"][1]["note"], "minor: a few more words");
+    assert_eq!(doc["changelog"][1]["generated"], true, "{doc}");
+    let (st, vs) = owner("GET", &e.url, &format!("/api/items/{sid}/versions"), None);
+    assert_eq!(st, 200);
+    let v2 = vs["items"]
+        .as_array()
+        .and_then(|a| a.iter().find(|v| v["version"] == 2))
+        .cloned()
+        .unwrap_or(Value::Null);
+    assert_eq!(v2["changeClass"]["category"], "minor", "{vs}");
+    assert_eq!(
+        v2["changeClass"]["overridden"],
+        c.category != Some(ChangeCategory::Minor)
+    );
+    // A category never reaches the public document as a field.
+    assert!(!doc.to_string().contains("changeClass"));
+
+    // Put the settings back.
+    b.save_server_ai_settings(&original).unwrap();
+}
+// --- end access-ai ---
+// ---------------------------------------------------------------- site
+// --- site --- Blyg › Site…: the public site's settings round-trip through
+// the studio as Studio sends them, a refusal comes back in its words, and
+// the update state and extensions are what the studio says.
+
+/// The site settings, put back when the test ends (tests share a Worker).
+struct RestoreSite<'a>(&'a LiveBackend, blyg_core::site::SiteConfig);
+
+impl Drop for RestoreSite<'_> {
+    fn drop(&mut self) {
+        if let Ok(now) = self.0.site_config() {
+            let _ = self.0.save_site_config(&now, &self.1);
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn site_settings_round_trip() {
+    use blyg_core::site::{CUSTOM_THEME_ID, custom_from_preset};
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let e = e2e();
+    let before = b.site_config().unwrap();
+    let _restore = RestoreSite(&b, before.clone());
+    // A fresh studio 0.56 reports every key.
+    assert_eq!(before.theme.as_deref(), Some("auto"));
+    assert_eq!(before.custom_theme, Some(None));
+    assert_eq!(before.posts_path.as_deref(), Some("posts"));
+    assert_eq!(before.hopper_feeds, Some(false));
+    assert!(before.feed_orders.as_ref().is_some_and(|o| o.len() >= 2));
+    // Its capabilities list the extensions compiled into the build.
+    let compiled: Vec<&str> = before
+        .server_extensions
+        .iter()
+        .filter(|x| x.compiled)
+        .map(|x| x.name.as_str())
+        .collect();
+    assert!(compiled.contains(&"inspect"), "{compiled:?}");
+
+    // A published thread for the front page and the main menu.
+    let (_, thread) = published(&b, Kind::Thread, &format!("# Front {}", tag("site")), None);
+
+    // An avatar: uploaded with no post, set by its id.
+    let m = b
+        .upload_media(other_png(), "image/png", None, None)
+        .unwrap();
+    let avatar = blyg_core::api::media::media_id(&m.url).unwrap();
+
+    let mut light = custom_from_preset("cream");
+    light.ink = "#331122".into();
+    let mut next = before.clone();
+    next.theme = Some(CUSTOM_THEME_ID.into());
+    next.custom_theme = Some(Some(light));
+    next.custom_theme_dark = Some(Some(custom_from_preset("nord")));
+    next.custom_theme_name = Some("Pink Quill".into());
+    next.font = Some("slab".into());
+    next.feed_order = Some("reverse-chronological".into());
+    next.front_page = Some(thread.clone());
+    next.posts_path = Some("writing".into());
+    next.links_position = Some("bottom".into());
+    next.links_threads = Some(vec![thread.clone()]);
+    next.links_external = Some(vec![AuthorLink {
+        label: "Résumé".into(),
+        url: "https://blyg.example.com/resume".into(),
+    }]);
+    next.links_blygger_com = Some(!before.links_blygger_com.unwrap());
+    next.hopper_feeds = Some(true);
+    next.author_url = Some("https://blyg.example.com/about".into());
+    next.avatar_media_id = Some(avatar.clone());
+    next.extensions = Some(vec!["inspect".into()]);
+    let saved = b.save_site_config(&before, &next).unwrap();
+    assert_eq!(saved.theme.as_deref(), Some("custom"));
+    assert!(
+        saved
+            .server_extensions
+            .iter()
+            .any(|x| x.name == "inspect" && x.enabled)
+    );
+
+    let (_, raw) = owner("GET", &e.url, "/api/settings", None);
+    assert_eq!(raw["theme"], "custom");
+    assert_eq!(raw["customTheme"]["ink"], "#331122");
+    assert_eq!(raw["customThemeDark"]["dark"], true);
+    assert_eq!(raw["customThemeName"], "Pink Quill");
+    assert_eq!(raw["font"], "slab");
+    assert_eq!(raw["feedOrder"], "reverse-chronological");
+    assert_eq!(raw["frontPage"], thread.as_str());
+    assert_eq!(raw["postsPath"], "writing");
+    assert_eq!(raw["linksPosition"], "bottom");
+    assert_eq!(raw["linksThreads"], json!([thread]));
+    assert_eq!(raw["linksExternal"][0]["label"], "Résumé");
+    assert_eq!(raw["hopperFeeds"], true);
+    assert_eq!(raw["authorUrl"], "https://blyg.example.com/about");
+    assert_eq!(raw["avatarMediaId"], avatar.as_str());
+    assert_eq!(raw["extensions"], json!(["inspect"]));
+    // Untouched: what Site Settings owns.
+    assert_eq!(
+        raw["siteTitle"],
+        json!(b.settings().unwrap().site_title.unwrap_or_default())
+    );
+
+    // The public pages follow: the latest items moved, the front page is
+    // the thread.
+    let (status, _) = public_get(&format!("{}/writing/", e.url));
+    assert_eq!(status, 200, "the posts page moved to /writing/");
+    let (_, home) = public_get(&format!("{}/", e.url));
+    assert!(home.contains("Front site-"), "the thread is the front page");
+
+    // Read back, nothing differs; a second save sends nothing.
+    let again = b.site_config().unwrap();
+    assert!(saved.patch(&again).is_empty(), "{:?}", saved.patch(&again));
+
+    // The studio refuses a posts path it already uses, in its words.
+    let mut bad = again.clone();
+    bad.posts_path = Some("feed".into());
+    match b.save_site_config(&again, &bad) {
+        Err(CoreError::Rejected {
+            status: 400,
+            message,
+            ..
+        }) => {
+            assert!(message.to_lowercase().contains("feed"), "{message}")
+        }
+        other => panic!("expected a 400, got {:?}", other.map(|c| c.posts_path)),
+    }
+    // A custom palette with a bad colour, sent anyway, is refused too.
+    let mut bad = again.clone();
+    if let Some(Some(t)) = bad.custom_theme.as_mut() {
+        t.paper = "white".into();
+    }
+    assert!(matches!(
+        b.save_site_config(&again, &bad),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn studio_update_state_is_read_and_follows_the_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let before = b.site_config().unwrap();
+    let _restore = RestoreSite(&b, before.clone());
+    let mut on = before.clone();
+    on.update_check = Some(true);
+    let base = b.save_site_config(&before, &on).unwrap();
+    let u = b.refresh_studio_update(true).unwrap().expect("served");
+    // The version the studio runs, from blyg.json's generator.
+    let v = u.current.clone().expect("blyg.json names its generator");
+    assert!(blyg_core::site::parse_version(&v).is_some(), "{v}");
+    assert_eq!(b.studio_update(), Some(u.clone()), "cached");
+    // The local studio can't reach a release feed: never "behind".
+    if u.latest.is_empty() {
+        assert!(!u.behind());
+    }
+    let mut off = base.clone();
+    off.update_check = Some(false);
+    b.save_site_config(&base, &off).unwrap();
+    assert_eq!(b.refresh_studio_update(true).unwrap(), None);
+    assert_eq!(b.studio_update(), None);
+}
+// --- end site ---
+// --- contacts --- Burrow managing the book, the h-card a handle publishes
+// as, Mentions › Sent, and each subscription's poll status (studio 0.56).
+
+fn nonce() -> u32 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos()
+}
+
+/// The add, edit, check and remove the Contacts sheet makes, with the
+/// studio's own checks coming back as its words.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn contacts_are_added_edited_checked_and_removed() {
+    use blyg_core::contacts::ContactInput;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let handle = format!("rue{}", nonce());
+    let input = ContactInput {
+        handle: format!("@{handle}"),
+        name: "Rue Marlow".into(),
+        url: "https://rue.example.org".into(),
+    };
+    let made = b.create_contact(&input).expect("create");
+    assert_eq!(made.handle, handle);
+    assert!(!made.id.is_empty(), "the studio's id: {made:?}");
+    assert_eq!(made.name.as_deref(), Some("Rue Marlow"));
+    // The local copy follows at once, so the @ popup offers it.
+    assert!(b.contacts().iter().any(|c| c.id == made.id));
+
+    match b.create_contact(&input) {
+        Err(CoreError::Rejected { status: 409, .. }) => {}
+        r => panic!("a second @{handle} is refused: {r:?}"),
+    }
+    let http = ContactInput {
+        handle: format!("{handle}x"),
+        url: "http://rue.example.org".into(),
+        ..input.clone()
+    };
+    assert!(
+        matches!(
+            b.create_contact(&http),
+            Err(CoreError::Rejected { status: 400, .. })
+        ),
+        "an http address is refused"
+    );
+
+    let edited = b
+        .update_contact(
+            &made.id,
+            &ContactInput {
+                name: "Rue M.".into(),
+                ..input.clone()
+            },
+        )
+        .expect("update");
+    assert_eq!(edited.name.as_deref(), Some("Rue M."));
+    let held = b.contacts();
+    let held = held.iter().find(|c| c.id == made.id).expect("still held");
+    assert_eq!(held.name.as_deref(), Some("Rue M."));
+
+    // Checking a page that can't be read: the studio says so and the
+    // contact stays as it was.
+    let unreadable = b
+        .create_contact(&ContactInput {
+            handle: format!("{handle}u"),
+            name: "Nobody".into(),
+            url: "https://127.0.0.1:9/".into(),
+        })
+        .expect("create");
+    match b.resolve_contact(&unreadable.id) {
+        Err(CoreError::Rejected { message, .. }) => {
+            assert!(message.contains("could not read"), "{message}")
+        }
+        Ok(c) => assert!(c.checked_ids().is_empty(), "{c:?}"),
+        Err(e) => panic!("resolve: {e}"),
+    }
+
+    for id in [&made.id, &unreadable.id] {
+        b.delete_contact(id).expect("delete");
+    }
+    assert!(!b.contacts().iter().any(|c| c.handle.starts_with(&handle)));
+    // Removing one already gone is fine (another device got there first).
+    b.delete_contact(&made.id).expect("delete twice");
+}
+
+/// The preview's h-card (blyg-render `handles.rs`) is the markup the
+/// studio publishes, byte for byte, and `contentMd` carries the link.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_handle_publishes_as_the_h_card_the_preview_shows() {
+    use blyg_core::contacts::ContactInput;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let handle = format!("kit{}", nonce());
+    let c = b
+        .create_contact(&ContactInput {
+            handle: handle.clone(),
+            name: "Kit".into(),
+            url: "https://kit.example.org".into(),
+        })
+        .expect("create");
+    let (_, sid) = published(
+        &b,
+        Kind::Fragment,
+        &format!("{} Tea with @{handle} today.", tag("hcard")),
+        None,
+    );
+    let card = "<span class=\"h-card\"><a class=\"u-url\" \
+                href=\"https://kit.example.org\">@<span class=\"p-name\">Kit</span></a></span>";
+    let doc = public_json(&format!("{}/items/{sid}.json", e2e().url));
+    let html = doc["content_html"].as_str().unwrap_or_default();
+    assert!(html.contains(card), "{doc}");
+
+    // The preview makes the same card for the same text.
+    struct Book(blyg_render::HandleCard, String);
+    impl blyg_render::Resolver for Book {
+        fn resolve(&self, _id: &str) -> blyg_render::Resolution {
+            blyg_render::Resolution::NotFound
+        }
+        fn contact(&self, h: &str) -> Option<blyg_render::HandleCard> {
+            (h == self.1).then(|| self.0.clone())
+        }
+    }
+    let book = Book(
+        blyg_render::HandleCard {
+            name: "Kit".into(),
+            url: "https://kit.example.org".into(),
+            ids: vec![],
+        },
+        handle.clone(),
+    );
+    let preview = blyg_render::render_preview(
+        &format!("Tea with @{handle} today."),
+        blyg_render::Kind::Fragment,
+        &book,
+        &blyg_render::RenderOpts::default(),
+    );
+    assert!(preview.html.contains(card), "{}", preview.html);
+    b.delete_contact(&c.id).expect("delete");
+}
+
+/// Publishing a stub queues a Webmention to the quoted post: Burrow reads
+/// it back as a Sent row with its status. The summary and the groups are
+/// served (5.2+), and a response's source answers for each mention.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn sent_mentions_summary_groups_and_sources_are_read() {
+    e2e();
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let (_, rid) = published(&source, Kind::Fragment, &tag("sent"), None);
+    let sub = me.subscribe(&src_url, Some("Sent to")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    let it = reading_item(&me, &rid).expect("held");
+    let of = RemoteRef {
+        origin: it.origin.clone(),
+        id: rid.clone(),
+        version: it.version,
+        cited: None,
+    };
+    let stub = me
+        .create_stub(&of, &format!("![[{rid}]]\n\nA reply."))
+        .unwrap();
+    me.sync_now().unwrap();
+    me.publish(&stub, None).expect("publish the stub");
+    let mine = sid_of(&me, &stub);
+
+    let mut sent = Vec::new();
+    wait_until("the outbound row", Duration::from_secs(15), || {
+        sent = me
+            .outbound_mentions()
+            .expect("outbound")
+            .expect("served")
+            .into_iter()
+            .filter(|o| o.item_id == mine)
+            .collect();
+        !sent.is_empty()
+    });
+    let o = &sent[0];
+    assert_eq!(o.version, 1, "{o:?}");
+    assert!(o.target.contains(&rid), "{o:?}");
+    assert!(
+        ["pending", "sent", "failed", "no_endpoint"].contains(&o.status.as_str()),
+        "{o:?}"
+    );
+    let summary = me.mention_summary().expect("summary").expect("served");
+    assert!(summary.outbound >= 1, "{summary:?}");
+
+    let groups = source.mention_groups().expect("groups").expect("served");
+    for g in &groups {
+        assert!(!g.target_item_id.is_empty(), "{g:?}");
+    }
+    for m in source.mentions().expect("mentions").iter().take(3) {
+        assert!(
+            source.mention_source(&m.id).expect("source").is_some(),
+            "served for {}",
+            m.id
+        );
+    }
+    assert_eq!(
+        source
+            .mention_source("no-such-mention")
+            .expect("a 404 is None"),
+        None
+    );
+}
+
+/// A subscription carries the studio's poll status (`lastPollAt`,
+/// `failCount`, `flags`), and reading the list again picks it up.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn subscriptions_carry_their_poll_status() {
+    let e = e2e();
+    let src_url = url_b();
+    let d = tempfile::tempdir().unwrap();
+    let me = manual(d.path());
+    let sub = me.subscribe(&src_url, Some("Polled")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[]);
+    me.refresh_subscriptions().expect("refresh");
+    let s = me
+        .subscriptions()
+        .into_iter()
+        .find(|s| s.id == sub.id)
+        .expect("held");
+    let (st, v) = owner("GET", &e.url, "/api/subscriptions?limit=100", None);
+    assert_eq!(st, 200, "{v}");
+    let rows = v["items"]
+        .as_array()
+        .or_else(|| v["subscriptions"].as_array())
+        .cloned()
+        .unwrap_or_default();
+    let row = rows
+        .iter()
+        .find(|r| r["id"] == sub.id.as_str())
+        .unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(
+        s.poll.last_poll_at.as_deref(),
+        row["lastPollAt"].as_str(),
+        "{row}"
+    );
+    assert_eq!(
+        s.poll.fail_count as f64,
+        row["failCount"].as_f64().unwrap_or(0.0)
+    );
+    assert_eq!(
+        s.poll.flags.len(),
+        row["flags"].as_array().map_or(0, |f| f.len())
+    );
+    // The offer's seed: the manifest's author, else the blyg itself.
+    if let Some(seed) = me.contact_seed(&s.origin, &s.title) {
+        assert!(
+            !seed.name.is_empty() && seed.url.starts_with("http"),
+            "{seed:?}"
+        );
+    }
+}
+// --- end contacts ---
+// --- upkeep --- stale quotes and their refresh, a version's words, signals.
+
+/// A thread quoting your own fragment goes stale when the fragment is
+/// republished: `/freshness` lists it (and it's kept for the list's marker
+/// and `is:stale-quote`), the thread's own report says what changed, and a
+/// refresh republishes the same words with the new quote.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn stale_quotes_are_listed_and_refreshed() {
+    use blyg_core::upkeep::QuoteStatus;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let t = tag("stale");
+    let (frag, frag_sid) = published(&b, Kind::Fragment, &format!("{t} the bench"), None);
+    let thread_text = format!("{t} on benches\n\n![[{frag_sid}]]\n\nMore soon.");
+    let (thread, thread_sid) = published(&b, Kind::Thread, &thread_text, None);
+    let names = |l: &[blyg_core::upkeep::ThreadFreshness]| {
+        l.iter().any(|x| x.id.eq_ignore_ascii_case(&thread_sid))
+    };
+    assert!(!names(&b.stale_quotes().unwrap()), "current at first");
+
+    // The fragment moves on: the thread's quote is a version behind.
+    b.save(&frag, &format!("{t} the bench, repainted")).unwrap();
+    assert_eq!(b.publish(&frag, None).unwrap().version, 2);
+    let list = b.stale_quotes().unwrap();
+    let mine = list
+        .iter()
+        .find(|x| x.id.eq_ignore_ascii_case(&thread_sid))
+        .unwrap_or_else(|| panic!("the thread is stale: {list:?}"));
+    assert_eq!((mine.stale, mine.blocking, mine.behind), (1, 0, 1));
+    assert!(mine.refreshable());
+    // Kept: the loose end finds it without asking again.
+    assert!(names(&b.cached_stale_quotes()));
+    let hits: Vec<LocalId> = b
+        .search("is:stale-quote")
+        .into_iter()
+        .map(|i| i.local_id)
+        .collect();
+    assert!(hits.contains(&thread), "{hits:?}");
+
+    let report = b.quote_freshness(&thread).unwrap();
+    let q = report
+        .quotes
+        .iter()
+        .find(|q| q.id.eq_ignore_ascii_case(&frag_sid))
+        .expect("the quote is reported");
+    assert_eq!(q.status, QuoteStatus::Refreshable);
+    assert_eq!((q.baked, q.held), (1, Some(2)));
+    assert_eq!(q.words(), "v1 → v2 available");
+
+    // Refresh: v2 of the thread, the same words, the quote at v2.
+    let r = b
+        .refresh_quotes(&thread, Some("refreshed quoted snapshots"))
+        .unwrap();
+    assert_eq!(r.version, 2);
+    assert!(
+        r.refreshed
+            .iter()
+            .any(|x| x.eq_ignore_ascii_case(&frag_sid)),
+        "{r:?}"
+    );
+    let it = b.item(&thread).unwrap();
+    assert_eq!(it.version, 2);
+    assert!(!it.dirty);
+    assert_eq!(it.content_md, thread_text, "the words don't change");
+    assert!(
+        !names(&b.cached_stale_quotes()),
+        "it leaves the list at once"
+    );
+    assert!(!names(&b.stale_quotes().unwrap()), "and the blyg agrees");
+    let v = b.versions(&thread).unwrap();
+    assert_eq!(
+        v.last().and_then(|v| v.note.clone()).as_deref(),
+        Some("refreshed quoted snapshots")
+    );
+    // A second refresh has nothing to do: refused.
+    assert!(b.refresh_quotes(&thread, None).is_err());
+
+    // Each version's words, for ⌘Y's diff.
+    assert_eq!(b.version_text(&frag, 1).unwrap(), format!("{t} the bench"));
+    assert_eq!(
+        b.version_text(&frag, 2).unwrap(),
+        format!("{t} the bench, repainted")
+    );
+    assert!(b.version_text(&frag, 9).is_err());
+}
+
+/// A refresh waits for unpublished edits: the blyg refuses it while the
+/// working copy holds anything but the published words.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_refresh_waits_for_unpublished_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let t = tag("stale-dirty");
+    let (frag, frag_sid) = published(&b, Kind::Fragment, &format!("{t} a gate"), None);
+    let (thread, _) = published(
+        &b,
+        Kind::Thread,
+        &format!("{t} gates\n\n![[{frag_sid}]]"),
+        None,
+    );
+    b.save(&frag, &format!("{t} a gate, oiled")).unwrap();
+    b.publish(&frag, None).unwrap();
+    b.save(&thread, &format!("{t} gates, edited\n\n![[{frag_sid}]]"))
+        .unwrap();
+    b.sync_now().unwrap();
+    let report = b.quote_freshness(&thread).unwrap();
+    assert!(report.dirty, "the blyg sees the edit");
+    assert!(!report.refreshable());
+    let err = b.refresh_quotes(&thread, None).unwrap_err();
+    assert!(
+        matches!(err, CoreError::Rejected { status: 409, .. }),
+        "{err:?}"
+    );
+    assert_eq!(b.item(&thread).unwrap().version, 1);
+}
+
+/// Your signals: a thumb down on a post you hold shows in the disliked
+/// list and in the activity log.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn signals_list_thumbs_and_activity() {
+    use blyg_core::upkeep::InteractionKind;
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("signals");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a heron"), None);
+    let b = manual(d1.path());
+    let sub = b.subscribe(&src_url, Some("Signals source")).unwrap();
+    let _unsub = Unsub(&b, sub.id.clone());
+    sync_until_held(&b, &[&rid]);
+    b.signal(&sub.id, &rid, Some(-1)).unwrap();
+
+    let mut down = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let p = b.thumbs_page(-1, cursor.as_deref()).unwrap();
+        down.extend(p.items);
+        match p.next {
+            Some(c) => cursor = Some(c),
+            None => break,
+        }
+    }
+    let row = down
+        .iter()
+        .find(|x| x.remote_id.eq_ignore_ascii_case(&rid))
+        .unwrap_or_else(|| panic!("disliked: {down:?}"));
+    assert_eq!(row.thumb, -1);
+    assert_eq!(row.subscription_id.as_deref(), Some(sub.id.as_str()));
+    let liked = b.thumbs_page(1, None).unwrap();
+    assert!(
+        !liked
+            .items
+            .iter()
+            .any(|x| x.remote_id.eq_ignore_ascii_case(&rid))
+    );
+    let log = b.interactions_page(None).unwrap();
+    assert!(
+        log.items
+            .iter()
+            .any(|i| i.kind == InteractionKind::ThumbDown && i.remote_id.eq_ignore_ascii_case(&rid)),
+        "{:?}",
+        log.items
+    );
+    b.signal(&sub.id, &rid, None).unwrap();
 }

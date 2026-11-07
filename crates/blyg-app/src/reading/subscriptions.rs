@@ -78,6 +78,7 @@ impl MainView {
                         v.close_reading_sheet(window, cx);
                         v.reading.subs = v.backend.subscriptions();
                         v.show_toast(format!("Subscribed to {}", s.title), None, cx);
+                        v.offer_contact_after_subscribe(&s, window, cx); // --- contacts ---
                     }
                     Err(e) => v.subscribe_failed(e.to_string(), window, cx),
                 });
@@ -246,7 +247,17 @@ impl MainView {
                                 .text_color(p.muted)
                                 .truncate()
                                 .child(super::vm::host(&s.origin)),
-                        ),
+                        )
+                        // --- contacts --- the blyg's last poll of it.
+                        .child({
+                            let (line, bad) = super::contacts::poll::status_line(s, self.now);
+                            div()
+                                .debug_selector(move || format!("sub-poll-{i}"))
+                                .text_size(px(11.))
+                                .truncate()
+                                .text_color(if bad { p.over } else { p.muted })
+                                .child(line)
+                        }),
                 )
                 // --- reader folders --- choose its folder.
                 .child(

@@ -705,9 +705,56 @@ impl Backend for SwitchBackend {
     fn rewrites_handles(&self) -> bool {
         self.cur().rewrites_handles()
     }
+    fn keeps_contacts(&self) -> bool {
+        self.cur().keeps_contacts()
+    }
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.cur().reading_mentions()
     }
+    // --- contacts --- managing the book, Mentions › Sent, poll status
+    fn create_contact(
+        &self,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().create_contact(c)
+    }
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().update_contact(id, c)
+    }
+    fn delete_contact(&self, id: &str) -> blyg_core::Result<()> {
+        self.cur().delete_contact(id)
+    }
+    fn resolve_contact(&self, id: &str) -> blyg_core::Result<blyg_core::contacts::Contact> {
+        self.cur().resolve_contact(id)
+    }
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<blyg_core::contacts::ContactSeed> {
+        self.cur().contact_seed(origin, title)
+    }
+    fn outbound_mentions(
+        &self,
+    ) -> blyg_core::Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
+        self.cur().outbound_mentions()
+    }
+    fn mention_summary(&self) -> blyg_core::Result<Option<blyg_core::outbound::MentionSummary>> {
+        self.cur().mention_summary()
+    }
+    fn mention_groups(&self) -> blyg_core::Result<Option<Vec<blyg_core::outbound::MentionGroup>>> {
+        self.cur().mention_groups()
+    }
+    fn mention_source(
+        &self,
+        id: &str,
+    ) -> blyg_core::Result<Option<blyg_core::outbound::MentionSource>> {
+        self.cur().mention_source(id)
+    }
+    fn refresh_subscriptions(&self) -> blyg_core::Result<()> {
+        self.cur().refresh_subscriptions()
+    }
+    // --- end contacts ---
     fn page_title(&self, url: &str) -> Option<String> {
         self.cur().page_title(url) // --- capture ---
     }
@@ -980,6 +1027,24 @@ impl Backend for SwitchBackend {
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         self.cur().conflict_texts(id)
     }
+    // --- site ---
+    fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
+        self.cur().site_config()
+    }
+    fn save_site_config(
+        &self,
+        base: &blyg_core::site::SiteConfig,
+        next: &blyg_core::site::SiteConfig,
+    ) -> Result<blyg_core::site::SiteConfig> {
+        self.cur().save_site_config(base, next)
+    }
+    fn studio_update(&self) -> Option<blyg_core::site::StudioUpdate> {
+        self.cur().studio_update()
+    }
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<blyg_core::site::StudioUpdate>> {
+        self.cur().refresh_studio_update(force)
+    }
+    // --- end site ---
     // --- nearby ---
     fn nearby_vectors(&self, model: &str) -> Vec<blyg_core::nearby::NearbyVector> {
         self.cur().nearby_vectors(model)
@@ -1116,6 +1181,89 @@ impl Backend for SwitchBackend {
     ) -> Option<blyg_core::lineage::LineageGraph> {
         self.cur().cached_lineage_graph(centre)
     }
+    // --- access-ai ---
+    fn access_gate(&self) -> blyg_core::access_ai::AccessGate {
+        self.cur().access_gate()
+    }
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        self.cur().access_sign_in(password)
+    }
+    fn own_client_id(&self) -> Option<String> {
+        self.cur().own_client_id()
+    }
+    fn authorizations(&self) -> Result<Vec<blyg_core::access_ai::Authorization>> {
+        self.cur().authorizations()
+    }
+    fn create_authorization(
+        &self,
+        new: &blyg_core::access_ai::NewAuthorization,
+    ) -> Result<blyg_core::access_ai::NewToken> {
+        self.cur().create_authorization(new)
+    }
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        self.cur().revoke_authorization(id)
+    }
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        self.cur().revoke_all_authorizations()
+    }
+    fn ai_models(&self) -> Result<blyg_core::access_ai::AiModels> {
+        self.cur().ai_models()
+    }
+    fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
+        self.cur().server_ai_settings()
+    }
+    fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
+        self.cur().save_server_ai_settings(s)
+    }
+    fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        self.cur().draft_note(id)
+    }
+    fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
+        self.cur().classify_change(id)
+    }
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &blyg_core::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        self.cur().publish_with(id, note, extras)
+    }
+    // --- end access-ai ---
+    // --- upkeep --- stale quotes, signals, a version's words
+    fn cached_stale_quotes(&self) -> Vec<blyg_core::upkeep::ThreadFreshness> {
+        self.cur().cached_stale_quotes()
+    }
+    fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
+        self.cur().stale_quotes()
+    }
+    fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
+        self.cur().quote_freshness(id)
+    }
+    fn refresh_quotes(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Refreshed> {
+        self.cur().refresh_quotes(id, note)
+    }
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        self.cur().version_text(id, version)
+    }
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
+        self.cur().thumbs_page(thumb, cursor)
+    }
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
+        self.cur().interactions_page(cursor)
+    }
+    // --- end upkeep ---
 }
 
 #[cfg(test)]

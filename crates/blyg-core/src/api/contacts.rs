@@ -3,11 +3,12 @@
 //! whose capabilities say 5.7 or later; an older one is never sent the
 //! route or the parameter.
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::{Api, enc};
 use crate::backend::{CoreError, Result};
-use crate::contacts::{Contact, parse_contacts, parse_reading_keys, serves_contacts};
+use crate::contacts::{Contact, ContactInput, parse_contacts, parse_reading_keys, serves_contacts};
+use crate::outbound::{MentionGroup, MentionSource, MentionSummary, OutboundMention};
 
 /// Pages read at most, so a misbehaving cursor can't loop forever.
 const MAX_PAGES: usize = 50;
@@ -78,6 +79,97 @@ impl Api {
         Ok(Some(out))
     }
 }
+
+// --- contacts --- managing the book, and the Mentions screen's other reads
+// (`crate::outbound`).
+impl Api {
+    fn contact_reply(v: Value, path: &str) -> Result<Contact> {
+        crate::contacts::parse_contact(&v)
+            .ok_or_else(|| CoreError::Other(format!("unexpected response from {path}")))
+    }
+
+    /// `POST /api/contacts {handle, name, url}`. A handle already in the
+    /// book is a 409 (`Rejected`), named by the studio.
+    pub fn create_contact(&self, c: &ContactInput) -> Result<Contact> {
+        let c = c.tidy();
+        let path = "/api/contacts";
+        let v = self.call(
+            "POST",
+            path,
+            Some(json!({ "handle": c.handle, "name": c.name, "url": c.url })),
+        )?;
+        Self::contact_reply(v, path)
+    }
+
+    /// `PATCH /api/contacts/{id} {handle, name, url}`.
+    pub fn update_contact(&self, id: &str, c: &ContactInput) -> Result<Contact> {
+        let c = c.tidy();
+        let path = format!("/api/contacts/{}", enc(id));
+        let v = self.call(
+            "PATCH",
+            &path,
+            Some(json!({ "handle": c.handle, "name": c.name, "url": c.url })),
+        )?;
+        Self::contact_reply(v, &path)
+    }
+
+    /// `DELETE /api/contacts/{id}`. One already gone is fine.
+    pub fn delete_contact(&self, id: &str) -> Result<()> {
+        match self.call("DELETE", &format!("/api/contacts/{}", enc(id)), None) {
+            Ok(_) | Err(CoreError::NotFound) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// `POST /api/contacts/{id}/resolve`: the studio reads the contact's
+    /// page and keeps the `rel="me"` identifiers it lists. A page it can't
+    /// read is a 502 (`Rejected`) naming why.
+    pub fn resolve_contact(&self, id: &str) -> Result<Contact> {
+        let path = format!("/api/contacts/{}/resolve", enc(id));
+        let v = self.call("POST", &path, None)?;
+        Self::contact_reply(v, &path)
+    }
+
+    /// `GET /api/mentions?direction=outbound`, every page. `Ok(None)`: not
+    /// served.
+    pub fn outbound_mentions(&self) -> Result<Option<Vec<OutboundMention>>> {
+        Self::optional(self.collect("/api/mentions", "direction=outbound"))
+    }
+
+    /// Whether this studio serves `/mention-groups` and `/mentions/summary`.
+    fn serves_groups(&self) -> Result<bool> {
+        Ok(self
+            .contract_version()?
+            .as_deref()
+            .is_some_and(crate::outbound::serves_groups))
+    }
+
+    /// `GET /api/mentions/summary`. `Ok(None)`: not served (before 5.2).
+    pub fn mention_summary(&self) -> Result<Option<MentionSummary>> {
+        if !self.serves_groups()? {
+            return Ok(None);
+        }
+        Self::optional(self.call_as("GET", "/api/mentions/summary", None))
+    }
+
+    /// `GET /api/mention-groups`, every page, newest response first.
+    /// `Ok(None)`: not served (before 5.2).
+    pub fn mention_groups(&self) -> Result<Option<Vec<MentionGroup>>> {
+        if !self.serves_groups()? {
+            return Ok(None);
+        }
+        Self::optional(self.collect("/api/mention-groups", ""))
+    }
+
+    /// `GET /api/mentions/{id}/source`. `Ok(None)`: no such mention, or not
+    /// served.
+    pub fn mention_source(&self, id: &str) -> Result<Option<MentionSource>> {
+        let v =
+            Self::optional(self.call("GET", &format!("/api/mentions/{}/source", enc(id)), None))?;
+        Ok(v.as_ref().map(MentionSource::parse))
+    }
+}
+// --- end contacts ---
 
 fn next_cursor(v: &Value) -> Option<String> {
     v.get("page")?

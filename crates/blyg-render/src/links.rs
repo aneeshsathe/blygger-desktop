@@ -435,6 +435,31 @@ fn in_href(literal: &str) -> String {
 }
 
 impl Links {
+    /// --- contacts --- `addLinkToken`: every `literal` in `text` becomes
+    /// one token that splices in as `html` (a mention's h-card).
+    pub(crate) fn add_literal(
+        &mut self,
+        text: &mut String,
+        literal: &str,
+        html: &str,
+        seq: &mut usize,
+    ) {
+        if literal.is_empty() || !text.contains(literal) {
+            return;
+        }
+        let n = *seq;
+        *seq += 1;
+        *text = text.replace(literal, &format!("{SENTINEL}{n}{SENTINEL}"));
+        self.tokens.insert(
+            n,
+            Token {
+                html: html.to_string(),
+                label: escape_html(literal),
+                literal: literal.to_string(),
+            },
+        );
+    }
+
     fn token(&self, seq: &str) -> Option<&Token> {
         seq.parse().ok().and_then(|n: usize| self.tokens.get(&n))
     }

@@ -198,6 +198,7 @@ fn sub(id: &str, kind: SubscriptionKind, origin: &str, feed: &str, title: &str) 
         status: "active".into(),
         in_blogroll: false,
         title_follows_source: true,
+        poll: Default::default(),
     }
 }
 

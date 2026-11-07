@@ -16,6 +16,41 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-07
+
+Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.
+
+### Added
+
+- **Client access.** Blyg › Client Access… lists every app and token that can act as you on your blyg (browser sign-ins, MCP apps, manual API tokens) with what each may do and when it ends; Burrow's own sign-in is marked "this Burrow". `n` makes a manual token (a name, REST API or MCP, its permissions): it appears once with Copy and Burrow never keeps it. ⌫ revokes one and ⇧⌫ revokes them all, after a confirmation that warns when this Burrow would be signed out. Your blyg serves client access to its own sign-in only, so with a browser sign-in or a token Burrow asks for the studio password once and keeps that sign-in in memory until it quits. The docs no longer send you to the studio for this.
+- **AI on your blyg.** Blyg › AI on Your Blyg… sets your blyg's own AI as the studio's Settings › AI does: a model per function from the studio's model list (TK generation, change notes, the change classifier, Smart Feed scoring), each provider's key status, the house style added to every `[TK]` generated on the blyg, automatic change notes, and whether the classifier's label starts the note. Separate from Burrow's own providers (Settings › AI), as the sheet says.
+- **Your blyg's AI in the publish sheet.** From a post's second version on, when your blyg offers them: "Draft a note" (⌥⌘N, Post › Draft a Change Note; Ctrl+Shift+E on Windows) fills the version note from what changed, and the change classifier labels the change typo, minor or major, quietly under the field (a click changes or clears it). You edit and confirm; nothing blocks publishing. A note published exactly as drafted is marked as generated, and the label you keep is stored with the version, privately.
+- **Blyg › Site…: your blyg's public site, as Studio sets it up.** The reading theme (Studio's presets, or a custom palette with Studio's theme editor: eight colours, a name, a dark companion, contrast warnings) with a preview, the typeface, the home-page order, a static front page, the posts path, the main menu (position, threads, your links, standard links), the avatar (upload and set), the author and site URLs, collection (hopper) feeds, studio update alerts and the studio's extensions. Nothing is sent until Save, and only what changed; a refusal shows the blyg's words. While your blyg's studio has a newer release (and its update alerts are on), the status bar says so quietly.
+- **Contacts** (Blyg › Contacts…, studio 0.56): search, add, edit and remove the people in your blyg's address book, and **Check page** to have your blyg read their `rel=me` links. **Post › Add Author to Contacts…** fills in a reading post's author, and subscribing to a blyg offers to add it.
+- **`@handle` in the preview** shows as the contact's link, the same h-card your blyg publishes.
+- **Mentions › Sent:** the Webmentions your blyg sent for your posts, and where each delivery stands (sent, pending, failed with the reason, no endpoint). **Reply** on a received response opens a stub of it, or offers to subscribe to its blyg first. Received mentions are ordered by your post, as your blyg groups them.
+- **Subscriptions show their poll status:** when your blyg last polled each one, failed polls in a row, and any flag it raised.
+- **Stale quotes.** A thread whose quoted posts have newer versions gets a quiet ↻ in Posts, and `is:stale-quote` lists them (a loose end too). Blyg › Stale Quotes… lists them stalest first with what changed in each quote ("v1 → v3 at its blyg"); ⏎ refreshes one, ⇧⏎ all that can be: a new version with the same words and the quotes brought up to date (blygger-studio's Updates tab and Refresh).
+- **What changed between versions.** In ⌘Y, **Changes from vN** shows a word diff of a version of your post against the one before it.
+- **Signals.** Blyg › Signals… lists your likes, your dislikes and your private activity log (thumbs, hoppers, stubs, forks, quotes). Never published, never counted.
+- **Threads, Fragments and Thumbed down** smart feeds in the Reader (Studio's lenses and disliked list).
+- **Alt text for images.** After a pasted or dropped image uploads, Burrow asks what it shows and writes it as the image's alt text.
+- **The tour** teaches the new Blyg menu: Site…, Contacts…, Stale Quotes… and Client Access…, from the what's-new card.
+- **Copy Link** (Post › Copy Link): the open post's address, yours or the one you're reading.
+- **Burrow in a browser reads as Studio does.** The Read side gets its sources: on a desk a pane left of the stream, on a phone ☰ on the Read tab. Choose a smart feed (All unread, Today, Thumbed, All, Background), Mentions, a hopper or a subscription, and Threads or Fragments; a line under the phone's search says what shows. Withdrawn posts show in Background only, as in the app.
+- **Subscriptions in a browser:** subscribe with a preview, see how each one is doing (checked when, paused, or having trouble and why), rename, pause and resume, put it on your blogroll, read it again, unsubscribe, check all now, and import or export OPML.
+- **Mentions in a browser:** responses to your posts grouped under each post (hide one, or show it again), the Webmentions you sent with their state, and Accept Webmentions.
+- **Hoppers in a browser:** make, rename, describe, make public or private, and delete one. **Thumbs:** 👍 / 👎 under a post you read.
+- **Peek in a browser:** open a post from a blyg you don't follow by its address, or by tapping a link to it in a post you read, without subscribing; History lists what you peeked at.
+- **Burrow in a browser writes like Studio** (live on your blyg, phone and desk):
+  - **Images**: from the file picker, the phone's photo picker, a paste or a drop, with alt text, uploaded to your blyg and placed where the caret was. Large images are made smaller first.
+  - **Versions** of your post: the list, each one as published or as a word diff against now, restore, and pin (confirmed by typing *pin*). **Withdraw** is here too, confirmed, with an optional note.
+  - **Fork** a pinned version, yours or one from a blyg you read, into a new draft.
+  - **TK generation** on your blyg, from the ✦ sheet.
+  - The **publish sheet** drafts a change note and suggests the kind of change when your blyg has the models set; you edit and confirm both.
+  - **Settings**: your blyg's title, author, bio, links, addresses, time zone and writing defaults, saved when you press Save.
+  - **`@handle`s**: your contacts in the `@` list, and the preview shows a contact's mention as the published page does.
+
 ## [0.18.1] - 2026-11-07
 
 ### Changed

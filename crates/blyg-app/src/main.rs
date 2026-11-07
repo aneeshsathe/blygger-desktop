@@ -405,9 +405,11 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Find…", app::FocusSearch),
                 MenuItem::separator(),
                 MenuItem::action("Publish…", app::Publish),
+                MenuItem::action("Draft a Change Note", app::note_ai::DraftChangeNote), // --- access-ai ---
                 MenuItem::action("Make Draft", app::scratch::MakeDraft),
                 MenuItem::action("Fragment ⇄ Thread", app::ToggleKind),
                 MenuItem::action("Open on the Web", app::OpenPermalink),
+                MenuItem::action("Copy Link", app::upkeep::CopyLink), // --- upkeep ---
                 MenuItem::separator(),
                 MenuItem::action("Generate (TK)", ai::AiGenerate),
                 MenuItem::action("Shorten to Fit 1000", ai::AiShorten),
@@ -422,6 +424,11 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
                 MenuItem::action("Put in Hopper…", app::reading::hoppers::HopperPicker),
+                // --- contacts ---
+                MenuItem::action(
+                    "Add Author to Contacts…",
+                    app::reading::contacts::AddAuthorToContacts,
+                ),
                 // --- shelf ---
                 MenuItem::action("Shelf…", app::shelf::ShowShelf),
                 MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
@@ -480,6 +487,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
+                MenuItem::action("Contacts…", app::reading::contacts::ShowContacts), // --- contacts ---
                 // --- chat ---
                 MenuItem::action("#thicket Chat (Experimental)", app::chat::ShowChat),
                 MenuItem::separator(),
@@ -494,6 +502,13 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::opml::ExportOpml,
                 ),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
+                // --- access-ai ---
+                MenuItem::action("Client Access…", app::access::ShowClientAccess),
+                MenuItem::action("AI on Your Blyg…", app::server_ai::ShowServerAi),
+                MenuItem::action("Site…", app::site::ShowSite), // --- site ---
+                // --- upkeep ---
+                MenuItem::action("Stale Quotes…", app::upkeep::ShowStaleQuotes),
+                MenuItem::action("Signals…", app::upkeep::ShowSignals),
                 // --- profiles ---
                 MenuItem::separator(),
                 MenuItem::action("Profile", app::profiles::ShowProfile),

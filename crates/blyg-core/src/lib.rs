@@ -1,6 +1,7 @@
 //! blyg-core: everything that isn't pixels. API client, local SQLite store,
 //! outbox + sync worker, and the `Backend` trait the UI talks to.
 
+pub mod access_ai; // --- access-ai ---
 pub mod api;
 pub mod backend;
 pub mod browse; // --- browse ---
@@ -14,9 +15,11 @@ pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
+pub mod outbound; // --- contacts --- sent mentions, groups, sources
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
+pub mod site; // --- site ---
 pub mod state;
 pub mod store;
 pub mod sync;
@@ -25,6 +28,7 @@ pub mod sync;
 pub mod synth;
 pub mod tk;
 pub mod trails; // --- trails ---
+pub mod upkeep; // --- upkeep --- stale quotes, signals
 mod util;
 
 pub use backend::{

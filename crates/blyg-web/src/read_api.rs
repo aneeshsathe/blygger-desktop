@@ -233,6 +233,9 @@ impl Burrow {
         let now = at(now_ms);
         let rows = rvm::order_refs(&self.rd.rows);
         let unread = rows.iter().filter(|r| r.is_unread()).count();
+        // --- web-reading --- the chosen source and lens.
+        let rows = self.wr_filter(rows, now);
+        // --- end web-reading ---
         let matching: Vec<&ReadingItem> = rows
             .into_iter()
             .filter(|r| !unread_only || r.is_unread())
@@ -267,6 +270,9 @@ impl Burrow {
         let empty = (total == 0).then(|| {
             if !query.trim().is_empty() {
                 rvm::no_match(query)
+            } else if let Some(e) = self.wr_empty() {
+                // --- web-reading --- what the chosen source says. --- end web-reading ---
+                e
             } else if unread_only {
                 "Nothing unread. ● shows everything again.".into()
             } else {

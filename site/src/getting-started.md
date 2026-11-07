@@ -46,11 +46,12 @@ in:
 - **Sign in with browser** (the default): your browser
   opens your studio's sign-in and asks you to allow Burrow. Burrow keeps the
   grant in your Keychain and renews it in the background; after 30 days, or
-  if you revoke it in the studio (**More › Client access**), it asks you to
-  sign in again.
+  if you revoke it (**Blyg › Client Access…** in Burrow, or **More › Client
+  access** in the studio), it asks you to sign in again.
 - **API token**: make one in your studio under **More › Client access**
   (REST API, with every permission; allow **reading:state** so read marks
-  sync) and paste it. It lasts 30 days.
+  sync) and paste it. It lasts 30 days. Once Burrow is connected,
+  **Blyg › Client Access…** makes and revokes tokens too.
 - **Studio password**, as a fallback.
 
 It checks them with the server before saving anything, and says plainly what's

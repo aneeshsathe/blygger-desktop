@@ -112,6 +112,21 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+// --- access-ai --- client access, AI on the blyg, the publish sheet's AI
+// (hooks marked the same way)
+#[path = "access.rs"]
+pub(crate) mod access;
+#[cfg(test)]
+#[path = "access_ai_tests.rs"]
+mod access_ai_tests;
+#[path = "note_ai.rs"]
+pub(crate) mod note_ai;
+#[path = "server_ai.rs"]
+pub(crate) mod server_ai;
+// --- upkeep --- (stale quotes, signals, version diffs, alt text, copy link;
+// hooks marked the same way)
+#[path = "upkeep/mod.rs"]
+pub(crate) mod upkeep;
 
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
@@ -168,6 +183,11 @@ pub(crate) mod loose_ends;
 #[path = "capture_link.rs"]
 pub(crate) mod capture_link;
 
+// --- site --- Blyg › Site…: the public site's settings (hooks marked the same way)
+#[path = "site/mod.rs"]
+pub(crate) mod site;
+// --- end site ---
+
 pub const CONTEXT: &str = "Blygger";
 
 /// Every binding lives in `keymap::table()`.
@@ -207,6 +227,8 @@ enum Sheet {
         title: String,
         next_version: u32,
         note: Entity<InputState>,
+        /// --- access-ai --- the blyg's draft note and change classifier.
+        ai: note_ai::NoteAi,
     },
     /// Publishing a post with labelled links to a blyg below studio 0.47
     /// (`server_notice::HELD_*`): `⏎` writes them bare and publishes.
@@ -275,6 +297,15 @@ enum Sheet {
     Blygs(switcher::BlygSheet),
     // --- shelf --- ⌘B: the posts you keep to hand.
     Shelf(shelf::ShelfSheet),
+    // --- access-ai --- Blyg › Client Access… and Blyg › AI on Your Blyg…
+    ClientAccess(Box<access::ClientAccessSheet>),
+    ServerAi(Box<server_ai::ServerAiSheet>),
+    // --- contacts --- Blyg › Contacts…, or an offer to add someone.
+    Contacts(Box<reading::contacts::ContactsSheet>),
+    // --- upkeep --- Blyg › Stale Quotes…, Blyg › Signals…, an image's alt text.
+    StaleQuotes(upkeep::StaleSheet),
+    Signals(upkeep::SignalsSheet),
+    AltText(upkeep::AltSheet),
 }
 
 struct Toast {
@@ -384,7 +415,10 @@ pub struct MainView {
     tray: tray::Tray,
     // --- split --- a second post beside the one being written
     split: split::Split,
-    nearby: nearby::State, // --- nearby ---
+    nearby: nearby::State,              // --- nearby ---
+    site: site::State,                  // --- site ---
+    contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
+    upkeep: upkeep::Upkeep,             // --- upkeep ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -548,10 +582,14 @@ impl MainView {
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             nearby: Default::default(),                        // --- nearby ---
+            site: Default::default(),                          // --- site ---
+            contacts: Default::default(),                      // --- contacts ---
+            upkeep: Default::default(),                        // --- upkeep ---
             _tasks: tasks,
             _subs: subs,
         };
         this.reload_shelf(); // --- shelf ---
+        this.upkeep_reload_stale(); // --- upkeep ---
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
@@ -562,6 +600,7 @@ impl MainView {
         this.ext_init(window, cx); // --- extensions ---
         this.chat_init(window, cx); // --- chat ---
         this.nearby_init(cx); // --- nearby ---
+        this.site_init(cx); // --- site ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -1258,6 +1297,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         self.reload_shelf(); // --- shelf ---
+        self.upkeep_reload_stale(); // --- upkeep ---
         self.list.refresh(results);
         self.loose_ends_refresh(cx); // --- loose ends ---
         self.new_post_sync_selection(); // --- new post ---
@@ -1606,6 +1646,7 @@ impl MainView {
                 self.do_publish(text, window, cx);
             }
             Some(Sheet::Connect { .. }) => self.submit_connect(window, cx),
+            Some(Sheet::ServerAi(_)) => self.save_server_ai(window, cx), // --- access-ai ---
             // --- browser macros --- Never publish under a macro's sheet: its
             // own ⌘⏎ (MacroContinue, keymap.rs) continues the run.
             Some(Sheet::MacroPreview(_) | Sheet::MacroPost(_)) => {}
@@ -1670,7 +1711,9 @@ impl MainView {
                     title,
                     next_version,
                     note,
+                    ai: Default::default(), // --- access-ai ---
                 });
+                self.note_ai_start(next_version, window, cx); // --- access-ai ---
                 cx.notify();
             }
         }
@@ -1700,12 +1743,13 @@ impl MainView {
     }
 
     fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Publish { id, .. }) = self.sheet.take() else {
+        let Some(Sheet::Publish { id, ai, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
+        let extras = ai.extras(&note); // --- access-ai ---
         let note_opt = Some(note.trim().to_string()).filter(|n| !n.is_empty());
-        self.start_publish(id, note_opt, window, cx);
+        self.start_publish_with(id, note_opt, extras, window, cx);
     }
 
     fn start_publish(
@@ -1715,13 +1759,32 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.start_publish_with(id, note_opt, Default::default(), window, cx);
+    }
+
+    /// --- access-ai --- `start_publish` with the note's provenance and the
+    /// confirmed change category.
+    fn start_publish_with(
+        &mut self,
+        id: LocalId,
+        note_opt: Option<String>,
+        extras: blyg_core::access_ai::PublishExtras,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.publishing = true;
         cx.notify();
         let backend = self.backend.clone();
         let task = cx.background_spawn({
             let id = id.clone();
             let note = note_opt.clone();
-            async move { scratch::publish_via(&*backend, &id, note.as_deref()) }
+            async move {
+                if extras == Default::default() {
+                    scratch::publish_via(&*backend, &id, note.as_deref())
+                } else {
+                    backend.publish_with(&id, note.as_deref(), &extras) // --- access-ai ---
+                }
+            }
         });
         cx.spawn_in(window, async move |this, cx| {
             let result = task.await;
@@ -2079,6 +2142,12 @@ impl MainView {
                     Ok((_, inline)) => vm::replace_placeholder(&text, inline),
                     Err(_) => vm::remove_placeholder(&text),
                 };
+                // --- upkeep --- once the image is in place, ask for its alt text.
+                let alt_for = result
+                    .as_ref()
+                    .ok()
+                    .filter(|_| replaced.is_some() && editing_same)
+                    .map(|(_, inline)| inline.clone());
                 // The placeholder was deleted before the upload finished:
                 // nothing refers to the file, so remove it again.
                 if replaced.is_none()
@@ -2103,6 +2172,9 @@ impl MainView {
                         v.show_toast(format!("Image uploaded ({size_kb} KB {ext})"), None, cx)
                     }
                     Err(e) => v.show_toast(format!("Upload failed: {e}"), None, cx),
+                }
+                if let Some(url) = alt_for {
+                    v.upkeep_ask_alt(id.clone(), url, window, cx); // --- upkeep ---
                 }
             });
         })
@@ -2381,6 +2453,8 @@ impl Render for MainView {
             Some(Sheet::Settings { hotkey, .. }) => vec![hotkey],
             Some(Sheet::Connect { url, token, .. }) => vec![url, token],
             Some(Sheet::Withdraw { note, .. }) => vec![note], // --- delete & withdraw ---
+            Some(Sheet::ClientAccess(s)) => s.inputs(),       // --- access-ai ---
+            Some(Sheet::ServerAi(s)) => s.inputs(),           // --- access-ai ---
             _ => vec![],
         };
         for input in [&self.omni].into_iter().chain(sheet_inputs) {
@@ -2427,6 +2501,11 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.access_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
+            .map(|d| self.upkeep_actions(d, cx)) // --- upkeep ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -2435,6 +2514,7 @@ impl Render for MainView {
             .map(|d| self.palette_actions(d, cx)) // --- palette ---
             .map(|d| self.focus_actions(d, cx)) // --- focus ---
             .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
+            .map(|d| self.site_actions(d, cx)) // --- site ---
             .size_full()
             .relative()
             .flex()
@@ -2519,6 +2599,7 @@ impl Render for MainView {
             .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(self.render_trail_publish(cx)) // --- trails ---
+            .children(self.render_site_overlay(window, cx)) // --- site ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
             .children(onboarding) // --- onboarding ---
@@ -2903,6 +2984,7 @@ impl MainView {
                         )
                     })
                     .child(vm::kind_label(item.kind))
+                    .children(self.upkeep_row_marker(item, ix, p.muted)) // --- upkeep ---
                     .child(
                         div()
                             .id(("row-pill", ix))
@@ -3451,6 +3533,13 @@ impl MainView {
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
+            Sheet::ClientAccess(s) => self.render_access_sheet(s, cx), // --- access-ai ---
+            Sheet::ServerAi(s) => self.render_server_ai_sheet(s, cx), // --- access-ai ---
+            Sheet::Contacts(s) => self.render_contacts_sheet(s, cx), // --- contacts ---
+            // --- upkeep ---
+            Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
+            Sheet::Signals(s) => self.render_signals_sheet(s, cx),
+            Sheet::AltText(s) => self.render_alt_sheet(s, cx),
             Sheet::Publish {
                 title,
                 next_version,
@@ -3475,6 +3564,7 @@ impl MainView {
                     .child(input_box(
                         gpui_kit::base::input::Input::new(note).into_any_element(),
                     ))
+                    .children(self.render_note_ai(cx)) // --- access-ai ---
                     .child(keys_row(vec![
                         key_hint("⏎", "publish"),
                         key_hint("esc", "cancel"),

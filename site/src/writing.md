@@ -12,6 +12,7 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 |---|---|
 | `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
 | `is:draft` / `is:stale` | drafts / drafts untouched for a month |
+| `is:stale-quote` | threads that quote an older version of a post (see [Stale quotes](#stale-quotes)) |
 | `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
 | `has:tk` | posts with a `[TK]` not generated yet |
 | `links:<id or host>` | posts that link to that post (the first characters of its id do) or to that site |
@@ -162,9 +163,48 @@ post leaves it `public v3 · unpublished edits` until you publish again, and
 its row in Posts gets the edit mark. Hover either to see both ways out: ⌘⏎
 publishes the edits as v4, ⌥⌘Z discards them. The published and pinned marks
 say what they mean on hover too.
+### Your blyg's AI in the publish sheet
+
+When your blyg has its own AI set up (**Blyg › AI on Your Blyg…**), the
+publish sheet for a second version on offers two helpers. Neither publishes
+anything, and neither holds publishing up:
+
+- **Draft a note** (⌥⌘N, or Post › Draft a Change Note): your blyg's
+  change-notes model writes the version note from what changed and puts it in
+  the field, to edit or keep. With "Draft automatically" on, an empty note is
+  drafted as the sheet opens. A note published exactly as drafted is marked
+  as generated in the changelog; edit it and it's yours.
+- **The change classifier**: your blyg labels the change *typo*, *minor* or
+  *major*, quietly under the field. Click another label to change it, or the
+  chosen one to clear it. With "Start the note with it" on, the label leads
+  the note (`minor: …`) in the field, where you see the note as it will
+  publish. The label is kept with the version on your blyg, privately:
+  readers see it only as words in your note.
+
+On Windows the key is Ctrl+Shift+E.
+
 **Versions** (⌘Y) lists every version of your post with its note. Open any of
 them and **Restore** it into the editor; publishing it makes a new version,
-since versions never go backwards.
+since versions never go backwards. **Changes from v2** on a version shows what
+it changed, word by word: added text shaded, removed text struck through.
+Click it again (**Hide changes**) to go back.
+
+**Copy Link** (Post › Copy Link) puts the open post's address on the
+clipboard; in Reading, the open post's.
+
+### Stale quotes
+
+A thread keeps each quote at the version it had when you published. When a
+quoted post gets a newer version, your thread's quote is *stale*: its row in
+Posts gets a quiet ↻, and `is:stale-quote` lists such threads (the loose-ends
+line says how many). **Blyg › Stale Quotes…** lists them, stalest first,
+with what changed in each quote ("v1 → v3 at its blyg"). **Refresh** (⏎)
+republishes the thread with its quotes brought up to date: a new version with
+the same words, and the note you type (or "refreshed quoted snapshots").
+**Refresh all** (⇧⏎) does every thread that can be. A thread with unpublished
+edits waits until you publish or discard them, and one whose quoted passage
+is gone from the new version needs editing first; the sheet says which. You
+don't need to refresh each time: let small drift wait and refresh in batches.
 
 ### Discard changes
 
@@ -256,8 +296,13 @@ quote it. It's never put in for you.
   the popup shows the link it becomes; publish tells you about any handle it
   couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
   notifies no one.
+  The preview shows a contact's handle as the link it will become (the
+  same h-card your blyg publishes). Manage the address book in Blyg ›
+  Contacts… (see [Reading](reading.md#contacts)).
 - **Images.** Paste or drop an image to upload it; it goes into the text
-  where you pasted it, and the preview shows it. Until a published post shows
+  where you pasted it, and the preview shows it. Burrow then asks what the
+  image shows: type it and press ⏎ to add it as alt text
+  (`![two crabs at dusk](…)`), or esc to skip. Until a published post shows
   it, an upload is private on studio 0.28 or later: only you (and Burrow,
   signed in as you) can see it.
 - **Spellcheck** with the macOS spell checker, your languages and learned

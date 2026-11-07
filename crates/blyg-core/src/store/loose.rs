@@ -37,6 +37,7 @@ impl Store {
         Facts {
             inbound,
             held_origins,
+            ..Default::default() // --- upkeep --- stale quotes come from meta
         }
     }
 }

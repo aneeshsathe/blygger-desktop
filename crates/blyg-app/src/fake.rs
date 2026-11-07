@@ -21,6 +21,15 @@ pub mod reading_seed;
 // --- profiles ---
 #[path = "fake_profiles.rs"]
 pub mod profile_seed;
+// --- access-ai ---
+#[path = "fake_access_ai.rs"]
+pub mod access_ai_seed;
+// --- contacts ---
+#[path = "fake_contacts.rs"]
+pub mod contacts_seed;
+// --- upkeep --- stale quotes, signals and activity log
+#[path = "fake_upkeep.rs"]
+pub mod upkeep_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -167,6 +176,14 @@ struct State {
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
+    // --- access-ai --- client access and the blyg's AI settings.
+    access_ai: access_ai_seed::Seed,
+    // --- site --- the public site's settings (`blyg_core::site`).
+    site: blyg_core::site::SiteConfig,
+    // --- contacts --- the address book and what the blyg sent.
+    book: contacts_seed::Book,
+    // --- upkeep --- stale quotes refreshed, asked yet (`fake_upkeep.rs`).
+    upkeep: upkeep_seed::FakeUpkeep,
 }
 
 pub struct FakeBackend {
@@ -352,6 +369,10 @@ impl FakeBackend {
                 shelf: Vec::new(),  // --- shelf ---
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
+                access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
+                site: fake_site(),                          // --- site ---
+                book: Default::default(),                   // --- contacts ---
+                upkeep: Default::default(),                 // --- upkeep ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -584,6 +605,18 @@ impl FakeBackend {
 
     // ------------------------------------------------------------ test hooks
 
+    #[cfg(test)]
+    /// --- access-ai --- the last `publish_with`'s extras.
+    pub fn last_publish_extras(&self) -> Option<blyg_core::access_ai::PublishExtras> {
+        self.lock().access_ai.last_extras
+    }
+
+    #[cfg(test)]
+    /// --- access-ai --- the blyg's AI settings, changed in place (tests).
+    pub fn set_server_ai(&self, f: impl FnOnce(&mut blyg_core::access_ai::ServerAiSettings)) {
+        f(&mut self.lock().access_ai.ai);
+    }
+
     pub fn is_offline(&self) -> bool {
         self.lock().offline
     }
@@ -675,6 +708,14 @@ impl FakeBackend {
         });
         id
     }
+
+    // --- contacts ---
+    /// Pretend the blyg rewrites `@handle` at publish (studio 0.56).
+    #[cfg(test)]
+    pub fn set_rewrites_handles(&self, on: bool) {
+        self.lock().book.rewrites = on;
+    }
+    // --- end contacts ---
 
     /// Pretend the server lacks (or has) the owner-API read extensions.
     #[cfg(test)]
@@ -874,16 +915,128 @@ impl Backend for FakeBackend {
         )
     }
 
-    // --- contacts --- a one-entry sample address book (a blyg the
-    // sample reading holds). The sample blyg is pre-0.56: it doesn't
-    // rewrite handles, so picking the contact writes the plain link.
+    // --- contacts --- a sample address book (a blyg the sample reading
+    // holds; `contacts_seed`). The sample blyg keeps contacts as studio
+    // 0.56 does, but rewrites `@handle` only when a test asks
+    // (`set_rewrites_handles`), so picking a contact writes the plain link.
     fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
-        vec![blyg_core::contacts::Contact {
-            handle: "lin".into(),
-            name: Some("Lin".into()),
-            origin: crate::fake::reading_seed::LIN.into(),
-        }]
+        self.lock().book.contacts.clone()
     }
+
+    fn rewrites_handles(&self) -> bool {
+        self.lock().book.rewrites
+    }
+
+    fn keeps_contacts(&self) -> bool {
+        true
+    }
+
+    fn create_contact(
+        &self,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.create(c)
+    }
+
+    fn update_contact(
+        &self,
+        id: &str,
+        c: &blyg_core::contacts::ContactInput,
+    ) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.update(id, c)
+    }
+
+    fn delete_contact(&self, id: &str) -> Result<()> {
+        thread::sleep(self.timing.network);
+        self.lock().book.delete(id)
+    }
+
+    fn resolve_contact(&self, id: &str) -> Result<blyg_core::contacts::Contact> {
+        thread::sleep(self.timing.network);
+        self.lock().book.resolve(id)
+    }
+
+    fn contact_seed(&self, origin: &str, title: &str) -> Option<blyg_core::contacts::ContactSeed> {
+        // The sample blygs' manifests name their author as the title.
+        let seed = blyg_core::contacts::ContactSeed::from_author(None, title, origin);
+        blyg_core::contacts::held(&self.contacts(), &seed.url, Some(origin))
+            .is_none()
+            .then_some(seed)
+    }
+
+    fn outbound_mentions(&self) -> Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
+        thread::sleep(self.timing.network);
+        self.read_guard()?;
+        Ok(Some(self.lock().book.outbound.clone()))
+    }
+
+    fn mention_summary(&self) -> Result<Option<blyg_core::outbound::MentionSummary>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let mut groups: Vec<&str> = st
+            .rd
+            .mentions
+            .iter()
+            .map(|m| m.target_item_id.as_str())
+            .collect();
+        groups.sort();
+        groups.dedup();
+        Ok(Some(blyg_core::outbound::MentionSummary {
+            inbound: st.rd.mentions.len() as u64,
+            outbound: st.book.outbound.len() as u64,
+            groups: groups.len() as u64,
+        }))
+    }
+
+    fn mention_groups(&self) -> Result<Option<Vec<blyg_core::outbound::MentionGroup>>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let mut ms: Vec<&Mention> = st.rd.mentions.iter().collect();
+        ms.sort_by(|a, b| b.verified_at.cmp(&a.verified_at));
+        let mut out: Vec<blyg_core::outbound::MentionGroup> = Vec::new();
+        for m in ms {
+            if !out.iter().any(|g| g.target_item_id == m.target_item_id) {
+                out.push(blyg_core::outbound::MentionGroup {
+                    target_item_id: m.target_item_id.clone(),
+                    verified_at: m.verified_at.clone().unwrap_or_default(),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(Some(out))
+    }
+
+    fn mention_source(&self, id: &str) -> Result<Option<blyg_core::outbound::MentionSource>> {
+        self.read_guard()?;
+        let st = self.lock();
+        let m = st
+            .rd
+            .mentions
+            .iter()
+            .find(|m| m.id == id)
+            .ok_or(CoreError::NotFound)?;
+        let holder = m.source_id.as_ref().and_then(|sid| {
+            st.rd
+                .reading
+                .iter()
+                .find(|r| &r.remote_id == sid)
+                .map(|r| r.subscription_id.clone())
+        });
+        let subscription = m.source_origin.as_ref().and_then(|o| {
+            st.rd
+                .subs
+                .iter()
+                .find(|s| blyg_core::profile::same_origin(&s.origin, o))
+                .map(|s| (s.id.clone(), s.title.clone()))
+        });
+        Ok(Some(blyg_core::outbound::MentionSource {
+            holder,
+            subscription,
+        }))
+    }
+    // --- end contacts ---
 
     // --- capture --- a page on the sample blog has a title; others none.
     fn page_title(&self, url: &str) -> Option<String> {
@@ -904,6 +1057,11 @@ impl Backend for FakeBackend {
                 .filter(|m| m.status == "verified")
                 .map(|m| m.target_item_id.to_ascii_lowercase()),
         );
+        // --- upkeep ---
+        f.stale_quotes = upkeep_seed::cached(&st)
+            .into_iter()
+            .map(|t| t.id.to_ascii_lowercase())
+            .collect();
         f
     }
 
@@ -1147,7 +1305,9 @@ impl Backend for FakeBackend {
             status: "active".into(),
             in_blogroll: false,
             title_follows_source: true,
+            poll: Default::default(),
         });
+        contacts_seed::poll(&mut v); // --- contacts ---
         v
     }
 
@@ -1477,6 +1637,7 @@ impl Backend for FakeBackend {
                 status: "active".into(),
                 in_blogroll: false,
                 title_follows_source: true,
+                poll: Default::default(),
             };
             st.rd.subs.push(sub.clone());
             sub
@@ -2234,6 +2395,83 @@ impl Backend for FakeBackend {
         ))
     }
 
+    // --- site --- the "server" checks what Studio checks, and refuses as it
+    // does (400 with its words).
+    fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(self.lock().site.clone())
+    }
+
+    fn save_site_config(
+        &self,
+        base: &blyg_core::site::SiteConfig,
+        next: &blyg_core::site::SiteConfig,
+    ) -> Result<blyg_core::site::SiteConfig> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let refuse = |message: String| CoreError::Rejected {
+            status: 400,
+            message,
+            details: vec![],
+        };
+        if let Some(e) = next.error() {
+            return Err(refuse(e));
+        }
+        let mut st = self.lock();
+        if let Some(fp) = next.front_page.as_deref().filter(|f| !f.is_empty()) {
+            let ok = st.items.iter().any(|i| {
+                i.kind == Kind::Thread
+                    && i.status == Status::Public
+                    && i.server_id.as_ref().is_some_and(|s| s.0 == fp)
+            });
+            if !ok {
+                return Err(refuse("frontPage must be a published thread".to_string()));
+            }
+        }
+        if let Some(on) = &next.extensions
+            && let Some(bad) = on.iter().find(|n| {
+                !st.site
+                    .server_extensions
+                    .iter()
+                    .any(|e| &e.name == *n && e.compiled)
+            })
+        {
+            return Err(refuse(format!(
+                "extension not compiled into this build: {bad}"
+            )));
+        }
+        let patch = next.patch(base);
+        let mut stored = serde_json::to_value(&st.site).unwrap_or_default();
+        if let Some(o) = stored.as_object_mut() {
+            o.extend(patch);
+        }
+        let mut saved: blyg_core::site::SiteConfig =
+            serde_json::from_value(stored).map_err(|e| CoreError::Other(e.to_string()))?;
+        saved.feed_orders = st.site.feed_orders.clone();
+        saved.server_extensions = st.site.server_extensions.clone();
+        let on = saved.extensions.clone().unwrap_or_default();
+        for e in &mut saved.server_extensions {
+            e.enabled = on.contains(&e.name);
+        }
+        saved.update = if saved.update_check == Some(false) {
+            None
+        } else {
+            fake_studio_update()
+        };
+        st.site = saved.clone();
+        Ok(saved)
+    }
+
+    fn studio_update(&self) -> Option<blyg_core::site::StudioUpdate> {
+        self.lock().site.update.clone()
+    }
+
+    fn refresh_studio_update(&self, _: bool) -> Result<Option<blyg_core::site::StudioUpdate>> {
+        Ok(self.lock().site.update.clone())
+    }
+    // --- end site ---
+
     fn background_reading(&self) -> Vec<ReadingItem> {
         let st = self.lock();
         if !st.read_ext {
@@ -2409,9 +2647,336 @@ impl Backend for FakeBackend {
         }
         Ok(())
     }
+
+    // --- access-ai --- as a browser sign-in: client access needs the
+    // studio password once (any but "wrong").
+    fn access_gate(&self) -> blyg_core::access_ai::AccessGate {
+        if self.lock().access_ai.session {
+            blyg_core::access_ai::AccessGate::Ready
+        } else {
+            blyg_core::access_ai::AccessGate::NeedsPassword
+        }
+    }
+
+    fn access_sign_in(&self, password: &str) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        if password.is_empty() || password == "wrong" {
+            return Err(CoreError::Unauthorized);
+        }
+        self.lock().access_ai.session = true;
+        Ok(())
+    }
+
+    fn own_client_id(&self) -> Option<String> {
+        Some(access_ai_seed::OWN_CLIENT.to_string())
+    }
+
+    fn authorizations(&self) -> Result<Vec<blyg_core::access_ai::Authorization>> {
+        self.remote_guard()?;
+        let st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        Ok(st.access_ai.authorizations.clone())
+    }
+
+    fn create_authorization(
+        &self,
+        new: &blyg_core::access_ai::NewAuthorization,
+    ) -> Result<blyg_core::access_ai::NewToken> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        let name = new.name.trim();
+        if name.is_empty() || name.chars().count() > 100 || new.scope.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "a name (1–100 characters) and at least one permission".into(),
+                details: vec![],
+            });
+        }
+        st.access_ai.seq += 1;
+        let n = st.access_ai.seq;
+        let now = Utc::now().timestamp();
+        let a = blyg_core::access_ai::Authorization {
+            id: format!("gr-new-{n}"),
+            client_id: format!("cl-new-{n}"),
+            name: name.to_string(),
+            manual: true,
+            resource: match new.resource {
+                blyg_core::access_ai::TokenResource::Api => format!("{ORIGIN}/api"),
+                blyg_core::access_ai::TokenResource::Mcp => format!("{ORIGIN}/mcp"),
+            },
+            scope: new.scope.clone(),
+            created_at: now,
+            expires_at: Some(now + 30 * 86_400),
+        };
+        st.access_ai.authorizations.push(a.clone());
+        Ok(blyg_core::access_ai::NewToken {
+            authorization: a,
+            access_token: format!("fake-token-{n}-0123456789abcdef"),
+            expires_in: 30 * 86_400,
+        })
+    }
+
+    fn revoke_authorization(&self, id: &str) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        st.access_ai.authorizations.retain(|a| a.id != id);
+        Ok(())
+    }
+
+    fn revoke_all_authorizations(&self) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        if !st.access_ai.session {
+            return Err(CoreError::Unauthorized);
+        }
+        st.access_ai.authorizations.clear();
+        Ok(())
+    }
+
+    fn ai_models(&self) -> Result<blyg_core::access_ai::AiModels> {
+        self.remote_guard()?;
+        Ok(self.lock().access_ai.models.clone())
+    }
+
+    fn server_ai_settings(&self) -> Result<blyg_core::access_ai::ServerAiSettings> {
+        self.remote_guard()?;
+        Ok(self.lock().access_ai.ai.clone())
+    }
+
+    fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let mut st = self.lock();
+        let ai = &mut st.access_ai.ai;
+        // Only the keys sent change, as a PATCH.
+        for f in blyg_core::access_ai::AiFunction::ALL {
+            if let Some(v) = s.model(f) {
+                *ai.model_mut(f) = Some(v.trim().to_string());
+            }
+        }
+        let keep = |to: &mut Option<String>, from: &Option<String>| {
+            if let Some(v) = from {
+                *to = Some(v.trim().to_string());
+            }
+        };
+        keep(&mut ai.style_prompt, &s.style_prompt);
+        keep(&mut ai.feed_prompt, &s.feed_prompt);
+        if s.auto_change_notes.is_some() {
+            ai.auto_change_notes = s.auto_change_notes;
+        }
+        if s.change_category_in_note.is_some() {
+            ai.change_category_in_note = s.change_category_in_note;
+        }
+        Ok(())
+    }
+
+    fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let st = self.lock();
+        let model = st.access_ai.ai.model_changelog.clone().unwrap_or_default();
+        if model.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "no change-notes model is set: choose one in Blyg › AI on Your Blyg"
+                    .into(),
+                details: vec![],
+            });
+        }
+        let item = st
+            .items
+            .iter()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        if item.version == 0 {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "a first version has no previous version to describe".into(),
+                details: vec![],
+            });
+        }
+        Ok(blyg_core::access_ai::DraftedNote {
+            note: "Tightened the opening and added a closing example.".into(),
+            model,
+        })
+    }
+
+    fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let st = self.lock();
+        let model = st.access_ai.ai.model_classify.clone().unwrap_or_default();
+        if model.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "the change classifier is off: choose a decision model in Settings → AI"
+                    .into(),
+                details: vec![],
+            });
+        }
+        let item = st
+            .items
+            .iter()
+            .find(|i| &i.local_id == id)
+            .ok_or(CoreError::NotFound)?;
+        if item.version == 0 {
+            return Err(CoreError::Rejected {
+                status: 409,
+                message: "a first version has no previous version to compare".into(),
+                details: vec![],
+            });
+        }
+        Ok(blyg_core::access_ai::ChangeClass {
+            category: Some(blyg_core::access_ai::ChangeCategory::Minor),
+            probability: Some(0.82),
+            model: Some(model),
+            reason: None,
+        })
+    }
+
+    fn publish_with(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+        extras: &blyg_core::access_ai::PublishExtras,
+    ) -> Result<PublishOutcome> {
+        let out = self.publish(id, note)?;
+        self.lock().access_ai.last_extras = Some(*extras);
+        Ok(out)
+    }
+    // --- end access-ai ---
+    // --- upkeep --- the sample's stale quotes and signals (`fake_upkeep.rs`).
+    fn cached_stale_quotes(&self) -> Vec<blyg_core::upkeep::ThreadFreshness> {
+        upkeep_seed::cached(&self.lock())
+    }
+
+    fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::stale(&self.lock()))
+    }
+
+    fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        upkeep_seed::one(&self.lock(), id)
+    }
+
+    fn refresh_quotes(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Refreshed> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let (r, sink) = {
+            let mut st = self.lock();
+            let r = upkeep_seed::refresh(&mut st, id, note)?;
+            (r, st.sink.clone())
+        };
+        Self::emit(&sink, CoreEvent::ItemsChanged);
+        Ok(r)
+    }
+
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        upkeep_seed::version_text(&self.lock(), id, version)
+    }
+
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        _cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::thumbs(&self.lock(), thumb))
+    }
+
+    fn interactions_page(
+        &self,
+        _cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::interactions(&self.lock()))
+    }
+    // --- end upkeep ---
 }
 
+// --- upkeep --- test hooks
+#[cfg(test)]
+impl FakeBackend {
+    /// Tests: make another of the sample's published posts stale.
+    pub fn add_stale_quote(&self, id: &LocalId) {
+        self.lock().upkeep.add(id.clone());
+    }
+}
+// --- end upkeep ---
+
 /// --- hoppers --- Each row's `hoppers` from the memberships.
+/// --- site --- The sample blyg's site settings, as studio 0.56 reports a
+/// fresh blyg's (with `inspect` and `reading-time` compiled in).
+fn fake_site() -> blyg_core::site::SiteConfig {
+    use blyg_core::site::{ServerExtension, SiteConfig, core_feed_orders};
+    let ext = |name: &str| ServerExtension {
+        name: name.into(),
+        compiled: true,
+        enabled: false,
+    };
+    SiteConfig {
+        author_url: Some(String::new()),
+        site_url: Some(String::new()),
+        avatar_media_id: Some(String::new()),
+        theme: Some("auto".into()),
+        custom_theme: Some(None),
+        custom_theme_dark: Some(None),
+        custom_theme_name: Some(String::new()),
+        font: Some("book".into()),
+        feed_order: Some("pace-layered".into()),
+        feed_orders: Some(core_feed_orders()),
+        front_page: Some(String::new()),
+        posts_path: Some("posts".into()),
+        links_position: Some("left".into()),
+        links_threads: Some(vec![]),
+        links_external: Some(vec![]),
+        links_collections: Some(true),
+        links_opml: Some(true),
+        links_blygger_org: Some(true),
+        links_blygger_com: Some(true),
+        hopper_feeds: Some(false),
+        update_check: Some(true),
+        update_feed_url: Some(String::new()),
+        update_notice_ack: Some(false),
+        extensions: Some(vec![]),
+        server_extensions: vec![ext("inspect"), ext("reading-time")],
+        update: fake_studio_update(),
+    }
+}
+
+/// --- site --- The sample studio's update state: current, unless
+/// `BLYGGER_FAKE_STUDIO_LATEST` names a newer release.
+fn fake_studio_update() -> Option<blyg_core::site::StudioUpdate> {
+    Some(blyg_core::site::StudioUpdate {
+        current: Some("0.56.0".into()),
+        latest: std::env::var("BLYGGER_FAKE_STUDIO_LATEST").unwrap_or_else(|_| "0.56.0".into()),
+        checked_at: "2026-11-07T08:00:00Z".into(),
+    })
+}
+
 fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {
     for r in rows {
         r.hoppers = items
