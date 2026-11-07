@@ -3,9 +3,25 @@
 `crates/blyg-web` is Burrow in a browser and on a phone: Burrow's own Rust
 (the omnibar and list rules, the counter, the Markdown preview and the
 reading view-model) compiled to WebAssembly, drawn by a small page of plain
-ES modules. At phone widths it has bottom tabs (Write · Read · Shelf), a ＋
-for quick capture and a paged bar above the keyboard; it installs as an
-offline web app.
+ES modules. At phone widths it has bottom tabs (Write · Read · Shelf ·
+Blyg), a ＋ for quick capture and a paged bar above the keyboard; it
+installs as an offline web app.
+
+## Where things are
+
+Every feature sits where you'd look for it, by name (an icon and a word),
+not behind a corner menu:
+
+| What | Desk (wider than 700px) | Phone |
+|---|---|---|
+| This post: shelve, preview, image, TK, versions, make draft, discard, withdraw, delete | the action row over the editor (each with its key) | 📚 Shelf · 👁 Preview · ⋯ Post in the editor's top bar; ⋯ Post and ✦ Write TK on the bar's last page |
+| A post you read: quote, reply, hopper, copy link, unread, fork, text size | the row over the post | the row under the post's top bar |
+| Sources, subscribe, subscriptions, mentions, hoppers, peek, history | the sources pane, named at its top | the row under the Read tab's search |
+| Your blyg's settings, mentions, hoppers, subscriptions, peek, history, shelf, theme (and the demo's offline switch and reset) | the ⚙ Blyg view (⌃3) | the Blyg tab |
+
+Every keyboard shortcut still works; the desk's keys line lists them.
+Destructive actions (delete, discard, withdraw, unsubscribe, deleting a
+hopper, clearing history) still ask first.
 
 It runs in one of two modes, and says which:
 
@@ -61,9 +77,9 @@ It runs in one of two modes, and says which:
 
 The Read side does what Studio's does (0.19.0):
 
-- **Sources.** On a desk, a pane left of the stream; on a phone, ☰ on the
-  Read tab, with a "Showing …" line under the search (✕ shows everything
-  again). The smart feeds (All unread, Today, Thumbed, All, Background) with
+- **Sources.** On a desk, a pane left of the stream; on a phone,
+  ☰ Sources in the row under the Read tab's search, with a "Showing …"
+  line under it (✕ shows everything again). The smart feeds (All unread, Today, Thumbed, All, Background) with
   their private counts, Mentions (posts that mention you, as the blyg's
   `GET /api/reading?mentions=true` lens says, else worked out from what is
   held), your hoppers and your subscriptions, each with a dot when there's
@@ -120,6 +136,9 @@ has to stay cool with all of them. So:
   after a refresh read it, and when the page is hidden.
 - A hidden page does no work: the 30 s redraw for relative times waits
   until it's on screen.
+- The rows of named actions cost nothing on a keystroke: the desk's row
+  over the editor is drawn from the view already in hand and replaced only
+  when it changes, and the Blyg list is drawn only while it's on screen.
 
 `crates/blyg-web/phone-check.mjs` checks the phone's Read tab in WebKit
 with iPhone emulation: a page of cards, a post that stays shown after the
@@ -144,10 +163,11 @@ to try it on a phone.
 
 <!-- web-writing -->
 The writing side of Studio, in both layouts. On a phone it's in the
-editor's bar (🖼 on the third page; ⋯ and ✦ on the last), the editor's ⋯
-button (this post's sheet), ⑂ on a post you read, and ⚙ in the ◐ sheet. On
-a desk: the same bar, `⋯ Post` in the status bar (⌃⇧Y opens the versions),
-`⑂ Fork` over a post you read, and `⚙ Your blyg` in the header. The rules
+editor's bar (🖼 on the third page; ⋯ Post and ✦ Write TK on the last), the
+editor's `⋯ Post` button (this post's sheet), `⑂ Fork` in the row under a
+post you read, and Settings on the Blyg tab. On a desk: the same bar, the
+action row over the editor (⌃⇧Y opens the versions), `⑂ Fork` over a post
+you read, and Settings in the ⚙ Blyg view (⌃3). The rules
 are in `src/writing.rs` (`w_*`), the drawing in `www/writing.js`.
 
 - **Images.** From the file picker (on a phone, the photo picker), a

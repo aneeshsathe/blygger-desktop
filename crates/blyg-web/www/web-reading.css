@@ -1,4 +1,4 @@
-/* --- web-reading --- The sources pane (desk), the "Showing …" line and ☰
+/* --- web-reading --- The sources pane (desk), the "Showing …" line
    (phone), and the panel both use for subscriptions, mentions, hoppers,
    peek and history: a sheet from the bottom on a phone, a dialog on a
    desk. Colours from Burrow's themes (--c-*). */
@@ -26,12 +26,9 @@
 .wr-lens { display: flex; gap: 2px; margin: 4px 10px 2px; padding: 2px; border-radius: 8px; background: var(--c-sel); }
 .wr-lens button { flex: 1; border: 0; background: none; color: var(--c-muted); font: 500 11.5px Inter, system-ui, sans-serif; padding: 4px 4px; border-radius: 6px; min-height: 26px; }
 .wr-lens button.on { background: var(--c-bg); color: var(--c-ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-.wr-more { display: flex; flex-direction: column; padding: 0 6px; }
-.wr-more button { border: 0; background: none; color: var(--c-accent); text-align: left; font: inherit; padding: 5px 6px; border-radius: 6px; min-height: 28px; }
-.wr-more button:hover { background: var(--c-sel); }
 .bad { color: var(--c-over); }
 
-/* ---------------------------------------------------------------- phone: ☰ and the line under the search */
+/* ---------------------------------------------------------------- phone: the line under the search */
 .wr-chip { display: flex; align-items: center; gap: 8px; margin: 0 1rem .4rem; padding: .35rem .4rem .35rem .75rem; border-radius: 999px;
   background: var(--c-sel); color: var(--c-ink); font: .85rem/1.2 var(--ui, system-ui); }
 .wr-chip[hidden] { display: none; }

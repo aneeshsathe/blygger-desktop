@@ -282,13 +282,14 @@ export const BAR_PAGES = [
   { name: 'More Markdown', tools: [
     ['code', '‹›', 'Inline code'], ['fence', '```', 'Code block'], ['mdlink', '🔗', 'Web link'],
     ['image', '🖼', 'Image'], ['rule', '―', 'Rule'], ['strike', '<s>S</s>', 'Strikethrough'] ] },
-  { name: 'Post', tools: [
-    ['shelf', '📚', 'Shelve or unshelve'], ['preview', '👁', 'Preview'], ['hide', '⌄', 'Hide the keyboard'] ] },
+  { name: 'Post', tools: [['hide', '⌄ Done', 'Hide the keyboard']] },
 ];
+// Shelve and Preview are named over the editor (the phone's top bar, the
+// desk's action row), so the last page keeps the post's own sheet.
 // --- web-writing --- The image tool uploads one (www/writing.js); the
 // last page gains TK generation on the blyg and the post's ⋯ menu.
 BAR_PAGES[2].tools[3] = ['upload', '🖼', 'Image: upload one, with alt text'];
-BAR_PAGES[3].tools.unshift(['more', '⋯', 'This post: image, versions, TK, withdraw'], ['gen', '✦', 'Generate the TK text on your blyg']);
+BAR_PAGES[3].tools.unshift(['more', '⋯ Post', 'This post: image, versions, TK, withdraw'], ['gen', '✦ Write TK', 'Generate the TK text on your blyg']);
 // --- end web-writing ---
 
 /** Build the bar into `host`. `act(name)` runs a tool; returns the bar. */
