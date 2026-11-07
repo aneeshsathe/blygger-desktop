@@ -10,7 +10,7 @@ use blyg_term::pty::{Output, Pty, ShellSpec};
 fn run(spec: &ShellSpec) -> String {
     let (tx, rx) = mpsc::channel();
     let tx = std::sync::Mutex::new(tx);
-    let _pty = Pty::spawn(spec, 120, 40, move |o| {
+    let pty = Pty::spawn(spec, 120, 40, move |o| {
         let _ = tx.lock().unwrap().send(o);
     })
     .expect("spawn");
@@ -18,7 +18,15 @@ fn run(spec: &ShellSpec) -> String {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(200)) {
-            Ok(Output::Bytes(b)) => out.extend(b),
+            Ok(Output::Bytes(b)) => {
+                // ConPTY asks where the cursor is (DSR) before it passes any
+                // output on, and waits for the answer. In the app the engine
+                // answers; here we do.
+                if b.windows(4).any(|w| w == b"\x1b[6n") {
+                    pty.write(b"\x1b[1;1R".to_vec());
+                }
+                out.extend(b);
+            }
             Ok(Output::Exited) => {
                 // Drain what the reader still holds.
                 while let Ok(Output::Bytes(b)) = rx.recv_timeout(Duration::from_millis(300)) {
