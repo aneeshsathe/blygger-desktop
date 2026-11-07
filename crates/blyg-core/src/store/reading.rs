@@ -298,7 +298,9 @@ fn kind_str(k: SubscriptionKind) -> &'static str {
 }
 
 /// Rows merged per transaction (`Store::merge_reading`).
-const MERGE_CHUNK: usize = 250;
+const MERGE_CHUNK: usize = 100;
+/// Between two of those transactions, so others get the store.
+const MERGE_PAUSE: std::time::Duration = std::time::Duration::from_millis(1);
 
 impl Store {
     /// Upsert a pulled reading list. `complete` = the server had no further
@@ -444,6 +446,11 @@ impl Store {
             }
 
             tx.commit()?;
+            drop(c);
+            // The store's mutex isn't fair: without a pause this thread
+            // takes it straight back, and a reader waiting on it waits
+            // for the whole merge after all.
+            std::thread::sleep(MERGE_PAUSE);
         }
 
         // Prune rows the server no longer returns.

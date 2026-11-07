@@ -224,7 +224,7 @@ keystroke, at 2,000 posts and a 20k-character thread: `blyg-app/src/posts_perf_t
 - **Two connections.** The store's writes, and the reading list's cache, use one connection; the
   reads of your own posts the UI makes (the list, search, one item, the picker, the sync status,
   the public origin) use a second, read-only one, so they never wait for a pull's merge (WAL). A
-  pulled reading list is merged 250 rows per transaction, so nothing waits seconds behind it.
+  pulled reading list is merged 100 rows per transaction, so nothing waits seconds behind it.
 - **The omnibar searches off the UI thread**, newest keystroke wins (a generation number);
   until its results are back the list shows the previous query's, and ⏎, ↑/↓, opening a post
   or focusing the editor finish the search first so they act on what was typed. A sync's

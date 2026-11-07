@@ -21,7 +21,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Changed
 
-- **Typing and searching stay smooth at any size.** A keystroke no longer waits on the local database: your text is saved on a background thread, the search index catches up after a pause, and the preview and the omnibar's search run off the main thread. In a 20,000-character thread with the preview up, over 2,000 posts, a keystroke went from about 50 ms (up to 150 ms) of main-thread work to under a millisecond; an omnibar keystroke from up to 55 ms to under one. Your own posts are read through a second database connection, so nothing you do waits on a sync, and a big reading-list pull is merged in small steps (store schema v18).
+- **Typing and searching stay smooth at any size.** A keystroke no longer waits on the local database: your text is saved on a background thread, the search index catches up after a pause, and the preview and the omnibar's search run off the main thread. In a 20,000-character thread with the preview up, over 2,000 posts, a keystroke went from 30–50 ms of main-thread work (over 100 ms at worst) to about 1 ms; an omnibar keystroke from 20–35 ms to under 1 ms. Your own posts are read through a second database connection, so the Write screen never waits on a sync, and a big reading-list pull is merged in small steps, so the Reading screen waits tens of milliseconds behind one rather than seconds (store schema v18).
 
 ## [0.17.1] - 2026-11-03
 
