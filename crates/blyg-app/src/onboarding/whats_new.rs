@@ -1,7 +1,10 @@
 //! What changed, per release: the first launch after an update opens the
-//! tutorial on a card listing it, with Take the tour, Start at what's new,
-//! and Skip tutorial. Add an entry when a release adds something the tour
-//! teaches, and set its version to the release's (CHANGELOG.md says when).
+//! tutorial on a short card that links to the release notes on the docs
+//! site (`site/src/releases.md`, one heading per release), with Take the
+//! tour, Show me what's new, and Skip tutorial. Add an entry when a release
+//! adds something the tour teaches, and set its version to the release's
+//! (CHANGELOG.md says when). The notes themselves live on the site, never
+//! in the app: a list long enough to say it all didn't fit on the card.
 //!
 //! The rule (every release): a new feature gets a tour step that lands on
 //! it, with `since` set to the release, existing steps are edited when
@@ -13,8 +16,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Release {
     pub version: &'static str,
-    /// Short lines, plain text.
-    pub items: &'static [&'static str],
     /// The tour step that teaches the first new thing (`steps::STEPS` id).
     pub first_step: Option<&'static str>,
 }
@@ -22,313 +23,46 @@ pub struct Release {
 pub const RELEASES: &[Release] = &[
     Release {
         version: "0.18.0",
-        items: &[
-            "The shelf: ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the \
-             top of the list, marked 📚. ⌘B opens the shelf; 1–9 opens a post on it, ⌥↑/⌥↓ \
-             reorder it. It's kept on this Mac for now.",
-            if cfg!(target_os = "windows") {
-                "Lineage while you write: a quiet line under the editor shows the open post's \
-                 lineage glyph, what it draws on and what draws on it. A click opens the \
-                 lists; Ctrl+J opens the lineage sheet for your own post."
-            } else {
-                "Lineage while you write: a quiet line under the editor shows the open post's \
-                 lineage glyph, what it draws on and what draws on it. A click opens the \
-                 lists; ⌘J opens the lineage sheet for your own post."
-            },
-            "The lineage sheet zooms out: − shows the neighbourhood two hops each way, coloured \
-             by relation. ⏎ re-centres on a post, ⌫ walks back, + returns to the list.",
-            if cfg!(target_os = "windows") {
-                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
-                 or link in the Stream) to see what it is; “label it” names an unlabelled \
-                 link. Ctrl-click opens the post."
-            } else {
-                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
-                 or link in the Stream) to see what it is; “label it” names an unlabelled \
-                 link. ⌘-click opens the post."
-            },
-            // --- chat ---
-            if cfg!(target_os = "windows") {
-                "#thicket (Ctrl+Shift+I), an experimental chat tab: talk with other Burrow users on \
-                 Libera.Chat (IRC), with unread and mention marks and a notification when \
-                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
-                 and it may be removed."
-            } else {
-                "#thicket (⇧⌘I), an experimental chat tab: talk with other Burrow users on \
-                 Libera.Chat (IRC), with unread and mention marks and a notification when \
-                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
-                 and it may be removed."
-            },
-            // --- terminal ---
-            if cfg!(target_os = "windows") {
-                "A terminal pane (Ctrl+`, experimental): your own shell under your posts, for \
-                 a CLI agent, git or wrangler. It gets nothing of Burrow's (no token, no \
-                 BLYGGER_* variable); Ctrl+Shift+T sends the editor's selection to it, quoted."
-            } else {
-                "A terminal pane (⌃`, experimental): your own shell under your posts, for a CLI \
-                 agent, git or wrangler. It gets nothing of Burrow's (no token, no BLYGGER_* \
-                 variable); ⇧⌘T sends the editor's selection to it, quoted."
-            },
-            // --- flow ---
-            if cfg!(target_os = "windows") {
-                "The command palette (Ctrl+Shift+P): every action, theme, font, blyg, hopper and \
-                 post by name, each with its key; Enter runs it, Ctrl+Enter keeps the palette \
-                 open. Extensions are its Extensions group, and Post › Extensions… still lists \
-                 them."
-            } else {
-                "The command palette (⇧⌘P): every action, theme, font, blyg, hopper and post by \
-                 name, each with its key; ⏎ runs it, ⌘⏎ keeps the palette open. Extensions are \
-                 its Extensions group, and Post › Extensions… still lists them."
-            },
-            if cfg!(target_os = "windows") {
-                "Focus mode (Ctrl+Shift+F, View › Focus): just the editor, the line you're on \
-                 held steady, other paragraphs dimmed, a hairline with the sync dot and this \
-                 sitting's words. Esc leaves; focus-line and focus-fade tune it."
-            } else {
-                "Focus mode (⌥⌘F, View › Focus): just the editor, the line you're on held \
-                 steady, other paragraphs dimmed, a hairline with the sync dot and this \
-                 sitting's words. esc leaves; focus-line and focus-fade tune it."
-            },
-            if cfg!(target_os = "windows") {
-                "Serendipity, off unless you turn it on (Settings › Serendipity): a new post's \
-                 empty editor shows one of your older posts; q quotes, l links, o opens, r \
-                 another, and typing sends it away."
-            } else {
-                "Serendipity, off unless you turn it on (Settings › Serendipity): ⌘N's empty \
-                 editor shows one of your older posts; q quotes, l links, o opens, r another, \
-                 and typing sends it away."
-            },
-            if cfg!(target_os = "windows") {
-                "Small motion: a published post's row settles, the sync dot and the counter ease \
-                 between colours, the list crossfades when you switch blygs. Windows' \
-                 animation setting isn't read yet; BLYGGER_REDUCE_MOTION=1 turns it off."
-            } else {
-                "Small motion: a published post's row settles, the sync dot and the counter ease \
-                 between colours, the list crossfades when you switch blygs (none of it with \
-                 Reduce Motion on). sounds = quiet adds a quiet system sound on publish and \
-                 capture."
-            },
-            // --- tangles ---
-            if cfg!(target_os = "windows") {
-                "Trails: t in Reading adds the post to a trail, with a word on why; Shift+T \
-                 starts another. Trails are listed with your sources, and Ctrl+Alt+T writes \
-                 one as a thread of quotes in a new draft. Nothing is published."
-            } else {
-                "Trails: t in Reading adds the post to a trail, with a word on why; ⇧T starts \
-                 another. Trails are listed with your sources, and ⌥⌘T writes one as a \
-                 thread of quotes in a new draft. Nothing is published."
-            },
-            if cfg!(target_os = "windows") {
-                "Drag a post into what you're writing to quote it (a link in a fragment), or \
-                 onto the search box to start a thread. q or Ctrl+Alt+K keeps it on the quote \
-                 tray above the status bar, and Ctrl+K lists the tray first."
-            } else {
-                "Drag a post into what you're writing to quote it (a link in a fragment), or \
-                 onto the omnibar to start a thread. q or ⌥⌘K keeps it on the quote tray \
-                 above the status bar, and ⌘K lists the tray first."
-            },
-            if cfg!(target_os = "windows") {
-                "Split view: Ctrl+Alt+Enter opens the selected post beside the one you're \
-                 writing (yours editable, anyone else's read-only); Ctrl+Alt+[ and Ctrl+Alt+] \
-                 move between them."
-            } else {
-                "Split view: ⌥⌘⏎ opens the selected post beside the one you're writing (yours \
-                 editable, anyone else's read-only); ⌥⌘[ and ⌥⌘] move between them."
-            },
-            // --- nearby ---
-            if cfg!(target_os = "windows") {
-                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
-                 that say what your paragraph says. Alt+Enter links the shared phrase, \
-                 Alt+Shift+Enter quotes it; Ctrl+Alt+U hides the rail. Settings › Nearby adds a \
-                 31 MB model that runs on this computer and matches meaning, not just words."
-            } else {
-                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
-                 that say what your paragraph says. ⌥⏎ links the shared phrase, ⌥⇧⏎ quotes it; \
-                 ⌥⌘U hides the rail. Settings › Nearby adds a 31 MB model that runs on this Mac \
-                 and matches meaning, not just words."
-            },
-            // --- capture ---
-            "Loose ends: the search reads is:orphan, is:draft, is:stale, is:leaf, has:tk, \
-             links:, quotes:, kind: and v:. With the search empty, a quiet line over the list \
-             says what's loose, in words (2 orphans · 1 ungenerated TK); a click filters.",
-            if cfg!(target_os = "windows") {
-                "Capture from anywhere: paste a web address into the search and ⏎ starts a \
-                 fragment with that link, titled from the page. Quick capture offers text you \
-                 just copied as a “quote clipboard” chip."
-            } else {
-                "Capture from anywhere: select text in any app and choose Services › Capture \
-                 in Burrow to open quick capture with it quoted. A web address pasted into the \
-                 search starts a fragment with that link, titled from the page."
-            },
-            "Your contacts come first in the @ list; where your blyg turns @handle into a \
-             link (studio 0.56), picking one writes @handle, and publish says which handles \
-             it couldn't resolve. Reading has a Mentions feed under All unread.",
-        ],
         first_step: Some("shelf"),
     },
     Release {
         version: "0.17.0",
-        items: &[
-            "Burrow stays quick with thousands of posts in Reading: a sync that finds nothing \
-             new no longer holds up the window, and lists, search and marking posts read are \
-             many times faster.",
-            "Pick several posts and press h to put them all in a hopper at once. A hopper \
-             lists its posts in its own order, the most recently added first.",
-            "The reader follows Burrow's theme, not the Mac's. bracket-picker = quotes (or off) \
-             in the config stops typing [[ from opening the post picker.",
-            "Switching blygs is safer: nothing from the blyg you left reaches the one you're \
-             on, and the switcher keys work on Windows.",
-        ],
         first_step: Some("hopper-several"),
     },
     Release {
         version: "0.16.0",
-        items: &[
-            "Burrow now needs blygger-studio 0.49.12 or later. On an older blyg, nothing syncs \
-             until it's updated; your posts stay on this computer and are sent afterwards.",
-            "A post edited in two places is never overwritten: when it changed on your blyg \
-             too, Burrow shows both copies and you choose which to keep, or keep both.",
-            "Long reading lists come in pages, and nothing is removed from this computer until \
-             the whole list has been read.",
-        ],
         first_step: Some("conflict"),
     },
     Release {
         version: "0.15.0",
-        items: &[
-            "Hoppers: your blyg's collections of posts, yours and others', are listed under \
-             Hoppers in the Reader's sources. Pick one to list its posts.",
-            "h on the reading screen, ⌥⌘P, or Hopper › on a post puts it in a hopper or takes \
-             it out; New Hopper… makes one and adds the post. Adds made offline are sent \
-             later.",
-            "Right-click a hopper to rename it, describe it, make it public (it gets a page on \
-             your blyg) or private, or delete it. Deleting a hopper never touches its posts.",
-        ],
         first_step: Some("hoppers"),
     },
     Release {
         version: "0.14.0",
-        items: &[
-            if cfg!(target_os = "windows") {
-                "Several blygs: click the blyg's name in the title bar, or press Ctrl+Shift+L, \
-                 to switch, add one or sign out of one; Ctrl+Shift+1–9 jump straight to one. \
-                 Each keeps its own posts and reading."
-            } else {
-                "Several blygs: click the blyg's name in the title bar, or press ⌃⌘0, to \
-                 switch, add one or sign out of one; ⌃⌘1–⌃⌘9 jump straight to one. Each keeps \
-                 its own posts and reading."
-            },
-            "Burrow opens on Reading now. ⌘R goes to your posts and back.",
-            "Write while you read: the box at the foot of Reading posts a fragment (⌘⏎) or \
-             keeps a draft (⌘D). c or ⇧⌘K puts the caret in it; esc keeps your text.",
-            "A revised post leads with what changed in the stream: “V3: …”, from its author's \
-             changelog.",
-            "Follow the thicket: in the reader, a quote, a stub's “responds to” line or a link \
-             to a blyg post opens that post. The breadcrumb shows the path; ⌘[ steps back.",
-            "⇧⌘H lists where following links has taken you. It's private, and never \
-             published.",
-            "Withdrawn posts are listed under Background in the Reader, and nowhere else.",
-            "A stub's passage is chosen in the preview: select it inside the quote, then ❝ \
-             quote only this or ⇧⌘D. The separate chooser is gone.",
-        ],
         first_step: Some("switcher"),
     },
     Release {
         version: "0.13.0",
-        items: &[
-            "Links have labels: [[ and ![[ write [[id | label]], the post's title (or its \
-             heading). The label is the link's text on the page, so edit the words after | \
-             to rename it; a quote's note is yours only. Rows lead with the title.",
-            "Discard changes: a published post with unpublished edits goes back to the version \
-             it published with ⌥⌘Z, Post › Discard Changes…, the toolbar's eraser or ⌘Y. It \
-             asks first; the public post never changes.",
-            "Your own posts: Your blyg is a Reading source, never unread or counted. A \
-             published post in Posts offers Reply · new stub, Quote into a thread and Link \
-             post above its text; Fork this pin in ⌘Y forks one.",
-            "Labelled links need blygger-studio 0.47. On an older blyg only posts with them \
-             wait: Burrow says “Your blyg needs updating”, links to how, and publishing offers \
-             to write the links bare.",
-        ],
         first_step: Some("discard"),
     },
     Release {
         version: "0.12.0",
-        items: &[
-            "Burrow works with a stock blyg: an unmodified blygger-studio 0.40 or later, no \
-             server patches. Reading, read marks, lineage and citations all sync.",
-            "Sign in with browser, or with a token from Studio › More › Client access (allow \
-             reading:state so read marks sync). The old server owner token is gone from \
-             sign-in.",
-            "If your blyg refuses Burrow's sign-in, Burrow stops syncing, keeps every change \
-             waiting, and opens the sign-in sheet to say why.",
-            "Publishing warns when generated text left a ![[…]] on its own line that its \
-             instruction didn't ask for: it would quote that post and notify its author. \
-             The preview shows the quote.",
-            "In the Reader, text a blyg marks as generated says, on hover and at the end of \
-             the post, that the mark is the publisher's own disclosure, not verified.",
-            "A post that drew on yours for generated text is listed as “drew on this”.",
-        ],
         first_step: Some("echoed-quote"),
     },
     Release {
         version: "0.11.0",
-        items: &[
-            "reading-time and inspect, two bundled extensions (off until you turn them on): \
-             “· 3 min” on each post you read, and ⋯ › inspect for the record behind it.",
-            "The lineage glyph, ⌘J and the ring now count: how many posts a post draws on, \
-             and how many draw on it.",
-            "Bring your feeds from another reader: Blyg › Import Subscriptions from OPML… (and \
-             Export). They land in an Imported feeds folder in the Reader.",
-            "markdown-notes takes several folders, and none until you choose one: Add folder… \
-             in the drawer's Notes tab, or Settings › Notes folders.",
-            "cross-post runs in the side pane, and you can fold the pane mid-run: the status \
-             bar says “macro running · show pane”.",
-            "⇧⌘P › Manage extensions can Turn off an extension or Forget its permissions; ⌘⌫ \
-             turns one off from the permission sheet.",
-            "Sign in again once after this update so read state keeps syncing between your Macs \
-             (studio 0.39 or later): Burrow › Disconnect…, keep the local copy, then Sign in \
-             with browser. An API token needs a new one with reading:state.",
-        ],
         first_step: Some("slots"),
     },
     Release {
         version: "0.10.0",
-        items: &[
-            "Extensions: ⇧⌘P lists what they offer; Burrow asks before one may do anything, \
-             and none can publish or see your sign-in.",
-            "markdown-notes opens a folder of Markdown notes in the Notes drawer: search, edit, \
-             and quote a note into your post.",
-            "cross-post puts a published post on Substack Notes from the browser pane, after \
-             you check the text twice.",
-            "⌘N opens an empty editor; it's kept on this Mac until ⌘D makes it a draft.",
-            "✂ Clip (⇧⌘C) in the browser pane quotes the page into a draft.",
-        ],
         first_step: Some("new"),
     },
     Release {
         version: "0.9.0",
-        items: &[
-            "Sign in with your browser: Burrow asks your studio for access and renews it.",
-            "In the Reader, ⌘-click, ⇧-click and ⌘A pick posts; r and u mark them read or \
-             unread.",
-            "Reply starts a stub quoting the whole post; choose a passage in the stub with \
-             quote a passage instead.",
-            "[[ and ![[ open a full-text picker over your posts and the ones you read.",
-            "Rename a subscription, or hand it back to its own name; ⇧⌘R checks every feed.",
-        ],
         first_step: Some("reader"),
     },
     Release {
         version: "0.8.0",
-        items: &[
-            "Lineage: a glyph beside each post's name shows which kinds of post it draws on and \
-         which draw on it (fork, reply, quote).",
-            "⌘J opens a post's lineage: what it draws on above, its responses below. Walk it one \
-         step at a time with ⏎ and ⌫.",
-            "Space on the post in the middle opens its actions on a ring: fork, reply, quote, link \
-         post, versions, open.",
-            "One response per post: a reply that also quotes is listed once, as a reply, and a \
-         reply to a passage says so.",
-        ],
         first_step: Some("lineage"),
     },
 ];
@@ -405,7 +139,6 @@ mod tests {
     fn every_entry_names_a_real_step() {
         for r in RELEASES {
             assert!(parse(r.version).is_some(), "{}", r.version);
-            assert!(!r.items.is_empty());
             if let Some(id) = r.first_step {
                 assert!(
                     super::super::steps::STEPS.iter().any(|s| s.id == id),

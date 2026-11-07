@@ -9,11 +9,16 @@ break things.
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and merge to `main`: the release
 workflow sees the untagged version, tags the commit, and publishes that
-section as the release notes. If the release
+section as the release notes. Add the release's section to
+`site/src/releases.md` (what the app's "What's new" opens). If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
 ## [Unreleased]
+
+### Changed
+
+- **What's new after an update** is a short card with a link to the new [release notes](https://aneeshsathe.github.io/blygger-desktop/releases.html) on the docs site, which the status bar's "What's new" link opens too, at the release's heading. The card used to list everything, and a big release no longer fit on it (it didn't scroll).
 
 ### Fixed
 

@@ -603,7 +603,14 @@ fn the_notice_says_what_to_do() {
     .unwrap();
     assert_eq!(n.text, "Burrow 0.3.0 is ready");
     assert_eq!(n.action, Some(("Restart to update", NoticeAction::Restart)));
-    assert_eq!(n.link.unwrap().0, "What's new");
+    // What's new is the release notes on the docs site, at this release.
+    assert_eq!(
+        n.link,
+        Some((
+            "What's new",
+            "https://aneeshsathe.github.io/blygger-desktop/releases.html#burrow-030".into()
+        ))
+    );
 
     let n = Phase::Available {
         offer: offer(true),
@@ -692,5 +699,33 @@ fn a_ready_update_asks_to_restart_and_an_available_one_to_download() {
         }
         .ask(),
         None
+    );
+}
+
+/// The notes link lands on the release's heading, as mdBook ids it, and a
+/// heading for every minor release is on the page.
+#[test]
+fn release_notes_link_lands_on_the_release() {
+    assert_eq!(
+        release_notes_url("v0.18.1"),
+        format!("{RELEASE_NOTES_URL}#burrow-0181")
+    );
+    assert_eq!(
+        release_notes_url("0.10.0"),
+        format!("{RELEASE_NOTES_URL}#burrow-0100")
+    );
+    let page = include_str!("../../../../site/src/releases.md");
+    for r in crate::app::onboarding::whats_new::RELEASES {
+        assert!(
+            page.contains(&format!("\n## Burrow {}\n", r.version)),
+            "site/src/releases.md has no heading for {}",
+            r.version
+        );
+    }
+    // A patch release that's being cut has its heading too.
+    let me = env!("CARGO_PKG_VERSION");
+    assert!(
+        page.contains(&format!("\n## Burrow {me}\n")),
+        "site/src/releases.md has no heading for {me}: add its notes"
     );
 }

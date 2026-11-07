@@ -22,6 +22,7 @@
 - [Keyboard shortcuts](keys.md)
 - [Server requirements](server.md)
 - [FAQ](faq.md)
+- [Release notes](releases.md)
 - [Changelog](changelog.md)
 - [Contributors](contributors.md)
 
