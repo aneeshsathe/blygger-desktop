@@ -56,6 +56,25 @@ impl Backend for Recording {
         self.rec("search");
         self.inner.search(q)
     }
+    // --- contacts ---
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        self.inner.contacts()
+    }
+    fn refresh_contacts(&self) -> blyg_core::Result<()> {
+        self.inner.refresh_contacts()
+    }
+    fn rewrites_handles(&self) -> bool {
+        self.inner.rewrites_handles()
+    }
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.inner.reading_mentions()
+    }
+    fn page_title(&self, url: &str) -> Option<String> {
+        self.inner.page_title(url) // --- capture ---
+    }
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        self.inner.loose_facts() // --- loose ends ---
+    }
     fn item(&self, id: &LocalId) -> Option<Item> {
         self.rec("item");
         self.inner.item(id)
@@ -640,6 +659,40 @@ fn do_step(e: &mut Env, id: &str) {
         // The Post menu's item (Windows has no key for it).
         "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
         "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
+        "shelf" => e.cx.dispatch_action(crate::app::shelf::ToggleShelf),
+        // --- lineage ---
+        "lineage-writing" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
+        "neighbourhood" => e.cx.simulate_keystrokes("-"),
+        // --- hover cards --- the pointer resting on the sample's quote (what
+        // the delay ends in; a pointer can't rest headless).
+        "hover-cards" => e.view.update(e.cx, |v, cx| {
+            let text = v.editor.read(cx).value().to_string();
+            let d = crate::app::hover_card::directives(&text)
+                .into_iter()
+                .next()
+                .expect("the sample quotes a post");
+            v.hover_show(d, cx)
+        }),
+        "chat" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
+        } // --- chat ---
+        "terminal" => e.cx.dispatch_action(crate::app::terminal::ToggleTerminal), // --- terminal ---
+        // --- flow ---
+        "palette" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
+        }
+        "focus" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-f")),
+        "serendipity" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
+        // --- tangles ---
+        "trails" => e.cx.simulate_keystrokes("t"),
+        "quote-tray" => e.cx.simulate_keystrokes("q"),
+        "split-view" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-enter"))
+        }
+        "nearby" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-u")), // --- nearby ---
+        // --- capture ---
+        "loose-ends" | "capture-link" => e.cx.simulate_keystrokes("enter"),
+        "contacts" => e.cx.simulate_input("@"),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
@@ -690,9 +743,8 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-c"))
         }
         "cross-post" => e.cx.simulate_keystrokes("escape"),
-        "extensions" => {
-            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
-        }
+        // The Post menu's item (the palette has ⇧⌘P now).
+        "extensions" => e.cx.dispatch_action(crate::app::extensions::ShowExtensions),
         // Manage extensions… is the palette's last row.
         "manage" => e.cx.simulate_keystrokes("up enter"),
         "consent" => {

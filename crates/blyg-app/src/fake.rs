@@ -162,6 +162,11 @@ struct State {
     folder_seq: u64,
     // --- browse --- the private browsing log, oldest first.
     browse: Vec<blyg_core::browse::BrowseStep>,
+    // --- shelf --- in order; may name posts since deleted.
+    shelf: Vec<LocalId>,
+    // --- trails --- (trail, its stops in order), in order.
+    trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
+    trail_seq: u64,
 }
 
 pub struct FakeBackend {
@@ -344,11 +349,25 @@ impl FakeBackend {
                 reading_sends: Vec::new(),
                 folder_seq: 0,
                 browse: Vec::new(),
+                shelf: Vec::new(),  // --- shelf ---
+                trails: Vec::new(), // --- trails ---
+                trail_seq: 0,
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
             media_dir: media_cache_dir(),
             scratch_dir: blyg_core::scratch_media::dir(&blyg_core::config::data_dir()),
+        }
+    }
+
+    /// --- hover cards --- Tests: give a post a server id of the blyg
+    /// alphabet (the seed's are placeholders the bracket grammar won't
+    /// read).
+    #[cfg(test)]
+    pub fn set_server_id(&self, id: &LocalId, server: &str) {
+        let mut st = self.lock();
+        if let Some(it) = st.items.iter_mut().find(|i| &i.local_id == id) {
+            it.server_id = Some(ServerId(server.into()));
         }
     }
 
@@ -833,18 +852,59 @@ impl Backend for FakeBackend {
     }
 
     fn search(&self, query: &str) -> Vec<Item> {
-        let q = query.trim().to_lowercase();
+        // --- loose ends --- operators filter what the words find.
+        blyg_core::loose::search(
+            query,
+            |query| {
+                let q = query.trim().to_lowercase();
+                let st = self.lock();
+                if q.is_empty() {
+                    return Self::sorted(&st.items);
+                }
+                let hits: Vec<Item> = st
+                    .items
+                    .iter()
+                    .filter(|i| i.content_md.to_lowercase().contains(&q))
+                    .cloned()
+                    .collect();
+                Self::sorted(&hits)
+            },
+            || self.items(),
+            || self.loose_facts(),
+        )
+    }
+
+    // --- contacts --- a one-entry sample address book (a blyg the
+    // sample reading holds). The sample blyg is pre-0.56: it doesn't
+    // rewrite handles, so picking the contact writes the plain link.
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        vec![blyg_core::contacts::Contact {
+            handle: "lin".into(),
+            name: Some("Lin".into()),
+            origin: crate::fake::reading_seed::LIN.into(),
+        }]
+    }
+
+    // --- capture --- a page on the sample blog has a title; others none.
+    fn page_title(&self, url: &str) -> Option<String> {
+        crate::vm::url_host(url)
+            .is_some_and(|h| h == "lin.example.org")
+            .then(|| "Rock pool economics".to_string())
+    }
+
+    // --- loose ends --- held posts' references, and verified mentions.
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        let mut f =
+            blyg_core::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading());
         let st = self.lock();
-        if q.is_empty() {
-            return Self::sorted(&st.items);
-        }
-        let hits: Vec<Item> = st
-            .items
-            .iter()
-            .filter(|i| i.content_md.to_lowercase().contains(&q))
-            .cloned()
-            .collect();
-        Self::sorted(&hits)
+        f.inbound.extend(
+            st.rd
+                .mentions
+                .iter()
+                .filter(|m| m.status == "verified")
+                .map(|m| m.target_item_id.to_ascii_lowercase()),
+        );
+        f
     }
 
     fn item(&self, id: &LocalId) -> Option<Item> {
@@ -1756,6 +1816,197 @@ impl Backend for FakeBackend {
         out
     }
 
+    // --- shelf --- the same rules as the store (pinned.rs).
+    fn shelf(&self) -> Vec<LocalId> {
+        let st = self.lock();
+        st.shelf
+            .iter()
+            .filter(|id| {
+                st.items
+                    .iter()
+                    .any(|i| &i.local_id == *id && i.status != Status::Withdrawn)
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        let mut st = self.lock();
+        if !st.items.iter().any(|i| &i.local_id == id) {
+            st.shelf.retain(|p| p != id);
+            return if on { Err(CoreError::NotFound) } else { Ok(()) };
+        }
+        let at = st.shelf.iter().position(|p| p == id);
+        match (on, at) {
+            (true, None) if st.shelf.len() >= 50 => {
+                return Err(CoreError::Rejected {
+                    status: 400,
+                    message: "Your shelf holds at most 50 posts. Take one off first.".into(),
+                    details: vec![],
+                });
+            }
+            (true, None) => st.shelf.push(id.clone()),
+            (false, Some(ix)) => {
+                st.shelf.remove(ix);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        let visible = self.shelf();
+        let mut st = self.lock();
+        let Some(from) = st.shelf.iter().position(|p| p == id) else {
+            return Err(CoreError::NotFound);
+        };
+        let anchor = visible.into_iter().filter(|v| v != id).nth(index);
+        let f = st.shelf.remove(from);
+        let to = anchor
+            .and_then(|a| st.shelf.iter().position(|p| *p == a))
+            .unwrap_or(st.shelf.len());
+        st.shelf.insert(to, f);
+        Ok(())
+    }
+
+    // --- trails --- the same rules as the store (store/trails.rs).
+    fn trails(&self) -> Vec<blyg_core::Trail> {
+        self.lock()
+            .trails
+            .iter()
+            .map(|(t, s)| blyg_core::Trail {
+                stops: s.len(),
+                ..t.clone()
+            })
+            .collect()
+    }
+
+    fn create_trail(&self, name: &str) -> Result<blyg_core::Trail> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "A trail needs a name.".into(),
+                details: vec![],
+            });
+        }
+        let mut st = self.lock();
+        st.trail_seq += 1;
+        let t = blyg_core::Trail {
+            id: format!("trail-{}", st.trail_seq),
+            name: name.into(),
+            stops: 0,
+        };
+        st.trails.push((t.clone(), Vec::new()));
+        Ok(t)
+    }
+
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        let mut st = self.lock();
+        let t = st.trails.iter_mut().find(|(t, _)| t.id == id);
+        let Some((t, _)) = t else {
+            return Err(CoreError::NotFound);
+        };
+        t.name = name.trim().to_string();
+        Ok(())
+    }
+
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        self.lock().trails.retain(|(t, _)| t.id != id);
+        Ok(())
+    }
+
+    fn trail_stops(&self, trail: &str) -> Vec<blyg_core::TrailStop> {
+        let mut st = self.lock();
+        let withdrawn: Vec<bool> = st
+            .trails
+            .iter()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, stops)| stops.iter().map(|s| fake_withdrawn(&st, s)).collect())
+            .unwrap_or_default();
+        let Some((_, stops)) = st.trails.iter_mut().find(|(t, _)| t.id == trail) else {
+            return vec![];
+        };
+        for (s, w) in stops.iter_mut().zip(withdrawn) {
+            s.withdrawn = w;
+            if w {
+                s.title = None;
+            }
+        }
+        stops.clone()
+    }
+
+    fn add_trail_stop(&self, trail: &str, stop: &blyg_core::TrailStop) -> Result<usize> {
+        let mut st = self.lock();
+        if fake_withdrawn(&st, stop) {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message: "That post was withdrawn.".into(),
+                details: vec![],
+            });
+        }
+        let Some((_, stops)) = st.trails.iter_mut().find(|(t, _)| t.id == trail) else {
+            return Err(CoreError::NotFound);
+        };
+        let why = stop.why.trim().to_string();
+        if let Some(i) = stops.iter().position(|s| s.key() == stop.key()) {
+            if !why.is_empty() {
+                stops[i].why = why;
+            }
+            return Ok(i);
+        }
+        stops.push(blyg_core::TrailStop {
+            why,
+            withdrawn: false,
+            ..stop.clone()
+        });
+        Ok(stops.len() - 1)
+    }
+
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        let mut st = self.lock();
+        let s = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .and_then(|(_, s)| s.get_mut(index))
+            .ok_or(CoreError::NotFound)?;
+        s.why = why.trim().to_string();
+        Ok(())
+    }
+
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        let mut st = self.lock();
+        let stops = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, s)| s)
+            .ok_or(CoreError::NotFound)?;
+        if index >= stops.len() {
+            return Err(CoreError::NotFound);
+        }
+        stops.remove(index);
+        Ok(())
+    }
+
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        let mut st = self.lock();
+        let stops = st
+            .trails
+            .iter_mut()
+            .find(|(t, _)| t.id == trail)
+            .map(|(_, s)| s)
+            .ok_or(CoreError::NotFound)?;
+        if from >= stops.len() {
+            return Err(CoreError::NotFound);
+        }
+        let s = stops.remove(from);
+        let to = to.min(stops.len());
+        stops.insert(to, s);
+        Ok(())
+    }
+
     // --- reader folders --- the same rules as the store (folders.rs).
     fn folders(&self) -> Vec<Folder> {
         let mut v = self.lock().rd.folders.clone();
@@ -2218,6 +2469,22 @@ fn shows_responses(mode: ResponsesMode, default: bool) -> bool {
         ResponsesMode::Default => default,
         ResponsesMode::Show => true,
         ResponsesMode::Hide => false,
+    }
+}
+
+/// --- trails --- Is the post a stop names withdrawn here?
+fn fake_withdrawn(st: &State, s: &blyg_core::TrailStop) -> bool {
+    if s.subscription_id == blyg_core::OWN_SUBSCRIPTION {
+        st.items.iter().any(|i| {
+            i.server_id.as_ref().is_some_and(|x| x.0 == s.remote_id)
+                && i.status == Status::Withdrawn
+        })
+    } else {
+        st.rd.reading.iter().any(|r| {
+            r.subscription_id == s.subscription_id
+                && r.remote_id == s.remote_id
+                && r.state == "tombstone"
+        })
     }
 }
 

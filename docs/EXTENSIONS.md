@@ -1,7 +1,8 @@
 # Burrow extensions (BXP, protocol 1)
 
 An extension is a separate program that Burrow starts and talks to over its
-stdin/stdout. It can add commands to the Extensions palette (⇧⌘P), offer a
+stdin/stdout. It can add commands to the Extensions palette (Post ›
+Extensions…, and the command palette's Extensions group, ⇧⌘P), offer a
 library of documents to the notes panel (the bundled `markdown-notes` is
 one), add a marker or a ⋯ row to each reading entry (the bundled
 `reading-time` and `inspect`), and, with the user's permission, read and

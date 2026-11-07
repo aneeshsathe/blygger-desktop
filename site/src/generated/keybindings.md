@@ -51,11 +51,22 @@
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
+| ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
+| ⌥⌘B | Put the open post on your shelf, or take it off | Post › Put on Shelf / Take Off |
+| ⌥⌘T | Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops) | Blyg › Publish Trail… |
+| ⌥⌘K | Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading) | Post › Put on Quote Tray |
+| ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
+| ⌥⌘[ | Split view: the keyboard to the left post | View › Left Post |
+| ⌥⌘] | Split view: the keyboard to the right post | View › Right Post |
+| ⌥⌘U | Nearby thoughts: show or hide the rail of your posts that say what this paragraph says | View › Nearby Thoughts |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
 | ⌥⌘S | Show or hide the Reader's sources pane (smart feeds, folders) | Blyg › Sources Pane |
 | ⇧⌘R | Check all feeds now (your blyg polls every subscription) | Blyg › Check All Feeds Now |
+| ⇧⌘I | #thicket chat on Libera.Chat (experimental; again: back to posts) | Blyg › #thicket Chat (Experimental) |
+| ⌃` | Terminal pane: show it and type there (experimental; again: hide it) | View › Terminal (Experimental) |
+| ⇧⌘T | Send the editor's selection to the terminal pane, quoted | Post › Send Selection to Terminal |
 | ⇧⌘H | Browsing history beside the reading pane: where following links took you (private) | Blyg › Browsing History |
 | ⇧⌘⌫ | Delete this draft or scratch note (asks first) | Post › Delete Draft… |
 | ⌥⌘Z | Discard unpublished changes: back to the published version (asks first) (no key on Windows, where it would be AltGr+Z) | Post › Discard Changes… |
@@ -66,13 +77,18 @@
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes drawer: open or close it (quotes a selected passage) | View › Notes |
 | ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
-| ⇧⌘P | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
+| ⇧⌘P | Command palette: every action, theme, font, blyg, hopper and post, by name | View › Command Palette… |
+| ⌥⌘F | Focus mode: the line you're on stays put, the rest steps back (esc leaves) | View › Focus |
 
 ### While typing in the editor or a text field
 
 | Key | What it does | Menu |
 |---|---|---|
 | ⌘⏎ | Publish… | Post › Publish… |
+| ⌥↑ | Nearby thoughts: the row above (typing in the editor) |  |
+| ⌥↓ | Nearby thoughts: the row below (typing in the editor) |  |
+| ⌥⏎ | Nearby thoughts: link the chosen post over the phrase it shares ([[id \| phrase]]) |  |
+| ⌥⇧⏎ | Nearby thoughts: quote the chosen post on a new line (![[id \| title]], threads only) |  |
 
 ### In the browser pane
 
@@ -116,3 +132,4 @@
 | Version, build, updates and connection info | Burrow › About Burrow |
 | Version, build, updates and connection info | Help › About Burrow |
 | Browser pane: open it with the address field ready (macOS) | View › Open Browser… |
+| Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |

@@ -1185,7 +1185,11 @@ fn highlight_round_trips_and_marks_the_public_page() {
             .nth(1)
             .and_then(|r| r.split('"').next())
             .unwrap_or_default()
-            .to_string()
+            .split_whitespace()
+            // Studio 0.56 marks every post up as microformats.
+            .filter(|c| *c != "h-entry")
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     assert_eq!(article(&page()), "fragment", "no class of its own");
 
@@ -5031,4 +5035,61 @@ fn the_reading_list_advertises_read_state_in_camel_case() {
         found = p.items.into_iter().find(|i| i.remote_id == rid);
     }
     assert_eq!(found.expect("the row").read_version, Some(1));
+}
+
+/// Studio 0.56 (contract 5.7.0): the owner's address book reaches Burrow,
+/// a handle that names a contact is rewritten to a link on publish, and one
+/// that names nobody comes back as the publish warning.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn contacts_and_handles_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .subsec_nanos();
+    let handle = format!("lin{n}");
+    let (st, c) = owner(
+        "POST",
+        &e.url,
+        "/api/contacts",
+        Some(serde_json::json!({
+            "handle": handle,
+            "name": "Lin",
+            "url": "https://lin.example.org",
+        })),
+    );
+    assert_eq!(st, 201, "{c}");
+    b.refresh_contacts().expect("contacts");
+    let got = b.contacts();
+    let lin = got
+        .iter()
+        .find(|x| x.handle == handle)
+        .unwrap_or_else(|| panic!("the contact reached Burrow: {got:?}"));
+    assert!(lin.origin.contains("lin.example.org"), "{lin:?}");
+    assert!(b.rewrites_handles(), "studio 0.56 rewrites handles");
+
+    let ghost = format!("nobody{n}");
+    let id = b
+        .create_draft(
+            Kind::Fragment,
+            &format!("{} Hello @{handle} and @{ghost}.", tag("handles")),
+        )
+        .unwrap();
+    b.sync_now().unwrap();
+    let out = b.publish(&id, None).expect("publish");
+    let warning = out.warning.unwrap_or_default();
+    assert!(
+        warning.contains(&ghost),
+        "unresolved handle warned: {warning:?}"
+    );
+    assert!(!warning.contains(&handle), "{warning:?}");
+    let page = public_get(&out.permalink).1;
+    assert!(page.contains("lin.example.org"), "the handle became a link");
+
+    if let Some(cid) = c["id"].as_str() {
+        owner("DELETE", &e.url, &format!("/api/contacts/{cid}"), None);
+    }
 }

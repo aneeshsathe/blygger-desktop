@@ -11,6 +11,7 @@ path = "src/main.rs"
 [dependencies]
 blyg-core = { path = "../blyg-core" }
 blyg-ai = { path = "../blyg-ai" }
+blyg-embed = { path = "../blyg-embed" } # --- nearby ---
 # --- extensions --- (the host, and the bundled extensions, markdown-notes and
 # cross-post, run as `blygger +ext <name>`)
 blyg-ext = { path = "../blyg-ext" }
@@ -19,6 +20,8 @@ blyg-ext-crosspost = { path = "../blyg-ext-crosspost" }
 # --- reading slots --- (reading-time and inspect, `blygger +ext <name>`)
 blyg-ext-reading-time = { path = "../blyg-ext-reading-time" }
 blyg-ext-inspect = { path = "../blyg-ext-inspect" }
+# --- chat --- (experimental: the #thicket tab, IRC on its own thread)
+blyg-irc = { path = "../blyg-irc" }
 # gpui-kit pins the matching GPUI snapshot (gpui-pre 0.3.6) plus gpui-base /
 # gpui-component 0.6.6. We use gpui-base's unstyled textarea and draw the rest.
 gpui-kit = { version = "=0.6.6", default-features = false }
@@ -45,6 +48,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std", "f
 # parser turns uBlock Origin / EasyList syntax into WebKit content-blocker
 # JSON (MPL-2.0, used unmodified).
 adblock = { version = "=0.13.3", default-features = false, features = ["content-blocking"] }
+blyg-term = { path = "../blyg-term" } # --- terminal --- (experimental pane; src/terminal/)
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # AppKit calls for the Dock icon, window ordering and webview focus.
@@ -101,3 +105,5 @@ embed-resource = "3.0"
 # --- full editor ---
 tempfile = "3"
 gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }
+# --- chat --- the in-process IRC server (127.0.0.1) for the chat tab's tests
+blyg-irc = { path = "../blyg-irc", features = ["test-server"] }

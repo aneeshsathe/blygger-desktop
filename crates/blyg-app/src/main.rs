@@ -20,6 +20,7 @@ mod about; // --- about ---
 mod ai;
 mod app;
 mod capture;
+mod capture_service; // --- capture --- Services (macOS), clipboard chip (Windows)
 mod cli;
 mod composer; // --- composer --- (@-mentions and spellcheck)
 mod connection;
@@ -211,6 +212,7 @@ fn main() -> ExitCode {
         });
         refresh_menus(cx); // --- blyg switcher --- (Blyg › Switch To lists them)
         capture::init(backend.clone(), &prefs, cx);
+        capture_service::init(cx); // --- capture ---
         // --- auto-update --- (off in fake mode, tests and BLYGGER_NO_UPDATE)
         update::init(state_dir, cx);
         about::init(cx); // --- about ---
@@ -420,8 +422,19 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
                 MenuItem::action("Put in Hopper…", app::reading::hoppers::HopperPicker),
+                // --- shelf ---
+                MenuItem::action("Shelf…", app::shelf::ShowShelf),
+                MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
+                // --- tangles --- the quote tray, split view
+                MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
+                MenuItem::action("Open Beside", app::split::OpenBeside),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
+                // --- terminal ---
+                MenuItem::action(
+                    "Send Selection to Terminal",
+                    app::terminal::SendSelectionToTerminal,
+                ),
                 // --- extensions ---
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
@@ -457,6 +470,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
                 MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
+                MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
@@ -466,6 +480,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
+                // --- chat ---
+                MenuItem::action("#thicket Chat (Experimental)", app::chat::ShowChat),
                 MenuItem::separator(),
                 MenuItem::action("Subscribe…", app::reading::SubscribeTo),
                 // --- OPML ---
@@ -494,15 +510,26 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("List + Editor + Preview", app::studio::ViewSplit),
                 MenuItem::action("Full Editor", app::studio::ViewStudio),
                 MenuItem::action("Preview", app::TogglePreview),
+                MenuItem::action("Focus", app::focus::ToggleFocus), // --- focus ---
+                MenuItem::separator(),
+                // --- palette ---
+                MenuItem::action("Command Palette…", app::command_palette::ShowPalette),
+                MenuItem::action("Nearby Thoughts", app::nearby::ToggleNearby), // --- nearby ---
                 MenuItem::separator(),
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),
                 MenuItem::action("Actual Size", app::FontReset),
+                // --- split ---
+                MenuItem::separator(),
+                MenuItem::action("Left Post", app::split::FocusLeftPost),
+                MenuItem::action("Right Post", app::split::FocusRightPost),
                 // --- browser ---
                 MenuItem::separator(),
                 MenuItem::action("Open Browser…", app::browser::OpenBrowser),
                 MenuItem::action("Show/Hide Browser Pane", app::browser::ToggleBrowser),
                 MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
+                // --- terminal ---
+                MenuItem::action("Terminal (Experimental)", app::terminal::ToggleTerminal),
             ],
             disabled: false,
         },

@@ -300,7 +300,7 @@ impl Sources<'_> {
     }
 }
 
-fn who_of(r: &ReadingItem) -> String {
+pub(crate) fn who_of(r: &ReadingItem) -> String {
     if r.subscription_id.is_empty() && r.subscription_title == "you" {
         return "you".into();
     }

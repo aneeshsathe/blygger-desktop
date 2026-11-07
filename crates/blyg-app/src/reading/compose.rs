@@ -492,6 +492,17 @@ impl MainView {
         let Some(directive) = quote_for(self) else {
             return;
         };
+        self.compose_insert_directive(&directive, window, cx);
+    }
+
+    /// --- tray --- `directive` (`![[id | label]]`) into the box on its own
+    /// line: at the caret when the box has the keyboard, else at the end.
+    pub(crate) fn compose_insert_directive(
+        &mut self,
+        directive: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.ensure_compose(window, cx);
         let Some(editor) = self.reading.compose.editor.clone() else {
             return;
@@ -505,7 +516,7 @@ impl MainView {
         } else {
             text.len()
         };
-        let (new, caret) = vm::insert_directive(&text, cursor, &directive);
+        let (new, caret) = vm::insert_directive(&text, cursor, directive);
         self.compose_set_text(&new, caret, window, cx);
         editor.update(cx, |s, cx| s.focus(window, cx));
     }
@@ -685,6 +696,15 @@ impl MainView {
                 .pb(px(if show_footer { 6. } else { 8. }))
                 .rule_t(&p)
                 .bg(p.bg)
+                // --- tray --- a post dropped here is quoted in the box.
+                .drag_over::<crate::app::tray::DraggedQuote>(move |s, _, _, _| {
+                    s.bg(p.accent.opacity(0.08))
+                })
+                .on_drop(
+                    cx.listener(|this, q: &crate::app::tray::DraggedQuote, window, cx| {
+                        this.drop_quote_in_compose(q, window, cx)
+                    }),
+                )
                 // The mention popup / picker / spelling menu keys first.
                 .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
                     this.compose_route_key(AssistKey::Up, window, cx);

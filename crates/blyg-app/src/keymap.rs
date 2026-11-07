@@ -69,6 +69,20 @@ use crate::composer::ToggleSpellcheck;
 use crate::app::notes::{QuoteToDraft, ToggleNotes};
 // --- extensions ---
 use crate::app::extensions::ShowExtensions;
+// --- shelf ---
+use crate::app::shelf::{ShowShelf, ToggleShelf};
+// --- chat ---
+use crate::app::chat::ShowChat;
+// --- terminal ---
+use crate::app::terminal::{SendSelectionToTerminal, ToggleTerminal};
+// --- trails ---
+use crate::app::trails::PublishTrail;
+// --- tray ---
+use crate::app::tray::AddToTray;
+// --- split ---
+use crate::app::split::{FocusLeftPost, FocusRightPost, OpenBeside};
+// --- nearby ---
+use crate::app::nearby::{NearbyDown, NearbyLink, NearbyQuote, NearbyUp, ToggleNearby};
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -81,6 +95,9 @@ use crate::app::browser::{
 };
 // --- browser macros ---
 use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
+// --- flow ---
+use crate::app::command_palette::ShowPalette;
+use crate::app::focus::ToggleFocus;
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -612,7 +629,111 @@ pub fn mac_table() -> Vec<Keybind> {
             "Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen)",
             Some("Post › Put in Hopper…")
         ),
+        // --- shelf --- (posts kept to hand). ⌘B is free in gpui-base's
+        // inputs, which bind no bold; ⇧⌘B is the browser, so the toggle is
+        // ⌥⌘B (Ctrl+Shift+A on Windows, see WINDOWS_OVERRIDES).
+        kb!(
+            "cmd-b",
+            Main,
+            ShowShelf,
+            "Shelf: the posts you keep to hand (1–9 opens one)",
+            Some("Post › Shelf…")
+        ),
+        kb!(
+            "alt-cmd-b",
+            Main,
+            ToggleShelf,
+            "Put the open post on your shelf, or take it off",
+            Some("Post › Put on Shelf / Take Off")
+        ),
         // --- end own posts ---
+        // --- trails --- (`t` / ⇧T on the reading screen are its own keys,
+        // in reading_key_down; ⌥⌘T is free in gpui-base's inputs)
+        kb!(
+            "alt-cmd-t",
+            Main,
+            PublishTrail,
+            "Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops)",
+            Some("Blyg › Publish Trail…")
+        ),
+        // --- end trails ---
+        // --- tray --- (⇧⌘Q is the system's Log Out; ⌥⌘K sits by ⌘K, the
+        // picker that lists the tray first. `q` on the reading screen is
+        // its own key, in reading_key_down.)
+        kb!(
+            "alt-cmd-k",
+            Main,
+            AddToTray,
+            "Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading)",
+            Some("Post › Put on Quote Tray")
+        ),
+        // --- end tray ---
+        // --- split --- (⌘[ / ⌘] are gpui-base's outdent / indent in every
+        // editor and the reader's Back, so the sides are ⌥⌘[ / ⌥⌘])
+        Keybind {
+            menu_key: Some("alt-cmd-↩"),
+            ..kb!(
+                "alt-cmd-enter",
+                Main,
+                OpenBeside,
+                "Split view: the selected post beside the one you're writing (again: close it)",
+                Some("Post › Open Beside")
+            )
+        },
+        kb!(
+            "alt-cmd-[",
+            Main,
+            FocusLeftPost,
+            "Split view: the keyboard to the left post",
+            Some("View › Left Post")
+        ),
+        kb!(
+            "alt-cmd-]",
+            Main,
+            FocusRightPost,
+            "Split view: the keyboard to the right post",
+            Some("View › Right Post")
+        ),
+        // --- end split ---
+        // --- nearby --- the rail beside the editor. ⌥↑/⌥↓/⌥⏎/⌥⇧⏎ out-rank
+        // the text field (gpui-base binds none of them) and pass through
+        // when the rail has nothing to offer.
+        kb!(
+            "alt-cmd-u",
+            Main,
+            ToggleNearby,
+            "Nearby thoughts: show or hide the rail of your posts that say what this paragraph says",
+            Some("View › Nearby Thoughts")
+        ),
+        kb!(
+            "alt-up",
+            MainInput,
+            NearbyUp,
+            "Nearby thoughts: the row above (typing in the editor)",
+            None
+        ),
+        kb!(
+            "alt-down",
+            MainInput,
+            NearbyDown,
+            "Nearby thoughts: the row below (typing in the editor)",
+            None
+        ),
+        kb!(
+            "alt-enter",
+            MainInput,
+            NearbyLink,
+            "Nearby thoughts: link the chosen post over the phrase it shares ([[id | phrase]])",
+            None
+        ),
+        kb!(
+            "alt-shift-enter",
+            MainInput,
+            NearbyQuote,
+            "Nearby thoughts: quote the chosen post on a new line (![[id | title]], threads only)",
+            None
+        ),
+        // --- end nearby ---
         menu_only!(
             SubscribeTo,
             "Subscribe to a blyg or feed",
@@ -701,6 +822,32 @@ pub fn mac_table() -> Vec<Keybind> {
             ReaderBack,
             "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
             "Blyg › Back"
+        ),
+        // --- chat --- the experimental #thicket tab (I for IRC; ⌘I is the
+        // profile sheet).
+        kb!(
+            "cmd-shift-i",
+            Main,
+            ShowChat,
+            "#thicket chat on Libera.Chat (experimental; again: back to posts)",
+            Some("Blyg › #thicket Chat (Experimental)")
+        ),
+        // --- terminal --- the experimental pane: ⌃` as in VS Code and Zed
+        // (⌘` is the system's Cycle Windows). The pane keeps every other key
+        // while it has the keyboard, but for ⌘-keys (Ctrl+Shift on Windows).
+        kb!(
+            "ctrl-`",
+            Main,
+            ToggleTerminal,
+            "Terminal pane: show it and type there (experimental; again: hide it)",
+            Some("View › Terminal (Experimental)")
+        ),
+        kb!(
+            "cmd-shift-t",
+            Main,
+            SendSelectionToTerminal,
+            "Send the editor's selection to the terminal pane, quoted",
+            Some("Post › Send Selection to Terminal")
         ),
         kb!(
             "cmd-shift-h",
@@ -906,12 +1053,28 @@ pub fn mac_table() -> Vec<Keybind> {
         // --- end notes ---
         // --- extensions --- the commands extensions add, their libraries,
         // and Manage extensions.
+        // The commands, libraries and Manage extensions are the command
+        // palette's Extensions group too (⇧⌘P).
+        menu_only!(
+            ShowExtensions,
+            "Extensions: run an extension's command, browse its notes, manage them",
+            "Post › Extensions…"
+        ),
+        // --- palette --- every action, theme, font, blyg, hopper and post
         kb!(
             "cmd-shift-p",
             Main,
-            ShowExtensions,
-            "Extensions: run an extension's command, browse its notes, manage them",
-            Some("Post › Extensions…")
+            ShowPalette,
+            "Command palette: every action, theme, font, blyg, hopper and post, by name",
+            Some("View › Command Palette…")
+        ),
+        // --- focus --- (Ctrl+Shift+F on Windows, see WINDOWS_OVERRIDES)
+        kb!(
+            "alt-cmd-f",
+            Main,
+            ToggleFocus,
+            "Focus mode: the line you're on stays put, the rest steps back (esc leaves)",
+            Some("View › Focus")
         ),
     ]
 }
@@ -982,6 +1145,12 @@ pub fn platform_key(key: &'static str) -> &'static str {
 /// Redo in every Windows text field (and gpui-base's `Input` binds it).
 const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     ("cmd-y", "ctrl-shift-y"),
+    // --- focus --- Ctrl+Alt+F is AltGr+F, which types a bracket on some
+    // layouts (Hungarian `[`): focus mode is Ctrl+Shift+F there.
+    ("alt-cmd-f", "ctrl-shift-f"),
+    // --- shelf --- Ctrl+Alt+B is quick capture's default hotkey there, and
+    // AltGr+B types `{` on Hungarian layouts: shelving is Ctrl+Shift+A.
+    ("alt-cmd-b", "ctrl-shift-a"),
     // --- blyg switcher --- ⌃⌘<digit> would fold into Ctrl+<digit>, the views.
     // Ctrl+Shift+0 never reaches an app on Windows set up with more than one
     // input language (it's the system's language hotkey; GPUI's Windows
@@ -1235,6 +1404,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
+    let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

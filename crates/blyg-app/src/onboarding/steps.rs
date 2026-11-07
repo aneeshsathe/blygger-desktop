@@ -91,6 +91,40 @@ pub enum Key {
     HopperPicker,
     /// The Hopper picker is open on several picked posts at once.
     HopperSeveral,
+    // --- shelf ---
+    /// A post was put on the shelf or taken off (⌥⌘B).
+    Shelf,
+    // --- lineage ---
+    /// On Posts, the lineage line's lists opened, or ⌘J opened the sheet.
+    LineageStrip,
+    /// The lineage sheet zoomed out to the neighbourhood map (`−`).
+    LineageMap,
+    // --- hover cards ---
+    /// A hover card is showing over a `[[…]]` in the editor.
+    HoverCard,
+    // --- chat ---
+    /// The #thicket chat tab came to the front (⇧⌘I or the tab).
+    Chat,
+    // --- terminal ---
+    /// The terminal pane was shown or hidden (⌃`).
+    Terminal,
+    // --- flow ---
+    /// The command palette opened (⇧⌘P, View › Command Palette…).
+    Palette,
+    /// Focus mode turned on (⌥⌘F, View › Focus).
+    Focus,
+    /// Serendipity's card is showing in ⌘N's empty editor.
+    Serendipity,
+    // --- tangles ---
+    /// A post is going on a trail (`t`: the why field is open), or ⌥⌘T.
+    Trail,
+    /// A post went on the quote tray (`q` or ⌥⌘K).
+    Tray,
+    /// ⌥⌘⏎: a post opened beside the one being written.
+    Split,
+    // --- nearby ---
+    /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
+    Nearby,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -213,6 +247,9 @@ pub enum Setup {
     Consent,
     /// The Subscriptions screen (⇧⌘S).
     Subscriptions,
+    /// --- tangles --- Posts, the sample draft open and then the versioned
+    /// post (so ⌥⌘⏎ has a post to put beside).
+    Pair,
 }
 
 /// One step of the tour.
@@ -497,6 +534,413 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- shelf ---
+    Step {
+        id: "shelf",
+        since: "0.18.0",
+        title: "Keep it on your shelf",
+        caption: if cfg!(target_os = "windows") {
+            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
+             Ctrl+Shift+A puts the open post on your shelf: 📚 marks it and it stays at the top \
+             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. The shelf is \
+             kept on this computer."
+        } else {
+            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
+             ⌥⌘B puts the open post on your shelf: 📚 marks it and it stays at the top of the \
+             list. ⌘B opens the shelf, and 1–9 opens a post on it. The shelf is kept on this \
+             Mac."
+        },
+        keys: &[Key::Shelf],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+A"
+        } else {
+            "⌥⌘B"
+        },
+        region: Region::List,
+        button: None,
+        setup: Setup::EnsureOpen,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- lineage ---
+    Step {
+        id: "lineage-writing",
+        since: "0.18.0",
+        title: "Lineage while you write",
+        caption: if cfg!(target_os = "windows") {
+            "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
+             what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
+             a row opens that post. Ctrl+J opens the full lineage, as in Reading."
+        } else {
+            "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
+             what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
+             a row opens that post. ⌘J opens the full lineage, as in Reading."
+        },
+        keys: &[Key::LineageStrip],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+J"
+        } else {
+            "⌘J"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Versioned,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "neighbourhood",
+        since: "0.18.0",
+        title: "Zoom out to the neighbourhood",
+        caption: "In the lineage sheet, − zooms out two hops: what the neighbours draw on and \
+                  what draws on them, coloured fork, reply, quote; a dashed one is a hop \
+                  further, a shaded one is yours. Arrows move, ⏎ makes a post the centre, ⌫ \
+                  walks back, + returns to the list.",
+        keys: &[Key::LineageMap],
+        key_label: "−",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Lineage,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- hover cards ---
+    Step {
+        id: "hover-cards",
+        since: "0.18.0",
+        title: "What a link is, on hover",
+        caption: if cfg!(target_os = "windows") {
+            "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
+             author, version, first lines), and an unlabelled link offers “label it”. \
+             Ctrl-click opens the post: yours here, anyone else's in Reading. Quotes and links \
+             in the Stream show the same card."
+        } else {
+            "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
+             author, version, first lines), and an unlabelled link offers “label it”. ⌘-click \
+             opens the post: yours here, anyone else's in Reading. Quotes and links in the \
+             Stream show the same card."
+        },
+        keys: &[Key::HoverCard],
+        key_label: "hover",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::StudioSample,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- chat --- the setup screen only: the tour never connects.
+    Step {
+        id: "chat",
+        since: "0.18.0",
+        title: "#thicket, an experimental chat",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), \
+             beside the views. It's experimental and may be removed. Sign in or create an \
+             account there when you like: nothing connects until you do, and Settings hides \
+             the tab."
+        } else {
+            "⇧⌘I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), beside the \
+             views. It's experimental and may be removed. Sign in or create an account there \
+             when you like: nothing connects until you do, and Settings hides the tab."
+        },
+        keys: &[Key::Chat],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+I"
+        } else {
+            "⇧⌘I"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- terminal --- the key showing the pane counts: the tour never
+    // needs a shell to start (none does in the tests).
+    Step {
+        id: "terminal",
+        since: "0.18.0",
+        title: "A terminal at the foot of the window",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+` opens a terminal under your posts (experimental): your own shell, for a \
+             CLI agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
+             token and no BLYGGER_* variable. Ctrl+` again hides it; Ctrl+Shift+T sends the \
+             editor's selection to it, quoted."
+        } else {
+            "⌃` opens a terminal under your posts (experimental): your own shell, for a CLI \
+             agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
+             token and no BLYGGER_* variable. ⌃` again hides it; ⇧⌘T sends the editor's \
+             selection to it, quoted."
+        },
+        keys: &[Key::Terminal],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+`"
+        } else {
+            "⌃`"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end terminal ---
+    // --- flow ---
+    Step {
+        id: "palette",
+        since: "0.18.0",
+        title: "Every command, by name",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
+             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
+             Changes); each row shows its key. Enter runs it, Ctrl+Enter runs it and keeps \
+             the palette open, and the last ten come first."
+        } else {
+            "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
+             your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
+             each row shows its key. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and \
+             the last ten come first."
+        },
+        keys: &[Key::Palette],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+P"
+        } else {
+            "⇧⌘P"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "focus",
+        since: "0.18.0",
+        title: "Focus: the line stays put",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+F is focus mode: the editor alone, the line you're typing on held \
+             a little above the middle, the paragraphs you're not in dimmed, and a hairline \
+             with the sync dot and this sitting's words. Esc brings everything back; \
+             focus-line and focus-fade in the config file tune it."
+        } else {
+            "⌥⌘F is focus mode: the editor alone, the line you're typing on held a little \
+             above the middle, the paragraphs you're not in dimmed, and a hairline with the \
+             sync dot and this sitting's words. esc brings everything back; focus-line and \
+             focus-fade in the config file tune it."
+        },
+        keys: &[Key::Focus],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+F"
+        } else {
+            "⌥⌘F"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::EnsureOpen,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "serendipity",
+        since: "0.18.0",
+        title: "An old thought, if you like",
+        caption: if cfg!(target_os = "windows") {
+            "Serendipity is off until you turn it on: Settings (Ctrl+,) › Serendipity, or \
+             serendipity = own in the config file. Then a new post's empty editor shows one \
+             of your older posts, often one nothing links to yet: q quotes it, l links it, o \
+             opens it, r shows another, and typing sends it away. Press Ctrl+N to see one \
+             from the samples."
+        } else {
+            "Serendipity is off until you turn it on: Settings (⌘,) › Serendipity, or \
+             serendipity = own in the config file. Then ⌘N's empty editor shows one of your \
+             older posts, often one nothing links to yet: q quotes it, l links it, o opens \
+             it, r shows another, and typing sends it away. Press ⌘N to see one from the \
+             samples."
+        },
+        keys: &[Key::Serendipity],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+N"
+        } else {
+            "⌘N"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end flow ---
+    // --- tangles --- trails, the quote tray, split view.
+    Step {
+        id: "trails",
+        since: "0.18.0",
+        title: "Keep a trail",
+        caption: if cfg!(target_os = "windows") {
+            "A trail is a path through posts you chose to keep. t adds the selected post, with a \
+             word on why (⏎ keeps it, esc skips); Shift+T starts another trail. The trail bar \
+             walks it, and Ctrl+Alt+T writes it as a thread of quotes in a new draft: nothing \
+             is published until you publish it."
+        } else {
+            "A trail is a path through posts you chose to keep. t adds the selected post, with a \
+             word on why (⏎ keeps it, esc skips); ⇧T starts another trail. The trail bar walks \
+             it, and ⌥⌘T writes it as a thread of quotes in a new draft: nothing is published \
+             until you publish it."
+        },
+        keys: &[Key::Trail],
+        key_label: "t",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "quote-tray",
+        since: "0.18.0",
+        title: "Pick it up, quote it later",
+        caption: if cfg!(target_os = "windows") {
+            "q (or Ctrl+Alt+K) puts the post on the quote tray, the strip above the status bar. \
+             Ctrl+K lists the tray first when you quote, and you can drag a tray chip, a stream \
+             post or a Reader row straight into a post: a quote in a thread, a link in a \
+             fragment. Dropped on the search box, it starts a new thread."
+        } else {
+            "q (or ⌥⌘K) puts the post on the quote tray, the strip above the status bar. ⌘K \
+             lists the tray first when you quote, and you can drag a tray chip, a stream post or \
+             a Reader row straight into a post: a quote in a thread, a link in a fragment. \
+             Dropped on the omnibar, it starts a new thread."
+        },
+        keys: &[Key::Tray],
+        key_label: "q",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::StreamQuote,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "split-view",
+        since: "0.18.0",
+        title: "Two posts side by side",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+Enter puts the selected post beside the one you were writing: yours in a \
+             second editor that saves on its own, anyone else's read-only. Ctrl+Alt+[ and \
+             Ctrl+Alt+] move between them, the divider drags, × closes it."
+        } else {
+            "⌥⌘⏎ puts the selected post beside the one you were writing: yours in a second \
+             editor that saves on its own, anyone else's read-only. ⌥⌘[ and ⌥⌘] move between \
+             them, the divider drags, × closes it."
+        },
+        keys: &[Key::Split],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+Enter"
+        } else {
+            "⌥⌘⏎"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Pair,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end tangles ---
+    // --- nearby --- the rail beside the sample thread.
+    Step {
+        id: "nearby",
+        since: "0.18.0",
+        title: "Nearby thoughts, while you write",
+        caption: if cfg!(target_os = "windows") {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the              phrase you share, Alt+Shift+Enter quotes the post (threads). Ctrl+Alt+U shows or              hides the rail; Settings › Nearby can add a small model on this computer that              matches meaning, not just words."
+        } else {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share,              ⌥⇧⏎ quotes the post (threads). ⌥⌘U shows or hides the rail; Settings › Nearby can              add a small model on this Mac that matches meaning, not just words."
+        },
+        keys: &[Key::Nearby],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+U"
+        } else {
+            "⌥⌘U"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::StudioSample,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- capture --- loose ends, capture from anywhere, contacts.
+    Step {
+        id: "loose-ends",
+        since: "0.18.0",
+        title: "Loose ends",
+        caption: "The search reads operators: is:draft lists your drafts, is:orphan the \
+                  published posts nothing points at, has:tk the ungenerated TKs, is:stale \
+                  drafts untouched for a month; links: and quotes: take an id or a host, and \
+                  kind:thread, v:2 work too. Other words search as ever. With the search \
+                  empty, a quiet line over the list says what's loose, in words.",
+        keys: &[Key::Enter],
+        key_label: "⏎",
+        region: Region::Omnibar,
+        button: None,
+        setup: Setup::Query("is:draft"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "capture-link",
+        since: "0.18.0",
+        title: "Capture from anywhere",
+        caption: if cfg!(target_os = "windows") {
+            "Paste a web address into the search and ⏎ starts a fragment with that link, \
+             titled from the page (a blyg post you hold is quoted instead). In the quick \
+             capture panel, text you copied in the last ten seconds is offered as a chip, \
+             \"quote clipboard\"; it's never put in for you."
+        } else {
+            "Paste a web address into the search and ⏎ starts a fragment with that link, \
+             titled from the page (a blyg post you hold is quoted instead). Anywhere on your \
+             Mac, select text and choose Services › Capture in Burrow: the quick capture \
+             panel opens with it quoted, and the page's address under it when the app gives \
+             one."
+        },
+        keys: &[Key::Enter],
+        key_label: "⏎",
+        region: Region::Omnibar,
+        button: None,
+        setup: Setup::Query("https://lin.example.org/t/rock-pools"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "contacts",
+        since: "0.18.0",
+        title: "Your contacts, first",
+        caption: "Type @: the people in your blyg's address book come first, then the blygs \
+                  you read. Where your blyg turns @handle into a link when it publishes, \
+                  picking a contact writes @handle; elsewhere, the plain link. In Reading, \
+                  Mentions under All unread lists the posts that mention you: dots, never a \
+                  count.",
+        keys: &[Key::Mention],
+        key_label: "@",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Mentions("Tea at the harbour with "),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end capture ---
     Step {
         id: "conflict",
         since: "0.16.0",
@@ -933,12 +1377,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "extensions",
         since: "0.10.0",
-        title: "Extensions: ⇧⌘P",
-        caption: "⇧⌘P lists what your extensions offer here: their commands, Browse for each \
-                  notes folder, and Manage extensions…. Burrow asks before one may do anything, \
-                  and none can publish or see your sign-in.",
+        title: "Extensions",
+        caption: "Post › Extensions… lists what your extensions offer here: their commands, \
+                  Browse for each notes folder, and Manage extensions…; the command palette \
+                  has them too. Burrow asks before one may do anything, and none can publish \
+                  or see your sign-in.",
         keys: &[Key::ExtPalette],
-        key_label: "⇧⌘P",
+        key_label: "Post menu",
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1057,6 +1502,19 @@ mod tests {
             Key::BlygSwitcher,
             Key::HopperPicker,
             Key::HopperSeveral,
+            Key::Shelf,
+            Key::LineageStrip,
+            Key::LineageMap,
+            Key::HoverCard,
+            Key::Chat,        // --- chat ---
+            Key::Terminal,    // --- terminal ---
+            Key::Palette,     // --- flow ---
+            Key::Focus,       // --- flow ---
+            Key::Serendipity, // --- flow ---
+            Key::Trail,       // --- tangles ---
+            Key::Tray,
+            Key::Split,
+            Key::Nearby, // --- nearby ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

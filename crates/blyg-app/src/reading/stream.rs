@@ -109,7 +109,8 @@ impl Stream {
         self.synced = now;
     }
 
-    fn blocks_of(&self, r: &ReadingItem) -> Rc<Vec<Block>> {
+    pub(crate) fn blocks_of(&self, r: &ReadingItem) -> Rc<Vec<Block>> {
+        // --- split --- (pub)
         let tomb = r.state == "tombstone";
         let key = (vm::key(r), r.version, tomb);
         if let Some(b) = self.blocks.borrow().get(&key) {
@@ -746,6 +747,13 @@ impl MainView {
             // --- themes --- the selected post takes the theme's row shape.
             .map(|d| crate::ornament::page_row(&self.theme, d, selected))
             .when(opened && !selected, |d| d.bg(p.sel.opacity(0.5)))
+            // --- tray --- picked up, it's a quote to drop in a post.
+            .when(!tombstone, |d| {
+                crate::app::tray::draggable(
+                    d,
+                    crate::app::tray::DraggedQuote::row(r, vm::post_title(r)),
+                )
+            })
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 this.stream_post_click(k_click.clone(), post_click_of(ev), window, cx)
             }))
@@ -998,7 +1006,8 @@ impl MainView {
 
     // ------------------------------------------------------------ blocks
 
-    fn render_blocks(
+    pub(crate) fn render_blocks(
+        // --- split --- (pub)
         &self,
         blocks: &[Block],
         post: &ReadingItem,
@@ -1112,6 +1121,8 @@ impl MainView {
         let mut text = String::new();
         let mut hl: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
         let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
+        // --- hover cards --- each `[[id]]` link's card, by its text range.
+        let mut cards: Vec<(std::ops::Range<usize>, crate::app::hover_card::Card)> = Vec::new();
         for s in spans {
             let start = text.len();
             // An `[[id]]` link reads as its own label, else as the target's
@@ -1154,6 +1165,9 @@ impl MainView {
                 });
                 styled = true;
             }
+            if let Some((_, _, id)) = &label {
+                cards.push((r.clone(), self.stream_card(post, id, false))); // --- hover cards ---
+            }
             let target = match label {
                 Some((_, origin, id)) => Some(Target::Post(origin, id)),
                 None => s
@@ -1187,6 +1201,7 @@ impl MainView {
             // `[[id]]` link opens the post like a quote box does.
             let view = cx.entity().downgrade();
             InteractiveText::new(("stream-text", *n), styled)
+                .tooltip(self.hover_card_span_tips(cards)) // --- hover cards ---
                 .on_click(ranges, move |i, window, cx| {
                     let t = targets.get(i).cloned();
                     let _ = view.update(cx, |this, cx| match t {
@@ -1283,6 +1298,9 @@ impl MainView {
                 cx.stop_propagation();
                 this.open_original(q_origin.clone(), q_id.clone(), version, window, cx);
             }))
+            // --- hover cards --- what it quotes, before the click.
+            .tooltip(self.hover_card_tip(self.stream_card(post, id, true)))
+            .tooltip_show_delay(crate::app::hover_card::DELAY)
             .children(quoted)
             .child(
                 div()

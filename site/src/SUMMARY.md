@@ -13,6 +13,8 @@
 - [Themes](themes.md)
 - [Extensions](extensions.md)
   - [Community extensions](generated/community-extensions.md)
+- [#thicket chat (experimental)](chat.md)
+- [The terminal pane (experimental)](terminal.md)
 
 # Reference
 
@@ -32,5 +34,6 @@
   - [blyg-ai](dev/ai.md)
   - [Blygger protocol digest](dev/protocol.md)
   - [Extensions (BXP)](dev/extensions.md)
+  - [blyg-web (preview)](dev/web.md)
 - [Building and testing](dev/building.md)
 - [Releasing](dev/releasing.md)

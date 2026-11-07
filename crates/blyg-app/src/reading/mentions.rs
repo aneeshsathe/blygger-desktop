@@ -12,7 +12,7 @@ use crate::app::MainView;
 use crate::theme::Rule; // --- themes --- dividers
 
 impl MainView {
-    pub(super) fn load_mentions(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_mentions(&mut self, cx: &mut Context<Self>) {
         if !matches!(self.reading.mentions, Load::Ready(_)) {
             self.reading.mentions = Load::Loading;
         }

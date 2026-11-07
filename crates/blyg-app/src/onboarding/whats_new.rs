@@ -21,6 +21,151 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.18.0",
+        items: &[
+            "The shelf: ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the \
+             top of the list, marked 📚. ⌘B opens the shelf; 1–9 opens a post on it, ⌥↑/⌥↓ \
+             reorder it. It's kept on this Mac for now.",
+            if cfg!(target_os = "windows") {
+                "Lineage while you write: a quiet line under the editor shows the open post's \
+                 lineage glyph, what it draws on and what draws on it. A click opens the \
+                 lists; Ctrl+J opens the lineage sheet for your own post."
+            } else {
+                "Lineage while you write: a quiet line under the editor shows the open post's \
+                 lineage glyph, what it draws on and what draws on it. A click opens the \
+                 lists; ⌘J opens the lineage sheet for your own post."
+            },
+            "The lineage sheet zooms out: − shows the neighbourhood two hops each way, coloured \
+             by relation. ⏎ re-centres on a post, ⌫ walks back, + returns to the list.",
+            if cfg!(target_os = "windows") {
+                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
+                 or link in the Stream) to see what it is; “label it” names an unlabelled \
+                 link. Ctrl-click opens the post."
+            } else {
+                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
+                 or link in the Stream) to see what it is; “label it” names an unlabelled \
+                 link. ⌘-click opens the post."
+            },
+            // --- chat ---
+            if cfg!(target_os = "windows") {
+                "#thicket (Ctrl+Shift+I), an experimental chat tab: talk with other Burrow users on \
+                 Libera.Chat (IRC), with unread and mention marks and a notification when \
+                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
+                 and it may be removed."
+            } else {
+                "#thicket (⇧⌘I), an experimental chat tab: talk with other Burrow users on \
+                 Libera.Chat (IRC), with unread and mention marks and a notification when \
+                 you're mentioned. Nothing connects until you set it up, Settings hides it, \
+                 and it may be removed."
+            },
+            // --- terminal ---
+            if cfg!(target_os = "windows") {
+                "A terminal pane (Ctrl+`, experimental): your own shell under your posts, for \
+                 a CLI agent, git or wrangler. It gets nothing of Burrow's (no token, no \
+                 BLYGGER_* variable); Ctrl+Shift+T sends the editor's selection to it, quoted."
+            } else {
+                "A terminal pane (⌃`, experimental): your own shell under your posts, for a CLI \
+                 agent, git or wrangler. It gets nothing of Burrow's (no token, no BLYGGER_* \
+                 variable); ⇧⌘T sends the editor's selection to it, quoted."
+            },
+            // --- flow ---
+            if cfg!(target_os = "windows") {
+                "The command palette (Ctrl+Shift+P): every action, theme, font, blyg, hopper and \
+                 post by name, each with its key; Enter runs it, Ctrl+Enter keeps the palette \
+                 open. Extensions are its Extensions group, and Post › Extensions… still lists \
+                 them."
+            } else {
+                "The command palette (⇧⌘P): every action, theme, font, blyg, hopper and post by \
+                 name, each with its key; ⏎ runs it, ⌘⏎ keeps the palette open. Extensions are \
+                 its Extensions group, and Post › Extensions… still lists them."
+            },
+            if cfg!(target_os = "windows") {
+                "Focus mode (Ctrl+Shift+F, View › Focus): just the editor, the line you're on \
+                 held steady, other paragraphs dimmed, a hairline with the sync dot and this \
+                 sitting's words. Esc leaves; focus-line and focus-fade tune it."
+            } else {
+                "Focus mode (⌥⌘F, View › Focus): just the editor, the line you're on held \
+                 steady, other paragraphs dimmed, a hairline with the sync dot and this \
+                 sitting's words. esc leaves; focus-line and focus-fade tune it."
+            },
+            if cfg!(target_os = "windows") {
+                "Serendipity, off unless you turn it on (Settings › Serendipity): a new post's \
+                 empty editor shows one of your older posts; q quotes, l links, o opens, r \
+                 another, and typing sends it away."
+            } else {
+                "Serendipity, off unless you turn it on (Settings › Serendipity): ⌘N's empty \
+                 editor shows one of your older posts; q quotes, l links, o opens, r another, \
+                 and typing sends it away."
+            },
+            if cfg!(target_os = "windows") {
+                "Small motion: a published post's row settles, the sync dot and the counter ease \
+                 between colours, the list crossfades when you switch blygs. Windows' \
+                 animation setting isn't read yet; BLYGGER_REDUCE_MOTION=1 turns it off."
+            } else {
+                "Small motion: a published post's row settles, the sync dot and the counter ease \
+                 between colours, the list crossfades when you switch blygs (none of it with \
+                 Reduce Motion on). sounds = quiet adds a quiet system sound on publish and \
+                 capture."
+            },
+            // --- tangles ---
+            if cfg!(target_os = "windows") {
+                "Trails: t in Reading adds the post to a trail, with a word on why; Shift+T \
+                 starts another. Trails are listed with your sources, and Ctrl+Alt+T writes \
+                 one as a thread of quotes in a new draft. Nothing is published."
+            } else {
+                "Trails: t in Reading adds the post to a trail, with a word on why; ⇧T starts \
+                 another. Trails are listed with your sources, and ⌥⌘T writes one as a \
+                 thread of quotes in a new draft. Nothing is published."
+            },
+            if cfg!(target_os = "windows") {
+                "Drag a post into what you're writing to quote it (a link in a fragment), or \
+                 onto the search box to start a thread. q or Ctrl+Alt+K keeps it on the quote \
+                 tray above the status bar, and Ctrl+K lists the tray first."
+            } else {
+                "Drag a post into what you're writing to quote it (a link in a fragment), or \
+                 onto the omnibar to start a thread. q or ⌥⌘K keeps it on the quote tray \
+                 above the status bar, and ⌘K lists the tray first."
+            },
+            if cfg!(target_os = "windows") {
+                "Split view: Ctrl+Alt+Enter opens the selected post beside the one you're \
+                 writing (yours editable, anyone else's read-only); Ctrl+Alt+[ and Ctrl+Alt+] \
+                 move between them."
+            } else {
+                "Split view: ⌥⌘⏎ opens the selected post beside the one you're writing (yours \
+                 editable, anyone else's read-only); ⌥⌘[ and ⌥⌘] move between them."
+            },
+            // --- nearby ---
+            if cfg!(target_os = "windows") {
+                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
+                 that say what your paragraph says. Alt+Enter links the shared phrase, \
+                 Alt+Shift+Enter quotes it; Ctrl+Alt+U hides the rail. Settings › Nearby adds a \
+                 31 MB model that runs on this computer and matches meaning, not just words."
+            } else {
+                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
+                 that say what your paragraph says. ⌥⏎ links the shared phrase, ⌥⇧⏎ quotes it; \
+                 ⌥⌘U hides the rail. Settings › Nearby adds a 31 MB model that runs on this Mac \
+                 and matches meaning, not just words."
+            },
+            // --- capture ---
+            "Loose ends: the search reads is:orphan, is:draft, is:stale, is:leaf, has:tk, \
+             links:, quotes:, kind: and v:. With the search empty, a quiet line over the list \
+             says what's loose, in words (2 orphans · 1 ungenerated TK); a click filters.",
+            if cfg!(target_os = "windows") {
+                "Capture from anywhere: paste a web address into the search and ⏎ starts a \
+                 fragment with that link, titled from the page. Quick capture offers text you \
+                 just copied as a “quote clipboard” chip."
+            } else {
+                "Capture from anywhere: select text in any app and choose Services › Capture \
+                 in Burrow to open quick capture with it quoted. A web address pasted into the \
+                 search starts a fragment with that link, titled from the page."
+            },
+            "Your contacts come first in the @ list; where your blyg turns @handle into a \
+             link (studio 0.56), picking one writes @handle, and publish says which handles \
+             it couldn't resolve. Reading has a Mentions feed under All unread.",
+        ],
+        first_step: Some("shelf"),
+    },
+    Release {
         version: "0.17.0",
         items: &[
             "Burrow stays quick with thousands of posts in Reading: a sync that finds nothing \

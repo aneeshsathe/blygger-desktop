@@ -490,10 +490,48 @@ impl PublicClient {
 }
 
 /// The one error for "that version has no public content".
+/// --- capture --- A page's `<title>`, one line, entities decoded; `None`
+/// without one.
+pub fn html_title(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let open = lower.find("<title")?;
+    let start = open + lower[open..].find('>')? + 1;
+    let end = start + lower[start..].find("</title")?;
+    let raw = &html[start..end];
+    let text = raw
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&");
+    let one = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!one.is_empty()).then_some(one)
+}
+
 pub fn not_pinned(version: u32) -> CoreError {
     CoreError::Rejected {
         status: 404,
         message: format!("v{version} isn't pinned, so it has no public content"),
         details: vec![],
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    // --- capture ---
+    use super::html_title;
+
+    #[test]
+    fn a_page_title_is_one_line_with_entities_decoded() {
+        let html =
+            "<html><HEAD><Title lang=en>\n  Rock pool\n economics &amp; tides </title></head>";
+        assert_eq!(
+            html_title(html).as_deref(),
+            Some("Rock pool economics & tides")
+        );
+        assert_eq!(html_title("<title>  </title>"), None);
+        assert_eq!(html_title("<p>no title</p>"), None);
     }
 }

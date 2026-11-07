@@ -131,11 +131,54 @@ pub trait Backend: Send + Sync {
     /// Newest-updated first.
     fn items(&self) -> Vec<Item>;
     /// Case-insensitive match over content; same order as `items`. Empty query = `items()`.
+    /// --- loose ends --- operators (`is:orphan`, `has:tk`, …,
+    /// `crate::loose`) filter what the remaining words find.
     fn search(&self, query: &str) -> Vec<Item>;
+    /// --- loose ends --- what `is:orphan` and `quotes:<host>` need beyond
+    /// the posts: local reads only (instant, any thread).
+    fn loose_facts(&self) -> crate::loose::Facts {
+        crate::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading())
+    }
     fn item(&self, id: &LocalId) -> Option<Item>;
+    /// --- contacts --- The owner's address book as last fetched (local,
+    /// instant). Empty when the blyg doesn't serve contacts.
+    fn contacts(&self) -> Vec<crate::contacts::Contact> {
+        Vec::new()
+    }
+    /// --- contacts --- Fetch the address book again (blocking).
+    fn refresh_contacts(&self) -> Result<()> {
+        Ok(())
+    }
+    /// --- contacts --- Whether publish rewrites `@handle` to a link here
+    /// (contract 5.7, as last seen).
+    fn rewrites_handles(&self) -> bool {
+        false
+    }
+    /// --- contacts --- `(subscription id, remote id)` of the held posts
+    /// that mention you, from the blyg's mentions lens (blocking). `None`
+    /// when it isn't served.
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        None
+    }
+    /// --- capture --- A web page's `<title>`, fetched once with the
+    /// token-less public client (blocking). `None`: not served, not HTML,
+    /// or no title.
+    fn page_title(&self, url: &str) -> Option<String> {
+        let _ = url;
+        None
+    }
     fn create_draft(&self, kind: Kind, content_md: &str) -> Result<LocalId>;
     /// Save the working copy. Debounced push to `PUT /api/items/:id`.
     fn save(&self, id: &LocalId, content_md: &str) -> Result<()>;
+    /// `save` from a keystroke: the same save, but it may land a moment
+    /// later, written on another thread, so typing never waits on the
+    /// store. Every read through this backend sees it at once (`item`
+    /// lays it over the stored row; other calls write it first). A write
+    /// that fails is reported as `CoreEvent::Error`. Additive; the
+    /// default is `save`.
+    fn save_typing(&self, id: &LocalId, content_md: &str) -> Result<()> {
+        self.save(id, content_md)
+    }
     /// Fragment ⇄ thread. Before first publish this is free (we recreate the
     /// draft server-side if needed); after publish the server decides.
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()>;
@@ -181,6 +224,23 @@ pub trait Backend: Send + Sync {
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()>;
     /// Last-known reading list from the local cache (instant).
     fn reading(&self) -> Vec<ReadingItem>;
+    /// Your own item whose server id is `server_id`, as `items()` has it.
+    /// Additive; the default searches `items()`, the live backend looks it
+    /// up (the preview's resolver asks for one id at a time).
+    fn own_item(&self, server_id: &str) -> Option<Item> {
+        self.items()
+            .into_iter()
+            .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == server_id))
+    }
+    /// `reading()`'s rows whose `remote_id` is `remote_id`, in its order.
+    /// Additive; the default filters `reading()`, the live backend without
+    /// copying the rest.
+    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        self.reading()
+            .into_iter()
+            .filter(|r| r.remote_id == remote_id)
+            .collect()
+    }
     /// How many of `reading()`'s posts are unread; withdrawn posts are
     /// background, never unread (studio 0.49). The live backend counts
     /// without copying the list.
@@ -577,6 +637,91 @@ pub trait Backend: Send + Sync {
 
     // --- end reader folders ---
 
+    // --- shelf ---
+    // Your own posts kept to hand at the top of the Write list, in your
+    // order. Local only (this store), never sent to the blyg, and unrelated
+    // to pinning a version (public and permanent). Additive; the defaults
+    // shelve nothing and refuse changes, so implementors compile.
+
+    /// The shelf in order (withdrawn posts left out).
+    fn shelf(&self) -> Vec<LocalId> {
+        Vec::new()
+    }
+
+    /// Put a post on the shelf (at the end), or take it off. Idempotent.
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        let _ = (id, on);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    /// Move a shelved post to `index` on the shelf (clamped).
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        let _ = (id, index);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    // --- end shelf ---
+
+    // --- trails ---
+    // Paths through posts you chose to keep (`crate::trails`): ordered
+    // stops with a "why" each. Local only (this store), never sent to the
+    // blyg; publishing one is an ordinary draft. Additive; the defaults know
+    // no trails and refuse changes, so implementors compile.
+
+    /// Every trail, in order, with its stop count.
+    fn trails(&self) -> Vec<crate::trails::Trail> {
+        Vec::new()
+    }
+
+    /// A new, empty trail. `Rejected{400}` for an empty name.
+    fn create_trail(&self, name: &str) -> Result<crate::trails::Trail> {
+        let _ = name;
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        let _ = (id, name);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// Delete a trail (the posts are untouched).
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        let _ = id;
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// A trail's stops in order; a withdrawn post's stop is a tombstone
+    /// with no title.
+    fn trail_stops(&self, trail: &str) -> Vec<crate::trails::TrailStop> {
+        let _ = trail;
+        Vec::new()
+    }
+
+    /// Add a post at the end of a trail (or update the why of one already
+    /// on it); its index. A withdrawn post is refused.
+    fn add_trail_stop(&self, trail: &str, stop: &crate::trails::TrailStop) -> Result<usize> {
+        let _ = (trail, stop);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        let _ = (trail, index, why);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        let _ = (trail, index);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    /// Move the stop at `from` to `to` (clamped).
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        let _ = (trail, from, to);
+        Err(CoreError::Other("trails aren't supported here".into()))
+    }
+
+    // --- end trails ---
+
     // --- quote targets ---
     // Opening a quote's (or a stub's, or a fork's) original that isn't held
     // here: its public files, fetched unauthenticated with `PublicClient`
@@ -765,5 +910,71 @@ pub trait Backend: Send + Sync {
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         let _ = id;
         None
+    }
+
+    // --- nearby --- Nearby thoughts' index and phrase search, local only
+    // (nothing here touches the network). Additive: the defaults keep no
+    // vectors (the app embeds again each run) and search in memory.
+
+    /// Every stored vector made by `model`.
+    fn nearby_vectors(&self, model: &str) -> Vec<crate::nearby::NearbyVector> {
+        let _ = model;
+        Vec::new()
+    }
+
+    /// Replace the stored vectors of the posts `docs` with `rows`.
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[crate::nearby::NearbyVector],
+    ) -> Result<()> {
+        let _ = (model, docs, rows);
+        Ok(())
+    }
+
+    /// Keep only `model`'s vectors of the posts in `keep`.
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        let _ = (model, keep);
+        Ok(())
+    }
+
+    /// The posts the rail may offer whose text contains each phrase, as
+    /// `(doc key, phrase index)` (`crate::nearby`'s keys). The live
+    /// backend asks the trigram indexes.
+    fn nearby_phrase_hits(&self, phrases: &[String]) -> Vec<(String, usize)> {
+        use crate::nearby::{offers_own, offers_reading, own_key, reading_key};
+        let needles: Vec<String> = phrases.iter().map(|p| p.trim().to_lowercase()).collect();
+        let subs = self.subscriptions();
+        let blyg = |id: &str| {
+            subs.iter()
+                .any(|s| s.id == id && s.kind == SubscriptionKind::Blyg)
+        };
+        let mut out = Vec::new();
+        for it in self.items().iter().filter(|i| offers_own(i)) {
+            let text = it.content_md.to_lowercase();
+            for (i, n) in needles.iter().enumerate() {
+                if n.chars().count() >= 3 && text.contains(n.as_str()) {
+                    out.push((own_key(&it.local_id.0), i));
+                }
+            }
+        }
+        for r in self
+            .reading()
+            .iter()
+            .filter(|r| offers_reading(r, blyg(&r.subscription_id)))
+        {
+            let text = r.content_md.to_lowercase();
+            for (i, n) in needles.iter().enumerate() {
+                if n.chars().count() >= 3 && text.contains(n.as_str()) {
+                    out.push((reading_key(&r.subscription_id, &r.remote_id), i));
+                }
+            }
+        }
+        out
     }
 }

@@ -54,11 +54,45 @@ pub struct AppState {
     /// box and not yet posted or saved (kept across views and restarts).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub compose_draft: Option<String>,
+    /// --- nearby --- The Nearby thoughts rail was hidden (⌥⌘U).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub nearby_hidden: bool,
     /// --- blyg switcher --- What each signed-in blyg looked like when it
     /// was last active (its name and avatar), by host, so the switcher can
     /// show blygs whose database isn't open.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub blyg_cards: std::collections::BTreeMap<String, BlygCard>,
+    // --- flow ---
+    /// The command palette's (⇧⌘P) last commands, newest first (ids such
+    /// as `action:Publish`, `theme:cutaway`), shown when its field is empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub palette_recent: Vec<String>,
+    /// Serendipity: the posts ⌘N's empty editor has shown, with when (Unix
+    /// seconds), so one isn't shown again within a month.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub serendipity_seen: std::collections::BTreeMap<String, u64>,
+    // --- end flow ---
+    // --- tangles ---
+    /// --- tray --- Posts picked up to quote and not placed yet, per blyg
+    /// (by host), in the order they were picked up.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub quote_tray: std::collections::BTreeMap<String, Vec<TrayEntry>>,
+    /// --- split --- The left post's share of the editor column in split
+    /// view, in thousandths, when the user dragged the divider.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub split_left: Option<u32>,
+}
+
+/// --- tray --- A post waiting in the quote tray: what the picker writes
+/// for it (`![[id | label]]`), its title, and where it's from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TrayEntry {
+    pub id: String,
+    pub label: String,
+    pub title: String,
+    /// The reading row's subscription (`~own` for yours).
+    pub subscription_id: String,
 }
 
 /// --- blyg switcher --- A blyg as the switcher shows it.

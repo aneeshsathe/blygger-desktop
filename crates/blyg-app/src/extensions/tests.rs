@@ -393,7 +393,7 @@ fn not_now_leaves_a_notice_that_asks_again(cx: &mut TestAppContext) {
 fn the_palette_lists_commands_libraries_and_manage(cx: &mut TestAppContext) {
     let v = vault();
     let (view, _, cx) = running(cx, &v);
-    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"));
+    cx.dispatch_action(crate::app::extensions::ShowExtensions);
     cx.run_until_parked();
     let rows = view.read_with(cx, |v, _| match &v.ext.overlay {
         Some(Overlay::Palette { rows, .. }) => rows.clone(),
@@ -424,8 +424,8 @@ fn the_palette_lists_commands_libraries_and_manage(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("escape");
     assert!(view.read_with(cx, |v, _| v.ext.overlay.is_none()));
     // ⇧⌘P twice closes it.
-    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"));
-    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"));
+    cx.dispatch_action(crate::app::extensions::ShowExtensions);
+    cx.dispatch_action(crate::app::extensions::ShowExtensions);
     assert!(view.read_with(cx, |v, _| v.ext.overlay.is_none()));
 }
 
@@ -643,7 +643,7 @@ fn save_selection_to_notes_makes_a_plain_note(cx: &mut TestAppContext) {
         v.open(&draft, window, cx);
         v.editor.update(cx, |s, cx| s.set_selected_range(0..20, cx));
     });
-    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"));
+    cx.dispatch_action(crate::app::extensions::ShowExtensions);
     cx.run_until_parked();
     cx.simulate_keystrokes("1"); // Save selection to notes
     let note = v.root.join("Lanterns on the pier.md");

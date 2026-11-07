@@ -14,15 +14,33 @@ pub enum EnterAction {
     Open(LocalId),
     /// No matches for a non-empty query: create a draft seeded with it.
     Create(String),
+    /// --- capture --- a lone web address with no matches: start a
+    /// fragment with that link (`capture_link`).
+    LinkFragment(String),
     Nothing,
 }
 
+/// --- capture --- `q` as one web address (`https://…`), else `None`.
+pub fn lone_web_url(q: &str) -> Option<String> {
+    let t = q.trim();
+    let lower = t.to_ascii_lowercase();
+    let ok = (lower.starts_with("https://") || lower.starts_with("http://"))
+        && !t.chars().any(char::is_whitespace)
+        && url_host(t).is_some_and(|h| h.contains('.') || h == "localhost");
+    ok.then(|| t.to_string())
+}
+
 /// The NV list: current query, the backend's results for it, and the selection.
+/// Shelved posts (`Backend::shelf`) that match come first, in your order;
+/// the rest keep the backend's order.
 #[derive(Debug, Default)]
 pub struct ListModel {
     query: String,
     results: Vec<Item>,
     selected: Option<LocalId>,
+    // --- shelf ---
+    shelf: Vec<LocalId>,
+    shelf_len: usize,
 }
 
 impl ListModel {
@@ -53,14 +71,49 @@ impl ListModel {
 
     /// A new query was typed: the selection jumps to the first match (NV).
     pub fn set_query(&mut self, query: &str, results: Vec<Item>) {
+        let results = self.arrange(results);
         self.query = query.to_string();
         self.selected = results.first().map(|i| i.local_id.clone());
         self.results = results;
     }
 
+    // --- shelf ---
+
+    /// The shelf changed: re-order what's listed, keeping the selection.
+    /// A post taken off stays where it is until the next `refresh` /
+    /// `set_query` puts it back in the backend's order.
+    pub fn set_shelf(&mut self, shelf: Vec<LocalId>) {
+        self.shelf = shelf;
+        let results = std::mem::take(&mut self.results);
+        self.results = self.arrange(results);
+    }
+
+    pub fn is_on_shelf(&self, id: &LocalId) -> bool {
+        self.shelf.contains(id)
+    }
+
+    /// How many rows at the top are on the shelf.
+    pub fn shelf_len(&self) -> usize {
+        self.shelf_len
+    }
+
+    /// Shelved matches first, in shelf order; the rest in the order given.
+    fn arrange(&mut self, mut results: Vec<Item>) -> Vec<Item> {
+        let mut top = Vec::new();
+        for id in &self.shelf {
+            if let Some(ix) = results.iter().position(|i| &i.local_id == id) {
+                top.push(results.remove(ix));
+            }
+        }
+        self.shelf_len = top.len();
+        top.extend(results);
+        top
+    }
+
     /// Same query, fresh results (sync pulled something). Keeps the selection
     /// if it's still there, else falls back to the first row.
     pub fn refresh(&mut self, results: Vec<Item>) {
+        let results = self.arrange(results);
         let keep = self
             .selected
             .as_ref()
@@ -90,6 +143,9 @@ impl ListModel {
             return;
         };
         self.results.remove(ix);
+        if ix < self.shelf_len {
+            self.shelf_len -= 1;
+        }
         if self.selected.as_ref() == Some(id) {
             self.selected = self
                 .results
@@ -133,6 +189,14 @@ impl ListModel {
     pub fn enter(&self) -> EnterAction {
         let q = self.trimmed_query();
         if !q.is_empty() && self.results.is_empty() {
+            // --- capture --- a pasted address starts a fragment with it.
+            if let Some(url) = lone_web_url(q) {
+                return EnterAction::LinkFragment(url);
+            }
+            // --- loose ends --- operators alone start nothing.
+            if blyg_core::loose::is_operator_only(q) {
+                return EnterAction::Nothing;
+            }
             return EnterAction::Create(q.to_string());
         }
         match &self.selected {
@@ -146,13 +210,28 @@ impl ListModel {
         let q = self.trimmed_query();
         match (q.is_empty(), self.results.len()) {
             (true, _) => String::new(),
+            (false, 0) if lone_web_url(q).is_some() => "⏎ start a fragment with this link".into(), // --- capture ---
+            (false, 0) if blyg_core::loose::is_operator_only(q) => "nothing loose".into(), // --- loose ends ---
             (false, 0) => "⏎ new draft".into(),
             (false, n) => format!("{n} found · ⏎ open"),
         }
     }
 
+    /// What the empty list says (`None`: the query is empty).
+    pub fn empty_message(&self) -> Option<String> {
+        let q = self.trimmed_query();
+        Some(match self.enter() {
+            _ if q.is_empty() => return None,
+            EnterAction::LinkFragment(_) => "Press ⏎ to start a fragment with this link.".into(),
+            EnterAction::Create(_) => format!("No matches. Press ⏎ to start “{q}”."),
+            _ => "Nothing loose here.".into(),
+        })
+    }
+
+    /// No matches for words worth starting a post with (not operators
+    /// alone, not a lone web address: those have their own ⏎).
     pub fn wants_create(&self) -> bool {
-        !self.trimmed_query().is_empty() && self.results.is_empty()
+        matches!(self.enter(), EnterAction::Create(_))
     }
 }
 
@@ -985,6 +1064,40 @@ mod tests {
     }
 
     #[test]
+    fn shelved_matches_come_first_in_shelf_order() {
+        let id = |s: &str| LocalId(s.into());
+        let mut m = ListModel::default();
+        m.set_shelf(vec![id("d"), id("b")]);
+        m.set_query("", ids(&["a", "b", "c", "d"]));
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["d", "b", "a", "c"]);
+        assert_eq!(m.shelf_len(), 2);
+        assert_eq!(m.selected(), Some(&id("d")), "the first shelved post");
+        assert!(m.is_on_shelf(&id("b")) && !m.is_on_shelf(&id("a")));
+
+        // A query: only shelved matches rank first; the others stay hidden.
+        m.set_query("x", ids(&["a", "b", "c"]));
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["b", "a", "c"]);
+        assert_eq!(m.shelf_len(), 1);
+
+        // Taking one off re-orders in place and keeps the selection.
+        m.select(&id("c"));
+        m.set_shelf(vec![]);
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["b", "a", "c"], "the backend's order as given");
+        assert_eq!(m.shelf_len(), 0);
+        assert_eq!(m.selected(), Some(&id("c")));
+
+        // Removing a shelved row shrinks the shelf block.
+        m.set_shelf(vec![id("a")]);
+        m.refresh(ids(&["a", "b", "c"]));
+        assert_eq!(m.shelf_len(), 1);
+        m.remove(&id("a"));
+        assert_eq!(m.shelf_len(), 0);
+    }
+
+    #[test]
     fn query_selects_first_match_and_moves_clamped() {
         let mut m = ListModel::default();
         m.set_query("", ids(&["a", "b", "c"]));
@@ -994,6 +1107,42 @@ mod tests {
         assert_eq!(m.move_selection(1), None, "clamped at the end");
         assert_eq!(m.move_selection(-10), Some(LocalId("a".into())));
         assert_eq!(m.move_selection(-1), None);
+    }
+
+    #[test]
+    fn operators_alone_never_create() {
+        // --- loose ends ---
+        let mut m = ListModel::default();
+        m.set_query("is:orphan", vec![]);
+        assert_eq!(m.enter(), EnterAction::Nothing);
+        assert!(!m.wants_create());
+        assert_eq!(m.hint(), "nothing loose");
+        m.set_query("is:draft tide", vec![]);
+        assert_eq!(m.enter(), EnterAction::Create("is:draft tide".into()));
+    }
+
+    #[test]
+    fn a_lone_web_address_starts_a_link_fragment() {
+        // --- capture ---
+        let mut m = ListModel::default();
+        m.set_query(" https://lin.example.org/t/rock-pools ", vec![]);
+        assert_eq!(
+            m.enter(),
+            EnterAction::LinkFragment("https://lin.example.org/t/rock-pools".into())
+        );
+        assert!(!m.wants_create());
+        assert_eq!(m.hint(), "⏎ start a fragment with this link");
+        // Already written about: ⏎ opens it.
+        m.set_query("https://lin.example.org/t/rock-pools", ids(&["rock"]));
+        assert_eq!(m.enter(), EnterAction::Open(LocalId("rock".into())));
+        for q in [
+            "lin.example.org",
+            "see https://a.example.com",
+            "https://",
+            "ftp://a.example",
+        ] {
+            assert_eq!(lone_web_url(q), None, "{q}");
+        }
     }
 
     #[test]
@@ -1067,7 +1216,9 @@ mod tests {
         it.version = 1;
         assert_eq!(edits_tip(&it), None, "clean");
         it.dirty = true;
-        let want = if cfg!(target_os = "windows") {
+        // Windows' spelling (there Discard has no key), not blyg-web's, which
+        // shares this file and keeps the Mac's keys on every platform.
+        let want = if crate::keymap::keyless_here("DiscardChanges") {
             "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
         } else {
             "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"

@@ -68,6 +68,46 @@ Check spelling while you type, with the macOS spell checker (your system languag
 Which typed brackets open the post picker. on: typing [[ anywhere outside code opens it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. off: typed brackets never open it. ⌘K always opens the picker.
 
 
+### `nearby`
+
+- **Values:** `on`, `titles`, `off`
+- **Default:** `on`
+
+Nearby thoughts: a rail beside the editor that shows up to five of your own published posts, and posts you hold from blygs you follow, that say the same thing as the paragraph you're writing. ⌥⌘U shows or hides it; ⌥↑/⌥↓ choose, ⌥⏎ links the matched phrase ([[id | phrase]]), ⌥⇧⏎ quotes the post on a new line (threads only). on matches the whole of each post; titles only their titles; off turns it off. Only what this Mac already holds is offered, and nothing is fetched to suggest.
+
+
+### `nearby-embedder`
+
+- **Values:** `local`, `endpoint`, `none`
+- **Default:** `none`
+
+How Nearby thoughts tells that two paragraphs mean the same thing. none (the default) matches shared phrases through the full-text index. local uses a small embedding model run on this Mac (potion-base-8M, MIT, about 31 MB), downloaded once into Burrow's data folder when you choose it (Settings › Nearby) and checked against a pinned checksum; after that it works offline and nothing leaves this Mac. endpoint sends each paragraph, and the text of the posts being indexed, to the embeddings endpoint in nearby-endpoint (e.g. Ollama on this Mac).
+
+
+### `nearby-endpoint`
+
+- **Values:** an `http(s)://` address
+- **Default:** unset
+
+With nearby-embedder = endpoint: an OpenAI-compatible or Ollama server's address, e.g. http://localhost:11434 for Ollama or http://localhost:1234/v1 for an OpenAI-compatible server. Burrow posts to /api/embed (Ollama, when the address has no /v1) or /embeddings. No API key is sent: point it at a server you run. Text goes there only when you set this.
+
+
+### `nearby-endpoint-model`
+
+- **Values:** text
+- **Default:** `nomic-embed-text`
+
+The model nearby-endpoint embeds with, e.g. nomic-embed-text or mxbai-embed-large.
+
+
+### `nearby-rerank`
+
+- **Values:** `off`, `on`
+- **Default:** `off`
+
+on: after the rail fills, the AI provider you use for writing (ai-provider) puts the best ten in order of how closely each says what your paragraph says. That sends the paragraph, and the titles and an excerpt of those posts, to that provider. off by default.
+
+
 ### `auto-update`
 
 - **Values:** `install`, `notify`, `off`
@@ -90,6 +130,86 @@ Where a link clicked in a post opens: app opens it in Burrow's browser pane (fro
 - **Default:** `true`
 
 Block ads and trackers in the browser pane, with uBlock Origin's default filter lists (downloaded about once a week; a small built-in list until then). The shield button turns it off for one site. false turns it off everywhere.
+
+
+### `chat-tab`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+Show the #thicket chat tab beside the views in the title bar. Experimental: it may be removed. The tab chats in #thicket, a channel for Burrow users on Libera.Chat (an IRC network). Nothing connects to Libera.Chat until you set it up in the tab (sign in, or create an account). false hides the tab and disconnects. Settings (⌘,) toggles it.
+
+
+### `chat-nick`
+
+- **Values:** text
+- **Default:** unset
+
+Your Libera.Chat nick (also your account name), e.g. chat-nick = ada_example. The chat tab writes it when you finish setting up, and then signs in on its own each time Burrow opens (SASL over TLS). The password is in the macOS Keychain, never in this file. Unset: the tab shows its setup and connects to nothing.
+
+
+### `chat-server`
+
+- **Values:** text
+- **Default:** `irc.libera.chat:6697`
+
+The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Chat is supported for now.
+
+
+### `chat-notifications`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+A system notification when someone mentions your nick in #thicket (or messages you) while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) toggles it.
+
+
+### `terminal`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+The terminal pane at the foot of the window (⌃` shows and hides it): your login shell, for a CLI agent (claude, codex…), git or wrangler beside your posts. Experimental. The shell gets your environment minus everything of Burrow's (no BLYGGER_* variable, no token) and talks to Burrow only through the pane. false turns it off and ends a running shell.
+
+
+### `terminal-shell`
+
+- **Values:** text
+- **Default:** unset
+
+The program the terminal pane runs, with its arguments, instead of your login shell ($SHELL -l on macOS, %COMSPEC% on Windows), e.g. terminal-shell = /bin/zsh -l or terminal-shell = pwsh.
+
+
+### `focus-line`
+
+- **Values:** a number from 0.1 to 0.9
+- **Default:** `0.45`
+
+Focus mode (⌥⌘F, View › Focus) keeps the line you're typing on at this height in the editor, as a fraction from the top: 0.45 is a little above the middle, 0.1 near the top, 0.9 near the bottom. The text scrolls under it.
+
+
+### `focus-fade`
+
+- **Values:** `paragraph`, `off`
+- **Default:** `paragraph`
+
+In focus mode, paragraph dims every paragraph but the one you're in, so it reads at about a third; off leaves the text as it is.
+
+
+### `serendipity`
+
+- **Values:** `off`, `own`, `on`
+- **Default:** `off`
+
+Serendipity: ⌘N's empty editor shows one of your older posts, an orphan (nothing links to it) or one from this week in another year, never a withdrawn one, and not the same one again within a month. q quotes it, l links it, o opens it, r shows another, until you type. own shows your own posts only; on also shows posts you've read from your subscriptions; off (the default) shows nothing. Settings (⌘,) has it too.
+
+
+### `sounds`
+
+- **Values:** `off`, `quiet`
+- **Default:** `off`
+
+quiet plays a soft macOS system sound when a post is published and when quick capture keeps a note; never while you type. off (the default) is silent. Burrow plays no sounds on Windows.
 
 
 ### `font-family-writing`

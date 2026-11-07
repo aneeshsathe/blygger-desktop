@@ -426,6 +426,21 @@ impl Assist {
             query: String::new(),
             sel: 0,
         });
+        // --- contacts --- the address book, fetched again in the
+        // background at most every ten minutes (this popup uses the copy
+        // kept here; the next one has the fresh one).
+        {
+            static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+            let mut last = LAST.lock().unwrap_or_else(|p| p.into_inner());
+            if last.is_none_or(|t| t.elapsed() > std::time::Duration::from_secs(600)) {
+                *last = Some(std::time::Instant::now());
+                let backend = self.backend.clone();
+                cx.background_spawn(async move {
+                    let _ = backend.refresh_contacts();
+                })
+                .detach();
+            }
+        }
         // Reading the store can take a few ms: off the typing path.
         let backend = self.backend.clone();
         let gathered = cx.background_spawn(async move {
@@ -434,12 +449,15 @@ impl Assist {
             let profiles = backend.cached_profiles();
             let items = backend.items();
             let own = backend.base_url();
+            let contacts = backend.contacts(); // --- contacts ---
             let src = mention::Sources {
                 subscriptions: &subs,
                 reading: &reading,
                 profiles: &profiles,
                 items: &items,
                 own_origin: own.as_deref(),
+                contacts: &contacts,
+                rewrites_handles: backend.rewrites_handles(),
             };
             mention::gather(&src, chrono::Utc::now())
         });
@@ -819,7 +837,11 @@ impl Assist {
                         .text_size(px(11.))
                         .text_color(p.muted)
                         .truncate()
-                        .child(format!("{} · {}", c.host, c.why)),
+                        .child(match &c.handle {
+                            // --- contacts --- what the blyg will publish.
+                            Some(h) => format!("@{h} → {} · {}", c.host, c.why),
+                            None => format!("{} · {}", c.host, c.why),
+                        }),
                 )
         });
         let empty = m.all.is_some() && m.shown.is_empty();

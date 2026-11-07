@@ -15,9 +15,13 @@ mod folders; // --- reader folders ---
 mod hoppers; // --- hoppers ---
 pub use hoppers::{FetchedHopper, HOPPERS_KNOWN, HopperOp, hopper_key};
 mod lineage; // --- lineage counts ---
+mod nearby; // --- nearby ---
 pub use lineage::Served as LineageServed;
+mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
+mod shelf; // --- shelf ---
+mod trails; // --- trails ---
 pub use provenance::Tracked;
 mod read_sync;
 mod reading;
@@ -33,7 +37,7 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use crate::api::wire::{WireItem, kind_str, parse_kind, parse_status, status_str};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
-use crate::util::{new_local_id, now_iso, now_ms};
+use crate::util::{lower_contains, new_local_id, now_iso, now_ms};
 
 impl From<rusqlite::Error> for CoreError {
     fn from(e: rusqlite::Error) -> Self {
@@ -46,9 +50,18 @@ const WAL_LIMIT: i64 = 16 * 1024 * 1024;
 
 pub struct Store {
     conn: Mutex<Connection>,
-    /// `items()` snapshot, stamped with the connection's `total_changes()`
-    /// when it was built: any INSERT/UPDATE/DELETE since invalidates it.
+    /// A second, read-only connection to the same file (WAL: its reads
+    /// never wait for a write, and see every commit made before they
+    /// start), for the reads of your own posts the UI makes: the list,
+    /// search, one item, the picker, the sync status. A pull's long merge
+    /// holds `conn`, not this. `None` for an in-memory database, which
+    /// can't be shared: everything uses `conn`.
+    read: Option<Mutex<Connection>>,
+    /// `items()` snapshot, stamped (`Store::stamp`) when it was built: any
+    /// commit since invalidates it.
     items_cache: Mutex<Option<(u64, Arc<Vec<Item>>)>>,
+    /// `public_origin()`, stamped the same way.
+    origin_cache: Mutex<Option<(u64, Option<String>)>>,
     /// The reading rows, parsed, patched row by row as they're written
     /// (`reading::Cache`): parsing every post's JSON on each read cost a
     /// quarter of a second at a few thousand posts.
@@ -208,12 +221,40 @@ fn max_str(a: &str, b: &str) -> String {
     if a >= b { a.to_string() } else { b.to_string() }
 }
 
+/// `item` as `Store::save` of `content` leaves it (its working copy; the
+/// outbox and provenance aside): the text, a newer `updated`, and, unless
+/// it's a scratch note, unpublished edits waiting to sync. Unchanged when
+/// the text is.
+pub fn saved_locally(item: &Item, content: &str) -> Item {
+    let mut it = item.clone();
+    if item.content_md == content {
+        return it;
+    }
+    it.content_md = content.to_string();
+    it.updated = max_str(&now_iso(), &item.updated);
+    if item.status != Status::Scratch {
+        it.dirty = true;
+        it.pending_sync = true;
+    }
+    it
+}
+
 impl Store {
     pub fn open(path: &Path) -> Result<Store> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| CoreError::Storage(e.to_string()))?;
         }
-        Self::init(Connection::open(path)?)
+        let mut store = Self::init(Connection::open(path)?)?;
+        let read = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+                | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+                | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )?;
+        read.busy_timeout(std::time::Duration::from_secs(5))?;
+        read.set_prepared_statement_cache_capacity(64);
+        store.read = Some(Mutex::new(read));
+        Ok(store)
     }
 
     pub fn open_in_memory() -> Result<Store> {
@@ -244,6 +285,8 @@ impl Store {
         }
         // Anything marked in flight belonged to a previous process that died mid-push.
         conn.execute("UPDATE outbox SET in_flight = 0", [])?;
+        // Text the last session left unindexed (`flush_fts`).
+        flush_fts(&mut conn)?;
         let reading_dirty = Arc::new(Mutex::new(reading::Dirty::All));
         let dirty = reading_dirty.clone();
         conn.update_hook(Some(
@@ -254,7 +297,9 @@ impl Store {
             },
         ))?;
         Ok(Store {
+            read: None,
             items_cache: Mutex::new(None),
+            origin_cache: Mutex::new(None),
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
             conn: Mutex::new(conn),
@@ -263,6 +308,38 @@ impl Store {
 
     fn conn(&self) -> MutexGuard<'_, Connection> {
         self.conn.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// The read-only connection (`conn` for an in-memory database). Never
+    /// for a read that must see a write still in progress.
+    fn rconn(&self) -> MutexGuard<'_, Connection> {
+        match &self.read {
+            Some(r) => r.lock().unwrap_or_else(|p| p.into_inner()),
+            None => self.conn(),
+        }
+    }
+
+    /// Changes whenever anything is committed: on the read-only connection
+    /// its `data_version` (every commit is another connection's), on the
+    /// only connection its `total_changes`. `c` is `rconn()`.
+    fn stamp(&self, c: &Connection) -> u64 {
+        if self.read.is_some() {
+            c.query_row("PRAGMA data_version", [], |r| r.get::<_, i64>(0))
+                .map(|v| v as u64)
+                // Unreadable: never matches a cached stamp.
+                .unwrap_or(u64::MAX)
+        } else {
+            c.total_changes()
+        }
+    }
+
+    /// Re-index the items whose text changed since they were last indexed
+    /// (`items_fts_stale`, schema v18). Searches are right without it (they
+    /// check those rows' text directly); this keeps that set small. Called
+    /// after a typing pause and after a pull.
+    pub fn flush_fts(&self) -> Result<()> {
+        flush_fts(&mut self.conn())?;
+        Ok(())
     }
 
     pub fn schema_version(&self) -> Result<usize> {
@@ -284,8 +361,8 @@ impl Store {
     }
 
     fn items_snapshot(&self) -> Result<Arc<Vec<Item>>> {
-        let c = self.conn();
-        let stamp = c.total_changes();
+        let c = self.rconn();
+        let stamp = self.stamp(&c);
         let mut cache = self.items_cache.lock().unwrap_or_else(|p| p.into_inner());
         if let Some((s, v)) = cache.as_ref()
             && *s == stamp
@@ -304,8 +381,9 @@ impl Store {
     }
 
     /// Case-insensitive substring match over content, newest-updated first.
-    /// ≥ 3 chars uses the FTS5 trigram index; shorter queries (which trigrams
-    /// can't index) scan in Rust.
+    /// Three or more chars uses the FTS5 trigram index; shorter queries (which trigrams
+    /// can't index) scan in Rust, as do rows whose text changed since they
+    /// were indexed (`flush_fts`).
     pub fn search(&self, query: &str) -> Vec<Item> {
         let q = query.trim();
         if q.is_empty() {
@@ -316,7 +394,7 @@ impl Store {
             let all = self.items_snapshot().unwrap_or_default();
             return all
                 .iter()
-                .filter(|i| i.content_md.to_lowercase().contains(&needle))
+                .filter(|i| lower_contains(&i.content_md, &needle))
                 .cloned()
                 .collect();
         }
@@ -325,13 +403,21 @@ impl Store {
 
     fn try_fts(&self, q: &str) -> Result<Vec<Item>> {
         let phrase = format!("\"{}\"", q.replace('"', "\"\""));
-        let c = self.conn();
+        let needle = q.to_lowercase();
+        let c = self.rconn();
         let mut st = c.prepare_cached(&format!(
-            "SELECT {ITEM_COLS} FROM items WHERE rid IN \
-             (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1) ORDER BY updated DESC, rid DESC"
+            "SELECT {ITEM_COLS}, rid IN (SELECT rid FROM items_fts_stale) FROM items WHERE rid IN \
+             (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1) \
+             OR rid IN (SELECT rid FROM items_fts_stale) ORDER BY updated DESC, rid DESC"
         ))?;
         let v = st
-            .query_map([phrase], row_to_item)?
+            .query_map([phrase], |r| Ok((row_to_item(r)?, r.get::<_, bool>(21)?)))?
+            .filter(|r| match r {
+                // Indexed under its old text: what it says now decides.
+                Ok((item, true)) => lower_contains(&item.content_md, &needle),
+                _ => true,
+            })
+            .map(|r| r.map(|(item, _)| item))
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(v)
     }
@@ -341,11 +427,11 @@ impl Store {
     }
 
     pub fn row(&self, id: &LocalId) -> Option<SyncRow> {
-        get_row(&self.conn(), id).ok().flatten()
+        get_row(&self.rconn(), id).ok().flatten()
     }
 
     pub fn local_id_for_server(&self, sid: &str) -> Option<LocalId> {
-        self.conn()
+        self.rconn()
             .query_row(
                 "SELECT local_id FROM items WHERE server_id = ?1",
                 [sid],
@@ -654,20 +740,22 @@ impl Store {
     }
 
     pub fn pending_count(&self) -> usize {
-        self.conn()
+        self.rconn()
             .query_row("SELECT COUNT(*) FROM outbox", [], |r| r.get::<_, i64>(0))
             .unwrap_or(0) as usize
     }
 
-    /// Earliest `not_before` among ops whose item isn't in conflict.
+    /// Earliest `not_before` among ops whose item isn't in conflict. Walks
+    /// the outbox in due order (`outbox_due`, v18) and stops at the first
+    /// such op, rather than joining every op to its item.
     pub fn earliest_due(&self) -> Option<i64> {
-        self.conn()
-            .query_row(
-                "SELECT MIN(o.not_before) FROM outbox o LEFT JOIN items i ON i.local_id = o.local_id \
-                 WHERE COALESCE(i.conflict, 0) = 0",
-                [],
-                |r| r.get::<_, Option<i64>>(0),
+        self.rconn()
+            .prepare_cached(
+                "SELECT o.not_before FROM outbox o WHERE NOT EXISTS \
+                 (SELECT 1 FROM items i WHERE i.local_id = o.local_id AND i.conflict <> 0) \
+                 ORDER BY o.not_before LIMIT 1",
             )
+            .and_then(|mut st| st.query_row([], |r| r.get::<_, i64>(0)).optional())
             .ok()
             .flatten()
     }
@@ -1106,8 +1194,22 @@ impl Store {
     /// The blyg's public origin (with its mount, trailing `/`), from any
     /// permalink the server gave us (`{origin}f/{id}`).
     pub fn public_origin(&self) -> Option<String> {
-        let p: String = self
-            .conn()
+        // Asked on every preview render: cached until the next commit.
+        let c = self.rconn();
+        let stamp = self.stamp(&c);
+        let mut cache = self.origin_cache.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some((s, o)) = cache.as_ref()
+            && *s == stamp
+        {
+            return o.clone();
+        }
+        let o = Self::read_public_origin(&c);
+        *cache = Some((stamp, o.clone()));
+        o
+    }
+
+    fn read_public_origin(c: &Connection) -> Option<String> {
+        let p: String = c
             .query_row(
                 "SELECT permalink FROM items WHERE permalink IS NOT NULL AND permalink <> '' LIMIT 1",
                 [],
@@ -1152,6 +1254,27 @@ fn op_from_row(r: &Row) -> rusqlite::Result<Op> {
         in_flight: r.get(4)?,
         payload: r.get(5)?,
     })
+}
+
+/// Re-index `items_fts_stale`'s rows: out with the text the index holds,
+/// in with the text the item has now (gone for a deleted item: its delete
+/// trigger already took it out).
+fn flush_fts(c: &mut Connection) -> rusqlite::Result<()> {
+    let any: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM items_fts_stale)", [], |r| {
+        r.get(0)
+    })?;
+    if !any {
+        return Ok(());
+    }
+    let tx = c.transaction()?;
+    tx.execute_batch(
+        "INSERT INTO items_fts(items_fts, rowid, content_md) \
+             SELECT 'delete', rid, old FROM items_fts_stale; \
+         INSERT INTO items_fts(rowid, content_md) \
+             SELECT s.rid, i.content_md FROM items_fts_stale s JOIN items i ON i.rid = s.rid; \
+         DELETE FROM items_fts_stale;",
+    )?;
+    tx.commit()
 }
 
 fn ops_for(tx: &Connection, id: &LocalId) -> rusqlite::Result<Vec<Op>> {
@@ -1352,7 +1475,22 @@ mod pick_tests;
 mod folders_tests; // --- reader folders ---
 
 #[cfg(test)]
+mod shelf_tests; // --- shelf ---
+
+#[cfg(test)]
+mod trails_tests; // --- trails ---
+
+#[cfg(test)]
+mod speed_tests; // lazy re-indexing, the read-only connection
+
+#[cfg(test)]
 mod read_state_tests; // --- read/unread ---
 
 #[cfg(test)]
 mod hoppers_tests; // --- hoppers ---
+
+#[cfg(test)]
+mod nearby_tests; // --- nearby ---
+
+#[cfg(test)]
+mod loose_tests; // --- loose ends ---

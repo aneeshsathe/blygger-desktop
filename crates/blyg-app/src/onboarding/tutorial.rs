@@ -526,6 +526,21 @@ impl MainView {
                         Some(crate::app::reading::RSheet::HopperPick { keys, .. }) if keys.len() > 1
                     ),
             ),
+            // --- lineage ---
+            (
+                Key::LineageStrip,
+                self.reading.view == crate::app::reading::View::Posts
+                    && (self.lineage_strip.open || self.lineage_open()),
+            ),
+            (Key::LineageMap, self.lineage_map_open()),
+            (Key::HoverCard, self.hover_card_shown()), // --- hover cards ---
+            // --- flow ---
+            (Key::Palette, self.cmd_palette.open.is_some()),
+            (Key::Focus, self.focus_on()),
+            (Key::Serendipity, self.serendipity_shown(cx)),
+            // --- tangles ---
+            (Key::Trail, self.reading.trails.field.is_some()),
+            (Key::Tray, !self.tray.items.is_empty()),
         ]
         .into_iter()
         .filter_map(|(k, on)| on.then_some(k))
@@ -591,6 +606,17 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::ReplyToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
+        let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
+        let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
+        let d = on!(d, crate::app::terminal::ToggleTerminal, Key::Terminal); // --- terminal ---
+        // --- tangles ---
+        let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
+        let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
+        let d = on!(d, crate::app::split::OpenBeside, Key::Split);
+        // --- nearby ---
+        let d = on!(d, crate::app::nearby::ToggleNearby, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyDown, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyLink, Key::Nearby);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -617,6 +643,24 @@ impl MainView {
             self.close_profile(window, cx);
         }
         self.ext_tour_close_sheets(window, cx);
+        self.chat_tour_tidy(); // --- chat ---
+        self.terminal_tour_tidy(window, cx); // --- terminal ---
+        // --- flow --- the palette closed, focus mode left.
+        if self.cmd_palette.open.is_some() {
+            self.close_palette(window, cx);
+        }
+        if self.focus_on() {
+            self.leave_focus(window, cx);
+        }
+    }
+
+    /// --- flow --- Whether the tour is on the step `id` (serendipity's step
+    /// shows the card on the samples, whatever the config says).
+    pub(crate) fn tutorial_on_step(&self, id: &str) -> bool {
+        self.onboarding
+            .tutorial
+            .as_ref()
+            .is_some_and(|t| !t.done && STEPS.get(t.step).is_some_and(|s| s.id == id))
     }
 
     /// Reading, in `mode`, nothing open, the search cleared.
@@ -665,6 +709,12 @@ impl MainView {
                 self.set_query_text(q, window, cx);
                 self.mode = EditMode::Search;
                 self.omni.update(cx, |s, cx| s.focus(window, cx));
+            }
+            // --- tangles --- a post to write beside, then the one to open.
+            Setup::Pair => {
+                self.tutorial_tidy(window, cx);
+                self.tutorial_open(steps::DRAFT, window, cx);
+                self.tutorial_open(steps::VERSIONED, window, cx);
             }
             Setup::EnsureOpen => {
                 self.tutorial_tidy(window, cx);
@@ -1018,6 +1068,10 @@ impl MainView {
             "clip" => self.browser_clip(window, cx),
             "cross-post" => self.close_browser(window, cx),
             "extensions" => self.ext_toggle_palette(window, cx),
+            // --- flow ---
+            "palette" => self.toggle_palette(window, cx),
+            "focus" => self.enter_focus(window, cx),
+            "serendipity" => self.start_new_post(window, cx),
             "manage" => {
                 self.ext.overlay = None;
                 self.ext_open_manage(window, cx);

@@ -113,6 +113,7 @@ fn the_sources_pane_lists_hoppers_under_background(cx: &mut TestAppContext) {
                 Entry::Heading(h) => format!("# {h}"),
                 Entry::Smart { smart, .. } => smart.label().into(),
                 Entry::Own => "Your blyg".into(),
+                Entry::Mentions { .. } => "Mentions".into(), // --- contacts ---
                 Entry::Hopper(h) => format!(
                     "▤ {} {}{}",
                     h.name,
@@ -121,6 +122,7 @@ fn the_sources_pane_lists_hoppers_under_background(cx: &mut TestAppContext) {
                 ),
                 Entry::Folder { folder, .. } => format!("[{}]", folder.name),
                 Entry::Sub { sub, .. } => sub.title,
+                Entry::Trail(t) => format!("⤳ {}", t.name), // --- trails ---
             })
             .collect()
     });

@@ -19,7 +19,9 @@ never a count. Posts are dated by when their author published or last edited
 them, and an edit updates the post in place rather than adding a new one.
 Quotes show as grey boxes with the quoted text (a quote inside a quote
 nests, three layers deep), and `[[id]]` links read as the post they point
-to. A post that has been revised leads with its latest changelog note,
+to. Rest the pointer on a quote box or a link to see the same card the
+editor shows: title, author, version, first lines. A post that has been
+revised leads with its latest changelog note,
 "V3: …", read from the author's changelog once the post is on screen, or
 "V3: No changelog entry available" when they left none.
 
@@ -32,6 +34,10 @@ to. A post that has been revised leads with its latest changelog note,
 **hoppers**, your folders and the rest), the posts from that source in the
 middle, and the post on the right.
 
+- **Mentions**, under All unread, lists the posts you hold that mention you:
+  ones that quote or reply to your posts, or link to your blyg (or, on studio
+  0.56 and later, what your blyg's own mentions lens says). A dot says there's
+  something to read; there's never a count.
 - **Background** lists withdrawn posts, the blygs' and your own, newest
   first, and nothing else lists them: not the other feeds, the counts or the
   stream. A withdrawn post is never unread. Opened, it reads as withdrawn
@@ -160,6 +166,47 @@ The Posts screen is unchanged.
 
 Burrow now opens on Reading. It stays on Posts during the first-run setup
 and the tour, and when there's no blyg to read from.
+
+## Trails
+
+A trail is a path through posts you chose to keep, with a word on why each
+one is there: yours and other people's, in your order.
+
+- **t** adds the post you're reading to the current trail and asks why
+  (⏎ keeps it, esc skips). With no trail yet, it asks for a name first.
+- **⇧T** starts another trail, with this post as its first stop.
+- The **trail bar** above the post box shows the trail's name (click it for
+  the next trail), its stops (click one to open it, drag to reorder, × to
+  take it off) and "stop 2 of 4" for the post in front of you.
+- The Reader's sources pane lists your trails under **Trails**. Pick one and
+  the list shows its stops in order, so j/k walk it.
+- **⌥⌘T** (Blyg › Publish Trail…) writes the trail as a thread of quotes,
+  `# name` then `![[id | why]]` for each stop, into a new draft. Nothing is
+  published until you publish it. **h** on that sheet makes a private
+  hopper of the stops instead.
+
+Trails stay on this Mac and tell no one. Posts from feeds can't be stops
+(a trail publishes as quotes). A post its author withdraws stays on the trail
+as "withdrawn", without its text, and is left out when you publish.
+
+On Windows the keys are Shift+T and Ctrl+Alt+T.
+
+## The quote tray
+
+Found something you'll want to quote later? Press **q** on the reading
+screen, or **⌥⌘K** anywhere (Post › Put on Quote Tray), and it goes on the
+**quote tray**, a strip above the status bar. The tray is kept for each blyg.
+When you quote, the `[[` / ⌘K picker lists the tray first, marked ❝; placing
+a post takes it off. On the strip, ←/→ pick a post, ⏎ places it, ⌫ takes it
+off.
+
+You can also **drag** a post into what you're writing: a stream post, a
+Reader row, a lineage row or a tray chip. In a thread it lands as a quote on
+its own line, after the line you dropped it on; in a fragment as a link where
+you dropped it. Dropped on the omnibar, it starts a new thread quoting it;
+dropped on the post box under Reading, it's quoted there.
+
+On Windows the key is Ctrl+Alt+K.
 
 ## Import and export subscriptions (OPML)
 
@@ -344,6 +391,13 @@ your blyg knows when it serves the lineage, else what this Mac holds: posts
 in your reading list, your own posts, and verified mentions of your posts.
 
 ![The lineage view](screenshots/lineage.png)
+
+Press **−** in the lineage view to zoom out to the **neighbourhood**: two
+steps each way, what the neighbours draw on and what draws on them. Colours
+are the glyph's (fork, reply, quote); a dashed hexagon is two steps away and
+a shaded one is yours. The arrow keys move, ⏎ makes a post the centre, ⌫
+walks back, **o** opens the selected post, and **+** goes back to the list.
+The second step comes from what this Mac holds.
 
 **Space** (or ⏎) on the post in the middle opens the **ring** of the reader's
 actions, always in the same places: **F** fork, **R** reply, **Q** quote,

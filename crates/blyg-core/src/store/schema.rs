@@ -327,6 +327,109 @@ const MIGRATIONS: &[&str] = &[
                      json_extract(new.json, '$.content_html'), ''));
     END;
     "#,
+    // v17 --- shelf --- (store/shelf.rs) your own posts kept to hand at
+    // the top of the Write list, in your order. Local only for now, like the
+    // Reader's folders: never queued or sent (blygger-studio#135 proposes a
+    // synced `/shelf`). Unrelated to version pins (`versions`,
+    // `remote_pins`), which are public and permanent. A post that's deleted
+    // here drops out by cascade.
+    r#"
+    CREATE TABLE shelf (
+        local_id  TEXT PRIMARY KEY REFERENCES items(local_id) ON DELETE CASCADE,
+        position  INTEGER NOT NULL
+    );
+    "#,
+    // v18 (performance): typing no longer re-indexes the whole post on
+    // every keystroke. A change to an item's text only notes the text the
+    // trigram index still holds for it (`items_fts_stale`, the first time),
+    // and `Store::flush_fts` re-indexes those rows later (after a typing
+    // pause, after a pull). Searches treat a noted row as unindexed and
+    // check its text directly, so they never miss a word. A write that
+    // leaves the text as it was (a pull re-merging an item) notes nothing.
+    // And the outbox gets an index on when its ops are due, which the
+    // status and the sync worker ask after every save, and permalinks one
+    // (`public_origin`, asked by every preview render, scanned every draft).
+    r#"
+    CREATE TABLE items_fts_stale (
+        rid  INTEGER PRIMARY KEY,
+        old  TEXT NOT NULL
+    );
+    DROP TRIGGER items_au;
+    CREATE TRIGGER items_au AFTER UPDATE OF content_md ON items
+    WHEN old.content_md IS NOT new.content_md
+    BEGIN
+        INSERT OR IGNORE INTO items_fts_stale(rid, old) VALUES (old.rid, old.content_md);
+    END;
+    DROP TRIGGER items_ad;
+    CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+        INSERT INTO items_fts(items_fts, rowid, content_md) VALUES ('delete', old.rid,
+            COALESCE((SELECT s.old FROM items_fts_stale s WHERE s.rid = old.rid), old.content_md));
+        DELETE FROM items_fts_stale WHERE rid = old.rid;
+    END;
+    CREATE INDEX outbox_due ON outbox(not_before);
+    CREATE INDEX items_permalink ON items(permalink)
+        WHERE permalink IS NOT NULL AND permalink <> '';
+    "#,
+    // v19 --- trails --- (store/trails.rs) paths through posts you chose
+    // to keep: ordered stops (your published posts as `~own`, and reading
+    // rows), each with a one-line "why". Local only: never queued or sent.
+    // `title` is the post's title when the stop was added, dropped once the
+    // post is withdrawn (the stop stays as a tombstone). Self-contained: it
+    // references no other table, so a stop outlives the row it names.
+    r#"
+    CREATE TABLE trails (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL,
+        position  INTEGER NOT NULL,
+        created   TEXT NOT NULL
+    );
+    CREATE TABLE trail_stops (
+        trail_id        TEXT NOT NULL REFERENCES trails(id) ON DELETE CASCADE,
+        position        INTEGER NOT NULL,
+        subscription_id TEXT NOT NULL,
+        remote_id       TEXT NOT NULL,
+        origin          TEXT NOT NULL DEFAULT '',
+        why             TEXT NOT NULL DEFAULT '',
+        title           TEXT,
+        PRIMARY KEY (trail_id, subscription_id, remote_id)
+    );
+    CREATE INDEX trail_stops_order ON trail_stops (trail_id, position);
+    "#,
+    // v20 --- nearby --- (store/nearby.rs) Nearby thoughts' index: one
+    // embedding per piece of a post the rail can offer (`doc` is
+    // `own:<local_id>` or `reading:<subscription_id>/<remote_id>`, `chunk`
+    // its position, 0 the title), stored as little-endian f16 with the
+    // model that made it, and a hash of the piece's text so an unchanged
+    // piece isn't embedded again. Local only, derived, rebuilt at will.
+    // A post that's deleted or withdrawn here loses its vectors at once
+    // (the triggers), whatever the app's indexer is doing.
+    r#"
+    CREATE TABLE nearby_vectors (
+        model  TEXT NOT NULL,
+        doc    TEXT NOT NULL,
+        chunk  INTEGER NOT NULL,
+        hash   TEXT NOT NULL,
+        vec    BLOB NOT NULL,
+        PRIMARY KEY (model, doc, chunk)
+    );
+    CREATE INDEX nearby_vectors_doc ON nearby_vectors(doc);
+    CREATE TRIGGER nearby_items_ad AFTER DELETE ON items BEGIN
+        DELETE FROM nearby_vectors WHERE doc = 'own:' || old.local_id;
+    END;
+    CREATE TRIGGER nearby_items_withdrawn AFTER UPDATE OF status ON items
+    WHEN new.status <> 'public' BEGIN
+        DELETE FROM nearby_vectors WHERE doc = 'own:' || old.local_id;
+    END;
+    CREATE TRIGGER nearby_reading_ad AFTER DELETE ON reading BEGIN
+        DELETE FROM nearby_vectors
+         WHERE doc = 'reading:' || old.subscription_id || '/' || old.remote_id;
+    END;
+    CREATE TRIGGER nearby_reading_gone AFTER UPDATE OF state ON reading
+    WHEN new.state <> 'current' BEGIN
+        DELETE FROM nearby_vectors
+         WHERE doc = 'reading:' || old.subscription_id || '/' || old.remote_id;
+    END;
+    "#,
 ];
 
 /// Returns whether any migration ran.

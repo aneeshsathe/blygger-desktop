@@ -873,6 +873,13 @@ impl MainView {
             // --- themes --- the theme's selected-row shape (lit cell,
             // outline, lantern…) on the page's selected ground.
             .map(|d| crate::ornament::page_row(&self.theme, d, selected && focused && shaped))
+            // --- tray --- picked up, it's a quote to drop in a post.
+            .when(r.state != "tombstone", |d| {
+                crate::app::tray::draggable(
+                    d,
+                    crate::app::tray::DraggedQuote::row(r, title.clone()),
+                )
+            })
             .when(r.is_unread() || edited, |d| {
                 // Unread / edited: an accent bar on the left, as in the mock.
                 d.child(

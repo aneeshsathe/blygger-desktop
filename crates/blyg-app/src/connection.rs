@@ -695,6 +695,25 @@ impl Backend for SwitchBackend {
     fn search(&self, q: &str) -> Vec<Item> {
         self.cur().search(q)
     }
+    // --- contacts ---
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        self.cur().contacts()
+    }
+    fn refresh_contacts(&self) -> blyg_core::Result<()> {
+        self.cur().refresh_contacts()
+    }
+    fn rewrites_handles(&self) -> bool {
+        self.cur().rewrites_handles()
+    }
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.cur().reading_mentions()
+    }
+    fn page_title(&self, url: &str) -> Option<String> {
+        self.cur().page_title(url) // --- capture ---
+    }
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        self.cur().loose_facts() // --- loose ends ---
+    }
     fn item(&self, id: &LocalId) -> Option<Item> {
         self.cur().item(id)
     }
@@ -708,6 +727,23 @@ impl Backend for SwitchBackend {
     /// not the trait default's compare-then-save.
     fn save_if_base(&self, id: &LocalId, content_md: &str, base_hash: &str) -> Result<()> {
         self.cur().save_if_base(id, content_md, base_hash)
+    }
+    /// The inner backend's own off-thread write (`LiveBackend`'s typing
+    /// writer), not the trait default's `save` on the UI thread.
+    fn save_typing(&self, id: &LocalId, content_md: &str) -> Result<()> {
+        self.cur().save_typing(id, content_md)
+    }
+    fn own_item(&self, server_id: &str) -> Option<Item> {
+        self.cur().own_item(server_id)
+    }
+    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        self.cur().reading_with_id(remote_id)
+    }
+    fn save_scratch_media(&self, bytes: &[u8], mime: &str) -> Result<String> {
+        self.cur().save_scratch_media(bytes, mime)
+    }
+    fn scratch_media_file(&self, url: &str) -> Option<std::path::PathBuf> {
+        self.cur().scratch_media_file(url)
     }
     fn set_kind(&self, id: &LocalId, kind: Kind) -> Result<()> {
         self.cur().set_kind(id, kind)
@@ -944,6 +980,29 @@ impl Backend for SwitchBackend {
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         self.cur().conflict_texts(id)
     }
+    // --- nearby ---
+    fn nearby_vectors(&self, model: &str) -> Vec<blyg_core::nearby::NearbyVector> {
+        self.cur().nearby_vectors(model)
+    }
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        self.cur().put_nearby_vectors(model, docs, rows)
+    }
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.cur().retain_nearby_vectors(model, keep)
+    }
+    fn nearby_phrase_hits(&self, phrases: &[String]) -> Vec<(String, usize)> {
+        self.cur().nearby_phrase_hits(phrases)
+    }
+    // --- end nearby ---
     // --- background ---
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()
@@ -972,6 +1031,45 @@ impl Backend for SwitchBackend {
     }
     fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
         self.cur().set_in_hopper(hopper, sub_id, remote_id, on)
+    }
+    // --- shelf --- (was missing: through the switcher the shelf read empty
+    // and refused changes)
+    fn shelf(&self) -> Vec<LocalId> {
+        self.cur().shelf()
+    }
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        self.cur().set_on_shelf(id, on)
+    }
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        self.cur().move_on_shelf(id, index)
+    }
+    // --- trails ---
+    fn trails(&self) -> Vec<blyg_core::Trail> {
+        self.cur().trails()
+    }
+    fn create_trail(&self, name: &str) -> Result<blyg_core::Trail> {
+        self.cur().create_trail(name)
+    }
+    fn rename_trail(&self, id: &str, name: &str) -> Result<()> {
+        self.cur().rename_trail(id, name)
+    }
+    fn delete_trail(&self, id: &str) -> Result<()> {
+        self.cur().delete_trail(id)
+    }
+    fn trail_stops(&self, trail: &str) -> Vec<blyg_core::TrailStop> {
+        self.cur().trail_stops(trail)
+    }
+    fn add_trail_stop(&self, trail: &str, stop: &blyg_core::TrailStop) -> Result<usize> {
+        self.cur().add_trail_stop(trail, stop)
+    }
+    fn set_trail_why(&self, trail: &str, index: usize, why: &str) -> Result<()> {
+        self.cur().set_trail_why(trail, index, why)
+    }
+    fn remove_trail_stop(&self, trail: &str, index: usize) -> Result<()> {
+        self.cur().remove_trail_stop(trail, index)
+    }
+    fn move_trail_stop(&self, trail: &str, from: usize, to: usize) -> Result<()> {
+        self.cur().move_trail_stop(trail, from, to)
     }
     // --- browse ---
     fn classify_links(&self, urls: &[String]) -> Result<Vec<blyg_core::browse::LinkTarget>> {
@@ -1124,5 +1222,24 @@ mod tests {
             "{stale:?}"
         );
         assert_eq!(sw.item(&id).unwrap().content_md, "second");
+    }
+
+    /// Every additive `Backend` method with a default the inner backend
+    /// overrides is forwarded, not answered by the default.
+    #[test]
+    fn additive_calls_reach_the_inner_backend() {
+        let fake = Arc::new(
+            crate::fake::FakeBackend::with_timing(crate::fake::Timing::instant())
+                .without_media_cache(),
+        );
+        let sw = SwitchBackend::new(fake.clone(), Mode::Fake);
+        let id = sw.create_draft(Kind::Fragment, "first").unwrap();
+        sw.save_typing(&id, "typed").unwrap();
+        assert_eq!(fake.item(&id).unwrap().content_md, "typed");
+        let url = sw
+            .save_scratch_media(b"\x89PNG\r\n\x1a\n", "image/png")
+            .expect("the inner backend keeps local images");
+        assert_eq!(sw.scratch_media_file(&url), fake.scratch_media_file(&url));
+        assert!(sw.scratch_media_file(&url).is_some());
     }
 }

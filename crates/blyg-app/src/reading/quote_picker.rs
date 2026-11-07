@@ -109,6 +109,8 @@ impl MainView {
             .map(|s| s.0);
         let q = Filters::get(cx).query(&input.read(cx).value(), exclude);
         let found = self.backend.pick_search(&q);
+        // --- tray --- what's waiting on the quote tray comes first.
+        let found = self.tray_first(found, &input.read(cx).value());
         if let Some(RSheet::Quote { rows, sel, .. }) = self.reading.sheet.as_mut() {
             *sel = (*sel).min(found.len().saturating_sub(1));
             *rows = found;
@@ -278,6 +280,7 @@ impl MainView {
             }
         };
         self.splice_editor(&text, &new_text, Some(caret), window, cx);
+        self.tray_placed(&pick.id); // --- tray ---
         let verb = match kind {
             PickKind::Quote => "Quoted",
             PickKind::Link => "Linked",

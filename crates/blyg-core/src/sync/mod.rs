@@ -1084,6 +1084,8 @@ impl Engine {
     pub fn pull(&self) -> Result<()> {
         let _net = self.net_lock();
         let r = self.pull_locked();
+        // Re-index any text the pull (or typing) changed (`Store::flush_fts`).
+        let _ = self.store.flush_fts();
         match &r {
             Ok(()) => self.note_ok(),
             Err(e) => self.note_err(e),

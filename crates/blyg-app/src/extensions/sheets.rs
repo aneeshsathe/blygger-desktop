@@ -180,11 +180,22 @@ impl MainView {
         let Some(row) = rows.get(i).cloned() else {
             return;
         };
-        // The selection is read where the user was, before the palette.
-        let screen = self.ext_screen_before_palette(window, cx);
         self.ext.overlay = None;
         self.focus_after_sheet(window, cx);
-        match row.action {
+        self.ext_run(row.action, window, cx);
+    }
+
+    /// Run a palette row's action (this palette's, or ⇧⌘P's Extensions
+    /// group: `palette.rs`).
+    pub(crate) fn ext_run(
+        &mut self,
+        action: RowAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        // The selection is read where the user was, before the palette.
+        let screen = self.ext_screen_before_palette(window, cx);
+        match action {
             RowAction::Manage => self.ext_open_manage(window, cx),
             RowAction::Library { id, .. } => {
                 self.ext_lib_show(window, cx);

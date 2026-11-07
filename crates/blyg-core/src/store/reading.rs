@@ -297,6 +297,11 @@ fn kind_str(k: SubscriptionKind) -> &'static str {
     }
 }
 
+/// Rows merged per transaction (`Store::merge_reading`).
+const MERGE_CHUNK: usize = 100;
+/// Between two of those transactions, so others get the store.
+const MERGE_PAUSE: std::time::Duration = std::time::Duration::from_millis(1);
+
 impl Store {
     /// Upsert a pulled reading list. `complete` = the server had no further
     /// pages, so rows it didn't return are gone (e.g. unsubscribed). Otherwise
@@ -313,15 +318,19 @@ impl Store {
             .map(|i| (i.subscription_id.clone(), i.remote_id.clone()))
             .collect();
         let mut changed = false;
-        let mut c = self.conn();
-        let tx = c.transaction()?;
-        for it in items {
-            let kept = retainable(&tx, it)?;
-            let it = &kept;
-            let json = to_json(it)?;
-            let sub_kind = sub_kinds.get(&it.subscription_id).map(|k| kind_str(*k));
-            let sort_at = it.sort_at();
-            let existing: Option<Held> = tx
+        // In slices of `MERGE_CHUNK` rows, each its own transaction, so a
+        // big pull (a blyg's whole archive) never holds the store for
+        // seconds: other reads and writes get in between slices.
+        for chunk in items.chunks(MERGE_CHUNK) {
+            let mut c = self.conn();
+            let tx = c.transaction()?;
+            for it in chunk {
+                let kept = retainable(&tx, it)?;
+                let it = &kept;
+                let json = to_json(it)?;
+                let sub_kind = sub_kinds.get(&it.subscription_id).map(|k| kind_str(*k));
+                let sort_at = it.sort_at();
+                let existing: Option<Held> = tx
                 .prepare_cached(
                     "SELECT json, origin, observed_at, page_url, sub_kind, state, version, sort_at \
                      FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
@@ -339,33 +348,33 @@ impl Store {
                     })
                 })
                 .optional()?;
-            let fields = params![
-                it.subscription_id,
-                it.remote_id,
-                it.origin,
-                it.observed_at,
-                it.page,
-                sub_kind,
-                it.state,
-                it.version,
-                json,
-                sort_at
-            ];
-            if let Some(old) = existing {
-                // Most of a pull is rows exactly as held. Writing them again
-                // would re-index each post's text (`reading_fts`) and churn
-                // the WAL for nothing, with the store locked throughout.
-                if old.json != json {
-                    changed = true;
-                    put_refs(&tx, it)?;
-                    tx.prepare_cached(
+                let fields = params![
+                    it.subscription_id,
+                    it.remote_id,
+                    it.origin,
+                    it.observed_at,
+                    it.page,
+                    sub_kind,
+                    it.state,
+                    it.version,
+                    json,
+                    sort_at
+                ];
+                if let Some(old) = existing {
+                    // Most of a pull is rows exactly as held. Writing them again
+                    // would re-index each post's text (`reading_fts`) and churn
+                    // the WAL for nothing, with the store locked throughout.
+                    if old.json != json {
+                        changed = true;
+                        put_refs(&tx, it)?;
+                        tx.prepare_cached(
                         "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
                          version = ?8, json = ?9, sort_at = ?10 WHERE subscription_id = ?1 AND remote_id = ?2",
                     )?
                     .execute(fields)?;
-                } else if !old.same_columns(it, sub_kind, &sort_at) {
-                    // The references come from the JSON: unchanged too.
-                    tx.prepare_cached(
+                    } else if !old.same_columns(it, sub_kind, &sort_at) {
+                        // The references come from the JSON: unchanged too.
+                        tx.prepare_cached(
                         "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
                          version = ?8, sort_at = ?9 WHERE subscription_id = ?1 AND remote_id = ?2",
                     )?
@@ -380,34 +389,34 @@ impl Store {
                         it.version,
                         sort_at
                     ])?;
+                    }
+                    changed |= raise_read(&tx, it)?;
+                    continue;
                 }
-                changed |= raise_read(&tx, it)?;
-                continue;
-            }
-            changed = true;
-            put_refs(&tx, it)?;
-            // Same subscription, same page, different id that the server no
-            // longer lists: an RSS guid that changed on edit. Same post.
-            let renamed: Option<String> = match &it.page {
-                Some(page) if !page.is_empty() => {
-                    let mut st = tx.prepare_cached(
+                changed = true;
+                put_refs(&tx, it)?;
+                // Same subscription, same page, different id that the server no
+                // longer lists: an RSS guid that changed on edit. Same post.
+                let renamed: Option<String> = match &it.page {
+                    Some(page) if !page.is_empty() => {
+                        let mut st = tx.prepare_cached(
                         "SELECT remote_id FROM reading WHERE subscription_id = ?1 AND page_url = ?2 AND remote_id <> ?3",
                     )?;
-                    let cands = st
-                        .query_map([&it.subscription_id, page, &it.remote_id], |r| {
-                            r.get::<_, String>(0)
-                        })?
-                        .collect::<rusqlite::Result<Vec<_>>>()?;
-                    cands
-                        .into_iter()
-                        .find(|rid| !incoming.contains(&(it.subscription_id.clone(), rid.clone())))
-                }
-                _ => None,
-            };
-            match renamed {
-                Some(old_rid) => {
-                    drop_refs(&tx, &it.subscription_id, &old_rid)?;
-                    tx.execute(
+                        let cands = st
+                            .query_map([&it.subscription_id, page, &it.remote_id], |r| {
+                                r.get::<_, String>(0)
+                            })?
+                            .collect::<rusqlite::Result<Vec<_>>>()?;
+                        cands.into_iter().find(|rid| {
+                            !incoming.contains(&(it.subscription_id.clone(), rid.clone()))
+                        })
+                    }
+                    _ => None,
+                };
+                match renamed {
+                    Some(old_rid) => {
+                        drop_refs(&tx, &it.subscription_id, &old_rid)?;
+                        tx.execute(
                         "UPDATE reading SET remote_id = ?2, origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, \
                          state = ?7, version = ?8, json = ?9, sort_at = ?11 WHERE subscription_id = ?1 AND remote_id = ?10",
                         params![
@@ -424,19 +433,29 @@ impl Store {
                             sort_at
                         ],
                     )?;
-                }
-                None => {
-                    tx.execute(
+                    }
+                    None => {
+                        tx.execute(
                         "INSERT INTO reading (subscription_id, remote_id, origin, observed_at, page_url, sub_kind, \
                          state, version, json, sort_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                         fields,
                     )?;
+                    }
                 }
+                raise_read(&tx, it)?;
             }
-            raise_read(&tx, it)?;
+
+            tx.commit()?;
+            drop(c);
+            // The store's mutex isn't fair: without a pause this thread
+            // takes it straight back, and a reader waiting on it waits
+            // for the whole merge after all.
+            std::thread::sleep(MERGE_PAUSE);
         }
 
         // Prune rows the server no longer returns.
+        let mut c = self.conn();
+        let tx = c.transaction()?;
         let oldest = items
             .iter()
             .map(|i| i.observed_at.as_str())
@@ -497,6 +516,32 @@ impl Store {
     pub fn reading(&self) -> Vec<ReadingItem> {
         let rows = self.reading_rows();
         listed(&rows).into_iter().map(|r| r.item.clone()).collect()
+    }
+
+    /// [`Self::reading`]'s rows with this remote id, copying only those.
+    /// Which row a post shows as depends on its whole group (duplicates of
+    /// it, which may carry other ids), so the groups those rows are in are
+    /// collapsed exactly as `reading()` collapses them.
+    pub fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+        let rows = self.reading_rows();
+        let groups: HashSet<String> = rows
+            .iter()
+            .filter(|r| r.item.remote_id == remote_id)
+            .map(|r| group_key(&r.item))
+            .collect();
+        if groups.is_empty() {
+            return Vec::new();
+        }
+        let members: Vec<Arc<Row>> = rows
+            .iter()
+            .filter(|r| groups.contains(&group_key(&r.item)))
+            .cloned()
+            .collect();
+        listed(&members)
+            .into_iter()
+            .filter(|r| r.item.remote_id == remote_id)
+            .map(|r| r.item.clone())
+            .collect()
     }
 
     /// How many of [`Self::reading`]'s posts are unread (withdrawn ones

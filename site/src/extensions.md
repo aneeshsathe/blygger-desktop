@@ -9,10 +9,11 @@ Burrow comes with four extensions, all off until you turn them on:
 **markdown-notes**, **cross-post**, **reading-time** and **inspect**. You can
 also install extensions other people write, or write your own.
 
-**⇧⌘P** (Post › Extensions…) opens the Extensions palette: the commands your
+**Post › Extensions…** opens the Extensions palette: the commands your
 running extensions offer on this screen, **Browse** for each notes folder,
 and **Manage extensions…** (what's installed, whether it's on, and what it's
-allowed). Manage is also where you turn one on or off; see
+allowed). The same rows are the **Extensions** group of the command palette
+(⇧⌘P), so ⇧⌘P and a few letters of a command's name run it too. Manage is also where you turn one on or off; see
 [Turning an extension off](#turning-an-extension-off).
 
 The tour (Help › Burrow Tutorial) shows markdown-notes, reading-time and
@@ -168,7 +169,7 @@ extension = inspect
 extension-allow = inspect reading.read
 ```
 
-Or turn them on in ⇧⌘P › Manage extensions… (Turn on, then Allow).
+Or turn them on in Post › Extensions… › Manage extensions… (Turn on, then Allow).
 
 ## Permissions and consent
 
@@ -212,7 +213,7 @@ Burrow's database.
 
 ## Turning an extension off
 
-In ⇧⌘P › **Manage extensions…**, each extension that's on has:
+In Post › Extensions… › **Manage extensions…**, each extension that's on has:
 
 - **Turn off**: removes its `extension` line, so it stops. Its
   `extension-allow` and `extension-setting` lines stay, so **Turn on** later

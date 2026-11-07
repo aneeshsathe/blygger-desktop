@@ -480,12 +480,31 @@ fn render_opts(base_url: Option<&str>, item: Option<&Item>) -> RenderOpts {
 
 /// Everything a render needs besides the text: the options, and a snapshot
 /// of the local store as the resolver (only when the text quotes anything).
-/// Local and instant, so it's taken on the UI thread.
+/// For a render now, on this thread; the preview's renders build theirs
+/// on the render thread (`prepare_lazy`).
 fn prepare(backend: &dyn Backend, item: Option<&Item>, md: &str) -> (StoreResolver, RenderOpts) {
     let base = backend.base_url();
     let opts = render_opts(base.as_deref(), item);
     let resolver = if md.contains("[[") {
         StoreResolver::snapshot(backend, &opts.mount)
+    } else {
+        StoreResolver::empty(&opts.mount)
+    };
+    (resolver, opts)
+}
+
+/// `prepare` for the preview, run on its render thread: the resolver looks
+/// up only the ids the render asks for (`StoreResolver::lazy`), so nothing
+/// is copied and the UI thread never touches the store for it.
+fn prepare_lazy(
+    backend: &std::sync::Arc<dyn Backend>,
+    item: Option<&Item>,
+    md: &str,
+) -> (StoreResolver, RenderOpts) {
+    let base = backend.base_url();
+    let opts = render_opts(base.as_deref(), item);
+    let resolver = if md.contains("[[") {
+        StoreResolver::lazy(backend.clone(), &opts.mount)
     } else {
         StoreResolver::empty(&opts.mount)
     };
@@ -736,7 +755,12 @@ impl MainView {
             self.studio.render_task = None;
             return;
         }
-        self.studio_theme(cx);
+        // A keystroke's refresh doesn't ask after the blyg's theme (that
+        // reads the store): the blyg can't change while you type, and the
+        // next immediate refresh (another post, a view change) checks.
+        if now || self.studio.theme_for.is_none() {
+            self.studio_theme(cx);
+        }
         let item = self.current.clone();
         let md = if item.is_some() {
             self.editor.read(cx).value().to_string()
@@ -745,7 +769,6 @@ impl MainView {
         };
         let key = self.studio_key();
         self.studio.requested = Some(key.clone());
-        let (resolver, opts) = prepare(&*self.backend, item.as_ref(), &md);
         let backend = self.backend.clone();
         let live = crate::connection::mode(cx) == Some(crate::connection::Mode::Live);
         self.studio.own_media_gen = crate::images::own_media_gen();
@@ -759,6 +782,7 @@ impl MainView {
             }
             let out = cx
                 .background_spawn(async move {
+                    let (resolver, opts) = prepare_lazy(&backend, item.as_ref(), &md);
                     let mut out = blyg_render::render_preview(&md, key.kind, &resolver, &opts);
                     with_local_images(&*backend, &md, &mut out);
                     if live {

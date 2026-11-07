@@ -506,6 +506,83 @@ impl Config {
         self.get("spellcheck") != Some("false")
     }
 
+    // --- nearby ---
+    /// `nearby`: `on`, `titles` or `off` (unknown values: `on`).
+    pub fn nearby(&self) -> &str {
+        match self.get("nearby") {
+            Some(v @ ("titles" | "off")) => v,
+            _ => "on",
+        }
+    }
+
+    /// `nearby-embedder`: `local`, `endpoint` or `none`.
+    pub fn nearby_embedder(&self) -> &str {
+        match self.get("nearby-embedder") {
+            Some(v @ ("local" | "endpoint")) => v,
+            _ => "none",
+        }
+    }
+
+    /// `nearby-endpoint`, if set.
+    pub fn nearby_endpoint(&self) -> Option<&str> {
+        self.get("nearby-endpoint")
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+    }
+
+    /// `nearby-endpoint-model`.
+    pub fn nearby_endpoint_model(&self) -> &str {
+        self.get("nearby-endpoint-model")
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .unwrap_or("nomic-embed-text")
+    }
+
+    /// `nearby-rerank`: on only when `on`.
+    pub fn nearby_rerank(&self) -> bool {
+        self.get("nearby-rerank") == Some("on")
+    }
+    // --- end nearby ---
+
+    // --- chat --- (experimental)
+    /// `chat-tab`: show the #thicket tab (on unless `false`).
+    pub fn chat_tab(&self) -> bool {
+        self.get("chat-tab") != Some("false")
+    }
+
+    /// `chat-nick`: the Libera.Chat nick and account, once set up.
+    pub fn chat_nick(&self) -> Option<&str> {
+        self.get("chat-nick")
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+    }
+
+    /// `chat-server`: `host:port`, over TLS.
+    pub fn chat_server(&self) -> &str {
+        self.get("chat-server").unwrap_or("irc.libera.chat:6697")
+    }
+
+    /// `chat-notifications`: notify about mentions (on unless `false`).
+    pub fn chat_notifications(&self) -> bool {
+        self.get("chat-notifications") != Some("false")
+    }
+    // --- end chat ---
+
+    // --- terminal --- (experimental)
+    /// `terminal`: the terminal pane (on unless `false`).
+    pub fn terminal(&self) -> bool {
+        self.get("terminal") != Some("false")
+    }
+
+    /// `terminal-shell`: the program (and arguments) the pane runs instead
+    /// of the login shell.
+    pub fn terminal_shell(&self) -> Option<&str> {
+        self.get("terminal-shell")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+    // --- end terminal ---
+
     pub fn font_family_writing(&self) -> &str {
         self.get("font-family-writing").unwrap_or("Literata")
     }

@@ -6,6 +6,28 @@ The omnibar filters your posts as you type. ↑/↓ previews each post, ⏎ open
 it, and ⏎ with no match starts a new draft seeded with what you typed. ⌘L
 comes back to the omnibar from anywhere, and so does esc from the editor.
 
+**Loose ends.** The search also reads a few operators, alone or with words:
+
+| Operator | Lists |
+|---|---|
+| `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
+| `is:draft` / `is:stale` | drafts / drafts untouched for a month |
+| `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
+| `has:tk` | posts with a `[TK]` not generated yet |
+| `links:<id or host>` | posts that link to that post (the first characters of its id do) or to that site |
+| `quotes:<id or host>` | posts that quote, reply to or fork it |
+| `kind:thread`, `kind:fragment`, `v:2` | by kind, by published version (`v:0`: never published) |
+
+`is:draft tide` lists drafts that mention tides. ⏎ never starts a post from
+operators alone. With the search empty, a quiet line over the list says
+what's loose, in words ("2 orphans · 1 ungenerated TK"); click a part to list
+those posts.
+
+**A web address.** Paste one into the search and, when no post has it, ⏎
+starts a fragment with that link, titled from the page (fetched once, without
+your token). An address of a blyg post you hold starts a thread quoting it,
+`![[id]]`, instead.
+
 **⌘N** (Post › New Post) opens an empty editor with the caret in it. Your
 search and the list stay as they were. What you type is a **scratch note**,
 kept on this Mac and saved as you go; the status bar says "New note · saved
@@ -17,6 +39,98 @@ Posts are **plain Markdown**, and there's no save button. Every keystroke is
 saved on your Mac and synced shortly after you stop typing. A post's title is
 its first line of text (a leading heading is the title), never a quote it
 starts with.
+
+### The shelf
+
+Some posts you keep coming back to: a /now page, a reading log, a running
+list of links. Put them on your **shelf** so you never have to search for
+them. **⌥⌘B** (Post › Put on Shelf / Take Off) shelves the open post, or
+takes it off. Shelved posts are marked 📚 and stay at the top of the list, in
+your order, above a thin rule. When you search, the shelved posts that match
+come first.
+
+**⌘B** (Post › Shelf…) opens the shelf: **1–9** or ⏎ opens a post on it,
+**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post off, and esc closes
+it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
+scratch note, up to 50 of them. A withdrawn post leaves it.
+
+The shelf is kept on this Mac (on Windows, this computer; the keys are
+Ctrl+B and Ctrl+Shift+A). It's not the same as pinning a version in ⌘Y, which
+is public and permanent.
+
+### Lineage while you write
+
+Under the editor, one quiet line shows what the open post is part of: its
+lineage glyph, how many posts it **draws on** (quotes, the post it replies
+to or forks) and how many known here **draw on it**, and how many posts it
+links to. A draft's line follows its text as you add or remove a quote. Click
+the line to see the posts by name; click one to open it, yours in the editor
+and anyone else's in Reading. **⌘J** (Ctrl+J on Windows) opens the full
+lineage view for a published post, as in Reading; on a draft it opens the
+lists.
+
+### Nearby thoughts
+
+A rail on the editor's right shows up to five of your own published posts,
+and posts you hold from blygs you follow, that say what the paragraph you're
+writing says, with the phrase you share (or the closest passage) under each.
+It looks again a moment after you stop typing, or when you move to another
+paragraph.
+
+- **⌥↑ / ⌥↓** choose a row without leaving the text.
+- **⌥⏎** links it: the phrase you share becomes `[[id | phrase]]` in place.
+  When the match is by meaning rather than a phrase, `[[id | title]]` goes
+  after the word at the caret.
+- **⌥⇧⏎** quotes it as `![[id | title]]` on a new line after the paragraph
+  (threads only).
+- **⌥⌘U** shows or hides the rail.
+
+On Windows the keys are Alt+Up/Alt+Down, Alt+Enter, Alt+Shift+Enter and
+Ctrl+Alt+U. Posts you already link or quote aren't offered again, and
+withdrawn posts never are. Nothing is fetched to make a suggestion: only
+what this computer already holds.
+
+Out of the box the rail matches **shared phrases**. **Settings › Nearby** can
+add a small model that runs on your computer and matches **meaning**, so a
+post about "the shore" turns up while you write about "tide pools":
+potion-base-8M (MIT), about 31 MB, downloaded once and checked, then used
+offline. Nothing you write leaves your computer with it. You can instead
+point `nearby-endpoint` at an embeddings server you run (Ollama, or anything
+OpenAI-compatible), and `nearby-rerank = on` lets your AI provider put the
+best ten in order. Both of those send text out; see
+[AI helpers](ai.md#nearby-thoughts-what-is-sent-where). `nearby = titles`
+matches titles only, and `nearby = off` turns the rail off. See
+[Configuration](config.md).
+
+### Hover cards
+
+Rest the pointer on a `[[…]]` or `![[…]]` in your text and a card says what
+it points at: the title, who wrote it, the version and its first lines. A
+link without a label offers **label it**, which writes the post's title in as
+the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
+post says so. The card only shows what this Mac already holds.
+
+### Serendipity
+
+Off unless you turn it on: Settings › Serendipity, or `serendipity = own` in
+the config file. Then ⌘N's empty editor shows one of your own published
+posts, more often one nothing links to yet, or one from this week in an
+earlier year, and never the same one twice in a month. While the editor is
+still empty, **q** quotes it into the new post, **l** links to it, **o** opens
+it and **r** shows another; the first thing you type sends it away.
+`serendipity = on` also offers posts from the blygs you read.
+### Two posts side by side
+
+**⌥⌘⏎** (Post › Open Beside) opens the selected post beside the one you're
+writing: a reply and its source, two drafts that should be one, a fork and
+its original. Your own post opens in a second editor that saves on its own
+and has its own status line. Anyone else's opens read-only; drag its header
+into your post to quote it. **⌥⌘[** and **⌥⌘]** (View › Left Post / Right
+Post) move between them, the divider drags (Burrow remembers where), and ×
+or ⌥⌘⏎ again closes the right side. From Reading, ⌥⌘⏎ goes to Posts with
+the post you were reading beside the one you were writing.
+
+On Windows the keys are Ctrl+Alt+Enter and Ctrl+Alt+[ / ].
 
 ## Fragments and threads
 
@@ -114,6 +228,14 @@ Scratch notes show in the main list with a `scratch` pill, are searchable and
 editable, and ⌘D or ⌘⏎ there promotes them too. Images pasted into a scratch
 note stay on your Mac until it's promoted, when they're uploaded.
 
+**Capture from anywhere.** On a Mac, select text in any app and choose
+Services › **Capture in Burrow** (in the app's menu, or the right-click menu):
+the panel opens with it quoted, and the page's address under it when the app
+sends one (some browsers do). To give it a key, use System Settings ›
+Keyboard › Keyboard Shortcuts › Services. On Windows, text you copied in the
+last ten seconds shows in the panel as a **quote clipboard** chip; click it to
+quote it. It's never put in for you.
+
 - `capture-default = draft` makes esc save a draft instead.
 - `new-note = scratch` makes the omnibar create scratch notes too, and
   `new-note = draft` makes ⌘N start drafts. Unset, ⌘N starts a scratch note
@@ -127,9 +249,13 @@ note stay on your Mac until it's promoted, when they're uploaded.
 
 - **Paste a link over text.** Select some text and paste a web address to link
   it, as in WordPress: the text becomes `[text](address)`.
-- **Mentions.** Type `@` to pick from the blygs you know (subscriptions,
-  blogroll, authors you read). It inserts a plain link to that blyg, since
-  Blygger has no handles.
+- **Mentions.** Type `@` to pick from the blygs you know: the people in your
+  blyg's address book first (studio 0.56's contacts), then subscriptions,
+  blogroll and authors you read. Where your blyg turns `@handle` into a link
+  when it publishes (studio 0.56), picking a contact writes `@handle`, and
+  the popup shows the link it becomes; publish tells you about any handle it
+  couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
+  notifies no one.
 - **Images.** Paste or drop an image to upload it; it goes into the text
   where you pasted it, and the preview shows it. Until a published post shows
   it, an upload is private on studio 0.28 or later: only you (and Burrow,
@@ -154,6 +280,16 @@ and video. Click a paragraph in the preview to jump to it.
 - ⌘2 **Preview**: the list, the editor and the preview.
 - ⌘3 **Full editor**: the editor and the preview, with the list hidden.
 - ⌘E toggles the preview in place.
+
+### Focus mode
+
+⌥⌘F (View › Focus; Ctrl+Shift+F on Windows) leaves just the editor. The line
+you're typing on stays put, a little above the middle of the window
+(`focus-line`, 0.1–0.9, default 0.45), and the paragraphs you aren't in are
+dimmed (`focus-fade = off` keeps them plain). The only chrome is a hairline at
+the bottom with the sync dot and how many words you've written this sitting;
+hover it for the status bar. That count is never stored. esc brings everything
+back, and ⌘L still reaches the omnibar.
 
 ![An image in the preview](screenshots/image-preview.png)
 

@@ -47,6 +47,10 @@ mod ui_tests;
 #[cfg(test)]
 #[path = "theme_tests.rs"]
 mod theme_tests;
+
+#[cfg(test)]
+#[path = "posts_perf_tests.rs"]
+mod posts_perf_tests; // the Posts screen at scale
 // --- composer --- (its GPUI tests need MainView's insides)
 #[cfg(test)]
 #[path = "composer/assist_tests.rs"]
@@ -105,6 +109,64 @@ pub(crate) mod extensions;
 // --- blyg switcher --- (several blygs, one active; hooks marked the same way)
 #[path = "switcher.rs"]
 pub(crate) mod switcher;
+// --- shelf --- (posts kept to hand; hooks marked the same way)
+#[path = "shelf.rs"]
+pub(crate) mod shelf;
+
+// --- tangles --- trails, the quote tray and drag-to-quote, split view
+// (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
+#[path = "split.rs"]
+pub(crate) mod split;
+#[cfg(test)]
+#[path = "split_tests.rs"]
+mod split_tests;
+#[path = "trails.rs"]
+pub(crate) mod trails;
+#[cfg(test)]
+#[path = "trails_tests.rs"]
+mod trails_tests;
+#[path = "tray.rs"]
+pub(crate) mod tray;
+#[cfg(test)]
+#[path = "tray_tests.rs"]
+mod tray_tests;
+// --- lineage --- (the open post's lineage under the editor; hooks marked the same way)
+#[path = "lineage_strip.rs"]
+pub(crate) mod lineage_strip;
+// --- hover cards --- (what a [[id]] is, on hover; hooks marked the same way)
+#[path = "hover_card.rs"]
+pub(crate) mod hover_card;
+// --- chat --- (the experimental #thicket tab; hooks marked the same way)
+#[path = "chat/mod.rs"]
+pub(crate) mod chat;
+// --- terminal --- (the experimental terminal pane; hooks marked the same way)
+#[path = "terminal/mod.rs"]
+pub(crate) mod terminal;
+// --- flow --- (the command palette, focus mode, serendipity, delight;
+// hooks marked `// --- palette ---`, `// --- focus ---`, `// --- serendipity ---`,
+// `// --- delight ---`)
+#[path = "palette.rs"]
+pub(crate) mod command_palette;
+#[path = "delight.rs"]
+pub(crate) mod delight;
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
+#[path = "focus.rs"]
+pub(crate) mod focus;
+#[path = "serendipity.rs"]
+pub(crate) mod serendipity;
+// --- nearby --- (Nearby thoughts: the rail beside the editor; hooks marked the same way)
+#[path = "nearby/mod.rs"]
+pub(crate) mod nearby;
+
+// --- loose ends --- the omnibar's operators' summary over the list.
+#[path = "loose_ends.rs"]
+pub(crate) mod loose_ends;
+
+// --- capture --- a web address pasted into the omnibar.
+#[path = "capture_link.rs"]
+pub(crate) mod capture_link;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -211,6 +273,8 @@ enum Sheet {
     MacroPost(browser::automation::PostSheet),
     // --- blyg switcher --- every signed-in blyg; switch, add, sign out.
     Blygs(switcher::BlygSheet),
+    // --- shelf --- ⌘B: the posts you keep to hand.
+    Shelf(shelf::ShelfSheet),
 }
 
 struct Toast {
@@ -218,6 +282,19 @@ struct Toast {
     text: SharedString,
     sub: Option<SharedString>,
     leaving: bool,
+}
+
+/// The omnibar's search off the UI thread. Each search takes the next
+/// generation; results that come back for an older one are dropped.
+#[derive(Default)]
+struct OmniSearch {
+    generation: u64,
+    /// The query typed whose results haven't come back yet.
+    pending: Option<String>,
+    task: Option<Task<()>>,
+    /// Edits saved from the editor so far (`after_edit`): a copy of the
+    /// open item read before the latest one is read again.
+    edits: u64,
 }
 
 pub struct MainView {
@@ -229,6 +306,9 @@ pub struct MainView {
     /// --- composer --- @-mentions and spellcheck over the editor.
     assist: Entity<crate::composer::Assist>,
     list: ListModel,
+    /// The omnibar's search running off the UI thread (`query_typed`).
+    search: OmniSearch,
+    loose_ends: loose_ends::LooseEnds, // --- loose ends ---
     list_scroll: UniformListScrollHandle,
     current: Option<Item>,
     mode: Mode,
@@ -286,6 +366,25 @@ pub struct MainView {
     ext: extensions::Extensions,
     // --- new post --- ⌘N's fresh editor, until it's left
     new_post: Option<new_post::NewPost>,
+    // --- lineage ---
+    lineage_strip: lineage_strip::State,
+    // --- hover cards ---
+    hover: hover_card::State,
+    // --- chat ---
+    chat: chat::Chat,
+    // --- terminal ---
+    terminal: terminal::Dock,
+    // --- flow ---
+    cmd_palette: command_palette::State,
+    focus_mode: focus::State,
+    serendipity: serendipity::State,
+    delight: delight::Delight,
+    // --- end flow ---
+    // --- tray --- quotes picked up, not placed yet
+    tray: tray::Tray,
+    // --- split --- a second post beside the one being written
+    split: split::Split,
+    nearby: nearby::State, // --- nearby ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -396,6 +495,8 @@ impl MainView {
             editor,
             assist, // --- composer ---
             list: ListModel::default(),
+            search: OmniSearch::default(),
+            loose_ends: Default::default(), // --- loose ends ---
             list_scroll: UniformListScrollHandle::new(),
             current: None,
             mode: Mode::Search,
@@ -426,18 +527,41 @@ impl MainView {
             watch_stamp: 0,
             now: chrono::Utc::now(),
             first_frame: Some(launched),
-            ai: Default::default(), // --- AI ---
-            new_post: None,         // --- new post ---
+            ai: Default::default(),            // --- AI ---
+            new_post: None,                    // --- new post ---
+            lineage_strip: Default::default(), // --- lineage ---
+            hover: Default::default(),         // --- hover cards ---
+            chat: Default::default(),          // --- chat ---
+            terminal: Default::default(),      // --- terminal ---
+            // --- flow ---
+            cmd_palette: Default::default(),
+            focus_mode: Default::default(),
+            serendipity: Default::default(),
+            delight: Default::default(),
+            // --- tray ---
+            tray: tray::Tray::load(
+                Self::tray_data_dir(cx),
+                blyg_url
+                    .as_deref()
+                    .and_then(crate::vm::url_host)
+                    .unwrap_or_default(),
+            ),
+            split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
+            nearby: Default::default(),                        // --- nearby ---
             _tasks: tasks,
             _subs: subs,
         };
+        this.reload_shelf(); // --- shelf ---
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
+        this.loose_ends_refresh(cx); // --- loose ends ---
         this.studio_init(window, cx);
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
+        this.chat_init(window, cx); // --- chat ---
+        this.nearby_init(cx); // --- nearby ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -626,6 +750,9 @@ impl MainView {
         }
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
+        self.chat_reload(window, cx); // --- chat ---
+        self.terminal_reload(window, cx); // --- terminal ---
+        self.nearby_reload(cx); // --- nearby ---
         self.show_toast(msg, None, cx);
     }
 
@@ -1072,12 +1199,75 @@ impl MainView {
     }
 
     fn requery(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.settle_search(window, cx);
         let results = self.backend.search(self.list.query());
+        self.requery_with(results, None, window, cx);
+    }
+
+    /// `requery` for a change the sync worker made (`ItemsChanged`): the
+    /// search, and the open item's fresh copy, are read on a background
+    /// thread. A search typed meanwhile is searched again here, since the
+    /// one under way may predate the change.
+    fn requery_later(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.search.generation += 1;
+        let generation = self.search.generation;
+        let typed = self.search.pending.clone();
+        let q = typed
+            .clone()
+            .unwrap_or_else(|| self.list.query().to_string());
+        let current = self.current.as_ref().map(|c| c.local_id.clone());
+        let edits = self.search.edits;
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move {
+            let results = backend.search(&q);
+            let fresh = current.map(|id| {
+                let item = backend.item(&id);
+                (id, item)
+            });
+            (q, results, fresh)
+        });
+        self.search.task = Some(cx.spawn_in(window, async move |this, cx| {
+            let (q, results, mut fresh) = task.await;
+            let _ = this.update_in(cx, |v, window, cx| {
+                if v.search.generation != generation {
+                    return;
+                }
+                v.search.pending = None;
+                v.search.task = None;
+                // Typed into since it was read: read it again.
+                if v.search.edits != edits {
+                    fresh = None;
+                }
+                if typed.is_some() {
+                    v.apply_query(&q, results, window, cx);
+                } else {
+                    v.requery_with(results, fresh, window, cx);
+                }
+            });
+        }));
+    }
+
+    /// The rest of `requery`, given the search's results and a fresh copy
+    /// of the open item (`None` inside: it's gone). One read for another
+    /// item than the one open now is read again.
+    fn requery_with(
+        &mut self,
+        results: Vec<Item>,
+        fresh: Option<(LocalId, Option<Item>)>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.reload_shelf(); // --- shelf ---
         self.list.refresh(results);
+        self.loose_ends_refresh(cx); // --- loose ends ---
         self.new_post_sync_selection(); // --- new post ---
         // Refresh the current item's metadata without clobbering the editor.
-        if let Some(cur) = &self.current {
-            match self.backend.item(&cur.local_id) {
+        if let Some(cur) = self.current.as_ref().map(|c| c.local_id.clone()) {
+            let fresh = match fresh {
+                Some((id, fresh)) if id == cur => fresh,
+                _ => self.backend.item(&cur),
+            };
+            match fresh {
                 Some(fresh) => {
                     let editor_text = self.editor.read(cx).value();
                     if fresh.content_md != editor_text.as_ref() && self.mode == Mode::Search {
@@ -1106,6 +1296,8 @@ impl MainView {
     }
 
     fn open(&mut self, id: &LocalId, window: &mut Window, cx: &mut Context<Self>) {
+        // A search typed just before lands first, not over the open post.
+        self.settle_search(window, cx);
         // --- new post --- opening another post leaves the new one.
         if self
             .new_post
@@ -1243,17 +1435,21 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         match ev {
-            InputEvent::Change => self.query_changed(window, cx),
+            InputEvent::Change => self.query_typed(window, cx),
             InputEvent::Focus => {
                 self.mode = Mode::Search;
                 cx.notify();
             }
             InputEvent::PressEnter {
                 secondary: true, ..
-            } => self.publish(window, cx),
-            InputEvent::PressEnter { .. } => match self.list.enter() {
+            } => {
+                self.settle_search(window, cx);
+                self.publish(window, cx)
+            }
+            InputEvent::PressEnter { .. } => match self.settle_search(window, cx).list.enter() {
                 EnterAction::Open(id) => self.open(&id, window, cx),
                 EnterAction::Create(seed) => self.create_from(&seed, window, cx),
+                EnterAction::LinkFragment(url) => self.capture_link(url, window, cx), // --- capture ---
                 EnterAction::Nothing => {}
             },
             InputEvent::Blur => {}
@@ -1269,7 +1465,7 @@ impl MainView {
     ) {
         match ev {
             InputEvent::Focus => {
-                if self.mode == Mode::Search && self.list.wants_create() {
+                if self.mode == Mode::Search && self.settle_search(window, cx).list.wants_create() {
                     let seed = self.list.trimmed_query().to_string();
                     self.create_from(&seed, window, cx);
                 } else {
@@ -1284,6 +1480,7 @@ impl MainView {
                 // and `[[` the link picker.
                 let typed = self.typed_picker(cx);
                 self.after_edit(cx);
+                self.nearby_typed(cx); // --- nearby ---
                 if let Some((kind, typed)) = typed {
                     self.open_picker_from_typing(kind, typed, window, cx);
                 }
@@ -1293,6 +1490,10 @@ impl MainView {
     }
 
     fn on_core_event(&mut self, ev: CoreEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(ev, CoreEvent::ItemsChanged | CoreEvent::ReadingChanged) {
+            self.lineage_strip.stale(); // --- lineage ---
+            self.nearby_store_changed(&ev, cx); // --- nearby ---
+        }
         match ev {
             CoreEvent::ItemsChanged => {
                 // --- follow-ups --- a queued promotion uploaded local images.
@@ -1303,7 +1504,7 @@ impl MainView {
                 if self.reading.view == reading::View::Reading {
                     self.reading_changed(cx);
                 }
-                self.requery(window, cx)
+                self.requery_later(window, cx)
             }
             CoreEvent::SyncStatus(s) => {
                 self.sync = s;
@@ -1365,6 +1566,8 @@ impl MainView {
     // ------------------------------------------------------------ actions
 
     fn move_selection(&mut self, delta: isize, window: &mut Window, cx: &mut Context<Self>) {
+        // ↑/↓ move through what was typed, even before its search is back.
+        self.settle_search(window, cx);
         // --- new post --- ↑/↓ go on from the row selected before ⌘N.
         let resumed = self.new_post_resume_selection();
         if self.list.move_selection(delta).is_some() || resumed {
@@ -1533,6 +1736,7 @@ impl MainView {
                 match result {
                     Ok(out) => {
                         v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
+                        v.delight_published(&id, cx); // --- delight ---
                         let head = match &note_opt {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
@@ -1941,10 +2145,20 @@ impl MainView {
             return;
         }
         let text = self.editor.read(cx).value();
-        if let Err(e) = self.ai_save_edit(&id, &text) {
+        self.search.edits += 1;
+        let saved = self.ai_save_edit(&id, &text);
+        if let Err(e) = &saved {
             self.show_toast(format!("Couldn't save: {e}"), None, cx);
         }
-        if let Some(fresh) = self.backend.item(&id) {
+        // The row as the save leaves it, worked out here rather than read
+        // back from the store: a keystroke never waits on SQLite.
+        let fresh = match (&saved, self.current.as_ref()) {
+            (Ok(()), Some(cur)) if cur.local_id == id => {
+                Some(blyg_core::store::saved_locally(cur, &text))
+            }
+            _ => self.backend.item(&id),
+        };
+        if let Some(fresh) = fresh {
             self.list.update_item(fresh.clone());
             self.current = Some(fresh);
         }
@@ -1959,13 +2173,76 @@ impl MainView {
         self.query_changed(window, cx);
     }
 
+    /// The omnibar's text was set: search now, on this thread.
     fn query_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let q = self.omni.read(cx).value().to_string();
-        if q == self.list.query() {
+        let typing = self.search.pending.take().is_some();
+        if typing {
+            // Whatever was typed before is superseded.
+            self.search.generation += 1;
+            self.search.task = None;
+        }
+        if q == self.list.query() && !typing {
             return;
         }
         let results = self.backend.search(&q);
-        self.list.set_query(&q, results);
+        self.apply_query(&q, results, window, cx);
+    }
+
+    /// A keystroke in the omnibar: the search runs on a background thread
+    /// (searching thousands of posts costs frames), and only the newest
+    /// keystroke's results are listed. Until they're back the list shows
+    /// the previous query's; ⏎, ↑/↓ and focusing the editor finish the
+    /// search first (`settle_search`), so they act on what was typed.
+    fn query_typed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let q = self.omni.read(cx).value().to_string();
+        let waiting = self.search.pending.as_deref();
+        if waiting == Some(q.as_str()) || (waiting.is_none() && q == self.list.query()) {
+            return;
+        }
+        self.search.generation += 1;
+        let generation = self.search.generation;
+        self.search.pending = Some(q.clone());
+        self.mode = Mode::Search;
+        let backend = self.backend.clone();
+        let task = cx.background_spawn(async move {
+            let results = backend.search(&q);
+            (q, results)
+        });
+        self.search.task = Some(cx.spawn_in(window, async move |this, cx| {
+            let (q, results) = task.await;
+            let _ = this.update_in(cx, |v, window, cx| {
+                if v.search.generation == generation {
+                    v.search.pending = None;
+                    v.search.task = None;
+                    v.apply_query(&q, results, window, cx);
+                }
+            });
+        }));
+        cx.notify();
+    }
+
+    /// A typed search still on its way: finish it now, on this thread.
+    /// Returns `self`, for whatever reads the list next.
+    fn settle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) -> &mut Self {
+        if let Some(q) = self.search.pending.take() {
+            self.search.generation += 1;
+            self.search.task = None;
+            let results = self.backend.search(&q);
+            self.apply_query(&q, results, window, cx);
+        }
+        self
+    }
+
+    /// List `results` for the query `q`: the selection jumps to the first.
+    fn apply_query(
+        &mut self,
+        q: &str,
+        results: Vec<Item>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.list.set_query(q, results);
         self.list_scroll.scroll_to_item(0, ScrollStrategy::Top);
         self.mode = Mode::Search;
         self.load_selected(window, cx);
@@ -2041,8 +2318,12 @@ impl Render for MainView {
 
         // --- full editor: which panes are on screen (⌘1/⌘2/⌘3/⌘E) ---
         self.studio_frame(window, cx);
+        self.focus_frame(window, cx); // --- focus ---
+        self.serendipity_frame(cx); // --- serendipity ---
         self.browser_frame(window, cx); // --- browser ---
         self.notes_frame(cx); // --- notes ---
+        self.tray_frame(cx); // --- tray ---
+        self.split_frame(cx); // --- split ---
         // --- reading compose ---
         self.compose_frame(window, cx);
         // --- end reading compose ---
@@ -2056,11 +2337,12 @@ impl Render for MainView {
         } else {
             viewport.width - list_w - px(1.)
         };
-        let pane_w = if show_preview {
+        let pane_w = if show_preview && !self.split.is_open() {
             (rest / 2.).floor()
         } else {
             rest
         };
+        let pane_w = self.split_pane_w(pane_w); // --- split ---
         // --- end full editor ---
         let list_len = if stacked {
             ListLength::Height((viewport.height * 0.34).round())
@@ -2069,6 +2351,7 @@ impl Render for MainView {
         };
         let measure = px(size * 36.0);
         let side_pad = ((pane_w - measure) / 2.).max(px(34.));
+        let (top_pad, bottom_pad) = self.focus_pads(cx).unwrap_or((px(26.), px(40.))); // --- focus ---
 
         // Project the palette + measure onto the editor each frame (cheap: copies).
         let assist_font = self.prefs.ui().family;
@@ -2087,8 +2370,8 @@ impl Render for MainView {
                 ..Default::default()
             });
             s.set_editor_paddings(Edges {
-                top: px(26.),
-                bottom: px(40.),
+                top: top_pad,       // --- focus ---
+                bottom: bottom_pad, // --- focus ---
                 left: side_pad,
                 right: side_pad,
             });
@@ -2107,7 +2390,7 @@ impl Render for MainView {
         }
 
         // --- buttons --- how the toolbar fits (None: show-buttons = false)
-        let toolbar = self.toolbar_fit(window, cx);
+        let toolbar = self.toolbar_fit(window, cx).filter(|_| !self.focus_on()); // --- focus ---
         let show_title = toolbar.as_ref().is_none_or(|(fit, _)| fit.title());
         div()
             .id("blygger")
@@ -2143,6 +2426,15 @@ impl Render for MainView {
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
+            .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.trails_actions(d, cx)) // --- trails ---
+            .map(|d| self.tray_actions(d, cx)) // --- tray ---
+            .map(|d| self.split_actions(d, cx)) // --- split ---
+            .map(|d| self.chat_actions(d, cx)) // --- chat ---
+            .map(|d| self.terminal_actions(d, cx)) // --- terminal ---
+            .map(|d| self.palette_actions(d, cx)) // --- palette ---
+            .map(|d| self.focus_actions(d, cx)) // --- focus ---
+            .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
             .size_full()
             .relative()
             .flex()
@@ -2169,45 +2461,64 @@ impl Render for MainView {
             // --- reading & versions: other screens replace omnibar + list + editor
             .map(|d| match self.render_reading_body(&body_font, cx) {
                 Some(body) => d.child(body),
-                None => d.child(self.render_omnibar(&ui_font, size, cx)).child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .flex()
-                        .when(stacked, |d| d.flex_col())
-                        .when(!stacked, |d| d.flex_row())
-                        .when(show_list, |d| {
-                            d.child(self.render_list(list_len, &ui_font, cx))
-                        })
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .min_h_0()
-                                .flex()
-                                .flex_row()
-                                .child(match self.render_own_versions(&body_font, size, cx) {
-                                    Some(v) => v,
-                                    None => self
-                                        .render_editor_pane(&body_font, size, side_pad, cx)
-                                        .into_any_element(),
-                                })
-                                // --- full editor --- (not beside ⌘Y's history,
-                                // whose body is the reader's WebView)
-                                .when(show_preview && self.reading.own.is_none(), |d| {
-                                    d.child(self.studio_pane(&p))
-                                }),
-                        ),
-                ),
+                // --- focus --- (the omnibar only while ⌘L has it)
+                None => d
+                    .when(!self.focus_hides_omnibar(), |d| {
+                        d.child(self.render_omnibar(&ui_font, size, cx))
+                    })
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .when(stacked, |d| d.flex_col())
+                            .when(!stacked, |d| d.flex_row())
+                            .when(show_list, |d| {
+                                d.child(self.render_list(list_len, &ui_font, cx))
+                            })
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .min_h_0()
+                                    .flex()
+                                    .flex_row()
+                                    .child(match self.render_own_versions(&body_font, size, cx) {
+                                        Some(v) => v,
+                                        // --- split --- the right post beside it
+                                        None => self.split_wrap(
+                                            self.render_editor_pane(&body_font, size, side_pad, cx)
+                                                .into_any_element(),
+                                            cx,
+                                        ),
+                                    })
+                                    // --- full editor --- (not beside ⌘Y's history,
+                                    // whose body is the reader's WebView)
+                                    .when(
+                                        show_preview
+                                            && self.reading.own.is_none()
+                                            && !self.split.is_open(), // --- split ---
+                                        |d| d.child(self.studio_pane(&p)),
+                                    ),
+                            ),
+                    ),
             })
-            .child(self.render_status_bar(cx))
+            .children(self.render_terminal(window, cx)) // --- terminal ---
+            .children(self.render_tray(cx)) // --- tray ---
+            // --- focus --- a hairline in place of the status bar
+            .map(|d| match self.render_focus_bar(cx) {
+                Some(bar) => d.child(bar),
+                None => d.child(self.render_status_bar(cx)),
+            })
             .children(self.render_browser_pane(cx)) // --- browser ---
             .children(self.render_notes_drawer(cx)) // --- notes ---
             .children(self.render_sheet(&ui_font, &body_font, cx))
             .children(self.render_ai_overlay(&ui_font, &body_font, cx)) // --- AI ---
             .children(self.render_ext_overlay(&ui_font, cx)) // --- extensions ---
+            .children(self.render_cmd_palette(&ui_font, cx)) // --- palette ---
             .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
+            .children(self.render_trail_publish(cx)) // --- trails ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
             .children(onboarding) // --- onboarding ---
@@ -2359,6 +2670,7 @@ impl MainView {
         };
         div()
             .id("omnibar")
+            .map(|d| self.omnibar_quote_drop(d, cx)) // --- tray ---
             .h(px(OMNI_H))
             .flex_none()
             .flex()
@@ -2423,11 +2735,11 @@ impl MainView {
         };
         if count == 0 {
             let q = self.list.trimmed_query().to_string();
-            let msg = if q.is_empty() {
-                "Nothing here yet. Type to start writing.".to_string()
-            } else {
-                format!("No matches. Press ⏎ to start “{q}”.")
-            };
+            // --- loose ends --- / --- capture --- operators and addresses.
+            let msg = self
+                .list
+                .empty_message()
+                .unwrap_or_else(|| "Nothing here yet. Type to start writing.".to_string());
             return base.child(
                 div()
                     .relative()
@@ -2447,20 +2759,32 @@ impl MainView {
                     ),
             );
         }
-        base.child(
-            uniform_list(
-                "items",
-                count,
-                cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                    range
-                        .map(|ix| this.render_row(ix, lsize, cx))
-                        .collect::<Vec<_>>()
-                }),
+        // --- loose ends --- the summary in words, over the rows.
+        base.flex()
+            .flex_col()
+            .children(self.render_loose_ends(cx))
+            .child(
+                div().w_full().flex_1().min_h_0().child(
+                    // --- delight --- the list crossfades on a blyg switch.
+                    self.delight_list(
+                        uniform_list(
+                            "items",
+                            count,
+                            cx.processor(
+                                move |this, range: std::ops::Range<usize>, _window, cx| {
+                                    range
+                                        .map(|ix| this.render_row(ix, lsize, cx))
+                                        .collect::<Vec<_>>()
+                                },
+                            ),
+                        )
+                        .track_scroll(&self.list_scroll)
+                        .size_full()
+                        .into_any_element(),
+                    ),
+                ),
             )
-            .track_scroll(&self.list_scroll)
-            .size_full(),
-        )
-        .children(crate::ornament::scroll_edge(&self.theme))
+            .children(crate::ornament::scroll_edge(&self.theme))
     }
 
     fn render_row(&self, ix: usize, lsize: f32, cx: &mut Context<Self>) -> AnyElement {
@@ -2490,14 +2814,58 @@ impl MainView {
         let (pill_text, pill_pub) = vm::pill(item);
         let id = item.local_id.clone();
         let row = div().id(("row", ix)).py(px(6.)).text_color(p.ink);
-        crate::ornament::row(&self.theme, row, selected)
+        // --- shelf --- a hairline under the last shelved row (absolute, so
+        // every row keeps the one height `uniform_list` needs).
+        let shelf_end = ix + 1 == self.list.shelf_len() && ix + 1 < self.list.results().len();
+        let row = row.when(shelf_end, |d| {
+            d.relative().child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(1.))
+                    .bg(self.palette.side_line),
+            )
+        });
+        let settle_id = item.local_id.clone(); // --- delight ---
+        let el = crate::ornament::row(&self.theme, row, selected)
             .on_click(cx.listener(move |this, _, window, cx| this.open(&id, window, cx)))
             .child(
                 div()
                     .text_size(px(lsize))
                     .line_height(relative(1.35))
-                    .truncate()
-                    .child(StyledText::new(title).with_highlights(highlights)),
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    // --- shelf --- a post kept to hand.
+                    .when(self.list.is_on_shelf(&item.local_id), |d| {
+                        d.child(
+                            div()
+                                .id(("row-shelf", ix))
+                                .flex_none()
+                                .text_size(px(lsize * 0.8))
+                                .tooltip(|_, cx| {
+                                    cx.new(|_| {
+                                        reading::Tip(
+                                            crate::keymap::hint(
+                                                "On your shelf · ⌘B opens it · ⌥⌘B takes it off",
+                                            )
+                                            .into(),
+                                        )
+                                    })
+                                    .into()
+                                })
+                                .child(shelf::GLYPH),
+                        )
+                    })
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .truncate()
+                            .child(StyledText::new(title).with_highlights(highlights)),
+                    ),
             )
             .child(
                 div()
@@ -2587,7 +2955,8 @@ impl MainView {
                     })
                     .child(vm::relative_time(&item.updated, self.now)),
             )
-            .map(|cell| crate::ornament::row_wrap(&self.theme, cell))
+            .map(|cell| crate::ornament::row_wrap(&self.theme, cell));
+        self.delight_row(el, &settle_id) // --- delight ---
     }
 
     fn render_editor_pane(
@@ -2634,14 +3003,27 @@ impl MainView {
             // --- stub quotes --- a stub's hint line and passage chooser.
             .children(self.render_stub_bar(cx))
             .child(
+                // --- nearby --- the rail sits right of the text.
                 div()
                     .flex_1()
                     .min_h_0()
-                    .relative()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
-                    .children(margins)
-                    .child(self.assist.clone()), // --- composer ---
+                    .flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .relative()
+                            .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                            .children(margins)
+                            .child(self.assist.clone()) // --- composer ---
+                            .map(|d| self.hover_card_editor(d, cx)) // --- hover cards ---
+                            .children(self.render_focus_fade(cx)) // --- focus ---
+                            .children(self.render_serendipity(side_pad, cx)), // --- serendipity ---
+                    )
+                    .children(self.render_nearby_rail(cx)), // --- nearby ---
             )
+            .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
         div()
             .id("editor-pane")
@@ -2655,9 +3037,14 @@ impl MainView {
             .line_height(relative(1.6))
             // --- composer --- the mention popup / spelling menu keys come first.
             .map(|d| self.composer_keys(d, cx))
+            .map(|d| self.serendipity_keys(d, cx)) // --- serendipity ---
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 if this.sheet.is_none() {
                     cx.stop_propagation();
+                    // --- focus --- esc leaves focus mode first.
+                    if this.focus_escape(window, cx) {
+                        return;
+                    }
                     // --- AI --- esc cancels a running generation first.
                     if !this.ai_escape(window, cx) {
                         this.back_to_search(window, cx);
@@ -2676,6 +3063,7 @@ impl MainView {
                     cx.stop_propagation();
                 }
             }))
+            .map(|d| self.editor_quote_drop(d, cx)) // --- tray ---
             .on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                 let imgs: Vec<_> = paths
                     .paths()
@@ -2817,7 +3205,7 @@ impl MainView {
                 )
                 .into_any_element()
         } else {
-            dot_el.into_any_element()
+            self.delight_dot(dot_el, dot_color) // --- delight ---
         };
 
         let bar = div()
@@ -2846,16 +3234,20 @@ impl MainView {
                         )
                         .child(vm::kind_label(item.kind)),
                 )
+                // --- delight --- the counter's colour eases.
                 .child(
-                    div()
-                        .when(level == vm::Level::Warn, |d| {
-                            d.text_color(self.palette.on_status_text(p.warn))
-                        })
-                        .when(level == vm::Level::Over, |d| {
-                            d.text_color(self.palette.on_status_text(p.over))
-                                .font_weight(FontWeight::SEMIBOLD)
-                        })
-                        .child(count),
+                    self.delight_counter(
+                        div()
+                            .when(level == vm::Level::Over, |d| {
+                                d.font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .child(count),
+                        match level {
+                            vm::Level::Warn => self.palette.on_status_text(p.warn),
+                            vm::Level::Over => self.palette.on_status_text(p.over),
+                            _ => p.muted,
+                        },
+                    ),
                 )
             })
             // --- full editor ---
@@ -3058,6 +3450,7 @@ impl MainView {
             Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
+            Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
             Sheet::Publish {
                 title,
                 next_version,
@@ -3850,6 +4243,9 @@ impl MainView {
                     .into_any_element(),
             ))
             .child(self.render_buttons_setting(cx)) // --- buttons ---
+            .child(self.render_chat_setting(cx)) // --- chat ---
+            .child(self.render_flow_settings(cx)) // --- flow ---
+            .child(self.render_nearby_setting(cx)) // --- nearby ---
             .child(row(
                 "QUICK CAPTURE",
                 div()
