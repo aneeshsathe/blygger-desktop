@@ -5,6 +5,39 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.20.0
+
+Your notes stay open while you write, the panes beside the editor resize, and
+the web app shows its features instead of hiding them. The tour's new step
+starts at the side tabs.
+
+### Writing beside your notes
+
+- **Notes stay open.** The notes are a pane at the window's right edge, beside
+  the editor, not an overlay: clicking or typing in your draft no longer
+  closes them. ⇧⌘N moves into the notes, esc goes back to your draft and
+  leaves them open, and × or ⇧⌘N from inside closes them. Quote into post and
+  Copy verbatim still land at the caret.
+- **Side tabs.** A slim bar at the right edge has a Notes tab and a Nearby
+  tab. Nearby thoughts is now a drawer too: closed until you open it (its tab,
+  or ⌥⌘U), and open until you close it. Focus mode hides the bar.
+- **Resize.** Drag the line between the editor and the ⌘E preview, or a
+  pane's edge. A double-click resets it. Burrow remembers the sizes, and
+  whether the notes and Nearby were open.
+
+### Burrow in a browser
+
+- **Nothing hides in a corner.** On a phone, a fourth tab, **Blyg**, lists
+  Settings, Mentions, Hoppers, Subscribe, Subscriptions, Peek, History, your
+  shelf and the theme. The Read tab has named buttons under its search, and a
+  post you're reading has Quote, Reply, Hopper, Copy link, Unread and Fork in
+  a row. On a desk, a **Blyg** view (⌃3) holds the same list, and an action
+  row over the editor names what you can do with the post.
+- **Serve it from your own blyg.** Each release now includes the web app as
+  `Burrow-web-<version>.zip`, covered by the signed checksums.
+  [Burrow on your own blyg](web-self-host.md) walks you, or your AI agent,
+  through putting it at `/burrow/` on your blyg.
+
 ## Burrow 0.19.0
 
 Burrow now does what Studio does, so you can run your blyg from Burrow alone,

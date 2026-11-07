@@ -1503,6 +1503,36 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end studio parity ---
+    // --- side dock (0.20.0) --- notes and Nearby beside the draft.
+    Step {
+        id: "side-dock",
+        since: "0.20.0",
+        title: "Notes beside your draft",
+        caption: if cfg!(target_os = "windows") {
+            "The tabs at the right edge open your notes and Nearby beside the editor, and \
+             they stay open while you write. Ctrl+Shift+N moves into the notes, esc comes \
+             back to your draft. Drag a pane's edge, or the line between the editor and \
+             the preview, to resize; a double-click resets it. Press Ctrl+Shift+N."
+        } else {
+            "The tabs at the right edge open your notes and Nearby beside the editor, and \
+             they stay open while you write. ⇧⌘N moves into the notes, esc comes back to \
+             your draft. Drag a pane's edge, or the line between the editor and the \
+             preview, to resize; a double-click resets it. Press ⇧⌘N."
+        },
+        keys: &[Key::Notes],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+N"
+        } else {
+            "⇧⌘N"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end side dock ---
     Step {
         id: "done",
         since: "0.1.0",
