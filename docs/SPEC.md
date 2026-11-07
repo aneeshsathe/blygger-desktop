@@ -62,7 +62,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   Code: `crates/blyg-app/src/new_post.rs`.
 - **Shelf** (`shelf.rs`, `store/shelf.rs`; user request 2026-11-06): your own
   posts kept to hand, for the living posts you keep updating. **⌥⌘B** (Post ›
-  Put on Shelf / Take Off; Ctrl+Alt+B on Windows, since ⇧⌘B is the browser)
+  Put on Shelf / Take Off; Ctrl+Shift+A on Windows, since ⇧⌘B is the browser)
   shelves the open post or takes it off, with a toast ("On your shelf · ⌘B" /
   "Taken off your shelf"). Shelved posts that match the omnibar come first in
   the list, in shelf order (`vm::ListModel::set_shelf`), each with 📚 before its

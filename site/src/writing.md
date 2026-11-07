@@ -55,7 +55,7 @@ it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
 scratch note, up to 50 of them. A withdrawn post leaves it.
 
 The shelf is kept on this Mac (on Windows, this computer; the keys are
-Ctrl+B and Ctrl+Alt+B). It's not the same as pinning a version in ⌘Y, which
+Ctrl+B and Ctrl+Shift+A). It's not the same as pinning a version in ⌘Y, which
 is public and permanent.
 
 ### Lineage while you write

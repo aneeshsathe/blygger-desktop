@@ -659,7 +659,7 @@ fn do_step(e: &mut Env, id: &str) {
         // The Post menu's item (Windows has no key for it).
         "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
         "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
-        "shelf" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-b")),
+        "shelf" => e.cx.dispatch_action(crate::app::shelf::ToggleShelf),
         // --- lineage ---
         "lineage-writing" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
         "neighbourhood" => e.cx.simulate_keystrokes("-"),
@@ -676,7 +676,7 @@ fn do_step(e: &mut Env, id: &str) {
         "chat" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
         } // --- chat ---
-        "terminal" => e.cx.simulate_keystrokes(&crate::keymap::keys("ctrl-`")), // --- terminal ---
+        "terminal" => e.cx.dispatch_action(crate::app::terminal::ToggleTerminal), // --- terminal ---
         // --- flow ---
         "palette" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))

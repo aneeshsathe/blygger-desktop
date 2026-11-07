@@ -541,7 +541,7 @@ pub const STEPS: &[Step] = &[
         title: "Keep it on your shelf",
         caption: if cfg!(target_os = "windows") {
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             Ctrl+Alt+B puts the open post on your shelf: 📚 marks it and it stays at the top \
+             Ctrl+Shift+A puts the open post on your shelf: 📚 marks it and it stays at the top \
              of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. The shelf is \
              kept on this computer."
         } else {
@@ -552,7 +552,7 @@ pub const STEPS: &[Step] = &[
         },
         keys: &[Key::Shelf],
         key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Alt+B"
+            "Ctrl+Shift+A"
         } else {
             "⌥⌘B"
         },

@@ -631,7 +631,7 @@ pub fn mac_table() -> Vec<Keybind> {
         ),
         // --- shelf --- (posts kept to hand). ⌘B is free in gpui-base's
         // inputs, which bind no bold; ⇧⌘B is the browser, so the toggle is
-        // ⌥⌘B (Ctrl+Alt+B on Windows, like the hopper picker's ⌥⌘P).
+        // ⌥⌘B (Ctrl+Shift+A on Windows, see WINDOWS_OVERRIDES).
         kb!(
             "cmd-b",
             Main,
@@ -1148,6 +1148,9 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     // --- focus --- Ctrl+Alt+F is AltGr+F, which types a bracket on some
     // layouts (Hungarian `[`): focus mode is Ctrl+Shift+F there.
     ("alt-cmd-f", "ctrl-shift-f"),
+    // --- shelf --- Ctrl+Alt+B is quick capture's default hotkey there, and
+    // AltGr+B types `{` on Hungarian layouts: shelving is Ctrl+Shift+A.
+    ("alt-cmd-b", "ctrl-shift-a"),
     // --- blyg switcher --- ⌃⌘<digit> would fold into Ctrl+<digit>, the views.
     // Ctrl+Shift+0 never reaches an app on Windows set up with more than one
     // input language (it's the system's language hotkey; GPUI's Windows

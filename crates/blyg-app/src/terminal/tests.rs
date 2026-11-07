@@ -103,10 +103,21 @@ fn keys_go_to_the_shell_not_the_window(cx: &mut TestAppContext) {
     keys(cx, "escape");
     assert_eq!(sent(&t, cx), b"ls\r\x1b[A\x03\x1b");
     assert!(open(&view, cx), "esc went to the shell; the pane stays");
-    // The app keeps its ⌘-keys (Ctrl+Shift on Windows): ⌘L is the omnibar.
-    keys(cx, "cmd-l");
-    assert!(sent(&t, cx).is_empty());
-    assert!(!focused(&view, cx), "⌘L took the keyboard to the omnibar");
+    // The app keeps its ⌘-keys: ⌘L is the omnibar. On Windows the pane keeps
+    // plain Ctrl-keys (Ctrl+L clears a shell) and the app keeps Ctrl+Shift:
+    // Ctrl+Shift+P is the command palette.
+    if cfg!(target_os = "windows") {
+        keys(cx, "cmd-shift-p");
+        assert!(sent(&t, cx).is_empty());
+        assert!(
+            !focused(&view, cx),
+            "Ctrl+Shift+P took the keyboard to the palette"
+        );
+    } else {
+        keys(cx, "cmd-l");
+        assert!(sent(&t, cx).is_empty());
+        assert!(!focused(&view, cx), "⌘L took the keyboard to the omnibar");
+    }
 }
 
 #[gpui_kit::test]
