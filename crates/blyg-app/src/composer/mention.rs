@@ -34,6 +34,11 @@ pub struct Candidate {
     pub rank: i64,
     /// Why it's offered, for the popup's second line.
     pub why: &'static str,
+    /// --- contacts --- In your address book (listed first).
+    pub contact: bool,
+    /// --- contacts --- The contact's handle, when the blyg rewrites
+    /// `@handle` on publish: ⏎ writes `@handle` instead of the link.
+    pub handle: Option<String>,
 }
 
 impl Candidate {
@@ -45,8 +50,12 @@ impl Candidate {
             .unwrap_or(&self.host)
     }
 
-    /// `[label](url)`, escaped like a pasted link.
+    /// `[label](url)`, escaped like a pasted link; `@handle` for a
+    /// contact the blyg will rewrite to an h-card link.
     pub fn link(&self) -> String {
+        if let Some(h) = &self.handle {
+            return format!("@{h}");
+        }
         format!(
             "[{}]({})",
             vm::escape_link_text(self.label()),
@@ -65,6 +74,10 @@ pub struct Sources<'a> {
     pub items: &'a [Item],
     /// The user's own blyg, never offered.
     pub own_origin: Option<&'a str>,
+    /// --- contacts --- The address book (studio 0.56), offered first.
+    pub contacts: &'a [blyg_core::contacts::Contact],
+    /// --- contacts --- The blyg rewrites `@handle` on publish.
+    pub rewrites_handles: bool,
 }
 
 #[derive(Default)]
@@ -76,6 +89,7 @@ struct Acc {
     rank: i64,
     why: &'static str,
     why_rank: u8,
+    handle: Option<String>, // --- contacts ---
 }
 
 impl Acc {
@@ -199,6 +213,17 @@ pub fn gather(src: &Sources, now: DateTime<Utc>) -> Vec<Candidate> {
             }
         }
     }
+    // --- contacts --- the address book, first of all.
+    for c in src.contacts {
+        if let Some(a) = entry!(&c.origin) {
+            if let Some(n) = clean(c.name.as_deref()) {
+                a.name = Some(n);
+            }
+            a.rank += 10_000;
+            a.because("in your contacts", 9);
+            a.handle = Some(c.handle.clone());
+        }
+    }
     let linked = linked_hosts(src.items);
     let mut out: Vec<Candidate> = by_url
         .into_values()
@@ -207,6 +232,7 @@ pub fn gather(src: &Sources, now: DateTime<Utc>) -> Vec<Candidate> {
                 a.rank += 60 * (*n).min(3) as i64;
                 a.because("you linked to them", 4);
             }
+            let contact = a.handle.is_some();
             Candidate {
                 url: a.url,
                 host: a.host,
@@ -214,6 +240,8 @@ pub fn gather(src: &Sources, now: DateTime<Utc>) -> Vec<Candidate> {
                 title: a.title,
                 rank: a.rank,
                 why: if a.why.is_empty() { "known" } else { a.why },
+                contact,
+                handle: a.handle.filter(|_| src.rewrites_handles),
             }
         })
         .collect();
@@ -312,7 +340,10 @@ pub fn filter(cands: &[Candidate], query: &str) -> Vec<Candidate> {
         .filter_map(|c| match_score(c, query).map(|s| (s, c)))
         .collect();
     hits.sort_by(|(sa, a), (sb, b)| {
-        sb.cmp(sa)
+        // --- contacts --- your contacts first, then today's sources.
+        b.contact
+            .cmp(&a.contact)
+            .then_with(|| sb.cmp(sa))
             .then_with(|| b.rank.cmp(&a.rank))
             .then_with(|| a.label().cmp(b.label()))
     });
@@ -445,7 +476,42 @@ mod tests {
             title: title.map(Into::into),
             rank,
             why: "subscribed",
+            contact: false,
+            handle: None,
         }
+    }
+
+    #[test]
+    fn contacts_come_first_and_write_handles_when_rewritten() {
+        // --- contacts ---
+        let subs = [sub(
+            "https://ada.blyg.example.org/",
+            "Ada's notes",
+            SubscriptionKind::Blyg,
+            true,
+        )];
+        let contacts = [blyg_core::contacts::Contact {
+            handle: "lin".into(),
+            name: Some("Lin Okafor".into()),
+            origin: "https://lin.example.org".into(),
+        }];
+        let src = |rewrites| Sources {
+            subscriptions: &subs,
+            contacts: &contacts,
+            rewrites_handles: rewrites,
+            ..Default::default()
+        };
+        let all = gather(&src(true), chrono::Utc::now());
+        let shown = filter(&all, "");
+        assert_eq!(shown[0].label(), "Lin Okafor");
+        assert_eq!(shown[0].why, "in your contacts");
+        assert_eq!(shown[0].link(), "@lin");
+        // A blyg that doesn't rewrite: the plain link, as before.
+        let all = gather(&src(false), chrono::Utc::now());
+        assert_eq!(
+            filter(&all, "lin")[0].link(),
+            "[Lin Okafor](https://lin.example.org/)"
+        );
     }
 
     #[test]
@@ -645,6 +711,7 @@ mod tests {
             profiles: &profiles,
             items: &[],
             own_origin: Some(ME),
+            ..Default::default()
         };
         let cs = gather(&src, now);
         let urls: Vec<&str> = cs.iter().map(|c| c.url.as_str()).collect();

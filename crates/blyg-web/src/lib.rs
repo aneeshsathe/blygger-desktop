@@ -474,6 +474,11 @@ impl Burrow {
                 let id = self.create_draft(&text, now_ms);
                 json(&Outcome::Create { id })
             }
+            // --- capture --- no page fetch here: the address is its own text.
+            EnterAction::LinkFragment(url) => {
+                let id = self.create_draft(&format!("[{url}]({url})"), now_ms);
+                json(&Outcome::Create { id })
+            }
             EnterAction::Nothing => json(&Outcome::Nothing),
         }
     }

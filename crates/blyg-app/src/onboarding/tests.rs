@@ -56,6 +56,25 @@ impl Backend for Recording {
         self.rec("search");
         self.inner.search(q)
     }
+    // --- contacts ---
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        self.inner.contacts()
+    }
+    fn refresh_contacts(&self) -> blyg_core::Result<()> {
+        self.inner.refresh_contacts()
+    }
+    fn rewrites_handles(&self) -> bool {
+        self.inner.rewrites_handles()
+    }
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.inner.reading_mentions()
+    }
+    fn page_title(&self, url: &str) -> Option<String> {
+        self.inner.page_title(url) // --- capture ---
+    }
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        self.inner.loose_facts() // --- loose ends ---
+    }
     fn item(&self, id: &LocalId) -> Option<Item> {
         self.rec("item");
         self.inner.item(id)
@@ -671,6 +690,9 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-enter"))
         }
         "nearby" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-u")), // --- nearby ---
+        // --- capture ---
+        "loose-ends" | "capture-link" => e.cx.simulate_keystrokes("enter"),
+        "contacts" => e.cx.simulate_input("@"),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

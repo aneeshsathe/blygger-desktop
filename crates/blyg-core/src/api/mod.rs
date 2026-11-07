@@ -22,6 +22,7 @@
 
 pub mod auth;
 pub mod browse; // --- browse --- (studio 0.49)
+pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;

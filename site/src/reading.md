@@ -34,6 +34,10 @@ revised leads with its latest changelog note,
 **hoppers**, your folders and the rest), the posts from that source in the
 middle, and the post on the right.
 
+- **Mentions**, under All unread, lists the posts you hold that mention you:
+  ones that quote or reply to your posts, or link to your blyg (or, on studio
+  0.56 and later, what your blyg's own mentions lens says). A dot says there's
+  something to read; there's never a count.
 - **Background** lists withdrawn posts, the blygs' and your own, newest
   first, and nothing else lists them: not the other feeds, the counts or the
   stream. A withdrawn post is never unread. Opened, it reads as withdrawn

@@ -215,6 +215,8 @@ pub struct CaptureView {
     finished: bool,
     /// Seen the panel active, so a later deactivation is a click away.
     was_active: bool,
+    /// --- capture --- Windows: the clipboard's fresh text, on offer.
+    clip: Option<String>,
     _subs: Vec<Subscription>,
 }
 
@@ -325,6 +327,7 @@ impl CaptureView {
             note: None,
             finished: false,
             was_active: window.is_window_active(),
+            clip: crate::capture_service::clipboard_offer(cx), // --- capture ---
             _subs: subs,
         }
     }
@@ -503,12 +506,19 @@ impl Render for CaptureView {
             .text_color(p.muted)
             .child(
                 div()
-                    .when(level == vm::Level::Warn, |d| d.text_color(p.warn_text()))
-                    .when(level == vm::Level::Over, |d| {
-                        d.text_color(p.over_text())
-                            .font_weight(FontWeight::SEMIBOLD)
-                    })
-                    .child(self.note.clone().unwrap_or_else(|| counter.into())),
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .child(
+                        div()
+                            .when(level == vm::Level::Warn, |d| d.text_color(p.warn_text()))
+                            .when(level == vm::Level::Over, |d| {
+                                d.text_color(p.over_text())
+                                    .font_weight(FontWeight::SEMIBOLD)
+                            })
+                            .child(self.note.clone().unwrap_or_else(|| counter.into())),
+                    )
+                    .children(self.clip_chip(&p, cx)), // --- capture ---
             )
             .map(|d| match buttons {
                 Some(row) => d.child(row), // --- buttons ---
@@ -621,6 +631,62 @@ impl Render for CaptureView {
         )
     }
 }
+
+// --- capture ---
+/// Open the panel (or bring it back) holding `quote` after whatever it
+/// holds already: a selection sent by the "Capture in Burrow" Service.
+pub fn open_with(quote: &str, cx: &mut App) {
+    toggle(cx);
+    if let Some(h) = cx.global::<CaptureGlobal>().window {
+        let quote = quote.to_string();
+        let _ = h.update(cx, |v, window, cx| {
+            let text = v.editor.read(cx).value().to_string();
+            let text = crate::capture_service::with_capture(&text, &quote);
+            v.editor.update(cx, |s, cx| {
+                s.set_value(text, window, cx);
+                let end = s.text().len();
+                s.set_selected_range(end..end, cx);
+            });
+            cx.notify();
+        });
+    }
+}
+
+impl CaptureView {
+    /// Windows: the clipboard's fresh text as a chip; a click quotes it.
+    fn clip_chip(&self, p: &crate::theme::Palette, cx: &mut Context<Self>) -> Option<AnyElement> {
+        self.clip.as_ref()?;
+        Some(
+            div()
+                .id("cap-clip")
+                .debug_selector(|| "cap-clip".into())
+                .px(px(7.))
+                .py(px(1.))
+                .rounded(px(9.))
+                .border_1()
+                .border_color(p.edge())
+                .cursor_pointer()
+                .hover(|s| s.text_color(p.ink))
+                .child("quote clipboard")
+                .on_click(cx.listener(|this, _, window, cx| {
+                    let Some(clip) = this.clip.take() else { return };
+                    if let Some(q) = crate::capture_service::service_quote(&clip, None) {
+                        let text = this.editor.read(cx).value().to_string();
+                        let text = crate::capture_service::with_capture(&text, &q);
+                        this.editor.update(cx, |s, cx| {
+                            s.set_value(text, window, cx);
+                            let end = s.text().len();
+                            s.set_selected_range(end..end, cx);
+                            s.focus(window, cx);
+                        });
+                    }
+                    cx.notify();
+                }))
+                .into_any_element(),
+        )
+    }
+}
+// --- end capture ---
 
 /// Demo hook: put text in an open capture panel.
 pub fn demo_fill(text: &str, cx: &mut App) {
@@ -883,6 +949,35 @@ mod tests {
         assert_eq!(
             it.content_md,
             format!("thanks @ru and [Lin]({})", crate::fake::reading_seed::LIN)
+        );
+    }
+
+    // --- capture ---
+    #[gpui_kit::test]
+    fn a_fresh_clipboard_is_a_chip_never_text(cx: &mut TestAppContext) {
+        cx.update(|cx| {
+            let mut w = crate::capture_service::ClipWatch::default();
+            let now = std::time::Instant::now();
+            w.observe(Some("before".into()), now);
+            w.observe(Some("Scarcity with a schedule.".into()), now);
+            cx.set_global(w);
+        });
+        let (fake, cx) = open_panel(cx, "");
+        let text = |cx: &mut VisualTestContext| {
+            cx.update(|w, cx| {
+                let v = w.root::<CaptureView>().flatten().unwrap();
+                v.read(cx).editor.read(cx).value().to_string()
+            })
+        };
+        assert_eq!(text(cx), "", "offered, not inserted");
+        click(cx, "cap-clip");
+        assert_eq!(text(cx), "> Scarcity with a schedule.\n\n");
+        assert!(cx.debug_bounds("cap-clip").is_none(), "used once");
+        cx.simulate_keystrokes("escape");
+        cx.run_until_parked();
+        assert_eq!(
+            kept(&fake).expect("kept").content_md,
+            "> Scarcity with a schedule."
         );
     }
 }

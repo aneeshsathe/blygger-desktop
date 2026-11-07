@@ -5,10 +5,12 @@ pub mod api;
 pub mod backend;
 pub mod browse; // --- browse ---
 pub mod config;
+pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod floor;
 pub mod grammar;
 pub mod lineage; // --- lineage counts ---
 pub mod live;
+pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---

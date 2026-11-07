@@ -396,6 +396,9 @@ pub struct Published {
     pub revision: u64,
     #[serde(default)]
     pub warning: Option<String>,
+    /// --- contacts --- `@handle`s the publish couldn't resolve (5.7.0).
+    #[serde(default, rename = "unresolvedHandles")]
+    pub unresolved_handles: Vec<String>,
 }
 
 /// `POST /api/media` → `201 {id, url, mime, revision?}`, or `200 {…,

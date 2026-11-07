@@ -852,18 +852,59 @@ impl Backend for FakeBackend {
     }
 
     fn search(&self, query: &str) -> Vec<Item> {
-        let q = query.trim().to_lowercase();
+        // --- loose ends --- operators filter what the words find.
+        blyg_core::loose::search(
+            query,
+            |query| {
+                let q = query.trim().to_lowercase();
+                let st = self.lock();
+                if q.is_empty() {
+                    return Self::sorted(&st.items);
+                }
+                let hits: Vec<Item> = st
+                    .items
+                    .iter()
+                    .filter(|i| i.content_md.to_lowercase().contains(&q))
+                    .cloned()
+                    .collect();
+                Self::sorted(&hits)
+            },
+            || self.items(),
+            || self.loose_facts(),
+        )
+    }
+
+    // --- contacts --- a one-entry sample address book (a blyg the
+    // sample reading holds). The sample blyg is pre-0.56: it doesn't
+    // rewrite handles, so picking the contact writes the plain link.
+    fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
+        vec![blyg_core::contacts::Contact {
+            handle: "lin".into(),
+            name: Some("Lin".into()),
+            origin: crate::fake::reading_seed::LIN.into(),
+        }]
+    }
+
+    // --- capture --- a page on the sample blog has a title; others none.
+    fn page_title(&self, url: &str) -> Option<String> {
+        crate::vm::url_host(url)
+            .is_some_and(|h| h == "lin.example.org")
+            .then(|| "Rock pool economics".to_string())
+    }
+
+    // --- loose ends --- held posts' references, and verified mentions.
+    fn loose_facts(&self) -> blyg_core::loose::Facts {
+        let mut f =
+            blyg_core::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading());
         let st = self.lock();
-        if q.is_empty() {
-            return Self::sorted(&st.items);
-        }
-        let hits: Vec<Item> = st
-            .items
-            .iter()
-            .filter(|i| i.content_md.to_lowercase().contains(&q))
-            .cloned()
-            .collect();
-        Self::sorted(&hits)
+        f.inbound.extend(
+            st.rd
+                .mentions
+                .iter()
+                .filter(|m| m.status == "verified")
+                .map(|m| m.target_item_id.to_ascii_lowercase()),
+        );
+        f
     }
 
     fn item(&self, id: &LocalId) -> Option<Item> {

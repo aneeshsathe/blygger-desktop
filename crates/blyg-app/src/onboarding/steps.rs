@@ -878,6 +878,69 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- capture --- loose ends, capture from anywhere, contacts.
+    Step {
+        id: "loose-ends",
+        since: "0.18.0",
+        title: "Loose ends",
+        caption: "The search reads operators: is:draft lists your drafts, is:orphan the \
+                  published posts nothing points at, has:tk the ungenerated TKs, is:stale \
+                  drafts untouched for a month; links: and quotes: take an id or a host, and \
+                  kind:thread, v:2 work too. Other words search as ever. With the search \
+                  empty, a quiet line over the list says what's loose, in words.",
+        keys: &[Key::Enter],
+        key_label: "⏎",
+        region: Region::Omnibar,
+        button: None,
+        setup: Setup::Query("is:draft"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "capture-link",
+        since: "0.18.0",
+        title: "Capture from anywhere",
+        caption: if cfg!(target_os = "windows") {
+            "Paste a web address into the search and ⏎ starts a fragment with that link, \
+             titled from the page (a blyg post you hold is quoted instead). In the quick \
+             capture panel, text you copied in the last ten seconds is offered as a chip, \
+             \"quote clipboard\"; it's never put in for you."
+        } else {
+            "Paste a web address into the search and ⏎ starts a fragment with that link, \
+             titled from the page (a blyg post you hold is quoted instead). Anywhere on your \
+             Mac, select text and choose Services › Capture in Burrow: the quick capture \
+             panel opens with it quoted, and the page's address under it when the app gives \
+             one."
+        },
+        keys: &[Key::Enter],
+        key_label: "⏎",
+        region: Region::Omnibar,
+        button: None,
+        setup: Setup::Query("https://lin.example.org/t/rock-pools"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "contacts",
+        since: "0.18.0",
+        title: "Your contacts, first",
+        caption: "Type @: the people in your blyg's address book come first, then the blygs \
+                  you read. Where your blyg turns @handle into a link when it publishes, \
+                  picking a contact writes @handle; elsewhere, the plain link. In Reading, \
+                  Mentions under All unread lists the posts that mention you: dots, never a \
+                  count.",
+        keys: &[Key::Mention],
+        key_label: "@",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Mentions("Tea at the harbour with "),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end capture ---
     Step {
         id: "conflict",
         since: "0.16.0",
