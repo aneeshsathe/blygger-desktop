@@ -12,6 +12,7 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 |---|---|
 | `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
 | `is:draft` / `is:stale` | drafts / drafts untouched for a month |
+| `is:stale-quote` | threads that quote an older version of a post (see [Stale quotes](#stale-quotes)) |
 | `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
 | `has:tk` | posts with a `[TK]` not generated yet |
 | `links:<id or host>` | posts that link to that post (the first characters of its id do) or to that site |
@@ -164,7 +165,26 @@ publishes the edits as v4, ⌥⌘Z discards them. The published and pinned marks
 say what they mean on hover too.
 **Versions** (⌘Y) lists every version of your post with its note. Open any of
 them and **Restore** it into the editor; publishing it makes a new version,
-since versions never go backwards.
+since versions never go backwards. **Changes from v2** on a version shows what
+it changed, word by word: added text shaded, removed text struck through.
+Click it again (**Hide changes**) to go back.
+
+**Copy Link** (Post › Copy Link) puts the open post's address on the
+clipboard; in Reading, the open post's.
+
+### Stale quotes
+
+A thread keeps each quote at the version it had when you published. When a
+quoted post gets a newer version, your thread's quote is *stale*: its row in
+Posts gets a quiet ↻, and `is:stale-quote` lists such threads (the loose-ends
+line says how many). **Blyg › Stale Quotes…** lists them, stalest first,
+with what changed in each quote ("v1 → v3 at its blyg"). **Refresh** (⏎)
+republishes the thread with its quotes brought up to date: a new version with
+the same words, and the note you type (or "refreshed quoted snapshots").
+**Refresh all** (⇧⏎) does every thread that can be. A thread with unpublished
+edits waits until you publish or discard them, and one whose quoted passage
+is gone from the new version needs editing first; the sheet says which. You
+don't need to refresh each time: let small drift wait and refresh in batches.
 
 ### Discard changes
 
@@ -257,7 +277,9 @@ quote it. It's never put in for you.
   couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
   notifies no one.
 - **Images.** Paste or drop an image to upload it; it goes into the text
-  where you pasted it, and the preview shows it. Until a published post shows
+  where you pasted it, and the preview shows it. Burrow then asks what the
+  image shows: type it and press ⏎ to add it as alt text
+  (`![two crabs at dusk](…)`), or esc to skip. Until a published post shows
   it, an upload is private on studio 0.28 or later: only you (and Burrow,
   signed in as you) can see it.
 - **Spellcheck** with the macOS spell checker, your languages and learned

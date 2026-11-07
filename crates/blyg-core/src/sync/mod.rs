@@ -7,6 +7,7 @@
 //! The store's own lock is never held across network I/O, so UI reads and
 //! saves stay instant while a push is in flight.
 
+pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
 mod worker;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1193,6 +1194,25 @@ impl Engine {
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
         }
+        // --- upkeep --- your threads with stale quotes (`GET /freshness`,
+        // the blyg's database only), asked again when your items or your
+        // reading moved. A refused or failed read leaves what's held.
+        if stale("freshness", upkeep::FRESHNESS_DEPS) {
+            match self.fetch_freshness() {
+                Ok(Some((_, changed))) => {
+                    if changed {
+                        self.emit(CoreEvent::ItemsChanged);
+                    }
+                    self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?;
+                }
+                Ok(None) => self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?,
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                Err(_) => {}
+            }
+        }
+        // --- end upkeep ---
         if reading_changed {
             self.emit(CoreEvent::ReadingChanged);
         }
@@ -1219,7 +1239,8 @@ impl Engine {
             return Ok(None);
         };
         if self.store.meta(CHANGES_EPOCH).as_deref() != Some(c.epoch.as_str()) {
-            for consumer in ["items", "subscriptions", "reading", "hoppers"] {
+            // --- upkeep --- `freshness`: the stale quotes (sync/upkeep.rs).
+            for consumer in ["items", "subscriptions", "reading", "hoppers", "freshness"] {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
             }

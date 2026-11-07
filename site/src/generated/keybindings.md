@@ -123,6 +123,9 @@
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
+| Stale quotes: your threads whose quoted posts have newer versions; refresh them | Blyg › Stale Quotes… |
+| Signals: your likes, dislikes and private activity log (never published) | Blyg › Signals… |
+| Copy the link to the post in front of you | Post › Copy Link |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
 | Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |

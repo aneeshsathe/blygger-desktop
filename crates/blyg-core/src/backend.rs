@@ -977,4 +977,71 @@ pub trait Backend: Send + Sync {
         }
         out
     }
+
+    // --- upkeep --- Studio's maintenance surfaces (`crate::upkeep`): stale
+    // quotes and their refresh, your signals and activity log, and one of
+    // your versions' words for a word diff. All additive with defaults.
+
+    /// Your threads with a stale or blocking quote, as the blyg last said
+    /// (local, instant; empty until asked). The list's marker and
+    /// `is:stale-quote` read it.
+    fn cached_stale_quotes(&self) -> Vec<crate::upkeep::ThreadFreshness> {
+        Vec::new()
+    }
+
+    /// Remote: `GET /freshness`, stalest first, remembered for
+    /// [`Backend::cached_stale_quotes`].
+    fn stale_quotes(&self) -> Result<Vec<crate::upkeep::ThreadFreshness>> {
+        Err(CoreError::Other(
+            "checking quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: one published thread's quotes, asking their blygs for their
+    /// newest versions (`GET /items/{id}/freshness`).
+    fn quote_freshness(&self, id: &LocalId) -> Result<crate::upkeep::ThreadFreshness> {
+        let _ = id;
+        Err(CoreError::Other(
+            "checking quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: republish the thread's published words with its stale quotes
+    /// re-baked (`POST /items/{id}/refresh`): a new version, the same words.
+    /// Refused (409) while the blyg's working copy has unpublished edits.
+    fn refresh_quotes(&self, id: &LocalId, note: Option<&str>) -> Result<crate::upkeep::Refreshed> {
+        let _ = (id, note);
+        Err(CoreError::Other(
+            "refreshing quotes isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: the words of one of your published versions (`GET
+    /// /items/{id}/versions/{v}`). A withdrawal marker has none (empty).
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        let _ = (id, version);
+        Err(CoreError::Other(
+            "reading an old version isn't supported here".into(),
+        ))
+    }
+
+    /// Remote: one page of your thumbs (`thumb` 1 liked, -1 disliked).
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Thumb>> {
+        let _ = (thumb, cursor);
+        Err(CoreError::Other("signals aren't supported here".into()))
+    }
+
+    /// Remote: one page of your private activity log, newest first.
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Interaction>> {
+        let _ = cursor;
+        Err(CoreError::Other("signals aren't supported here".into()))
+    }
+    // --- end upkeep ---
 }

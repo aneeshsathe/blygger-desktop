@@ -37,6 +37,9 @@ pub enum Op {
     Kind(Kind),
     /// Last published as version `n` (`v:0`: never published).
     Version(u32),
+    /// --- upkeep --- A published thread with a stale quote, as the blyg
+    /// last said (`is:stale-quote`; `Facts::stale_quotes`).
+    StaleQuote,
 }
 
 /// What `links:` and `quotes:` name: an id (or its first characters, as
@@ -132,9 +135,12 @@ impl Query {
     }
 
     fn needs_facts(&self) -> bool {
-        self.ops
-            .iter()
-            .any(|o| matches!(o, Op::Orphan | Op::Quotes(Target::Host(_)) | Op::Links(_)))
+        self.ops.iter().any(|o| {
+            matches!(
+                o,
+                Op::Orphan | Op::Quotes(Target::Host(_)) | Op::Links(_) | Op::StaleQuote
+            )
+        })
     }
 
     fn needs_all(&self) -> bool {
@@ -160,6 +166,7 @@ fn parse_op(w: &str) -> Option<Op> {
         ("is", "draft") => Some(Op::Draft),
         ("is", "leaf") => Some(Op::Leaf),
         ("is", "stale") => Some(Op::Stale),
+        ("is", "stale-quote") => Some(Op::StaleQuote), // --- upkeep ---
         ("has", "tk") => Some(Op::HasTk),
         ("kind", "thread") => Some(Op::Kind(Kind::Thread)),
         ("kind", "fragment") => Some(Op::Kind(Kind::Fragment)),
@@ -179,6 +186,9 @@ pub struct Facts {
     /// Held posts' ids (lowercase) → their origin, so a `![[id]]` can be
     /// matched by host.
     pub held_origins: HashMap<String, String>,
+    /// --- upkeep --- Server ids (lowercase) of your threads with a stale
+    /// or blocking quote, as `GET /freshness` last answered.
+    pub stale_quotes: HashSet<String>,
 }
 
 impl Facts {
@@ -286,6 +296,11 @@ fn matches(op: &Op, i: &Item, facts: &Facts, linked: &HashSet<String>, now: i64)
         Op::HasTk => ungenerated_tk(i),
         Op::Kind(k) => i.kind == *k,
         Op::Version(n) => i.version == *n,
+        // --- upkeep ---
+        Op::StaleQuote => i
+            .server_id
+            .as_ref()
+            .is_some_and(|s| facts.stale_quotes.contains(&s.0.to_ascii_lowercase())),
         Op::Links(t) => {
             let md = &i.content_md;
             let by_id = crate::grammar::link_refs(md).into_iter().any(|r| {
@@ -351,6 +366,8 @@ pub struct Summary {
     pub orphans: usize,
     pub ungenerated_tk: usize,
     pub stale_drafts: usize,
+    /// --- upkeep --- threads with a stale quote (`is:stale-quote`).
+    pub stale_quotes: usize,
 }
 
 impl Summary {
@@ -367,6 +384,9 @@ impl Summary {
             }
             if stale(i, now) {
                 s.stale_drafts += 1;
+            }
+            if matches(&Op::StaleQuote, i, facts, &linked, now) {
+                s.stale_quotes += 1; // --- upkeep ---
             }
         }
         s
@@ -395,6 +415,17 @@ impl Summary {
                     "drafts older than a month",
                 ),
                 "is:stale",
+            ));
+        }
+        // --- upkeep ---
+        if self.stale_quotes > 0 {
+            out.push((
+                plural(
+                    self.stale_quotes,
+                    "thread with stale quotes",
+                    "threads with stale quotes",
+                ),
+                "is:stale-quote",
             ));
         }
         out

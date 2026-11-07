@@ -30,9 +30,12 @@ revised leads with its latest changelog note,
 ## The Reader
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
-(All unread, Today, Thumbed, All, Background, then **Your blyg**, your
-**hoppers**, your folders and the rest), the posts from that source in the
-middle, and the post on the right.
+(All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
+Background, then **Your blyg**, your **hoppers**, your folders and the rest),
+the posts from that source in the middle, and the post on the right.
+
+- **Threads** and **Fragments** list only that kind of post; **Thumbed
+  down** lists the posts you gave a 👎.
 
 - **Mentions**, under All unread, lists the posts you hold that mention you:
   ones that quote or reply to your posts, or link to your blyg (or, on studio
@@ -271,7 +274,15 @@ The selected post shows its actions. Each says what it makes:
   descends from pins, so on the current version Fork is greyed out and its
   tooltip says where to find a pin.
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
-- **Open on web**, and 👍 / 👎.
+- **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
+
+### Signals
+
+**Blyg › Signals…** is your private record: the posts you liked, the ones
+you disliked, and an activity log of what you did (thumbs, hoppers, stubs,
+forks and quotes), newest first. Nothing in it is published, and it shows no
+counts. 1–3 switch lists, and ⏎ opens a post in Reading when you still hold
+it.
 
 ![Reading a post](screenshots/reading.png)
 

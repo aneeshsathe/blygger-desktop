@@ -21,6 +21,9 @@ pub mod reading_seed;
 // --- profiles ---
 #[path = "fake_profiles.rs"]
 pub mod profile_seed;
+// --- upkeep --- stale quotes, signals and activity log
+#[path = "fake_upkeep.rs"]
+pub mod upkeep_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -167,6 +170,8 @@ struct State {
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
+    // --- upkeep --- stale quotes refreshed, asked yet (`fake_upkeep.rs`).
+    upkeep: upkeep_seed::FakeUpkeep,
 }
 
 pub struct FakeBackend {
@@ -352,6 +357,7 @@ impl FakeBackend {
                 shelf: Vec::new(),  // --- shelf ---
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
+                upkeep: Default::default(), // --- upkeep ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -904,6 +910,11 @@ impl Backend for FakeBackend {
                 .filter(|m| m.status == "verified")
                 .map(|m| m.target_item_id.to_ascii_lowercase()),
         );
+        // --- upkeep ---
+        f.stale_quotes = upkeep_seed::cached(&st)
+            .into_iter()
+            .map(|t| t.id.to_ascii_lowercase())
+            .collect();
         f
     }
 
@@ -2409,7 +2420,76 @@ impl Backend for FakeBackend {
         }
         Ok(())
     }
+
+    // --- upkeep --- the sample's stale quotes and signals (`fake_upkeep.rs`).
+    fn cached_stale_quotes(&self) -> Vec<blyg_core::upkeep::ThreadFreshness> {
+        upkeep_seed::cached(&self.lock())
+    }
+
+    fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::stale(&self.lock()))
+    }
+
+    fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        upkeep_seed::one(&self.lock(), id)
+    }
+
+    fn refresh_quotes(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Refreshed> {
+        thread::sleep(self.timing.publish);
+        self.remote_guard()?;
+        let (r, sink) = {
+            let mut st = self.lock();
+            let r = upkeep_seed::refresh(&mut st, id, note)?;
+            (r, st.sink.clone())
+        };
+        Self::emit(&sink, CoreEvent::ItemsChanged);
+        Ok(r)
+    }
+
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        upkeep_seed::version_text(&self.lock(), id, version)
+    }
+
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        _cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::thumbs(&self.lock(), thumb))
+    }
+
+    fn interactions_page(
+        &self,
+        _cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(upkeep_seed::interactions(&self.lock()))
+    }
+    // --- end upkeep ---
 }
+
+// --- upkeep --- test hooks
+#[cfg(test)]
+impl FakeBackend {
+    /// Tests: make another of the sample's published posts stale.
+    pub fn add_stale_quote(&self, id: &LocalId) {
+        self.lock().upkeep.add(id.clone());
+    }
+}
+// --- end upkeep ---
 
 /// --- hoppers --- Each row's `hoppers` from the memberships.
 fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {

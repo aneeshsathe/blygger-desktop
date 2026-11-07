@@ -728,6 +728,13 @@ impl Backend for LiveBackend {
         if let Some(ids) = store.meta(MENTIONED_META) {
             f.inbound.extend(ids.split_whitespace().map(str::to_string));
         }
+        // --- upkeep --- the threads `GET /freshness` last named.
+        f.stale_quotes = self
+            .e()
+            .cached_freshness()
+            .into_iter()
+            .map(|t| t.id.to_ascii_lowercase())
+            .collect();
         f
     }
 
@@ -1809,6 +1816,89 @@ impl Backend for LiveBackend {
         }
         Ok(())
     }
+
+    // --- upkeep --- stale quotes, signals, a version's words.
+
+    fn cached_stale_quotes(&self) -> Vec<crate::upkeep::ThreadFreshness> {
+        self.e().cached_freshness()
+    }
+
+    fn stale_quotes(&self) -> Result<Vec<crate::upkeep::ThreadFreshness>> {
+        match self.e().track(self.e().fetch_freshness())? {
+            Some((list, changed)) => {
+                if changed {
+                    self.e().emit(CoreEvent::ItemsChanged);
+                }
+                Ok(list)
+            }
+            None => Err(CoreError::Other(
+                "your blyg doesn't check quotes (update it)".into(),
+            )),
+        }
+    }
+
+    fn quote_freshness(&self, id: &LocalId) -> Result<crate::upkeep::ThreadFreshness> {
+        let sid = self.server_id(id)?;
+        self.e().track(self.e().api.item_freshness(&sid, true))
+    }
+
+    /// A refresh is a publish of the published words: the item's version,
+    /// permalink and base move as after `publish`; its text doesn't.
+    fn refresh_quotes(&self, id: &LocalId, note: Option<&str>) -> Result<crate::upkeep::Refreshed> {
+        let sid = self.server_id(id)?;
+        let _net = self.e().net_lock();
+        let row = self.row(id)?;
+        let published = row
+            .base_content
+            .clone()
+            .unwrap_or_else(|| row.item.content_md.clone());
+        let r = self.command(id, &sid, |rev| self.e().api.refresh_quotes(&sid, rev, note))?;
+        self.e().store.set_revision(id, r.revision)?;
+        let permalink = self
+            .refresh(id, &sid)
+            .and_then(|w| w.permalink)
+            .or(row.item.permalink.clone())
+            .unwrap_or_else(|| self.permalink_for(row.item.kind, &sid));
+        self.e()
+            .store
+            .after_publish(id, r.version, &permalink, &published)?;
+        // The thread is current now; the next pull confirms it.
+        let rest: Vec<_> = self
+            .e()
+            .cached_freshness()
+            .into_iter()
+            .filter(|t| !t.id.eq_ignore_ascii_case(&sid))
+            .collect();
+        self.e().keep_freshness(rest)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(r)
+    }
+
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        let sid = self.server_id(id)?;
+        let v = self.e().track(self.e().api.item_version(&sid, version))?;
+        Ok(if v.kind == "withdrawn" {
+            String::new()
+        } else {
+            v.content_md
+        })
+    }
+
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Thumb>> {
+        self.e().track(self.e().api.thumbs(thumb, cursor))
+    }
+
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<crate::upkeep::Page<crate::upkeep::Interaction>> {
+        self.e().track(self.e().api.interactions(cursor))
+    }
+    // --- end upkeep ---
 }
 
 impl LiveBackend {

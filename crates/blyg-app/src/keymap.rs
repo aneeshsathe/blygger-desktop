@@ -71,6 +71,8 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- shelf ---
 use crate::app::shelf::{ShowShelf, ToggleShelf};
+// --- upkeep ---
+use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes};
 // --- chat ---
 use crate::app::chat::ShowChat;
 // --- terminal ---
@@ -755,6 +757,24 @@ pub fn mac_table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- upkeep --- (no keys: occasional chores, and ⌘B/⌘I and their
+        // neighbours are taken; Windows would read ⌥ chords as AltGr)
+        menu_only!(
+            ShowStaleQuotes,
+            "Stale quotes: your threads whose quoted posts have newer versions; refresh them",
+            "Blyg › Stale Quotes…"
+        ),
+        menu_only!(
+            ShowSignals,
+            "Signals: your likes, dislikes and private activity log (never published)",
+            "Blyg › Signals…"
+        ),
+        menu_only!(
+            CopyLink,
+            "Copy the link to the post in front of you",
+            "Post › Copy Link"
+        ),
+        // --- end upkeep ---
         // --- stream --- (issue #1) the reading screen's two modes; the
         // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
         kb!(
@@ -1405,6 +1425,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
+    let _ = (ShowStaleQuotes, ShowSignals, CopyLink); // --- upkeep ---
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

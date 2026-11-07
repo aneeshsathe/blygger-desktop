@@ -27,6 +27,9 @@ pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
 pub mod public;
+// --- upkeep --- stale quotes, signals, a version's text
+pub mod upkeep;
+// --- end upkeep ---
 pub mod wire;
 
 use std::io::Read;

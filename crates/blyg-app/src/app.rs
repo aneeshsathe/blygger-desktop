@@ -112,6 +112,10 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+// --- upkeep --- (stale quotes, signals, version diffs, alt text, copy link;
+// hooks marked the same way)
+#[path = "upkeep/mod.rs"]
+pub(crate) mod upkeep;
 
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
@@ -275,6 +279,10 @@ enum Sheet {
     Blygs(switcher::BlygSheet),
     // --- shelf --- ⌘B: the posts you keep to hand.
     Shelf(shelf::ShelfSheet),
+    // --- upkeep --- Blyg › Stale Quotes…, Blyg › Signals…, an image's alt text.
+    StaleQuotes(upkeep::StaleSheet),
+    Signals(upkeep::SignalsSheet),
+    AltText(upkeep::AltSheet),
 }
 
 struct Toast {
@@ -384,7 +392,8 @@ pub struct MainView {
     tray: tray::Tray,
     // --- split --- a second post beside the one being written
     split: split::Split,
-    nearby: nearby::State, // --- nearby ---
+    nearby: nearby::State,  // --- nearby ---
+    upkeep: upkeep::Upkeep, // --- upkeep ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -548,10 +557,12 @@ impl MainView {
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             nearby: Default::default(),                        // --- nearby ---
+            upkeep: Default::default(),                        // --- upkeep ---
             _tasks: tasks,
             _subs: subs,
         };
         this.reload_shelf(); // --- shelf ---
+        this.upkeep_reload_stale(); // --- upkeep ---
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
@@ -1258,6 +1269,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         self.reload_shelf(); // --- shelf ---
+        self.upkeep_reload_stale(); // --- upkeep ---
         self.list.refresh(results);
         self.loose_ends_refresh(cx); // --- loose ends ---
         self.new_post_sync_selection(); // --- new post ---
@@ -2079,6 +2091,12 @@ impl MainView {
                     Ok((_, inline)) => vm::replace_placeholder(&text, inline),
                     Err(_) => vm::remove_placeholder(&text),
                 };
+                // --- upkeep --- once the image is in place, ask for its alt text.
+                let alt_for = result
+                    .as_ref()
+                    .ok()
+                    .filter(|_| replaced.is_some() && editing_same)
+                    .map(|(_, inline)| inline.clone());
                 // The placeholder was deleted before the upload finished:
                 // nothing refers to the file, so remove it again.
                 if replaced.is_none()
@@ -2103,6 +2121,9 @@ impl MainView {
                         v.show_toast(format!("Image uploaded ({size_kb} KB {ext})"), None, cx)
                     }
                     Err(e) => v.show_toast(format!("Upload failed: {e}"), None, cx),
+                }
+                if let Some(url) = alt_for {
+                    v.upkeep_ask_alt(id.clone(), url, window, cx); // --- upkeep ---
                 }
             });
         })
@@ -2427,6 +2448,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.upkeep_actions(d, cx)) // --- upkeep ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -2903,6 +2925,7 @@ impl MainView {
                         )
                     })
                     .child(vm::kind_label(item.kind))
+                    .children(self.upkeep_row_marker(item, ix, p.muted)) // --- upkeep ---
                     .child(
                         div()
                             .id(("row-pill", ix))
@@ -3451,6 +3474,10 @@ impl MainView {
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
             Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
+            // --- upkeep ---
+            Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
+            Sheet::Signals(s) => self.render_signals_sheet(s, cx),
+            Sheet::AltText(s) => self.render_alt_sheet(s, cx),
             Sheet::Publish {
                 title,
                 next_version,

@@ -408,6 +408,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Make Draft", app::scratch::MakeDraft),
                 MenuItem::action("Fragment ⇄ Thread", app::ToggleKind),
                 MenuItem::action("Open on the Web", app::OpenPermalink),
+                MenuItem::action("Copy Link", app::upkeep::CopyLink), // --- upkeep ---
                 MenuItem::separator(),
                 MenuItem::action("Generate (TK)", ai::AiGenerate),
                 MenuItem::action("Shorten to Fit 1000", ai::AiShorten),
@@ -494,6 +495,9 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::opml::ExportOpml,
                 ),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
+                // --- upkeep ---
+                MenuItem::action("Stale Quotes…", app::upkeep::ShowStaleQuotes),
+                MenuItem::action("Signals…", app::upkeep::ShowSignals),
                 // --- profiles ---
                 MenuItem::separator(),
                 MenuItem::action("Profile", app::profiles::ShowProfile),
