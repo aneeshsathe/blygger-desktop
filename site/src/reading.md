@@ -341,7 +341,7 @@ in Draft):
 
 - in the reading pane or the preview;
 - in the built-in [browser](notes-and-browser.md#the-browser-pane);
-- in your [notes](notes-and-browser.md#the-notes-drawer).
+- in your [notes](notes-and-browser.md#the-notes-pane).
 
 The passage goes into the draft open in the editor, at the caret, or into a
 new draft if none is open, with where it came from:
