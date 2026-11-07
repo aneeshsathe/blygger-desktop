@@ -273,8 +273,15 @@ impl TerminalView {
             }
             return true;
         }
-        // The app's own keys.
-        if m.platform || (cfg!(target_os = "windows") && m.control && m.shift) {
+        // The app's own keys: ⌘ on macOS; Ctrl+Shift on Windows, and
+        // Ctrl+Alt with an arrow (the app's ⌥⌘-arrows there, the tour's Next
+        // and Back among them). Other Ctrl+Alt keys stay here: that's AltGr,
+        // which types characters on many layouts.
+        let windows = cfg!(target_os = "windows");
+        if m.platform
+            || (windows && m.control && m.shift)
+            || (windows && m.control && m.alt && matches!(key, "left" | "right" | "up" | "down"))
+        {
             return false;
         }
         let k = Key {
