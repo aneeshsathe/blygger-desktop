@@ -9,7 +9,10 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 
 A patch release: fixes, nothing new to learn.
 
-<!-- 0.18.1 items: filled in at release -->
+- What's new after an update is now this page. The card that used to list everything had grown too long to fit (and didn't scroll); it now links here, and so does the status bar's "What's new".
+- Nearby thoughts: ⌥↑/⌥↓, ⌥⏎ (link) and ⌥⇧⏎ (quote) keep working after you click a row in the rail. Rest the pointer on a row to see the post. The rail says when it's matching shared phrases only and why, and tries the model again while you write.
+- Burrow in a browser is fast with thousands of posts to read and no longer heats a phone: only the screen you're on is drawn, lists load a page at a time as you scroll, and a refresh reads only what changed. Opening a post on a phone no longer goes blank after a second.
+- Burrow in a browser works on a blyg served under a path (`{mount}/burrow/`), not only at the host root.
 
 ## Burrow 0.18.0
 

@@ -41,6 +41,12 @@ It runs in one of two modes, and says which:
   pause the outbox sends what waits: edits (each with the revision it was
   based on), new drafts, draft deletes, read marks and hopper changes.
   Offline, they wait, survive a reload, and replay when the blyg answers.
+- **Refreshing.** On start, and when the page comes back after a minute,
+  it asks `GET /api/changes` first and reads again only the lists whose
+  revisions moved since they were last read (`changes_plan` in
+  `src/live.rs`, on the native sync's dependency lists), and everything
+  every 10 minutes as the native sync does. Without a usable answer it
+  reads everything, as before.
 - **Conflicts.** A 409 `revision-conflict` fetches the blyg's copy and
   shows it beside yours: "Keep mine" sends yours over it, "Use theirs"
   takes it. Nothing is overwritten without that choice.
@@ -49,6 +55,30 @@ It runs in one of two modes, and says which:
   straight to the network.
 - The shelf stays in the browser until the studio has one
   (blygger-studio#135).
+
+## Staying fast with thousands of posts
+
+A blyg can hold hundreds of your posts and thousands to read, and a phone
+has to stay cool with all of them. So:
+
+- Only the screen you're on is drawn. The reading list and the post list
+  are drawn a page at a time (`Burrow.reading_page` takes a limit and
+  says how many match), with more as you scroll. `draw()` in `core.js`
+  skips a redraw that would change nothing.
+- Nothing under an open post is redrawn: a read mark landing on the blyg
+  updates the counts, and the stream is redrawn when you go back to it.
+- The store's snapshot (`live`) holds your posts, the outbox and your
+  marks, and is written on every change. The reading list has its own
+  (`live-reading`, `Burrow.reading_json`), written only when it changed:
+  after a refresh read it, and when the page is hidden.
+- A hidden page does no work: the 30 s redraw for relative times waits
+  until it's on screen.
+
+`crates/blyg-web/phone-check.mjs` checks the phone's Read tab in WebKit
+with iPhone emulation: a page of cards, a post that stays shown after the
+outbox's send, a redraw and a second open, nothing rebuilt under it, and
+no long stall while it opens. Run it against the demo, or live against a
+disposable local blyg (its header says how).
 
 To develop against a disposable local blyg (never a real one), run the
 Worker with throwaway state on port 8790, then

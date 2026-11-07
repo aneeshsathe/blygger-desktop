@@ -69,11 +69,31 @@ pub struct Live {
     /// Hopper changes waiting to be sent.
     #[serde(default)]
     pub hops: Vec<HopOp>,
-    /// The reading list and hoppers as last read, for offline.
-    #[serde(default)]
+    /// The reading list and hoppers, as snapshots before 0.18.1 kept them.
+    /// Read once to move them to their own snapshot
+    /// (`Burrow::reading_json`), never written here again: thousands of
+    /// posts' HTML made every keystroke's save megabytes long.
+    #[serde(default, skip_serializing)]
     pub reading: Vec<ReadingItem>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     pub hoppers: Vec<Hopper>,
+    /// `GET /api/changes`: the epoch and the revisions the item list was
+    /// last read under, so an unchanged list isn't read again.
+    #[serde(default)]
+    pub seen: Seen,
+}
+
+/// The change revisions a list was last read whole under (`GET
+/// /api/changes`, as the native sync keeps them), and when.
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Seen {
+    #[serde(default)]
+    pub epoch: String,
+    #[serde(default)]
+    pub revisions: std::collections::BTreeMap<String, u64>,
+    /// When it was last read whole (ms since the epoch).
+    #[serde(default)]
+    pub at_ms: f64,
 }
 
 /// The blyg's copy of an item that changed under a local edit.

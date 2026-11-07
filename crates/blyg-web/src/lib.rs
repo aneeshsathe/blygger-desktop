@@ -285,6 +285,17 @@ pub struct Burrow {
     sync: SyncStatus,
     publishing: bool,
     offline: bool,
+    /// Live: what the reading list was last read whole under, kept with
+    /// its own snapshot (`reading_json`).
+    reading_seen: store::Seen,
+    /// The reading list changed since `reading_json` last wrote it.
+    reading_dirty: bool,
+    /// `GET /api/changes`, captured before a refresh reads anything.
+    changes: Option<blyg_core::api::wire::ChangeState>,
+    /// Each reading row's stream excerpt, by key, for the version it was
+    /// made from: rendering thousands of posts' Markdown on every redraw
+    /// was most of a phone's redraw.
+    excerpts: std::cell::RefCell<std::collections::HashMap<String, (u32, String)>>,
 }
 
 #[wasm_bindgen]
@@ -318,6 +329,10 @@ impl Burrow {
             sync: SyncStatus::Synced,
             publishing: false,
             offline: false,
+            reading_seen: store::Seen::default(),
+            reading_dirty: false,
+            changes: None,
+            excerpts: Default::default(),
         }
     }
 

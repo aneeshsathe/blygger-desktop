@@ -16,16 +16,35 @@
 use std::collections::HashSet;
 
 use blyg_core::api::absolute_page;
-use blyg_core::api::wire::{WireItem, imported_row};
-use blyg_core::{Hopper, Item, Kind, LocalId, ServerId, Status};
-use serde::Serialize;
+use blyg_core::api::wire::{ChangeState, WireItem, imported_row};
+use blyg_core::sync::{FULL_PULL_EVERY, ITEMS_DEPS, READING_DEPS};
+use blyg_core::{Hopper, Item, Kind, LocalId, ReadingItem, ServerId, Status};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use wasm_bindgen::prelude::*;
 
 use crate::api::{self, ApiError, Request};
 use crate::read_api::key_of;
-use crate::store::{Conflict, HopOp, PendingDelete, ReadOp, WebStore};
+use crate::store::{Conflict, HopOp, PendingDelete, ReadOp, Seen, WebStore};
 use crate::{Burrow, Outcome, at, json, seed};
+
+/// The reading list's own snapshot (IndexedDB key `live-reading`): the
+/// rows and hoppers as last read, and the revisions they were read under.
+#[derive(Deserialize)]
+struct ReadingCache {
+    rows: Vec<ReadingItem>,
+    #[serde(default)]
+    hoppers: Vec<Hopper>,
+    #[serde(default)]
+    seen: Seen,
+}
+
+#[derive(Serialize)]
+struct ReadingCacheRef<'a> {
+    rows: &'a [ReadingItem],
+    hoppers: &'a [Hopper],
+    seen: &'a Seen,
+}
 
 /// An item as the blyg holds it, in the app's model. Its local id is its
 /// server id.
@@ -567,8 +586,14 @@ impl Burrow {
 #[wasm_bindgen]
 impl Burrow {
     /// Live mode on the blyg whose public base is `base`. `saved`: the
-    /// live store as last persisted (a different store from the demo's).
-    pub fn new_live(now_ms: f64, saved: Option<String>, base: &str) -> Burrow {
+    /// live store as last persisted (a different store from the demo's);
+    /// `reading`: the reading list as `reading_json` last wrote it.
+    pub fn new_live(
+        now_ms: f64,
+        saved: Option<String>,
+        reading: Option<String>,
+        base: &str,
+    ) -> Burrow {
         let mut store = saved
             .as_deref()
             .and_then(WebStore::from_json)
@@ -578,12 +603,36 @@ impl Burrow {
             store.live.base = base.to_string();
         }
         let mut b = Burrow::new(at(now_ms).timestamp_millis() as f64, None);
+        let cache = reading
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<ReadingCache>(s).ok());
+        // A snapshot from before 0.18.1 holds the list itself: it moves to
+        // its own snapshot on the next write.
+        let legacy = std::mem::take(&mut store.live.reading);
+        let legacy_hoppers = std::mem::take(&mut store.live.hoppers);
+        b.reading_dirty = cache.is_none() && !legacy.is_empty();
+        let cache = cache.unwrap_or(ReadingCache {
+            rows: legacy,
+            hoppers: legacy_hoppers,
+            seen: Default::default(),
+        });
         b.rd = seed::Reading {
-            rows: store.live.reading.clone(),
+            rows: cache.rows,
             subs: vec![],
-            hoppers: store.live.hoppers.clone(),
+            hoppers: cache.hoppers,
         };
+        b.reading_seen = cache.seen;
         b.store = store;
+        // Marks made since the list was written, sent or not.
+        for r in &mut b.rd.rows {
+            let key = key_of(r);
+            if let Some(v) = b.store.read.get(&key) {
+                r.read_version = *v;
+            }
+            if let Some(h) = b.store.hopped.get(&key) {
+                r.hoppers = h.clone();
+            }
+        }
         b.overlay_reading();
         b.list = crate::vm::ListModel::default();
         b.list.set_query("", b.store.arrange(b.store.items()).0);
@@ -628,9 +677,83 @@ impl Burrow {
         let hoppers: Vec<Value> = serde_json::from_str(hoppers_json).unwrap_or_default();
         self.rd.hoppers = hoppers.iter().filter_map(hopper_of).collect();
         self.rd.rows = out;
-        self.store.live.hoppers = self.rd.hoppers.clone();
+        // The blyg's list has every mark it was sent; the ones it hasn't
+        // been sent yet stay on top (`overlay_reading`).
+        self.store.read.clear();
+        self.store.hopped.clear();
+        self.excerpts.borrow_mut().clear();
+        self.reading_dirty = true;
         self.overlay_reading();
         json(&json!({ "rows": self.rd.rows.len(), "hoppers": self.rd.hoppers.len() }))
+    }
+
+    /// The reading list and hoppers, for their own IndexedDB snapshot
+    /// (apart from `to_json`'s, which is written on every change). It is
+    /// written only when the list changed: `reading_dirty`.
+    pub fn reading_json(&mut self) -> String {
+        self.reading_dirty = false;
+        json(&ReadingCacheRef {
+            rows: &self.rd.rows,
+            hoppers: &self.rd.hoppers,
+            seen: &self.reading_seen,
+        })
+    }
+
+    /// Whether the reading list changed since `reading_json` last ran.
+    pub fn reading_dirty(&self) -> bool {
+        self.reading_dirty
+    }
+
+    /// Before a refresh: the blyg's `GET /api/changes` answer, and `now`.
+    /// Returns which lists to read again, `{items, reading}`: those whose
+    /// revisions moved since they were last read whole (the native sync's
+    /// rule, `blyg_core::sync`), and all of them on a new epoch, without a
+    /// usable answer, or every `FULL_PULL_EVERY` as a safety net.
+    pub fn changes_plan(&mut self, status: u16, body: &str, now_ms: f64) -> String {
+        self.changes = (status == 200)
+            .then(|| serde_json::from_str::<ChangeState>(body).ok())
+            .flatten();
+        let every = FULL_PULL_EVERY.as_millis() as f64;
+        let stale = |seen: &Seen, deps: &[&str]| match &self.changes {
+            None => true,
+            Some(c) => {
+                c.epoch != seen.epoch
+                    || now_ms - seen.at_ms >= every
+                    || !deps.iter().all(|d| {
+                        c.domains
+                            .get(*d)
+                            .is_some_and(|n| seen.revisions.get(*d) == Some(n))
+                    })
+            }
+        };
+        json(&json!({
+            "items": stale(&self.store.live.seen, ITEMS_DEPS),
+            "reading": stale(&self.reading_seen, READING_DEPS),
+        }))
+    }
+
+    /// A list (`items` or `reading`) was read whole and installed: record
+    /// the revisions `changes_plan` captured before it was read.
+    pub fn changes_accept(&mut self, list: &str, now_ms: f64) {
+        let Some(c) = &self.changes else {
+            return;
+        };
+        let (seen, deps) = match list {
+            "items" => (&mut self.store.live.seen, ITEMS_DEPS),
+            "reading" => {
+                self.reading_dirty = true;
+                (&mut self.reading_seen, READING_DEPS)
+            }
+            _ => return,
+        };
+        *seen = Seen {
+            epoch: c.epoch.clone(),
+            revisions: deps
+                .iter()
+                .filter_map(|d| c.domains.get(*d).map(|n| (d.to_string(), *n)))
+                .collect(),
+            at_ms: now_ms,
+        };
     }
 
     /// The next outbox entry to send, as `{op, id, …, req: {method, path,
@@ -664,7 +787,6 @@ impl Burrow {
             .store
             .outbox_answer(&op, status, body, retry_after.as_deref());
         self.after_change(None);
-        self.store.live.reading = self.rd.rows.clone();
         json(&step)
     }
 
@@ -885,6 +1007,5 @@ impl Burrow {
                 }
             }
         }
-        self.store.live.reading = self.rd.rows.clone();
     }
 }
