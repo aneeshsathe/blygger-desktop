@@ -32,8 +32,8 @@ code. What a release build does on the network, and how to check it:
 - Remote HTML (posts you read) is sanitised in WebAssembly before it's shown.
 - Publishing, deleting, unsubscribing, withdrawing and pinning happen only
   when you choose them, and the destructive ones ask first.
-- The build is reproducible: building the same tag yourself gives the same
-  files (see [Build it yourself](#build-it-yourself-optional)).
+- You can build it from the tagged source yourself instead of downloading
+  it (see [Build it yourself](#build-it-yourself-optional)).
 
 ## For agents: the rules
 
@@ -124,7 +124,9 @@ ls static/burrow/index.html static/burrow/sw.js static/burrow/pkg
 ```
 
 Replace the whole folder on every update. Don't merge an old build with a new
-one.
+one. Commit `static/` to the deploy repo: besides keeping the build with the
+config that serves it, the blyg's own tests (vitest reads `wrangler.jsonc`)
+need the assets directory to exist.
 
 ## 4. Tell the Worker to serve them
 
@@ -167,9 +169,15 @@ npx wrangler deploy
 
 Only static files change, and D1 isn't touched. If the owner wants a backup
 anyway, `npx wrangler d1 export <database> --remote --output backup.sql`
-before deploying (use the database name from `wrangler.jsonc`).
+before deploying (use the database name from `wrangler.jsonc`). On the free
+plan the export sometimes fails with "Authentication error [code: 10000]";
+run `npx wrangler whoami` and try again.
 
 ## 6. Check it
+
+Files added by a deploy can return 404 for about 20 seconds afterwards. If a
+check fails right after deploying, wait a little and run it again before
+calling it broken.
 
 ```sh
 H=https://blyg.example.com   # the blyg's host, no path
@@ -215,11 +223,16 @@ git checkout "v$VERSION"
 # The result is crates/blyg-web/dist/; copy it to static/burrow/.
 ```
 
-The toolchain (`rust-toolchain.toml`), `Cargo.lock` and wasm-bindgen are
-pinned, so the same tag builds the same `pkg/` files byte for byte. The
-home-screen icons are resized with macOS `sips`. On other systems the full-size
-icon is copied instead, so only `icons/` differs. The path to the checkout
-must not contain spaces.
+The Rust toolchain (`rust-toolchain.toml`), `Cargo.lock` and wasm-bindgen are
+pinned, so two builds of the same tag with the same C compiler give the same
+`pkg/` files. The C compiler does matter: a few crates the app links but
+never calls compile C for WebAssembly when the compiler can (the release
+builds use Homebrew's LLVM), and are left out when it can't. So a build of
+yours may differ from the release's `blyg_web_bg.wasm`, and both work. If the
+system clang can't build for WebAssembly (older Xcode), `serve.sh` uses
+Homebrew's LLVM (`brew install llvm`). The home-screen icons are resized
+with macOS `sips`. On other systems the full-size icon is copied instead,
+so `icons/` differs too. The path to the checkout must not contain spaces.
 
 ## When something's wrong
 
