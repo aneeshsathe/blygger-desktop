@@ -19,7 +19,7 @@ use blyg_core::{
 };
 use blyg_embed::Embedder;
 use blyg_embed::testing::ConceptEmbedder;
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Focusable as _, TestAppContext, VisualTestContext};
 
 use super::engine::{self, Ask, Index, Progress};
 use super::{DEBOUNCE, NearbyGlobal};
@@ -434,6 +434,19 @@ fn setup<'a>(
     (LocalId, LocalId),
     &'a mut VisualTestContext,
 ) {
+    setup_with(dir, embedder.map(|e| e as Arc<dyn Embedder>), cx)
+}
+
+fn setup_with<'a>(
+    dir: &std::path::Path,
+    embedder: Option<Arc<dyn Embedder>>,
+    cx: &'a mut TestAppContext,
+) -> (
+    Entity<MainView>,
+    Arc<LiveBackend>,
+    (LocalId, LocalId),
+    &'a mut VisualTestContext,
+) {
     let drafts = seed(dir);
     let live = live(dir);
     let prefs = Prefs::from_config(ConfigStore::in_memory(CONNECTED).config());
@@ -447,7 +460,7 @@ fn setup<'a>(
             cx,
         );
         cx.set_global(NearbyGlobal {
-            embedder: embedder.map(|e| e as Arc<dyn Embedder>),
+            embedder,
             models_dir: None,
         });
     });
@@ -594,4 +607,186 @@ fn alt_cmd_u_hides_the_rail(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(cx.debug_bounds("nearby-rail").is_some());
     assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+}
+
+// ------------------------------------------------------------ 0.18.1 fixes
+
+/// The middle of a debug-selected element.
+fn centre(cx: &mut VisualTestContext, sel: &'static str) -> gpui_kit::Point<gpui_kit::Pixels> {
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    cx.debug_bounds(sel)
+        .unwrap_or_else(|| panic!("{sel} isn't drawn"))
+        .center()
+}
+
+/// The owner's report (0.18.0): the keys did nothing. Typed for real
+/// (keystrokes through the text field, not `set_editor_text`), then a row
+/// clicked with the mouse, as one does: the click used to hand the
+/// keyboard to the window (its `track_focus`), so ⌥↓/⌥⏎ no longer reached
+/// the rail (`Blygger > Input` needs the editor focused).
+#[gpui_kit::test]
+fn typing_then_clicking_a_row_keeps_the_keys_working(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, (thread, _), cx) = setup(dir.path(), None, cx);
+    write(&view, cx, &thread, "# New thoughts\n\n");
+    cx.simulate_input("I walked out to the tide pools at dusk again");
+    settle(cx);
+    assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+
+    let row = centre(cx, "nearby-row-0");
+    cx.simulate_click(row, gpui_kit::Modifiers::none());
+    cx.run_until_parked();
+    let focused = view.update_in(cx, |v, window, cx| {
+        v.editor.read(cx).focus_handle(cx).is_focused(window)
+    });
+    assert!(focused, "a click on a row leaves the editor the keyboard");
+    assert_eq!(view.read_with(cx, |v, _| v.nearby.sel), 0);
+
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-down"));
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-enter"));
+    cx.run_until_parked();
+    assert_eq!(
+        editor(&view, cx),
+        format!("# New thoughts\n\nI walked out to the [[{POOLS} | tide pools at dusk]] again")
+    );
+}
+
+/// ⌥⇧⏎ after clicking a row: the quote is written too.
+#[gpui_kit::test]
+fn clicking_a_row_then_alt_shift_enter_quotes_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, (thread, _), cx) = setup(dir.path(), None, cx);
+    write(
+        &view,
+        cx,
+        &thread,
+        "# New thoughts\n\nI walked out to the tide pools at dusk again",
+    );
+    assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+    let row = centre(cx, "nearby-row-0");
+    cx.simulate_click(row, gpui_kit::Modifiers::none());
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-shift-enter"));
+    cx.run_until_parked();
+    let after = editor(&view, cx);
+    assert!(
+        after.contains(&format!("dusk again\n![[{POOLS} | Tide pools at dusk]]")),
+        "{after}"
+    );
+}
+
+/// Resting the mouse on a row shows the post: its title, who, and its
+/// first lines; moving off puts the card away.
+#[gpui_kit::test]
+fn hovering_a_row_shows_the_post(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, (thread, _), cx) = setup(dir.path(), None, cx);
+    write(
+        &view,
+        cx,
+        &thread,
+        "# New thoughts\n\nI walked out to the tide pools at dusk again",
+    );
+    let row = centre(cx, "nearby-row-0");
+    cx.simulate_mouse_move(row, None, gpui_kit::Modifiers::none());
+    cx.run_until_parked();
+    assert!(
+        view.read_with(cx, |v, _| v.nearby.hover.is_none()),
+        "not at once"
+    );
+    cx.executor()
+        .advance_clock(crate::app::hover_card::DELAY + Duration::from_millis(50));
+    cx.run_until_parked();
+    assert_eq!(
+        view.read_with(cx, |v, _| v.nearby.hover.clone()),
+        Some(POOLS.to_string())
+    );
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    let card = cx.debug_bounds("nearby-card").expect("the card is drawn");
+    let rail_box = cx.debug_bounds("nearby-rail").unwrap();
+    assert!(
+        card.right() <= rail_box.left(),
+        "left of the rail: {card:?} {rail_box:?}"
+    );
+    let c = view.read_with(cx, |v, _| v.nearby_card(&v.nearby.rows[0]));
+    assert_eq!(c.title, "Tide pools at dusk");
+    assert_eq!(c.meta, "You · ≡ thread");
+    assert_eq!(
+        c.excerpt.as_deref(),
+        Some("What the tide leaves behind is what the pool has to work with until the next one.")
+    );
+
+    // Off the row: the card goes.
+    cx.simulate_mouse_move(
+        gpui_kit::point(gpui_kit::px(5.), gpui_kit::px(5.)),
+        None,
+        gpui_kit::Modifiers::none(),
+    );
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.nearby.hover.is_none()));
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-card").is_none());
+}
+
+/// An embedder that fails until told otherwise (an endpoint that's down).
+struct Flaky {
+    up: std::sync::atomic::AtomicBool,
+    inner: ConceptEmbedder,
+}
+
+impl Embedder for Flaky {
+    fn id(&self) -> String {
+        self.inner.id()
+    }
+    fn embed(&self, texts: &[&str]) -> blyg_embed::Result<Vec<Vec<f32>>> {
+        if self.up.load(std::sync::atomic::Ordering::Relaxed) {
+            self.inner.embed(texts)
+        } else {
+            Err(blyg_embed::EmbedError::Network("connection refused".into()))
+        }
+    }
+}
+
+/// A failed index build says so and stays said (it used to flip to "By
+/// meaning" at the next pause, with no index behind it), and is tried
+/// again later rather than never.
+#[gpui_kit::test]
+fn a_failed_index_says_so_and_is_tried_again(cx: &mut TestAppContext) {
+    use super::Status;
+    let dir = tempfile::tempdir().unwrap();
+    let flaky = Arc::new(Flaky {
+        up: false.into(),
+        inner: ConceptEmbedder::default(),
+    });
+    let (view, _live, (thread, _), cx) = setup_with(dir.path(), Some(flaky.clone()), cx);
+    let words = view.read_with(cx, |v, _| v.nearby_status_words());
+    assert_eq!(words, "Starts when you write in a post");
+    let text = "# New\n\nWalking the coast, I keep thinking about what the sea gives back";
+    write(&view, cx, &thread, text);
+    let status = view.read_with(cx, |v, _| v.nearby.status.clone());
+    assert!(matches!(status, Status::Failed(_)), "{status:?}");
+    // Another pause: still failed, not "By meaning".
+    view.update(cx, |v, cx| v.nearby_typed(cx));
+    settle(cx);
+    let status = view.read_with(cx, |v, _| v.nearby.status.clone());
+    assert!(matches!(status, Status::Failed(_)), "{status:?}");
+    assert!(
+        view.read_with(cx, |v, _| v.nearby_status_words())
+            .starts_with("Shared phrases only: ")
+    );
+
+    // The endpoint is back; after the retry delay the next pause indexes.
+    flaky.up.store(true, std::sync::atomic::Ordering::Relaxed);
+    cx.executor()
+        .advance_clock(super::RETRY_INDEX + Duration::from_secs(1));
+    view.update(cx, |v, cx| v.nearby_typed(cx));
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |v, _| v.nearby.status.clone()),
+        Status::Ready
+    );
+    let rows = rail(&view, cx);
+    assert!(rows.contains(&R1.to_string()), "{rows:?}");
 }

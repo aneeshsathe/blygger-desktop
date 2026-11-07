@@ -21,10 +21,11 @@ export const isLive = () => !!S.live;
 export const isPhone = () => S.layout === 'phone';
 
 // ---------------------------------------------------------------- storage
-// The whole store is one JSON value under one IndexedDB key: `store` for
-// the demo's sample data, `live` for your blyg (its cache and outbox), so
-// the two never mix. Every call is guarded: a private window or blocked
-// storage just means no persistence.
+// The store is one JSON value under one IndexedDB key: `store` for the
+// demo's sample data, `live` for your blyg (its cache and outbox), so the
+// two never mix. Live, the reading list is apart, under `live-reading`.
+// Every call is guarded: a private window or blocked storage just means no
+// persistence.
 const DB = 'burrow-web', OS = 'kv';
 const storeKey = () => (S.live ? 'live' : 'store');
 function idb() {
@@ -46,21 +47,37 @@ export async function load(key = 'store') {
   } catch { return undefined; }
 }
 let dbp;
-/** Write the store to IndexedDB. Live, a change saved this way (a read
-    mark, a hopper, a delete) also goes to the blyg after a pause, unless
-    `quiet` (the outbox's own writes). */
-export async function persist({ quiet = false } = {}) {
-  if (S.live && !quiet) scheduleSend();
+async function put(key, value) {
   try {
     dbp ??= idb();
     const db = await dbp;
     await new Promise((resolve, reject) => {
       const tx = db.transaction(OS, 'readwrite');
-      tx.objectStore(OS).put(S.B.to_json(), storeKey());
+      tx.objectStore(OS).put(value, key);
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
     });
     return true;
   } catch { return false; }
+}
+let saving = null;
+/** Write the store to IndexedDB. Live, a change saved this way (a read
+    mark, a hopper, a delete) also goes to the blyg after a pause, unless
+    `quiet` (the outbox's own writes). Calls in one turn make one write.
+    The snapshot holds your posts, the outbox and your marks; the reading
+    list (thousands of posts) has its own, `persistReading`. */
+export function persist({ quiet = false } = {}) {
+  if (S.live && !quiet) scheduleSend();
+  saving ??= new Promise((resolve) => setTimeout(() => {
+    saving = null;
+    put(storeKey(), S.B.to_json()).then(resolve);
+  }, 0));
+  return saving;
+}
+/** Live: write the reading list, when it changed since it was last
+    written (after a refresh read it, and when the page is hidden). */
+export function persistReading() {
+  if (!S.live || !S.B?.reading_dirty()) return Promise.resolve(true);
+  return put('live-reading', S.B.reading_json());
 }
 export const pref = {
   get(k) { try { return localStorage.getItem('burrow-web.' + k); } catch { return null; } },
@@ -87,6 +104,32 @@ export function touched() {
     const ok = await persist();
     setTimeout(() => { S.B.sync_phase(ok ? 'synced' : 'error'); S.render(); }, 350);
   }, 800);
+}
+
+// ---------------------------------------------------------------- drawing
+/** Set `el`'s HTML, unless it's what is already there: a redraw that
+    changes nothing (the 30 s tick, an outbox step) costs a string compare,
+    not a rebuilt list, and leaves an open card or a scroll alone. */
+export function draw(el, html) {
+  if (el._html === html) return false;
+  el.innerHTML = html;
+  el._html = html;
+  return true;
+}
+/** Long lists are drawn a page at a time: `more()` runs when `scroller`
+    (an element, or `window` for the page) nears its end, to draw the next
+    page. */
+export function onNearEnd(scroller, more) {
+  let queued = false;
+  scroller.addEventListener('scroll', () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => {
+      queued = false;
+      const el = scroller === window ? document.scrollingElement : scroller;
+      if (el.scrollTop + el.clientHeight > el.scrollHeight - 1200) more();
+    });
+  }, { passive: true });
 }
 
 // ---------------------------------------------------------------- toast
@@ -491,6 +534,14 @@ export function swipeCards(list, { onRight, onTap }) {
     onTap(c.dataset.key);
   });
   return { closeAll };
+}
+
+/** After a swipe's action: a card the redraw kept (it was already read, so
+    nothing changed) slides back into place. */
+export function settle(c) {
+  if (!c?.isConnected) return;
+  c.style.transform = '';
+  c.parentElement?.classList.remove('to-read');
 }
 
 /** A stream row: the card, with "✓ Read" under its left edge and the

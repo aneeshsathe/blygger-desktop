@@ -14,7 +14,13 @@ break things.
 1. Rename `[Unreleased]` in `CHANGELOG.md` to `[x.y.z] - YYYY-MM-DD`, and add
    a fresh, empty `[Unreleased]` above it.
 2. Bump `version` in the root `Cargo.toml`.
-3. Commit, and merge it to `main` (through a PR, as usual). Don't push a tag.
+3. Add a `## Burrow x.y.z` section at the top of `site/src/releases.md`: what
+   the release brings, for someone using Burrow, newest first. After an
+   update, the app's status-bar "What's new" link and the what's-new card
+   open that page at the release's heading (`update::release_notes_url`), so
+   the notes live there, not in the app. A test fails while the running
+   version has no heading.
+4. Commit, and merge it to `main` (through a PR, as usual). Don't push a tag.
 
 On every push to `main`, `.github/workflows/release.yml` checks whether the
 Cargo version has a `vx.y.z` tag yet. If it does, nothing runs. If not, it
@@ -52,6 +58,7 @@ optional; the workflow's header lists their secrets.
 
 ## The full history
 
-The [Changelog](../changelog.md) has every release's notes, and the
+The [Release notes](../releases.md) say what each release brings, the
+[Changelog](../changelog.md) lists every change, and the
 [Releases page](https://github.com/aneeshsathe/blygger-desktop/releases) has
 the downloads.

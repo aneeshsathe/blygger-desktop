@@ -33,7 +33,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 #phone textarea:focus-visible,#phone input:focus-visible{outline:none}
 
 .pview{position:absolute;left:0;right:0;top:0;bottom:var(--tabh);display:flex;flex-direction:column;background:var(--pbg);
-  padding-top:env(safe-area-inset-top);transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility .28s;will-change:transform}
+  padding-top:env(safe-area-inset-top);transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility .28s}
 .pview:not(.off-r):not(.off-l){transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility 0s}
 .pview.off-r{transform:translateX(100%);visibility:hidden}
 .pview.off-l{transform:translateX(-30%);visibility:hidden}
@@ -114,6 +114,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .card:not(.unread) .ex{color:var(--pmuted)}
 .card .hop{font:.72rem var(--ui);color:var(--pmuted);margin-top:.25rem}
 .stream-empty{padding:2rem 1rem;color:var(--pmuted);font-style:italic;text-align:center}
+.stream-more,.list-more{padding:1rem;color:var(--pmuted);font:.8rem var(--ui);text-align:center;margin:0}
 
 /* ---- the post */
 .post{padding:.25rem max(1.35rem,env(safe-area-inset-right)) 2rem max(1.35rem,env(safe-area-inset-left));font-size:var(--rsize);line-height:1.55;overflow-wrap:break-word}

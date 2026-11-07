@@ -13,7 +13,7 @@
 // never overwrites: the blyg's copy is fetched and you choose.
 
 import { Burrow, Pager } from './pkg/blyg_web.js';
-import { $, S, esc, now, load, persist, toast } from './core.js';
+import { $, S, esc, now, load, persist, persistReading, toast } from './core.js';
 
 const API = '/api/';
 
@@ -80,27 +80,43 @@ export async function start(online) {
     const st = await call('GET', '/api/settings');
     if (st.status === 200) base = Burrow.public_base(st.body, location.origin);
   }
-  S.B = Burrow.new_live(now(), await load('live'), online ? base : '');
+  S.B = Burrow.new_live(now(), await load('live'), await load('live-reading'), online ? base : '');
   if (!online) S.B.set_offline(true);
   hooks();
 }
 
 let lastRefresh = 0;
-/** Send what waits, then read the posts and the reading list again. */
+/** Send what waits, then read again what changed on the blyg: its
+    `/api/changes` revisions say which lists moved since they were last
+    read (src/live.rs `changes_plan`), so a refresh that finds nothing new
+    costs one request, not every post. */
 export async function refresh() {
   if (!S.B?.is_live_mode()) return;
   await flush();
   if (S.B.is_offline()) return;
-  const items = await readAll('/api/items');
-  if (items.error) { problem(items.error); return; }
-  S.B.live_items(items.json);
-  const rows = await readAll('/api/reading/imported');
-  const hops = await readAll('/api/hoppers');
-  if (!rows.error || rows.error.code === 'not-found') {
-    S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
-  } else problem(rows.error);
+  const ch = await call('GET', '/api/changes');
+  const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, now()));
+  let changed = false;
+  if (plan.items) {
+    const items = await readAll('/api/items');
+    if (items.error) { problem(items.error); return; }
+    S.B.live_items(items.json);
+    S.B.changes_accept('items', now());
+    changed = true;
+  }
+  if (plan.reading) {
+    const rows = await readAll('/api/reading/imported');
+    const hops = await readAll('/api/hoppers');
+    if (!rows.error || rows.error.code === 'not-found') {
+      S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
+      if (!rows.error && !hops.error) S.B.changes_accept('reading', now());
+      changed = true;
+    } else problem(rows.error);
+  }
   lastRefresh = Date.now();
+  if (!changed) return;
   await persist({ quiet: true });
+  await persistReading();
   S.render();
 }
 
@@ -144,7 +160,11 @@ async function sendAll() {
       toast(esc(step.error.text), 4200);
       failed = true;
     }
+  }
+  if (!sent) {
+    if (!S.B.is_offline()) S.B.sync_phase('synced');
     S.render();
+    return;
   }
   await persist({ quiet: true });
   if (!S.B.is_offline()) S.B.sync_phase(failed ? 'error' : 'synced');
@@ -238,8 +258,12 @@ function hooks() {
   window.addEventListener('online', backOnline);
   window.addEventListener('offline', () => { if (S.B?.is_live_mode()) goOffline(); });
   // Back from signing in, or from another app: catch up.
+  // The reading list is written when it changed and you leave the page
+  // (not on every mark: it's thousands of posts).
+  window.addEventListener('pagehide', () => { persistReading(); });
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !S.B?.is_live_mode()) return;
+    if (document.visibilityState === 'hidden') { persistReading(); return; }
+    if (!S.B?.is_live_mode()) return;
     if (!$('#signin').hidden || S.B.is_offline()) backOnline();
     else if (Date.now() - lastRefresh > 60_000) refresh();
   });

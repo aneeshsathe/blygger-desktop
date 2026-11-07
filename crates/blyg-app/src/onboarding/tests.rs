@@ -1165,7 +1165,6 @@ fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
 
 static NEWS: super::whats_new::Release = super::whats_new::Release {
     version: "9.9.9",
-    items: &["Something new"],
     first_step: Some("lineage"),
 };
 

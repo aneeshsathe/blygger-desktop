@@ -46,6 +46,8 @@ struct ReadRow {
 #[derive(Serialize)]
 struct ReadView {
     unread: usize,
+    /// How many rows match; `rows` holds the first `limit` of them.
+    total: usize,
     rows: Vec<ReadRow>,
     empty: Option<String>,
 }
@@ -134,6 +136,21 @@ fn author(r: &ReadingItem) -> String {
 }
 
 impl Burrow {
+    /// The stream's excerpt for `r`, made once per version.
+    fn excerpt_of(&self, r: &ReadingItem, title: &str) -> String {
+        let key = key_of(r);
+        if let Some((v, e)) = self.excerpts.borrow().get(&key)
+            && *v == r.version
+        {
+            return e.clone();
+        }
+        let e = excerpt(r, title);
+        self.excerpts
+            .borrow_mut()
+            .insert(key, (r.version, e.clone()));
+        e
+    }
+
     fn row(&self, key: &str) -> Option<&ReadingItem> {
         self.rd.rows.iter().find(|r| key_of(r) == key)
     }
@@ -186,7 +203,7 @@ impl Burrow {
             self.store.read.insert(key.to_string(), read);
             if changed {
                 self.queue_read(key, read);
-                self.store.live.reading = self.rd.rows.clone();
+                self.reading_dirty = true;
             }
         }
     }
@@ -199,13 +216,32 @@ impl Burrow {
     /// The stream: the native order (edited-since-read first, withdrawn
     /// posts hidden unless kept), the reading search, unread only or all.
     pub fn reading_view(&self, now_ms: f64, query: &str, unread_only: bool) -> String {
+        self.reading_page(now_ms, query, unread_only, usize::MAX)
+    }
+
+    /// [`Burrow::reading_view`]'s first `limit` rows, with the unread count
+    /// and how many match in all. The page draws a page of the stream and
+    /// asks for more as you scroll, so a redraw costs the rows it shows,
+    /// not the thousands it holds.
+    pub fn reading_page(
+        &self,
+        now_ms: f64,
+        query: &str,
+        unread_only: bool,
+        limit: usize,
+    ) -> String {
         let now = at(now_ms);
-        let rows = rvm::order(self.rd.rows.clone());
+        let rows = rvm::order_refs(&self.rd.rows);
         let unread = rows.iter().filter(|r| r.is_unread()).count();
-        let shown: Vec<ReadRow> = rows
-            .iter()
-            .filter(|r| rvm::matches_query(r, query))
+        let matching: Vec<&ReadingItem> = rows
+            .into_iter()
             .filter(|r| !unread_only || r.is_unread())
+            .filter(|r| rvm::matches_query(r, query))
+            .collect();
+        let total = matching.len();
+        let shown: Vec<ReadRow> = matching
+            .into_iter()
+            .take(limit)
             .map(|r| {
                 let title = rvm::post_title(r);
                 ReadRow {
@@ -215,7 +251,7 @@ impl Burrow {
                     when: rvm::when_label(r, now),
                     unread: r.is_unread(),
                     badge: rvm::badge(r),
-                    excerpt: excerpt(r, &title),
+                    excerpt: self.excerpt_of(r, &title),
                     title,
                     glyph: glyph(r),
                     hoppers: r
@@ -228,7 +264,7 @@ impl Burrow {
                 }
             })
             .collect();
-        let empty = shown.is_empty().then(|| {
+        let empty = (total == 0).then(|| {
             if !query.trim().is_empty() {
                 rvm::no_match(query)
             } else if unread_only {
@@ -239,6 +275,7 @@ impl Burrow {
         });
         json(&ReadView {
             unread,
+            total,
             rows: shown,
             empty,
         })
@@ -442,6 +479,7 @@ impl Burrow {
             true
         };
         self.store.hopped.insert(key.to_string(), r.hoppers.clone());
+        self.reading_dirty = true;
         self.queue_hop(key, hopper, added);
         json(&Outcome::Toast {
             message: if added {

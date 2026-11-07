@@ -179,7 +179,10 @@ cookie.
   in the browser (the studio has none yet, blygger-studio#135).
 - **The outbox** (`src/live.rs`). Every keystroke is in the store at once
   and persisted (IndexedDB key `live`; the demo's is `store`, so they
-  never mix). About 800 ms after typing stops, the outbox sends what waits:
+  never mix). The reading list is kept apart, under `live-reading`, and
+  written only when it changed (after a refresh read it, and when the page
+  is hidden), so a keystroke's save stays small however much you read.
+  About 800 ms after typing stops, the outbox sends what waits:
   each edited item once, with the revision its edit was based on; then
   draft deletes, read marks and hopper changes. Typing while a save is in
   flight keeps the item pending for the next send. Offline (no answer, or

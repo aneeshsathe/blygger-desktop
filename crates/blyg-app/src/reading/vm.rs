@@ -59,12 +59,27 @@ pub fn visible(r: &ReadingItem) -> bool {
 /// first of any duplicate key wins), and posts edited since you read them
 /// moved to the top. Otherwise the backend's order (newest first) is kept.
 pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
+    ordered(items)
+}
+
+/// [`order`] without copying the rows: references into `items`, in the
+/// order shown. Burrow in a browser orders thousands of rows on every
+/// redraw, so it borrows them.
+#[allow(dead_code)]
+pub fn order_refs(items: &[ReadingItem]) -> Vec<&ReadingItem> {
+    ordered(items)
+}
+
+fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut seen = std::collections::HashSet::new();
-    let (mut edited, mut rest): (Vec<_>, Vec<_>) = items
+    let (mut edited, mut rest): (Vec<T>, Vec<T>) = items
         .into_iter()
-        .filter(visible)
-        .filter(|r| seen.insert(key(r)))
-        .partition(|r| r.edited_since_read() && r.state != "tombstone");
+        .filter(|r| visible(r.borrow()))
+        .filter(|r| seen.insert(key(r.borrow())))
+        .partition(|r| {
+            let r = r.borrow();
+            r.edited_since_read() && r.state != "tombstone"
+        });
     edited.append(&mut rest);
     edited
 }

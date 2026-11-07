@@ -161,7 +161,7 @@ impl Phase {
             } => Some(Notice {
                 text: format!("Burrow {} is available", offer.version),
                 action: Some(("Download", NoticeAction::Download)),
-                link: Some(("What's new", offer.page_url.clone())),
+                link: Some(("What's new", release_notes_url(&offer.version.to_string()))),
             }),
             Phase::Available {
                 offer,
@@ -174,7 +174,7 @@ impl Phase {
             Phase::Ready { offer, .. } => Some(Notice {
                 text: format!("Burrow {} is ready", offer.version),
                 action: Some(("Restart to update", NoticeAction::Restart)),
-                link: Some(("What's new", offer.page_url.clone())),
+                link: Some(("What's new", release_notes_url(&offer.version.to_string()))),
             }),
         }
     }
@@ -219,6 +219,21 @@ impl Phase {
 }
 
 /// The "can't install" explanation for the notice.
+/// The release notes on the docs site (`site/src/releases.md`).
+pub const RELEASE_NOTES_URL: &str = "https://aneeshsathe.github.io/blygger-desktop/releases.html";
+
+/// `version`'s release notes: the page, at the release's heading. The site
+/// (mdBook) ids "## Burrow 0.18.1" as `burrow-0181`.
+pub fn release_notes_url(version: &str) -> String {
+    let digits: String = version
+        .trim()
+        .trim_start_matches('v')
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    format!("{RELEASE_NOTES_URL}#burrow-{}", digits.to_lowercase())
+}
+
 pub fn cant_update_in_place(why: &str) -> String {
     format!("Can't update in place: {why}; download from the release page")
 }

@@ -9,15 +9,33 @@ break things.
 To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
 `version` in the root `Cargo.toml`, commit, and merge to `main`: the release
 workflow sees the untagged version, tags the commit, and publishes that
-section as the release notes. If the release
+section as the release notes. Add the release's section to
+`site/src/releases.md` (what the app's "What's new" opens). If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-07
+
+### Changed
+
+- **What's new after an update** is a short card with a link to the new [release notes](https://aneeshsathe.github.io/blygger-desktop/releases.html) on the docs site, which the status bar's "What's new" link opens too, at the release's heading. The card used to list everything, and a big release no longer fit on it (it didn't scroll).
+
+- **Burrow in a browser is fast with thousands of posts to read**, and no longer heats a phone. Measured live on a local blyg with 300 posts and 4,000 to read (WebKit, iPhone emulation): opening a post takes 43 ms (was 3.9 s), the Read tab 80 ms (was 1.3 s), going back 52 ms (was 1.3 s), and a second start shows your posts in 0.2 s (was 0.9 s). Idle, with the processor slowed four times to stand in for a phone's, it uses 0.2 s of CPU a minute (was 4.5 s).
+  - Only the screen you're on is drawn, and the reading list and post list a page at a time, with more as you scroll (the window's reading list too). A redraw that changes nothing changes nothing on the page.
+  - The reading list's excerpts are made once per post version, and it is ordered without copying every post.
+  - The store's snapshot holds your posts, the outbox and your marks (120 KB, was 8 MB); the reading list has its own, written only when it changed and the page is hidden. A snapshot from 0.18.0 moves over on its own.
+  - A refresh asks the blyg's `/api/changes` first and reads only the lists that moved, as the app does (with the app's full read every 10 minutes as a safety net). The outbox no longer redraws after every send.
+  - Hidden (another app, a locked phone), the page does no work: the 30 s redraw for relative times waits until it's on screen again.
+
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).
+- **Nearby thoughts: the keys work after a click.** Clicking a rail row handed the keyboard to the window, so ⌥↑/⌥↓, ⌥⏎ and ⌥⇧⏎ did nothing until you clicked back into the text. A click now chooses the row and leaves the editor in charge.
+- **Nearby thoughts: hover a row to see the post.** Resting the pointer on a row shows a card left of the rail with the post's title, who wrote it and its first lines, like the editor's link hover cards.
+- **Nearby thoughts: no stuck or misleading status.** When building the index failed (an endpoint that was down, say), the footer switched to "By meaning" at the next pause with no index behind it and never tried again. It now keeps saying "Shared phrases only: why" and retries at most every 30 seconds while you write. Settings › Nearby says "Starts when you write in a post" before anything is loaded, and an empty rail with nothing to match says so.
+- **Burrow in a browser, on a phone:** opening a post in Read no longer goes blank after a second. About 800 ms after a post opened, the outbox's send redrew the whole app three times, rebuilding every card in the reading list under the open post (4,000 cards, 64,000 elements), and wrote the whole store, every post's HTML included, to IndexedDB twice. That held the page for seconds and, on an iPhone, left the post view blank, every time the post was opened. Nothing under an open post is redrawn now.
 
 ## [0.18.0] - 2026-11-07
 

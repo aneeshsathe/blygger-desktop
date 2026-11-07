@@ -24,7 +24,7 @@ fn wire(id: &str, rev: u64, md: &str, status: &str, version: u32) -> Value {
 }
 
 fn live() -> Burrow {
-    let mut b = Burrow::new_live(NOW, None, BASE);
+    let mut b = Burrow::new_live(NOW, None, None, BASE);
     let items = json!([
         wire(
             "aaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -396,12 +396,12 @@ fn a_conflict_keeps_both_copies_until_you_choose() {
             .contains("their words")
     );
     // It survives a reload.
-    let mut b = Burrow::new_live(NOW, Some(b.to_json()), BASE);
+    let mut b = Burrow::new_live(NOW, Some(b.to_json()), None, BASE);
     b.open("aaaaaaaaaaaaaaaaaaaaaaaaaa");
     assert_eq!(v(b.view(NOW))["current"]["conflict"]["server_rev"], 9);
 
     // Keep mine: sent over theirs, based on their revision.
-    let mut mine = Burrow::new_live(NOW, Some(b.to_json()), BASE);
+    let mut mine = Burrow::new_live(NOW, Some(b.to_json()), None, BASE);
     mine.open("aaaaaaaaaaaaaaaaaaaaaaaaaa");
     mine.resolve_conflict(true);
     let n = next(&mine);
@@ -450,7 +450,7 @@ fn offline_edits_wait_survive_a_reload_and_replay() {
     assert_eq!(step["stop"], true);
     assert_eq!(step["error"]["code"], "offline");
     // Reload with no network: the edit is still waiting.
-    let mut b = Burrow::new_live(NOW, Some(b.to_json()), "");
+    let mut b = Burrow::new_live(NOW, Some(b.to_json()), None, "");
     let n = next(&b);
     assert_eq!(
         n["req"]["body"]["contentMd"],
@@ -689,4 +689,146 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
         assert!(!src.contains("document.cookie"));
         assert!(!src.to_lowercase().contains("authorization"));
     }
+}
+
+// ---------------------------------------------------------------- speed (0.18.1)
+
+fn reading_rows(n: usize) -> Value {
+    Value::Array(
+        (0..n)
+            .map(|i| reading_row("sub1", &format!("r{i}"), 1, (i % 2 == 0).then_some(1)))
+            .collect(),
+    )
+}
+
+#[test]
+fn the_store_snapshot_leaves_the_reading_list_to_its_own() {
+    let mut b = live();
+    b.live_reading(&reading_rows(50).to_string(), "[]");
+    // Every change writes `to_json`: it must not carry 50 (or 4,000) posts.
+    let snap = b.to_json();
+    assert!(!snap.contains("High water at dawn"), "{snap}");
+    assert!(b.reading_dirty());
+    let cache = b.reading_json();
+    assert!(!b.reading_dirty());
+    assert!(cache.contains("High water at dawn"));
+    // A mark after the list was written still shows after a reload, sent
+    // (settled) or not.
+    b.set_read("sub1|r1", true);
+    assert!(b.reading_dirty());
+    answer(&mut b, 200, &json!({ "ok": true }));
+    assert_eq!(next(&b), Value::Null);
+    let again = Burrow::new_live(NOW, Some(b.to_json()), Some(cache.clone()), BASE);
+    let rv = v(again.reading_view(NOW, "", false));
+    assert_eq!(rv["total"], 50);
+    assert_eq!(rv["unread"], 24);
+    // Without its snapshot, the reading list is simply empty until read.
+    let bare = Burrow::new_live(NOW, Some(b.to_json()), None, BASE);
+    assert_eq!(v(bare.reading_view(NOW, "", false))["total"], 0);
+    // The blyg's list is the truth again once read: the local marks go.
+    let mut b = again;
+    b.live_reading(&reading_rows(50).to_string(), "[]");
+    assert_eq!(v(b.reading_view(NOW, "", false))["unread"], 25);
+}
+
+#[test]
+fn a_snapshot_from_0_18_0_moves_its_reading_list_out() {
+    let mut b = live();
+    b.live_reading(&reading_rows(3).to_string(), "[]");
+    // 0.18.0 kept the list inside the store's snapshot.
+    let mut old: Value = serde_json::from_str(&b.to_json()).unwrap();
+    old["live"]["reading"] = v(b.reading_json())["rows"].clone();
+    let mut b = Burrow::new_live(NOW, Some(old.to_string()), None, BASE);
+    assert_eq!(v(b.reading_view(NOW, "", false))["total"], 3);
+    assert!(b.reading_dirty(), "written to its own snapshot next");
+    assert!(!b.to_json().contains("High water at dawn"));
+    assert!(b.reading_json().contains("High water at dawn"));
+}
+
+#[test]
+fn the_stream_is_drawn_a_page_at_a_time() {
+    let mut b = live();
+    b.live_reading(&reading_rows(120).to_string(), "[]");
+    let all = v(b.reading_view(NOW, "", false));
+    let page = v(b.reading_page(NOW, "", false, 40));
+    assert_eq!(
+        (page["total"].as_u64(), page["unread"].as_u64()),
+        (Some(120), Some(60))
+    );
+    let rows = page["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 40);
+    assert_eq!(rows[..], all["rows"].as_array().unwrap()[..40]);
+    // Counts only (the badge under another screen): no rows at all.
+    let none = v(b.reading_page(NOW, "", true, 0));
+    assert_eq!(
+        (
+            none["total"].as_u64(),
+            none["rows"].as_array().unwrap().len()
+        ),
+        (Some(60), 0)
+    );
+    assert_eq!(none["empty"], Value::Null);
+    // A row's excerpt (its text after the title line) follows its text when
+    // the blyg's list changes it, even at the same version.
+    assert_eq!(rows[0]["excerpt"], "");
+    let mut one = reading_rows(1);
+    one[0]["contentMd"] = json!("Tides\n\nLow water at noon.");
+    b.live_reading(&one.to_string(), "[]");
+    assert_eq!(
+        v(b.reading_page(NOW, "", false, 1))["rows"][0]["excerpt"],
+        "Low water at noon."
+    );
+}
+
+fn changes(epoch: &str, items: u64, reading: u64) -> String {
+    json!({ "epoch": epoch, "domains": {
+        "items": items, "settings": 1, "reading": reading, "subscriptions": 2,
+        "signals": 0, "hoppers": 4, "feed": 9
+    } })
+    .to_string()
+}
+
+fn plan(b: &mut Burrow, status: u16, body: &str, now: f64) -> (bool, bool) {
+    let p = v(b.changes_plan(status, body, now));
+    (
+        p["items"].as_bool().unwrap(),
+        p["reading"].as_bool().unwrap(),
+    )
+}
+
+#[test]
+fn a_refresh_reads_only_what_changed() {
+    let mut b = live();
+    let soon = NOW + 1000.0;
+    // Never read under these revisions: both lists.
+    assert_eq!(plan(&mut b, 200, &changes("e1", 5, 7), NOW), (true, true));
+    b.changes_accept("items", NOW);
+    b.changes_accept("reading", NOW);
+    // Nothing moved: nothing to read.
+    assert_eq!(
+        plan(&mut b, 200, &changes("e1", 5, 7), soon),
+        (false, false)
+    );
+    // Only the reading list moved (a poll imported posts, a mark landed).
+    assert_eq!(plan(&mut b, 200, &changes("e1", 5, 8), soon), (false, true));
+    // A new epoch (the database was restored): everything.
+    assert_eq!(plan(&mut b, 200, &changes("e2", 5, 7), soon), (true, true));
+    // No usable answer: everything, as before /api/changes.
+    assert_eq!(plan(&mut b, 404, "", soon), (true, true));
+    assert_eq!(plan(&mut b, 200, "{", soon), (true, true));
+    // And everything now and then, as the native sync's safety net.
+    let later = NOW + blyg_core::sync::FULL_PULL_EVERY.as_millis() as f64;
+    assert_eq!(plan(&mut b, 200, &changes("e1", 5, 7), later), (true, true));
+    // What was seen survives a reload: the items' with the store, the
+    // reading list's with its own snapshot.
+    let cache = b.reading_json();
+    let mut again = Burrow::new_live(NOW, Some(b.to_json()), Some(cache), BASE);
+    assert_eq!(
+        plan(&mut again, 200, &changes("e1", 5, 7), soon),
+        (false, false)
+    );
+    // An accept without a captured answer records nothing.
+    let mut c = live();
+    c.changes_accept("items", NOW);
+    assert_eq!(plan(&mut c, 200, &changes("e1", 5, 7), NOW), (true, true));
 }

@@ -61,11 +61,14 @@ async function openStore() {
       chooseLayout();
       (S.layout === 'phone' ? showPhone : showDesk)();
     });
-    // Relative times ("2m") keep moving.
-    setInterval(() => {
+    // Relative times ("2m") keep moving, while the page is on screen: a
+    // hidden page (another app, a locked phone) does no work.
+    const tick = () => {
       const typing = S.layout === 'phone' ? document.activeElement?.id === 'p-ta' : deskEditorFocused();
-      if (!typing) S.render();
-    }, 30_000);
+      if (!typing && document.visibilityState === 'visible') S.render();
+    };
+    setInterval(tick, 30_000);
+    document.addEventListener('visibilitychange', tick);
     live.initSignIn(() => location.reload());
     if (m.mode === 'signin') live.signIn();
     else if (m.mode === 'unsupported') live.signIn(m.why);

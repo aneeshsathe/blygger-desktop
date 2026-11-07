@@ -1638,6 +1638,9 @@ impl MainView {
             return div().into_any_element();
         };
         let version = t.news.first().map_or("", |r| r.version);
+        // The notes for the release this launch is (newer than the card's
+        // newest entry, for a patch release), on the docs site.
+        let notes = crate::update::release_notes_url(&super::whats_new::running_version());
         let has_new_step = t.news.iter().any(|r| r.first_step.is_some());
         let button = |id: &'static str, label: &'static str, strong: bool| {
             div()
@@ -1688,18 +1691,23 @@ impl MainView {
             .child(
                 div()
                     .mt(px(8.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
                     .line_height(relative(1.45))
                     .text_color(p.ink.opacity(0.85))
-                    .children(t.news.iter().flat_map(|r| r.items.iter()).map(|line| {
-                        div()
-                            .flex()
-                            .gap(px(8.))
-                            .child(div().flex_none().text_color(p.accent).child("•"))
-                            .child(div().flex_1().min_w_0().child(*line))
-                    })),
+                    .child(if has_new_step {
+                        "The release notes say what changed. The tour shows you the new parts."
+                    } else {
+                        "The release notes say what changed."
+                    }),
+            )
+            .child(
+                div()
+                    .id("whats-new-notes")
+                    .mt(px(8.))
+                    .cursor_pointer()
+                    .text_color(p.accent_text())
+                    .hover(|s| s.underline())
+                    .child("Read the release notes ↗")
+                    .on_click(move |_, _, cx| cx.open_url(&notes)),
             )
             .child(
                 div()

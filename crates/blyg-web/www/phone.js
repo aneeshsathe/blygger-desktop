@@ -8,7 +8,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme,
+  swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 
@@ -51,22 +51,19 @@ window.addEventListener('popstate', () => {
 });
 
 // ---------------------------------------------------------------- render
+// Only the screen you're on is drawn, and long lists a page at a time
+// (more as you scroll): a blyg can hold hundreds of posts and thousands to
+// read, and a phone redrawing all of them on every change ran hot.
+const PAGE = 40;
+let listN = PAGE * 2;    // Write rows drawn
+let streamN = PAGE;      // Read cards drawn
+
 export function render({ loadEditor = false } = {}) {
   if (!S.B) return;
   V = JSON.parse(S.B.view(now()));
   if (S.layout === 'phone') document.title = pview === 'edit' ? V.title : 'Burrow';
 
-  // Write: the shelf strip, then the posts (shelved first, a line under).
-  $('#p-shelf').innerHTML = V.shelf.length
-    ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
-    : '<span class="empty">Hold a post to shelve it</span>';
-  const query = V.query.trim();
-  $('#p-list').innerHTML = (V.rows.map((r, i) => `<button type="button" role="listitem" class="prow${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" data-id="${esc(r.id)}" data-shelved="${r.shelved}">
-      <div class="ti">${r.shelved ? '📚 ' : ''}${r.title_html}</div>
-      <div class="meta">${esc(r.kind)} <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span>${r.dot ? `<span class="dot${r.dot === 'amber' ? ' amber' : ''}" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}<span>${esc(r.when)}</span></div></button>`).join(''))
-    + (V.wants_create && query
-      ? `<button type="button" class="prow start" data-new="1"><div class="ti">＋ Start “${esc(query)}”</div><div class="meta">${V.rows.length ? 'a new post' : 'no matches · tap to write it'}</div></button>`
-      : '');
+  if (pview === 'write') renderList();
 
   // The editor.
   const c = V.current;
@@ -105,17 +102,41 @@ export function render({ loadEditor = false } = {}) {
   renderStream();
 }
 
+/** Write: the shelf strip, then the posts (shelved first, a line under). */
+function renderList() {
+  draw($('#p-shelf'), V.shelf.length
+    ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
+    : '<span class="empty">Hold a post to shelve it</span>');
+  const query = V.query.trim();
+  const rows = V.rows.slice(0, listN);
+  draw($('#p-list'), rows.map((r, i) => `<button type="button" role="listitem" class="prow${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" data-id="${esc(r.id)}" data-shelved="${r.shelved}">
+      <div class="ti">${r.shelved ? '📚 ' : ''}${r.title_html}</div>
+      <div class="meta">${esc(r.kind)} <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span>${r.dot ? `<span class="dot${r.dot === 'amber' ? ' amber' : ''}" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}<span>${esc(r.when)}</span></div></button>`).join('')
+    + (V.rows.length > rows.length ? `<p class="list-more">${V.rows.length - rows.length} more…</p>` : '')
+    + (V.wants_create && query
+      ? `<button type="button" class="prow start" data-new="1"><div class="ti">＋ Start “${esc(query)}”</div><div class="meta">${V.rows.length ? 'a new post' : 'no matches · tap to write it'}</div></button>`
+      : ''));
+}
+
+/** Read: the unread counts always; the cards only on the Read screen (not
+    under an open post, so marking it read redraws nothing you can't see). */
 function renderStream() {
-  const R = JSON.parse(S.B.reading_view(now(), $('#p-rq').value, unreadOnly));
+  const reading = pview === 'read';
+  const R = JSON.parse(S.B.reading_page(now(), $('#p-rq').value, unreadOnly, reading ? streamN : 0));
   const u = $('#p-unreadOnly');
   u.textContent = `● ${R.unread}`;
   u.setAttribute('aria-pressed', String(unreadOnly));
   u.setAttribute('aria-label', unreadOnly ? `Showing unread only (${R.unread}); show all` : `${R.unread} unread; show only those`);
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
-  if (pview !== 'read' && pview !== 'post') return;
-  $('#p-stream').innerHTML = R.rows.length
-    ? R.rows.map(cardHtml).join('')
-    : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`;
+  if (!reading) return;
+  draw($('#p-stream'), R.rows.length
+    ? R.rows.map(cardHtml).join('') + (R.total > R.rows.length ? `<p class="stream-more">${R.total - R.rows.length} more…</p>` : '')
+    : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
+}
+/** Back to the top of the stream: one page again. */
+function streamFromTop() {
+  streamN = PAGE;
+  $('#p-stream').scrollTop = 0;
 }
 
 let pvT;
@@ -311,8 +332,8 @@ export function initPhone() {
   $('#p-tabs').addEventListener('click', (e) => {
     const t = e.target.closest('.tab'); if (!t) return;
     if (t.dataset.tab === 'shelf') { renderShelfSheet(); sheet('sh-shelf'); return; }
+    if (t.dataset.tab === 'read') streamFromTop();
     show(t.dataset.tab);
-    if (t.dataset.tab === 'read') $('#p-stream').scrollTop = 0;
   });
   $('#p-fab').addEventListener('click', () => {
     $('#p-capTa').value = ''; capCount();
@@ -326,7 +347,8 @@ export function initPhone() {
   });
 
   // write
-  q.addEventListener('input', () => { S.B.set_query(q.value); render(); });
+  q.addEventListener('input', () => { S.B.set_query(q.value); listN = PAGE * 2; render(); });
+  onNearEnd($('#p-writeScroll'), () => { if (pview === 'write' && V.rows.length > listN) { listN += PAGE * 2; renderList(); } });
   q.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
@@ -420,10 +442,15 @@ export function initPhone() {
   });
 
   // read
-  $('#p-rq').addEventListener('input', renderStream);
-  $('#p-unreadOnly').addEventListener('click', () => { unreadOnly = !unreadOnly; renderStream(); });
+  $('#p-rq').addEventListener('input', () => { streamFromTop(); renderStream(); });
+  $('#p-unreadOnly').addEventListener('click', () => { unreadOnly = !unreadOnly; streamFromTop(); renderStream(); });
+  onNearEnd($('#p-stream'), () => {
+    if (pview !== 'read' || !$('#p-stream .stream-more')) return;
+    streamN += PAGE;
+    renderStream();
+  });
   swipeCards($('#p-stream'), {
-    onRight: (key) => { outcome(S.B.set_read(key, true)); persist(); renderStream(); },
+    onRight: (key, c) => { outcome(S.B.set_read(key, true)); persist(); renderStream(); settle(c); },
     onTap: (key) => openReading(key),
   });
   $('#p-stream').addEventListener('click', (e) => {
