@@ -73,6 +73,8 @@ use crate::app::extensions::ShowExtensions;
 use crate::app::shelf::{ShowShelf, ToggleShelf};
 // --- chat ---
 use crate::app::chat::ShowChat;
+// --- terminal ---
+use crate::app::terminal::{SendSelectionToTerminal, ToggleTerminal};
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -731,6 +733,23 @@ pub fn mac_table() -> Vec<Keybind> {
             ShowChat,
             "#thicket chat on Libera.Chat (experimental; again: back to posts)",
             Some("Blyg › #thicket Chat (Experimental)")
+        ),
+        // --- terminal --- the experimental pane: ⌃` as in VS Code and Zed
+        // (⌘` is the system's Cycle Windows). The pane keeps every other key
+        // while it has the keyboard, but for ⌘-keys (Ctrl+Shift on Windows).
+        kb!(
+            "ctrl-`",
+            Main,
+            ToggleTerminal,
+            "Terminal pane: show it and type there (experimental; again: hide it)",
+            Some("View › Terminal (Experimental)")
+        ),
+        kb!(
+            "cmd-shift-t",
+            Main,
+            SendSelectionToTerminal,
+            "Send the editor's selection to the terminal pane, quoted",
+            Some("Post › Send Selection to Terminal")
         ),
         kb!(
             "cmd-shift-h",

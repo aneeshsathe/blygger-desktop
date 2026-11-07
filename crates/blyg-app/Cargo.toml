@@ -47,6 +47,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std", "f
 # parser turns uBlock Origin / EasyList syntax into WebKit content-blocker
 # JSON (MPL-2.0, used unmodified).
 adblock = { version = "=0.13.3", default-features = false, features = ["content-blocking"] }
+blyg-term = { path = "../blyg-term" } # --- terminal --- (experimental pane; src/terminal/)
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # AppKit calls for the Dock icon, window ordering and webview focus.

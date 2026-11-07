@@ -657,6 +657,7 @@ fn do_step(e: &mut Env, id: &str) {
         "chat" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
         } // --- chat ---
+        "terminal" => e.cx.simulate_keystrokes(&crate::keymap::keys("ctrl-`")), // --- terminal ---
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

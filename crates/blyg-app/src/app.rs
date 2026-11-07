@@ -121,6 +121,9 @@ pub(crate) mod hover_card;
 // --- chat --- (the experimental #thicket tab; hooks marked the same way)
 #[path = "chat/mod.rs"]
 pub(crate) mod chat;
+// --- terminal --- (the experimental terminal pane; hooks marked the same way)
+#[path = "terminal/mod.rs"]
+pub(crate) mod terminal;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -325,6 +328,8 @@ pub struct MainView {
     hover: hover_card::State,
     // --- chat ---
     chat: chat::Chat,
+    // --- terminal ---
+    terminal: terminal::Dock,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -471,6 +476,7 @@ impl MainView {
             lineage_strip: Default::default(), // --- lineage ---
             hover: Default::default(),         // --- hover cards ---
             chat: Default::default(),          // --- chat ---
+            terminal: Default::default(),      // --- terminal ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -672,6 +678,7 @@ impl MainView {
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
         self.chat_reload(window, cx); // --- chat ---
+        self.terminal_reload(window, cx); // --- terminal ---
         self.show_toast(msg, None, cx);
     }
 
@@ -2336,6 +2343,7 @@ impl Render for MainView {
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
             .map(|d| self.chat_actions(d, cx)) // --- chat ---
+            .map(|d| self.terminal_actions(d, cx)) // --- terminal ---
             .size_full()
             .relative()
             .flex()
@@ -2393,6 +2401,7 @@ impl Render for MainView {
                         ),
                 ),
             })
+            .children(self.render_terminal(window, cx)) // --- terminal ---
             .child(self.render_status_bar(cx))
             .children(self.render_browser_pane(cx)) // --- browser ---
             .children(self.render_notes_drawer(cx)) // --- notes ---

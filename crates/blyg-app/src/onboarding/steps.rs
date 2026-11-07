@@ -105,6 +105,9 @@ pub enum Key {
     // --- chat ---
     /// The #thicket chat tab came to the front (⇧⌘I or the tab).
     Chat,
+    // --- terminal ---
+    /// The terminal pane was shown or hidden (⌃`).
+    Terminal,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -637,6 +640,37 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- terminal --- the key showing the pane counts: the tour never
+    // needs a shell to start (none does in the tests).
+    Step {
+        id: "terminal",
+        since: "0.18.0",
+        title: "A terminal at the foot of the window",
+        caption: if cfg!(target_os = "windows") {
+            "Ctrl+` opens a terminal under your posts (experimental): your own shell, for a \
+             CLI agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
+             token and no BLYGGER_* variable. Ctrl+` again hides it; Ctrl+Shift+T sends the \
+             editor's selection to it, quoted."
+        } else {
+            "⌃` opens a terminal under your posts (experimental): your own shell, for a CLI \
+             agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
+             token and no BLYGGER_* variable. ⌃` again hides it; ⇧⌘T sends the editor's \
+             selection to it, quoted."
+        },
+        keys: &[Key::Terminal],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+`"
+        } else {
+            "⌃`"
+        },
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end terminal ---
     Step {
         id: "conflict",
         since: "0.16.0",
@@ -1201,7 +1235,8 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat, // --- chat ---
+            Key::Chat,     // --- chat ---
+            Key::Terminal, // --- terminal ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
