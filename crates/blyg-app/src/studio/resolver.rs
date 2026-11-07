@@ -3,11 +3,14 @@
 //! (`Backend::reading`), in the Worker's `resolveTarget` order. Nothing is
 //! ever fetched (SPEC § Protocol philosophy 3).
 //!
-//! A snapshot of both lists is taken on the UI thread (local, instant) and
-//! moved to the render thread, so rendering never touches the backend.
+//! The preview's resolver (`StoreResolver::lazy`) is built on the render
+//! thread and looks up only the ids the text names, each once, as the
+//! render asks for them: no copy of either list is taken, and nothing on
+//! the UI thread. `StoreResolver::new` resolves from lists already in hand.
 
-use std::cell::RefCell;
+use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use blyg_core::{Backend, Item, Kind, ReadingItem, Status, SubscriptionKind};
 use blyg_render::{
@@ -19,8 +22,14 @@ use blyg_render::{
 const MAX_DEPTH: usize = 3;
 
 pub struct StoreResolver {
-    own: HashMap<String, Item>,
-    remote: HashMap<String, Vec<(ReadingItem, bool)>>,
+    /// Your own items by server id: all of them (`new`), or those looked
+    /// up so far (`lazy`, `None` = not yours).
+    own: RefCell<HashMap<String, Option<Item>>>,
+    remote: RefCell<HashMap<String, Vec<(ReadingItem, bool)>>>,
+    /// Where an id not in `own` / `remote` yet is looked up (`lazy`).
+    source: Option<Arc<dyn Backend>>,
+    /// The RSS subscriptions' ids (`lazy`: read on first need).
+    rss: OnceCell<Vec<String>>,
     mount: String,
     /// Ids being baked right now (cycle and depth guard).
     stack: RefCell<Vec<String>>,
@@ -50,7 +59,7 @@ impl StoreResolver {
     ) -> Self {
         let own = items
             .into_iter()
-            .filter_map(|i| i.server_id.clone().map(|s| (s.0, i)))
+            .filter_map(|i| i.server_id.clone().map(|s| (s.0, Some(i))))
             .collect();
         let mut remote: HashMap<String, Vec<(ReadingItem, bool)>> = HashMap::new();
         for r in reading {
@@ -61,14 +70,16 @@ impl StoreResolver {
                 .push((r, rss));
         }
         StoreResolver {
-            own,
-            remote,
+            own: RefCell::new(own),
+            remote: RefCell::new(remote),
+            source: None,
+            rss: OnceCell::new(),
             mount: mount.to_string(),
             stack: RefCell::new(Vec::new()),
         }
     }
 
-    /// Everything the backend holds locally.
+    /// Everything the backend holds locally, copied now.
     pub fn snapshot(backend: &dyn Backend, mount: &str) -> Self {
         let rss: Vec<String> = backend
             .subscriptions()
@@ -77,6 +88,58 @@ impl StoreResolver {
             .map(|s| s.id)
             .collect();
         Self::new(backend.items(), backend.reading(), &rss, mount)
+    }
+
+    /// Resolves from what `backend` holds locally, looking each id up the
+    /// first time the render asks for it (`Backend::own_item`,
+    /// `Backend::reading_with_id`): the same answers as a snapshot of
+    /// `items()` and `reading()`, without copying either.
+    pub fn lazy(backend: Arc<dyn Backend>, mount: &str) -> Self {
+        StoreResolver {
+            source: Some(backend),
+            ..Self::empty(mount)
+        }
+    }
+
+    /// Your own item with server id `id`.
+    fn own_item(&self, id: &str) -> Option<Item> {
+        if let Some(hit) = self.own.borrow().get(id) {
+            return hit.clone();
+        }
+        let src = self.source.as_ref()?;
+        let found = src.own_item(id);
+        self.own.borrow_mut().insert(id.to_string(), found.clone());
+        found
+    }
+
+    /// The held reading rows with remote id `id`, each with whether it
+    /// came through an RSS subscription.
+    fn remote_rows(&self, id: &str) -> Vec<(ReadingItem, bool)> {
+        if let Some(rows) = self.remote.borrow().get(id) {
+            return rows.clone();
+        }
+        let Some(src) = self.source.as_ref() else {
+            return Vec::new();
+        };
+        let rss = self.rss.get_or_init(|| {
+            src.subscriptions()
+                .into_iter()
+                .filter(|s| s.kind == SubscriptionKind::Rss)
+                .map(|s| s.id)
+                .collect()
+        });
+        let rows: Vec<(ReadingItem, bool)> = src
+            .reading_with_id(id)
+            .into_iter()
+            .map(|r| {
+                let is_rss = rss.contains(&r.subscription_id);
+                (r, is_rss)
+            })
+            .collect();
+        self.remote
+            .borrow_mut()
+            .insert(id.to_string(), rows.clone());
+        rows
     }
 
     /// Resolves nothing (a document without `[[`: no snapshot needed).
@@ -164,12 +227,14 @@ impl StoreResolver {
 
 impl Resolver for StoreResolver {
     fn resolve(&self, id: &str) -> Resolution {
-        if let Some(item) = self.own.get(id) {
-            return self.own(id, item);
+        if let Some(item) = self.own_item(id) {
+            return self.own(id, &item);
         }
-        match self.remote.get(id) {
-            Some(rows) if !rows.is_empty() => self.imported(id, rows),
-            _ => Resolution::NotFound,
+        let rows = self.remote_rows(id);
+        if rows.is_empty() {
+            Resolution::NotFound
+        } else {
+            self.imported(id, &rows)
         }
     }
 
@@ -177,11 +242,13 @@ impl Resolver for StoreResolver {
     /// stop a quote from containing itself don't apply: a guarded post is
     /// still linked, its excerpt taken from its own text.
     fn resolve_link(&self, id: &str) -> Resolution {
-        match self.resolve(id) {
+        let r = self.resolve(id);
+        let guarded = matches!(
+            r,
             Resolution::Unavailable(UnresolvedReason::Circular | UnresolvedReason::Other(_))
-                if self.own.contains_key(id) =>
-            {
-                let item = &self.own[id];
+        );
+        match self.own_item(id).filter(|_| guarded) {
+            Some(item) => {
                 let opts = RenderOpts {
                     data_line: false,
                     provenance: false,
@@ -205,7 +272,7 @@ impl Resolver for StoreResolver {
                     page: None,
                 })
             }
-            r => r,
+            None => r,
         }
     }
 }

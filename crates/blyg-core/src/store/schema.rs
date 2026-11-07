@@ -339,6 +339,37 @@ const MIGRATIONS: &[&str] = &[
         position  INTEGER NOT NULL
     );
     "#,
+    // v18 (performance): typing no longer re-indexes the whole post on
+    // every keystroke. A change to an item's text only notes the text the
+    // trigram index still holds for it (`items_fts_stale`, the first time),
+    // and `Store::flush_fts` re-indexes those rows later (after a typing
+    // pause, after a pull). Searches treat a noted row as unindexed and
+    // check its text directly, so they never miss a word. A write that
+    // leaves the text as it was (a pull re-merging an item) notes nothing.
+    // And the outbox gets an index on when its ops are due, which the
+    // status and the sync worker ask after every save, and permalinks one
+    // (`public_origin`, asked by every preview render, scanned every draft).
+    r#"
+    CREATE TABLE items_fts_stale (
+        rid  INTEGER PRIMARY KEY,
+        old  TEXT NOT NULL
+    );
+    DROP TRIGGER items_au;
+    CREATE TRIGGER items_au AFTER UPDATE OF content_md ON items
+    WHEN old.content_md IS NOT new.content_md
+    BEGIN
+        INSERT OR IGNORE INTO items_fts_stale(rid, old) VALUES (old.rid, old.content_md);
+    END;
+    DROP TRIGGER items_ad;
+    CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+        INSERT INTO items_fts(items_fts, rowid, content_md) VALUES ('delete', old.rid,
+            COALESCE((SELECT s.old FROM items_fts_stale s WHERE s.rid = old.rid), old.content_md));
+        DELETE FROM items_fts_stale WHERE rid = old.rid;
+    END;
+    CREATE INDEX outbox_due ON outbox(not_before);
+    CREATE INDEX items_permalink ON items(permalink)
+        WHERE permalink IS NOT NULL AND permalink <> '';
+    "#,
 ];
 
 /// Returns whether any migration ran.

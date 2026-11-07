@@ -18,15 +18,21 @@ fn phrase(w: &str) -> String {
 }
 
 /// One `AND`ed condition per indexable word: in the text (the index) or in
-/// the id. Pushes the binds.
+/// the id. Pushes the binds. `stale` names a table of rowids the index
+/// doesn't hold the current text of (`items_fts_stale`): those are always
+/// candidates, and `pick::matches` decides.
 fn word_filter(
     words: &[String],
     fts: &str,
     rowid: &str,
     id: &str,
+    stale: Option<&str>,
     binds: &mut Vec<String>,
 ) -> String {
     let mut sql = String::new();
+    let stale = stale
+        .map(|t| format!(" OR {rowid} IN (SELECT rid FROM {t})"))
+        .unwrap_or_default();
     for w in words.iter().filter(|w| w.chars().count() >= 3) {
         binds.push(phrase(w));
         let n = binds.len();
@@ -34,7 +40,7 @@ fn word_filter(
         let m = binds.len();
         sql.push_str(&format!(
             " AND ({rowid} IN (SELECT rowid FROM {fts} WHERE {fts} MATCH ?{n}) \
-             OR instr(lower({id}), ?{m}) > 0)"
+             OR instr(lower({id}), ?{m}) > 0{stale})"
         ));
     }
     sql
@@ -44,10 +50,17 @@ impl Store {
     pub fn pick_search(&self, q: &PickQuery) -> Result<Vec<Pickable>> {
         let words = pick::words(&q.text);
         let mut rows = Vec::new();
-        let c = self.conn();
+        let c = self.rconn();
         if q.wants_mine() {
             let mut binds = Vec::new();
-            let filter = word_filter(&words, "items_fts", "rid", "server_id", &mut binds);
+            let filter = word_filter(
+                &words,
+                "items_fts",
+                "rid",
+                "server_id",
+                Some("items_fts_stale"),
+                &mut binds,
+            );
             let mut st = c.prepare(&format!(
                 "SELECT {ITEM_COLS} FROM items \
                  WHERE status = 'public' AND server_id IS NOT NULL{filter}"
@@ -66,7 +79,14 @@ impl Store {
                 }
                 None => "",
             };
-            let filter = word_filter(&words, "reading_fts", "rowid", "remote_id", &mut binds);
+            let filter = word_filter(
+                &words,
+                "reading_fts",
+                "rowid",
+                "remote_id",
+                None,
+                &mut binds,
+            );
             let mut st = c.prepare(&format!(
                 "SELECT json FROM reading WHERE sub_kind = 'blyg' \
                  AND (state = 'current' \
