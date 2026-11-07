@@ -74,7 +74,7 @@ change, with Burrow connected to it, and watch its log as you publish to it.
 ### Git on a notes vault
 
 A markdown-notes vault is a folder. `cd` into it and `git log -p`, `git diff`
-or commit, beside the notes drawer that edits it.
+or commit, beside the notes pane that edits it.
 
 ## Safety
 

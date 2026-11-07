@@ -10,7 +10,7 @@ keyboard?** (`show-buttons`). esc skips it at any step.
 Then comes an optional **interactive tour** of the real window: each step
 highlights a part of it and waits for you to press the key (⌘N, ⌘T, ⌘⏎, ⌘3,
 ⌘G, ⌘Y, ⌘R, ⌘J, ⌘K, ⇧⌘C, ⇧⌘P, ⌥⌘F…). It covers writing, reading, lineage, the
-notes drawer, the browser pane, and extensions: the bundled markdown-notes,
+notes pane, the browser pane, and extensions: the bundled markdown-notes,
 reading-time and inspect run on sample notes during the tour, even if yours
 are off. The tour runs on sample data, so your own blyg isn't touched, nothing
 it does changes your config file, and your posts come back when it ends.

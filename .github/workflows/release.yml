@@ -222,7 +222,10 @@ jobs:
       - name: Build and package the web app
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+        # The runner's Apple clang has no wasm32 target; serve.sh then uses
+        # Homebrew's LLVM, installed here.
         run: |
+          brew list llvm >/dev/null 2>&1 || brew install llvm
           ./crates/blyg-web/serve.sh --build-only
           WEB="$RUNNER_TEMP/web"
           rm -rf "$WEB" && mkdir -p "$WEB"

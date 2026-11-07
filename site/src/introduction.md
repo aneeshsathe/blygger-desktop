@@ -36,7 +36,7 @@ written in Rust with [GPUI](https://www.gpui.rs), the UI framework behind Zed.
 - **Read** everything you follow as one stream, or in a three-pane reader,
   and quote, reply, fork or link from any post. See
   [Reading, quoting and responses](reading.md).
-- **Collect** as you go: a global quick-capture panel, a notes drawer for
+- **Collect** as you go: a global quick-capture panel, a notes pane for
   reading notes, and a built-in browser with ad blocking. See
   [Notes and the browser](notes-and-browser.md).
 - **Get help from AI**, if you want it. It's off until you switch it on, you
