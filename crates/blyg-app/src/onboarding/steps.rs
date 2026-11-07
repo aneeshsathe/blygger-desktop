@@ -105,6 +105,9 @@ pub enum Key {
     // --- chat ---
     /// The #thicket chat tab came to the front (⇧⌘I or the tab).
     Chat,
+    // --- nearby ---
+    /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
+    Nearby,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -633,6 +636,29 @@ pub const STEPS: &[Step] = &[
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- nearby --- the rail beside the sample thread.
+    Step {
+        id: "nearby",
+        since: "0.18.0",
+        title: "Nearby thoughts, while you write",
+        caption: if cfg!(target_os = "windows") {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the              phrase you share, Alt+Shift+Enter quotes the post (threads). Ctrl+Alt+U shows or              hides the rail; Settings › Nearby can add a small model on this computer that              matches meaning, not just words."
+        } else {
+            "The rail right of the editor shows your posts, and posts you hold, that say what              the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share,              ⌥⇧⏎ quotes the post (threads). ⌥⌘U shows or hides the rail; Settings › Nearby can              add a small model on this Mac that matches meaning, not just words."
+        },
+        keys: &[Key::Nearby],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+U"
+        } else {
+            "⌥⌘U"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::StudioSample,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1201,7 +1227,8 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat, // --- chat ---
+            Key::Chat,   // --- chat ---
+            Key::Nearby, // --- nearby ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

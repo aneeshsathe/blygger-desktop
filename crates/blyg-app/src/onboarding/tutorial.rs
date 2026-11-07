@@ -601,6 +601,10 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
         let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
+        // --- nearby ---
+        let d = on!(d, crate::app::nearby::ToggleNearby, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyDown, Key::Nearby);
+        let d = on!(d, crate::app::nearby::NearbyLink, Key::Nearby);
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 

@@ -68,6 +68,46 @@ Check spelling while you type, with the macOS spell checker (your system languag
 Which typed brackets open the post picker. on: typing [[ anywhere outside code opens it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. off: typed brackets never open it. ⌘K always opens the picker.
 
 
+### `nearby`
+
+- **Values:** `on`, `titles`, `off`
+- **Default:** `on`
+
+Nearby thoughts: a rail beside the editor that shows up to five of your own published posts, and posts you hold from blygs you follow, that say the same thing as the paragraph you're writing. ⌥⌘U shows or hides it; ⌥↑/⌥↓ choose, ⌥⏎ links the matched phrase ([[id | phrase]]), ⌥⇧⏎ quotes the post on a new line (threads only). on matches the whole of each post; titles only their titles; off turns it off. Only what this Mac already holds is offered, and nothing is fetched to suggest.
+
+
+### `nearby-embedder`
+
+- **Values:** `local`, `endpoint`, `none`
+- **Default:** `none`
+
+How Nearby thoughts tells that two paragraphs mean the same thing. none (the default) matches shared phrases through the full-text index. local uses a small embedding model run on this Mac (potion-base-8M, MIT, about 31 MB), downloaded once into Burrow's data folder when you choose it (Settings › Nearby) and checked against a pinned checksum; after that it works offline and nothing leaves this Mac. endpoint sends each paragraph, and the text of the posts being indexed, to the embeddings endpoint in nearby-endpoint (e.g. Ollama on this Mac).
+
+
+### `nearby-endpoint`
+
+- **Values:** an `http(s)://` address
+- **Default:** unset
+
+With nearby-embedder = endpoint: an OpenAI-compatible or Ollama server's address, e.g. http://localhost:11434 for Ollama or http://localhost:1234/v1 for an OpenAI-compatible server. Burrow posts to /api/embed (Ollama, when the address has no /v1) or /embeddings. No API key is sent: point it at a server you run. Text goes there only when you set this.
+
+
+### `nearby-endpoint-model`
+
+- **Values:** text
+- **Default:** `nomic-embed-text`
+
+The model nearby-endpoint embeds with, e.g. nomic-embed-text or mxbai-embed-large.
+
+
+### `nearby-rerank`
+
+- **Values:** `off`, `on`
+- **Default:** `off`
+
+on: after the rail fills, the AI provider you use for writing (ai-provider) puts the best ten in order of how closely each says what your paragraph says. That sends the paragraph, and the titles and an excerpt of those posts, to that provider. off by default.
+
+
 ### `auto-update`
 
 - **Values:** `install`, `notify`, `off`

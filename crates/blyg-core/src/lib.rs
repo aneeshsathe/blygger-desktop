@@ -10,6 +10,7 @@ pub mod grammar;
 pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod model;
+pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
 pub mod pick;
 pub mod profile; // --- profiles ---

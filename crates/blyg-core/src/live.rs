@@ -683,6 +683,40 @@ impl Backend for LiveBackend {
         }
     }
 
+    // --- nearby --- the index and the phrase search: the store, local only.
+
+    fn nearby_vectors(&self, model: &str) -> Vec<crate::nearby::NearbyVector> {
+        self.e().store.nearby_vectors(model).unwrap_or_default()
+    }
+
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[crate::nearby::NearbyVector],
+    ) -> Result<()> {
+        self.e().store.put_nearby_vectors(model, docs, rows)
+    }
+
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.e()
+            .store
+            .retain_nearby_vectors(model, keep)
+            .map(|_| ())
+    }
+
+    fn nearby_phrase_hits(&self, phrases: &[String]) -> Vec<(String, usize)> {
+        self.e()
+            .store
+            .nearby_phrase_hits(phrases)
+            .unwrap_or_default()
+    }
+    // --- end nearby ---
+
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         let row = self.e().store.row(id)?;
         row.item.conflict.then(|| {

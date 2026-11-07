@@ -20,6 +20,7 @@ pub mod claude_code;
 pub mod cli;
 pub mod cloudflare;
 pub mod codex;
+pub mod embeddings; // --- nearby ---
 pub mod error;
 mod http;
 pub mod openai;

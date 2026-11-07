@@ -53,6 +53,7 @@
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
 | ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
 | ⌥⌘B | Put the open post on your shelf, or take it off | Post › Put on Shelf / Take Off |
+| ⌥⌘U | Nearby thoughts: show or hide the rail of your posts that say what this paragraph says | View › Nearby Thoughts |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |
@@ -76,6 +77,10 @@
 | Key | What it does | Menu |
 |---|---|---|
 | ⌘⏎ | Publish… | Post › Publish… |
+| ⌥↑ | Nearby thoughts: the row above (typing in the editor) |  |
+| ⌥↓ | Nearby thoughts: the row below (typing in the editor) |  |
+| ⌥⏎ | Nearby thoughts: link the chosen post over the phrase it shares ([[id \| phrase]]) |  |
+| ⌥⇧⏎ | Nearby thoughts: quote the chosen post on a new line (![[id \| title]], threads only) |  |
 
 ### In the browser pane
 

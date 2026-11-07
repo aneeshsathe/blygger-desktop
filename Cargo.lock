@@ -797,6 +797,7 @@ dependencies = [
  "block2 0.6.2",
  "blyg-ai",
  "blyg-core",
+ "blyg-embed",
  "blyg-ext",
  "blyg-ext-crosspost",
  "blyg-ext-inspect",
@@ -842,6 +843,17 @@ dependencies = [
  "toml 1.1.6+spec-1.1.0",
  "ureq",
  "url",
+]
+
+[[package]]
+name = "blyg-embed"
+version = "0.17.1"
+dependencies = [
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "unicode-normalization",
+ "ureq",
 ]
 
 [[package]]

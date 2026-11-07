@@ -817,4 +817,70 @@ pub trait Backend: Send + Sync {
         let _ = id;
         None
     }
+
+    // --- nearby --- Nearby thoughts' index and phrase search, local only
+    // (nothing here touches the network). Additive: the defaults keep no
+    // vectors (the app embeds again each run) and search in memory.
+
+    /// Every stored vector made by `model`.
+    fn nearby_vectors(&self, model: &str) -> Vec<crate::nearby::NearbyVector> {
+        let _ = model;
+        Vec::new()
+    }
+
+    /// Replace the stored vectors of the posts `docs` with `rows`.
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[crate::nearby::NearbyVector],
+    ) -> Result<()> {
+        let _ = (model, docs, rows);
+        Ok(())
+    }
+
+    /// Keep only `model`'s vectors of the posts in `keep`.
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        let _ = (model, keep);
+        Ok(())
+    }
+
+    /// The posts the rail may offer whose text contains each phrase, as
+    /// `(doc key, phrase index)` (`crate::nearby`'s keys). The live
+    /// backend asks the trigram indexes.
+    fn nearby_phrase_hits(&self, phrases: &[String]) -> Vec<(String, usize)> {
+        use crate::nearby::{offers_own, offers_reading, own_key, reading_key};
+        let needles: Vec<String> = phrases.iter().map(|p| p.trim().to_lowercase()).collect();
+        let subs = self.subscriptions();
+        let blyg = |id: &str| {
+            subs.iter()
+                .any(|s| s.id == id && s.kind == SubscriptionKind::Blyg)
+        };
+        let mut out = Vec::new();
+        for it in self.items().iter().filter(|i| offers_own(i)) {
+            let text = it.content_md.to_lowercase();
+            for (i, n) in needles.iter().enumerate() {
+                if n.chars().count() >= 3 && text.contains(n.as_str()) {
+                    out.push((own_key(&it.local_id.0), i));
+                }
+            }
+        }
+        for r in self
+            .reading()
+            .iter()
+            .filter(|r| offers_reading(r, blyg(&r.subscription_id)))
+        {
+            let text = r.content_md.to_lowercase();
+            for (i, n) in needles.iter().enumerate() {
+                if n.chars().count() >= 3 && text.contains(n.as_str()) {
+                    out.push((reading_key(&r.subscription_id, &r.remote_id), i));
+                }
+            }
+        }
+        out
+    }
 }

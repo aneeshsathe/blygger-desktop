@@ -370,6 +370,46 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX items_permalink ON items(permalink)
         WHERE permalink IS NOT NULL AND permalink <> '';
     "#,
+    // v19: RESERVED for --- trails --- (merged from its own branch). A
+    // placeholder so --- nearby --- below can be v20; the merge replaces it.
+    r#"
+    SELECT 1;
+    "#,
+    // v20 --- nearby --- (store/nearby.rs) Nearby thoughts' index: one
+    // embedding per piece of a post the rail can offer (`doc` is
+    // `own:<local_id>` or `reading:<subscription_id>/<remote_id>`, `chunk`
+    // its position, 0 the title), stored as little-endian f16 with the
+    // model that made it, and a hash of the piece's text so an unchanged
+    // piece isn't embedded again. Local only, derived, rebuilt at will.
+    // A post that's deleted or withdrawn here loses its vectors at once
+    // (the triggers), whatever the app's indexer is doing.
+    r#"
+    CREATE TABLE nearby_vectors (
+        model  TEXT NOT NULL,
+        doc    TEXT NOT NULL,
+        chunk  INTEGER NOT NULL,
+        hash   TEXT NOT NULL,
+        vec    BLOB NOT NULL,
+        PRIMARY KEY (model, doc, chunk)
+    );
+    CREATE INDEX nearby_vectors_doc ON nearby_vectors(doc);
+    CREATE TRIGGER nearby_items_ad AFTER DELETE ON items BEGIN
+        DELETE FROM nearby_vectors WHERE doc = 'own:' || old.local_id;
+    END;
+    CREATE TRIGGER nearby_items_withdrawn AFTER UPDATE OF status ON items
+    WHEN new.status <> 'public' BEGIN
+        DELETE FROM nearby_vectors WHERE doc = 'own:' || old.local_id;
+    END;
+    CREATE TRIGGER nearby_reading_ad AFTER DELETE ON reading BEGIN
+        DELETE FROM nearby_vectors
+         WHERE doc = 'reading:' || old.subscription_id || '/' || old.remote_id;
+    END;
+    CREATE TRIGGER nearby_reading_gone AFTER UPDATE OF state ON reading
+    WHEN new.state <> 'current' BEGIN
+        DELETE FROM nearby_vectors
+         WHERE doc = 'reading:' || old.subscription_id || '/' || old.remote_id;
+    END;
+    "#,
 ];
 
 /// Returns whether any migration ran.

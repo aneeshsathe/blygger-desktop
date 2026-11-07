@@ -121,6 +121,9 @@ pub(crate) mod hover_card;
 // --- chat --- (the experimental #thicket tab; hooks marked the same way)
 #[path = "chat/mod.rs"]
 pub(crate) mod chat;
+// --- nearby --- (Nearby thoughts: the rail beside the editor; hooks marked the same way)
+#[path = "nearby/mod.rs"]
+pub(crate) mod nearby;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -325,6 +328,7 @@ pub struct MainView {
     hover: hover_card::State,
     // --- chat ---
     chat: chat::Chat,
+    nearby: nearby::State, // --- nearby ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -471,6 +475,7 @@ impl MainView {
             lineage_strip: Default::default(), // --- lineage ---
             hover: Default::default(),         // --- hover cards ---
             chat: Default::default(),          // --- chat ---
+            nearby: Default::default(),        // --- nearby ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -483,6 +488,7 @@ impl MainView {
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
         this.chat_init(window, cx); // --- chat ---
+        this.nearby_init(cx); // --- nearby ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -672,6 +678,7 @@ impl MainView {
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
         self.chat_reload(window, cx); // --- chat ---
+        self.nearby_reload(cx); // --- nearby ---
         self.show_toast(msg, None, cx);
     }
 
@@ -1397,6 +1404,7 @@ impl MainView {
                 // and `[[` the link picker.
                 let typed = self.typed_picker(cx);
                 self.after_edit(cx);
+                self.nearby_typed(cx); // --- nearby ---
                 if let Some((kind, typed)) = typed {
                     self.open_picker_from_typing(kind, typed, window, cx);
                 }
@@ -1408,6 +1416,7 @@ impl MainView {
     fn on_core_event(&mut self, ev: CoreEvent, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(ev, CoreEvent::ItemsChanged | CoreEvent::ReadingChanged) {
             self.lineage_strip.stale(); // --- lineage ---
+            self.nearby_store_changed(&ev, cx); // --- nearby ---
         }
         match ev {
             CoreEvent::ItemsChanged => {
@@ -2336,6 +2345,7 @@ impl Render for MainView {
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
             .map(|d| self.chat_actions(d, cx)) // --- chat ---
+            .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
             .size_full()
             .relative()
             .flex()
@@ -2870,14 +2880,23 @@ impl MainView {
             // --- stub quotes --- a stub's hint line and passage chooser.
             .children(self.render_stub_bar(cx))
             .child(
+                // --- nearby --- the rail sits right of the text.
                 div()
                     .flex_1()
                     .min_h_0()
-                    .relative()
-                    .child(gpui_kit::base::input::Textarea::new(&self.editor))
-                    .children(margins)
-                    .child(self.assist.clone()) // --- composer ---
-                    .map(|d| self.hover_card_editor(d, cx)), // --- hover cards ---
+                    .flex()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .relative()
+                            .child(gpui_kit::base::input::Textarea::new(&self.editor))
+                            .children(margins)
+                            .child(self.assist.clone()) // --- composer ---
+                            .map(|d| self.hover_card_editor(d, cx)), // --- hover cards ---
+                    )
+                    .children(self.render_nearby_rail(cx)), // --- nearby ---
             )
             .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
@@ -4090,6 +4109,7 @@ impl MainView {
             ))
             .child(self.render_buttons_setting(cx)) // --- buttons ---
             .child(self.render_chat_setting(cx)) // --- chat ---
+            .child(self.render_nearby_setting(cx)) // --- nearby ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

@@ -58,6 +58,18 @@ pub const RELEASES: &[Release] = &[
                  you're mentioned. Nothing connects until you set it up, Settings hides it, \
                  and it may be removed."
             },
+            // --- nearby ---
+            if cfg!(target_os = "windows") {
+                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
+                 that say what your paragraph says. Alt+Enter links the shared phrase, \
+                 Alt+Shift+Enter quotes it; Ctrl+Alt+U hides the rail. Settings › Nearby adds a \
+                 31 MB model that runs on this computer and matches meaning, not just words."
+            } else {
+                "Nearby thoughts: a rail beside the editor shows your posts, and posts you hold, \
+                 that say what your paragraph says. ⌥⏎ links the shared phrase, ⌥⇧⏎ quotes it; \
+                 ⌥⌘U hides the rail. Settings › Nearby adds a 31 MB model that runs on this Mac \
+                 and matches meaning, not just words."
+            },
         ],
         first_step: Some("shelf"),
     },

@@ -47,6 +47,39 @@ and anyone else's in Reading. **⌘J** (Ctrl+J on Windows) opens the full
 lineage view for a published post, as in Reading; on a draft it opens the
 lists.
 
+### Nearby thoughts
+
+A rail on the editor's right shows up to five of your own published posts,
+and posts you hold from blygs you follow, that say what the paragraph you're
+writing says, with the phrase you share (or the closest passage) under each.
+It looks again a moment after you stop typing, or when you move to another
+paragraph.
+
+- **⌥↑ / ⌥↓** choose a row without leaving the text.
+- **⌥⏎** links it: the phrase you share becomes `[[id | phrase]]` in place.
+  When the match is by meaning rather than a phrase, `[[id | title]]` goes
+  after the word at the caret.
+- **⌥⇧⏎** quotes it as `![[id | title]]` on a new line after the paragraph
+  (threads only).
+- **⌥⌘U** shows or hides the rail.
+
+On Windows the keys are Alt+Up/Alt+Down, Alt+Enter, Alt+Shift+Enter and
+Ctrl+Alt+U. Posts you already link or quote aren't offered again, and
+withdrawn posts never are. Nothing is fetched to make a suggestion: only
+what this computer already holds.
+
+Out of the box the rail matches **shared phrases**. **Settings › Nearby** can
+add a small model that runs on your computer and matches **meaning**, so a
+post about "the shore" turns up while you write about "tide pools":
+potion-base-8M (MIT), about 31 MB, downloaded once and checked, then used
+offline. Nothing you write leaves your computer with it. You can instead
+point `nearby-endpoint` at an embeddings server you run (Ollama, or anything
+OpenAI-compatible), and `nearby-rerank = on` lets your AI provider put the
+best ten in order. Both of those send text out; see
+[AI helpers](ai.md#nearby-thoughts-what-is-sent-where). `nearby = titles`
+matches titles only, and `nearby = off` turns the rail off. See
+[Configuration](config.md).
+
 ### Hover cards
 
 Rest the pointer on a `[[…]]` or `![[…]]` in your text and a card says what

@@ -944,6 +944,29 @@ impl Backend for SwitchBackend {
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         self.cur().conflict_texts(id)
     }
+    // --- nearby ---
+    fn nearby_vectors(&self, model: &str) -> Vec<blyg_core::nearby::NearbyVector> {
+        self.cur().nearby_vectors(model)
+    }
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        self.cur().put_nearby_vectors(model, docs, rows)
+    }
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.cur().retain_nearby_vectors(model, keep)
+    }
+    fn nearby_phrase_hits(&self, phrases: &[String]) -> Vec<(String, usize)> {
+        self.cur().nearby_phrase_hits(phrases)
+    }
+    // --- end nearby ---
     // --- background ---
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()
