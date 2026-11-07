@@ -25,13 +25,25 @@ pub enum Smart {
     /// lens): the blygs' tombstones and your own withdrawn posts. Nowhere
     /// else lists them.
     Background,
+    // --- upkeep --- Studio's Threads and Fragments lenses and its disliked
+    // list, as smart feeds.
+    /// Posts you gave a thumb down.
+    Disliked,
+    /// Threads only.
+    Threads,
+    /// Fragments only.
+    Fragments,
+    // --- end upkeep ---
 }
 
 impl Smart {
-    pub const ALL: [Smart; 5] = [
+    pub const ALL: [Smart; 8] = [
         Smart::Unread,
         Smart::Today,
         Smart::Thumbed,
+        Smart::Disliked,  // --- upkeep ---
+        Smart::Threads,   // --- upkeep ---
+        Smart::Fragments, // --- upkeep ---
         Smart::All,
         Smart::Background,
     ];
@@ -43,6 +55,10 @@ impl Smart {
             Smart::Thumbed => "Thumbed",
             Smart::All => "All",
             Smart::Background => "Background",
+            // --- upkeep ---
+            Smart::Disliked => "Thumbed down",
+            Smart::Threads => "Threads",
+            Smart::Fragments => "Fragments",
         }
     }
 }
@@ -143,6 +159,10 @@ pub fn in_source(
         Source::Smart(Smart::Unread) => needs_reading(r),
         Source::Smart(Smart::Today) => is_today(r, now),
         Source::Smart(Smart::Thumbed) => r.thumb == Some(1),
+        // --- upkeep ---
+        Source::Smart(Smart::Disliked) => r.thumb == Some(-1),
+        Source::Smart(Smart::Threads) => r.kind == blyg_core::Kind::Thread,
+        Source::Smart(Smart::Fragments) => r.kind == blyg_core::Kind::Fragment,
         Source::Folder(f) => filed.get(&r.subscription_id) == Some(f),
         Source::Sub(s) => &r.subscription_id == s,
         Source::Own => super::own::is_own_row(r),
@@ -397,6 +417,10 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Background) => {
             "Nothing withdrawn. Posts their authors withdraw are kept here, out of the way."
         }
+        // --- upkeep ---
+        Source::Smart(Smart::Disliked) => "Nothing thumbed down. 👎 a post to list it here.",
+        Source::Smart(Smart::Threads) => "No threads to read.",
+        Source::Smart(Smart::Fragments) => "No fragments to read.",
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
@@ -471,6 +495,9 @@ mod tests {
                 "All unread",
                 "Today",
                 "Thumbed",
+                "Thumbed down", // --- upkeep ---
+                "Threads",      // --- upkeep ---
+                "Fragments",    // --- upkeep ---
                 "All",
                 "Background",
                 "# Folders",

@@ -28,6 +28,7 @@ pub mod sync;
 pub mod synth;
 pub mod tk;
 pub mod trails; // --- trails ---
+pub mod upkeep; // --- upkeep --- stale quotes, signals
 mod util;
 
 pub use backend::{

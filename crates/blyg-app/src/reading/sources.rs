@@ -45,6 +45,11 @@ const ICON_BACKGROUND: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewB
 const ICON_MENTIONS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="3.6"/><path d="M15.6 12v1.6a2.4 2.4 0 0 0 4.8 0V12a8.4 8.4 0 1 0-3.3 6.7"/></svg>"#;
 /// --- own posts --- "Your blyg": a house.
 const ICON_OWN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M4 10.5L12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5.5h-5V20H5a1 1 0 0 1-1-1z"/></svg>"#;
+// --- upkeep --- thumbed down (the thumb, turned over), threads (a quote
+// mark over lines), fragments (a short line).
+const ICON_THUMB_DOWN: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><g transform="rotate(180 12 12)"><path d="M7 10.5V20H4.5v-9.5z"/><path d="M7 10.5l3.6-6.5c1.4 0 2.4 1 2.2 2.5L12.3 10H18a2 2 0 0 1 2 2.3l-1.1 5.9A2.2 2.2 0 0 1 16.7 20H7"/></g></svg>"#;
+const ICON_THREADS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4.5 5h15M4.5 9.5h15M4.5 14h10"/><path d="M8 18.5h11.5"/><path d="M4.5 17v3"/></svg>"#;
+const ICON_FRAGMENTS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5h14v7H5z"/><path d="M8 12h6"/></svg>"#;
 const ICON_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.2h8.5A1.5 1.5 0 0 1 21 8.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>"#;
 
 fn smart_icon(s: Smart) -> &'static [u8] {
@@ -54,6 +59,10 @@ fn smart_icon(s: Smart) -> &'static [u8] {
         Smart::Thumbed => ICON_THUMB,
         Smart::All => ICON_ALL,
         Smart::Background => ICON_BACKGROUND,
+        // --- upkeep ---
+        Smart::Disliked => ICON_THUMB_DOWN,
+        Smart::Threads => ICON_THREADS,
+        Smart::Fragments => ICON_FRAGMENTS,
     }
 }
 

@@ -1230,6 +1230,40 @@ impl Backend for SwitchBackend {
         self.cur().publish_with(id, note, extras)
     }
     // --- end access-ai ---
+    // --- upkeep --- stale quotes, signals, a version's words
+    fn cached_stale_quotes(&self) -> Vec<blyg_core::upkeep::ThreadFreshness> {
+        self.cur().cached_stale_quotes()
+    }
+    fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
+        self.cur().stale_quotes()
+    }
+    fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
+        self.cur().quote_freshness(id)
+    }
+    fn refresh_quotes(
+        &self,
+        id: &LocalId,
+        note: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Refreshed> {
+        self.cur().refresh_quotes(id, note)
+    }
+    fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
+        self.cur().version_text(id, version)
+    }
+    fn thumbs_page(
+        &self,
+        thumb: i8,
+        cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
+        self.cur().thumbs_page(thumb, cursor)
+    }
+    fn interactions_page(
+        &self,
+        cursor: Option<&str>,
+    ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
+        self.cur().interactions_page(cursor)
+    }
+    // --- end upkeep ---
 }
 
 #[cfg(test)]

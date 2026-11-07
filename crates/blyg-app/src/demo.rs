@@ -62,6 +62,11 @@ impl MainView {
     }
 
     fn demo_step(&mut self, scenario: &str, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+        // --- upkeep ---
+        if self.upkeep_demo_step(scenario, n, window, cx) {
+            return;
+        }
+        // --- end upkeep ---
         match (scenario, n) {
             // Live filter with highlighted matches, ↓ previews the next row.
             ("search", 0) => self.set_query_text("the", window, cx),

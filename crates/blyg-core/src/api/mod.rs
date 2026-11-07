@@ -31,6 +31,9 @@ pub mod public;
 // --- site ---
 pub mod site;
 // --- end site ---
+// --- upkeep --- stale quotes, signals, a version's text
+pub mod upkeep;
+// --- end upkeep ---
 pub mod wire;
 
 use std::io::Read;

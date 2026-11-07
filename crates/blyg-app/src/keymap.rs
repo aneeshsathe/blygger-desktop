@@ -79,6 +79,8 @@ use crate::app::shelf::{ShowShelf, ToggleShelf};
 use crate::app::access::ShowClientAccess;
 use crate::app::note_ai::DraftChangeNote;
 use crate::app::server_ai::ShowServerAi;
+// --- upkeep ---
+use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes};
 // --- chat ---
 use crate::app::chat::ShowChat;
 // --- terminal ---
@@ -789,6 +791,24 @@ pub fn mac_table() -> Vec<Keybind> {
             "Blyg › Site…"
         ),
         // --- end site ---
+        // --- upkeep --- (no keys: occasional chores, and ⌘B/⌘I and their
+        // neighbours are taken; Windows would read ⌥ chords as AltGr)
+        menu_only!(
+            ShowStaleQuotes,
+            "Stale quotes: your threads whose quoted posts have newer versions; refresh them",
+            "Blyg › Stale Quotes…"
+        ),
+        menu_only!(
+            ShowSignals,
+            "Signals: your likes, dislikes and private activity log (never published)",
+            "Blyg › Signals…"
+        ),
+        menu_only!(
+            CopyLink,
+            "Copy the link to the post in front of you",
+            "Post › Copy Link"
+        ),
+        // --- end upkeep ---
         // --- stream --- (issue #1) the reading screen's two modes; the
         // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
         kb!(
@@ -1457,6 +1477,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
     let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
     let _ = ShowSite; // --- site ---
+    let _ = (ShowStaleQuotes, ShowSignals, CopyLink); // --- upkeep ---
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

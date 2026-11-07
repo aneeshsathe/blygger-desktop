@@ -123,6 +123,10 @@ mod access_ai_tests;
 pub(crate) mod note_ai;
 #[path = "server_ai.rs"]
 pub(crate) mod server_ai;
+// --- upkeep --- (stale quotes, signals, version diffs, alt text, copy link;
+// hooks marked the same way)
+#[path = "upkeep/mod.rs"]
+pub(crate) mod upkeep;
 
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
@@ -298,6 +302,10 @@ enum Sheet {
     ServerAi(Box<server_ai::ServerAiSheet>),
     // --- contacts --- Blyg › Contacts…, or an offer to add someone.
     Contacts(Box<reading::contacts::ContactsSheet>),
+    // --- upkeep --- Blyg › Stale Quotes…, Blyg › Signals…, an image's alt text.
+    StaleQuotes(upkeep::StaleSheet),
+    Signals(upkeep::SignalsSheet),
+    AltText(upkeep::AltSheet),
 }
 
 struct Toast {
@@ -410,6 +418,7 @@ pub struct MainView {
     nearby: nearby::State,              // --- nearby ---
     site: site::State,                  // --- site ---
     contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
+    upkeep: upkeep::Upkeep,             // --- upkeep ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -575,10 +584,12 @@ impl MainView {
             nearby: Default::default(),                        // --- nearby ---
             site: Default::default(),                          // --- site ---
             contacts: Default::default(),                      // --- contacts ---
+            upkeep: Default::default(),                        // --- upkeep ---
             _tasks: tasks,
             _subs: subs,
         };
         this.reload_shelf(); // --- shelf ---
+        this.upkeep_reload_stale(); // --- upkeep ---
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
@@ -1286,6 +1297,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         self.reload_shelf(); // --- shelf ---
+        self.upkeep_reload_stale(); // --- upkeep ---
         self.list.refresh(results);
         self.loose_ends_refresh(cx); // --- loose ends ---
         self.new_post_sync_selection(); // --- new post ---
@@ -2130,6 +2142,12 @@ impl MainView {
                     Ok((_, inline)) => vm::replace_placeholder(&text, inline),
                     Err(_) => vm::remove_placeholder(&text),
                 };
+                // --- upkeep --- once the image is in place, ask for its alt text.
+                let alt_for = result
+                    .as_ref()
+                    .ok()
+                    .filter(|_| replaced.is_some() && editing_same)
+                    .map(|(_, inline)| inline.clone());
                 // The placeholder was deleted before the upload finished:
                 // nothing refers to the file, so remove it again.
                 if replaced.is_none()
@@ -2154,6 +2172,9 @@ impl MainView {
                         v.show_toast(format!("Image uploaded ({size_kb} KB {ext})"), None, cx)
                     }
                     Err(e) => v.show_toast(format!("Upload failed: {e}"), None, cx),
+                }
+                if let Some(url) = alt_for {
+                    v.upkeep_ask_alt(id.clone(), url, window, cx); // --- upkeep ---
                 }
             });
         })
@@ -2484,6 +2505,7 @@ impl Render for MainView {
             .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
+            .map(|d| self.upkeep_actions(d, cx)) // --- upkeep ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -2962,6 +2984,7 @@ impl MainView {
                         )
                     })
                     .child(vm::kind_label(item.kind))
+                    .children(self.upkeep_row_marker(item, ix, p.muted)) // --- upkeep ---
                     .child(
                         div()
                             .id(("row-pill", ix))
@@ -3513,6 +3536,10 @@ impl MainView {
             Sheet::ClientAccess(s) => self.render_access_sheet(s, cx), // --- access-ai ---
             Sheet::ServerAi(s) => self.render_server_ai_sheet(s, cx), // --- access-ai ---
             Sheet::Contacts(s) => self.render_contacts_sheet(s, cx), // --- contacts ---
+            // --- upkeep ---
+            Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
+            Sheet::Signals(s) => self.render_signals_sheet(s, cx),
+            Sheet::AltText(s) => self.render_alt_sheet(s, cx),
             Sheet::Publish {
                 title,
                 next_version,

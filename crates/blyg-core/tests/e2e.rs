@@ -5717,3 +5717,170 @@ fn subscriptions_carry_their_poll_status() {
     }
 }
 // --- end contacts ---
+// --- upkeep --- stale quotes and their refresh, a version's words, signals.
+
+/// A thread quoting your own fragment goes stale when the fragment is
+/// republished: `/freshness` lists it (and it's kept for the list's marker
+/// and `is:stale-quote`), the thread's own report says what changed, and a
+/// refresh republishes the same words with the new quote.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn stale_quotes_are_listed_and_refreshed() {
+    use blyg_core::upkeep::QuoteStatus;
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let t = tag("stale");
+    let (frag, frag_sid) = published(&b, Kind::Fragment, &format!("{t} the bench"), None);
+    let thread_text = format!("{t} on benches\n\n![[{frag_sid}]]\n\nMore soon.");
+    let (thread, thread_sid) = published(&b, Kind::Thread, &thread_text, None);
+    let names = |l: &[blyg_core::upkeep::ThreadFreshness]| {
+        l.iter().any(|x| x.id.eq_ignore_ascii_case(&thread_sid))
+    };
+    assert!(!names(&b.stale_quotes().unwrap()), "current at first");
+
+    // The fragment moves on: the thread's quote is a version behind.
+    b.save(&frag, &format!("{t} the bench, repainted")).unwrap();
+    assert_eq!(b.publish(&frag, None).unwrap().version, 2);
+    let list = b.stale_quotes().unwrap();
+    let mine = list
+        .iter()
+        .find(|x| x.id.eq_ignore_ascii_case(&thread_sid))
+        .unwrap_or_else(|| panic!("the thread is stale: {list:?}"));
+    assert_eq!((mine.stale, mine.blocking, mine.behind), (1, 0, 1));
+    assert!(mine.refreshable());
+    // Kept: the loose end finds it without asking again.
+    assert!(names(&b.cached_stale_quotes()));
+    let hits: Vec<LocalId> = b
+        .search("is:stale-quote")
+        .into_iter()
+        .map(|i| i.local_id)
+        .collect();
+    assert!(hits.contains(&thread), "{hits:?}");
+
+    let report = b.quote_freshness(&thread).unwrap();
+    let q = report
+        .quotes
+        .iter()
+        .find(|q| q.id.eq_ignore_ascii_case(&frag_sid))
+        .expect("the quote is reported");
+    assert_eq!(q.status, QuoteStatus::Refreshable);
+    assert_eq!((q.baked, q.held), (1, Some(2)));
+    assert_eq!(q.words(), "v1 → v2 available");
+
+    // Refresh: v2 of the thread, the same words, the quote at v2.
+    let r = b
+        .refresh_quotes(&thread, Some("refreshed quoted snapshots"))
+        .unwrap();
+    assert_eq!(r.version, 2);
+    assert!(
+        r.refreshed
+            .iter()
+            .any(|x| x.eq_ignore_ascii_case(&frag_sid)),
+        "{r:?}"
+    );
+    let it = b.item(&thread).unwrap();
+    assert_eq!(it.version, 2);
+    assert!(!it.dirty);
+    assert_eq!(it.content_md, thread_text, "the words don't change");
+    assert!(
+        !names(&b.cached_stale_quotes()),
+        "it leaves the list at once"
+    );
+    assert!(!names(&b.stale_quotes().unwrap()), "and the blyg agrees");
+    let v = b.versions(&thread).unwrap();
+    assert_eq!(
+        v.last().and_then(|v| v.note.clone()).as_deref(),
+        Some("refreshed quoted snapshots")
+    );
+    // A second refresh has nothing to do: refused.
+    assert!(b.refresh_quotes(&thread, None).is_err());
+
+    // Each version's words, for ⌘Y's diff.
+    assert_eq!(b.version_text(&frag, 1).unwrap(), format!("{t} the bench"));
+    assert_eq!(
+        b.version_text(&frag, 2).unwrap(),
+        format!("{t} the bench, repainted")
+    );
+    assert!(b.version_text(&frag, 9).is_err());
+}
+
+/// A refresh waits for unpublished edits: the blyg refuses it while the
+/// working copy holds anything but the published words.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_refresh_waits_for_unpublished_edits() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let t = tag("stale-dirty");
+    let (frag, frag_sid) = published(&b, Kind::Fragment, &format!("{t} a gate"), None);
+    let (thread, _) = published(
+        &b,
+        Kind::Thread,
+        &format!("{t} gates\n\n![[{frag_sid}]]"),
+        None,
+    );
+    b.save(&frag, &format!("{t} a gate, oiled")).unwrap();
+    b.publish(&frag, None).unwrap();
+    b.save(&thread, &format!("{t} gates, edited\n\n![[{frag_sid}]]"))
+        .unwrap();
+    b.sync_now().unwrap();
+    let report = b.quote_freshness(&thread).unwrap();
+    assert!(report.dirty, "the blyg sees the edit");
+    assert!(!report.refreshable());
+    let err = b.refresh_quotes(&thread, None).unwrap_err();
+    assert!(
+        matches!(err, CoreError::Rejected { status: 409, .. }),
+        "{err:?}"
+    );
+    assert_eq!(b.item(&thread).unwrap().version, 1);
+}
+
+/// Your signals: a thumb down on a post you hold shows in the disliked
+/// list and in the activity log.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn signals_list_thumbs_and_activity() {
+    use blyg_core::upkeep::InteractionKind;
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("signals");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a heron"), None);
+    let b = manual(d1.path());
+    let sub = b.subscribe(&src_url, Some("Signals source")).unwrap();
+    sync_until_held(&b, &[&rid]);
+    b.signal(&sub.id, &rid, Some(-1)).unwrap();
+
+    let mut down = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let p = b.thumbs_page(-1, cursor.as_deref()).unwrap();
+        down.extend(p.items);
+        match p.next {
+            Some(c) => cursor = Some(c),
+            None => break,
+        }
+    }
+    let row = down
+        .iter()
+        .find(|x| x.remote_id.eq_ignore_ascii_case(&rid))
+        .unwrap_or_else(|| panic!("disliked: {down:?}"));
+    assert_eq!(row.thumb, -1);
+    assert_eq!(row.subscription_id.as_deref(), Some(sub.id.as_str()));
+    let liked = b.thumbs_page(1, None).unwrap();
+    assert!(
+        !liked
+            .items
+            .iter()
+            .any(|x| x.remote_id.eq_ignore_ascii_case(&rid))
+    );
+    let log = b.interactions_page(None).unwrap();
+    assert!(
+        log.items
+            .iter()
+            .any(|i| i.kind == InteractionKind::ThumbDown && i.remote_id.eq_ignore_ascii_case(&rid)),
+        "{:?}",
+        log.items
+    );
+    b.signal(&sub.id, &rid, None).unwrap();
+}

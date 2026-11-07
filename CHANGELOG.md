@@ -26,6 +26,12 @@ teaches something new in the tour, set the newest entry's `version` in
 - **`@handle` in the preview** shows as the contact's link, the same h-card your blyg publishes.
 - **Mentions › Sent:** the Webmentions your blyg sent for your posts, and where each delivery stands (sent, pending, failed with the reason, no endpoint). **Reply** on a received response opens a stub of it, or offers to subscribe to its blyg first. Received mentions are ordered by your post, as your blyg groups them.
 - **Subscriptions show their poll status:** when your blyg last polled each one, failed polls in a row, and any flag it raised.
+- **Stale quotes.** A thread whose quoted posts have newer versions gets a quiet ↻ in Posts, and `is:stale-quote` lists them (a loose end too). Blyg › Stale Quotes… lists them stalest first with what changed in each quote ("v1 → v3 at its blyg"); ⏎ refreshes one, ⇧⏎ all that can be: a new version with the same words and the quotes brought up to date (blygger-studio's Updates tab and Refresh).
+- **What changed between versions.** In ⌘Y, **Changes from vN** shows a word diff of a version of your post against the one before it.
+- **Signals.** Blyg › Signals… lists your likes, your dislikes and your private activity log (thumbs, hoppers, stubs, forks, quotes). Never published, never counted.
+- **Threads, Fragments and Thumbed down** smart feeds in the Reader (Studio's lenses and disliked list).
+- **Alt text for images.** After a pasted or dropped image uploads, Burrow asks what it shows and writes it as the image's alt text.
+- **Copy Link** (Post › Copy Link): the open post's address, yours or the one you're reading.
 
 ## [0.18.1] - 2026-11-07
 
