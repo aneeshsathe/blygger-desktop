@@ -673,7 +673,7 @@ fn reading_marks_go_to_the_blyg() {
 fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
     let worker = include_str!("../www/sw.js");
     assert!(
-        worker.contains(r"if (/^\/(api|studio)(\/|$)/.test(u.pathname)) return false;"),
+        worker.contains(r"if (/\/(api|studio)(\/|$)/.test(u.pathname)) return false;"),
         "sw.js must pass /api/ and /studio/ straight to the network"
     );
     assert!(worker.contains("if (req.method !== 'GET' || !mine(req.url)) return;"));

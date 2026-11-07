@@ -25,7 +25,8 @@ self.addEventListener('activate', (e) => {
 function mine(url) {
   const u = new URL(url);
   if (u.origin !== location.origin) return false;
-  if (/^\/(api|studio)(\/|$)/.test(u.pathname)) return false;
+  // At the host root or under a path mount ({mount}/api, {mount}/studio).
+  if (/\/(api|studio)(\/|$)/.test(u.pathname)) return false;
   return u.href.startsWith(self.registration.scope);
 }
 
