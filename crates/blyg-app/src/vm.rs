@@ -1216,7 +1216,9 @@ mod tests {
         it.version = 1;
         assert_eq!(edits_tip(&it), None, "clean");
         it.dirty = true;
-        let want = if cfg!(target_os = "windows") {
+        // Windows' spelling (there Discard has no key), not blyg-web's, which
+        // shares this file and keeps the Mac's keys on every platform.
+        let want = if crate::keymap::keyless_here("DiscardChanges") {
             "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
         } else {
             "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"
