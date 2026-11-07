@@ -38,16 +38,16 @@ pub const CHANGES_SEEN: &str = "changes_seen:";
 
 /// What each pulled collection depends on, by `/api/changes` domain. A
 /// collection is fetched again only when one of these moved.
-const ITEMS_DEPS: &[&str] = &["items", "settings"];
-const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
-const READING_DEPS: &[&str] = &["reading", "subscriptions", "signals", "hoppers"];
+pub const ITEMS_DEPS: &[&str] = &["items", "settings"];
+pub const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
+pub const READING_DEPS: &[&str] = &["reading", "subscriptions", "signals", "hoppers"];
 /// --- hoppers --- the hoppers, their memberships and the unheld posts.
-const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
+pub const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
 
 /// With `/api/changes`, everything is still read whole this often, as a
 /// safety net (a trigger the server's dependency matrix misses, lineage
 /// fills that wait on a later pull).
-const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
+pub const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
 
 /// One item's autosave pushes are at least this far apart (`force` ignores
 /// it): about 20 writes a minute at most from continuous typing, well under

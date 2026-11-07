@@ -7,7 +7,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, outcome, publishedToast, copyText,
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme,
+  swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
@@ -82,13 +82,22 @@ export function render({ loadEditor = false } = {}) {
   renderReading();
 }
 
+// The stream is drawn a page at a time; more as you scroll or step past
+// the last card drawn.
+const RPAGE = 100;
+let rlimit = RPAGE;
+let rmore = false;
 function renderReading() {
-  const R = JSON.parse(S.B.reading_view(now(), rq, false));
+  const R = JSON.parse(S.B.reading_page(now(), rq, false, view === 'reading' ? rlimit : 0));
   $('#d-unread').textContent = R.unread ? String(R.unread) : '';
   if (view !== 'reading') return;
   rkeys = R.rows.map((r) => r.key);
+  rmore = R.total > R.rows.length;
   const host = $('#d-stream');
-  host.innerHTML = R.rows.length ? R.rows.map(cardHtml).join('') : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`;
+  draw(host, R.rows.length
+    ? R.rows.map(cardHtml).join('') + (rmore ? `<div class="empty">${R.total - R.rows.length} more…</div>` : '')
+    : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`);
+  host.querySelector('.card.cur')?.classList.remove('cur');
   if (rcur) host.querySelector(`.card[data-key="${CSS.escape(rcur)}"]`)?.classList.add('cur');
 }
 
@@ -279,7 +288,7 @@ function readAction(a, key = rcur, passage = '') {
 export function initDesk() {
   omni.addEventListener('focus', () => { if (view === 'posts') { mode = 'search'; render(); } });
   omni.addEventListener('input', () => {
-    if (view === 'reading') { rq = omni.value; render(); return; }
+    if (view === 'reading') { rq = omni.value; rlimit = RPAGE; $('#d-stream').scrollTop = 0; render(); return; }
     S.B.set_query(omni.value); render({ loadEditor: true });
   });
   omni.addEventListener('keydown', (e) => {
@@ -287,9 +296,10 @@ export function initDesk() {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const i = rkeys.indexOf(rcur) + (e.key === 'ArrowDown' ? 1 : -1);
+        if (i >= rkeys.length && rmore) { rlimit += RPAGE; renderReading(); }
         const k = rkeys[Math.max(0, Math.min(rkeys.length - 1, i))];
         if (k) openReading(k);
-      } else if (e.key === 'Escape') { omni.value = ''; rq = ''; render(); }
+      } else if (e.key === 'Escape') { omni.value = ''; rq = ''; rlimit = RPAGE; render(); }
       return;
     }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -335,13 +345,17 @@ export function initDesk() {
 
   // reading
   swipeCards($('#d-stream'), {
-    onRight: (key) => { outcome(S.B.set_read(key, true)); persist(); render(); },
+    onRight: (key, c) => { outcome(S.B.set_read(key, true)); persist(); render(); settle(c); },
     onTap: (key) => openReading(key),
   });
   $('#d-stream').addEventListener('click', (e) => {
     const b = e.target.closest('.acts [data-act]'); if (!b) return;
     readAction(b.dataset.act, b.dataset.key);
   });
+  // The stream scrolls itself, or (when the window is taller) the page does.
+  const moreReading = () => { if (S.layout === 'desk' && view === 'reading' && rmore) { rlimit += RPAGE; renderReading(); } };
+  onNearEnd($('#d-stream'), moreReading);
+  onNearEnd(window, moreReading);
   $('#d-ractions').addEventListener('click', (e) => { const b = e.target.closest('[data-ra]'); if (b) readAction(b.dataset.ra); });
   $('#d-post').addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) openReading(g.dataset.goto); });
   holdSentences($('#d-post'), $('#d-pmenu'), (a, text) => readAction(a === 'link' ? 'link' : a, rcur, a === 'link' ? '' : text));

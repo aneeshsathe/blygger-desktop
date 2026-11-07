@@ -18,6 +18,16 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).
+- **Burrow in a browser, on a phone:** opening a post in Read no longer goes blank after a second. About 800 ms after a post opened, the outbox's send redrew the whole app three times, rebuilding every card in the reading list under the open post (4,000 cards, 64,000 elements), and wrote the whole store, every post's HTML included, to IndexedDB twice. That held the page for seconds and, on an iPhone, left the post view blank, every time the post was opened. Nothing under an open post is redrawn now.
+
+### Changed
+
+- **Burrow in a browser is fast with thousands of posts to read**, and no longer heats a phone. Measured live on a local blyg with 300 posts and 4,000 to read (WebKit, iPhone emulation): opening a post takes 43 ms (was 3.9 s), the Read tab 80 ms (was 1.3 s), going back 52 ms (was 1.3 s), and a second start shows your posts in 0.2 s (was 0.9 s). Idle, with the processor slowed four times to stand in for a phone's, it uses 0.2 s of CPU a minute (was 4.5 s).
+  - Only the screen you're on is drawn, and the reading list and post list a page at a time, with more as you scroll (the window's reading list too). A redraw that changes nothing changes nothing on the page.
+  - The reading list's excerpts are made once per post version, and it is ordered without copying every post.
+  - The store's snapshot holds your posts, the outbox and your marks (120 KB, was 8 MB); the reading list has its own, written only when it changed and the page is hidden. A snapshot from 0.18.0 moves over on its own.
+  - A refresh asks the blyg's `/api/changes` first and reads only the lists that moved, as the app does (with the app's full read every 10 minutes as a safety net). The outbox no longer redraws after every send.
+  - Hidden (another app, a locked phone), the page does no work: the 30 s redraw for relative times waits until it's on screen again.
 
 ## [0.18.0] - 2026-11-07
 

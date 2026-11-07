@@ -280,6 +280,22 @@ fn an_unlisted_post_stays_the_one_acted_on() {
 
 // ---------------------------------------------------------------- phone
 
+#[test]
+fn the_stream_orders_without_copying_as_the_native_list_does() {
+    let rows = crate::seed::reading(at(NOW)).rows;
+    let key = |r: &blyg_core::ReadingItem| crate::read_api::key_of(r);
+    let owned: Vec<String> = crate::reading::vm::order(rows.clone())
+        .iter()
+        .map(key)
+        .collect();
+    let borrowed: Vec<String> = crate::reading::vm::order_refs(&rows)
+        .into_iter()
+        .map(key)
+        .collect();
+    assert!(!owned.is_empty());
+    assert_eq!(owned, borrowed);
+}
+
 fn reading(b: &Burrow, q: &str, unread_only: bool) -> Value {
     serde_json::from_str(&b.reading_view(NOW, q, unread_only)).unwrap()
 }
