@@ -133,6 +133,15 @@ mod tests {
     }
 
     #[test]
+    fn the_web_self_host_page_trusts_the_same_key() {
+        let page = include_str!("../../../../site/src/web-self-host.md");
+        assert!(
+            page.contains(&format!("PUB={RELEASE_PUBLIC_KEY_B64}\n")),
+            "site/src/web-self-host.md's PUB must match RELEASE_PUBLIC_KEY_B64"
+        );
+    }
+
+    #[test]
     fn signatures_verify_only_with_the_right_key_and_bytes() {
         let sk = test_key();
         let sums = b"abc  Blygger-9.9.9-macos-universal.zip\n";

@@ -213,6 +213,26 @@ jobs:
           cat "$WIN/SHA256SUMS-windows" >> dist/SHA256SUMS
           cat dist/SHA256SUMS
 
+      # The web app (crates/blyg-web), for owners who serve it from their own
+      # blyg at /burrow/ (site/src/web-self-host.md). The zip holds one
+      # `burrow/` folder, so unzipping it into a static-assets directory puts
+      # it at the right path. Built here (macOS) because serve.sh makes the
+      # home-screen icons with `sips`. Its lines join SHA256SUMS before it's
+      # signed; the desktop updaters look up only their own zip's line.
+      - name: Build and package the web app
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          ./crates/blyg-web/serve.sh --build-only
+          WEB="$RUNNER_TEMP/web"
+          rm -rf "$WEB" && mkdir -p "$WEB"
+          cp -R crates/blyg-web/dist "$WEB/burrow"
+          (cd "$WEB" && find burrow -exec touch -t 202001010000 {} + \
+            && find burrow -type f | LC_ALL=C sort | zip -qX -@ "$GITHUB_WORKSPACE/dist/Burrow-web-$VERSION.zip")
+          cp "dist/Burrow-web-$VERSION.zip" dist/Burrow-web.zip
+          (cd dist && shasum -a 256 "Burrow-web-$VERSION.zip" Burrow-web.zip) >> dist/SHA256SUMS
+          cat dist/SHA256SUMS
+
       # In-app updates only install a release whose SHA256SUMS carries a valid
       # Ed25519 signature from this key. The script signs with Homebrew's
       # OpenSSL 3, writes the key to a 0600 temp file (never echoed, deleted
@@ -281,5 +301,7 @@ jobs:
             dist/Blygger-macos-universal.zip \
             dist/Burrow-"$VERSION"-windows-x64.zip \
             dist/Burrow-windows-x64.zip \
+            dist/Burrow-web-"$VERSION".zip \
+            dist/Burrow-web.zip \
             dist/SHA256SUMS \
             dist/SHA256SUMS.sig

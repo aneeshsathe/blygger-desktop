@@ -46,8 +46,9 @@ on your Mac or PC and in a browser. The tour's new steps start at Blyg â€º Siteâ
 
 ### Burrow in a browser
 
-The web app (at `/burrow/` on your blyg) does most of what Studio does, and
-stays fast on a phone:
+The web app does most of what Studio does, and stays fast on a phone. It runs
+from your own blyg at `/burrow/`; Studio doesn't serve it yet, so
+[Burrow on your own blyg](web-self-host.md) shows how to add it:
 
 - **Reading**: sources (smart feeds, Mentions, hoppers, subscriptions) with a
   Threads / Fragments lens; subscriptions (subscribe with a preview, pause,

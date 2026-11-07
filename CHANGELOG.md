@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- Each release includes the web app as `Burrow-web-<version>.zip`, covered by the signed `SHA256SUMS`, and a new page, "Burrow on your own blyg", walks an owner (or their AI agent) through serving it at `/burrow/` on their own blyg: verify, unzip into the Worker's static assets, deploy, check.
+
 ## [0.19.0] - 2026-11-07
 
 Studio parity: Burrow runs your blyg as Studio does, on the desktop and in a browser.
