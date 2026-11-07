@@ -124,6 +124,22 @@ The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Cha
 A system notification when someone mentions your nick in #thicket (or messages you) while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) toggles it.
 
 
+### `terminal`
+
+- **Values:** `true` or `false`
+- **Default:** `true`
+
+The terminal pane at the foot of the window (⌃` shows and hides it): your login shell, for a CLI agent (claude, codex…), git or wrangler beside your posts. Experimental. The shell gets your environment minus everything of Burrow's (no BLYGGER_* variable, no token) and talks to Burrow only through the pane. false turns it off and ends a running shell.
+
+
+### `terminal-shell`
+
+- **Values:** text
+- **Default:** unset
+
+The program the terminal pane runs, with its arguments, instead of your login shell ($SHELL -l on macOS, %COMSPEC% on Windows), e.g. terminal-shell = /bin/zsh -l or terminal-shell = pwsh.
+
+
 ### `font-family-writing`
 
 - **Values:** text

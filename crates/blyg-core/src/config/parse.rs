@@ -530,6 +530,21 @@ impl Config {
     }
     // --- end chat ---
 
+    // --- terminal --- (experimental)
+    /// `terminal`: the terminal pane (on unless `false`).
+    pub fn terminal(&self) -> bool {
+        self.get("terminal") != Some("false")
+    }
+
+    /// `terminal-shell`: the program (and arguments) the pane runs instead
+    /// of the login shell.
+    pub fn terminal_shell(&self) -> Option<&str> {
+        self.get("terminal-shell")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+    }
+    // --- end terminal ---
+
     pub fn font_family_writing(&self) -> &str {
         self.get("font-family-writing").unwrap_or("Literata")
     }

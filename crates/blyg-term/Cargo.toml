@@ -1,0 +1,25 @@
+[package]
+name = "blyg-term"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+description = "Burrow's experimental terminal pane: a terminal engine behind a small trait, the shell on a pty, and a scrubbed environment"
+
+[dependencies]
+# The engine in use: Alacritty's terminal core (Apache-2.0), the same one
+# Zed draws with GPUI. Pure Rust, so plain `cargo build` works on macOS and
+# Windows with no Zig and no download at build time.
+alacritty_terminal = { version = "0.26", default-features = false }
+# The pty: wezterm's portable-pty (MIT), a Unix pty on macOS and ConPTY on
+# Windows.
+portable-pty = "0.9"
+
+[features]
+# libghostty-vt 1.0 (MIT) as the engine instead, through the hand-written
+# bindings in src/ghostty.rs (against the 1.0 headers). Off by default: no
+# crates.io package ships the 1.0 library without Zig or a download at build
+# time. To try it, build libghostty-vt 1.0 yourself and point
+# GHOSTTY_VT_LIB_DIR at the directory holding libghostty-vt.a (see build.rs).
+libghostty = []
+
+[dev-dependencies]

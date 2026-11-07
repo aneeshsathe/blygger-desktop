@@ -58,6 +58,16 @@ pub const RELEASES: &[Release] = &[
                  you're mentioned. Nothing connects until you set it up, Settings hides it, \
                  and it may be removed."
             },
+            // --- terminal ---
+            if cfg!(target_os = "windows") {
+                "A terminal pane (Ctrl+`, experimental): your own shell under your posts, for \
+                 a CLI agent, git or wrangler. It gets nothing of Burrow's (no token, no \
+                 BLYGGER_* variable); Ctrl+Shift+T sends the editor's selection to it, quoted."
+            } else {
+                "A terminal pane (⌃`, experimental): your own shell under your posts, for a CLI \
+                 agent, git or wrangler. It gets nothing of Burrow's (no token, no BLYGGER_* \
+                 variable); ⇧⌘T sends the editor's selection to it, quoted."
+            },
         ],
         first_step: Some("shelf"),
     },

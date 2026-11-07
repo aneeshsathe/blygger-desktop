@@ -235,6 +235,22 @@ pub const KEYS: &[KeySpec] = &[
          toggles it.",
     ),
     // --- end chat ---
+    // --- terminal --- (experimental: the pane at the foot of the window)
+    docs(
+        key("terminal", ValueKind::Bool, Some("true")),
+        "The terminal pane at the foot of the window (⌃` shows and hides it): your login \
+         shell, for a CLI agent (claude, codex…), git or wrangler beside your posts. \
+         Experimental. The shell gets your environment minus everything of Burrow's (no \
+         BLYGGER_* variable, no token) and talks to Burrow only through the pane. false \
+         turns it off and ends a running shell.",
+    ),
+    docs(
+        key("terminal-shell", ValueKind::Text, None),
+        "The program the terminal pane runs, with its arguments, instead of your login shell \
+         ($SHELL -l on macOS, %COMSPEC% on Windows), e.g. terminal-shell = /bin/zsh -l or \
+         terminal-shell = pwsh.",
+    ),
+    // --- end terminal ---
     docs(
         key("font-family-writing", ValueKind::Text, Some("Literata")),
         "Font for the editor and preview. Run `blygger +list-fonts` to see the choices.",
