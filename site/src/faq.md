@@ -30,7 +30,7 @@ it is. See [Server requirements](server.md).
 
 Your posts live on your blyg; Burrow keeps a local copy in
 `~/Library/Application Support/org.blygger.desktop/`, so everything works
-offline. Scratch notes and the notes drawer stay on your Mac until you make
+offline. Scratch notes and the notes pane stay on your Mac until you make
 them drafts. Your sign-in (browser grant, token or password) and AI keys are in the macOS Keychain, never in
 a file, and never logged.
 

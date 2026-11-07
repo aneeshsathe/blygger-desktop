@@ -26,7 +26,7 @@ markdown-notes reads and writes folders of Markdown notes, such as Obsidian
 vaults, as many as you like. It's kept apart from your blyg, so it works with
 no blyg connected, and it never links notes to posts.
 
-- **The notes panel** (the notes drawer's Notes tab) switches between your
+- **The notes panel** (the notes pane's Notes tab) switches between your
   folders, lists the one you pick, searches titles and bodies, and opens a
   note to read or edit. **Add folder…** adds more; **Remove from Burrow**
   forgets a folder (its notes stay where they are).

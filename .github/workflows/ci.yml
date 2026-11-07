@@ -44,6 +44,13 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      # The web app, built as the release builds it (release.yml attaches it
+      # as Burrow-web-<version>.zip), so a break shows here, not at release.
+      - name: Build the web app
+        run: |
+          brew list llvm >/dev/null 2>&1 || brew install llvm
+          ./crates/blyg-web/serve.sh --build-only
+
   # Windows is a supported platform: the same checks, plus a release build
   # packaged as the zip a release would attach (kept a week, for testing a
   # pull request on a real Windows machine). Tests that need macOS are

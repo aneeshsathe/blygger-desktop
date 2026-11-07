@@ -42,6 +42,19 @@ if [[ "${WASM_OPT:-0}" == 1 ]] && [[ "$(cat "$TOOLS/wasm-opt.version" 2>/dev/nul
   echo "$WASM_OPT_VERSION" > "$TOOLS/wasm-opt.version"
 fi
 
+# ring's build script compiles C for wasm32. Some Apple clangs (older Xcode)
+# have no wasm32 target; then use Homebrew's LLVM if it's installed.
+if [[ -z "${CC_wasm32_unknown_unknown:-}" ]] \
+  && ! echo 'int x;' | clang --target=wasm32-unknown-unknown -x c -c -o /dev/null - 2>/dev/null; then
+  LLVM_BIN="$(brew --prefix llvm 2>/dev/null)/bin"
+  if [[ -x "$LLVM_BIN/clang" ]]; then
+    export CC_wasm32_unknown_unknown="$LLVM_BIN/clang" AR_wasm32_unknown_unknown="$LLVM_BIN/llvm-ar"
+  else
+    echo "error: this clang can't build for wasm32; install LLVM (brew install llvm) and retry" >&2
+    exit 1
+  fi
+fi
+
 echo "Building blyg-web (wasm32, profile wasm-release)"
 # blyg-core links SQLite and ring (for its store and HTTP client), whose C
 # parts don't build for wasm32 with every toolchain. This crate never calls
