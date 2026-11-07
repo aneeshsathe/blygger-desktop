@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use blyg_core::{Item, Kind, LocalId, ServerId, Status, promotion_kind};
+use blyg_core::{Item, Kind, LocalId, RemoteRef, ServerId, Status, promotion_kind};
 use serde::{Deserialize, Serialize};
 
 use crate::seed;
@@ -21,11 +21,22 @@ pub struct Published {
     pub content_md: String,
 }
 
+/// The most posts the shelf holds (studio's `PUT /shelf` limit; the
+/// native shelf refuses a 51st the same way).
+pub const SHELF_MAX: usize = 50;
+
 #[derive(Debug, Default)]
 pub struct WebStore {
     items: Vec<Item>,
     versions: HashMap<LocalId, Vec<Published>>,
     next_id: u64,
+    /// Your shelf, in order (local only, as the native shelf is today).
+    pub shelf: Vec<LocalId>,
+    /// Reading rows you've read or marked: `"sub|remote id"` → the version
+    /// read (`None`: marked unread). Rows not here keep the seed's state.
+    pub read: HashMap<String, Option<u32>>,
+    /// Reading rows you've put in hoppers: `"sub|remote id"` → hopper ids.
+    pub hopped: HashMap<String, Vec<String>>,
 }
 
 /// The persisted form of an `Item` (the model's `Item` has no serde).
@@ -43,6 +54,9 @@ struct Stored {
     permalink: Option<String>,
     #[serde(default)]
     versions: Vec<Published>,
+    /// What a reply stub answers.
+    #[serde(default)]
+    stub_of: Option<RemoteRef>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -51,6 +65,12 @@ struct Snapshot {
     format: u32,
     next_id: u64,
     items: Vec<Stored>,
+    #[serde(default)]
+    shelf: Vec<String>,
+    #[serde(default)]
+    read: HashMap<String, Option<u32>>,
+    #[serde(default)]
+    hopped: HashMap<String, Vec<String>>,
 }
 
 const FORMAT: u32 = 1;
@@ -78,6 +98,7 @@ impl WebStore {
             items,
             versions,
             next_id: 1,
+            ..WebStore::default()
         }
     }
 
@@ -88,6 +109,9 @@ impl WebStore {
         }
         let mut store = WebStore {
             next_id: snap.next_id,
+            shelf: snap.shelf.into_iter().map(LocalId).collect(),
+            read: snap.read,
+            hopped: snap.hopped,
             ..WebStore::default()
         };
         for s in snap.items {
@@ -98,6 +122,7 @@ impl WebStore {
             it.dirty = s.dirty;
             it.updated = s.updated;
             it.permalink = s.permalink;
+            it.stub_of = s.stub_of;
             if !s.versions.is_empty() {
                 store.versions.insert(id, s.versions);
             }
@@ -122,12 +147,16 @@ impl WebStore {
                 updated: i.updated.clone(),
                 permalink: i.permalink.clone(),
                 versions: self.versions.get(&i.local_id).cloned().unwrap_or_default(),
+                stub_of: i.stub_of.clone(),
             })
             .collect();
         serde_json::to_string(&Snapshot {
             format: FORMAT,
             next_id: self.next_id,
             items,
+            shelf: self.shelf.iter().map(|i| i.0.clone()).collect(),
+            read: self.read.clone(),
+            hopped: self.hopped.clone(),
         })
         .unwrap_or_default()
     }
@@ -268,6 +297,7 @@ impl WebStore {
         let before = self.items.len();
         self.items.retain(|i| &i.local_id != id);
         self.versions.remove(id);
+        self.shelf.retain(|s| s != id);
         self.items.len() != before
     }
 
@@ -285,6 +315,72 @@ impl WebStore {
         it.dirty = false;
         it.updated = now.to_string();
         Some(it.clone())
+    }
+
+    /// A reply stub or quote thread: a draft thread with this text, which
+    /// answers `stub_of` when it's a reply.
+    pub fn insert_thread(
+        &mut self,
+        content_md: &str,
+        stub_of: Option<RemoteRef>,
+        now: &str,
+        ms: i64,
+    ) -> LocalId {
+        let id = self.insert(Kind::Thread, content_md, Status::Draft, now, ms);
+        if let Some(it) = self.get_mut(&id) {
+            it.stub_of = stub_of;
+        }
+        id
+    }
+
+    /// Put a post on the shelf (at the end) or take it off. `Err` when the
+    /// shelf is full. Withdrawn posts aren't shelved, as natively.
+    pub fn set_on_shelf(&mut self, id: &LocalId, on: bool) -> Result<bool, String> {
+        let here = self.shelf.contains(id);
+        if on == here {
+            return Ok(false);
+        }
+        if !on {
+            self.shelf.retain(|s| s != id);
+            return Ok(true);
+        }
+        match self.item(id) {
+            Some(it) if it.status == Status::Withdrawn => {
+                Err("Withdrawn posts can't go on the shelf".into())
+            }
+            None => Err("No such post".into()),
+            Some(_) if self.shelf.len() >= SHELF_MAX => Err(format!(
+                "Your shelf is full ({SHELF_MAX} posts). Take one off first."
+            )),
+            Some(_) => {
+                self.shelf.push(id.clone());
+                Ok(true)
+            }
+        }
+    }
+
+    /// Move a shelved post to `index` (clamped).
+    pub fn move_on_shelf(&mut self, id: &LocalId, index: usize) {
+        if let Some(ix) = self.shelf.iter().position(|s| s == id) {
+            let it = self.shelf.remove(ix);
+            let to = index.min(self.shelf.len());
+            self.shelf.insert(to, it);
+        }
+    }
+
+    /// Shelved posts first, in shelf order; the rest in the order given.
+    /// The same rule as the native list (`vm::ListModel::set_shelf` on the
+    /// `shelf` branch), applied before the list sees the results.
+    pub fn arrange(&self, mut results: Vec<Item>) -> (Vec<Item>, usize) {
+        let mut top = Vec::new();
+        for id in &self.shelf {
+            if let Some(ix) = results.iter().position(|i| &i.local_id == id) {
+                top.push(results.remove(ix));
+            }
+        }
+        let n = top.len();
+        top.extend(results);
+        (top, n)
     }
 
     /// Mark everything pushed (the debounced "sync" of the demo).

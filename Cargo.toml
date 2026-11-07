@@ -18,5 +18,15 @@ lto = "thin"
 codegen-units = 1
 strip = true
 
+# blyg-web's WebAssembly build (crates/blyg-web/serve.sh): smallest code,
+# whole-program LTO. Panics already abort on wasm32-unknown-unknown.
+[profile.wasm-release]
+inherits = "release"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [profile.dev.package."*"]
 opt-level = 2   # GPUI + sqlite are painfully slow unoptimised; our own code stays debuggable

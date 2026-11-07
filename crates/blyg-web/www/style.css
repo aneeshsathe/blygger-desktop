@@ -36,6 +36,7 @@ kbd{font:500 .74rem Inter,system-ui,sans-serif;display:inline-block;min-width:1.
 .keys .note{font-size:.76rem}
 
 /* ============ the window ============ */
+.win,#phone{--pbg:var(--c-bg);--pink:var(--c-ink);--pmuted:var(--c-muted);--pline:var(--c-line);--psel:var(--c-sel);--pacc:var(--c-accent);--pbar:var(--c-bar);--ui:Inter,-apple-system,system-ui,sans-serif}
 .win{--wbg:var(--c-bg);--wink:var(--c-ink);--wmuted:var(--c-muted);--wline:var(--c-line);--wsel:var(--c-sel);--wacc:var(--c-accent);--wbar:var(--c-bar);
   position:relative;flex:1;min-height:440px;display:flex;flex-direction:column;background:var(--wbg);color:var(--wink);
   border-radius:12px;overflow:hidden;box-shadow:0 0 0 1px rgba(0,0,0,.12),0 24px 60px -18px rgba(0,0,0,.35)}
@@ -64,14 +65,15 @@ kbd{font:500 .74rem Inter,system-ui,sans-serif;display:inline-block;min-width:1.
 .pill.pub{color:var(--wacc);border-color:currentColor}
 .dot{width:6px;height:6px;border-radius:50%;background:var(--wacc);display:inline-block}
 .empty{padding:14px;font:italic var(--lsize) var(--fui);color:var(--wmuted)}
-.edwrap{position:relative;min-height:0;display:grid;grid-template-columns:1fr}
-.win.previewing .edwrap{grid-template-columns:1fr 1fr}
+.edwrap{position:relative;min-height:0;display:flex;flex-direction:column}
+.edpanes{flex:1;min-height:0;display:grid;grid-template-columns:1fr}
+.win.previewing .edpanes{grid-template-columns:1fr 1fr}
 .ed{width:100%;height:100%;border:0;resize:none;padding:22px 34px;background:transparent;color:var(--wink);font:var(--fsize)/1.6 var(--fbody);outline:none;caret-color:var(--wacc)}
 .ed::placeholder{color:var(--wmuted);font-style:italic}
 .pv{display:none;width:100%;height:100%;border:0;border-left:1px solid var(--wline);background:var(--wbg)}
 .win.previewing .pv{display:block}
 @media (max-width:720px){
-  .win.previewing .edwrap{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
+  .win.previewing .edpanes{grid-template-columns:1fr;grid-template-rows:1fr 1fr}
   .win.previewing .pv{border-left:0;border-top:1px solid var(--wline)}
   .ed{padding:16px 18px}
   .win.side .body{grid-template-columns:none;grid-template-rows:minmax(90px,32%) 1fr}
@@ -106,3 +108,54 @@ kbd{font:500 .74rem Inter,system-ui,sans-serif;display:inline-block;min-width:1.
 .loading{position:absolute;inset:34px 0 0;display:flex;align-items:center;justify-content:center;background:var(--wbg);color:var(--wmuted);font:italic 18px var(--fbody);z-index:8}
 .loading.gone{display:none}
 .loading.err{color:var(--c-over);font-style:normal;font-size:14px;padding:24px;text-align:center}
+
+/* ============ views, shelf, reading (desktop) ============ */
+.omni .views{flex:none;display:inline-flex;gap:2px;background:var(--wsel);border-radius:8px;padding:2px}
+.omni .views button{border:0;background:transparent;color:var(--wmuted);font:500 12px Inter,system-ui,sans-serif;padding:4px 10px;border-radius:6px}
+.omni .views button.on{background:var(--wbg);color:var(--wink);box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.omni .views b{color:var(--wacc);font-weight:600}
+.row .shelfmark{flex:none;font-size:.8em}
+.row.shelved-last{border-bottom:1px solid var(--wacc)}
+.win .stubof{margin:10px 34px 0}
+.body[hidden]{display:none}
+.rbody{grid-template-rows:none;grid-template-columns:minmax(260px,38%) 1fr}
+.rlist{border-bottom:0;border-right:1px solid var(--wline)}
+.rlist .swipewrap:first-child{border-top:0}
+.rlist .card .ex{font-size:15.5px}
+.rlist .card.cur{background:var(--wsel)}
+.rpane{position:relative;min-height:0;display:flex;flex-direction:column}
+.ractions{flex:none;display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid var(--wline);flex-wrap:wrap}
+.ractions[hidden]{display:none}
+.ractions button{border:1px solid transparent;background:none;color:var(--wink);font:12.5px Inter,system-ui,sans-serif;padding:4px 8px;border-radius:6px}
+.ractions button:hover{border-color:var(--wline);color:var(--wacc)}
+.ractions .flex{flex:1}
+.rscroll{flex:1;min-height:0;overflow:auto}
+.win .post{max-width:40em;margin:0 auto;padding:14px 30px 40px;--rsize:19px}
+.win .muted{color:var(--wmuted);font-style:italic}
+.win .pmenu{transform:none;left:auto}
+@media (max-width:720px){ .rbody{grid-template-columns:none;grid-template-rows:minmax(120px,40%) 1fr} }
+
+/* ============ the editor bar (desktop and phone) ============
+   Paged screens of tools, as Apple Notes has above the keyboard: they
+   snap a page at a time, the dots show which, Publish stays put. */
+.edbar{flex:none;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-rows:auto auto;align-items:center;column-gap:4px;padding:4px 6px 2px;border-top:1px solid var(--pline);background:var(--pbar);user-select:none;-webkit-user-select:none}
+.edbar .pager{grid-column:2;grid-row:1;display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scrollbar-width:none;overscroll-behavior-x:contain;touch-action:pan-x}
+.edbar .pager::-webkit-scrollbar{display:none}
+.edbar .pager.dragging{scroll-snap-type:none;cursor:grabbing}
+.edbar .page{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;display:flex;gap:3px;justify-content:space-between}
+.edbar .page button{flex:1 1 0;min-width:0;border:0;background:var(--pbg);color:var(--pink);border-radius:7px;padding:6px 4px;min-height:34px;font:13px var(--ui);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.edbar .page button:active{background:var(--psel)}
+.edbar .pri{grid-column:4;grid-row:1;border:0;background:var(--pacc);color:#fff;border-radius:8px;padding:0 12px;min-height:34px;font:600 13px var(--ui);cursor:pointer;margin-left:2px}
+.edbar .pg-arrow{display:none;border:0;background:none;color:var(--pmuted);font:18px var(--ui);padding:0 4px;cursor:pointer;min-height:34px}
+.edbar .pg-arrow.prev{grid-column:1;grid-row:1}
+.edbar .pg-arrow.next{grid-column:3;grid-row:1}
+@media (hover:hover) and (pointer:fine){ .edbar .pg-arrow{display:block} }
+.edbar.at-start .pg-arrow.prev,.edbar.at-end .pg-arrow.next{visibility:hidden}
+.edbar .pgdots{grid-column:2;grid-row:2;display:flex;justify-content:center;gap:2px}
+.edbar .pgdot{width:16px;height:12px;border:0;padding:0;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.edbar .pgdot::before{content:"";width:6px;height:6px;border-radius:3px;background:var(--pline)}
+.edbar .pgdot.on::before{background:var(--pacc)}
+.sheet .picks{max-height:min(320px,50vh);overflow:auto;margin-top:8px;border-bottom:1px solid var(--wline)}
+.sheet .opt2{font-size:15px;padding:7px 4px;min-height:0}
+.sheet .opt2 .n{font:12px Inter,system-ui,sans-serif;color:var(--wmuted);margin-right:6px}
+.sheet .opt2:hover,.sheet .opt2:focus{background:var(--wsel);outline:none}

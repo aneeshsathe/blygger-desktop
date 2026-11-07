@@ -14,13 +14,14 @@
 //! The data is the native fake's invented sample posts, kept in memory and
 //! persisted by the page to IndexedDB. Nothing here opens a socket.
 
-use blyg_core::{Item, Kind, LocalId, ReadingItem, Status, SyncStatus};
+use blyg_core::{Item, Kind, LocalId, Status, SyncStatus};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 /// `vm.rs` calls `crate::keymap::{hint, hint_owned, keyless_here}`.
 mod keymap;
+mod read_api;
 pub mod seed;
 pub mod store;
 pub mod theme;
@@ -31,6 +32,40 @@ pub mod theme;
 pub mod vm;
 
 pub mod studio;
+
+/// The native app's reading view-model, compiled unchanged.
+pub mod reading;
+
+/// `crate::app::notes::link`, which the reading view-model calls: a copy of
+/// `crates/blyg-app/src/notes/mod.rs` `link` (that module also holds the
+/// notes drawer, which needs GPUI).
+pub mod app {
+    pub mod notes {
+        use crate::vm;
+
+        /// `[title](url)`: brackets in the title escaped, newlines folded, a
+        /// destination with parentheses wrapped in `<…>`.
+        pub fn link(title: &str, url: &str) -> String {
+            let t: String = title
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ")
+                .replace('\\', "\\\\");
+            let t = if t.is_empty() { url.to_string() } else { t };
+            format!(
+                "[{}]({})",
+                vm::escape_link_text(&t),
+                vm::link_destination(url.trim())
+            )
+        }
+    }
+}
+
+/// `crate::fake::reading_seed`, for the reading view-model's own tests.
+#[cfg(test)]
+pub mod fake {
+    pub use crate::seed::reading_seed;
+}
 
 use store::WebStore;
 use studio::resolver::{StoreResolver, render_kind};
@@ -129,6 +164,7 @@ struct Row {
     dot_tip: Option<String>,
     when: String,
     selected: bool,
+    shelved: bool,
 }
 
 #[derive(Serialize)]
@@ -145,6 +181,9 @@ struct Current {
     status: &'static str,
     /// The new-post status line, while a ⌘N post is open.
     new_post: Option<String>,
+    shelved: bool,
+    /// What a reply stub answers (`host · title`), for the editor's header.
+    stub_of: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -157,6 +196,10 @@ struct View {
     current: Option<Current>,
     sync: String,
     sync_dot: &'static str,
+    /// How many rows at the top are shelved (a hairline goes under them).
+    shelf_len: usize,
+    /// The shelf strip: every shelved post, in order, filtered or not.
+    shelf: Vec<read_api::ShelfRow>,
 }
 
 #[derive(Serialize)]
@@ -211,7 +254,7 @@ fn kind_name(k: Kind) -> &'static str {
 pub struct Burrow {
     store: WebStore,
     list: ListModel,
-    reading: Vec<ReadingItem>,
+    rd: seed::Reading,
     /// A ⌘N post: `Some(None)` before its first keystroke, then its id.
     new_post: Option<Option<LocalId>>,
     /// The row selected before ⌘N, where ↑/↓ go on from.
@@ -232,11 +275,21 @@ impl Burrow {
             .and_then(WebStore::from_json)
             .unwrap_or_else(|| WebStore::seeded(now));
         let mut list = ListModel::default();
-        list.set_query("", store.items());
+        list.set_query("", store.arrange(store.items()).0);
+        let mut rd = seed::reading(now);
+        for r in &mut rd.rows {
+            let key = read_api::key_of(r);
+            if let Some(v) = store.read.get(&key) {
+                r.read_version = *v;
+            }
+            if let Some(h) = store.hopped.get(&key) {
+                r.hoppers = h.clone();
+            }
+        }
         Burrow {
             store,
             list,
-            reading: seed::reading(now),
+            rd,
             new_post: None,
             before_new: None,
             sync: SyncStatus::Synced,
@@ -281,7 +334,12 @@ impl Burrow {
 
     fn refresh(&mut self) {
         let q = self.list.query().to_string();
-        self.list.refresh(self.store.search(&q));
+        self.list.refresh(self.results(&q));
+    }
+
+    /// The store's matches for `q`, shelved posts first.
+    fn results(&self, q: &str) -> Vec<Item> {
+        self.store.arrange(self.store.search(q)).0
     }
 
     /// After a change to the open post: fresh results, and the post stays
@@ -318,8 +376,15 @@ impl Burrow {
                 dot_tip: vm::edits_tip(it),
                 when: vm::relative_time(&it.updated, now),
                 selected: sel.as_ref() == Some(&it.local_id),
+                shelved: self.store.shelf.contains(&it.local_id),
             })
             .collect();
+        let shelf_len = self
+            .list
+            .results()
+            .iter()
+            .take_while(|i| self.store.shelf.contains(&i.local_id))
+            .count();
         let current = match (&self.new_post, self.current_item()) {
             (Some(None), _) => Some(Current {
                 id: None,
@@ -333,6 +398,8 @@ impl Burrow {
                 permalink: None,
                 status: "new",
                 new_post: Some(NEW_NOTE.into()),
+                shelved: false,
+                stub_of: None,
             }),
             (_, Some(it)) => {
                 let chars = it.char_count();
@@ -349,6 +416,8 @@ impl Burrow {
                     status: status_name(it.status),
                     new_post: (self.new_post.is_some() && it.status == Status::Scratch)
                         .then(|| NEW_NOTE.into()),
+                    shelved: self.store.shelf.contains(&it.local_id),
+                    stub_of: self.stub_label(&it),
                     content: it.content_md,
                 })
             }
@@ -371,6 +440,8 @@ impl Burrow {
             current,
             sync: label,
             sync_dot: dot_class(dot),
+            shelf_len,
+            shelf: self.shelf_rows(now),
         })
     }
 
@@ -378,7 +449,7 @@ impl Burrow {
     /// match and the editor shows it (NV).
     pub fn set_query(&mut self, query: &str) {
         self.leave_new_post();
-        let results = self.store.search(query);
+        let results = self.results(query);
         self.list.set_query(query, results);
     }
 
@@ -423,7 +494,7 @@ impl Burrow {
             &rfc(now_ms),
             now_ms as i64,
         );
-        self.list.set_query("", self.store.items());
+        self.list.set_query("", self.results(""));
         self.list.select(&id);
         self.touched();
         id.0
@@ -753,7 +824,7 @@ impl Burrow {
             ..blyg_render::RenderOpts::default()
         };
         let resolver = if md.contains("[[") {
-            StoreResolver::new(self.store.items(), self.reading.clone(), &[], &opts.mount)
+            StoreResolver::new(self.store.items(), self.rd.rows.clone(), &[], &opts.mount)
         } else {
             StoreResolver::empty(&opts.mount)
         };

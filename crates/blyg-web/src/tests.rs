@@ -277,3 +277,205 @@ fn an_unlisted_post_stays_the_one_acted_on() {
     // The listed thread is untouched.
     assert_eq!(titles(&view(&b)).len(), 1);
 }
+
+// ---------------------------------------------------------------- phone
+
+fn reading(b: &Burrow, q: &str, unread_only: bool) -> Value {
+    serde_json::from_str(&b.reading_view(NOW, q, unread_only)).unwrap()
+}
+
+fn ids(v: &Value) -> Vec<String> {
+    v["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn reading_marks_read_by_swipe_and_by_opening_and_remembers() {
+    let mut b = Burrow::new(NOW, None);
+    let r = reading(&b, "", false);
+    let unread = r["unread"].as_u64().unwrap();
+    assert!(unread >= 2, "{r}");
+    // Excerpts are the post's own words, without markup or quoted posts.
+    for x in r["rows"].as_array().unwrap() {
+        let e = x["excerpt"].as_str().unwrap();
+        assert!(!e.contains("![[") && !e.contains("## "), "{e}");
+    }
+    let unread_keys: Vec<String> = r["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|x| x["unread"] == true)
+        .map(|x| x["key"].as_str().unwrap().to_string())
+        .collect();
+    // Swipe right.
+    assert_eq!(
+        outcome(b.set_read(&unread_keys[0], true))["message"],
+        "Marked read"
+    );
+    // Open.
+    let post: Value = serde_json::from_str(&b.open_reading(&unread_keys[1], NOW)).unwrap();
+    assert!(!post["html"].as_str().unwrap().is_empty());
+    assert!(post["by"].as_str().unwrap().contains(" · v"), "{post}");
+    assert_eq!(
+        reading(&b, "", false)["unread"].as_u64().unwrap(),
+        unread - 2
+    );
+    // Unread only leaves them out.
+    let only = reading(&b, "", true);
+    assert!(
+        only["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|x| x["unread"] == true)
+    );
+    // Kept with the store.
+    let again = Burrow::new(NOW, Some(b.to_json()));
+    assert_eq!(
+        reading(&again, "", false)["unread"].as_u64().unwrap(),
+        unread - 2
+    );
+}
+
+#[test]
+fn holding_a_sentence_replies_to_just_that_passage() {
+    let mut b = Burrow::new(NOW, None);
+    let r = reading(&b, "", false);
+    let row = r["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|x| {
+            x["excerpt"]
+                .as_str()
+                .is_some_and(|e| e.split_whitespace().count() > 6)
+        })
+        .unwrap()
+        .clone();
+    let key = row["key"].as_str().unwrap();
+    // The first few words of the post's text, as a held passage.
+    let passage = row["excerpt"]
+        .as_str()
+        .unwrap()
+        .split_whitespace()
+        .take(5)
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert_eq!(outcome(b.reply_to(key, &passage, NOW))["action"], "create");
+    let v = view(&b);
+    let cur = &v["current"];
+    assert_eq!(cur["kind_label"], "≡ thread");
+    let content = cur["content"].as_str().unwrap();
+    assert!(content.contains(&passage), "{content}");
+    let stub = cur["stub_of"].as_str().unwrap();
+    assert!(stub.starts_with("↩ Replying to"), "{stub}");
+    // It survives a reload.
+    let again = Burrow::new(NOW, Some(b.to_json()));
+    assert!(
+        view(&again)["rows"].as_array().unwrap().len()
+            > titles(&view(&Burrow::new(NOW, None))).len()
+    );
+    assert!(again.to_json().contains("stub_of"));
+}
+
+#[test]
+fn the_shelf_comes_first_keeps_its_order_and_holds_fifty() {
+    let mut b = Burrow::new(NOW, None);
+    let all = ids(&view(&b));
+    let (a, c) = (&all[3], &all[5]);
+    assert_eq!(outcome(b.set_on_shelf(a, true))["action"], "nothing");
+    assert_eq!(outcome(b.set_on_shelf(c, true))["action"], "nothing");
+    let v = view(&b);
+    assert_eq!(v["shelf_len"], 2);
+    assert_eq!(v["rows"][0]["id"], a.as_str());
+    assert_eq!(v["rows"][1]["id"], c.as_str());
+    assert_eq!(v["rows"][0]["shelved"], true);
+    b.move_on_shelf(c, 0);
+    let v = view(&b);
+    assert_eq!(v["shelf"][0]["id"], c.as_str());
+    assert_eq!(v["rows"][0]["id"], c.as_str());
+    // The open post's 📚 toggles it.
+    b.open_from_shelf(a);
+    assert_eq!(view(&b)["current"]["shelved"], true);
+    assert_eq!(outcome(b.toggle_shelf())["message"], "Taken off your shelf");
+    assert_eq!(view(&b)["shelf_len"], 1);
+    // Fifty at most.
+    for i in 0..60 {
+        b.capture(&format!("note {i}"), false, NOW);
+    }
+    let rest: Vec<String> = ids(&view(&b)).into_iter().filter(|id| id != c).collect();
+    for id in &rest[..49] {
+        assert_eq!(outcome(b.set_on_shelf(id, true))["action"], "nothing");
+    }
+    assert_eq!(view(&b)["shelf"].as_array().unwrap().len(), 50);
+    let full = outcome(b.set_on_shelf(&rest[49], true));
+    assert_eq!(full["action"], "toast", "{full}");
+}
+
+#[test]
+fn quick_capture_keeps_or_publishes() {
+    let mut b = Burrow::new(NOW, None);
+    let c: Value = serde_json::from_str(&Burrow::capture_counter("Low tide")).unwrap();
+    assert!(c["label"].as_str().unwrap().contains("/ 1000"), "{c}");
+    assert_eq!(
+        outcome(b.capture("  ", false, NOW))["message"],
+        "Nothing to keep yet"
+    );
+    let kept = outcome(b.capture("Low tide this morning.", false, NOW));
+    assert_eq!(kept["message"], "Kept as a note in this browser");
+    let p = outcome(b.capture("A map nobody reads.", true, NOW));
+    assert_eq!(p["action"], "published");
+    assert_eq!(p["version"], 1);
+    assert!(
+        p["permalink"]
+            .as_str()
+            .unwrap()
+            .starts_with("https://blyg.example.com")
+    );
+    b.set_offline(true);
+    let off = outcome(b.capture("On a train.", true, NOW));
+    assert!(
+        off["message"].as_str().unwrap().starts_with("Offline"),
+        "{off}"
+    );
+}
+
+#[test]
+fn the_pickers_link_anything_and_quote_into_threads() {
+    let mut b = Burrow::new(NOW, None);
+    let t: Value = serde_json::from_str(&b.pick_targets("")).unwrap();
+    let t = t.as_array().unwrap();
+    assert!(
+        t.iter()
+            .any(|x| x["sub"].as_str().unwrap().starts_with("yours"))
+    );
+    let theirs = t
+        .iter()
+        .find(|x| !x["sub"].as_str().unwrap().starts_with("yours"))
+        .unwrap();
+    let (id, label) = (
+        theirs["id"].as_str().unwrap(),
+        theirs["label"].as_str().unwrap(),
+    );
+    let link = outcome(b.pick_markup(id, label, false));
+    assert_eq!(link["action"], "insert");
+    assert!(
+        link["text"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("[[{id}")),
+        "{link}"
+    );
+    // The open post is a fragment: a quote needs a thread.
+    assert_eq!(view(&b)["current"]["kind_label"], "◦ fragment");
+    assert_eq!(outcome(b.pick_markup(id, label, true))["action"], "toast");
+    b.toggle_kind(NOW);
+    let q = outcome(b.pick_markup(id, label, true));
+    assert_eq!(q["action"], "insert");
+    assert_eq!(q["block"], true);
+    assert!(q["text"].as_str().unwrap().starts_with("![["), "{q}");
+}

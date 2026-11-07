@@ -5,7 +5,8 @@
 //! stands in for a blyg.
 
 use blyg_core::{
-    Author, HighlightMode, Item, Kind, LocalId, ReadingItem, ResponsesMode, ServerId, Status,
+    Author, HighlightMode, Hopper, Item, Kind, LocalId, ReadingItem, ResponsesMode, ServerId,
+    Status, Subscription,
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -140,11 +141,44 @@ pub fn items(now: DateTime<Utc>) -> Vec<Item> {
     out
 }
 
-/// The one imported post from a subscription (`fake.rs` `sample_reading`),
-/// so `![[01j9t4r7…]]` in a thread resolves in the preview.
-pub fn reading(now: DateTime<Utc>) -> Vec<ReadingItem> {
+/// The native fake's reading data (subscriptions, the reading list with
+/// stubs, forks and quotes between posts, hoppers), compiled unchanged.
+/// It names the sample blyg as `super::ORIGIN`.
+#[path = "../../blyg-app/src/fake_reading.rs"]
+#[allow(dead_code)]
+pub mod reading_seed;
+
+/// Everything the Read tab shows: the fake's reading seed plus the
+/// shoreline post, with hopper membership filled in from the seed.
+pub struct Reading {
+    pub rows: Vec<ReadingItem>,
+    pub subs: Vec<Subscription>,
+    pub hoppers: Vec<Hopper>,
+}
+
+pub fn reading(now: DateTime<Utc>) -> Reading {
+    let s = reading_seed::seed(now);
+    let mut rows = s.reading;
+    rows.push(shoreline(now));
+    for (hopper, sub, id) in &s.hopper_items {
+        if let Some(r) = rows
+            .iter_mut()
+            .find(|r| &r.subscription_id == sub && &r.remote_id == id)
+        {
+            r.hoppers.push(hopper.clone());
+        }
+    }
+    Reading {
+        rows,
+        subs: s.subs,
+        hoppers: s.hoppers,
+    }
+}
+
+/// The shoreline post (`fake.rs` `sample_reading`).
+fn shoreline(now: DateTime<Utc>) -> ReadingItem {
     let when = (now - Duration::days(1)).to_rfc3339();
-    vec![ReadingItem {
+    ReadingItem {
         subscription_id: SAMPLE_SUB.into(),
         remote_id: SAMPLE_QUOTE_ID.into(),
         subscription_title: "Shoreline Notes".into(),
@@ -173,5 +207,5 @@ pub fn reading(now: DateTime<Utc>) -> Vec<ReadingItem> {
         lineage_known: false,
         source_url: None,
         generated: None,
-    }]
+    }
 }
