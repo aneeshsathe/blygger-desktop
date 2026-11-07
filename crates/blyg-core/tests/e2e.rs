@@ -1185,7 +1185,11 @@ fn highlight_round_trips_and_marks_the_public_page() {
             .nth(1)
             .and_then(|r| r.split('"').next())
             .unwrap_or_default()
-            .to_string()
+            .split_whitespace()
+            // Studio 0.56 marks every post up as microformats.
+            .filter(|c| *c != "h-entry")
+            .collect::<Vec<_>>()
+            .join(" ")
     };
     assert_eq!(article(&page()), "fragment", "no class of its own");
 
