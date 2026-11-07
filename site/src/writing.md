@@ -18,6 +18,24 @@ saved on your Mac and synced shortly after you stop typing. A post's title is
 its first line of text (a leading heading is the title), never a quote it
 starts with.
 
+### The shelf
+
+Some posts you keep coming back to: a /now page, a reading log, a running
+list of links. Put them on your **shelf** so you never have to search for
+them. **⌥⌘B** (Post › Put on Shelf / Take Off) shelves the open post, or
+takes it off. Shelved posts are marked 📚 and stay at the top of the list, in
+your order, above a thin rule. When you search, the shelved posts that match
+come first.
+
+**⌘B** (Post › Shelf…) opens the shelf: **1–9** or ⏎ opens a post on it,
+**⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post off, and esc closes
+it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
+scratch note. A withdrawn post leaves it.
+
+The shelf is kept on this Mac (on Windows, this computer; the keys are
+Ctrl+B and Ctrl+Alt+B). It's not the same as pinning a version in ⌘Y, which
+is public and permanent.
+
 ## Fragments and threads
 
 A blyg holds two kinds of post:

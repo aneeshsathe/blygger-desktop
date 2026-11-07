@@ -18,11 +18,16 @@ pub enum EnterAction {
 }
 
 /// The NV list: current query, the backend's results for it, and the selection.
+/// Shelved posts (`Backend::shelf`) that match come first, in your order;
+/// the rest keep the backend's order.
 #[derive(Debug, Default)]
 pub struct ListModel {
     query: String,
     results: Vec<Item>,
     selected: Option<LocalId>,
+    // --- shelf ---
+    shelf: Vec<LocalId>,
+    shelf_len: usize,
 }
 
 impl ListModel {
@@ -53,14 +58,49 @@ impl ListModel {
 
     /// A new query was typed: the selection jumps to the first match (NV).
     pub fn set_query(&mut self, query: &str, results: Vec<Item>) {
+        let results = self.arrange(results);
         self.query = query.to_string();
         self.selected = results.first().map(|i| i.local_id.clone());
         self.results = results;
     }
 
+    // --- shelf ---
+
+    /// The shelf changed: re-order what's listed, keeping the selection.
+    /// A post taken off stays where it is until the next `refresh` /
+    /// `set_query` puts it back in the backend's order.
+    pub fn set_shelf(&mut self, shelf: Vec<LocalId>) {
+        self.shelf = shelf;
+        let results = std::mem::take(&mut self.results);
+        self.results = self.arrange(results);
+    }
+
+    pub fn is_on_shelf(&self, id: &LocalId) -> bool {
+        self.shelf.contains(id)
+    }
+
+    /// How many rows at the top are on the shelf.
+    pub fn shelf_len(&self) -> usize {
+        self.shelf_len
+    }
+
+    /// Shelved matches first, in shelf order; the rest in the order given.
+    fn arrange(&mut self, mut results: Vec<Item>) -> Vec<Item> {
+        let mut top = Vec::new();
+        for id in &self.shelf {
+            if let Some(ix) = results.iter().position(|i| &i.local_id == id) {
+                top.push(results.remove(ix));
+            }
+        }
+        self.shelf_len = top.len();
+        top.extend(results);
+        top
+    }
+
     /// Same query, fresh results (sync pulled something). Keeps the selection
     /// if it's still there, else falls back to the first row.
     pub fn refresh(&mut self, results: Vec<Item>) {
+        let results = self.arrange(results);
         let keep = self
             .selected
             .as_ref()
@@ -90,6 +130,9 @@ impl ListModel {
             return;
         };
         self.results.remove(ix);
+        if ix < self.shelf_len {
+            self.shelf_len -= 1;
+        }
         if self.selected.as_ref() == Some(id) {
             self.selected = self
                 .results
@@ -982,6 +1025,40 @@ mod tests {
 
     fn ids(v: &[&str]) -> Vec<Item> {
         v.iter().map(|s| item(s, s)).collect()
+    }
+
+    #[test]
+    fn shelved_matches_come_first_in_shelf_order() {
+        let id = |s: &str| LocalId(s.into());
+        let mut m = ListModel::default();
+        m.set_shelf(vec![id("d"), id("b")]);
+        m.set_query("", ids(&["a", "b", "c", "d"]));
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["d", "b", "a", "c"]);
+        assert_eq!(m.shelf_len(), 2);
+        assert_eq!(m.selected(), Some(&id("d")), "the first shelved post");
+        assert!(m.is_on_shelf(&id("b")) && !m.is_on_shelf(&id("a")));
+
+        // A query: only shelved matches rank first; the others stay hidden.
+        m.set_query("x", ids(&["a", "b", "c"]));
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["b", "a", "c"]);
+        assert_eq!(m.shelf_len(), 1);
+
+        // Taking one off re-orders in place and keeps the selection.
+        m.select(&id("c"));
+        m.set_shelf(vec![]);
+        let order: Vec<_> = m.results().iter().map(|i| i.local_id.0.clone()).collect();
+        assert_eq!(order, ["b", "a", "c"], "the backend's order as given");
+        assert_eq!(m.shelf_len(), 0);
+        assert_eq!(m.selected(), Some(&id("c")));
+
+        // Removing a shelved row shrinks the shelf block.
+        m.set_shelf(vec![id("a")]);
+        m.refresh(ids(&["a", "b", "c"]));
+        assert_eq!(m.shelf_len(), 1);
+        m.remove(&id("a"));
+        assert_eq!(m.shelf_len(), 0);
     }
 
     #[test]

@@ -21,6 +21,15 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.18.0",
+        items: &[
+            "The shelf: ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the \
+             top of the list, marked 📚. ⌘B opens the shelf; 1–9 opens a post on it, ⌥↑/⌥↓ \
+             reorder it. It's kept on this Mac for now.",
+        ],
+        first_step: Some("shelf"),
+    },
+    Release {
         version: "0.17.0",
         items: &[
             "Burrow stays quick with thousands of posts in Reading: a sync that finds nothing \

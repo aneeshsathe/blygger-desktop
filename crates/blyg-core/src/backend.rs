@@ -577,6 +577,31 @@ pub trait Backend: Send + Sync {
 
     // --- end reader folders ---
 
+    // --- shelf ---
+    // Your own posts kept to hand at the top of the Write list, in your
+    // order. Local only (this store), never sent to the blyg, and unrelated
+    // to pinning a version (public and permanent). Additive; the defaults
+    // shelve nothing and refuse changes, so implementors compile.
+
+    /// The shelf in order (withdrawn posts left out).
+    fn shelf(&self) -> Vec<LocalId> {
+        Vec::new()
+    }
+
+    /// Put a post on the shelf (at the end), or take it off. Idempotent.
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        let _ = (id, on);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    /// Move a shelved post to `index` on the shelf (clamped).
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        let _ = (id, index);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    // --- end shelf ---
+
     // --- quote targets ---
     // Opening a quote's (or a stub's, or a fork's) original that isn't held
     // here: its public files, fetched unauthenticated with `PublicClient`

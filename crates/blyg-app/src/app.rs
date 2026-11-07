@@ -105,6 +105,9 @@ pub(crate) mod extensions;
 // --- blyg switcher --- (several blygs, one active; hooks marked the same way)
 #[path = "switcher.rs"]
 pub(crate) mod switcher;
+// --- shelf --- (posts kept to hand; hooks marked the same way)
+#[path = "shelf.rs"]
+pub(crate) mod shelf;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -211,6 +214,8 @@ enum Sheet {
     MacroPost(browser::automation::PostSheet),
     // --- blyg switcher --- every signed-in blyg; switch, add, sign out.
     Blygs(switcher::BlygSheet),
+    // --- shelf --- ⌘B: the posts you keep to hand.
+    Shelf(shelf::ShelfSheet),
 }
 
 struct Toast {
@@ -431,6 +436,7 @@ impl MainView {
             _tasks: tasks,
             _subs: subs,
         };
+        this.reload_shelf(); // --- shelf ---
         let results = this.backend.search("");
         this.list.set_query("", results);
         this.load_selected(window, cx);
@@ -1072,6 +1078,7 @@ impl MainView {
     }
 
     fn requery(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reload_shelf(); // --- shelf ---
         let results = self.backend.search(self.list.query());
         self.list.refresh(results);
         self.new_post_sync_selection(); // --- new post ---
@@ -2143,6 +2150,7 @@ impl Render for MainView {
             .map(|d| self.notes_actions(d, cx)) // --- notes ---
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
+            .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
             .size_full()
             .relative()
             .flex()
@@ -2490,14 +2498,57 @@ impl MainView {
         let (pill_text, pill_pub) = vm::pill(item);
         let id = item.local_id.clone();
         let row = div().id(("row", ix)).py(px(6.)).text_color(p.ink);
+        // --- shelf --- a hairline under the last shelved row (absolute, so
+        // every row keeps the one height `uniform_list` needs).
+        let shelf_end = ix + 1 == self.list.shelf_len() && ix + 1 < self.list.results().len();
+        let row = row.when(shelf_end, |d| {
+            d.relative().child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .right_0()
+                    .bottom_0()
+                    .h(px(1.))
+                    .bg(self.palette.side_line),
+            )
+        });
         crate::ornament::row(&self.theme, row, selected)
             .on_click(cx.listener(move |this, _, window, cx| this.open(&id, window, cx)))
             .child(
                 div()
                     .text_size(px(lsize))
                     .line_height(relative(1.35))
-                    .truncate()
-                    .child(StyledText::new(title).with_highlights(highlights)),
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    // --- shelf --- a post kept to hand.
+                    .when(self.list.is_on_shelf(&item.local_id), |d| {
+                        d.child(
+                            div()
+                                .id(("row-shelf", ix))
+                                .flex_none()
+                                .text_size(px(lsize * 0.8))
+                                .tooltip(|_, cx| {
+                                    cx.new(|_| {
+                                        reading::Tip(
+                                            crate::keymap::hint(
+                                                "On your shelf · ⌘B opens it · ⌥⌘B takes it off",
+                                            )
+                                            .into(),
+                                        )
+                                    })
+                                    .into()
+                                })
+                                .child(shelf::GLYPH),
+                        )
+                    })
+                    .child(
+                        div()
+                            .min_w_0()
+                            .flex_1()
+                            .truncate()
+                            .child(StyledText::new(title).with_highlights(highlights)),
+                    ),
             )
             .child(
                 div()
@@ -3058,6 +3109,7 @@ impl MainView {
             Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
             Sheet::MacroPost(s) => self.render_macro_post(s, cx),
             Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
+            Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
             Sheet::Publish {
                 title,
                 next_version,

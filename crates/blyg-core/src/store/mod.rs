@@ -18,6 +18,7 @@ mod lineage; // --- lineage counts ---
 pub use lineage::Served as LineageServed;
 mod pick;
 mod provenance;
+mod shelf; // --- shelf ---
 pub use provenance::Tracked;
 mod read_sync;
 mod reading;
@@ -1350,6 +1351,9 @@ mod pick_tests;
 
 #[cfg(test)]
 mod folders_tests; // --- reader folders ---
+
+#[cfg(test)]
+mod shelf_tests; // --- shelf ---
 
 #[cfg(test)]
 mod read_state_tests; // --- read/unread ---

@@ -162,6 +162,8 @@ struct State {
     folder_seq: u64,
     // --- browse --- the private browsing log, oldest first.
     browse: Vec<blyg_core::browse::BrowseStep>,
+    // --- shelf --- in order; may name posts since deleted.
+    shelf: Vec<LocalId>,
 }
 
 pub struct FakeBackend {
@@ -344,6 +346,7 @@ impl FakeBackend {
                 reading_sends: Vec::new(),
                 folder_seq: 0,
                 browse: Vec::new(),
+                shelf: Vec::new(), // --- shelf ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -1754,6 +1757,52 @@ impl Backend for FakeBackend {
             }
         }
         out
+    }
+
+    // --- shelf --- the same rules as the store (pinned.rs).
+    fn shelf(&self) -> Vec<LocalId> {
+        let st = self.lock();
+        st.shelf
+            .iter()
+            .filter(|id| {
+                st.items
+                    .iter()
+                    .any(|i| &i.local_id == *id && i.status != Status::Withdrawn)
+            })
+            .cloned()
+            .collect()
+    }
+
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        let mut st = self.lock();
+        if !st.items.iter().any(|i| &i.local_id == id) {
+            st.shelf.retain(|p| p != id);
+            return if on { Err(CoreError::NotFound) } else { Ok(()) };
+        }
+        let at = st.shelf.iter().position(|p| p == id);
+        match (on, at) {
+            (true, None) => st.shelf.push(id.clone()),
+            (false, Some(ix)) => {
+                st.shelf.remove(ix);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        let visible = self.shelf();
+        let mut st = self.lock();
+        let Some(from) = st.shelf.iter().position(|p| p == id) else {
+            return Err(CoreError::NotFound);
+        };
+        let anchor = visible.into_iter().filter(|v| v != id).nth(index);
+        let f = st.shelf.remove(from);
+        let to = anchor
+            .and_then(|a| st.shelf.iter().position(|p| *p == a))
+            .unwrap_or(st.shelf.len());
+        st.shelf.insert(to, f);
+        Ok(())
     }
 
     // --- reader folders --- the same rules as the store (folders.rs).

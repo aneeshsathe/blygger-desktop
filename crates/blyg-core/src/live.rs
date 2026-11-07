@@ -1311,6 +1311,24 @@ impl Backend for LiveBackend {
         self.e().store.set_subscription_folder(sub_id, folder)
     }
 
+    // --- shelf --- local only: the store, nothing queued.
+
+    fn shelf(&self) -> Vec<LocalId> {
+        self.e().store.shelf()
+    }
+
+    fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
+        self.e().store.set_on_shelf(id, on)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(())
+    }
+
+    fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
+        self.e().store.move_on_shelf(id, index)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        Ok(())
+    }
+
     // --- quote targets ---
 
     fn public_item(&self, origin: &str, id: &str) -> Result<crate::backend::PublicItem> {

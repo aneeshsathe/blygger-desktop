@@ -69,6 +69,8 @@ use crate::composer::ToggleSpellcheck;
 use crate::app::notes::{QuoteToDraft, ToggleNotes};
 // --- extensions ---
 use crate::app::extensions::ShowExtensions;
+// --- shelf ---
+use crate::app::shelf::{ShowShelf, ToggleShelf};
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -611,6 +613,23 @@ pub fn mac_table() -> Vec<Keybind> {
             HopperPicker,
             "Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen)",
             Some("Post › Put in Hopper…")
+        ),
+        // --- shelf --- (posts kept to hand). ⌘B is free in gpui-base's
+        // inputs, which bind no bold; ⇧⌘B is the browser, so the toggle is
+        // ⌥⌘B (Ctrl+Alt+B on Windows, like the hopper picker's ⌥⌘P).
+        kb!(
+            "cmd-b",
+            Main,
+            ShowShelf,
+            "Shelf: the posts you keep to hand (1–9 opens one)",
+            Some("Post › Shelf…")
+        ),
+        kb!(
+            "alt-cmd-b",
+            Main,
+            ToggleShelf,
+            "Put the open post on your shelf, or take it off",
+            Some("Post › Put on Shelf / Take Off")
         ),
         // --- end own posts ---
         menu_only!(

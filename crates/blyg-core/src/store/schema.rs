@@ -327,6 +327,18 @@ const MIGRATIONS: &[&str] = &[
                      json_extract(new.json, '$.content_html'), ''));
     END;
     "#,
+    // v17 --- shelf --- (store/shelf.rs) your own posts kept to hand at
+    // the top of the Write list, in your order. Local only for now, like the
+    // Reader's folders: never queued or sent (blygger-studio#135 proposes a
+    // synced `/shelf`). Unrelated to version pins (`versions`,
+    // `remote_pins`), which are public and permanent. A post that's deleted
+    // here drops out by cascade.
+    r#"
+    CREATE TABLE shelf (
+        local_id  TEXT PRIMARY KEY REFERENCES items(local_id) ON DELETE CASCADE,
+        position  INTEGER NOT NULL
+    );
+    "#,
 ];
 
 /// Returns whether any migration ran.

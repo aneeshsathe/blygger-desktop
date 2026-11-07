@@ -640,6 +640,7 @@ fn do_step(e: &mut Env, id: &str) {
         // The Post menu's item (Windows has no key for it).
         "discard" => e.cx.dispatch_action(crate::app::discard::DiscardChanges),
         "own-post" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-r")),
+        "shelf" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-b")),
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

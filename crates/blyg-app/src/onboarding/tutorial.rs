@@ -591,6 +591,7 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::ReplyToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
+        let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 

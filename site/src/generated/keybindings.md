@@ -51,6 +51,8 @@
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
 | ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
+| ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
+| ⌥⌘B | Put the open post on your shelf, or take it off | Post › Put on Shelf / Take Off |
 | ⌥⌘1 | Reading as a stream (the default) | Blyg › Stream |
 | ⌥⌘2 | Reading as a list with the post beside it | Blyg › Reader |
 | ⇧⌘K | Compose while reading: the post box at the foot of the reading screen (c there) | Blyg › Compose While Reading |

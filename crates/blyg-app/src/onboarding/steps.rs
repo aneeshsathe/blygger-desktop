@@ -91,6 +91,9 @@ pub enum Key {
     HopperPicker,
     /// The Hopper picker is open on several picked posts at once.
     HopperSeveral,
+    // --- shelf ---
+    /// A post was put on the shelf or taken off (⌥⌘B).
+    Shelf,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -493,6 +496,35 @@ pub const STEPS: &[Step] = &[
         region: Region::Editor,
         button: Some("Discard"),
         setup: Setup::Edited("Then I wrote this down, and thought better of it."),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- shelf ---
+    Step {
+        id: "shelf",
+        since: "0.18.0",
+        title: "Keep it on your shelf",
+        caption: if cfg!(target_os = "windows") {
+            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
+             Ctrl+Alt+B puts the open post on your shelf: 📚 marks it and it stays at the top \
+             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. The shelf is \
+             kept on this computer."
+        } else {
+            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
+             ⌥⌘B puts the open post on your shelf: 📚 marks it and it stays at the top of the \
+             list. ⌘B opens the shelf, and 1–9 opens a post on it. The shelf is kept on this \
+             Mac."
+        },
+        keys: &[Key::Shelf],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Alt+B"
+        } else {
+            "⌥⌘B"
+        },
+        region: Region::List,
+        button: None,
+        setup: Setup::EnsureOpen,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1057,6 +1089,7 @@ mod tests {
             Key::BlygSwitcher,
             Key::HopperPicker,
             Key::HopperSeveral,
+            Key::Shelf,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

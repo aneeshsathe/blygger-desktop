@@ -60,6 +60,25 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   ⌘D draft · ⌘⏎ publish" ("New draft · syncs to your blyg · ⌘⏎ publish" with
   `new-note = draft`). The omnibar's create (`⏎` with no match) is unchanged.
   Code: `crates/blyg-app/src/new_post.rs`.
+- **Shelf** (`shelf.rs`, `store/shelf.rs`; user request 2026-11-06): your own
+  posts kept to hand, for the living posts you keep updating. **⌥⌘B** (Post ›
+  Put on Shelf / Take Off; Ctrl+Alt+B on Windows, since ⇧⌘B is the browser)
+  shelves the open post or takes it off, with a toast ("On your shelf · ⌘B" /
+  "Taken off your shelf"). Shelved posts that match the omnibar come first in
+  the list, in shelf order (`vm::ListModel::set_shelf`), each with 📚 before its
+  title, and a hairline under the last one; the rest keep the backend's order.
+  **⌘B** (Post › Shelf…) drops a sheet listing the shelf: 1–9 / ⏎ open a post
+  (clearing a search that hides it), ↑/↓ move, ⌥↑/⌥↓ reorder, ⌫ takes the
+  highlighted post off, esc closes. Any post of yours (thread, fragment, draft,
+  scratch note; a scratch note keeps its place when promoted, same `LocalId`);
+  withdrawn posts are left out, deleted ones drop out by cascade. **Local
+  only for now**: store table `shelf(local_id, position)` (schema v17),
+  `Backend::shelf` / `set_on_shelf` / `move_on_shelf`, never queued or sent.
+  blygger-studio#135 adds an owner-only `GET/PUT /shelf {itemIds, revision}`
+  (`expectedRevision`, 409 with the current list; unknown and withdrawn ids
+  dropped; change domain `shelf`); Burrow moves onto it once released, keeping
+  scratch notes and unsynced drafts local. Named "shelf", never "pin": a pin is
+  a public, permanent version pin (§ Versions & pins).
 - **Reading actions on your own post** (`reading/own.rs`): a published post of
   yours shows a row of chips above the editor, "Your post · vN ·" then **Reply ·
   new stub** (⌥⌘R), **Quote into a thread** (⌥⌘Q) and **Link post · new

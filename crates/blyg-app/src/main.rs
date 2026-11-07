@@ -420,6 +420,9 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
                 MenuItem::action("Put in Hopper…", app::reading::hoppers::HopperPicker),
+                // --- shelf ---
+                MenuItem::action("Shelf…", app::shelf::ShowShelf),
+                MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
                 // --- extensions ---
