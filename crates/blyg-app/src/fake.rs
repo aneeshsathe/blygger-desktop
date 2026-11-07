@@ -167,6 +167,8 @@ struct State {
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
+    // --- site --- the public site's settings (`blyg_core::site`).
+    site: blyg_core::site::SiteConfig,
 }
 
 pub struct FakeBackend {
@@ -352,6 +354,7 @@ impl FakeBackend {
                 shelf: Vec::new(),  // --- shelf ---
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
+                site: fake_site(), // --- site ---
             })),
             generation: Arc::new(AtomicU64::new(0)),
             timing,
@@ -2234,6 +2237,83 @@ impl Backend for FakeBackend {
         ))
     }
 
+    // --- site --- the "server" checks what Studio checks, and refuses as it
+    // does (400 with its words).
+    fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(self.lock().site.clone())
+    }
+
+    fn save_site_config(
+        &self,
+        base: &blyg_core::site::SiteConfig,
+        next: &blyg_core::site::SiteConfig,
+    ) -> Result<blyg_core::site::SiteConfig> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        let refuse = |message: String| CoreError::Rejected {
+            status: 400,
+            message,
+            details: vec![],
+        };
+        if let Some(e) = next.error() {
+            return Err(refuse(e));
+        }
+        let mut st = self.lock();
+        if let Some(fp) = next.front_page.as_deref().filter(|f| !f.is_empty()) {
+            let ok = st.items.iter().any(|i| {
+                i.kind == Kind::Thread
+                    && i.status == Status::Public
+                    && i.server_id.as_ref().is_some_and(|s| s.0 == fp)
+            });
+            if !ok {
+                return Err(refuse("frontPage must be a published thread".to_string()));
+            }
+        }
+        if let Some(on) = &next.extensions
+            && let Some(bad) = on.iter().find(|n| {
+                !st.site
+                    .server_extensions
+                    .iter()
+                    .any(|e| &e.name == *n && e.compiled)
+            })
+        {
+            return Err(refuse(format!(
+                "extension not compiled into this build: {bad}"
+            )));
+        }
+        let patch = next.patch(base);
+        let mut stored = serde_json::to_value(&st.site).unwrap_or_default();
+        if let Some(o) = stored.as_object_mut() {
+            o.extend(patch);
+        }
+        let mut saved: blyg_core::site::SiteConfig =
+            serde_json::from_value(stored).map_err(|e| CoreError::Other(e.to_string()))?;
+        saved.feed_orders = st.site.feed_orders.clone();
+        saved.server_extensions = st.site.server_extensions.clone();
+        let on = saved.extensions.clone().unwrap_or_default();
+        for e in &mut saved.server_extensions {
+            e.enabled = on.contains(&e.name);
+        }
+        saved.update = if saved.update_check == Some(false) {
+            None
+        } else {
+            fake_studio_update()
+        };
+        st.site = saved.clone();
+        Ok(saved)
+    }
+
+    fn studio_update(&self) -> Option<blyg_core::site::StudioUpdate> {
+        self.lock().site.update.clone()
+    }
+
+    fn refresh_studio_update(&self, _: bool) -> Result<Option<blyg_core::site::StudioUpdate>> {
+        Ok(self.lock().site.update.clone())
+    }
+    // --- end site ---
+
     fn background_reading(&self) -> Vec<ReadingItem> {
         let st = self.lock();
         if !st.read_ext {
@@ -2412,6 +2492,55 @@ impl Backend for FakeBackend {
 }
 
 /// --- hoppers --- Each row's `hoppers` from the memberships.
+/// --- site --- The sample blyg's site settings, as studio 0.56 reports a
+/// fresh blyg's (with `inspect` and `reading-time` compiled in).
+fn fake_site() -> blyg_core::site::SiteConfig {
+    use blyg_core::site::{ServerExtension, SiteConfig, core_feed_orders};
+    let ext = |name: &str| ServerExtension {
+        name: name.into(),
+        compiled: true,
+        enabled: false,
+    };
+    SiteConfig {
+        author_url: Some(String::new()),
+        site_url: Some(String::new()),
+        avatar_media_id: Some(String::new()),
+        theme: Some("auto".into()),
+        custom_theme: Some(None),
+        custom_theme_dark: Some(None),
+        custom_theme_name: Some(String::new()),
+        font: Some("book".into()),
+        feed_order: Some("pace-layered".into()),
+        feed_orders: Some(core_feed_orders()),
+        front_page: Some(String::new()),
+        posts_path: Some("posts".into()),
+        links_position: Some("left".into()),
+        links_threads: Some(vec![]),
+        links_external: Some(vec![]),
+        links_collections: Some(true),
+        links_opml: Some(true),
+        links_blygger_org: Some(true),
+        links_blygger_com: Some(true),
+        hopper_feeds: Some(false),
+        update_check: Some(true),
+        update_feed_url: Some(String::new()),
+        update_notice_ack: Some(false),
+        extensions: Some(vec![]),
+        server_extensions: vec![ext("inspect"), ext("reading-time")],
+        update: fake_studio_update(),
+    }
+}
+
+/// --- site --- The sample studio's update state: current, unless
+/// `BLYGGER_FAKE_STUDIO_LATEST` names a newer release.
+fn fake_studio_update() -> Option<blyg_core::site::StudioUpdate> {
+    Some(blyg_core::site::StudioUpdate {
+        current: Some("0.56.0".into()),
+        latest: std::env::var("BLYGGER_FAKE_STUDIO_LATEST").unwrap_or_else(|_| "0.56.0".into()),
+        checked_at: "2026-11-07T08:00:00Z".into(),
+    })
+}
+
 fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {
     for r in rows {
         r.hoppers = items

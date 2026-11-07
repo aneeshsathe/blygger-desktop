@@ -980,6 +980,24 @@ impl Backend for SwitchBackend {
     fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
         self.cur().conflict_texts(id)
     }
+    // --- site ---
+    fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
+        self.cur().site_config()
+    }
+    fn save_site_config(
+        &self,
+        base: &blyg_core::site::SiteConfig,
+        next: &blyg_core::site::SiteConfig,
+    ) -> Result<blyg_core::site::SiteConfig> {
+        self.cur().save_site_config(base, next)
+    }
+    fn studio_update(&self) -> Option<blyg_core::site::StudioUpdate> {
+        self.cur().studio_update()
+    }
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<blyg_core::site::StudioUpdate>> {
+        self.cur().refresh_studio_update(force)
+    }
+    // --- end site ---
     // --- nearby ---
     fn nearby_vectors(&self, model: &str) -> Vec<blyg_core::nearby::NearbyVector> {
         self.cur().nearby_vectors(model)

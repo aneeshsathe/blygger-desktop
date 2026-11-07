@@ -55,6 +55,8 @@ use crate::app::reading::own::{LinkToPost, QuotePost, ReplyToPost};
 // --- hoppers ---
 use crate::app::reading::hoppers::{HopperPicker, NewHopper};
 
+// --- site ---
+use crate::app::site::ShowSite;
 // --- profiles ---
 use crate::app::profiles::{MyProfile, OpenProfile, ShowProfile};
 // --- delete & withdraw ---
@@ -755,6 +757,13 @@ pub fn mac_table() -> Vec<Keybind> {
             "The blyg's site settings (title, bio, links)",
             "Blyg › Site Settings…"
         ),
+        // --- site ---
+        menu_only!(
+            ShowSite,
+            "The blyg's public site: theme, typeface, front page, menus, avatar, collection feeds, studio updates and extensions",
+            "Blyg › Site…"
+        ),
+        // --- end site ---
         // --- stream --- (issue #1) the reading screen's two modes; the
         // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
         kb!(
@@ -1405,6 +1414,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = ToggleSpellcheck; // --- composer ---
     let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
+    let _ = ShowSite; // --- site ---
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

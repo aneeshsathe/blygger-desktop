@@ -912,6 +912,43 @@ pub trait Backend: Send + Sync {
         None
     }
 
+    // --- site --- The public site's settings Studio sets up (theme, font,
+    // front page, links menus, avatar, collection feeds, update alerts,
+    // extensions; `crate::site`). Additive: the defaults say "not here".
+
+    /// Read them (with the studio's extensions and update state).
+    /// `NotFound` when the server has no settings route.
+    fn site_config(&self) -> Result<crate::site::SiteConfig> {
+        Err(CoreError::NotFound)
+    }
+
+    /// Save what differs between `next` and `base` (as last read); answers
+    /// the stored settings. A refusal is `Rejected` with the server's words.
+    fn save_site_config(
+        &self,
+        base: &crate::site::SiteConfig,
+        next: &crate::site::SiteConfig,
+    ) -> Result<crate::site::SiteConfig> {
+        let _ = (base, next);
+        Err(CoreError::Other(
+            "site settings aren't supported here".into(),
+        ))
+    }
+
+    /// The studio's update state as last read: local, instant. `None`
+    /// until read, when not served, or with update alerts off.
+    fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
+        None
+    }
+
+    /// Read the update state again if it's older than six hours (`force`:
+    /// now). Network; call it off the UI thread.
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
+        let _ = force;
+        Ok(None)
+    }
+    // --- end site ---
+
     // --- nearby --- Nearby thoughts' index and phrase search, local only
     // (nothing here touches the network). Additive: the defaults keep no
     // vectors (the app embeds again each run) and search in memory.

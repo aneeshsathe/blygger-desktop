@@ -5093,3 +5093,167 @@ fn contacts_and_handles_round_trip() {
         owner("DELETE", &e.url, &format!("/api/contacts/{cid}"), None);
     }
 }
+
+// ---------------------------------------------------------------- site
+// --- site --- Blyg › Site…: the public site's settings round-trip through
+// the studio as Studio sends them, a refusal comes back in its words, and
+// the update state and extensions are what the studio says.
+
+/// The site settings, put back when the test ends (tests share a Worker).
+struct RestoreSite<'a>(&'a LiveBackend, blyg_core::site::SiteConfig);
+
+impl Drop for RestoreSite<'_> {
+    fn drop(&mut self) {
+        if let Ok(now) = self.0.site_config() {
+            let _ = self.0.save_site_config(&now, &self.1);
+        }
+    }
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn site_settings_round_trip() {
+    use blyg_core::site::{CUSTOM_THEME_ID, custom_from_preset};
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let e = e2e();
+    let before = b.site_config().unwrap();
+    let _restore = RestoreSite(&b, before.clone());
+    // A fresh studio 0.56 reports every key.
+    assert_eq!(before.theme.as_deref(), Some("auto"));
+    assert_eq!(before.custom_theme, Some(None));
+    assert_eq!(before.posts_path.as_deref(), Some("posts"));
+    assert_eq!(before.hopper_feeds, Some(false));
+    assert!(before.feed_orders.as_ref().is_some_and(|o| o.len() >= 2));
+    // Its capabilities list the extensions compiled into the build.
+    let compiled: Vec<&str> = before
+        .server_extensions
+        .iter()
+        .filter(|x| x.compiled)
+        .map(|x| x.name.as_str())
+        .collect();
+    assert!(compiled.contains(&"inspect"), "{compiled:?}");
+
+    // A published thread for the front page and the main menu.
+    let (_, thread) = published(&b, Kind::Thread, &format!("# Front {}", tag("site")), None);
+
+    // An avatar: uploaded with no post, set by its id.
+    let m = b
+        .upload_media(other_png(), "image/png", None, None)
+        .unwrap();
+    let avatar = blyg_core::api::media::media_id(&m.url).unwrap();
+
+    let mut light = custom_from_preset("cream");
+    light.ink = "#331122".into();
+    let mut next = before.clone();
+    next.theme = Some(CUSTOM_THEME_ID.into());
+    next.custom_theme = Some(Some(light));
+    next.custom_theme_dark = Some(Some(custom_from_preset("nord")));
+    next.custom_theme_name = Some("Pink Quill".into());
+    next.font = Some("slab".into());
+    next.feed_order = Some("reverse-chronological".into());
+    next.front_page = Some(thread.clone());
+    next.posts_path = Some("writing".into());
+    next.links_position = Some("bottom".into());
+    next.links_threads = Some(vec![thread.clone()]);
+    next.links_external = Some(vec![AuthorLink {
+        label: "Résumé".into(),
+        url: "https://blyg.example.com/resume".into(),
+    }]);
+    next.links_blygger_com = Some(!before.links_blygger_com.unwrap());
+    next.hopper_feeds = Some(true);
+    next.author_url = Some("https://blyg.example.com/about".into());
+    next.avatar_media_id = Some(avatar.clone());
+    next.extensions = Some(vec!["inspect".into()]);
+    let saved = b.save_site_config(&before, &next).unwrap();
+    assert_eq!(saved.theme.as_deref(), Some("custom"));
+    assert!(
+        saved
+            .server_extensions
+            .iter()
+            .any(|x| x.name == "inspect" && x.enabled)
+    );
+
+    let (_, raw) = owner("GET", &e.url, "/api/settings", None);
+    assert_eq!(raw["theme"], "custom");
+    assert_eq!(raw["customTheme"]["ink"], "#331122");
+    assert_eq!(raw["customThemeDark"]["dark"], true);
+    assert_eq!(raw["customThemeName"], "Pink Quill");
+    assert_eq!(raw["font"], "slab");
+    assert_eq!(raw["feedOrder"], "reverse-chronological");
+    assert_eq!(raw["frontPage"], thread.as_str());
+    assert_eq!(raw["postsPath"], "writing");
+    assert_eq!(raw["linksPosition"], "bottom");
+    assert_eq!(raw["linksThreads"], json!([thread]));
+    assert_eq!(raw["linksExternal"][0]["label"], "Résumé");
+    assert_eq!(raw["hopperFeeds"], true);
+    assert_eq!(raw["authorUrl"], "https://blyg.example.com/about");
+    assert_eq!(raw["avatarMediaId"], avatar.as_str());
+    assert_eq!(raw["extensions"], json!(["inspect"]));
+    // Untouched: what Site Settings owns.
+    assert_eq!(
+        raw["siteTitle"],
+        json!(b.settings().unwrap().site_title.unwrap_or_default())
+    );
+
+    // The public pages follow: the latest items moved, the front page is
+    // the thread.
+    let (status, _) = public_get(&format!("{}/writing/", e.url));
+    assert_eq!(status, 200, "the posts page moved to /writing/");
+    let (_, home) = public_get(&format!("{}/", e.url));
+    assert!(home.contains("Front site-"), "the thread is the front page");
+
+    // Read back, nothing differs; a second save sends nothing.
+    let again = b.site_config().unwrap();
+    assert!(saved.patch(&again).is_empty(), "{:?}", saved.patch(&again));
+
+    // The studio refuses a posts path it already uses, in its words.
+    let mut bad = again.clone();
+    bad.posts_path = Some("feed".into());
+    match b.save_site_config(&again, &bad) {
+        Err(CoreError::Rejected {
+            status: 400,
+            message,
+            ..
+        }) => {
+            assert!(message.to_lowercase().contains("feed"), "{message}")
+        }
+        other => panic!("expected a 400, got {:?}", other.map(|c| c.posts_path)),
+    }
+    // A custom palette with a bad colour, sent anyway, is refused too.
+    let mut bad = again.clone();
+    if let Some(Some(t)) = bad.custom_theme.as_mut() {
+        t.paper = "white".into();
+    }
+    assert!(matches!(
+        b.save_site_config(&again, &bad),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn studio_update_state_is_read_and_follows_the_setting() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let before = b.site_config().unwrap();
+    let _restore = RestoreSite(&b, before.clone());
+    let mut on = before.clone();
+    on.update_check = Some(true);
+    let base = b.save_site_config(&before, &on).unwrap();
+    let u = b.refresh_studio_update(true).unwrap().expect("served");
+    // The version the studio runs, from blyg.json's generator.
+    let v = u.current.clone().expect("blyg.json names its generator");
+    assert!(blyg_core::site::parse_version(&v).is_some(), "{v}");
+    assert_eq!(b.studio_update(), Some(u.clone()), "cached");
+    // The local studio can't reach a release feed: never "behind".
+    if u.latest.is_empty() {
+        assert!(!u.behind());
+    }
+    let mut off = base.clone();
+    off.update_check = Some(false);
+    b.save_site_config(&base, &off).unwrap();
+    assert_eq!(b.refresh_studio_update(true).unwrap(), None);
+    assert_eq!(b.studio_update(), None);
+}
+// --- end site ---

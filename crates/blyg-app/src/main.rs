@@ -494,6 +494,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     app::reading::opml::ExportOpml,
                 ),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
+                MenuItem::action("Site…", app::site::ShowSite), // --- site ---
                 // --- profiles ---
                 MenuItem::separator(),
                 MenuItem::action("Profile", app::profiles::ShowProfile),

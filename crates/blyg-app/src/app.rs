@@ -168,6 +168,11 @@ pub(crate) mod loose_ends;
 #[path = "capture_link.rs"]
 pub(crate) mod capture_link;
 
+// --- site --- Blyg › Site…: the public site's settings (hooks marked the same way)
+#[path = "site/mod.rs"]
+pub(crate) mod site;
+// --- end site ---
+
 pub const CONTEXT: &str = "Blygger";
 
 /// Every binding lives in `keymap::table()`.
@@ -385,6 +390,7 @@ pub struct MainView {
     // --- split --- a second post beside the one being written
     split: split::Split,
     nearby: nearby::State, // --- nearby ---
+    site: site::State,     // --- site ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -548,6 +554,7 @@ impl MainView {
             ),
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             nearby: Default::default(),                        // --- nearby ---
+            site: Default::default(),                          // --- site ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -562,6 +569,7 @@ impl MainView {
         this.ext_init(window, cx); // --- extensions ---
         this.chat_init(window, cx); // --- chat ---
         this.nearby_init(cx); // --- nearby ---
+        this.site_init(cx); // --- site ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
         if let Some(n) = notice {
             this.show_toast(n, None, cx);
@@ -2435,6 +2443,7 @@ impl Render for MainView {
             .map(|d| self.palette_actions(d, cx)) // --- palette ---
             .map(|d| self.focus_actions(d, cx)) // --- focus ---
             .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
+            .map(|d| self.site_actions(d, cx)) // --- site ---
             .size_full()
             .relative()
             .flex()
@@ -2519,6 +2528,7 @@ impl Render for MainView {
             .children(self.render_slots_sheet(&ui_font, cx)) // --- reading slots ---
             .children(self.render_reading_sheet(cx)) // --- reading & versions ---
             .children(self.render_trail_publish(cx)) // --- trails ---
+            .children(self.render_site_overlay(window, cx)) // --- site ---
             .children(profile_overlay) // --- profiles ---
             .children(self.render_toast())
             .children(onboarding) // --- onboarding ---

@@ -15,6 +15,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Blyg › Site…: your blyg's public site, as Studio sets it up.** The reading theme (Studio's presets, or a custom palette with Studio's theme editor: eight colours, a name, a dark companion, contrast warnings) with a preview, the typeface, the home-page order, a static front page, the posts path, the main menu (position, threads, your links, standard links), the avatar (upload and set), the author and site URLs, collection (hopper) feeds, studio update alerts and the studio's extensions. Nothing is sent until Save, and only what changed; a refusal shows the blyg's words. While your blyg's studio has a newer release (and its update alerts are on), the status bar says so quietly.
+
 ### Fixed
 
 - **Burrow in a browser:** live mode finds the owner API at `{mount}/api` beside `{mount}/burrow/`, so it works on a blyg served under a path, not only at the host root (where it leaned on the deprecated host-root `/api` alias).
