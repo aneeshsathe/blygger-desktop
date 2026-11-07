@@ -108,6 +108,12 @@ pub(crate) mod switcher;
 // --- shelf --- (posts kept to hand; hooks marked the same way)
 #[path = "shelf.rs"]
 pub(crate) mod shelf;
+// --- lineage --- (the open post's lineage under the editor; hooks marked the same way)
+#[path = "lineage_strip.rs"]
+pub(crate) mod lineage_strip;
+// --- hover cards --- (what a [[id]] is, on hover; hooks marked the same way)
+#[path = "hover_card.rs"]
+pub(crate) mod hover_card;
 
 pub const CONTEXT: &str = "Blygger";
 
@@ -291,6 +297,10 @@ pub struct MainView {
     ext: extensions::Extensions,
     // --- new post --- ⌘N's fresh editor, until it's left
     new_post: Option<new_post::NewPost>,
+    // --- lineage ---
+    lineage_strip: lineage_strip::State,
+    // --- hover cards ---
+    hover: hover_card::State,
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -431,8 +441,10 @@ impl MainView {
             watch_stamp: 0,
             now: chrono::Utc::now(),
             first_frame: Some(launched),
-            ai: Default::default(), // --- AI ---
-            new_post: None,         // --- new post ---
+            ai: Default::default(),            // --- AI ---
+            new_post: None,                    // --- new post ---
+            lineage_strip: Default::default(), // --- lineage ---
+            hover: Default::default(),         // --- hover cards ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -1300,6 +1312,9 @@ impl MainView {
     }
 
     fn on_core_event(&mut self, ev: CoreEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(ev, CoreEvent::ItemsChanged | CoreEvent::ReadingChanged) {
+            self.lineage_strip.stale(); // --- lineage ---
+        }
         match ev {
             CoreEvent::ItemsChanged => {
                 // --- follow-ups --- a queued promotion uploaded local images.
@@ -2691,8 +2706,10 @@ impl MainView {
                     .relative()
                     .child(gpui_kit::base::input::Textarea::new(&self.editor))
                     .children(margins)
-                    .child(self.assist.clone()), // --- composer ---
+                    .child(self.assist.clone()) // --- composer ---
+                    .map(|d| self.hover_card_editor(d, cx)), // --- hover cards ---
             )
+            .children(self.render_lineage_strip(cx)) // --- lineage ---
             .children(band);
         div()
             .id("editor-pane")

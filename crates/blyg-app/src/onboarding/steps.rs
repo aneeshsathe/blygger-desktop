@@ -94,6 +94,14 @@ pub enum Key {
     // --- shelf ---
     /// A post was put on the shelf or taken off (⌥⌘B).
     Shelf,
+    // --- lineage ---
+    /// On Posts, the lineage line's lists opened, or ⌘J opened the sheet.
+    LineageStrip,
+    /// The lineage sheet zoomed out to the neighbourhood map (`−`).
+    LineageMap,
+    // --- hover cards ---
+    /// A hover card is showing over a `[[…]]` in the editor.
+    HoverCard,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -525,6 +533,75 @@ pub const STEPS: &[Step] = &[
         region: Region::List,
         button: None,
         setup: Setup::EnsureOpen,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- lineage ---
+    Step {
+        id: "lineage-writing",
+        since: "0.18.0",
+        title: "Lineage while you write",
+        caption: if cfg!(target_os = "windows") {
+            "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
+             what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
+             a row opens that post. Ctrl+J opens the full lineage, as in Reading."
+        } else {
+            "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
+             what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
+             a row opens that post. ⌘J opens the full lineage, as in Reading."
+        },
+        keys: &[Key::LineageStrip],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+J"
+        } else {
+            "⌘J"
+        },
+        region: Region::Editor,
+        button: None,
+        setup: Setup::Versioned,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "neighbourhood",
+        since: "0.18.0",
+        title: "Zoom out to the neighbourhood",
+        caption: "In the lineage sheet, − zooms out two hops: what the neighbours draw on and \
+                  what draws on them, coloured fork, reply, quote; a dashed one is a hop \
+                  further, a shaded one is yours. Arrows move, ⏎ makes a post the centre, ⌫ \
+                  walks back, + returns to the list.",
+        keys: &[Key::LineageMap],
+        key_label: "−",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Lineage,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- hover cards ---
+    Step {
+        id: "hover-cards",
+        since: "0.18.0",
+        title: "What a link is, on hover",
+        caption: if cfg!(target_os = "windows") {
+            "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
+             author, version, first lines), and an unlabelled link offers “label it”. \
+             Ctrl-click opens the post: yours here, anyone else's in Reading. Quotes and links \
+             in the Stream show the same card."
+        } else {
+            "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
+             author, version, first lines), and an unlabelled link offers “label it”. ⌘-click \
+             opens the post: yours here, anyone else's in Reading. Quotes and links in the \
+             Stream show the same card."
+        },
+        keys: &[Key::HoverCard],
+        key_label: "hover",
+        region: Region::Editor,
+        button: None,
+        setup: Setup::StudioSample,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1090,6 +1167,9 @@ mod tests {
             Key::HopperPicker,
             Key::HopperSeveral,
             Key::Shelf,
+            Key::LineageStrip,
+            Key::LineageMap,
+            Key::HoverCard,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

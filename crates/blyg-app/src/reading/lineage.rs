@@ -36,6 +36,8 @@ pub struct Sheet {
     pub act: Option<Act>,
     pub focus: FocusHandle,
     pub pin: Pin,
+    /// --- lineage --- zoomed out (`−`) to the two-hop neighbourhood map.
+    pub map: Option<super::neighbourhood_view::MapState>,
 }
 
 // The stage, in its own pixels.
@@ -87,7 +89,7 @@ fn window(n: usize, sel: Option<usize>) -> std::ops::Range<usize> {
     s..s + ROW_MAX
 }
 
-fn hex_points(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
+pub(super) fn hex_points(cx: f32, cy: f32, r: f32) -> Vec<(f32, f32)> {
     (0..6)
         .map(|i| {
             let a = (i as f32 * 60.).to_radians();
@@ -138,6 +140,8 @@ impl MainView {
         }
         match self.lineage_target() {
             Some((origin, id)) => self.open_lineage(origin, id, window, cx),
+            // --- lineage --- a draft on Posts: its lines under the editor.
+            None if self.reading.view == super::View::Posts && self.lineage_strip_toggle(cx) => {}
             None => self.show_toast(
                 "No post to show the lineage of",
                 Some("Select a post in Reading, or open one of your published posts".into()),
@@ -177,14 +181,10 @@ impl MainView {
         (posts, Some(base))
     }
 
-    /// The view of `(origin, id)`: the node's graph when it served one
-    /// (`graph`, else its cached copy), otherwise what this Mac holds.
-    fn lineage_model(
-        &self,
-        origin: &str,
-        id: &str,
-        graph: Option<&blyg_core::lineage::LineageGraph>,
-    ) -> Model {
+    /// What the lineage is built from: the reading rows (yours left out:
+    /// your posts count as your posts), your published posts, the verified
+    /// mentions, and every post's edges over them.
+    pub(crate) fn with_lineage_src<R>(&self, f: impl FnOnce(&lineage_vm::Sources) -> R) -> R {
         // --- own posts --- your rows aren't reading rows here: your posts
         // count as your posts (`own`), as they always have.
         let fresh = if self.reading.rows.is_empty() {
@@ -215,21 +215,34 @@ impl MainView {
             mentions,
             local,
         };
-        let local_model = lineage_vm::build(origin, id, &src);
-        let cached;
-        let graph = match graph {
-            Some(g) => Some(g),
-            None => {
-                cached = self
-                    .backend
-                    .cached_lineage_graph(&local_model.centre.query());
-                cached.as_ref()
+        f(&src)
+    }
+
+    /// The view of `(origin, id)`: the node's graph when it served one
+    /// (`graph`, else its cached copy), otherwise what this Mac holds.
+    pub(crate) fn lineage_model(
+        &self,
+        origin: &str,
+        id: &str,
+        graph: Option<&blyg_core::lineage::LineageGraph>,
+    ) -> Model {
+        self.with_lineage_src(|src| {
+            let local_model = lineage_vm::build(origin, id, src);
+            let cached;
+            let graph = match graph {
+                Some(g) => Some(g),
+                None => {
+                    cached = self
+                        .backend
+                        .cached_lineage_graph(&local_model.centre.query());
+                    cached.as_ref()
+                }
+            };
+            match graph {
+                Some(g) => lineage_vm::from_graph(origin, id, src, g),
+                None => local_model,
             }
-        };
-        match graph {
-            Some(g) => lineage_vm::from_graph(origin, id, &src, g),
-            None => local_model,
-        }
+        })
     }
 
     // ------------------------------------------------------------ counts from the node
@@ -296,6 +309,7 @@ impl MainView {
                         Sel::Down(i) if i < s.model.downs.len() => Sel::Down(i),
                         _ => Sel::Centre,
                     };
+                    v.lineage_rebuild_map(); // --- lineage ---
                 }
                 cx.notify();
             });
@@ -319,6 +333,7 @@ impl MainView {
             act: None,
             focus: focus.clone(),
             pin: Pin::Unknown,
+            map: None, // --- lineage ---
         };
         self.open_reading_sheet(RSheet::Lineage(Box::new(sheet)), cx);
         window.focus(&focus, cx);
@@ -353,14 +368,20 @@ impl MainView {
         cx.notify();
     }
 
-    fn lineage_mut(&mut self) -> Option<&mut Sheet> {
+    pub(super) fn lineage_mut(&mut self) -> Option<&mut Sheet> {
         match self.reading.sheet.as_mut() {
             Some(RSheet::Lineage(s)) => Some(s),
             _ => None,
         }
     }
 
-    fn lineage_recentre(&mut self, origin: String, id: String, back: bool, cx: &mut Context<Self>) {
+    pub(super) fn lineage_recentre(
+        &mut self,
+        origin: String,
+        id: String,
+        back: bool,
+        cx: &mut Context<Self>,
+    ) {
         let model = self.lineage_model(&origin, &id, None);
         if let Some(s) = self.lineage_mut() {
             if !back {
@@ -373,6 +394,7 @@ impl MainView {
             s.act = None;
             s.pin = Pin::Unknown;
         }
+        self.lineage_rebuild_map(); // --- lineage ---
         self.lineage_fetch_graph(cx);
     }
 
@@ -395,6 +417,14 @@ impl MainView {
             .filter(|n| !n.is_post())
             .map(|n| n.origin.clone());
         let centre = (s.model.centre.origin.clone(), s.model.centre.id.clone());
+        // --- lineage --- the map has its own keys; `−` zooms out to it.
+        if s.map.is_some() {
+            return self.lineage_map_key(key, window, cx);
+        }
+        if !ring && key == "-" {
+            self.lineage_zoom(true, cx);
+            return true;
+        }
         if ring {
             match key {
                 "escape" if act.is_some() => {
@@ -622,7 +652,9 @@ impl MainView {
             if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
                 return;
             }
-            if this.lineage_key(k.key.as_str(), window, cx) {
+            // --- lineage --- `−` and `+` (⇧= on most layouts) zoom.
+            let key = super::neighbourhood_view::zoom_key(k);
+            if this.lineage_key(key.unwrap_or(k.key.as_str()), window, cx) {
                 cx.stop_propagation();
             }
         }))
@@ -661,11 +693,19 @@ impl MainView {
                 crate::keymap::hint("Responses: what this Mac holds")
             })
             .child(crate::keymap::hint("⌘J / esc closes"));
-        let body = div()
-            .flex()
-            .gap(px(14.))
-            .child(self.render_lineage_stage(s, cx))
-            .child(self.render_lineage_side(s));
+        // --- lineage --- zoomed out: the neighbourhood map.
+        let body = match &s.map {
+            Some(m) => div()
+                .flex()
+                .gap(px(14.))
+                .child(self.render_lineage_map(m, cx))
+                .child(self.render_lineage_map_side(s, m)),
+            None => div()
+                .flex()
+                .gap(px(14.))
+                .child(self.render_lineage_stage(s, cx))
+                .child(self.render_lineage_side(s)),
+        };
         div()
             .track_focus(&s.focus)
             .map(|d| self.lineage_sheet_keys(d, cx))
@@ -1403,6 +1443,7 @@ impl MainView {
                 )),
                 has_back.then_some(("⌫", "back")),
                 Some(("o", "open in the reader")),
+                Some(("−", "zoom out: two hops")), // --- lineage ---
                 Some(("esc", "close")),
             ]
             .into_iter()
@@ -1457,81 +1498,10 @@ impl MainView {
         if glyph.is_empty() {
             return None;
         }
-        let (up, down) = (glyph.up, glyph.down);
         let p = self.palette.on_page();
-        let colors = [
-            (Relation::Forks, rel_color(&p, Relation::Forks), 3.),
-            (Relation::Stubs, rel_color(&p, Relation::Stubs), 8.),
-            (Relation::Quotes, rel_color(&p, Relation::Quotes), 13.),
-        ];
-        let ink = p.ink;
-        let bg = p.bg;
         let tip = glyph.tip();
         let (origin, id) = (r.origin.clone(), r.remote_id.clone());
-        let painter = canvas(
-            |_, _, _| (),
-            move |b, (), window, _| {
-                let at = |x: f32, y: f32| point(b.origin.x + px(x), b.origin.y + px(y));
-                let (cx_, cy_) = (23., 8.);
-                for (rel, color, y) in colors {
-                    for (kinds, left) in [(up, true), (down, false)] {
-                        let mark = kinds.get(rel);
-                        if mark == Mark::None {
-                            continue;
-                        }
-                        let mut pb = PathBuilder::stroke(px(1.5));
-                        if mark == Mark::Partial {
-                            pb = pb.dash_array(&[px(1.5), px(2.5)]);
-                        }
-                        let (x0, x1) = if left {
-                            (3., cx_ - 5.)
-                        } else {
-                            (43., cx_ + 5.)
-                        };
-                        pb.move_to(at(x0, y));
-                        pb.cubic_bezier_to(
-                            at(x1, cy_),
-                            at((x0 + x1) / 2., y),
-                            at((x0 + x1) / 2., cy_),
-                        );
-                        if let Ok(path) = pb.build() {
-                            window.paint_path(path, color);
-                        }
-                        window.paint_quad(
-                            fill(
-                                Bounds {
-                                    origin: at(x0 - 2., y - 2.),
-                                    size: size(px(4.), px(4.)),
-                                },
-                                color,
-                            )
-                            .corner_radii(px(2.)),
-                        );
-                    }
-                }
-                let pts = hex_points(cx_, cy_, 4.8);
-                let poly = |pb: &mut PathBuilder| {
-                    pb.move_to(at(pts[0].0, pts[0].1));
-                    for q in &pts[1..] {
-                        pb.line_to(at(q.0, q.1));
-                    }
-                    pb.close();
-                };
-                let mut f = PathBuilder::fill();
-                poly(&mut f);
-                if let Ok(path) = f.build() {
-                    window.paint_path(path, bg);
-                }
-                let mut l = PathBuilder::stroke(px(1.1));
-                poly(&mut l);
-                if let Ok(path) = l.build() {
-                    window.paint_path(path, ink);
-                }
-            },
-        )
-        .w(px(46.))
-        .h(px(16.))
-        .flex_none();
+        let painter = glyph_painter(glyph, &p);
         Some(
             div()
                 .id("lineage-glyph")
@@ -1561,6 +1531,82 @@ impl MainView {
                 .into_any_element(),
         )
     }
+}
+
+/// --- lineage --- The glyph's drawing: kinds in from the left (what it
+/// draws on), kinds out to the right (what draws on it), in fixed slots
+/// (fork, reply, quote), dotted for passages. The stream and the editor's
+/// lineage line both draw it.
+pub(crate) fn glyph_painter(glyph: Glyph, p: &Palette) -> AnyElement {
+    let (up, down) = (glyph.up, glyph.down);
+    let colors = [
+        (Relation::Forks, rel_color(p, Relation::Forks), 3.),
+        (Relation::Stubs, rel_color(p, Relation::Stubs), 8.),
+        (Relation::Quotes, rel_color(p, Relation::Quotes), 13.),
+    ];
+    let ink = p.ink;
+    let bg = p.bg;
+    canvas(
+        |_, _, _| (),
+        move |b, (), window, _| {
+            let at = |x: f32, y: f32| point(b.origin.x + px(x), b.origin.y + px(y));
+            let (cx_, cy_) = (23., 8.);
+            for (rel, color, y) in colors {
+                for (kinds, left) in [(up, true), (down, false)] {
+                    let mark = kinds.get(rel);
+                    if mark == Mark::None {
+                        continue;
+                    }
+                    let mut pb = PathBuilder::stroke(px(1.5));
+                    if mark == Mark::Partial {
+                        pb = pb.dash_array(&[px(1.5), px(2.5)]);
+                    }
+                    let (x0, x1) = if left {
+                        (3., cx_ - 5.)
+                    } else {
+                        (43., cx_ + 5.)
+                    };
+                    pb.move_to(at(x0, y));
+                    pb.cubic_bezier_to(at(x1, cy_), at((x0 + x1) / 2., y), at((x0 + x1) / 2., cy_));
+                    if let Ok(path) = pb.build() {
+                        window.paint_path(path, color);
+                    }
+                    window.paint_quad(
+                        fill(
+                            Bounds {
+                                origin: at(x0 - 2., y - 2.),
+                                size: size(px(4.), px(4.)),
+                            },
+                            color,
+                        )
+                        .corner_radii(px(2.)),
+                    );
+                }
+            }
+            let pts = hex_points(cx_, cy_, 4.8);
+            let poly = |pb: &mut PathBuilder| {
+                pb.move_to(at(pts[0].0, pts[0].1));
+                for q in &pts[1..] {
+                    pb.line_to(at(q.0, q.1));
+                }
+                pb.close();
+            };
+            let mut f = PathBuilder::fill();
+            poly(&mut f);
+            if let Ok(path) = f.build() {
+                window.paint_path(path, bg);
+            }
+            let mut l = PathBuilder::stroke(px(1.1));
+            poly(&mut l);
+            if let Ok(path) = l.build() {
+                window.paint_path(path, ink);
+            }
+        },
+    )
+    .w(px(46.))
+    .h(px(16.))
+    .flex_none()
+    .into_any_element()
 }
 
 #[cfg(test)]

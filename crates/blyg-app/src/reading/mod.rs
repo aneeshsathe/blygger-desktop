@@ -26,11 +26,16 @@ pub(crate) mod browse;
 #[cfg(test)]
 mod browse_tests;
 pub(crate) mod demo; // --- buttons --- (pub(crate): the toolbar demo snapshots too)
-mod lineage;
+pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
+// --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
 mod marks; // --- read/unread ---
 mod mentions;
+pub(crate) mod neighbourhood;
+#[cfg(test)]
+mod neighbourhood_tests;
+mod neighbourhood_view;
 pub(crate) mod opml; // --- OPML import/export ---
 // --- own posts --- your published posts as a reading source, and the
 // reading actions on them from the Posts view.

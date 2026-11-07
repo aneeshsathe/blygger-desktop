@@ -19,7 +19,9 @@ never a count. Posts are dated by when their author published or last edited
 them, and an edit updates the post in place rather than adding a new one.
 Quotes show as grey boxes with the quoted text (a quote inside a quote
 nests, three layers deep), and `[[id]]` links read as the post they point
-to. A post that has been revised leads with its latest changelog note,
+to. Rest the pointer on a quote box or a link to see the same card the
+editor shows: title, author, version, first lines. A post that has been
+revised leads with its latest changelog note,
 "V3: …", read from the author's changelog once the post is on screen, or
 "V3: No changelog entry available" when they left none.
 
@@ -344,6 +346,13 @@ your blyg knows when it serves the lineage, else what this Mac holds: posts
 in your reading list, your own posts, and verified mentions of your posts.
 
 ![The lineage view](screenshots/lineage.png)
+
+Press **−** in the lineage view to zoom out to the **neighbourhood**: two
+steps each way, what the neighbours draw on and what draws on them. Colours
+are the glyph's (fork, reply, quote); a dashed hexagon is two steps away and
+a shaded one is yours. The arrow keys move, ⏎ makes a post the centre, ⌫
+walks back, **o** opens the selected post, and **+** goes back to the list.
+The second step comes from what this Mac holds.
 
 **Space** (or ⏎) on the post in the middle opens the **ring** of the reader's
 actions, always in the same places: **F** fork, **R** reply, **Q** quote,

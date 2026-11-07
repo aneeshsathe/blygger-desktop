@@ -18,6 +18,9 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Added
 
 - **The shelf.** ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the top of the Write list, marked 📚, in your order. ⌘B opens the shelf: 1–9 or ⏎ opens a post, ⌥↑/⌥↓ reorder, ⌫ takes one off. Any post of yours can be shelved. The shelf is kept on this computer for now (store schema v17); syncing it waits on blygger-studio#135. On Windows the keys are Ctrl+B and Ctrl+Alt+B.
+- **Lineage while you write.** A quiet line under the editor shows the open post's lineage glyph, "draws on N · drawn on by M" and the posts it links to. A click opens the lists, and a row opens that post (yours in the editor, others in Reading). ⌘J on Posts opens the lineage sheet for your published post, or the lists for a draft.
+- **The neighbourhood map.** In the lineage sheet, − zooms out to two hops each way, nodes coloured by relation (fork, reply, quote), the second hop dashed and your own posts shaded. Arrows move, ⏎ re-centres, ⌫ walks back, o opens, + returns to the list. Read from what this Mac holds and capped, so it stays fast.
+- **Hover cards and ⌘-click.** Resting the pointer on a `[[id]]`, `[[id | label]]` or `![[id | label]]` in the editor shows the post's title, author, version and first lines, with "label it" for an unlabelled link. ⌘-click (Ctrl-click on Windows) opens it. The stream's quote boxes and links show the same card. Withdrawn posts show as withdrawn; other people's unpinned past versions are never shown.
 
 ## [0.17.1] - 2026-11-03
 

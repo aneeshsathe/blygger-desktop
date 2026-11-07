@@ -26,6 +26,26 @@ pub const RELEASES: &[Release] = &[
             "The shelf: ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the \
              top of the list, marked 📚. ⌘B opens the shelf; 1–9 opens a post on it, ⌥↑/⌥↓ \
              reorder it. It's kept on this Mac for now.",
+            if cfg!(target_os = "windows") {
+                "Lineage while you write: a quiet line under the editor shows the open post's \
+                 lineage glyph, what it draws on and what draws on it. A click opens the \
+                 lists; Ctrl+J opens the lineage sheet for your own post."
+            } else {
+                "Lineage while you write: a quiet line under the editor shows the open post's \
+                 lineage glyph, what it draws on and what draws on it. A click opens the \
+                 lists; ⌘J opens the lineage sheet for your own post."
+            },
+            "The lineage sheet zooms out: − shows the neighbourhood two hops each way, coloured \
+             by relation. ⏎ re-centres on a post, ⌫ walks back, + returns to the list.",
+            if cfg!(target_os = "windows") {
+                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
+                 or link in the Stream) to see what it is; “label it” names an unlabelled \
+                 link. Ctrl-click opens the post."
+            } else {
+                "Hover cards: rest the pointer on a [[…]] or ![[…]] in the editor (or a quote \
+                 or link in the Stream) to see what it is; “label it” names an unlabelled \
+                 link. ⌘-click opens the post."
+            },
         ],
         first_step: Some("shelf"),
     },

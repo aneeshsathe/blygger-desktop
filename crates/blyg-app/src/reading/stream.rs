@@ -1112,6 +1112,8 @@ impl MainView {
         let mut text = String::new();
         let mut hl: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
         let mut links: Vec<(std::ops::Range<usize>, Target)> = Vec::new();
+        // --- hover cards --- each `[[id]]` link's card, by its text range.
+        let mut cards: Vec<(std::ops::Range<usize>, crate::app::hover_card::Card)> = Vec::new();
         for s in spans {
             let start = text.len();
             // An `[[id]]` link reads as its own label, else as the target's
@@ -1154,6 +1156,9 @@ impl MainView {
                 });
                 styled = true;
             }
+            if let Some((_, _, id)) = &label {
+                cards.push((r.clone(), self.stream_card(post, id, false))); // --- hover cards ---
+            }
             let target = match label {
                 Some((_, origin, id)) => Some(Target::Post(origin, id)),
                 None => s
@@ -1187,6 +1192,7 @@ impl MainView {
             // `[[id]]` link opens the post like a quote box does.
             let view = cx.entity().downgrade();
             InteractiveText::new(("stream-text", *n), styled)
+                .tooltip(self.hover_card_span_tips(cards)) // --- hover cards ---
                 .on_click(ranges, move |i, window, cx| {
                     let t = targets.get(i).cloned();
                     let _ = view.update(cx, |this, cx| match t {
@@ -1283,6 +1289,9 @@ impl MainView {
                 cx.stop_propagation();
                 this.open_original(q_origin.clone(), q_id.clone(), version, window, cx);
             }))
+            // --- hover cards --- what it quotes, before the click.
+            .tooltip(self.hover_card_tip(self.stream_card(post, id, true)))
+            .tooltip_show_delay(crate::app::hover_card::DELAY)
             .children(quoted)
             .child(
                 div()
