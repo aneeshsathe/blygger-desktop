@@ -64,6 +64,18 @@ earlier year, and never the same one twice in a month. While the editor is
 still empty, **q** quotes it into the new post, **l** links to it, **o** opens
 it and **r** shows another; the first thing you type sends it away.
 `serendipity = on` also offers posts from the blygs you read.
+### Two posts side by side
+
+**⌥⌘⏎** (Post › Open Beside) opens the selected post beside the one you're
+writing: a reply and its source, two drafts that should be one, a fork and
+its original. Your own post opens in a second editor that saves on its own
+and has its own status line. Anyone else's opens read-only; drag its header
+into your post to quote it. **⌥⌘[** and **⌥⌘]** (View › Left Post / Right
+Post) move between them, the divider drags (Burrow remembers where), and ×
+or ⌥⌘⏎ again closes the right side. From Reading, ⌥⌘⏎ goes to Posts with
+the post you were reading beside the one you were writing.
+
+On Windows the keys are Ctrl+Alt+Enter and Ctrl+Alt+[ / ].
 
 ## Fragments and threads
 

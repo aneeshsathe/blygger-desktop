@@ -75,6 +75,12 @@ use crate::app::shelf::{ShowShelf, ToggleShelf};
 use crate::app::chat::ShowChat;
 // --- terminal ---
 use crate::app::terminal::{SendSelectionToTerminal, ToggleTerminal};
+// --- trails ---
+use crate::app::trails::PublishTrail;
+// --- tray ---
+use crate::app::tray::AddToTray;
+// --- split ---
+use crate::app::split::{FocusLeftPost, FocusRightPost, OpenBeside};
 // --- blyg switcher ---
 use crate::app::switcher::{
     AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
@@ -639,6 +645,54 @@ pub fn mac_table() -> Vec<Keybind> {
             Some("Post › Put on Shelf / Take Off")
         ),
         // --- end own posts ---
+        // --- trails --- (`t` / ⇧T on the reading screen are its own keys,
+        // in reading_key_down; ⌥⌘T is free in gpui-base's inputs)
+        kb!(
+            "alt-cmd-t",
+            Main,
+            PublishTrail,
+            "Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops)",
+            Some("Blyg › Publish Trail…")
+        ),
+        // --- end trails ---
+        // --- tray --- (⇧⌘Q is the system's Log Out; ⌥⌘K sits by ⌘K, the
+        // picker that lists the tray first. `q` on the reading screen is
+        // its own key, in reading_key_down.)
+        kb!(
+            "alt-cmd-k",
+            Main,
+            AddToTray,
+            "Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading)",
+            Some("Post › Put on Quote Tray")
+        ),
+        // --- end tray ---
+        // --- split --- (⌘[ / ⌘] are gpui-base's outdent / indent in every
+        // editor and the reader's Back, so the sides are ⌥⌘[ / ⌥⌘])
+        Keybind {
+            menu_key: Some("alt-cmd-↩"),
+            ..kb!(
+                "alt-cmd-enter",
+                Main,
+                OpenBeside,
+                "Split view: the selected post beside the one you're writing (again: close it)",
+                Some("Post › Open Beside")
+            )
+        },
+        kb!(
+            "alt-cmd-[",
+            Main,
+            FocusLeftPost,
+            "Split view: the keyboard to the left post",
+            Some("View › Left Post")
+        ),
+        kb!(
+            "alt-cmd-]",
+            Main,
+            FocusRightPost,
+            "Split view: the keyboard to the right post",
+            Some("View › Right Post")
+        ),
+        // --- end split ---
         menu_only!(
             SubscribeTo,
             "Subscribe to a blyg or feed",

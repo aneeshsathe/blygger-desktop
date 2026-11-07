@@ -370,6 +370,31 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX items_permalink ON items(permalink)
         WHERE permalink IS NOT NULL AND permalink <> '';
     "#,
+    // v19 --- trails --- (store/trails.rs) paths through posts you chose
+    // to keep: ordered stops (your published posts as `~own`, and reading
+    // rows), each with a one-line "why". Local only: never queued or sent.
+    // `title` is the post's title when the stop was added, dropped once the
+    // post is withdrawn (the stop stays as a tombstone). Self-contained: it
+    // references no other table, so a stop outlives the row it names.
+    r#"
+    CREATE TABLE trails (
+        id        TEXT PRIMARY KEY,
+        name      TEXT NOT NULL,
+        position  INTEGER NOT NULL,
+        created   TEXT NOT NULL
+    );
+    CREATE TABLE trail_stops (
+        trail_id        TEXT NOT NULL REFERENCES trails(id) ON DELETE CASCADE,
+        position        INTEGER NOT NULL,
+        subscription_id TEXT NOT NULL,
+        remote_id       TEXT NOT NULL,
+        origin          TEXT NOT NULL DEFAULT '',
+        why             TEXT NOT NULL DEFAULT '',
+        title           TEXT,
+        PRIMARY KEY (trail_id, subscription_id, remote_id)
+    );
+    CREATE INDEX trail_stops_order ON trail_stops (trail_id, position);
+    "#,
 ];
 
 /// Returns whether any migration ran.

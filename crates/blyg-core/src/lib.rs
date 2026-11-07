@@ -21,6 +21,7 @@ pub mod sync;
 #[doc(hidden)]
 pub mod synth;
 pub mod tk;
+pub mod trails; // --- trails ---
 mod util;
 
 pub use backend::{
@@ -33,3 +34,4 @@ pub use model::*;
 pub use pick::{PickQuery, PickSort, PickSource, Pickable};
 pub use profile::{BlogrollEntry, Profile, ProfileKind, ProfilePost, Relation}; // --- profiles ---
 pub use sync::SyncOptions;
+pub use trails::{Trail, TrailStop}; // --- trails ---

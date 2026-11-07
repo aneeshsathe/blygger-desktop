@@ -107,6 +107,33 @@ pub const RELEASES: &[Release] = &[
                  Reduce Motion on). sounds = quiet adds a quiet system sound on publish and \
                  capture."
             },
+            // --- tangles ---
+            if cfg!(target_os = "windows") {
+                "Trails: t in Reading adds the post to a trail, with a word on why; Shift+T \
+                 starts another. Trails are listed with your sources, and Ctrl+Alt+T writes \
+                 one as a thread of quotes in a new draft. Nothing is published."
+            } else {
+                "Trails: t in Reading adds the post to a trail, with a word on why; ⇧T starts \
+                 another. Trails are listed with your sources, and ⌥⌘T writes one as a \
+                 thread of quotes in a new draft. Nothing is published."
+            },
+            if cfg!(target_os = "windows") {
+                "Drag a post into what you're writing to quote it (a link in a fragment), or \
+                 onto the search box to start a thread. q or Ctrl+Alt+K keeps it on the quote \
+                 tray above the status bar, and Ctrl+K lists the tray first."
+            } else {
+                "Drag a post into what you're writing to quote it (a link in a fragment), or \
+                 onto the omnibar to start a thread. q or ⌥⌘K keeps it on the quote tray \
+                 above the status bar, and ⌘K lists the tray first."
+            },
+            if cfg!(target_os = "windows") {
+                "Split view: Ctrl+Alt+Enter opens the selected post beside the one you're \
+                 writing (yours editable, anyone else's read-only); Ctrl+Alt+[ and Ctrl+Alt+] \
+                 move between them."
+            } else {
+                "Split view: ⌥⌘⏎ opens the selected post beside the one you're writing (yours \
+                 editable, anyone else's read-only); ⌥⌘[ and ⌥⌘] move between them."
+            },
         ],
         first_step: Some("shelf"),
     },

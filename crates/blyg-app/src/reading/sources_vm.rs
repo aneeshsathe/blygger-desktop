@@ -59,6 +59,8 @@ pub enum Source {
     Own,
     /// --- hoppers --- a hopper id: the posts in it, theirs and yours.
     Hopper(String),
+    /// --- trails --- a trail id: its stops, in its order (`trails.rs`).
+    Trail(String),
 }
 
 impl Default for Source {
@@ -142,6 +144,8 @@ pub fn in_source(
         Source::Sub(s) => &r.subscription_id == s,
         Source::Own => super::own::is_own_row(r),
         Source::Hopper(h) => r.hoppers.iter().any(|x| x == h),
+        // --- trails --- listed in the trail's order by `State::refilter`.
+        Source::Trail(_) => false,
     }
 }
 
@@ -198,6 +202,8 @@ pub enum Entry {
     /// --- hoppers --- one of your hoppers, with how many posts it holds
     /// (the blyg's count, not unread: a hopper is a collection).
     Hopper(Hopper),
+    /// --- trails --- one of your trails, with its number of stops.
+    Trail(blyg_core::Trail),
 }
 
 impl Entry {
@@ -210,6 +216,7 @@ impl Entry {
             Entry::Sub { sub, .. } => Some(Source::Sub(sub.id.clone())),
             Entry::Own => Some(Source::Own),
             Entry::Hopper(h) => Some(Source::Hopper(h.id.clone())),
+            Entry::Trail(t) => Some(Source::Trail(t.id.clone())), // --- trails ---
         }
     }
 }
@@ -364,6 +371,7 @@ pub fn source_label(
             .map(sub_name)
             .unwrap_or_else(|| "Subscription".into()),
         Source::Own => super::own::OWN_LABEL.into(),
+        Source::Trail(_) => "Trail".into(), // --- trails --- (named by the caller)
     }
 }
 
@@ -381,6 +389,7 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
         Source::Hopper(_) => "Nothing in this hopper yet. Press h on a post to put it here.",
+        Source::Trail(_) => "No stops held here yet. Press t on a post to add it to the trail.",
     }
 }
 
@@ -438,6 +447,7 @@ mod tests {
                 }
                 Entry::Own => "Your blyg".into(),
                 Entry::Hopper(h) => format!("▤ {}", h.name),
+                Entry::Trail(t) => format!("⤳ {}", t.name), // --- trails ---
             })
             .collect();
         assert_eq!(

@@ -423,6 +423,9 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 // --- shelf ---
                 MenuItem::action("Shelf…", app::shelf::ShowShelf),
                 MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
+                // --- tangles --- the quote tray, split view
+                MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
+                MenuItem::action("Open Beside", app::split::OpenBeside),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
                 // --- terminal ---
@@ -465,6 +468,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Sources Pane", app::reading::sources::ToggleSources),
                 MenuItem::action("New Folder…", app::reading::sources::NewFolder),
                 MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
+                MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
@@ -512,6 +516,10 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Bigger", app::FontBigger),
                 MenuItem::action("Smaller", app::FontSmaller),
                 MenuItem::action("Actual Size", app::FontReset),
+                // --- split ---
+                MenuItem::separator(),
+                MenuItem::action("Left Post", app::split::FocusLeftPost),
+                MenuItem::action("Right Post", app::split::FocusRightPost),
                 // --- browser ---
                 MenuItem::separator(),
                 MenuItem::action("Open Browser…", app::browser::OpenBrowser),

@@ -664,6 +664,12 @@ fn do_step(e: &mut Env, id: &str) {
         }
         "focus" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-f")),
         "serendipity" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
+        // --- tangles ---
+        "trails" => e.cx.simulate_keystrokes("t"),
+        "quote-tray" => e.cx.simulate_keystrokes("q"),
+        "split-view" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-enter"))
+        }
         "mentions" => e.cx.simulate_input("@"),
         "stream" | "generated" => e.cx.simulate_keystrokes("enter"),
         "echoed-quote" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),

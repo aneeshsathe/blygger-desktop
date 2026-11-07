@@ -406,6 +406,8 @@ pub struct State {
     pub browse: browse::Browse,
     /// --- reading compose --- the compose box.
     pub compose: compose::Compose,
+    /// --- trails --- your trails, the current one, the bar's field.
+    pub trails: crate::app::trails::Trails,
 }
 
 impl State {
@@ -470,6 +472,7 @@ impl State {
                     .clone()
                     .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
             ),
+            trails: crate::app::trails::Trails::load(backend), // --- trails ---
         }
         .refiltered()
     }
@@ -509,6 +512,13 @@ impl State {
         // --- hoppers --- a hopper lists its posts in its own order.
         if let Some(order) = in_hopper.and_then(|h| self.hopper_order.get(h)) {
             hoppers::in_hopper_order(&self.rows, &mut self.shown, order);
+        }
+        // --- trails --- a trail lists its held stops, in its order.
+        if let (stream_vm::ReadMode::Reader, sources_vm::Source::Trail(t)) =
+            (&self.mode, &self.source)
+        {
+            let keys = self.trails.keys(t);
+            self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &keys);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -675,6 +685,7 @@ impl MainView {
             r.source = sources_vm::Source::default();
         }
         r.avatars = sources::avatars(self.backend.as_ref());
+        r.trails.reload(self.backend.as_ref()); // --- trails ---
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
@@ -887,6 +898,7 @@ impl MainView {
                 .flex()
                 .flex_col()
                 .child(inner)
+                .children(self.render_trails_bar(cx)) // --- trails ---
                 .into_any_element(),
         )
     }
@@ -903,6 +915,10 @@ impl MainView {
         // --- reading compose --- typing in the compose box is the box's
         // business too (its esc and ⌘⏎ are its own, `compose.rs`).
         if self.reading.compose.has_keyboard(window, cx) {
+            return;
+        }
+        // --- trails --- and the trail bar's field and publish sheet.
+        if self.trail_field_focused(window, cx) {
             return;
         }
         let k = &ev.keystroke;
@@ -1016,6 +1032,13 @@ impl MainView {
                 self.open_hopper_picker(window, cx);
                 true
             }
+            // --- tray --- `q` puts the post in front of you on the quote tray.
+            (View::Reading, "q") => {
+                self.add_to_tray(window, cx);
+                true
+            }
+            // --- trails --- `t` adds the post in front of you, ⇧T a new trail.
+            (View::Reading, "t") => self.trail_key(k.modifiers.shift, window, cx),
             // --- reading compose --- `c` writes a post, as in social apps.
             (View::Reading, "c") => {
                 self.focus_compose(window, cx);

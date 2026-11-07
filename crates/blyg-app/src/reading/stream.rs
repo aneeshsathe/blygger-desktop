@@ -109,7 +109,8 @@ impl Stream {
         self.synced = now;
     }
 
-    fn blocks_of(&self, r: &ReadingItem) -> Rc<Vec<Block>> {
+    pub(crate) fn blocks_of(&self, r: &ReadingItem) -> Rc<Vec<Block>> {
+        // --- split --- (pub)
         let tomb = r.state == "tombstone";
         let key = (vm::key(r), r.version, tomb);
         if let Some(b) = self.blocks.borrow().get(&key) {
@@ -746,6 +747,13 @@ impl MainView {
             // --- themes --- the selected post takes the theme's row shape.
             .map(|d| crate::ornament::page_row(&self.theme, d, selected))
             .when(opened && !selected, |d| d.bg(p.sel.opacity(0.5)))
+            // --- tray --- picked up, it's a quote to drop in a post.
+            .when(!tombstone, |d| {
+                crate::app::tray::draggable(
+                    d,
+                    crate::app::tray::DraggedQuote::row(r, vm::post_title(r)),
+                )
+            })
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 this.stream_post_click(k_click.clone(), post_click_of(ev), window, cx)
             }))
@@ -998,7 +1006,8 @@ impl MainView {
 
     // ------------------------------------------------------------ blocks
 
-    fn render_blocks(
+    pub(crate) fn render_blocks(
+        // --- split --- (pub)
         &self,
         blocks: &[Block],
         post: &ReadingItem,

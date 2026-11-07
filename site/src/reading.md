@@ -163,6 +163,47 @@ The Posts screen is unchanged.
 Burrow now opens on Reading. It stays on Posts during the first-run setup
 and the tour, and when there's no blyg to read from.
 
+## Trails
+
+A trail is a path through posts you chose to keep, with a word on why each
+one is there: yours and other people's, in your order.
+
+- **t** adds the post you're reading to the current trail and asks why
+  (⏎ keeps it, esc skips). With no trail yet, it asks for a name first.
+- **⇧T** starts another trail, with this post as its first stop.
+- The **trail bar** above the post box shows the trail's name (click it for
+  the next trail), its stops (click one to open it, drag to reorder, × to
+  take it off) and "stop 2 of 4" for the post in front of you.
+- The Reader's sources pane lists your trails under **Trails**. Pick one and
+  the list shows its stops in order, so j/k walk it.
+- **⌥⌘T** (Blyg › Publish Trail…) writes the trail as a thread of quotes,
+  `# name` then `![[id | why]]` for each stop, into a new draft. Nothing is
+  published until you publish it. **h** on that sheet makes a private
+  hopper of the stops instead.
+
+Trails stay on this Mac and tell no one. Posts from feeds can't be stops
+(a trail publishes as quotes). A post its author withdraws stays on the trail
+as "withdrawn", without its text, and is left out when you publish.
+
+On Windows the keys are Shift+T and Ctrl+Alt+T.
+
+## The quote tray
+
+Found something you'll want to quote later? Press **q** on the reading
+screen, or **⌥⌘K** anywhere (Post › Put on Quote Tray), and it goes on the
+**quote tray**, a strip above the status bar. The tray is kept for each blyg.
+When you quote, the `[[` / ⌘K picker lists the tray first, marked ❝; placing
+a post takes it off. On the strip, ←/→ pick a post, ⏎ places it, ⌫ takes it
+off.
+
+You can also **drag** a post into what you're writing: a stream post, a
+Reader row, a lineage row or a tray chip. In a thread it lands as a quote on
+its own line, after the line you dropped it on; in a fragment as a link where
+you dropped it. Dropped on the omnibar, it starts a new thread quoting it;
+dropped on the post box under Reading, it's quoted there.
+
+On Windows the key is Ctrl+Alt+K.
+
 ## Import and export subscriptions (OPML)
 
 Moving from another feed reader? Export an OPML file there (Feedly,

@@ -19,6 +19,7 @@ pub use lineage::Served as LineageServed;
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
+mod trails; // --- trails ---
 pub use provenance::Tracked;
 mod read_sync;
 mod reading;
@@ -1473,6 +1474,9 @@ mod folders_tests; // --- reader folders ---
 
 #[cfg(test)]
 mod shelf_tests; // --- shelf ---
+
+#[cfg(test)]
+mod trails_tests; // --- trails ---
 
 #[cfg(test)]
 mod speed_tests; // lazy re-indexing, the read-only connection
