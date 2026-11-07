@@ -18,6 +18,7 @@ pub mod opml; // --- OPML import/export ---
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
+pub mod site; // --- site ---
 pub mod state;
 pub mod store;
 pub mod sync;

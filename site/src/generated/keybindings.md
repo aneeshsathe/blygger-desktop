@@ -126,6 +126,7 @@
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |
 | AI on your blyg: a model per function, house style, change notes, the change classifier | Blyg › AI on Your Blyg… |
+| The blyg's public site: theme, typeface, front page, menus, avatar, collection feeds, studio updates and extensions | Blyg › Site… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
 | Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |

@@ -61,7 +61,7 @@ impl MainView {
     /// Update your blyg", while true.
     pub(super) fn render_server_notice(&self) -> Option<AnyElement> {
         if !self.backend.server_outdated() {
-            return None;
+            return self.render_studio_update_notice(); // --- site ---
         }
         // --- themes --- on the status bar's own ground, warning-coloured.
         let warn = self.palette.on_status_text(self.palette.warn);

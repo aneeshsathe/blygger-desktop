@@ -688,6 +688,21 @@ Fable's proposal 11, without its `blygger +mcp` verb: blygs already serve MCP (`
 - **Blyg › AI on Your Blyg…** (`app/server_ai.rs`): `GET /api/ai/models` and the `aiModelTk`, `aiModelChangelog`, `aiModelClassify`, `aiModelFeed`, `aiStylePrompt`, `feedPrompt`, `autoChangeNotes` and `changeCategoryInNote` settings, read and PATCHed alone (`ServerAiSettings`), so the site-settings sheet's fields are never sent from here. One line on the sheet says how it differs from Settings › AI (Burrow's own providers).
 - **The publish sheet** (`app/note_ai.rs`): from v2 on, if the blyg names a change-notes model, "Draft a note" (⌥⌘N; Ctrl+Shift+E on Windows) calls `POST /api/items/{id}/note-draft`; if it names a decision model, `POST /api/items/{id}/classify` runs as the sheet opens and the label shows as quiet, clickable words. The category rules are upstream's `change-category.ts`, ported (`compose_note`, `recategorize`, `note_is_generated`). Publish sends `noteGenerated` only for an unedited machine note and `changeCategory` only when the classifier answered (`PublishExtras`, `Backend::publish_with`). Nothing blocks publishing.
 - **Not used: `GET /api/fork-options`.** Studio's fork page lists an item's pinned versions with it; Burrow already lists them (the reading pane's version pill, ⌘Y, the lineage ring) from the public changelog and forks one with `POST /api/items {mode: fork}`, so it would add a round trip and nothing else.
+## The public site (Blyg › Site…; `site/`, `blyg_core::site`, `api/site.rs`)
+
+Studio parity for the settings that run the blyg's public site, which Site Settings (title, author, bio, masthead links, time zone, writing defaults) doesn't hold. One sheet (menu and command palette only, no key), in Studio's sections, each shown only when the studio reports its keys:
+
+- **Appearance:** the reading theme (Auto, Studio's six presets, Custom) as swatches, and a preview of a public page in the chosen palette and typeface (light and dark side by side for Auto and for a custom theme with a dark companion). Custom is Studio's theme editor: eight `#rrggbb` colours (`page paper ink inkSoft rule pencil genBg genRule`), a name (one line, at most 40 characters), the dark flag, an optional dark companion (the pair must be light + dark), "start from" a preset, and Studio's advisory WCAG contrast warnings (4.5:1). Typeface: Studio's eight system stacks, previewed with the stack's macOS or Windows face.
+- **Home page:** the order (`feedOrders` as the studio lists them, extensions' too), the static front page (a published thread of yours, or the latest items), the posts path (Studio's rules: 1–40 of `a-z0-9-`, not a name the blyg uses).
+- **Links:** where the main menu sits, the threads it lists first (pick, reorder, remove; at most 30), your own links (`Label | url` lines), and the four standard links. The masthead links stay in Site Settings.
+- **Profile:** the avatar (Upload… sends the image with no post, `POST /api/media`, and sets `avatarMediaId` to its id; shown only after an upload, as in Studio), `authorUrl`, `siteUrl`.
+- **Network:** collection (hopper) feeds, `hopperFeeds`.
+- **Updates:** `updateCheck` and `updateFeedUrl`, and what the studio last found.
+- **Extensions:** the studio's own (from `GET /api/capabilities` `extensions`), on or off; one not compiled into the build shows but can't be turned on.
+
+Nothing is sent until Save (or ⌘⏎), which checks what Studio checks and then sends `PATCH /api/settings` with only the keys that changed (`SiteConfig::patch`; a key the studio didn't report is never sent). A refusal shows the server's words ("Your blyg refused it: …"). The sheet stays open, saying Saved.
+
+**Studio update alerts.** `GET /api/update-state` (which also starts the studio's daily release check) gives the newest release the studio has seen; the version it runs is `blyg.json`'s `generator`. Read at most every six hours per blyg (asked every ten minutes, from the cache), and not at all with `updateCheck` off. While the studio is behind, the status bar shows a quiet "Your blyg's studio has an update: x.y.z · Release notes" where the "needs updating" notice goes (which wins).
 
 ## Naming
 

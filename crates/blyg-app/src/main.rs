@@ -498,6 +498,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),
                 MenuItem::action("AI on Your Blyg…", app::server_ai::ShowServerAi),
+                MenuItem::action("Site…", app::site::ShowSite), // --- site ---
                 // --- profiles ---
                 MenuItem::separator(),
                 MenuItem::action("Profile", app::profiles::ShowProfile),

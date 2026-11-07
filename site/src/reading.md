@@ -435,6 +435,32 @@ blygs that report them.
 
 ![Mentions](screenshots/mentions.png)
 
+## Your blyg's public site
+
+**Blyg › Site…** sets up the rest of your blyg's public site, as Studio's
+settings page does (each section shows when your blyg's studio offers it):
+
+- **Appearance:** the theme your pages use (Auto, Paper, Cream, Slate,
+  Solarized Light and Dark, Nord, or your own), with a preview. **Custom**
+  is Studio's theme editor: eight colours, a name, and an optional dark
+  companion for readers in dark mode, with a warning when text would be
+  hard to read. The **typeface** is one of eight that are already on your
+  readers' devices. (Burrow's own look is in Settings, not here.)
+- **Home page:** newest first or pace-layered, a **front page** (one of your
+  published threads in place of the latest items) and the **posts path**
+  where the latest items live (`/posts/` unless you change it).
+- **Links:** the main menu on every page: where it sits, the threads it
+  lists first, your own links, and the standard ones.
+- **Profile:** your **avatar** (Upload…), the address your name links to,
+  and the blyg's canonical address.
+- **Network:** an RSS feed for each public collection (hopper).
+- **Updates:** whether your blyg checks for new studio releases. When there
+  is one, the status bar says so quietly, with a link to the release notes.
+- **Extensions:** your studio's own extensions, on or off.
+
+Nothing reaches your blyg until **Save** (⌘⏎). If your blyg refuses
+something, the sheet says why in its words.
+
 ## Profiles
 
 ⌘I on a post (or a click on its author's address, its "↳ stub of" /

@@ -1527,6 +1527,37 @@ impl Backend for LiveBackend {
         Some(self.finish_profile(p))
     }
 
+    // --- site ---
+
+    fn site_config(&self) -> Result<crate::site::SiteConfig> {
+        self.e()
+            .track(self.e().api.site_config())?
+            .ok_or(CoreError::NotFound)
+    }
+
+    fn save_site_config(
+        &self,
+        base: &crate::site::SiteConfig,
+        next: &crate::site::SiteConfig,
+    ) -> Result<crate::site::SiteConfig> {
+        let patch = next.patch(base);
+        if patch.is_empty() {
+            return Ok(next.clone());
+        }
+        let mut saved = self.e().track(self.e().api.put_site_config(patch))?;
+        saved.update = self.e().api.cached_studio_update();
+        Ok(saved)
+    }
+
+    fn studio_update(&self) -> Option<crate::site::StudioUpdate> {
+        self.engine.api.cached_studio_update()
+    }
+
+    fn refresh_studio_update(&self, force: bool) -> Result<Option<crate::site::StudioUpdate>> {
+        self.engine.api.refresh_studio_update(force)
+    }
+    // --- end site ---
+
     // --- about ---
 
     fn read_state_sync(&self) -> bool {

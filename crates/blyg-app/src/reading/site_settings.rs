@@ -264,7 +264,20 @@ impl MainView {
             .child(self.sheet_heading("Site settings"))
             .child(div().text_color(p.muted).child(crate::keymap::hint(
                 "What your blyg shows about itself. Saved to the blyg, not this Mac.",
-            )));
+            )))
+            // --- site --- the rest of the public site is in Blyg › Site….
+            .child(
+                div()
+                    .id("site-settings-more")
+                    .cursor_pointer()
+                    .text_color(p.accent)
+                    .hover(|d| d.underline())
+                    .child("Theme, front page, menus, avatar and more: Blyg › Site…")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.close_reading_sheet(window, cx);
+                        this.open_site(window, cx);
+                    })),
+            );
         match load {
             Load::Unavailable => {
                 return frame
