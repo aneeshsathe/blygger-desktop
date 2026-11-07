@@ -15,6 +15,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-07
+
 ### Added
 
 - **The shelf.** ⌥⌘B keeps a post you keep updating (a /now page, a reading log) at the top of the Write list, marked 📚, in your order. ⌘B opens the shelf: 1–9 or ⏎ opens a post, ⌥↑/⌥↓ reorder, ⌫ takes one off. Any post of yours can be shelved. The shelf is kept on this computer for now (store schema v17); syncing it waits on blygger-studio#135. On Windows the keys are Ctrl+B and Ctrl+Alt+B.
