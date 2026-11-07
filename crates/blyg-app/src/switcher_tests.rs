@@ -271,3 +271,29 @@ fn signing_out_of_the_active_blyg_switches_to_the_next(cx: &mut TestAppContext) 
         "no Connect sheet while a blyg is left"
     );
 }
+
+/// The store can be newer than the editor (a save that didn't come from it,
+/// a merge whose refresh hasn't landed): switching away mustn't save the
+/// editor's older text back over it.
+#[gpui_kit::test]
+fn switching_never_puts_the_editors_older_text_back(cx: &mut TestAppContext) {
+    let (view, w, cx) = setup(cx);
+    cx.simulate_keystrokes("enter");
+    cx.run_until_parked();
+    let (id, shown) = view.read_with(cx, |v, cx| {
+        (
+            v.current.as_ref().expect("a post is open").local_id.clone(),
+            v.editor.read(cx).value().to_string(),
+        )
+    });
+    let newer = format!("{shown} Saved from elsewhere.");
+    w.a.save(&id, &newer).unwrap();
+    cx.dispatch_action(SwitchBlyg2);
+    cx.run_until_parked();
+    assert_eq!(active(cx).as_deref(), Some(B));
+    assert_eq!(
+        w.a.item(&id).unwrap().content_md,
+        newer,
+        "blyg A kept the newer text"
+    );
+}
