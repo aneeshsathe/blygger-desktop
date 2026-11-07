@@ -137,3 +137,5 @@
 | Version, build, updates and connection info | Help › About Burrow |
 | Browser pane: open it with the address field ready (macOS) | View › Open Browser… |
 | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
+| Contacts: your address book of @handles (add, edit, check, remove) | Blyg › Contacts… |
+| Add the author of the post you're reading to your contacts | Post › Add Author to Contacts… |

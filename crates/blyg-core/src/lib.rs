@@ -15,6 +15,7 @@ pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
+pub mod outbound; // --- contacts --- sent mentions, groups, sources
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;

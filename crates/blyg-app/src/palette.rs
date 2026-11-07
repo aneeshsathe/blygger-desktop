@@ -115,6 +115,7 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
             "server ai",
         ],
         "DraftChangeNote" => &["version note", "changelog", "ai note"],
+        "ShowContacts" => &["address book", "people", "handles", "mention"], // --- contacts ---
         "ShowBlygSwitcher" => &["switch", "account", "blogs"],
         "ShowChat" => &["irc", "thicket"],
         "FocusSearch" => &["find", "search", "omnibar"],

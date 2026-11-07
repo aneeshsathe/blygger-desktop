@@ -137,6 +137,10 @@ it changes. Right-click one for **Rename…** (your own name, kept as you
 set it), **Use the Blyg's Own Name** to hand it back, and **Check Now**.
 **⇧⌘R** (Blyg › Check All Feeds Now) asks your blyg to poll every
 subscription at once.
+Each subscription on the Subscriptions screen says when your blyg last
+polled it and, in the alert colour, how many polls in a row failed and any
+flag the blyg raised on it (a feed answering for another site, say). The
+screen reads them again each time you open it.
 
 | | |
 |---|---|
@@ -425,6 +429,14 @@ hashes, and its JSON).
 quoted, stubbed or forked which post, and when. You can hide one, and your own
 posts list their mentions under them in ⌘Y and in the reading pane.
 
+**Sent** beside **Received** lists the Webmentions your blyg sent for your
+posts: which version of which post, the page it pointed at, and where the
+delivery stands (sent, pending with its next try, failed with the reason, or
+no endpoint on the other side). **Reply** on a response opens a stub of it
+when your blyg holds that post, and otherwise offers to subscribe to its
+blyg first. Received mentions are grouped by your post, as your blyg orders
+them.
+
 Your blyg decides whether a post's public page shows its responses. In
 **Site settings** (Blyg › Site Settings…), **Show responses by default** sets
 it for the whole blyg, on blygs that report it. On the Mentions screen, each
@@ -460,6 +472,18 @@ settings page does (each section shows when your blyg's studio offers it):
 
 Nothing reaches your blyg until **Save** (⌘⏎). If your blyg refuses
 something, the sheet says why in its words.
+## Contacts
+
+On studio 0.56 or later, your blyg keeps an address book, and **Blyg ›
+Contacts…** manages it: search, add, edit and remove people by handle, name
+and https address. **Check page** asks your blyg to read the address's
+`rel=me` links and keep them as the contact's other addresses; if it can't
+read the page, it says why and the contact still works.
+
+**Post › Add Author to Contacts…** on a reading post fills in its author's
+name and address (or says they're already there as `@handle`), and
+subscribing to a blyg offers to add it. A handle in your writing becomes a
+link to that person when your blyg publishes it.
 
 ## Profiles
 

@@ -252,6 +252,13 @@ pub struct WireSubscription {
     pub in_blogroll: bool,
     #[serde(default)]
     pub title_follows_source: bool,
+    // --- contacts --- the poll status (Studio's Inspector).
+    #[serde(default)]
+    pub last_poll_at: Option<String>,
+    #[serde(default)]
+    pub fail_count: f64,
+    #[serde(default)]
+    pub flags: Vec<crate::model::SubscriptionFlag>,
 }
 
 impl From<WireSubscription> for Subscription {
@@ -265,6 +272,12 @@ impl From<WireSubscription> for Subscription {
             status: w.status,
             in_blogroll: w.in_blogroll,
             title_follows_source: w.title_follows_source,
+            // --- contacts ---
+            poll: crate::model::SubscriptionPoll {
+                last_poll_at: w.last_poll_at.filter(|t| !t.is_empty()),
+                fail_count: w.fail_count.max(0.0) as u32,
+                flags: w.flags,
+            },
         }
     }
 }

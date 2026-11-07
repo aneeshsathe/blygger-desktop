@@ -84,6 +84,7 @@ pub fn subscriptions() -> Vec<Subscription> {
             status: "active".into(),
             in_blogroll: true,
             title_follows_source: true,
+            poll: Default::default(),
         })
         .collect()
 }

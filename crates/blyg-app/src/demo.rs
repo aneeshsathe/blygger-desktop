@@ -255,6 +255,8 @@ impl MainView {
             (s, n) if s.starts_with("aa-") => self.access_ai_demo(s, n, window, cx),
             // --- site --- (site-appearance, site-custom, site-home, site-links, …)
             (s, n) if s.starts_with("site-") => self.site_demo(s, n, window, cx),
+            // --- contacts --- (ct-book, ct-author, ct-sent, ct-subs; contacts/demo.rs)
+            (s, n) if s.starts_with("ct-") => self.contacts_demo(s, n, window, cx),
             _ => {}
         }
     }

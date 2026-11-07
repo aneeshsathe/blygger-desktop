@@ -124,6 +124,7 @@ fn folders_survive_a_subscriptions_refresh() {
         status: "active".into(),
         in_blogroll: false,
         title_follows_source: true,
+        poll: Default::default(),
     };
     s.replace_subscriptions(std::slice::from_ref(&sub)).unwrap();
     s.set_subscription_folder("sub-rue", Some(&f.id)).unwrap();

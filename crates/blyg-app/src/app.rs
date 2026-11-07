@@ -296,6 +296,8 @@ enum Sheet {
     // --- access-ai --- Blyg › Client Access… and Blyg › AI on Your Blyg…
     ClientAccess(Box<access::ClientAccessSheet>),
     ServerAi(Box<server_ai::ServerAiSheet>),
+    // --- contacts --- Blyg › Contacts…, or an offer to add someone.
+    Contacts(Box<reading::contacts::ContactsSheet>),
 }
 
 struct Toast {
@@ -405,8 +407,9 @@ pub struct MainView {
     tray: tray::Tray,
     // --- split --- a second post beside the one being written
     split: split::Split,
-    nearby: nearby::State, // --- nearby ---
-    site: site::State,     // --- site ---
+    nearby: nearby::State,              // --- nearby ---
+    site: site::State,                  // --- site ---
+    contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -571,6 +574,7 @@ impl MainView {
             split: split::Split::new(Self::tray_data_dir(cx)), // --- split ---
             nearby: Default::default(),                        // --- nearby ---
             site: Default::default(),                          // --- site ---
+            contacts: Default::default(),                      // --- contacts ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -2479,6 +2483,7 @@ impl Render for MainView {
             .map(|d| self.access_actions(d, cx)) // --- access-ai ---
             .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
+            .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -3507,6 +3512,7 @@ impl MainView {
             Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
             Sheet::ClientAccess(s) => self.render_access_sheet(s, cx), // --- access-ai ---
             Sheet::ServerAi(s) => self.render_server_ai_sheet(s, cx), // --- access-ai ---
+            Sheet::Contacts(s) => self.render_contacts_sheet(s, cx), // --- contacts ---
             Sheet::Publish {
                 title,
                 next_version,

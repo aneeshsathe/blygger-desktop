@@ -33,6 +33,19 @@ pub struct StoreResolver {
     mount: String,
     /// Ids being baked right now (cycle and depth guard).
     stack: RefCell<Vec<String>>,
+    /// --- contacts --- The address book, when the blyg rewrites `@handle`
+    /// (`snapshot`: read now; `lazy`: on the first handle). Empty: every
+    /// `@handle` stays prose, as publish leaves it on such a blyg.
+    handles: OnceCell<Vec<blyg_core::contacts::Contact>>,
+}
+
+/// --- contacts --- The book, when publish would rewrite handles.
+fn handle_book(backend: &dyn Backend) -> Vec<blyg_core::contacts::Contact> {
+    if backend.rewrites_handles() {
+        backend.contacts()
+    } else {
+        Vec::new()
+    }
 }
 
 fn item_kind(k: Kind) -> ItemKind {
@@ -76,6 +89,7 @@ impl StoreResolver {
             rss: OnceCell::new(),
             mount: mount.to_string(),
             stack: RefCell::new(Vec::new()),
+            handles: OnceCell::new(), // --- contacts ---
         }
     }
 
@@ -87,7 +101,9 @@ impl StoreResolver {
             .filter(|s| s.kind == SubscriptionKind::Rss)
             .map(|s| s.id)
             .collect();
-        Self::new(backend.items(), backend.reading(), &rss, mount)
+        let r = Self::new(backend.items(), backend.reading(), &rss, mount);
+        let _ = r.handles.set(handle_book(backend)); // --- contacts ---
+        r
     }
 
     /// Resolves from what `backend` holds locally, looking each id up the
@@ -236,6 +252,22 @@ impl Resolver for StoreResolver {
         } else {
             self.imported(id, &rows)
         }
+    }
+
+    /// --- contacts --- `@handle` → its contact's h-card, as publish
+    /// renders it (only where the blyg rewrites handles).
+    fn contact(&self, handle: &str) -> Option<blyg_render::HandleCard> {
+        let book = self
+            .handles
+            .get_or_init(|| self.source.as_deref().map(handle_book).unwrap_or_default());
+        let c = book
+            .iter()
+            .find(|c| c.handle.eq_ignore_ascii_case(handle))?;
+        Some(blyg_render::HandleCard {
+            name: c.display_name().to_string(),
+            url: c.origin.clone(),
+            ids: c.checked_ids().into_iter().map(str::to_string).collect(),
+        })
     }
 
     /// A `[[id]]` link bakes nothing, so the cycle and depth guards that

@@ -276,6 +276,9 @@ quote it. It's never put in for you.
   the popup shows the link it becomes; publish tells you about any handle it
   couldn't find. Otherwise it inserts a plain link to that blyg. Either way it
   notifies no one.
+  The preview shows a contact's handle as the link it will become (the
+  same h-card your blyg publishes). Manage the address book in Blyg ›
+  Contacts… (see [Reading](reading.md#contacts)).
 - **Images.** Paste or drop an image to upload it; it goes into the text
   where you pasted it, and the preview shows it. Until a published post shows
   it, an upload is private on studio 0.28 or later: only you (and Burrow,
