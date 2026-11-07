@@ -6,7 +6,9 @@
 
 use std::collections::HashMap;
 
-use blyg_core::{Item, Kind, LocalId, RemoteRef, ServerId, Status, promotion_kind};
+use blyg_core::{
+    Hopper, Item, Kind, LocalId, ReadingItem, RemoteRef, ServerId, Status, promotion_kind,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::seed;
@@ -37,6 +39,73 @@ pub struct WebStore {
     pub read: HashMap<String, Option<u32>>,
     /// Reading rows you've put in hoppers: `"sub|remote id"` → hopper ids.
     pub hopped: HashMap<String, Vec<String>>,
+    /// Live mode: the blyg's own state, and what waits to be sent.
+    pub live: Live,
+}
+
+/// What live mode keeps beside the items (all of it persisted, so it
+/// survives a reload with no network): each item's revision on the blyg,
+/// conflicts waiting for you, and the outbox. Item edits wait as the items
+/// themselves (`pending_sync`), sent with the revision they were based on.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Live {
+    pub on: bool,
+    /// The blyg's public base (its `siteUrl`, else the origin), for
+    /// permalinks and the preview.
+    #[serde(default)]
+    pub base: String,
+    /// local id → the item's revision on the blyg, as last seen.
+    #[serde(default)]
+    pub rev: HashMap<String, u64>,
+    /// local id → the blyg's copy, when it changed under your edit.
+    #[serde(default)]
+    pub conflicts: HashMap<String, Conflict>,
+    /// Drafts deleted here, waiting to be deleted on the blyg.
+    #[serde(default)]
+    pub deletes: Vec<PendingDelete>,
+    /// Read marks waiting to be sent (`None`: mark unread).
+    #[serde(default)]
+    pub reads: Vec<ReadOp>,
+    /// Hopper changes waiting to be sent.
+    #[serde(default)]
+    pub hops: Vec<HopOp>,
+    /// The reading list and hoppers as last read, for offline.
+    #[serde(default)]
+    pub reading: Vec<ReadingItem>,
+    #[serde(default)]
+    pub hoppers: Vec<Hopper>,
+}
+
+/// The blyg's copy of an item that changed under a local edit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Conflict {
+    pub server_md: String,
+    pub server_rev: u64,
+    pub server_kind: Kind,
+    pub server_status: Status,
+    pub server_version: u32,
+    pub server_dirty: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PendingDelete {
+    pub server_id: String,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReadOp {
+    pub sub: String,
+    pub remote_id: String,
+    pub version: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HopOp {
+    pub hopper: String,
+    pub sub: String,
+    pub remote_id: String,
+    pub on: bool,
 }
 
 /// The persisted form of an `Item` (the model's `Item` has no serde).
@@ -57,6 +126,9 @@ struct Stored {
     /// What a reply stub answers.
     #[serde(default)]
     stub_of: Option<RemoteRef>,
+    /// Live mode: an edit not yet on the blyg (the outbox).
+    #[serde(default)]
+    pending: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -71,6 +143,8 @@ struct Snapshot {
     read: HashMap<String, Option<u32>>,
     #[serde(default)]
     hopped: HashMap<String, Vec<String>>,
+    #[serde(default)]
+    live: Live,
 }
 
 const FORMAT: u32 = 1;
@@ -112,6 +186,7 @@ impl WebStore {
             shelf: snap.shelf.into_iter().map(LocalId).collect(),
             read: snap.read,
             hopped: snap.hopped,
+            live: snap.live,
             ..WebStore::default()
         };
         for s in snap.items {
@@ -123,6 +198,9 @@ impl WebStore {
             it.updated = s.updated;
             it.permalink = s.permalink;
             it.stub_of = s.stub_of;
+            // The demo's "sync" is pretend, so only live mode keeps it.
+            it.pending_sync = s.pending && store.live.on;
+            it.conflict = store.live.conflicts.contains_key(&s.id);
             if !s.versions.is_empty() {
                 store.versions.insert(id, s.versions);
             }
@@ -148,6 +226,7 @@ impl WebStore {
                 permalink: i.permalink.clone(),
                 versions: self.versions.get(&i.local_id).cloned().unwrap_or_default(),
                 stub_of: i.stub_of.clone(),
+                pending: i.pending_sync,
             })
             .collect();
         serde_json::to_string(&Snapshot {
@@ -157,6 +236,7 @@ impl WebStore {
             shelf: self.shelf.iter().map(|i| i.0.clone()).collect(),
             read: self.read.clone(),
             hopped: self.hopped.clone(),
+            live: self.live.clone(),
         })
         .unwrap_or_default()
     }
@@ -184,6 +264,44 @@ impl WebStore {
                 .cloned()
                 .collect(),
         )
+    }
+
+    /// Live mode: an empty store for the blyg at `base`.
+    pub fn live(base: &str) -> Self {
+        WebStore {
+            next_id: 1,
+            live: Live {
+                on: true,
+                base: base.to_string(),
+                ..Live::default()
+            },
+            ..WebStore::default()
+        }
+    }
+
+    pub(crate) fn get_mut_pub(&mut self, id: &LocalId) -> Option<&mut Item> {
+        self.get_mut(id)
+    }
+
+    /// Put an item in (or replace it), keeping its place.
+    pub(crate) fn upsert(&mut self, it: Item) {
+        match self.items.iter_mut().find(|i| i.local_id == it.local_id) {
+            Some(slot) => *slot = it,
+            None => self.items.push(it),
+        }
+    }
+
+    /// The local id of the item the blyg knows as `server_id`.
+    pub fn by_server(&self, server_id: &str) -> Option<LocalId> {
+        self.items
+            .iter()
+            .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == server_id))
+            .map(|i| i.local_id.clone())
+    }
+
+    /// Every item, in no particular order (for the outbox).
+    pub(crate) fn raw(&self) -> &[Item] {
+        &self.items
     }
 
     pub fn item(&self, id: &LocalId) -> Option<Item> {
@@ -392,6 +510,9 @@ impl WebStore {
 
     pub fn pending(&self) -> usize {
         self.items.iter().filter(|i| i.pending_sync).count()
+            + self.live.deletes.len()
+            + self.live.reads.len()
+            + self.live.hops.len()
     }
 }
 

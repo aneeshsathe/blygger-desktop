@@ -11,16 +11,21 @@
 //!   resolver and snapshot sanitiser (`crates/blyg-app/src/studio/`);
 //! - the app's themes (`crates/blyg-core/themes/`).
 //!
-//! The data is the native fake's invented sample posts, kept in memory and
-//! persisted by the page to IndexedDB. Nothing here opens a socket.
+//! In the demo, the data is the native fake's invented sample posts, kept in
+//! memory and persisted by the page to IndexedDB. Served from a blyg, it is
+//! the owner's own posts (`live`): the page fetches the same-origin owner
+//! API and this crate decides what to send and what the answers mean
+//! (`api`). Nothing here opens a socket.
 
 use blyg_core::{Item, Kind, LocalId, Status, SyncStatus};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
+pub mod api;
 /// `vm.rs` calls `crate::keymap::{hint, hint_owned, keyless_here}`.
 mod keymap;
+pub mod live;
 mod read_api;
 pub mod seed;
 pub mod store;
@@ -184,6 +189,10 @@ struct Current {
     shelved: bool,
     /// What a reply stub answers (`host · title`), for the editor's header.
     stub_of: Option<String>,
+    /// Live mode: the blyg changed this post under your edit.
+    conflict: Option<live::ConflictView>,
+    /// Live mode: an edit the blyg hasn't got yet.
+    pending: bool,
 }
 
 #[derive(Serialize)]
@@ -200,6 +209,10 @@ struct View {
     shelf_len: usize,
     /// The shelf strip: every shelved post, in order, filtered or not.
     shelf: Vec<read_api::ShelfRow>,
+    /// `live` (the blyg's own posts) or `demo` (the sample data).
+    mode: &'static str,
+    /// The line that says which, for the page's header.
+    mode_label: String,
 }
 
 #[derive(Serialize)]
@@ -230,6 +243,16 @@ enum Outcome {
         version: u32,
         permalink: String,
         note: Option<String>,
+    },
+    /// Live mode: the page publishes `id` on the blyg.
+    RemotePublish {
+        id: String,
+        note: Option<String>,
+    },
+    /// Live mode: the page restores `id` to `version` on the blyg.
+    RemoteRestore {
+        id: String,
+        version: u32,
     },
 }
 
@@ -400,6 +423,8 @@ impl Burrow {
                 new_post: Some(NEW_NOTE.into()),
                 shelved: false,
                 stub_of: None,
+                conflict: None,
+                pending: false,
             }),
             (_, Some(it)) => {
                 let chars = it.char_count();
@@ -418,6 +443,8 @@ impl Burrow {
                         .then(|| NEW_NOTE.into()),
                     shelved: self.store.shelf.contains(&it.local_id),
                     stub_of: self.stub_label(&it),
+                    conflict: self.conflict_view(&it.local_id),
+                    pending: it.pending_sync,
                     content: it.content_md,
                 })
             }
@@ -431,8 +458,21 @@ impl Burrow {
             self.sync
         };
         let (label, dot) = vm::sync_label(sync, self.publishing);
+        let origin = self.origin_str();
         json(&View {
-            title: vm::window_title(Some(seed::ORIGIN)),
+            title: vm::window_title(Some(&origin)),
+            mode: if self.is_live() { "live" } else { "demo" },
+            mode_label: if self.is_live() {
+                format!(
+                    "Live · your posts on {}",
+                    origin
+                        .trim_start_matches("https://")
+                        .trim_start_matches("http://")
+                )
+            } else {
+                "Demo · invented sample posts, kept in this browser. Nothing is sent anywhere."
+                    .into()
+            },
             query: self.list.query().to_string(),
             hint: self.list.hint(),
             wants_create: self.list.wants_create(),
@@ -558,7 +598,10 @@ impl Burrow {
             "saving" => SyncStatus::Saving,
             "error" => SyncStatus::Error,
             _ => {
-                self.store.mark_synced();
+                // Live, "synced" is the outbox's to say (`pending_sync`).
+                if !self.is_live() {
+                    self.store.mark_synced();
+                }
                 SyncStatus::Synced
             }
         };
@@ -587,6 +630,11 @@ impl Burrow {
         let Some(it) = self.current_item() else {
             return json(&Outcome::Nothing);
         };
+        if self.is_live() && it.version > 0 {
+            return json(&Outcome::Toast {
+                message: "A published post keeps its kind".into(),
+            });
+        }
         let kind = match it.kind {
             Kind::Fragment => Kind::Thread,
             Kind::Thread => Kind::Fragment,
@@ -650,6 +698,18 @@ impl Burrow {
             return json(&Outcome::Nothing);
         };
         let note = Some(note.trim().to_string()).filter(|n| !n.is_empty());
+        if self.is_live() {
+            // A scratch note becomes a draft first, so the outbox sends it.
+            if self
+                .store
+                .item(&id)
+                .is_some_and(|i| i.status == Status::Scratch)
+            {
+                self.store.promote(&id, &rfc(now_ms));
+                self.keep_open(&id);
+            }
+            return json(&Outcome::RemotePublish { id: id.0, note });
+        }
         let Some(it) = self.store.publish(&id, note.clone(), &rfc(now_ms)) else {
             return json(&Outcome::Nothing);
         };
@@ -712,6 +772,7 @@ impl Burrow {
         let noun = vm::discard_noun(&it);
         self.new_post = None;
         self.before_new = None;
+        self.queue_delete(&it);
         self.store.delete(&it.local_id);
         self.list.remove(&it.local_id);
         json(&Outcome::Toast {
@@ -745,6 +806,12 @@ impl Burrow {
         let Ok(v) = vm::discard_changes(&it, self.offline) else {
             return json(&Outcome::Nothing);
         };
+        if self.is_live() {
+            return json(&Outcome::RemoteRestore {
+                id: it.local_id.0,
+                version: v,
+            });
+        }
         match self.store.restore(&it.local_id, v, &rfc(now_ms)) {
             Some(it) => {
                 self.list.update_item(it);
@@ -819,7 +886,7 @@ impl Burrow {
 impl Burrow {
     fn render(&self, md: &str, kind: Kind, item: Option<&Item>) -> blyg_render::Rendered {
         let opts = blyg_render::RenderOpts {
-            mount: seed::ORIGIN.to_string(),
+            mount: self.origin_str(),
             self_id: item.and_then(|i| i.server_id.as_ref()).map(|s| s.0.clone()),
             ..blyg_render::RenderOpts::default()
         };
@@ -867,3 +934,6 @@ pub fn page_shell(theme_css: &str, body: &str, nonce: &str) -> String {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod live_tests;

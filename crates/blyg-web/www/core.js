@@ -15,13 +15,18 @@ export const S = {
   themes: [],
   theme: null,
   render: () => {}, // the active layout's render
+  live: null,       // live.js, on a blyg (null: the demo)
 };
+export const isLive = () => !!S.live;
 export const isPhone = () => S.layout === 'phone';
 
 // ---------------------------------------------------------------- storage
-// The whole store is one JSON value under one IndexedDB key. Every call is
-// guarded: a private window or blocked storage just means no persistence.
-const DB = 'burrow-web', OS = 'kv', KEY = 'store';
+// The whole store is one JSON value under one IndexedDB key: `store` for
+// the demo's sample data, `live` for your blyg (its cache and outbox), so
+// the two never mix. Every call is guarded: a private window or blocked
+// storage just means no persistence.
+const DB = 'burrow-web', OS = 'kv';
+const storeKey = () => (S.live ? 'live' : 'store');
 function idb() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB, 1);
@@ -30,24 +35,28 @@ function idb() {
     req.onerror = () => reject(req.error);
   });
 }
-export async function load() {
+export async function load(key = 'store') {
   try {
     const db = await idb();
     return await new Promise((resolve) => {
-      const r = db.transaction(OS).objectStore(OS).get(KEY);
+      const r = db.transaction(OS).objectStore(OS).get(key);
       r.onsuccess = () => resolve(typeof r.result === 'string' ? r.result : undefined);
       r.onerror = () => resolve(undefined);
     });
   } catch { return undefined; }
 }
 let dbp;
-export async function persist() {
+/** Write the store to IndexedDB. Live, a change saved this way (a read
+    mark, a hopper, a delete) also goes to the blyg after a pause, unless
+    `quiet` (the outbox's own writes). */
+export async function persist({ quiet = false } = {}) {
+  if (S.live && !quiet) scheduleSend();
   try {
     dbp ??= idb();
     const db = await dbp;
     await new Promise((resolve, reject) => {
       const tx = db.transaction(OS, 'readwrite');
-      tx.objectStore(OS).put(S.B.to_json(), KEY);
+      tx.objectStore(OS).put(S.B.to_json(), storeKey());
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
     });
     return true;
@@ -61,10 +70,17 @@ export const pref = {
 // ---------------------------------------------------------------- sync
 // Each keystroke is in the store at once ("saved in this browser"); ~800 ms
 // after typing stops the store is written to IndexedDB, the demo's push.
+// Live, it is written at once and the outbox goes to the blyg after the
+// pause (live.js), each edit with the revision it was based on.
 let syncT;
+function scheduleSend() {
+  clearTimeout(syncT);
+  if (!S.B.is_offline()) syncT = setTimeout(() => S.live.flush(), 800);
+}
 export function touched() {
   S.render();
   clearTimeout(syncT);
+  if (S.live) { persist(); return; }
   if (S.B.is_offline()) { persist(); return; }
   syncT = setTimeout(async () => {
     S.B.sync_phase('syncing'); S.render();
@@ -93,7 +109,34 @@ export function outcome(json, shakeEl) {
   return o;
 }
 export function publishedToast(r) {
-  toast(`Published v${r.version}${r.note ? ` · “${esc(r.note)}”` : ''}<br><small>${esc(r.permalink.replace(/^https?:\/\//, ''))} (a pretend blyg)</small>`, 3200);
+  const where = esc(r.permalink.replace(/^https?:\/\//, ''));
+  toast(`Published v${r.version}${r.note ? ` · “${esc(r.note)}”` : ''}<br><small>${S.live
+    ? `<a href="${esc(r.permalink)}" target="_blank" rel="noopener">${where}</a>`
+    : `${where} (a pretend blyg)`}</small>`, S.live ? 5200 : 3200);
+}
+/** Finish a publish: live, `remote_publish` goes to the blyg. */
+export async function finishPublish(o) {
+  return o?.action === 'remote_publish' && S.live ? await S.live.publish(o) : o;
+}
+/** Finish a discard: live, `remote_restore` goes to the blyg. */
+export async function finishDiscard(o) {
+  return o?.action === 'remote_restore' && S.live ? await S.live.restore(o) : o;
+}
+/** The conflict banner under the editor: the blyg's copy beside yours. */
+export function conflictBanner(el, c, onChoose) {
+  el.hidden = !c?.conflict;
+  if (!c?.conflict) { el.innerHTML = ''; el._rev = null; return; }
+  if (el._rev === c.conflict.server_rev) return;
+  el._rev = c.conflict.server_rev;
+  el.innerHTML = `<b>Changed elsewhere.</b> The blyg has a newer copy (revision ${c.conflict.server_rev})${c.conflict.excerpt ? `: <q>${esc(c.conflict.excerpt)}</q>` : ''}.
+    <span class="cbtns"><button type="button" data-keep="mine">Keep mine</button><button type="button" data-keep="theirs">Use theirs</button></span>`;
+  el.onclick = (e) => {
+    const b = e.target.closest('[data-keep]');
+    if (!b) return;
+    outcome(S.B.resolve_conflict(b.dataset.keep === 'mine'));
+    el._rev = null;
+    onChoose();
+  };
 }
 export async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return true; } catch { return false; }
