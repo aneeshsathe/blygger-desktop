@@ -92,3 +92,18 @@ fn scratch_notes_stay_shelved_when_promoted() {
     s.set_status_version(&n, Status::Draft, 0).unwrap();
     assert_eq!(s.shelf(), [n]);
 }
+
+#[test]
+fn the_shelf_holds_at_most_fifty() {
+    let s = store();
+    for i in 0..super::shelf::SHELF_MAX {
+        let id = post(&s, &format!("post {i}"));
+        s.set_on_shelf(&id, true).unwrap();
+    }
+    let one_more = post(&s, "one too many");
+    assert!(matches!(
+        s.set_on_shelf(&one_more, true),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+    assert_eq!(s.shelf().len(), super::shelf::SHELF_MAX);
+}

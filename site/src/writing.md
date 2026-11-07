@@ -30,7 +30,7 @@ come first.
 **⌘B** (Post › Shelf…) opens the shelf: **1–9** or ⏎ opens a post on it,
 **⌥↑/⌥↓** reorder it, **⌫** takes the highlighted post off, and esc closes
 it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
-scratch note. A withdrawn post leaves it.
+scratch note, up to 50 of them. A withdrawn post leaves it.
 
 The shelf is kept on this Mac (on Windows, this computer; the keys are
 Ctrl+B and Ctrl+Alt+B). It's not the same as pinning a version in ⌘Y, which

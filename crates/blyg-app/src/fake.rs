@@ -1781,6 +1781,13 @@ impl Backend for FakeBackend {
         }
         let at = st.shelf.iter().position(|p| p == id);
         match (on, at) {
+            (true, None) if st.shelf.len() >= 50 => {
+                return Err(CoreError::Rejected {
+                    status: 400,
+                    message: "Your shelf holds at most 50 posts. Take one off first.".into(),
+                    details: vec![],
+                });
+            }
             (true, None) => st.shelf.push(id.clone()),
             (false, Some(ix)) => {
                 st.shelf.remove(ix);

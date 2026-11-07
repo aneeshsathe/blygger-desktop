@@ -71,13 +71,16 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   (clearing a search that hides it), ↑/↓ move, ⌥↑/⌥↓ reorder, ⌫ takes the
   highlighted post off, esc closes. Any post of yours (thread, fragment, draft,
   scratch note; a scratch note keeps its place when promoted, same `LocalId`);
-  withdrawn posts are left out, deleted ones drop out by cascade. **Local
+  withdrawn posts are left out, deleted ones drop out by cascade. At most 50 posts
+  (studio's `PUT /shelf` limit; a 51st is refused with a toast). **Local
   only for now**: store table `shelf(local_id, position)` (schema v17),
   `Backend::shelf` / `set_on_shelf` / `move_on_shelf`, never queued or sent.
-  blygger-studio#135 adds an owner-only `GET/PUT /shelf {itemIds, revision}`
-  (`expectedRevision`, 409 with the current list; unknown and withdrawn ids
-  dropped; change domain `shelf`); Burrow moves onto it once released, keeping
-  scratch notes and unsynced drafts local. Named "shelf", never "pin": a pin is
+  blygger-studio#137 (closes #135; contract 5.8.0, unreleased as of
+  2026-11-06) adds owner-only `GET/PUT {mount}/api/shelf` →
+  `{itemIds, revision}` (≤ 50 ids; `expectedRevision`, else 409
+  `revision-conflict` with `details.current`; unknown and withdrawn ids
+  dropped; change domain `shelf`; 404 below 5.8). Burrow moves onto it once
+  released, keeping scratch notes and unsynced drafts local. Named "shelf", never "pin": a pin is
   a public, permanent version pin (§ Versions & pins).
 - **Reading actions on your own post** (`reading/own.rs`): a published post of
   yours shows a row of chips above the editor, "Your post · vN ·" then **Reply ·

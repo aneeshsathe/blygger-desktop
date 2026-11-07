@@ -10,6 +10,10 @@ use super::Store;
 use crate::backend::{CoreError, Result};
 use crate::model::LocalId;
 
+/// The most posts a shelf holds: studio's `PUT /shelf` limit
+/// (blygger-studio#137), kept here too so a synced shelf never drops any.
+pub const SHELF_MAX: usize = 50;
+
 /// Every post on the shelf in order, withdrawn ones included (they're filtered
 /// when read, so withdrawing and nothing else can't lose a position).
 fn ordered_ids(tx: &Transaction) -> Result<Vec<String>> {
@@ -61,6 +65,15 @@ impl Store {
                 )?;
                 if !exists {
                     return Err(CoreError::NotFound);
+                }
+                if ids.len() >= SHELF_MAX {
+                    return Err(CoreError::Rejected {
+                        status: 400,
+                        message: format!(
+                            "Your shelf holds at most {SHELF_MAX} posts. Take one off first."
+                        ),
+                        details: vec![],
+                    });
                 }
                 tx.execute(
                     "INSERT INTO shelf (local_id, position) VALUES (?1, ?2)",
