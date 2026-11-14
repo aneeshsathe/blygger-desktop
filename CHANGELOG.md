@@ -16,7 +16,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
-## [0.21.0] - 2026-11-13
+## [0.21.0] - 2026-11-14
 
 Protocol 0.4's latest revisions (blygger-spec decisions #95–#104), copies elsewhere, cross-posting to Bluesky and Farcaster, and a sync that reads far less from your blyg.
 
