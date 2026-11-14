@@ -159,9 +159,9 @@ extension-setting = cross-post farcaster-max-bytes=1024
 - **The Bluesky and Farcaster recipes haven't been run against the live sites
   yet** (`tested = "unverified"`). Bluesky's compose link is documented by
   Bluesky, and its selectors come from the markup of Bluesky's open-source web
-  app. Farcaster's come from its web client's compose dialog. Farcaster
-  changed hands in October 2026 and is being renamed, so its web client's
-  address or buttons may change.
+  app. Farcaster's come from its web client's compose dialog. Farcaster's
+  web client has moved before (it was warpcast.com), so its address or
+  buttons may change.
 - Any site can change its page at any time. When a step doesn't find what it
   looks for, the run stops, says which step, and **nothing is posted**.
   `blygger +list-extensions` shows each macro's `tested` value. The
