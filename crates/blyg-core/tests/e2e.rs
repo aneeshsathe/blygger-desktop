@@ -5897,3 +5897,124 @@ fn signals_list_thumbs_and_activity() {
     );
     b.signal(&sub.id, &rid, None).unwrap();
 }
+
+// ---------------------------------------------------------------- syndication
+// --- syndication --- decision #98's gate: one client lists a copy of its
+// post without spending a version, and a second client shows it from the
+// imported item, with no fetch of the copy. Needs a studio whose
+// capabilities list `putSyndication` (studio feat/syndication, contract
+// 5.9.0); against an older one it says so and passes.
+
+#[test]
+#[ignore = "needs a local Worker (scripts/e2e-local.sh) with studio syndication (putSyndication); skips on an older studio"]
+fn syndication_is_written_in_place_and_read_by_a_second_client() {
+    e2e();
+    let src_url = url_b();
+    let src_api = Api::new(&src_url, cred_b());
+    if !src_api.serves_syndication().unwrap() {
+        eprintln!("skipped: this studio doesn't serve putSyndication yet");
+        return;
+    }
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("synd");
+    let (id, sid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
+    let versions_before = src_api.item_versions(&sid).unwrap().len();
+    let route = format!("/api/items/{sid}/syndication");
+
+    // The first client: a copy listed, local first, then sent.
+    let copy = syndication::SyndicationEntry::new("https://social.example.net/@burrow/111", 1);
+    let kept = source
+        .set_syndication(
+            &id,
+            &[
+                copy.clone(),
+                syndication::SyndicationEntry::new("http://plain.example.net/1", 1),
+            ],
+        )
+        .unwrap();
+    assert_eq!(kept, std::slice::from_ref(&copy), "https only");
+    source.sync_now().unwrap();
+    assert!(source.syndication_served());
+    let (st, list) = owner_as(&cred_b(), "GET", &src_url, &route, None);
+    assert_eq!(st, 200, "{list}");
+    let ans = syndication::parse_answer(&list).unwrap();
+    assert_eq!(ans.entries, std::slice::from_ref(&copy));
+    // The PUT bumped the item's revision, and nothing else.
+    let (_, item) = owner_as(
+        &cred_b(),
+        "GET",
+        &src_url,
+        &format!("/api/items/{sid}"),
+        None,
+    );
+    assert_eq!(item["revision"].as_u64(), Some(ans.revision));
+    assert_eq!(item["version"].as_u64(), Some(1), "no version spent");
+    assert_eq!(src_api.item_versions(&sid).unwrap().len(), versions_before);
+    assert_eq!(source.item(&id).unwrap().version, 1);
+    assert!(!source.item(&id).unwrap().pending_sync);
+    // The public item document carries it.
+    let doc = public_json(&format!("{src_url}/items/{sid}.json"));
+    assert_eq!(
+        syndication::parse_member(doc.get("syndication")).unwrap(),
+        std::slice::from_ref(&copy)
+    );
+
+    // The route refuses a non-https address (400) and an unpublished
+    // version (409).
+    let put = |entries: Value| {
+        owner_as(
+            &cred_b(),
+            "PUT",
+            &src_url,
+            &route,
+            Some(json!({"entries": entries, "expectedRevision": ans.revision})),
+        )
+        .0
+    };
+    assert_eq!(
+        put(json!([{"url": "http://plain.example.net/1", "version": 1}])),
+        400
+    );
+    assert_eq!(
+        put(json!([{"url": "https://social.example.net/@b/2", "version": 9}])),
+        409
+    );
+
+    // Burrow kept the revision the PUT answered: a later command on the
+    // post goes through, and a fresh read agrees.
+    source.pin(&id, 1).unwrap();
+    assert_eq!(
+        source.refresh_syndication(&id).unwrap(),
+        std::slice::from_ref(&copy)
+    );
+
+    // The second client: subscribed, it holds the entry with the post.
+    let sub = me.subscribe(&src_url, Some("Synd source")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&sid]);
+    wait_until(
+        "the entry on the imported row",
+        Duration::from_secs(20),
+        || {
+            me.sync_now().unwrap();
+            me.reading_syndication(&sub.id, &sid) == std::slice::from_ref(&copy)
+        },
+    );
+    assert_eq!(reading_item(&me, &sid).unwrap().version, 1);
+
+    // Removing it is in place too.
+    source.set_syndication(&id, &[]).unwrap();
+    source.sync_now().unwrap();
+    let (_, list) = owner_as(&cred_b(), "GET", &src_url, &route, None);
+    assert_eq!(syndication::parse_answer(&list).unwrap().entries, []);
+    let (_, item) = owner_as(
+        &cred_b(),
+        "GET",
+        &src_url,
+        &format!("/api/items/{sid}"),
+        None,
+    );
+    assert_eq!(item["version"].as_u64(), Some(1));
+}

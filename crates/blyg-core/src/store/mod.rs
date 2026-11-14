@@ -21,6 +21,8 @@ mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
+mod syndication; // --- syndication ---
+pub use syndication::ReadingSyndication;
 mod trails; // --- trails ---
 pub use provenance::Tracked;
 mod read_sync;
@@ -94,6 +96,10 @@ pub enum OpKind {
     /// `hoppers::HopperOp`, `local_id` = `hoppers::hopper_key`. One waits
     /// per (hopper, post): the last action replaces it.
     Hopper,
+    /// --- syndication --- Write one post's copies-elsewhere list in place;
+    /// payload a `syndication::SyndicationOp`, `local_id` =
+    /// `syndication::op_key`. One waits per post: the last edit replaces it.
+    Syndication,
 }
 
 impl OpKind {
@@ -106,6 +112,7 @@ impl OpKind {
             OpKind::Read => "read",
             OpKind::Unread => "unread",
             OpKind::Hopper => "hopper",
+            OpKind::Syndication => "syndication", // --- syndication ---
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -116,6 +123,7 @@ impl OpKind {
             "read" => OpKind::Read,
             "unread" => OpKind::Unread,
             "hopper" => OpKind::Hopper,
+            "syndication" => OpKind::Syndication, // --- syndication ---
             _ => OpKind::Save,
         }
     }

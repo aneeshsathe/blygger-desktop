@@ -430,6 +430,15 @@ const MIGRATIONS: &[&str] = &[
          WHERE doc = 'reading:' || old.subscription_id || '/' || old.remote_id;
     END;
     "#,
+    // v21 --- syndication --- (store/syndication.rs, decision #98) where a
+    // post has been copied to on other networks, `[{url, version}]` as
+    // JSON (NULL: none). On your own items it's local first: the outbox's
+    // `syndication` op writes it to the blyg in place (no new version). On
+    // imported reading rows it's what the blyg served with the row.
+    r#"
+    ALTER TABLE items ADD COLUMN syndication TEXT;
+    ALTER TABLE reading ADD COLUMN syndication TEXT;
+    "#,
 ];
 
 /// Returns whether any migration ran.

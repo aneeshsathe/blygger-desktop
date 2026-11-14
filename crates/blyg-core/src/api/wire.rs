@@ -65,9 +65,19 @@ pub struct WireItem {
     /// now, resolved from `highlight` and `highlightGeneratedDefault`.
     #[serde(skip)]
     pub highlighting: Option<bool>,
+    /// --- syndication --- the copies elsewhere (`crate::syndication`), raw;
+    /// absent on a studio that doesn't serve the member.
+    #[serde(default)]
+    pub syndication: Option<Value>,
 }
 
 impl WireItem {
+    /// --- syndication --- the served list, normalized; `None` when the
+    /// item doesn't carry the member (unknown, not empty).
+    pub fn syndication_entries(&self) -> Option<Vec<crate::syndication::SyndicationEntry>> {
+        crate::syndication::parse_member(self.syndication.as_ref())
+    }
+
     /// `provenance` as the app's shape (`None` when the field is absent).
     /// An entry without a model reads as `"unknown"`; one that doesn't
     /// parse as `null`.
@@ -435,6 +445,9 @@ pub struct ReadingPage {
     pub items: Vec<ReadingItem>,
     /// The next page's cursor; `None` when this was the last page.
     pub next: Option<String>,
+    /// --- syndication --- each row's served copies elsewhere (empty when
+    /// the row carries none, or is withdrawn).
+    pub syndication: Vec<crate::store::ReadingSyndication>,
 }
 
 /// `GET /api/reading/imported` serves at most this many rows a page.

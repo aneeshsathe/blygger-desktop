@@ -23,6 +23,7 @@ pub mod site; // --- site ---
 pub mod state;
 pub mod store;
 pub mod sync;
+pub mod syndication; // --- syndication --- (decision #98)
 /// Synthetic data at scale, for performance tests and benchmarks.
 #[doc(hidden)]
 pub mod synth;

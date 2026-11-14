@@ -687,6 +687,45 @@ impl Backend for LiveBackend {
     }
 
     // --- contacts ---
+    // --- syndication ---
+    fn syndication(&self, id: &LocalId) -> Vec<crate::syndication::SyndicationEntry> {
+        self.engine.store.syndication(id)
+    }
+
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[crate::syndication::SyndicationEntry],
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let kept = self.e().store.set_syndication(id, entries)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        self.wake();
+        Ok(kept)
+    }
+
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let sid = self.server_id(id)?;
+        let _net = self.e().net_lock();
+        self.e().track(self.e().fetch_syndication(id, &sid))?;
+        Ok(self.e().store.syndication(id))
+    }
+
+    fn syndication_served(&self) -> bool {
+        self.engine.syndication_served()
+    }
+
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<crate::syndication::SyndicationEntry> {
+        self.engine.store.reading_syndication(sub_id, remote_id)
+    }
+    // --- end syndication ---
+
     fn contacts(&self) -> Vec<crate::contacts::Contact> {
         self.engine
             .store

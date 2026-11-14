@@ -80,7 +80,8 @@ use crate::app::access::ShowClientAccess;
 use crate::app::note_ai::DraftChangeNote;
 use crate::app::server_ai::ShowServerAi;
 // --- upkeep ---
-use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes};
+use crate::app::syndication::ShowCopiesElsewhere;
+use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes}; // --- syndication ---
 // --- chat ---
 use crate::app::chat::ShowChat;
 // --- terminal ---
@@ -809,6 +810,12 @@ pub fn mac_table() -> Vec<Keybind> {
             "Post › Copy Link"
         ),
         // --- end upkeep ---
+        // --- syndication ---
+        menu_only!(
+            ShowCopiesElsewhere,
+            "Copies elsewhere: where this published post is also posted (no new version)",
+            "Post › Copies Elsewhere…"
+        ),
         // --- stream --- (issue #1) the reading screen's two modes; the
         // stream's own keys (j/k, ⏎/Space, esc) live in reading_key_down.
         kb!(
@@ -1478,6 +1485,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
     let _ = ShowSite; // --- site ---
     let _ = (ShowStaleQuotes, ShowSignals, CopyLink); // --- upkeep ---
+    let _ = ShowCopiesElsewhere; // --- syndication ---
 }
 
 /// The key `action` has on this platform, as glyphs (`⌃⌘1`, or

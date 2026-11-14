@@ -1088,6 +1088,7 @@ impl MainView {
             // Room for the body: a long diff scrolls here instead.
             .when(!diffing, |d| d.max_h(relative(0.45)))
             .children(self.render_peek_note(o, cx)) // --- browse ---
+            .children(self.render_reading_copies(item)) // --- syndication ---
             .when_some(banner, |d, b| {
                 d.child(
                     div()

@@ -434,6 +434,7 @@ export function renderPost(host, p) {
   const thread = /thread/.test(p.kind);
   host.innerHTML = `${thread ? `<h3>${esc(p.title)}</h3>` : ''}<div class="by">${esc(p.by)}</div>
     ${p.lineage.length || p.drawn_on_by.length ? `<div class="lineage" aria-label="Lineage">${p.lineage.map(lin).join('')}${p.drawn_on_by.map(lin).join('')}</div>` : ''}
+    ${/* --- syndication --- escaped, https-checked HTML from src/syndication.rs */ S.B.reading_copies_html(p.key)}
     <div class="item-content">${p.html}</div>`;
   const content = $('.item-content', host);
   // A thread's first line is its title: shown above, so not twice. A

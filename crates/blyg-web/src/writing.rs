@@ -1793,6 +1793,15 @@ impl Burrow {
             },
             it.version > 0,
         );
+        // --- syndication ---
+        if it.status == Status::Public {
+            add(
+                "copies",
+                "⇢  Copies elsewhere…",
+                "Where you've also posted it (no new version)".into(),
+                self.is_live(),
+            );
+        }
         if it.status == Status::Public {
             add(
                 "withdraw",

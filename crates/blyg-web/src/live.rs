@@ -667,6 +667,7 @@ impl Burrow {
     /// on top of what the blyg says.
     pub fn live_reading(&mut self, rows_json: &str, hoppers_json: &str) -> String {
         let rows: Vec<Value> = serde_json::from_str(rows_json).unwrap_or_default();
+        crate::syndication::note_rows(&rows); // --- syndication ---
         let mut out = Vec::with_capacity(rows.len());
         for r in &rows {
             if let Ok(mut it) = imported_row(r) {

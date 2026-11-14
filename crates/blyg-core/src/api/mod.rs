@@ -34,7 +34,8 @@ pub mod site;
 // --- upkeep --- stale quotes, signals, a version's text
 pub mod upkeep;
 // --- end upkeep ---
-pub mod wire;
+pub mod syndication_api;
+pub mod wire; // --- syndication --- (decision #98)
 
 use std::io::Read;
 use std::sync::Mutex;
@@ -995,6 +996,7 @@ impl Api {
             return Ok(None);
         };
         let mut items = Vec::with_capacity(page.items.len());
+        let mut syndication = Vec::new(); // --- syndication ---
         for row in &page.items {
             let mut it = imported_row(row).map_err(|e| {
                 CoreError::Other(format!(
@@ -1002,11 +1004,18 @@ impl Api {
                 ))
             })?;
             it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
+            // --- syndication --- endcaps carry none (§16.14 rule 4).
+            let served = (it.state != "tombstone")
+                .then(|| crate::syndication::parse_member(row.get(crate::syndication::MEMBER)))
+                .flatten()
+                .unwrap_or_default();
+            syndication.push((it.subscription_id.clone(), it.remote_id.clone(), served));
             items.push(it);
         }
         Ok(Some(ReadingPage {
             items,
             next: page.page.next_cursor,
+            syndication,
         }))
     }
 
