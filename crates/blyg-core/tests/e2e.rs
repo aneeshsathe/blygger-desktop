@@ -165,7 +165,7 @@ fn owner_as(
             &format!("Bearer {}", s.access_token().expect("access token")),
         ),
         Credential::Password(p) => {
-            let s = auth::login(base, p).expect("studio sign-in");
+            let s = studio_login(base, p);
             req.set("cookie", &format!("{}={s}", auth::SESSION_COOKIE))
         }
     };
@@ -2329,14 +2329,11 @@ fn no_redirects() -> ureq::Agent {
         .build()
 }
 
-/// What the owner does in the browser: sign in to the studio, open the
-/// authorize page, and allow every permission it offers. Returns where the
-/// studio sends the browser next (the loopback callback).
-fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
-    // Other tests sign in with the password too and can spend the studio's
-    // sign-in budget (429): wait it out.
+/// `auth::login`, waiting out the studio's sign-in budget (429): other
+/// tests sign in with the password too and can spend it.
+fn studio_login(base: &str, password: &str) -> String {
     let t0 = Instant::now();
-    let session = loop {
+    loop {
         match auth::login(base, password) {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
@@ -2345,7 +2342,14 @@ fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
             }
             r => break r.expect("studio sign-in"),
         }
-    };
+    }
+}
+
+/// What the owner does in the browser: sign in to the studio, open the
+/// authorize page, and allow every permission it offers. Returns where the
+/// studio sends the browser next (the loopback callback).
+fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
+    let session = studio_login(base, password);
     let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
     let page = no_redirects()
         .get(authorize_url)
@@ -2599,7 +2603,7 @@ fn a_token_without_a_scope_says_which() {
         return;
     };
     // A read-only manual token, minted as Studio → More → Client access does.
-    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let session = studio_login(&e.url, &password);
     let minted = match agent()
         .post(&format!("{}/api/authorizations", e.url))
         .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
@@ -2656,7 +2660,7 @@ fn a_token_without_a_scope_says_which() {
 fn minted_token(scope: &[&str]) -> Option<String> {
     let e = e2e();
     let password = owner_password()?;
-    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let session = studio_login(&e.url, &password);
     let minted = match agent()
         .post(&format!("{}/api/authorizations", e.url))
         .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
