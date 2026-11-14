@@ -8,12 +8,11 @@ use regex::Regex;
 use std::fmt;
 use std::sync::OnceLock;
 
-use crate::embeds::JS_WS;
+use crate::ItemKind;
 use crate::grammar::{self, Ids};
 use crate::linemap::Mapped;
 use crate::markdown::{self, MdStats};
-use crate::util::{blyg_item_url, escape_html, is_js_ws, js_trim};
-use crate::{ID_ALPHABET, ItemKind};
+use crate::util::{absolutize_html, blyg_item_url, escape_html, is_js_ws, js_trim};
 
 /// A resolved quote: the snapshot to bake and the provenance to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -105,6 +104,9 @@ pub enum UnresolvedReason {
     QuoteNotFound {
         version: u32,
     },
+    /// A directive line in a fragment (§10.1, decision #102): a publish
+    /// error. Only threads quote; readers show an old one as literal text.
+    DirectiveInFragment,
     Other(String),
 }
 
@@ -130,6 +132,9 @@ impl fmt::Display for UnresolvedReason {
                     f,
                     "quoted passage not found in the target's version {version}"
                 );
+            }
+            UnresolvedReason::DirectiveInFragment => {
+                "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code"
             }
             UnresolvedReason::Other(s) => s,
         };
@@ -159,6 +164,10 @@ impl UnresolvedReason {
             UnresolvedReason::EmptyQuote => "the quoted passage under it is empty".into(),
             UnresolvedReason::QuoteNotFound { version } => {
                 format!("the quoted passage isn't in version {version} of that post")
+            }
+            UnresolvedReason::DirectiveInFragment => {
+                "a fragment can't quote. Quote it from a thread, or put the line in code to show it"
+                    .into()
             }
             UnresolvedReason::Other(s) => s.clone(),
         }
@@ -285,19 +294,45 @@ pub(crate) fn directive_id(line: &str) -> Option<&str> {
 }
 
 /// Whether the walk would take `line` as a directive (resolved, or refused
-/// as a reserved `@vN` form) rather than prose.
+/// as a reserved `@vN` form, labelled or not) rather than prose.
 pub(crate) fn is_directive_line(line: &str) -> bool {
-    directive_id(line).is_some() || reserved_re().is_match(line)
+    directive_id(line).is_some() || grammar::reserved_line(line)
 }
 
-fn reserved_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(&format!(
-            r"^[{JS_WS}]*!\[\[([{ID_ALPHABET}]{{26}})@v[0-9]+\]\][{JS_WS}]*$"
-        ))
-        .expect("reserved re")
-    })
+/// A baked quote is never inside a `blyg-tk-gen` wrapper (§5.7, #102): an
+/// inline generated span that a quote interrupts closes before the quote and
+/// reopens after it. `open` says whether a span was left open by the prose
+/// before this chunk, and is updated for the prose after it. The span keeps
+/// one `generated[]` entry; only its wrapper is divided.
+fn balance_inline(chunk: &str, open: &std::cell::Cell<bool>) -> String {
+    use crate::tk::{INLINE_CLOSE, INLINE_OPEN};
+    let was_open = open.get();
+    if !was_open && !chunk.contains([INLINE_OPEN, INLINE_CLOSE]) {
+        return chunk.to_string();
+    }
+    let mut out = String::with_capacity(chunk.len() + 6);
+    let lead = chunk.len() - chunk.trim_start_matches(is_js_ws).len();
+    out.push_str(&chunk[..lead]);
+    let mut o = was_open;
+    if was_open && lead < chunk.len() {
+        out.push(INLINE_OPEN);
+    }
+    for c in chunk[lead..].chars() {
+        match c {
+            INLINE_OPEN => o = true,
+            INLINE_CLOSE => o = false,
+            _ => {}
+        }
+    }
+    let body = &chunk[lead..];
+    let trimmed = body.trim_end_matches(is_js_ws);
+    out.push_str(trimmed);
+    if o && !trimmed.is_empty() {
+        out.push(INLINE_CLOSE);
+    }
+    out.push_str(&body[trimmed.len()..]);
+    open.set(o);
+    out
 }
 
 pub(crate) struct WalkResult {
@@ -354,6 +389,8 @@ pub(crate) fn walk(
     let mut prose_start: Option<usize> = None; // first line index of pending prose
     let lines: Vec<&str> = doc.text.split('\n').collect();
     let literal = literal_lines(&doc.text, &lines);
+    // Whether an inline generated span is open across a quote (§5.7, #102).
+    let span_open = std::cell::Cell::new(false);
 
     let flush = |from: Option<usize>,
                  to: usize,
@@ -361,7 +398,7 @@ pub(crate) fn walk(
                  md: &mut MdStats,
                  block_lines: &mut Vec<usize>| {
         if let Some(from) = from {
-            let chunk = lines[from..to].join("\n");
+            let chunk = balance_inline(&lines[from..to].join("\n"), &span_open);
             let map = |j: usize| doc.lines[from + j];
             let (html, stats) = markdown::render(&chunk, if lines_on { Some(&map) } else { None });
             md.images += stats.images;
@@ -400,7 +437,7 @@ pub(crate) fn walk(
             prose_start.get_or_insert(k);
             continue;
         }
-        if reserved_re().is_match(line) {
+        if grammar::reserved_line(line) {
             flush(prose_start.take(), k, &mut parts, &mut md, &mut block_lines);
             fail(
                 UnresolvedReason::ReservedVersion,
@@ -410,10 +447,14 @@ pub(crate) fn walk(
             );
             continue;
         }
-        let Some(id) = directive_id(line) else {
+        let Some(body) = grammar::directive_line(line, Ids::Strict) else {
             prose_start.get_or_insert(k);
             continue;
         };
+        let id = &line[body.id.clone()];
+        // The author's name for the quoted item (§10.1, §10.2, #81), baked
+        // verbatim and escaped as `data-blyg-label`; plain text (#102).
+        let label = grammar::label(body.raw_label.clone().map(|r| &line[r]));
         flush(prose_start.take(), k, &mut parts, &mut md, &mut block_lines);
         // The attached quote (§16.4) is part of the directive whether or not
         // the target resolves, so a failure still consumes it rather than
@@ -459,6 +500,9 @@ pub(crate) fn walk(
                     .as_ref()
                     .map(|o| format!(" data-blyg-origin=\"{}\"", escape_html(o)))
                     .unwrap_or_default();
+                let label_attr = label
+                    .map(|l| format!(" data-blyg-label=\"{}\"", escape_html(l)))
+                    .unwrap_or_default();
                 let (class, body) = match &selector {
                     // The bake is the selection's plain text in paragraphs
                     // (plan §7.3 P4), not a carved range of the target's HTML.
@@ -470,10 +514,19 @@ pub(crate) fn walk(
                             .collect::<Vec<_>>()
                             .join("\n"),
                     ),
-                    None => ("blyg-transclusion", f.content_html.clone()),
+                    // A non-conformant source's relative URLs resolve
+                    // against the source's identity origin before the bake
+                    // (§10.2, #102), so this item's HTML meets §5.2.
+                    None => (
+                        "blyg-transclusion",
+                        match &f.origin {
+                            Some(o) => absolutize_html(&f.content_html, o),
+                            None => f.content_html.clone(),
+                        },
+                    ),
                 };
                 parts.push(format!(
-                    "<blockquote class=\"{class}\" data-blyg-id=\"{}\" data-blyg-version=\"{}\"{origin_attr}{}>\n{body}\n</blockquote>",
+                    "<blockquote class=\"{class}\" data-blyg-id=\"{}\" data-blyg-version=\"{}\"{origin_attr}{label_attr}{}>\n{body}\n</blockquote>",
                     escape_html(&f.id),
                     f.version,
                     data_line(lines_on, src_line),
@@ -615,7 +668,26 @@ mod tests {
             Some("01j9zq3k4m5n6p7q8r9s0t1v2w")
         );
         assert!(directive_id("![[01j9zq3k4m5n6p7q8r9s0t1v2w | a]] b]]").is_none());
-        assert!(reserved_re().is_match("![[01j9zq3k4m5n6p7q8r9s0t1v2w@v12]]"));
+        assert!(grammar::reserved_line(
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v12]]"
+        ));
+        // Decision #102: the labelled form is reserved too; inline is text.
+        assert!(grammar::reserved_line(
+            " ![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | a | b]]\t"
+        ));
+        assert!(grammar::reserved_line(
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2|x]]"
+        ));
+        assert!(!grammar::reserved_line(
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | a]] b]]"
+        ));
+        assert!(!grammar::reserved_line(
+            "see ![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2]]"
+        ));
+        assert!(!grammar::reserved_line("![[01j9zq3k4m5n6p7q8r9s0t1v2w@v]]"));
+        assert!(!grammar::reserved_line(
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | open"
+        ));
         assert_eq!(
             host_of("https://Blyg.Example.com:443/x/"),
             "blyg.example.com"

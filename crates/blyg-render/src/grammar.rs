@@ -152,6 +152,67 @@ pub(crate) fn directive_line(line: &str, ids: Ids) -> Option<Body> {
     line[body.end..].chars().all(is_js_ws).then_some(body)
 }
 
+/// The reserved `![[id@vN]]` directive (§10.1): a line of its own, with or
+/// without a label (`![[id@vN | label]]`, decision #102). Surrounding
+/// whitespace is allowed as for a directive; inline, the sequence is text.
+pub(crate) fn reserved_line(line: &str) -> bool {
+    let start = line.len() - line.trim_start_matches(is_js_ws).len();
+    let rest = &line[start..];
+    let Some(rest) = rest.strip_prefix("![[") else {
+        return false;
+    };
+    let b = rest.as_bytes();
+    if b.len() < 26 || !b[..26].iter().all(|&c| Ids::Strict.accepts(c)) {
+        return false;
+    }
+    let Some(rest) = rest[26..].strip_prefix("@v") else {
+        return false;
+    };
+    let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    if digits == 0 {
+        return false;
+    }
+    let rest = &rest[digits..];
+    let tail = if let Some(t) = rest.strip_prefix("]]") {
+        t
+    } else {
+        // The label grammar of `body_at`: `[ \t]*|` and then everything to
+        // the first `]]`.
+        let after = rest.trim_start_matches([' ', '\t']);
+        let Some(label) = after.strip_prefix('|') else {
+            return false;
+        };
+        let Some(close) = label.find("]]") else {
+            return false;
+        };
+        &label[close + 2..]
+    };
+    tail.chars().all(is_js_ws)
+}
+
+/// The lines of `text` (split at `\n`) that the line grammar reads as a
+/// directive or as the reserved `@vN` form, outside code by CommonMark's
+/// block structure (§10.1, decision #102): `(line index, reserved)`.
+pub(crate) fn directive_lines(text: &str) -> Vec<(usize, bool)> {
+    if !text.contains("![[") {
+        return Vec::new();
+    }
+    let lines: Vec<&str> = text.split('\n').collect();
+    let literal = crate::transclusion::literal_lines(text, &lines);
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(k, _)| !literal[*k])
+        .filter_map(|(k, l)| {
+            if reserved_line(l) {
+                Some((k, true))
+            } else {
+                directive_line(l, Ids::Strict).map(|_| (k, false))
+            }
+        })
+        .collect()
+}
+
 /// The links in `text`, in order, as the studio reads them
 /// (`text.matchAll(linkInline())` with `label(m[2])`). Code is not skipped:
 /// a caller that cares filters by `range.start` against [`code_ranges`].

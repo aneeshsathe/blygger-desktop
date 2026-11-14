@@ -35,6 +35,94 @@ pub fn blyg_item_url(origin: &str, kind: crate::ItemKind, id: &str, page: Option
     }
 }
 
+/// The address of an item's document when the publisher holds no `page`
+/// for it (§10.1, decision #102): `{origin}items/{id}.json`, never a
+/// permalink-convention guess. (The origin's `item` template, §6.1, is not
+/// held by the local store; the default path is the template's default.)
+pub fn item_document_url(origin: &str, id: &str) -> String {
+    let origin = if origin.ends_with('/') {
+        origin.to_string()
+    } else {
+        format!("{origin}/")
+    };
+    format!("{origin}items/{id}.json")
+}
+
+/// Whether `url` starts with a scheme (`/^[a-zA-Z][a-zA-Z0-9+.-]*:/`).
+fn has_scheme(url: &str) -> bool {
+    let Some(colon) = url.find(':') else {
+        return false;
+    };
+    let s = &url[..colon];
+    s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '.' | '-'))
+}
+
+/// Undo `escape_html` (and the numeric forms markdown-it writes) in an
+/// attribute value.
+fn unescape_attr(v: &str) -> String {
+    if !v.contains('&') {
+        return v.to_string();
+    }
+    v.replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+/// Every `href="…"` and `src="…"` in `html` that is not absolute, resolved
+/// by RFC 3986 against `base` (protocol §5.2, decision #102: the item's
+/// identity origin, e.g. `https://blyg.example.com/blyg/`). A URL with a
+/// scheme is left byte for byte; a fragment-only or network-path reference
+/// is resolved too, since §5.2 wants every URL absolute. Nothing changes
+/// when `base` is not an absolute http(s) URL.
+pub fn absolutize_html(html: &str, base: &str) -> String {
+    let Ok(base) = url::Url::parse(base) else {
+        return html.to_string();
+    };
+    if !matches!(base.scheme(), "http" | "https") || base.cannot_be_a_base() {
+        return html.to_string();
+    }
+    if !html.contains("href=\"") && !html.contains("src=\"") {
+        return html.to_string();
+    }
+    let mut out = String::with_capacity(html.len() + 64);
+    let mut rest = html;
+    loop {
+        let next = ["href=\"", "src=\""]
+            .iter()
+            .filter_map(|a| {
+                rest.match_indices(a)
+                    // An attribute name, not the tail of another
+                    // (`data-src`): preceded by whitespace.
+                    .find(|(i, _)| *i > 0 && rest.as_bytes()[i - 1].is_ascii_whitespace())
+                    .map(|(i, _)| (i, a.len()))
+            })
+            .min();
+        let Some((i, n)) = next else { break };
+        let start = i + n;
+        let Some(len) = rest[start..].find('"') else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let value = &rest[start..start + len];
+        if has_scheme(value) {
+            out.push_str(value);
+        } else {
+            match base.join(&unescape_attr(value)) {
+                Ok(u) => out.push_str(&escape_html(u.as_str())),
+                Err(_) => out.push_str(value),
+            }
+        }
+        rest = &rest[start + len..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// `/^https?:\/\//i`.
 fn is_http_url(s: &str) -> bool {
     ["http://", "https://"].iter().any(|p| {

@@ -194,7 +194,30 @@ pub struct Prefs {
     // --- browser --- (read-only here: set in the config file)
     pub open_links: crate::app::browser::OpenLinks,
     pub content_blocking: bool,
+    // --- lang --- (read-only here: set in the config file)
+    /// `lang`: the `lang` of the preview and reader pages (default `en`).
+    pub lang: String,
 }
+
+// --- lang ---
+static PAGE_LANG: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// The `lang` setting, for the pages the WebViews show (`en` until the
+/// config is read). Kept beside the prefs, like the reader theme, so the
+/// page builders need no prefs of their own.
+pub fn page_lang() -> String {
+    let l = PAGE_LANG.read().map(|l| l.clone()).unwrap_or_default();
+    if l.is_empty() { "en".into() } else { l }
+}
+
+/// `lang` as the config gives it: trimmed, `en` when unset or empty.
+fn lang_of(v: Option<&str>) -> String {
+    v.map(str::trim)
+        .filter(|l| !l.is_empty())
+        .unwrap_or("en")
+        .to_string()
+}
+// --- end lang ---
 
 impl Default for Prefs {
     fn default() -> Self {
@@ -222,7 +245,13 @@ impl Prefs {
     }
 
     pub fn from_config(c: &Config) -> Self {
+        // --- lang ---
+        let lang = lang_of(c.get("lang"));
+        if let Ok(mut l) = PAGE_LANG.write() {
+            l.clone_from(&lang);
+        }
         Self {
+            lang, // --- lang ---
             writing_font: c.font_family_writing().to_string(),
             ui_font: c.font_family_ui().to_string(),
             writing_font_set: c.is_set("font-family-writing"),
@@ -443,6 +472,18 @@ mod tests {
                 .ends_with("layout = stacked\nshow-buttons = false\n")
         );
         assert_eq!(Prefs::from_config(s.config()), new);
+    }
+
+    // --- lang ---
+    #[test]
+    fn lang_defaults_to_en() {
+        assert_eq!(Prefs::default().lang, "en");
+        assert_eq!(lang_of(Some("  ")), "en");
+        assert_eq!(lang_of(Some(" pt-BR ")), "pt-BR");
+        let s = ConfigStore::in_memory("lang = fr\n");
+        assert_eq!(Prefs::from_config(s.config()).lang, "fr");
+        // Back to the default, for the other tests' pages (`page_lang`).
+        let _ = Prefs::default();
     }
 
     // --- auto-update ---

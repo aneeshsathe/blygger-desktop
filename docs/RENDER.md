@@ -16,14 +16,17 @@ working copy ─┬─ parse TK scopes (tk.rs, as tk.ts parseScopes), except ins
               │            inline spans → U+E001…U+E002 sentinels (Markdown parses across them)
               ├─ [[id]] / [[id | label]] links → U+E003 tokens, except in code (links.rs)
               ├─ fragment: Markdown                     thread: line walker (transclusion.rs)
-              │                                           own-line ![[id]] (label ignored) → Resolver → blockquote,
-              │                                             except in code;
-              │                                             an attached `>` run → partial quote
-              │                                           prose runs → Markdown
+              │  (an own-line ![[id]] stays text            own-line ![[id]] → Resolver → blockquote
+              │   and is a publish error, #102)               (label baked as data-blyg-label), except in code;
+              │                                             an attached `>` run → partial quote;
+              │                                             a remote snapshot's relative URLs → its origin's
+              │                                           prose runs → Markdown (an inline TK span
+              │                                             closes before a quote, reopens after)
               │                                         thread: sanitize (sanitize.rs, lol-html)
               ├─ splice generated blocks, sentinels → span.blyg-tk-gen
               ├─ splice link anchors (or the unresolved marker) for the tokens
-              └─ thread: inject the provenance line into each top-level quote
+              ├─ thread: inject the provenance line into each top-level quote
+              └─ relative href/src → absolute against the identity origin (an absolute mount only)
 ```
 
 The sentinels are Private Use Area characters, as in the Worker since
@@ -57,8 +60,15 @@ document for the thread walk, and whitespace-only prose is dropped. That
 is what the decision says publish produces. The studio's preview does not
 do it (it shows the directive as text inside the block, and so does its
 publish for a scope with recorded provenance, an upstream inconsistency),
-so four fixtures are known divergences (see "Parity"). Fragments never
-quote, so there the directive stays text.
+so four fixtures are known divergences (see "Parity"). Since decision #102
+(protocol 0.4 §5.7) this shape is the rule: a baked quote is never inside
+a `blyg-tk-gen` wrapper. An inline span that a quote interrupts closes
+before it and reopens after it (`<span>one</span>` | quote |
+`<span>two</span>`), where the studio's preview leaves the span open across
+the quote. However many wrappers a scope's output is cut into, it is one
+generation and keeps one `generated[]` entry (the app records provenance
+per scope). Fragments never quote: there the directive renders as text
+and is a publish error (below).
 
 `unrequested_output_directives(md)` (tk.ts `unrequestedOutputDirectives`)
 lists the ids such a line names when the scope's instruction does not,
@@ -126,13 +136,69 @@ no escape: `[[id | cut]] here]]` is the label `cut` followed by text, and a
 label never spans lines. A label-first `[[text | id]]`, a short or long id,
 an uppercase id, `[[id ]]` (space, no pipe) and a label with no closing
 `]]` on its line are not grammar at all and stay literal text. On a link
-the label is the anchor text (below). On a directive it is a note for the
-author: resolution, the bake, the provenance line and `Quote` ignore it,
-and a labelled own-line directive is a whole or partial quote exactly as an
-unlabelled one. `![[id@vN | x]]` is not the reserved form (that has no
-label) and is prose. A `[TK]` instruction's `![[id | label]]` is a source
-by its id. The unresolved marker's `directive` is the trimmed line or the
-link's literal, label included, as the studio reports it.
+the label is the anchor text (below). On a directive it is the author's
+name for the quoted item (decision #81): resolution, the provenance line
+and `Quote` ignore it, and the bake carries it, HTML-escaped, as
+`data-blyg-label` after the other attributes, as studio 0.59 does (an
+unlabelled bake has no attribute). A label is plain text in both forms
+(decision #102): no Markdown or HTML in it is interpreted. A labelled
+own-line directive is a whole or partial quote exactly as an unlabelled
+one. Since #102 the reserved form is the own-line `![[id@vN]]` **with or
+without** a label (`![[id@vN | x]]` is refused too; the studio's
+`RESERVED_LINE` still takes only the unlabelled one); inline, either is
+text. A `[TK]` instruction's `![[id | label]]` is a source by its id. The
+unresolved marker's `directive` is the trimmed line or the link's literal,
+label included, as the studio reports it.
+
+**Decision #102** (protocol 0.4, fifteenth revision, 2026-11-12; v0.4-plan
+§21). The nine readings, as this crate applies them:
+
+1. A directive line in a **fragment** (outside code, after TK scopes give
+   their output) is a publish error. The preview still renders it as text,
+   which is how readers show the ones published before the ruling, and
+   reports it in `Stats::unresolved` as `UnresolvedReason::DirectiveInFragment`;
+   `publish_grammar_errors(md, kind)` finds it without a render, and
+   `blyg_core::grammar::publish_error` turns it into the message the publish
+   path refuses with before anything is sent (`LiveBackend::publish_with`).
+   The studio (0.59) still publishes it as text.
+2. The `@vN` reservation is the own-line form, labelled or not (above).
+   Reported as `ReservedVersion` in both kinds.
+3. Code is CommonMark's block structure (`markdown::code_ranges`, from
+   markdown-it's block parser): a tab- or four-space-indented directive at
+   the start of a document or after a blank line is code; directly under a
+   paragraph line (a lazy continuation) or as a list item's indented
+   paragraph it is not, and the line grammar reads it first.
+4. Labels are plain text, escaped wherever they are baked (above).
+5. A link to an imported item with no `page` names its **item document**,
+   `{origin}items/{id}.json` (`item_document_url`), never the
+   `{origin}{f|t}/{id}/` convention. The local store does not hold another
+   origin's `item` template (§6.1), so the default path is used. The
+   provenance line and the Reader's own links are presentation and keep the
+   convention, which §5.8 still allows there. The studio's `blygItemUrl`
+   still guesses.
+6. An author's relative URL resolves by RFC 3986 against the item's
+   identity origin (`absolutize_html`, run last when `RenderOpts::mount` is
+   absolute): `media/x.png` → `{origin}media/x.png`, `/archive/` →
+   host-rooted, `../y` per the RFC. A URL with a scheme is untouched. A
+   fragment-only `#sec` and a network-path `//host/x` are resolved too,
+   because §5.2 wants every URL absolute; the studio's `absolutizeHtml`
+   leaves those two alone and joins rather than resolves `../`.
+7. A held snapshot's relative URLs resolve against the **source's** origin
+   before the bake (the walker, whole quotes; a partial quote is text).
+8. A pin-retained bake carries the retained version: `Found::version` is
+   the resolver's, and the app's store keeps the highest pinned version it
+   holds (`pin_in`); with nothing retained the resolver says
+   `SourceWithdrawn`, a publish error.
+9. A baked quote is never inside a `blyg-tk-gen` wrapper (above).
+
+**Decision #103, rendering half.** `ShellOpts::lang` (the app's `lang`
+setting, default `en`) replaces the hardcoded `lang="en"`; there is no wire
+member for an item's language. `studio_css()` isolates every baked quote
+and attributed string directionally (`unicode-bidi: isolate` on
+`blockquote.blyg-transclusion`, the provenance line's source name, a
+citation's `cite`, the Reader's quote footer and anything carrying
+`data-blyg-label`), and a citation's author and excerpt are wrapped in
+`<bdi>`. This is presentation: nothing in `content_html` changes for it.
 
 **`[[id]]` links** (protocol 0.3 §16.2) work in both kinds (`links.rs`, the
 Worker's `resolveInternalLinks` / `previewInternalLinks` /
@@ -150,9 +216,10 @@ when its `content_html` opens with an `<h1>`–`<h6>`; otherwise it is
 thread" or "a fragment". Like everything rendered, it is frozen at publish.
 The Reader labels `[[id]]` links in a held post the same way
 (`stream_vm::link_label`). Your own items link to `{mount}/{f|t}/{id}/`,
-imported ones to their origin's `page` or `{origin}{f|t}/{id}/`
-(importer/util.ts `blygItemUrl`, `util::blyg_item_url`, which the
-provenance line uses too). A relative `page` is origin-relative, a leading
+imported ones to their origin's `page`, or with none to the item document
+`{origin}items/{id}.json` (decision #102; the provenance line still uses
+importer/util.ts `blygItemUrl`'s `{origin}{f|t}/{id}/`, `util::blyg_item_url`).
+A relative `page` is origin-relative, a leading
 `/` included; since studio 0.36 an absolute http(s) `page` is kept as it is
 (templated blygs, §16.6e). An unresolved link shows
 `span.blyg-link-unresolved` and joins `Stats::unresolved` after the quotes,
@@ -239,6 +306,10 @@ pub fn selection_from_quote(quote_md: &str) -> String; // transclusion.ts select
 pub fn locate_selection(target_html: &str, selection: &str) -> Option<TextQuoteSelector>;
 
 pub fn render_markdown(md: &str) -> String;           // the Worker's renderMarkdown
+pub fn publish_grammar_errors(md: &str, kind: Kind) -> Vec<Unresolved>; // #102: fragment directive lines, reserved @vN lines
+pub fn absolutize_html(html: &str, base: &str) -> String; // RFC 3986 against an identity origin (#102)
+pub fn item_document_url(origin: &str, id: &str) -> String; // {origin}items/{id}.json
+pub fn shell_lang(lang: Option<&str>) -> String;       // the page's lang attribute (#103), `en` by default
 
 // The bracket grammar (grammar.ts, link-label.ts; studio 0.48)
 pub struct LinkRef { range: Range<usize> /* bytes, brackets included */, id: String, label: Option<String> }
@@ -256,7 +327,7 @@ pub struct Attachment { key: String /* media r2_key */, alt: Option<String>, inl
 pub fn media_html(&[Attachment], mount, content_html) -> String;     // pages.ts mediaHtml: what the content doesn't show
 pub fn preview_media(&[Attachment], mount, content_html) -> String;  // media_html in div#preview-media
 pub fn page_shell(theme_css: &str, body: &str) -> String;       // complete document with CSP
-pub fn page_shell_with(theme_css, body, &ShellOpts { title, base_href }) -> String;
+pub fn page_shell_with(theme_css, body, &ShellOpts { title, base_href, reader, lang }) -> String;
 pub fn preview_script() -> String;  pub fn embed_css() -> &'static str;  pub fn csp(nonce) -> String;
 ```
 
@@ -351,6 +422,23 @@ scopes, the sanitizer (a hostile quoted target, Markdown that loses
 attributes, a sanitized TK block) and TK or links in code, plus a media
 case for placed and `inline` attachments.
 
+**Protocol 0.4 r15 rewrites** (2026-11-13). Where decisions #81 and #102
+change what the 0.49.1 fixtures show, `tests/parity.rs` rewrites the
+expected HTML before comparing, so the rest of each case is still checked:
+`SPEC_LABELS` adds `data-blyg-label` to the labelled quotes, the no-`page`
+rule rewrites anchors to an imported item without a `page` (the fake
+store's `…01`, `…03`, `…05`) to its item document (not the provenance
+line's), `SPEC_REWRITES` closes and reopens the inline TK span around a
+quote and turns the labelled `@vN` line into the reserved marker, and
+`SPEC_ERRORS` adds the publish errors the fixtures lack (a fragment's
+directive line, the labelled `@vN`). 16 cases are rewritten. The fixtures
+were not regenerated against studio 0.59.0: its Miniflare no longer takes
+`gen_parity.mjs`'s single-worker options (it wants `workers: [{config}]`),
+and 0.59 changed more of the preview than #102 (it bakes a generated
+block's quotes inside the block, #105), so a re-sync is its own task. The
+rewrites follow the spec where the studio differs; studio 0.59 already
+bakes `data-blyg-label` exactly as rewritten.
+
 Results. Tests compare after collapsing whitespace between tags, but every
 matching case is also byte-identical. The four known divergences are the
 block-scope directive cases of decision #60 (`tr_in_tk_block`,
@@ -362,7 +450,7 @@ provisional: revisit them when upstream fixes its preview and publish.
 
 | suite | cases | normalised | byte-identical |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing) | 257 | 253 + 4 known | 253 |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing) | 257 | 253 (16 of them rewritten to r15) + 4 known | 237 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
 | attachments (`mediaHtml`) | 4 | 4 | 4 |

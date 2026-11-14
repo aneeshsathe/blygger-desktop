@@ -132,6 +132,14 @@ Where a link clicked in a post opens: app opens it in Burrow's browser pane (fro
 Block ads and trackers in the browser pane, with uBlock Origin's default filter lists (downloaded about once a week; a small built-in list until then). The shield button turns it off for one site. false turns it off everywhere.
 
 
+### `lang`
+
+- **Values:** text
+- **Default:** `en`
+
+The language your posts are written in, as a language tag (en, fr, pt-BR, ar…). The preview and the reading view mark their pages with it, so a screen reader speaks them in the right voice and the browser hyphenates and spell-checks them as that language. It is not published: a blyg has no field for it.
+
+
 ### `chat-tab`
 
 - **Values:** `true` or `false`

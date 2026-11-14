@@ -353,6 +353,7 @@ pub fn reader_page_named(
             title: "Reading".into(),
             base_href: doc.base.clone(),
             reader: true,
+            lang: Some(crate::prefs::page_lang()), // --- lang ---
         },
     )
 }
