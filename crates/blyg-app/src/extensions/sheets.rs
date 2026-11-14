@@ -133,12 +133,18 @@ impl MainView {
 
     /// Close whichever extension sheet is up (a consent sheet answers no).
     pub(crate) fn ext_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(Overlay::Consent { reply, name, .. }) = self.ext.overlay.take() {
+        if let Some(Overlay::Consent {
+            reply, name, caps, ..
+        }) = self.ext.overlay.take()
+        {
             match reply {
                 Some(r) => r.answer(false),
                 // (The tour's sample question leaves no notice.)
                 None if self.ext_tour_on() => {}
+                // Not now: declined, and not asked again at launch.
                 None => {
+                    let caps: Vec<Capability> = caps.into_iter().map(|c| c.0).collect();
+                    self.ext_record_declines(&name, &caps);
                     self.ext.notices.insert(name, Notice::NeedsPermission);
                 }
             }
@@ -330,12 +336,13 @@ impl MainView {
             self.ext_tour_refuses(format!("{name} would be allowed"), cx);
             return;
         }
-        if !unticked.is_empty() {
-            self.ext.declined.push((name.clone(), unticked));
-        }
         let Some(Overlay::Consent { reply, .. }) = self.ext.overlay.take() else {
             return;
         };
+        // A launch-time question's unticked capabilities stay declined.
+        if reply.is_none() {
+            self.ext_record_declines(&name, &unticked);
+        }
         if let Some(r) = reply {
             r.answer(true);
         }
@@ -425,7 +432,7 @@ impl MainView {
         self.ext.notices.remove(name);
         // Turning it on again is a fresh start: ask again.
         self.ext.asked.retain(|(n, _)| n != name);
-        self.ext.declined.retain(|(n, _)| n != name);
+        self.ext_forget_declines(name);
         if !changes.is_empty() && self.ext_write_config(&changes, window, cx) {
             let text = match (was_on, forget) {
                 (true, false) => format!("{name} turned off"),

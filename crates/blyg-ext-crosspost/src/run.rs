@@ -11,14 +11,19 @@ use blyg_ext::protocol::*;
 use blyg_ext::rpc::{params, to_value};
 use serde_json::Value;
 
-use crate::text::{max_chars_setting, prepare, template_setting};
-use crate::{MACRO, NAME};
+use crate::text::{
+    DEFAULT_BLUESKY_MAX_CHARS, DEFAULT_FARCASTER_MAX_BYTES, Limit, limit_setting,
+    max_chars_setting, prepare_within, template_setting,
+};
+use crate::{BLUESKY_MACRO, FARCASTER_MACRO, MACRO, NAME};
 
 /// The extension's state: its settings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrossPostExt {
     template: String,
     max_chars: usize,
+    bluesky_max_chars: usize,
+    farcaster_max_bytes: usize,
     /// Settings it couldn't use (the default stands), for the preview
     /// sheet's note.
     problems: Vec<String>,
@@ -29,6 +34,8 @@ impl Default for CrossPostExt {
         let mut e = CrossPostExt {
             template: String::new(),
             max_chars: 0,
+            bluesky_max_chars: 0,
+            farcaster_max_bytes: 0,
             problems: vec![],
         };
         e.configure(&BTreeMap::new());
@@ -37,7 +44,8 @@ impl Default for CrossPostExt {
 }
 
 impl CrossPostExt {
-    /// Read `template` and `max-chars` (`extension-setting = cross-post …`).
+    /// Read `template`, `max-chars`, `bluesky-max-chars` and
+    /// `farcaster-max-bytes` (`extension-setting = cross-post …`).
     pub fn configure(&mut self, settings: &BTreeMap<String, String>) {
         self.problems.clear();
         self.template = template_setting(settings.get("template").map(String::as_str))
@@ -50,22 +58,42 @@ impl CrossPostExt {
                 self.problems.push(why);
                 default
             });
+        let mut limit = |key: &str, default: usize| {
+            limit_setting(key, settings.get(key).map(String::as_str), default).unwrap_or_else(
+                |(default, why)| {
+                    self.problems.push(why);
+                    default
+                },
+            )
+        };
+        self.bluesky_max_chars = limit("bluesky-max-chars", DEFAULT_BLUESKY_MAX_CHARS);
+        self.farcaster_max_bytes = limit("farcaster-max-bytes", DEFAULT_FARCASTER_MAX_BYTES);
+    }
+
+    /// The limit for one of its macros; `None` for any other.
+    fn limit(&self, macro_id: &str) -> Option<Limit> {
+        Some(match macro_id {
+            MACRO => Limit::chars(self.max_chars, "max-chars"),
+            BLUESKY_MACRO => Limit::chars(self.bluesky_max_chars, "bluesky-max-chars"),
+            FARCASTER_MACRO => Limit::bytes(self.farcaster_max_bytes, "farcaster-max-bytes"),
+            _ => return None,
+        })
     }
 
     /// `extension/macro.prepare`.
     pub fn prepare(&self, p: &MacroPrepareParams) -> Result<MacroPrepareResult, RpcError> {
-        if p.macro_id != MACRO {
+        let Some(limit) = self.limit(&p.macro_id) else {
             return Err(RpcError::invalid_params(format!(
                 "{NAME} has no macro {:?}",
                 p.macro_id
             )));
-        }
-        let out = prepare(
+        };
+        let out = prepare_within(
             p.item.content_md.as_deref(),
             &p.item.title,
             &p.permalink,
             &self.template,
-            self.max_chars,
+            limit,
             &p.text,
         );
         let mut notes: Vec<String> = out.note.into_iter().collect();
@@ -203,6 +231,48 @@ mod tests {
             note.contains("{{nope}}") && note.contains("max-chars"),
             "{note}"
         );
+    }
+
+    #[test]
+    fn each_site_gets_its_own_limit() {
+        let long = "tide ".repeat(100);
+        let mut p = params(Some(&long));
+        let e = CrossPostExt::default();
+        let substack = e.prepare(&p).unwrap();
+        assert!(substack.text.chars().count() <= 280);
+        assert!(substack.note.unwrap().contains("(max-chars)"));
+        p.macro_id = BLUESKY_MACRO.into();
+        let bluesky = e.prepare(&p).unwrap();
+        let n = bluesky.text.chars().count();
+        assert!(n <= 300 && n > 280, "{n}");
+        assert_eq!(
+            bluesky.note.as_deref(),
+            Some("Cut to 300 characters (bluesky-max-chars)")
+        );
+        p.macro_id = FARCASTER_MACRO.into();
+        let cast = e.prepare(&p).unwrap();
+        assert!(cast.text.len() <= 320 && cast.text.len() > 300);
+        assert_eq!(
+            cast.note.as_deref(),
+            Some("Cut to 320 bytes (farcaster-max-bytes)")
+        );
+        assert!(cast.text.ends_with("\n\nhttps://blyg.example.com/p/1"));
+    }
+
+    #[test]
+    fn the_new_limits_are_settings() {
+        let e = with(&[("bluesky-max-chars", "60"), ("farcaster-max-bytes", "1024")]);
+        let long = "tide ".repeat(400);
+        let mut p = params(Some(&long));
+        p.macro_id = BLUESKY_MACRO.into();
+        assert!(e.prepare(&p).unwrap().text.chars().count() <= 60);
+        p.macro_id = FARCASTER_MACRO.into();
+        let cast = e.prepare(&p).unwrap().text;
+        assert!(cast.len() <= 1024 && cast.len() > 1000, "{}", cast.len());
+        let e = with(&[("farcaster-max-bytes", "lots")]);
+        let r = e.prepare(&p).unwrap();
+        assert!(r.text.len() <= 320);
+        assert!(r.note.unwrap().contains("farcaster-max-bytes \"lots\""));
     }
 
     #[test]

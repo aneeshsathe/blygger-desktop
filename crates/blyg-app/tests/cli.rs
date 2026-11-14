@@ -239,11 +239,16 @@ fn list_extensions_shows_bundled_installed_and_broken() {
     assert!(
         out.contains(
             "cross-post 0.1.0 (bundled): off\n  \
-             Cross-posts a published post to Substack Notes, in the browser pane, after you confirm.\n  \
-             asks for: items.read, ui, browser.automate:https://substack.com\n  \
+             Cross-posts a published post to Substack Notes, Bluesky or Farcaster, in the browser pane, after you confirm.\n  \
+             asks for: items.read, ui, browser.automate:https://substack.com, \
+             browser.automate:https://bsky.app, browser.automate:https://farcaster.xyz\n  \
              site:     substack-notes (Substack Notes, https://substack.com)\n  \
+             site:     bluesky (Bluesky, https://bsky.app)\n  \
+             site:     farcaster (Farcaster, https://farcaster.xyz)\n  \
              macro:    cross-post-note \"Cross-post to Substack Notes…\" on substack-notes, tested: 2026-10-09\n            \
              last run: 2026-10-02T09:00:00Z posted via=paste \"Posted to Substack Notes\"\n  \
+             macro:    cross-post-bluesky \"Cross-post to Bluesky…\" on bluesky, tested: unverified\n  \
+             macro:    cross-post-cast \"Cross-post to Farcaster…\" on farcaster, tested: unverified\n  \
              turn on:  extension = cross-post\n"
         ),
         "{out}"
