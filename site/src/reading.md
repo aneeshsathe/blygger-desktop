@@ -290,6 +290,14 @@ it.
 
 ![Reading a post](screenshots/reading.png)
 
+### Copies elsewhere
+
+When an author lists where else they posted something, Reading shows it under
+the post's header: **Also posted at** and each copy's host, as a plain link.
+It's the author's claim: Burrow doesn't fetch or check the copies, shows no
+counts from them, and never hides or merges a post from another network
+because of one. Only `https:` addresses are shown as links.
+
 ### Versions of other people's posts
 
 The version pill in a post's header, `‹ vN ▾ ›`, steps through the current

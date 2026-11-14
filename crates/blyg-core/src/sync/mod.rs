@@ -7,6 +7,7 @@
 //! The store's own lock is never held across network I/O, so UI reads and
 //! saves stay instant while a push is in flight.
 
+mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
 mod worker;
 
@@ -571,6 +572,7 @@ impl Engine {
         }
         match crate::api::contract(self.api.contract_version()?.as_deref()) {
             Contract::Supported => {
+                self.note_syndication_served(); // --- syndication ---
                 let mut st = self.state();
                 st.compatible = true;
                 st.outdated = false;
@@ -648,6 +650,9 @@ impl Engine {
         }
         if op.kind == OpKind::Hopper {
             return self.run_hopper(op); // --- hoppers ---
+        }
+        if op.kind == OpKind::Syndication {
+            return self.run_syndication(op); // --- syndication ---
         }
         if op.kind == OpKind::DeleteRemote {
             // A draft an older Burrow retired: no row holds its revision, so
@@ -807,7 +812,11 @@ impl Engine {
                     Err(e) => Err(e),
                 }
             }
-            OpKind::DeleteRemote | OpKind::Read | OpKind::Unread | OpKind::Hopper => {
+            OpKind::DeleteRemote
+            | OpKind::Read
+            | OpKind::Unread
+            | OpKind::Hopper
+            | OpKind::Syndication => {
                 unreachable!()
             }
         }
@@ -1118,7 +1127,8 @@ impl Engine {
         if stale("items", ITEMS_DEPS) {
             let settings = full || !self.unchanged(&rev, "items", &["settings"]);
             if let Some(wires) = settled(self.api.list_items_with(settings))? {
-                let out = self.store.merge_all(&wires)?;
+                let mut out = self.store.merge_all(&wires)?;
+                out.changed |= self.store.merge_wire_syndication(&wires)?; // --- syndication ---
                 for (local_id, mine, theirs) in out.conflicts {
                     self.emit(CoreEvent::Conflict {
                         local_id,
@@ -1155,7 +1165,7 @@ impl Engine {
             // A list that kept changing while it was read: as held, and
             // read again next pull.
             let mut whole = !matches!(fetched, Reading::Changing);
-            if let Reading::Read(items, complete) = fetched {
+            if let Reading::Read(items, complete, synd) = fetched {
                 let kinds = self
                     .store
                     .subscriptions()
@@ -1163,6 +1173,7 @@ impl Engine {
                     .map(|s| (s.id, s.kind))
                     .collect();
                 reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
+                reading_changed |= self.store.set_reading_syndication(&synd)?; // --- syndication ---
                 reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
                 if self.read_sync_on() {
                     match self.reconcile_reads(&items) {
@@ -1639,6 +1650,7 @@ impl Engine {
         let pages = self.opts.reading_pages.max(1);
         'walk: for _ in 0..=crate::api::CURSOR_RESTARTS {
             let mut all: Vec<ReadingItem> = Vec::new();
+            let mut synd: Vec<crate::store::ReadingSyndication> = Vec::new(); // --- syndication ---
             let mut cursor: Option<String> = None;
             for _ in 0..pages {
                 let page = match self
@@ -1659,6 +1671,7 @@ impl Engine {
                     st.reading_unavailable = false;
                     st.reading_served = true;
                 }
+                synd.extend(page.syndication); // --- syndication ---
                 // Only a server that advertises read state means it.
                 let keep = self.read_sync_on();
                 all.extend(page.items.into_iter().map(|mut it| {
@@ -1670,10 +1683,10 @@ impl Engine {
                 match page.next {
                     // Opaque cursor: passed back verbatim.
                     Some(n) => cursor = Some(n),
-                    None => return Ok(Reading::Read(all, true)),
+                    None => return Ok(Reading::Read(all, true, synd)),
                 }
             }
-            return Ok(Reading::Read(all, false));
+            return Ok(Reading::Read(all, false, synd));
         }
         Ok(Reading::Changing)
     }
@@ -1772,8 +1785,13 @@ impl Engine {
 
 /// What one reading pull read.
 enum Reading {
-    /// The rows, and whether the walk reached the list's end.
-    Read(Vec<ReadingItem>, bool),
+    /// The rows, whether the walk reached the list's end, and (---
+    /// syndication ---) each row's served copies elsewhere.
+    Read(
+        Vec<ReadingItem>,
+        bool,
+        Vec<crate::store::ReadingSyndication>,
+    ),
     /// The server has no imported reading list.
     Unavailable,
     /// The list changed under every walk (`cursor-expired`): nothing taken.

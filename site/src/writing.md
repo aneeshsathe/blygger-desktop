@@ -239,6 +239,35 @@ confirm.
 
 ![Versions of your own post](screenshots/versions-own.png)
 
+### Copies elsewhere
+
+When you've posted something on another network too (a note, a thread, a
+cross-post), you can say so on the post. **Post › Copies Elsewhere…** (or the
+**Copies elsewhere…** chip in ⌘Y) lists each copy with its host, its address
+and the version it was made from:
+
+- paste the copy's address and press ⏎ to add it. Only `https:` addresses
+  can be listed. The version defaults to the current one; type another if
+  the copy was made from an earlier version;
+- **Edit** puts an entry back in the fields to change it; **Remove** takes it
+  off the post (the copy itself stays where it is).
+
+The list is your claim, shown to readers as plain links. Changing it never
+publishes a new version: your blyg rewrites the post in place, so no feed
+entry goes out and nobody's reader sees the post as edited. The change is
+saved here at once and sent like your other edits, offline too. A blyg on an
+older studio doesn't keep the list yet; Burrow says so, and the list stays on
+this Mac.
+
+After a cross-post (Post › Extensions…, or a macro in the palette), Burrow
+lists the copy for you when the site shows a link to the new post as the
+composer closes (Bluesky's and Farcaster's "posted" notices). When it
+doesn't (Substack Notes shows none), the browser pane's bar shows **＋ Record
+copy**: open the copy in the pane (for a Substack note, its own page,
+`…/note/…`) and click it. Either way the copy is listed at the version you
+cross-posted. In the web app, the
+post's **⋯ › Copies elsewhere…** does the same, and asks before removing one.
+
 ### Delete and withdraw
 
 Drafts and scratch notes can be deleted: ⇧⌘⌫ (Post › Delete Draft…) asks

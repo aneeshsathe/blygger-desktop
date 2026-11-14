@@ -1409,6 +1409,8 @@ impl MainView {
                 .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(cx.listener(|this, _, window, cx| this.browser_clip(window, cx))),
             )
+            // --- syndication --- after a cross-post: list the copy on screen.
+            .children(self.render_record_copy(&pg.url, cx))
             // --- browser macros --- the running macro, and its Stop.
             .when(b.automation.running(), |d| {
                 d.child(

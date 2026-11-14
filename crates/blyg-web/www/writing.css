@@ -77,3 +77,6 @@ html[data-layout="phone"] .w-sheet .w-acts button{min-height:38px}
 .w-at p{margin:.4rem .55rem}
 @media (prefers-reduced-motion:reduce){.w-sheet{transition:none}}
 /* --- end web-writing --- */
+/* --- syndication --- the Copies elsewhere sheet's rows */
+.w-copy{gap:.5rem;align-items:baseline}
+.w-copy .w-flex{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}

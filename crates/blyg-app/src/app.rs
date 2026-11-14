@@ -128,6 +128,10 @@ pub(crate) mod server_ai;
 #[path = "upkeep/mod.rs"]
 pub(crate) mod upkeep;
 
+// --- syndication --- copies elsewhere (decision #98; hooks marked the same way)
+#[path = "syndication_ui.rs"]
+pub(crate) mod syndication;
+
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
 #[path = "split.rs"]
@@ -312,6 +316,8 @@ enum Sheet {
     StaleQuotes(upkeep::StaleSheet),
     Signals(upkeep::SignalsSheet),
     AltText(upkeep::AltSheet),
+    // --- syndication --- Post › Copies Elsewhere…
+    Copies(Box<syndication::CopiesSheet>),
 }
 
 struct Toast {
@@ -2525,6 +2531,7 @@ impl Render for MainView {
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
             .map(|d| self.upkeep_actions(d, cx)) // --- upkeep ---
+            .map(|d| self.syndication_actions(d, cx)) // --- syndication ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -3566,6 +3573,7 @@ impl MainView {
             Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
             Sheet::Signals(s) => self.render_signals_sheet(s, cx),
             Sheet::AltText(s) => self.render_alt_sheet(s, cx),
+            Sheet::Copies(s) => self.render_copies_sheet(s, cx), // --- syndication ---
             Sheet::Publish {
                 title,
                 next_version,

@@ -140,6 +140,50 @@ pub trait Backend: Send + Sync {
         crate::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading())
     }
     fn item(&self, id: &LocalId) -> Option<Item>;
+    // --- syndication --- (decision #98, `crate::syndication`) copies of a
+    // post on other networks. Additive; the defaults keep none and refuse
+    // changes, so implementors compile.
+    /// Your post's copies elsewhere, as last left here. Local, instant.
+    fn syndication(&self, id: &LocalId) -> Vec<crate::syndication::SyndicationEntry> {
+        let _ = id;
+        Vec::new()
+    }
+    /// Replace your published post's list. Local first and queued (written
+    /// to the blyg in place: never a new version). Returns the list as kept
+    /// (normalized: https only, one per address).
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[crate::syndication::SyndicationEntry],
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let _ = (id, entries);
+        Err(CoreError::Other("copies elsewhere aren't kept here".into()))
+    }
+    /// Read your published post's list from the blyg again (blocking);
+    /// what's kept here after. An edit still waiting to be sent wins.
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        Ok(self.syndication(id))
+    }
+    /// Whether the blyg keeps copies elsewhere (its capabilities, as last
+    /// checked). The list can still be edited here when it doesn't; it
+    /// waits on this Mac.
+    fn syndication_served(&self) -> bool {
+        false
+    }
+    /// An imported post's copies elsewhere, as its blyg served them. Local;
+    /// nothing is fetched from the copies.
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<crate::syndication::SyndicationEntry> {
+        let _ = (sub_id, remote_id);
+        Vec::new()
+    }
+    // --- end syndication ---
     /// --- contacts --- The owner's address book as last fetched (local,
     /// instant). Empty when the blyg doesn't serve contacts.
     fn contacts(&self) -> Vec<crate::contacts::Contact> {

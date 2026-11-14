@@ -768,7 +768,8 @@ fn the_post_menu_offers_what_fits_the_post() {
         .iter()
         .map(|i| i["act"].as_str().unwrap())
         .collect();
-    assert_eq!(acts, ["image", "tk", "history", "withdraw"]);
+    // --- syndication --- a public post lists its copies elsewhere
+    assert_eq!(acts, ["image", "tk", "history", "copies", "withdraw"]);
     let d = local_of(&b, DRAFT);
     b.open(&d);
     let m = v(b.w_post_menu());

@@ -66,6 +66,10 @@ pub struct State {
     /// `BlockingFor`, never written to `state.json`.
     pub(crate) run_unblocked: Rc<RefCell<BTreeSet<String>>>,
     pacing: Pacing,
+    /// --- syndication --- a cross-post's copy, waiting for "＋ Record copy".
+    pub(crate) copy: Option<crate::app::syndication::PendingCopy>,
+    /// --- syndication --- the link to the new post a run read before `done`.
+    pub(crate) captured: Option<String>,
 }
 
 struct Running {
@@ -336,6 +340,13 @@ impl Page for UiPage<'_> {
         }
     }
 
+    fn captured(&mut self, url: &str) {
+        let url = url.to_string();
+        let _ = self.this.update(self.cx, |v, _| {
+            v.browser.automation.captured = Some(url); // --- syndication ---
+        });
+    }
+
     fn progress(&mut self, index: usize, step: &blyg_ext::recipe::Step) {
         if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
             println!(
@@ -469,6 +480,26 @@ impl MainView {
                 .pacing
                 .record(&run.pace_key(), Instant::now());
         }
+        // --- syndication --- a post went out (or may have): offer to list
+        // the copy once it's on screen.
+        let copy =
+            run.copy_of
+                .as_ref()
+                .filter(|_| out.counts_as_post())
+                .map(
+                    |(id, version, title)| crate::app::syndication::PendingCopy {
+                        id: id.clone(),
+                        version: *version,
+                        title: title.clone(),
+                        ext: run.ext.clone(),
+                        site_title: run.site.title.clone(),
+                        origin: run.site.origin.clone(),
+                        home: run.site.home.clone(),
+                    },
+                );
+        let captured = self.browser.automation.captured.take();
+        let offer_copy = copy.is_some();
+        let listed = self.syndication_after_macro(copy, captured);
         if let Some(dir) = self.browser_data_dir() {
             let time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             append_log(&dir, &run.ext, &runner::log_line(&time, run, &out));
@@ -507,6 +538,15 @@ impl MainView {
                 )
             }
         };
+        // --- syndication ---
+        let sub = match sub {
+            None if listed.is_some() => listed
+                .map(|host| format!("Listed on your post as its copy on {host} · no new version")),
+            None if offer_copy => Some(
+                "Open the copy in the pane, then ＋ Record copy lists it on your post".to_string(),
+            ),
+            s => s,
+        };
         self.show_toast(text, sub.map(Into::into), cx);
         if let Some(r) = ran {
             self.macro_restore_pane(&r, &out, window, cx);
@@ -531,6 +571,8 @@ impl MainView {
             out,
             Outcome::Handed { .. } | Outcome::Failed(_) | Outcome::Cancelled { after_submit: true }
         );
+        // --- syndication --- the copy is recorded from the pane.
+        let needs_page = needs_page || self.browser.automation.copy.is_some();
         if r.touched || needs_page || was_open || !self.browser.open {
             return;
         }

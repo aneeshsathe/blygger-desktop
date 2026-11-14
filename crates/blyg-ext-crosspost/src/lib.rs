@@ -9,6 +9,8 @@
 //!
 //! - [`text`]: the text logic, pure.
 //! - [`run`]: the BXP extension around it (`blygger +ext cross-post`).
+//! - [`copy`]: whether the page in the pane after a run is the copy, so
+//!   Burrow can list it on the post (`syndication`, decision #98).
 //!
 //! The Substack recipe was checked by hand against the live Substack Notes
 //! on 2026-10-09 (`tested`); update the date when it's checked again. The
@@ -17,6 +19,7 @@
 //! composers' markup as published, not yet from a run against the live
 //! sites.
 
+pub mod copy; // --- syndication --- the copy a cross-post made
 pub mod run;
 pub mod text;
 

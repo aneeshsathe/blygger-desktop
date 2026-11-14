@@ -37,6 +37,7 @@ pub mod web_reading;
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
+pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]

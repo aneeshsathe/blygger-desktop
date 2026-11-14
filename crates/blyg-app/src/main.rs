@@ -410,6 +410,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Fragment ⇄ Thread", app::ToggleKind),
                 MenuItem::action("Open on the Web", app::OpenPermalink),
                 MenuItem::action("Copy Link", app::upkeep::CopyLink), // --- upkeep ---
+                MenuItem::action("Copies Elsewhere…", app::syndication::ShowCopiesElsewhere), // --- syndication ---
                 MenuItem::separator(),
                 MenuItem::action("Generate (TK)", ai::AiGenerate),
                 MenuItem::action("Shorten to Fit 1000", ai::AiShorten),

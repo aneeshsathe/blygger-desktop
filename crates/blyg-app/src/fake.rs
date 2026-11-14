@@ -919,6 +919,50 @@ impl Backend for FakeBackend {
     // holds; `contacts_seed`). The sample blyg keeps contacts as studio
     // 0.56 does, but rewrites `@handle` only when a test asks
     // (`set_rewrites_handles`), so picking a contact writes the plain link.
+    // --- syndication --- for looking (BLYGGER_FAKE=1): kept in memory, and
+    // one sample post you read lists a copy elsewhere.
+    fn syndication(&self, id: &LocalId) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        fake_syndication()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(&id.0)
+            .cloned()
+            .unwrap_or_default()
+    }
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[blyg_core::syndication::SyndicationEntry],
+    ) -> Result<Vec<blyg_core::syndication::SyndicationEntry>> {
+        if self.item(id).is_none_or(|i| i.status != Status::Public) {
+            return Err(CoreError::Other("Publish the post first".into()));
+        }
+        let kept = blyg_core::syndication::normalize(entries);
+        fake_syndication()
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(id.0.clone(), kept.clone());
+        Ok(kept)
+    }
+    fn syndication_served(&self) -> bool {
+        true
+    }
+    fn reading_syndication(
+        &self,
+        _sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        if remote_id == reading_seed::KIT_TIDES {
+            vec![blyg_core::syndication::SyndicationEntry::new(
+                "https://social.example.net/@kit/113",
+                1,
+            )]
+        } else {
+            vec![]
+        }
+    }
+    // --- end syndication ---
+
     fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
         self.lock().book.contacts.clone()
     }
@@ -3051,6 +3095,15 @@ fn fake_withdrawn(st: &State, s: &blyg_core::TrailStop) -> bool {
                 && r.state == "tombstone"
         })
     }
+}
+
+/// --- syndication --- the fake's copies-elsewhere lists, by local id.
+fn fake_syndication()
+-> &'static Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>> {
+    static M: std::sync::OnceLock<
+        Mutex<HashMap<String, Vec<blyg_core::syndication::SyndicationEntry>>>,
+    > = std::sync::OnceLock::new();
+    M.get_or_init(Default::default)
 }
 
 #[cfg(test)]

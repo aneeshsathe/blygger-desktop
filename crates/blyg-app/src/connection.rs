@@ -696,6 +696,34 @@ impl Backend for SwitchBackend {
         self.cur().search(q)
     }
     // --- contacts ---
+    // --- syndication ---
+    fn syndication(&self, id: &LocalId) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        self.cur().syndication(id)
+    }
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[blyg_core::syndication::SyndicationEntry],
+    ) -> blyg_core::Result<Vec<blyg_core::syndication::SyndicationEntry>> {
+        self.cur().set_syndication(id, entries)
+    }
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> blyg_core::Result<Vec<blyg_core::syndication::SyndicationEntry>> {
+        self.cur().refresh_syndication(id)
+    }
+    fn syndication_served(&self) -> bool {
+        self.cur().syndication_served()
+    }
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        self.cur().reading_syndication(sub_id, remote_id)
+    }
+    // --- end syndication ---
     fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
         self.cur().contacts()
     }
