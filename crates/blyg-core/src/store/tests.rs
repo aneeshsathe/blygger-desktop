@@ -373,3 +373,39 @@ fn discard_changes_drops_the_waiting_save() {
     assert!(it.dirty, "the blyg still says unpublished");
     assert_eq!(s.pending_count(), 0);
 }
+
+// --- unicode --- (spec decision #103)
+
+#[test]
+fn saving_cleans_controls_and_composes_to_nfc() {
+    let s = store();
+    // A decomposed é, a NUL, an escape and U+FFFF; tab, LF and CR stay.
+    let raw = "Cafe\u{301}\0 \u{1b}[1mbold\u{FFFF}\tend\r\n";
+    let want = "Caf\u{e9} [1mbold\tend\r\n";
+    let id = s.create_draft(Kind::Fragment, raw, 0).unwrap();
+    assert_eq!(s.item(&id).unwrap().content_md, want);
+    s.save(&id, &format!("{raw}more\u{7}"), 0).unwrap();
+    assert_eq!(s.item(&id).unwrap().content_md, format!("{want}more"));
+    // A save that differs only before cleaning changes nothing.
+    let before = s.item(&id).unwrap();
+    s.save(&id, &format!("{raw}more"), 0).unwrap();
+    assert_eq!(s.item(&id).unwrap().updated, before.updated);
+    // The optimistic copy matches what the store kept.
+    let local = saved_locally(&before, &format!("{raw}again"));
+    s.save(&id, &format!("{raw}again"), 0).unwrap();
+    assert_eq!(local.content_md, s.item(&id).unwrap().content_md);
+
+    let scratch = s
+        .create_scratch(Kind::Fragment, "n\u{0}o\u{308}te")
+        .unwrap();
+    assert_eq!(s.item(&scratch).unwrap().content_md, "n\u{f6}te");
+}
+
+#[test]
+fn a_save_checked_against_its_base_compares_the_cleaned_text() {
+    let s = store();
+    let id = s.create_draft(Kind::Fragment, "e\u{301}", 0).unwrap();
+    let base = content_hash("\u{e9}");
+    s.save_if_base(&id, "e\u{301}!", &base, 0).unwrap();
+    assert_eq!(s.item(&id).unwrap().content_md, "\u{e9}!");
+}

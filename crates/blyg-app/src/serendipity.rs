@@ -139,7 +139,7 @@ pub fn excerpt(md: &str) -> String {
         }
     }
     if out.chars().count() > 220 {
-        let cut: String = out.chars().take(217).collect();
+        let cut = blyg_core::text::prefix_graphemes(&out, 217);
         format!("{}…", cut.trim_end())
     } else {
         out

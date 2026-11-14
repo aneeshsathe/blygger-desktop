@@ -226,6 +226,7 @@ fn max_str(a: &str, b: &str) -> String {
 /// it's a scratch note, unpublished edits waiting to sync. Unchanged when
 /// the text is.
 pub fn saved_locally(item: &Item, content: &str) -> Item {
+    let content = &*crate::text::for_save(content);
     let mut it = item.clone();
     if item.content_md == content {
         return it;
@@ -446,6 +447,7 @@ impl Store {
     // ------------------------------------------------------- local mutations
 
     pub fn create_draft(&self, kind: Kind, content: &str, debounce_ms: i64) -> Result<LocalId> {
+        let content = &*crate::text::for_save(content);
         let id = new_local_id();
         let now = now_iso();
         let mut c = self.conn();
@@ -462,6 +464,7 @@ impl Store {
 
     /// A local-only scratch note: no outbox op, now or ever (until `promote_scratch`).
     pub fn create_scratch(&self, kind: Kind, content: &str) -> Result<LocalId> {
+        let content = &*crate::text::for_save(content);
         let id = new_local_id();
         let now = now_iso();
         self.conn().execute(
@@ -518,6 +521,7 @@ impl Store {
     /// A draft thread replying to `of` (`stub_of`); the outbox's create op
     /// sends the item's `stub_of` with `POST /api/items`.
     pub fn create_stub(&self, of: &RemoteRef, content: &str, debounce_ms: i64) -> Result<LocalId> {
+        let content = &*crate::text::for_save(content);
         let id = new_local_id();
         let now = now_iso();
         let stub = serde_json::to_string(of).map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -572,6 +576,10 @@ impl Store {
         base_hash: Option<&str>,
         debounce_ms: i64,
     ) -> Result<()> {
+        // The author's text as a publisher may send it (§5, decision #103):
+        // no C0 controls but tab/LF/CR, no U+FFFE/U+FFFF, and NFC. Cleaned
+        // here, so the store, the outbox and the server all hold one text.
+        let content = &*crate::text::for_save(content);
         let mut c = self.conn();
         let tx = c.transaction()?;
         let row = get_row(&tx, id)?.ok_or(CoreError::NotFound)?;

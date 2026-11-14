@@ -499,7 +499,7 @@ pub fn render_remote_md(
             .filter(|s| s.kind == SubscriptionKind::Rss)
             .map(|s| s.id)
             .collect();
-        let same = |a: &str| a.trim_end_matches('/') == mount;
+        let same = |a: &str| blyg_core::origin::same(a, origin);
         let reading = backend
             .reading()
             .into_iter()

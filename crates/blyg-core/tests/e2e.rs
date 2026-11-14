@@ -5897,3 +5897,44 @@ fn signals_list_thumbs_and_activity() {
     );
     b.signal(&sub.id, &rid, None).unwrap();
 }
+
+/// Decision #103: what Burrow publishes is text (no C0 controls but tab,
+/// LF and CR; no U+FFFE/U+FFFF) in NFC, the hash is over exactly those
+/// bytes, and the studio's copy coming back on the next pull is the one
+/// Burrow kept, so nothing reads as a conflict or an edit.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn published_text_is_clean_nfc_and_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("unicode");
+    let typed = format!("{t} cafe\u{301}\u{0} by the sea\u{1b}\u{FFFF}\tend");
+    let kept = format!("{t} caf\u{e9} by the sea\tend");
+    let (id, sid) = published(&b, Kind::Fragment, &typed, Some("note\u{7} e\u{301}"));
+
+    assert_eq!(b.item(&id).unwrap().content_md, kept);
+    assert_eq!(server_item(&sid)["contentMd"], kept.as_str());
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["content_md"], kept.as_str());
+    assert_eq!(doc["content_hash"], content_hash(&kept));
+    assert_eq!(doc["changelog"][0]["note"], "note \u{e9}");
+    let (s, feed) = public_get(&format!("{}/feed.xml", e.url));
+    assert_eq!(s, 200);
+    assert!(!feed.contains('\u{0}') && !feed.contains('\u{1b}'));
+
+    // A pull brings the studio's copy back: unchanged, clean, no conflict.
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, kept);
+    assert!(!it.conflict && !it.dirty && !it.pending_sync, "{it:?}");
+
+    // An edit typed in NFD saves as NFC, and pushes as NFC.
+    b.save(&id, &format!("{t} cafe\u{301} again")).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(
+        server_item(&sid)["contentMd"],
+        format!("{t} caf\u{e9} again").as_str()
+    );
+    assert!(!b.item(&id).unwrap().conflict);
+}

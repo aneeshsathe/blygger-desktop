@@ -490,7 +490,8 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
     }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    // Code points, never inside a grapheme cluster (spec §5.3).
+    let mut out = blyg_core::text::prefix_graphemes(s, max.saturating_sub(1)).to_string();
     out.truncate(out.trim_end().len());
     out.push('…');
     out

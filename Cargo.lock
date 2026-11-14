@@ -858,6 +858,7 @@ dependencies = [
  "base64 0.22.1",
  "blyg-render",
  "getrandom 0.2.17",
+ "idna 1.1.0",
  "keyring",
  "rusqlite",
  "serde",
@@ -866,6 +867,8 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "toml 1.1.6+spec-1.1.0",
+ "unicode-normalization",
+ "unicode-segmentation",
  "ureq",
  "url",
 ]

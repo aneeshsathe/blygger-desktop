@@ -15,6 +15,7 @@ pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
+pub mod origin; // --- unicode --- §12.2 origin spelling (decision #103)
 pub mod outbound; // --- contacts --- sent mentions, groups, sources
 pub mod pick;
 pub mod profile; // --- profiles ---
@@ -26,6 +27,7 @@ pub mod sync;
 /// Synthetic data at scale, for performance tests and benchmarks.
 #[doc(hidden)]
 pub mod synth;
+pub mod text; // --- unicode --- §5 text rules (decision #103)
 pub mod tk;
 pub mod trails; // --- trails ---
 pub mod upkeep; // --- upkeep --- stale quotes, signals

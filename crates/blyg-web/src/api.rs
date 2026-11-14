@@ -289,7 +289,7 @@ pub fn save_item(server_id: &str, revision: u64, content_md: &str, kind: Option<
 pub fn publish(server_id: &str, revision: u64, note: Option<&str>) -> Request {
     let mut body = json!({ "expectedRevision": revision });
     if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
-        body["note"] = json!(n);
+        body["note"] = json!(blyg_core::text::for_save(n));
     }
     Request {
         method: "POST",

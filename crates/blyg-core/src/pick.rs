@@ -190,18 +190,12 @@ pub fn pick_label(title: Option<&str>, shows: String) -> String {
 /// The first [`EXCERPT_CHARS`] characters of the plain text, `…` when cut.
 pub fn excerpt(md: &str) -> String {
     let t = plain_text(md);
-    if t.chars().count() <= EXCERPT_CHARS {
-        return t;
-    }
-    let cut: String = t.chars().take(EXCERPT_CHARS - 1).collect();
-    format!("{}…", cut.trim_end())
+    // Code points, never inside a grapheme cluster (§5.3).
+    crate::text::clip(&t, EXCERPT_CHARS).into_owned()
 }
 
 fn host(origin: &str) -> String {
-    url::Url::parse(origin)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_else(|| origin.trim_end_matches('/').to_string())
+    crate::origin::display_host(origin).unwrap_or_else(|| origin.trim_end_matches('/').to_string())
 }
 
 /// A row for your own published post, if it's one the query can name.
