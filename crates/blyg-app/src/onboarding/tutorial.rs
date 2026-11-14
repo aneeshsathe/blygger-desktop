@@ -19,7 +19,7 @@ use gpui_kit::base::input::{Enter, MoveDown, MoveUp};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::steps::{self, Key, Region, STEPS, Setup};
+use super::steps::{self, Key, Pick, Region, STEPS, Setup, TOURS};
 use crate::app::reading::View;
 use crate::app::reading::stream_vm::{self, ReadMode};
 use crate::app::scratch::MakeDraft;
@@ -52,7 +52,16 @@ struct Parked {
 }
 
 pub struct Tutorial {
+    /// The step on screen (`STEPS` index): `run[pos]`.
     pub step: usize,
+    /// The tour running, its steps (`STEPS` indices, its end card last),
+    /// and where in them the tour is.
+    pub pick: Pick,
+    pub run: Vec<usize>,
+    pub pos: usize,
+    /// The chooser is up (the quick tour, the feature tours, Skip): the
+    /// step under it waits.
+    pub chooser: bool,
     /// The step's key was pressed; the card shows ✓ and moves on shortly.
     pub done: bool,
     /// Bumped on every step change (stale "move on" timers check it).
@@ -76,6 +85,11 @@ impl Tutorial {
     pub fn current(&self) -> &'static steps::Step {
         &STEPS[self.step]
     }
+
+    /// The user is looking at a card, not a step: the chooser or what's new.
+    pub fn on_card(&self) -> bool {
+        self.chooser || !self.news.is_empty()
+    }
 }
 
 fn same_backend(switch: &Arc<SwitchBackend>, backend: &Arc<dyn Backend>) -> bool {
@@ -85,9 +99,11 @@ fn same_backend(switch: &Arc<SwitchBackend>, backend: &Arc<dyn Backend>) -> bool
 impl MainView {
     // ------------------------------------------------------------ start / end
 
+    /// The tutorial, on its chooser (the quick tour, the feature tours,
+    /// Skip). Already running: back to the chooser.
     pub(in crate::app) fn start_tutorial(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.onboarding.tutorial.is_some() {
-            return;
+            return self.tour_chooser(window, cx);
         }
         self.onboarding.flow = None;
         self.sheet = None;
@@ -151,8 +167,13 @@ impl MainView {
         self.base_url = self.backend.base_url();
         self.reading = crate::app::reading::State::new(&*self.backend, cx);
         self.current = None;
+        self.onboarding.finished_tours = finished_tours(cx);
         self.onboarding.tutorial = Some(Tutorial {
             step: 0,
+            pick: Pick::Quick,
+            run: steps::run(&steps::QUICK),
+            pos: 0,
+            chooser: true,
             done: false,
             generation: 0,
             typed_from: None,
@@ -162,7 +183,103 @@ impl MainView {
             news: Vec::new(),
             parked,
         });
-        self.tutorial_enter(0, window, cx);
+        // The quick tour's first screen waits under the chooser.
+        self.tutorial_show(0, window, cx);
+        window.focus(&self.onboarding.focus, cx);
+    }
+
+    /// The tutorial, straight into `pick` (the onboarding card's choice).
+    pub(in crate::app) fn start_tour(
+        &mut self,
+        pick: Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.start_tutorial(window, cx);
+        self.tutorial_begin(pick, window, cx);
+    }
+
+    /// A row of the chooser was picked, on the onboarding card or the
+    /// tutorial's own chooser.
+    pub(in crate::app) fn tour_pick(
+        &mut self,
+        pick: Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.onboarding.flow.is_some() {
+            self.finish_onboarding(Some(pick), window, cx);
+        } else {
+            self.start_tour(pick, window, cx);
+        }
+    }
+
+    /// Back to the chooser, leaving the screen as it is under it.
+    pub(in crate::app) fn tour_chooser(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
+        t.chooser = true;
+        t.news.clear();
+        t.generation += 1; // a pending "move on" is stale
+        window.focus(&self.onboarding.focus, cx);
+        cx.notify();
+    }
+
+    /// Run `pick` from its first step.
+    pub(in crate::app) fn tutorial_begin(
+        &mut self,
+        pick: Pick,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let run = match pick.tour() {
+            Some(tour) => steps::run(tour),
+            None => {
+                let versions = self.tutorial_news_versions();
+                steps::news_run(&versions)
+            }
+        };
+        self.tutorial_run(pick, run, 0, window, cx);
+    }
+
+    /// The versions the what's-new card is about (those with a step).
+    fn tutorial_news_versions(&self) -> Vec<&'static str> {
+        self.onboarding
+            .tutorial
+            .as_ref()
+            .map(|t| {
+                t.news
+                    .iter()
+                    .filter(|r| r.first_step.is_some())
+                    .map(|r| r.version)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    fn tutorial_run(
+        &mut self,
+        pick: Pick,
+        run: Vec<usize>,
+        pos: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
+        let was_card = t.on_card();
+        t.pick = pick;
+        t.run = run;
+        t.chooser = false;
+        t.news.clear();
+        // The card had the keyboard: the window gets it back (the step's
+        // setup may take it on).
+        if was_card {
+            self.focus_after_sheet(window, cx);
+        }
+        self.tutorial_show(pos, window, cx);
     }
 
     /// After an update: the tutorial, opening on what changed.
@@ -175,25 +292,25 @@ impl MainView {
         self.start_tutorial(window, cx);
         if let Some(t) = self.onboarding.tutorial.as_mut() {
             t.news = news;
+            t.chooser = false;
         }
         // The card has the keyboard: ⏎ what's new, esc skips.
         window.focus(&self.onboarding.focus, cx);
         cx.notify();
     }
 
-    /// Leave the what's-new card for the tour, at its start or at the
-    /// first new step.
-    fn whats_new_go(&mut self, at_new: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(t) = self.onboarding.tutorial.as_mut() else {
-            return;
-        };
-        let first = t.news.iter().rev().find_map(|r| r.first_step);
-        t.news.clear();
-        let i = first
-            .filter(|_| at_new)
-            .and_then(|id| STEPS.iter().position(|s| s.id == id))
-            .unwrap_or(0);
-        self.tutorial_enter(i, window, cx);
+    /// Leave the what's-new card: for its new steps, or for the chooser.
+    pub(super) fn whats_new_go(
+        &mut self,
+        at_new: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if at_new && !self.tutorial_news_versions().is_empty() {
+            self.tutorial_begin(Pick::News, window, cx);
+        } else {
+            self.tour_chooser(window, cx);
+        }
     }
 
     /// Back to the real backend, as the user left it.
@@ -260,7 +377,7 @@ impl MainView {
         }
         self.show_toast(
             "Tour finished",
-            Some(crate::keymap::hint("⌘, › Help replays it").into()),
+            Some(crate::keymap::hint("⌘, › Help has the tours").into()),
             cx,
         );
         cx.notify();
@@ -268,13 +385,50 @@ impl MainView {
 
     // ------------------------------------------------------------ steps
 
+    /// Step `i` of `STEPS`, in the tour that holds it: the running one if
+    /// it does, else its feature tour (the demos and the tests enter steps
+    /// by id).
     pub(super) fn tutorial_enter(&mut self, i: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(t) = self.onboarding.tutorial.as_mut() else {
+        let Some(t) = self.onboarding.tutorial.as_ref() else {
             return;
         };
         let i = i.min(STEPS.len() - 1);
+        if let Some(pos) = t.run.iter().position(|&s| s == i) {
+            let (pick, run) = (t.pick, t.run.clone());
+            return self.tutorial_run(pick, run, pos, window, cx);
+        }
+        let id = STEPS[i].id;
+        let (pick, tour) = match steps::tour_of(id) {
+            Some(n) => (Pick::Feature(n), &TOURS[n]),
+            None if id == steps::QUICK_END => (Pick::Quick, &steps::QUICK),
+            None => (Pick::Feature(0), &TOURS[0]),
+        };
+        let run = steps::run(tour);
+        let pos = run.iter().position(|&s| s == i).unwrap_or(run.len() - 1);
+        self.tutorial_run(pick, run, pos, window, cx);
+    }
+
+    /// The running tour's card `pos` (past the end: its end card).
+    fn tutorial_show(&mut self, pos: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
+        let pos = pos.min(t.run.len().saturating_sub(1));
+        let i = t.run.get(pos).copied().unwrap_or(0);
+        t.pos = pos;
         t.step = i;
         t.done = false;
+        // A feature tour walked to its end card is ticked in the chooser.
+        if let Pick::Feature(n) = t.pick
+            && pos + 1 == t.run.len()
+            && pos > 0
+            && !t.chooser
+        {
+            self.tour_finished(TOURS[n].id, cx);
+        }
+        let Some(t) = self.onboarding.tutorial.as_mut() else {
+            return;
+        };
         t.generation += 1;
         t.typed_from = None;
         t.retries = 0;
@@ -295,30 +449,32 @@ impl MainView {
     }
 
     pub(super) fn tutorial_next(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .onboarding
-            .tutorial
-            .as_ref()
-            .is_some_and(|t| !t.news.is_empty())
-        {
-            // ⌥⌘→: the primary choice, what's new (else the whole tour).
-            return self.whats_new_go(true, window, cx);
-        }
-        let Some(step) = self.onboarding.tutorial.as_ref().map(|t| t.step) else {
+        let Some(t) = self.onboarding.tutorial.as_ref() else {
             return;
         };
-        if step + 1 >= STEPS.len() {
+        if !t.news.is_empty() {
+            // ⌥⌘→: the primary choice, what's new (else the chooser).
+            return self.whats_new_go(true, window, cx);
+        }
+        if t.chooser {
+            // ⌥⌘→: the primary choice, the quick tour.
+            return self.tutorial_begin(Pick::Quick, window, cx);
+        }
+        if t.pos + 1 >= t.run.len() {
             self.finish_tutorial(window, cx);
         } else {
-            self.tutorial_enter(step + 1, window, cx);
+            let pos = t.pos + 1;
+            self.tutorial_show(pos, window, cx);
         }
     }
 
     pub(super) fn tutorial_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(step) = self.onboarding.tutorial.as_ref().map(|t| t.step)
-            && step > 0
+        if let Some(t) = self.onboarding.tutorial.as_ref()
+            && !t.on_card()
+            && t.pos > 0
         {
-            self.tutorial_enter(step - 1, window, cx);
+            let pos = t.pos - 1;
+            self.tutorial_show(pos, window, cx);
         }
     }
 
@@ -335,11 +491,11 @@ impl MainView {
             return;
         };
         let step = &STEPS[t.step];
-        if t.done || !step.accepts(key) || !t.news.is_empty() {
+        if t.done || !step.accepts(key) || t.on_card() {
             return;
         }
         t.done = true;
-        let (generation, at, pause, settle) = (t.generation, t.step, step.pause_ms, step.settle);
+        let (generation, at, pause, settle) = (t.generation, t.pos, step.pause_ms, step.settle);
         cx.notify();
         if step.stay {
             return; // ✓, and Next when they're ready
@@ -359,10 +515,11 @@ impl MainView {
                     {
                         return false;
                     }
-                    if at + 1 >= STEPS.len() {
+                    let len = v.onboarding.tutorial.as_ref().map_or(0, |t| t.run.len());
+                    if at + 1 >= len {
                         v.finish_tutorial(window, cx);
                     } else {
-                        v.tutorial_enter(at + 1, window, cx);
+                        v.tutorial_show(at + 1, window, cx);
                     }
                     true
                 });
@@ -650,6 +807,9 @@ impl MainView {
         self.reading.browse.trail.end();
         if self.notes.drawn() {
             self.notes_tour_hide(cx);
+            // Its keyboard comes back to the window: a step after the
+            // side dock's or the notes' finds its keys working.
+            self.focus_after_sheet(window, cx);
         }
         self.browser.automation.tour_sample(false);
         self.browser_tour_hide(cx);
@@ -710,7 +870,6 @@ impl MainView {
 
     fn tutorial_setup(&mut self, setup: Setup, window: &mut Window, cx: &mut Context<Self>) {
         match setup {
-            Setup::Nothing => {}
             Setup::Search => {
                 self.tutorial_tidy(window, cx);
                 self.studio_set_view(ViewMode::Write, cx);
@@ -785,6 +944,10 @@ impl MainView {
                     self.current = None;
                     self.open(&id, window, cx);
                 }
+            }
+            Setup::FullEditor => {
+                self.tutorial_setup(Setup::StudioSample, window, cx);
+                self.studio_set_view(ViewMode::Studio, cx);
             }
             Setup::EchoedQuote => {
                 self.tutorial_tidy(window, cx);
@@ -1311,7 +1474,7 @@ impl MainView {
         let Some(t) = self.onboarding.tutorial.as_ref() else {
             return false;
         };
-        if !t.news.is_empty() || self.lineage_open() || self.reading.view != View::Reading {
+        if t.on_card() || self.lineage_open() || self.reading.view != View::Reading {
             return true;
         }
         let vp = window.viewport_size();
@@ -1403,10 +1566,26 @@ impl MainView {
         if !t.news.is_empty() {
             return Some(self.render_whats_new(cx));
         }
+        if t.chooser {
+            return Some(self.render_tour_chooser(cx));
+        }
         let p = self.palette;
         let step = t.current();
-        let (index, done) = (t.step, t.done);
-        let last = index + 1 == STEPS.len();
+        let (pos, count, pick, done) = (t.pos, t.run.len(), t.pick, t.done);
+        let last = pos + 1 == count;
+        let end_card = step.keys.is_empty();
+        // The end card says which tour it ends.
+        let title = match (end_card, pick) {
+            (true, Pick::Feature(n)) => format!("That's {}", TOURS[n].title),
+            (true, Pick::News) => "That's what's new".to_string(),
+            _ => crate::keymap::hint(step.title).to_string(),
+        };
+        let tour_name = match pick {
+            Pick::News => "WHAT'S NEW".to_string(),
+            _ => pick
+                .tour()
+                .map_or("TOUR".into(), |t| t.title.to_uppercase()),
+        };
         let buttons = super::show_buttons(cx);
         let hotkey = crate::prefs::hotkey_glyphs(&self.prefs.hotkey);
         let caption = crate::keymap::hint(step.caption).replace("{hotkey}", &hotkey);
@@ -1532,9 +1711,9 @@ impl MainView {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(p.muted)
                     .child(format!(
-                        "TOUR · {} OF {}{} · SAMPLE DATA",
-                        index + 1,
-                        STEPS.len(),
+                        "{tour_name} · {} OF {}{} · SAMPLE DATA",
+                        pos + 1,
+                        count,
                         // What this version added says so.
                         if step.since == super::whats_new::running_version() {
                             format!(" · NEW IN {}", step.since)
@@ -1559,7 +1738,7 @@ impl MainView {
                     .mt(px(5.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(15.))
-                    .child(crate::keymap::hint(step.title)),
+                    .child(title),
             )
             .child(
                 div()
@@ -1568,6 +1747,10 @@ impl MainView {
                     .line_height(relative(1.45))
                     .child(caption),
             )
+            // The quick tour's end card lists the feature tours.
+            .when(end_card && pick == Pick::Quick, |d| {
+                d.child(self.render_tour_list(true, cx).mt(px(8.)))
+            })
             .child(div().mt(px(9.)).child(key_row))
             .when_some(step.button.filter(|_| buttons), |d, b| {
                 d.child(
@@ -1595,7 +1778,7 @@ impl MainView {
                             .text_size(px(11.5))
                             .text_color(p.muted)
                             .child(div().flex_1())
-                            .when(index > 0, |d| {
+                            .when(pos > 0 && !end_card, |d| {
                                 d.child(
                                     link(
                                         "tutorial-back",
@@ -1606,11 +1789,21 @@ impl MainView {
                                     )),
                                 )
                             })
+                            // An end card: another tour, or done.
+                            .when(end_card, |d| {
+                                d.child(
+                                    link("tutorial-tours", "‹ Back to the tours".into())
+                                        .debug_selector(|| "tutorial-tours".into())
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.tour_chooser(window, cx)
+                                        })),
+                                )
+                            })
                             .child(
                                 link(
                                     "tutorial-next",
                                     if last {
-                                        crate::keymap::hint("Finish  ⌥⌘→").into()
+                                        crate::keymap::hint("Done  ⌥⌘→").into()
                                     } else {
                                         crate::keymap::hint("Next ›  ⌥⌘→").into()
                                     },
@@ -1751,11 +1944,9 @@ impl MainView {
                         ),
                     )
                     .child(div().flex_1())
-                    .child(
-                        button("whats-new-tour", "Take the whole tour", false).on_click(
-                            cx.listener(|this, _, window, cx| this.whats_new_go(false, window, cx)),
-                        ),
-                    )
+                    .child(button("whats-new-tour", "Choose a tour…", false).on_click(
+                        cx.listener(|this, _, window, cx| this.whats_new_go(false, window, cx)),
+                    ))
                     .when(has_new_step, |d| {
                         d.child(
                             button("whats-new-start", "Show me what's new  ⏎", true).on_click(
@@ -1765,6 +1956,267 @@ impl MainView {
                             ),
                         )
                     }),
+            );
+        div()
+            .absolute()
+            .inset_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .bg(p.shadow.opacity(0.25))
+            .child(card)
+            .into_any_element()
+    }
+}
+
+// ================================================================ tours
+
+/// The feature tours walked to their end card (`state.json`).
+pub(super) fn finished_tours(cx: &App) -> Vec<String> {
+    super::data_dir(cx)
+        .map(|d| blyg_core::state::AppState::load(&d).tours_done)
+        .unwrap_or_default()
+}
+
+impl MainView {
+    /// Feature tour `id` reached its end card: tick it in the chooser.
+    fn tour_finished(&mut self, id: &'static str, cx: &mut Context<Self>) {
+        if self.onboarding.finished_tours.iter().any(|t| t == id) {
+            return;
+        }
+        self.onboarding.finished_tours.push(id.into());
+        if let Some(dir) = super::data_dir(cx) {
+            let _ = blyg_core::state::AppState::update(&dir, |s| {
+                if !s.tours_done.iter().any(|t| t == id) {
+                    s.tours_done.push(id.into());
+                }
+            });
+        }
+    }
+
+    /// The chooser's keys (its card and the onboarding's last step): ⏎
+    /// the quick tour, 1–9 a feature tour. True when one was picked.
+    pub(super) fn tour_key(
+        &mut self,
+        ev: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let m = &ev.keystroke.modifiers;
+        if m.platform || m.control || m.alt || m.shift {
+            return false;
+        }
+        let pick = match ev.keystroke.key.as_str() {
+            "enter" => Pick::Quick,
+            k => match k.parse::<usize>() {
+                Ok(n) if (1..=TOURS.len()).contains(&n) => Pick::Feature(n - 1),
+                _ => return false,
+            },
+        };
+        self.tour_pick(pick, window, cx);
+        true
+    }
+
+    /// The tours, one row each: the quick tour (⏎) and the feature tours
+    /// (1–9), with what each covers, its length, and ✓ once walked.
+    /// `compact` (the quick tour's end card): the feature tours' names only.
+    pub(super) fn render_tour_list(&self, compact: bool, cx: &mut Context<Self>) -> Div {
+        let p = self.palette;
+        let row = |id: String,
+                   key: Option<String>,
+                   tour: &'static steps::Tour,
+                   ticked: bool,
+                   primary: bool| {
+            let count = tour.steps.len();
+            div()
+                .id(SharedString::from(id.clone()))
+                .debug_selector(move || id)
+                .flex()
+                .items_center()
+                .gap(px(10.))
+                .px(px(10.))
+                .py(px(if compact { 3. } else { 4. }))
+                .rounded(px(7.))
+                .border_1()
+                .border_color(if primary { p.accent } else { p.edge() })
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.accent))
+                .children(key.map(|k| {
+                    div()
+                        .px(px(6.))
+                        .min_w(px(22.))
+                        .flex()
+                        .flex_none()
+                        .justify_center()
+                        .rounded(px(5.))
+                        .border_1()
+                        .border_b_2()
+                        .border_color(p.edge())
+                        .text_color(p.ink)
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_size(px(11.5))
+                        .child(k)
+                }))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .flex()
+                        .flex_col()
+                        // The name, then its length (✓ once walked).
+                        .child(
+                            div()
+                                .flex()
+                                .items_baseline()
+                                .gap(px(7.))
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .text_color(if primary { p.accent_text() } else { p.ink })
+                                        .child(tour.title),
+                                )
+                                .child(
+                                    div()
+                                        .text_size(px(11.))
+                                        .text_color(if ticked { p.green_text() } else { p.muted })
+                                        .child(if ticked {
+                                            format!("✓ {count} steps")
+                                        } else {
+                                            format!("{count} steps")
+                                        }),
+                                ),
+                        )
+                        .when(!compact, |d| {
+                            d.child(
+                                div()
+                                    .text_size(px(11.5))
+                                    .text_color(p.muted)
+                                    .truncate()
+                                    .child(tour.blurb),
+                            )
+                        }),
+                )
+        };
+        let finished = &self.onboarding.finished_tours;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(if compact { 3. } else { 5. }))
+            .when(!compact, |d| {
+                d.child(
+                    row(
+                        "tour-quick".into(),
+                        Some("⏎".into()),
+                        &steps::QUICK,
+                        false,
+                        true,
+                    )
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.tour_pick(Pick::Quick, window, cx)),
+                    ),
+                )
+            })
+            // The feature tours: one column on a tour card, two (1–5, 6–9)
+            // on the chooser, so it fits a small window.
+            .child({
+                let mut rows = TOURS.iter().enumerate().map(|(n, tour)| {
+                    let ticked = finished.iter().any(|t| t == tour.id);
+                    let key = (!compact).then(|| (n + 1).to_string());
+                    row(format!("tour-{}", tour.id), key, tour, ticked, false).on_click(
+                        cx.listener(move |this, _, window, cx| {
+                            this.tour_pick(Pick::Feature(n), window, cx)
+                        }),
+                    )
+                });
+                let gap = px(if compact { 3. } else { 5. });
+                let column = |d: Div| d.flex_1().min_w_0().flex().flex_col().gap(gap);
+                if compact {
+                    column(div()).children(rows)
+                } else {
+                    let left: Vec<_> = rows.by_ref().take(TOURS.len().div_ceil(2)).collect();
+                    div()
+                        .flex()
+                        .gap(gap)
+                        .child(column(div()).children(left))
+                        .child(column(div()).children(rows))
+                }
+            })
+    }
+
+    /// The tutorial's chooser, centred: the first tour screen when the tour
+    /// is started from Settings › Help, the Help menu, the what's-new card
+    /// or an end card's "Back to the tours".
+    fn render_tour_chooser(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let card = div()
+            .id("tour-chooser")
+            .debug_selector(|| "tour-chooser".into())
+            .track_focus(&self.onboarding.focus)
+            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                if ev.keystroke.key == "escape" {
+                    this.finish_tutorial(window, cx);
+                } else if !this.tour_key(ev, window, cx) {
+                    return;
+                }
+                cx.stop_propagation();
+            }))
+            .occlude()
+            .w(px(660.))
+            .max_w(relative(0.92))
+            .map(|d| crate::theme_ext::card(d, &self.theme))
+            .px(px(20.))
+            .py(px(16.))
+            .font_family(SharedString::from(self.prefs.ui().family))
+            .text_size(px(13.))
+            .child(
+                div()
+                    .text_size(px(10.5))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(p.muted)
+                    .child("TOURS · SAMPLE DATA"),
+            )
+            .child(
+                div()
+                    .mt(px(4.))
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px(17.))
+                    .child("Take a tour"),
+            )
+            .child(
+                div()
+                    .mt(px(6.))
+                    .mb(px(10.))
+                    .line_height(relative(1.45))
+                    .text_color(p.ink.opacity(0.85))
+                    .child(
+                        "A walk through the real window: you press the keys, it shows what \
+                         they do. It runs on sample data, so your blyg isn't touched.",
+                    ),
+            )
+            .child(self.render_tour_list(false, cx))
+            .child(
+                div()
+                    .mt(px(12.))
+                    .pt(px(10.))
+                    .rule_t(&p)
+                    .flex()
+                    .items_center()
+                    .text_size(px(12.))
+                    .child(
+                        div()
+                            .id("tour-skip")
+                            .px(px(11.))
+                            .py(px(5.))
+                            .rounded_full()
+                            .border_1()
+                            .border_color(p.edge())
+                            .cursor_pointer()
+                            .hover(|s| s.border_color(p.accent))
+                            .child("Skip  esc")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.finish_tutorial(window, cx)),
+                            ),
+                    ),
             );
         div()
             .absolute()

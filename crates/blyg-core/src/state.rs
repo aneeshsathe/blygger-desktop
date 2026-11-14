@@ -106,6 +106,10 @@ pub struct AppState {
     /// `open-posts-on-site` says, by subscription id.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub author_site_subs: std::collections::BTreeMap<String, bool>,
+    /// --- tours --- The feature tours walked to their end card (tour ids,
+    /// `onboarding::steps::TOURS`): the chooser ticks them.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tours_done: Vec<String>,
 }
 
 /// --- tray --- A post waiting in the quote tray: what the picker writes

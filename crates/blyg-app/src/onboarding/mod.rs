@@ -34,6 +34,7 @@ use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
 
 pub(crate) use steps::Key;
+use steps::Pick;
 pub use tutorial::Tutorial;
 
 gpui_kit::actions!(
@@ -98,6 +99,9 @@ pub struct State {
     onboarded_here: bool,
     /// The tutorial's sample data (instant timing in tests).
     pub(crate) make_fake: fn() -> Arc<FakeBackend>,
+    /// --- tours --- The feature tours walked to the end (ids, from
+    /// `state.json`'s `tours_done`): ticked in the chooser.
+    pub(crate) finished_tours: Vec<String>,
 }
 
 impl State {
@@ -115,6 +119,7 @@ impl State {
                     FakeBackend::with_timing(crate::fake::Timing::instant()).without_media_cache(),
                 )
             },
+            finished_tours: Vec::new(),
         }
     }
 }
@@ -248,6 +253,7 @@ impl MainView {
         if matches!(self.sheet, Some(Sheet::Settings { .. })) {
             self.sheet = None;
         }
+        self.onboarding.finished_tours = tutorial::finished_tours(cx);
         self.onboarding.flow = Some(Flow {
             step,
             connecting: false,
@@ -279,7 +285,7 @@ impl MainView {
         };
         match step.next() {
             Some(n) => self.onboarding_go(n, window, cx),
-            None => self.finish_onboarding(true, window, cx),
+            None => self.finish_onboarding(Some(Pick::Quick), window, cx),
         }
     }
 
@@ -289,10 +295,11 @@ impl MainView {
         }
     }
 
-    /// Done or skipped: remember it, and optionally start the tour.
+    /// Done or skipped: remember it, and optionally start a tour (the
+    /// "Take the tour?" card's choice).
     pub(super) fn finish_onboarding(
         &mut self,
-        then_tutorial: bool,
+        tour: Option<Pick>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -301,10 +308,9 @@ impl MainView {
         if let Some(dir) = data_dir(cx) {
             let _ = blyg_core::state::AppState::update(&dir, |s| s.onboarded = true);
         }
-        if then_tutorial {
-            self.start_tutorial(window, cx);
-        } else {
-            self.focus_after_sheet(window, cx);
+        match tour {
+            Some(pick) => self.start_tour(pick, window, cx),
+            None => self.focus_after_sheet(window, cx),
         }
         cx.notify();
     }
@@ -727,29 +733,13 @@ impl MainView {
                     .flex_col()
                     .gap(px(10.))
                     .child(para(
-                        "A short walk through the real window: you press the keys, it shows \
-                         what they do. It runs on sample data, so your blyg isn't touched."
+                        "A walk through the real window: you press the keys, it shows what \
+                         they do. It runs on sample data, so your blyg isn't touched. Start \
+                         with the quick tour; the feature tours go further, and Settings › \
+                         Help has them all later."
                             .into(),
                     ))
-                    .child(
-                        div()
-                            .mt(px(4.))
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(8.))
-                            .child(
-                                choice("ob-tour", "⏎", "Start the tour".into(), true).on_click(
-                                    cx.listener(|this, _, window, cx| {
-                                        this.finish_onboarding(true, window, cx)
-                                    }),
-                                ),
-                            )
-                            .child(choice("ob-no-tour", "esc", "Skip".into(), false).on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.finish_onboarding(false, window, cx)
-                                }),
-                            )),
-                    )
+                    .child(self.render_tour_list(false, cx))
                     .into_any_element(),
             ),
         };
@@ -760,48 +750,47 @@ impl MainView {
                 .rounded_full()
                 .bg(if *s == step { p.accent } else { p.edge() })
         });
-        let footer =
-            div()
-                .mt(px(16.))
-                .pt(px(10.))
-                .rule_t(&p)
-                .flex()
-                .items_center()
-                .gap(px(14.))
-                .text_size(px(11.5))
-                .text_color(p.muted)
-                .child(div().flex().gap(px(5.)).children(dots))
-                .child(div().flex_1())
-                .when(step.prev().is_some(), |d| {
-                    d.child(
-                        div()
-                            .id("ob-back")
-                            .cursor_pointer()
-                            .hover(|s| s.text_color(p.ink))
-                            .child("‹ Back")
-                            .on_click(
-                                cx.listener(|this, _, window, cx| this.onboarding_back(window, cx)),
-                            ),
-                    )
-                })
-                .child(
+        let footer = div()
+            .mt(px(16.))
+            .pt(px(10.))
+            .rule_t(&p)
+            .flex()
+            .items_center()
+            .gap(px(14.))
+            .text_size(px(11.5))
+            .text_color(p.muted)
+            .child(div().flex().gap(px(5.)).children(dots))
+            .child(div().flex_1())
+            .when(step.prev().is_some(), |d| {
+                d.child(
                     div()
-                        .id("ob-skip")
-                        .flex()
-                        .items_center()
-                        .gap(px(5.))
+                        .id("ob-back")
                         .cursor_pointer()
                         .hover(|s| s.text_color(p.ink))
-                        .child(kbd("esc"))
-                        .child(if step == FlowStep::Tutorial {
-                            "skip"
-                        } else {
-                            "skip setup"
-                        })
-                        .on_click(cx.listener(|this, _, window, cx| {
-                            this.finish_onboarding(false, window, cx)
-                        })),
-                );
+                        .child("‹ Back")
+                        .on_click(
+                            cx.listener(|this, _, window, cx| this.onboarding_back(window, cx)),
+                        ),
+                )
+            })
+            .child(
+                div()
+                    .id("ob-skip")
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .cursor_pointer()
+                    .hover(|s| s.text_color(p.ink))
+                    .child(kbd("esc"))
+                    .child(if step == FlowStep::Tutorial {
+                        "skip"
+                    } else {
+                        "skip setup"
+                    })
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.finish_onboarding(None, window, cx)),
+                    ),
+            );
 
         let card = div()
             .id("onboarding")
@@ -812,7 +801,11 @@ impl MainView {
                     cx.stop_propagation();
                 }
             }))
-            .w(px(540.))
+            .w(px(if step == FlowStep::Tutorial {
+                660.
+            } else {
+                540.
+            }))
             .max_w(relative(0.92))
             // --- themes --- the theme's sheet border, radius and a shadow
             // that shows on dark themes.
@@ -874,8 +867,12 @@ impl MainView {
         }
         let connected = crate::settings::blyg_url(cx).is_some()
             && crate::connection::mode(cx) != Some(crate::connection::Mode::Disconnected);
+        // "Take the tour?": ⏎ the quick tour, 1–9 a feature tour.
+        if step == FlowStep::Tutorial && self.tour_key(ev, window, cx) {
+            return true;
+        }
         match (step, ev.keystroke.key.as_str()) {
-            (_, "escape") => self.finish_onboarding(false, window, cx),
+            (_, "escape") => self.finish_onboarding(None, window, cx),
             (FlowStep::Connect, "enter") if !connected => self.onboarding_connect(window, cx),
             (FlowStep::Connect, "s") if !connected => self.onboarding_sample_data(window, cx),
             (FlowStep::Ai, "a") => self.onboarding_ai_settings(window, cx),
@@ -885,7 +882,6 @@ impl MainView {
                 let on = show_buttons(cx);
                 self.onboarding_buttons(on, window, cx)
             }
-            (FlowStep::Tutorial, "enter") => self.finish_onboarding(true, window, cx),
             (_, "enter") => self.onboarding_next(window, cx),
             (_, "left") => self.onboarding_back(window, cx),
             _ => return false,
@@ -895,8 +891,8 @@ impl MainView {
 
     // ------------------------------------------------------------ settings
 
-    /// Settings › Help: replay the tour, show onboarding again, and the
-    /// tutorial-on-launch checkbox.
+    /// Settings › Help: the tours (the chooser), show onboarding again, and
+    /// the tutorial-on-launch checkbox.
     pub(super) fn render_help_settings(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let chip = |id: &'static str, label: &'static str| {
@@ -936,7 +932,7 @@ impl MainView {
                             .flex()
                             .flex_wrap()
                             .gap(px(6.))
-                            .child(chip("help-replay", "Replay tutorial").on_click(
+                            .child(chip("help-replay", "Take a tour…").on_click(
                                 cx.listener(|this, _, window, cx| this.help_replay(window, cx)),
                             ))
                             .child(chip("help-onboarding", "Show onboarding again").on_click(
@@ -948,14 +944,11 @@ impl MainView {
             .into_any_element()
     }
 
-    /// Settings › Help › Replay tutorial.
+    /// Settings › Help › Take a tour…: the chooser (the quick tour and the
+    /// feature tours).
     pub(super) fn help_replay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sheet = None;
-        if self.onboarding.tutorial.is_some() {
-            self.tutorial_enter(0, window, cx);
-        } else {
-            self.start_tutorial(window, cx);
-        }
+        self.start_tutorial(window, cx);
     }
 
     /// Settings › Help › Show onboarding again.
@@ -1037,6 +1030,41 @@ impl MainView {
                 self.start_whats_new(news, window, cx)
             }
             ("ob-news-go", 1) => self.tutorial_next(window, cx),
+            // --- tours --- `tut-tours`: the chooser; `tut-tour-<id>`: tour
+            // `<id>` (`quick`, or a feature tour) from its start;
+            // `tut-tour-<id>-end`: at its end card.
+            ("tut-tours", 0) => self.start_tutorial(window, cx),
+            (s, 0) if s.starts_with("tut-tour-") => {
+                let name = s.trim_start_matches("tut-tour-");
+                let (id, end) = match name.strip_suffix("-end") {
+                    Some(id) => (id, true),
+                    None => (name, false),
+                };
+                let pick = if id == steps::QUICK.id {
+                    Some(Pick::Quick)
+                } else {
+                    steps::TOURS
+                        .iter()
+                        .position(|t| t.id == id)
+                        .map(Pick::Feature)
+                };
+                if let Some(pick) = pick {
+                    self.start_tour(pick, window, cx);
+                    if end {
+                        for _ in 0..steps::STEPS.len() {
+                            let at_end = self
+                                .onboarding
+                                .tutorial
+                                .as_ref()
+                                .is_none_or(|t| t.pos + 1 >= t.run.len());
+                            if at_end {
+                                break;
+                            }
+                            self.tutorial_next(window, cx);
+                        }
+                    }
+                }
+            }
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
             (s, 0) if s.starts_with("tut-") => {
                 self.start_tutorial(window, cx);

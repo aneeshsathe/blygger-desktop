@@ -12,7 +12,7 @@ use blyg_core::*;
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::FlowStep;
-use super::steps::{self, Region, STEPS};
+use super::steps::{self, Pick, Region, STEPS, TOURS};
 use crate::app::studio::webview::{FactoryGlobal, PreviewSurface};
 use crate::app::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
@@ -352,6 +352,25 @@ fn tour_step(e: &mut Env) -> Option<&'static str> {
     })
 }
 
+fn tour_pick(e: &mut Env) -> Option<Pick> {
+    e.view
+        .read_with(e.cx, |v, _| v.onboarding.tutorial.as_ref().map(|t| t.pick))
+}
+
+fn chooser_up(e: &mut Env) -> bool {
+    e.view.read_with(e.cx, |v, _| {
+        v.onboarding.tutorial.as_ref().is_some_and(|t| t.chooser)
+    })
+}
+
+/// Where the running tour is: (its card, its length).
+fn tour_pos(e: &mut Env) -> (usize, usize) {
+    e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().expect("a tour");
+        (t.pos, t.run.len())
+    })
+}
+
 /// Let a step's ✓ pause run out.
 fn settle(e: &mut Env) {
     e.cx.executor().advance_clock(Duration::from_secs(4));
@@ -509,11 +528,29 @@ fn buttons_or_keyboard_writes_the_config(cx: &mut TestAppContext) {
     let text = config_text(e.cx);
     assert!(text.contains("show-buttons = true"), "{text}");
     assert_eq!(text.matches("show-buttons").count(), 1, "{text}");
-    // ⏎ on the last step starts the tour.
+    // ⏎ on the last step starts the quick tour.
     e.cx.simulate_keystrokes("enter");
     e.cx.run_until_parked();
     assert_eq!(tour_step(&mut e), Some("search"));
+    assert_eq!(tour_pick(&mut e), Some(Pick::Quick));
+    assert!(!chooser_up(&mut e));
     assert!(state::AppState::load(e.dir.path()).onboarded);
+}
+
+/// "Take the tour?" is the chooser: 1–9 start a feature tour.
+#[gpui_kit::test]
+fn the_onboarding_card_offers_the_feature_tours(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.open_onboarding(FlowStep::Tutorial, window, cx)
+    });
+    e.cx.run_until_parked();
+    assert!(drawn(&mut e, "tour-quick") && drawn(&mut e, "tour-workspace"));
+    e.cx.simulate_keystrokes("2");
+    e.cx.run_until_parked();
+    assert_eq!(flow_step(&mut e), None);
+    assert_eq!(tour_pick(&mut e), Some(Pick::Feature(1)));
+    assert_eq!(tour_step(&mut e), Some(TOURS[1].steps[0]));
 }
 
 #[gpui_kit::test]
@@ -521,6 +558,16 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     let mut e = setup(cx, CONNECTED, true);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
+    // The chooser: the step under it waits for a pick.
+    assert!(chooser_up(&mut e));
+    e.cx.simulate_keystrokes("down");
+    settle(&mut e);
+    assert!(!tour_done(&mut e), "no step while the chooser is up");
+    // 1: Writing.
+    e.cx.simulate_keystrokes("1");
+    e.cx.run_until_parked();
+    assert!(!chooser_up(&mut e));
+    assert_eq!(tour_pick(&mut e), Some(Pick::Feature(0)));
     assert_eq!(tour_step(&mut e), Some("search"));
 
     // ⌘T isn't this step's key.
@@ -572,11 +619,15 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     assert_eq!(tour_step(&mut e), Some("kinds"));
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-t"));
     settle(&mut e);
-    assert_eq!(tour_step(&mut e), Some("capture"));
+    assert_eq!(tour_step(&mut e), Some("full-editor"), "Writing's next");
+
+    // Quick capture is in its own tour; entering it there runs that tour.
+    enter(&mut e, "capture");
+    assert_eq!(tour_pick(&mut e), Some(Pick::Feature(5)));
     // The scratch note is in the tutorial's fake; ⌘D makes it a draft.
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-d"));
     settle(&mut e);
-    assert_eq!(tour_step(&mut e), Some("publish"));
+    assert_eq!(tour_step(&mut e), Some("capture-link"));
     let fake = fake.expect("the tutorial's fake");
     assert!(
         fake.items()
@@ -587,10 +638,10 @@ fn tutorial_steps_advance_on_their_key_only(cx: &mut TestAppContext) {
     // Next and Back work at any time.
     e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
     e.cx.run_until_parked();
-    assert_eq!(tour_step(&mut e), Some("publish-note"));
+    assert_eq!(tour_step(&mut e), Some("notes"));
     e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-left"));
     e.cx.run_until_parked();
-    assert_eq!(tour_step(&mut e), Some("publish"));
+    assert_eq!(tour_step(&mut e), Some("capture-link"));
 }
 
 #[gpui_kit::test]
@@ -831,40 +882,184 @@ fn quote_a_passage(e: &mut Env) {
     })
 }
 
+/// Walk the running tour from where it is to its end card, each step by
+/// its own key: each moves on to the tour's next card, whatever the step
+/// before it left on screen.
+fn walk_tour(e: &mut Env, name: &str) {
+    loop {
+        let (pos, len) = tour_pos(e);
+        let id = tour_step(e).expect("a step");
+        let step = &STEPS[steps::index(id).unwrap()];
+        if step.keys.is_empty() {
+            assert_eq!(pos + 1, len, "{name}: {id} is its end card");
+            return;
+        }
+        assert!(!tour_done(e), "{name}/{id}: done before its key");
+        do_step(e, id);
+        assert!(tour_done(e), "{name}/{id}: its key didn't count");
+        // Leave what the key opened (a proposal, the picker) so it moves on.
+        settle(e);
+        if step.stay {
+            // It opened something to look at: it waits for Next.
+            assert_eq!(tour_step(e), Some(id), "{name}/{id} stays");
+            e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
+            settle(e);
+        } else if tour_step(e) == Some(id) {
+            e.cx.simulate_keystrokes("escape");
+            settle(e);
+        }
+        assert_eq!(tour_pos(e).0, pos + 1, "{name}/{id} moves on after its key");
+    }
+}
+
+/// Every tour, picked from the chooser after the one before it, walks to
+/// its end card on its steps' own keys (so every step does, in the tour it
+/// is in), and what's new walks 0.21.0's steps. All on sample data.
 #[gpui_kit::test]
-fn every_step_advances_on_its_own_key(cx: &mut TestAppContext) {
+fn every_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
     let mut e = setup_ext(cx);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
     tour_extensions_ready(&mut e);
     e.real.take();
-    for (i, step) in STEPS.iter().enumerate() {
-        if step.keys.is_empty() {
-            continue; // the last step waits for Finish
+    let picks = [(Pick::Quick, "enter".to_string())]
+        .into_iter()
+        .chain((0..TOURS.len()).map(|n| (Pick::Feature(n), (n + 1).to_string())));
+    for (pick, key) in picks {
+        if !chooser_up(&mut e) {
+            e.view
+                .update_in(e.cx, |v, window, cx| v.tour_chooser(window, cx));
+            e.cx.run_until_parked();
         }
-        enter(&mut e, step.id);
-        assert!(!tour_done(&mut e), "{}: done before its key", step.id);
-        do_step(&mut e, step.id);
-        assert!(tour_done(&mut e), "{}: its key didn't count", step.id);
-        // Leave what the key opened (a proposal, the picker) so it moves on.
-        settle(&mut e);
-        if step.stay {
-            // It opened something to look at: it waits for Next.
-            assert_eq!(tour_step(&mut e), Some(step.id), "{} stays", step.id);
-            e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
-            settle(&mut e);
-        } else if tour_step(&mut e) == Some(step.id) {
-            e.cx.simulate_keystrokes("escape");
-            settle(&mut e);
+        e.cx.simulate_keystrokes(&key);
+        e.cx.run_until_parked();
+        assert_eq!(tour_pick(&mut e), Some(pick));
+        assert_eq!(tour_pos(&mut e).0, 0, "{pick:?} starts at its start");
+        walk_tour(&mut e, &format!("{pick:?}"));
+        if let Pick::Feature(n) = pick {
+            let done = e.view.read_with(e.cx, |v, _| {
+                v.onboarding.finished_tours.iter().any(|t| t == TOURS[n].id)
+            });
+            assert!(done, "{}: ticked", TOURS[n].id);
         }
-        assert_eq!(
-            tour_step(&mut e),
-            Some(STEPS[i + 1].id),
-            "{} moves on after its key",
-            step.id
-        );
     }
+    // What's new: only 0.21.0's steps, then the end card.
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.start_whats_new(vec![&RELEASE_0_21], window, cx)
+    });
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
+    assert_eq!(tour_pick(&mut e), Some(Pick::News));
+    assert_eq!(tour_step(&mut e), Some("author-site"));
+    assert_eq!(tour_pos(&mut e).1, 3);
+    walk_tour(&mut e, "news");
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+    // Walked tours are remembered.
+    let kept = state::AppState::load(e.dir.path()).tours_done;
+    assert_eq!(kept.len(), TOURS.len(), "{kept:?}");
+}
+
+static RELEASE_0_21: super::whats_new::Release = super::whats_new::Release {
+    version: "0.21.0",
+    first_step: Some("author-site"),
+};
+
+/// Each tour's first step sets up its own screen: started on a fresh
+/// tour, its key works.
+#[gpui_kit::test]
+fn every_tour_starts_cold(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    let picks = [Pick::Quick, Pick::News]
+        .into_iter()
+        .chain((0..TOURS.len()).map(Pick::Feature));
+    for pick in picks {
+        if pick == Pick::News {
+            e.view.update_in(e.cx, |v, window, cx| {
+                v.start_whats_new(vec![&RELEASE_0_21], window, cx)
+            });
+            e.cx.run_until_parked();
+            e.cx.simulate_keystrokes("enter");
+        } else {
+            e.view
+                .update_in(e.cx, |v, window, cx| v.start_tour(pick, window, cx));
+        }
+        e.cx.run_until_parked();
+        let id = tour_step(&mut e).unwrap();
+        assert_eq!(tour_pos(&mut e).0, 0, "{pick:?}");
+        assert!(!tour_done(&mut e), "{pick:?}/{id}");
+        do_step(&mut e, id);
+        assert!(
+            tour_done(&mut e),
+            "{pick:?}/{id}: its key didn't count cold"
+        );
+        e.view
+            .update_in(e.cx, |v, window, cx| v.finish_tutorial(window, cx));
+        e.cx.run_until_parked();
+        assert!(real_is_back(&e));
+    }
+}
+
+/// The chooser: ⏎ the quick tour, a number a feature tour, esc skips; a
+/// feature tour's end card goes back to it, or ends.
+#[gpui_kit::test]
+fn the_chooser_and_the_end_cards(cx: &mut TestAppContext) {
+    let mut e = setup(cx, CONNECTED, true);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    assert!(chooser_up(&mut e));
+    for sel in [
+        "tour-chooser",
+        "tour-quick",
+        "tour-writing",
+        "tour-workspace",
+    ] {
+        assert!(drawn(&mut e, sel), "{sel}");
+    }
+    e.cx.simulate_keystrokes("escape");
+    e.cx.run_until_parked();
+    assert!(
+        e.view
+            .read_with(e.cx, |v, _| v.onboarding.tutorial.is_none())
+    );
+    assert!(real_is_back(&e));
+
+    // 3: Publishing and versions, walked with Next to its end card.
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    e.cx.simulate_keystrokes("3");
+    e.cx.run_until_parked();
+    assert_eq!(tour_step(&mut e), Some("publish"));
+    let len = tour_pos(&mut e).1;
+    for _ in 1..len {
+        e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
+        e.cx.run_until_parked();
+    }
+    assert_eq!(tour_step(&mut e), Some(steps::END));
+    assert!(drawn(&mut e, "tutorial-tours"), "Back to the tours");
+    assert_eq!(
+        state::AppState::load(e.dir.path()).tours_done,
+        ["publishing"]
+    );
+    // Back to the tours: the chooser, the tour ticked.
+    e.view
+        .update_in(e.cx, |v, window, cx| v.tour_chooser(window, cx));
+    e.cx.run_until_parked();
+    assert!(chooser_up(&mut e));
+    // ⌥⌘→ on the chooser is its first choice, the quick tour; its end card
+    // lists the feature tours; Done ends.
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
+    e.cx.run_until_parked();
+    assert_eq!(tour_pick(&mut e), Some(Pick::Quick));
+    enter(&mut e, steps::QUICK_END);
+    assert_eq!(tour_pick(&mut e), Some(Pick::Quick));
+    assert!(
+        drawn(&mut e, "tour-reading"),
+        "the feature tours are listed"
+    );
+    e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
+    e.cx.run_until_parked();
+    assert_eq!(tour_step(&mut e), None, "Done ends it");
 }
 
 #[gpui_kit::test]
@@ -1032,7 +1227,12 @@ fn the_tour_puts_reading_mode_notes_and_browser_back(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn tutorial_on_launch_shows_it_on_start(cx: &mut TestAppContext) {
     let mut e = setup(cx, &format!("{CONNECTED}tutorial-on-launch = true\n"), true);
-    assert_eq!(tour_step(&mut e), Some("search"));
+    assert!(chooser_up(&mut e), "on the chooser");
+    assert_eq!(
+        tour_step(&mut e),
+        Some("search"),
+        "the quick tour's under it"
+    );
     assert_eq!(flow_step(&mut e), None);
     // The checkbox writes the key back.
     e.view
@@ -1136,8 +1336,16 @@ fn replay_from_settings(cx: &mut TestAppContext) {
     e.view
         .update_in(e.cx, |v, window, cx| v.help_replay(window, cx));
     e.cx.run_until_parked();
-    assert_eq!(tour_step(&mut e), Some("search"));
+    assert!(chooser_up(&mut e), "Take a tour… opens the chooser");
     assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
+    // Mid-tour, it's the chooser again.
+    e.cx.simulate_keystrokes("4");
+    e.cx.run_until_parked();
+    assert_eq!(tour_step(&mut e), Some("stream"));
+    e.view
+        .update_in(e.cx, |v, window, cx| v.help_replay(window, cx));
+    e.cx.run_until_parked();
+    assert!(chooser_up(&mut e));
     // "Show onboarding again" ends the tour and opens the flow.
     e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     e.cx.run_until_parked();
@@ -1177,7 +1385,7 @@ fn the_mentions_step_lets_you_pick_someone(cx: &mut TestAppContext) {
 // --- what's new --- the first launch after an update.
 
 static NEWS: super::whats_new::Release = super::whats_new::Release {
-    version: "9.9.9",
+    version: "0.8.0",
     first_step: Some("lineage"),
 };
 
@@ -1215,6 +1423,22 @@ fn whats_new_opens_the_tour_with_a_way_out(cx: &mut TestAppContext) {
         v.onboarding.tutorial.as_ref().map(|t| STEPS[t.step].id)
     });
     assert_eq!(step, Some("lineage"));
+    // Only that release's steps, then the end card.
+    let run: Vec<_> = e.view.read_with(e.cx, |v, _| {
+        let t = v.onboarding.tutorial.as_ref().unwrap();
+        t.run.iter().map(|&i| STEPS[i].id).collect()
+    });
+    assert_eq!(run, ["lineage", "ring", steps::END]);
+    // Choose a tour…: the chooser.
+    e.view.update_in(e.cx, |v, window, cx| {
+        v.finish_tutorial(window, cx);
+        v.start_whats_new(vec![&NEWS], window, cx);
+    });
+    e.cx.run_until_parked();
+    e.view
+        .update_in(e.cx, |v, window, cx| v.whats_new_go(false, window, cx));
+    e.cx.run_until_parked();
+    assert!(!news_up(&e) && chooser_up(&mut e));
     // Skip: the card's other way out ends the tour.
     e.view.update_in(e.cx, |v, window, cx| {
         v.finish_tutorial(window, cx);
@@ -1635,12 +1859,15 @@ fn the_tour_starts_on_posts_when_burrow_opened_on_reading(cx: &mut TestAppContex
     assert_eq!(view(&mut e), View::Reading, "Burrow opened on Reading");
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
+    // ⏎ on the chooser: the quick tour.
+    e.cx.simulate_keystrokes("enter");
+    e.cx.run_until_parked();
     assert_eq!(tour_step(&mut e), Some("search"));
     assert_eq!(view(&mut e), View::Posts, "the first step is on Posts");
     assert!(ring_now(&mut e, Region::Search).is_some());
     e.cx.simulate_keystrokes("down");
     settle(&mut e);
-    assert_eq!(tour_step(&mut e), Some("create"), "its key works there");
+    assert_eq!(tour_step(&mut e), Some("new"), "its key works there");
     enter(&mut e, "stream");
     assert_eq!(view(&mut e), View::Reading);
     e.view

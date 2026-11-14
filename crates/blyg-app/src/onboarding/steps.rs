@@ -1,5 +1,15 @@
-//! The tutorial's script: one row per step, in order. Edit the table to
-//! change the tour; `tutorial.rs` only interprets it.
+//! The tutorial's script: one row per step, in order, and the tours that
+//! walk them. Edit the tables to change the tours; `tutorial.rs` only
+//! interprets them.
+//!
+//! There is no single long tour. The chooser (the first tour screen, also
+//! Settings › Help) offers the **quick tour** (`QUICK`: the essentials, a
+//! couple of minutes) and the **feature tours** (`TOURS`). Every step but
+//! the two end cards is in exactly one feature tour, in table order; the
+//! quick tour borrows a few of them. A tour can start at any of its steps,
+//! so a step's `setup` prepares everything it needs and never counts on the
+//! step before it. What's new runs the steps a release added
+//! (`news_run`), wherever they live.
 //!
 //! A step waits for one of its `keys` (a GPUI action the user triggers in
 //! the real window, never synthetic input), then moves on. Next and Back
@@ -178,7 +188,6 @@ pub enum Region {
 /// What a step prepares on the sample data when it's entered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Setup {
-    Nothing,
     /// Posts, ⌘1, an empty omnibar with the focus in it.
     Search,
     /// A query with no match in the omnibar, caret at the end.
@@ -193,6 +202,8 @@ pub enum Setup {
     PublishSheet,
     /// The sample thread (a quote, a TK and a video), opened in ⌘1.
     StudioSample,
+    /// `StudioSample`, in the full editor (⌘3).
+    FullEditor,
     /// The draft with a TK scope appended, caret inside it.
     Tk(&'static str),
     /// A thread draft whose generated text echoed a quote its instruction
@@ -463,7 +474,7 @@ pub const STEPS: &[Step] = &[
         key_label: "⌘1",
         region: Region::Whole,
         button: Some("Write"),
-        setup: Setup::Nothing,
+        setup: Setup::FullEditor,
         pause_ms: 600,
         settle: false,
         stay: false,
@@ -1573,12 +1584,30 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end side dock ---
+    // --- tours --- the end cards: no key, only Next (and the chooser).
     Step {
-        id: "done",
+        id: QUICK_END,
+        since: "0.1.0",
+        title: "That's the quick tour",
+        caption: "Everything you did here was on sample data. The feature tours below go \
+                  further, a few minutes each: pick one now, or any time from Settings (⌘,) \
+                  › Help.",
+        keys: &[],
+        key_label: "",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Posts,
+        pause_ms: 0,
+        settle: false,
+        stay: false,
+    },
+    Step {
+        id: END,
         since: "0.1.0",
         title: "That's the tour",
         caption: "Everything you did here was on sample data. Your own posts and reading come \
-                  back when you finish. Settings (⌘,) › Help replays this tour.",
+                  back when you finish. Back to the tours picks another; Settings (⌘,) › Help \
+                  opens them again.",
         keys: &[],
         key_label: "",
         region: Region::Whole,
@@ -1590,6 +1619,218 @@ pub const STEPS: &[Step] = &[
     },
 ];
 
+// ================================================================ tours
+
+/// The quick tour's end card: it lists the feature tours.
+pub const QUICK_END: &str = "quick-done";
+/// The end card of a feature tour and of what's new.
+pub const END: &str = "done";
+
+/// A tour: a few steps of `STEPS`, by id, in table order. Its end card
+/// follows the last (`run`).
+#[derive(Debug, Clone, Copy)]
+pub struct Tour {
+    pub id: &'static str,
+    pub title: &'static str,
+    /// One short line for the chooser.
+    pub blurb: &'static str,
+    pub steps: &'static [&'static str],
+}
+
+/// The essentials: what a new user needs first.
+pub const QUICK: Tour = Tour {
+    id: "quick",
+    title: "Quick tour",
+    blurb: "The essentials: find, write, publish and read, in a couple of minutes.",
+    steps: &[
+        "search",
+        "new",
+        "autosave",
+        "kinds",
+        "publish",
+        "publish-note",
+        "versions",
+        "stream",
+        "side-dock",
+    ],
+};
+
+/// The feature tours, in the chooser's order (keys 1–9).
+pub const TOURS: &[Tour] = &[
+    Tour {
+        id: "writing",
+        title: "Writing",
+        blurb: "Search, drafts, kinds, links and mentions.",
+        steps: &[
+            "search",
+            "create",
+            "new",
+            "autosave",
+            "kinds",
+            "full-editor",
+            "write-view",
+            "shelf",
+            "hover-cards",
+            "loose-ends",
+            "quotes",
+            "mentions",
+        ],
+    },
+    Tour {
+        id: "ai",
+        title: "AI and TK",
+        blurb: "Fill a gap, shorten, a quote the AI added.",
+        steps: &["tk", "shorten", "echoed-quote"],
+    },
+    Tour {
+        id: "publishing",
+        title: "Publishing and versions",
+        blurb: "Versions, pins, discard, conflicts, copies.",
+        steps: &[
+            "publish",
+            "publish-note",
+            "versions",
+            "discard",
+            "conflict",
+            "own-post",
+            "copies-elsewhere",
+        ],
+    },
+    Tour {
+        id: "reading",
+        title: "Reading",
+        blurb: "Stream, Reader, the author's site, OPML.",
+        steps: &[
+            "stream",
+            "compose",
+            "slots",
+            "generated",
+            "original",
+            "author-site",
+            "reader",
+            "opml",
+        ],
+    },
+    Tour {
+        id: "lineage",
+        title: "Hoppers, lineage and quotes",
+        blurb: "Lineage, trails, the quote tray, hoppers.",
+        steps: &[
+            "lineage-writing",
+            "neighbourhood",
+            "trails",
+            "quote-tray",
+            "lineage",
+            "ring",
+            "hoppers",
+            "hopper-several",
+            "thicket",
+            "history",
+            "stub-passage",
+        ],
+    },
+    Tour {
+        id: "notes",
+        title: "Notes, browser and capture",
+        blurb: "Quick capture, notes, the browser pane.",
+        steps: &[
+            "capture",
+            "capture-link",
+            "notes",
+            "notes-library",
+            "browser",
+            "clip",
+        ],
+    },
+    Tour {
+        id: "extensions",
+        title: "Extensions and cross-post",
+        blurb: "Cross-post, and what extensions may do.",
+        steps: &["cross-post", "extensions", "manage", "consent"],
+    },
+    Tour {
+        id: "blyg",
+        title: "Your blyg",
+        blurb: "Site, contacts, client access, switching.",
+        steps: &[
+            "contacts",
+            "switcher",
+            "site",
+            "contacts-book",
+            "stale-quotes",
+            "client-access",
+        ],
+    },
+    Tour {
+        id: "workspace",
+        title: "Workspace",
+        blurb: "Palette, chat, terminal, focus, split, dock.",
+        steps: &[
+            "chat",
+            "terminal",
+            "palette",
+            "focus",
+            "serendipity",
+            "split-view",
+            "nearby",
+            "side-dock",
+        ],
+    },
+];
+
+/// Which tour is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pick {
+    Quick,
+    /// `TOURS[i]`.
+    Feature(usize),
+    /// What's new: the steps the news's releases added.
+    News,
+}
+
+impl Pick {
+    pub fn tour(self) -> Option<&'static Tour> {
+        match self {
+            Pick::Quick => Some(&QUICK),
+            Pick::Feature(i) => TOURS.get(i),
+            Pick::News => None,
+        }
+    }
+}
+
+/// The step `id`'s index in `STEPS`.
+pub fn index(id: &str) -> Option<usize> {
+    STEPS.iter().position(|s| s.id == id)
+}
+
+/// The feature tour that holds step `id`.
+pub fn tour_of(id: &str) -> Option<usize> {
+    TOURS.iter().position(|t| t.steps.contains(&id))
+}
+
+/// A tour's steps as `STEPS` indices, its end card last.
+pub fn run(tour: &Tour) -> Vec<usize> {
+    let end = if tour.id == QUICK.id { QUICK_END } else { END };
+    tour.steps
+        .iter()
+        .copied()
+        .chain([end])
+        .filter_map(index)
+        .collect()
+}
+
+/// What's new: the steps whose `since` is one of `versions`, in table
+/// order, then the end card.
+pub fn news_run(versions: &[&str]) -> Vec<usize> {
+    STEPS
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| !s.keys.is_empty() && versions.contains(&s.since))
+        .map(|(i, _)| i)
+        .chain(index(END))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1600,15 +1841,18 @@ mod tests {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), STEPS.len(), "duplicate step id");
-        for (i, s) in STEPS.iter().enumerate() {
+        for s in STEPS {
             assert!(!s.title.is_empty() && !s.caption.is_empty(), "{}", s.id);
-            let last = i + 1 == STEPS.len();
+            // Each tour ends on its own end card; only those wait for Next.
+            let end = s.id == END || s.id == QUICK_END;
             assert_eq!(
                 s.keys.is_empty(),
-                last,
-                "{}: only the last step waits for Next",
+                end,
+                "{}: only an end card waits for Next",
                 s.id
             );
+            // A step that moves on by itself shows its ✓ first.
+            assert!(end || s.stay || s.pause_ms > 0, "{}: pause_ms 0", s.id);
             assert_eq!(s.key_label.is_empty(), s.keys.is_empty(), "{}", s.id);
         }
         // Every topic in the spec is covered.
@@ -1668,6 +1912,56 @@ mod tests {
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
+    }
+
+    #[test]
+    fn every_step_is_in_exactly_one_feature_tour() {
+        for s in STEPS {
+            let n = TOURS.iter().filter(|t| t.steps.contains(&s.id)).count();
+            let end = s.id == END || s.id == QUICK_END;
+            assert_eq!(n, usize::from(!end), "{} is in {n} feature tours", s.id);
+        }
+        for t in TOURS.iter().chain([&QUICK]) {
+            assert!(!t.title.is_empty() && !t.blurb.is_empty(), "{}", t.id);
+            assert!(!t.steps.is_empty(), "{}", t.id);
+            // Every id exists, and the tour keeps the table's order.
+            let ix: Vec<usize> = t
+                .steps
+                .iter()
+                .map(|id| index(id).unwrap_or_else(|| panic!("{}: no step {id}", t.id)))
+                .collect();
+            assert!(ix.windows(2).all(|w| w[0] < w[1]), "{}: out of order", t.id);
+            let r = run(t);
+            assert_eq!(r.len(), t.steps.len() + 1, "{}", t.id);
+            assert!(STEPS[*r.last().unwrap()].keys.is_empty(), "{}", t.id);
+        }
+        let mut ids: Vec<_> = TOURS.iter().map(|t| t.id).chain([QUICK.id]).collect();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), TOURS.len() + 1, "duplicate tour id");
+        // The chooser's number keys are 1–9.
+        assert!(TOURS.len() <= 9);
+    }
+
+    #[test]
+    fn the_quick_tour_is_quick() {
+        let r = run(&QUICK);
+        assert!(r.len() <= 10, "{} cards", r.len());
+        assert_eq!(STEPS[*r.last().unwrap()].id, QUICK_END);
+        assert_eq!(QUICK.steps[0], "search", "it starts where Burrow does");
+    }
+
+    #[test]
+    fn whats_new_runs_only_the_releases_steps() {
+        let ids = |r: Vec<usize>| r.into_iter().map(|i| STEPS[i].id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(news_run(&["0.21.0"])),
+            ["author-site", "copies-elsewhere", END]
+        );
+        assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
+        assert_eq!(ids(news_run(&["9.9.9"])), [END]);
+        assert_eq!(tour_of("author-site"), Some(3));
+        assert_eq!(tour_of(END), None);
     }
 
     #[test]

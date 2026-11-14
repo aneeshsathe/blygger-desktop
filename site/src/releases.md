@@ -9,8 +9,9 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 
 Read a blyg as its author styled it, list where else your posts appear,
 cross-post to Bluesky and Farcaster, and sync with far less load on your blyg.
-Protocol 0.4's latest revisions are in too. The tour's new steps start at
-Copies elsewhere.
+Protocol 0.4's latest revisions are in too. The tour is now a quick tour of
+the essentials plus nine feature tours, picked from its first screen, and
+What's new runs just the new steps.
 
 ### Reading
 
