@@ -39,6 +39,10 @@ extension-setting = hello greeting=hi
 
 The first start of an extension that asks for capabilities and has none
 granted shows the consent sheet; Allow writes the `extension-allow` lines.
+What the owner declines (unticked, or Not now) is kept in the data folder
+(`extension-declines.json`, `crates/blyg-app/src/extensions/declines.rs`) and
+not asked about again at launch, until the manifest's capability list changes
+or the extension is turned off. Manage extensions › Allow… still asks.
 
 ## Manifest (`extension.toml`)
 

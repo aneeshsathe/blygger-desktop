@@ -228,6 +228,14 @@ extension-allow = markdown-notes ui
 extension-allow = markdown-notes fs:~/Notes
 ```
 
+Burrow remembers what you declined, by unticking it or with Not now, and
+doesn't ask about it again on later launches. It asks again only when the
+extension asks for something new: a capability it didn't ask for before, or
+an update that changes its list. To allow a declined capability later, use
+**Allow…** in Manage extensions (or the status-bar notice), or add its
+`extension-allow` line yourself. Turning the extension off forgets what you
+declined.
+
 You can also write these lines yourself, or delete one to take a permission
 back. Each line grants one capability:
 
