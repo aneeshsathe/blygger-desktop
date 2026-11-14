@@ -210,7 +210,7 @@ fn clip_spans(spans: &[blyg_render::Span], max: usize) -> Vec<blyg_render::Span>
             left -= n;
             continue;
         }
-        let mut cut: String = s.text.chars().take(left).collect();
+        let mut cut = blyg_core::text::prefix_graphemes(&s.text, left).to_string();
         // Back up to a word boundary when there is one.
         if let Some(i) = cut
             .rfind(char::is_whitespace)

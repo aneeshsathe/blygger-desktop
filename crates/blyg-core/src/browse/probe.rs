@@ -50,14 +50,12 @@ pub fn client() -> PublicClient {
     )
 }
 
-/// `url` without its fragment, when it is an http(s) URL.
+/// `url` without its fragment, when it is an http(s) URL, folded the way a
+/// URL from the network is before it meets a written origin (§12.2,
+/// §15.4 step 2: lowercase scheme and host, no default port, uppercase
+/// escapes), so [`own_permalink`]'s prefix test compares one spelling.
 pub fn lookup_key(url: &str) -> Option<String> {
-    let mut u = url::Url::parse(url.trim()).ok()?;
-    if !matches!(u.scheme(), "http" | "https") {
-        return None;
-    }
-    u.set_fragment(None);
-    Some(u.to_string())
+    crate::origin::fold_url(url)
 }
 
 /// The studio's item-id rule (`peek.ts` `ID_RE`).

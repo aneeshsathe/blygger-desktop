@@ -21,6 +21,9 @@ ureq = { version = "2.12", default-features = false, features = ["tls", "json"] 
 rusqlite = { version = "0.40", features = ["bundled", "hooks"] }
 toml = "1"
 url = "2"
+unicode-normalization = { workspace = true }
+unicode-segmentation = { workspace = true }
+idna = { workspace = true }
 keyring = { version = "3.6", features = ["apple-native", "windows-native"], optional = true }
 # The studio's code ranges (`tk::parse`: TK tokens in code are text).
 blyg-render = { path = "../blyg-render" }

@@ -1393,7 +1393,7 @@ impl Burrow {
             Ok((_, sid)) => {
                 let mut body = json!({ "expectedRevision": self.w_rev(id) });
                 if !note.is_empty() {
-                    body["note"] = json!(note);
+                    body["note"] = json!(blyg_core::text::for_save(note));
                 }
                 req(post(format!("{}/withdraw", api::item_path(&sid)), body))
             }

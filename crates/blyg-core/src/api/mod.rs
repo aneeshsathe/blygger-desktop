@@ -496,6 +496,10 @@ impl Api {
             if s.cited.as_ref().is_some_and(|c| !c.complete()) {
                 s.cited = None;
             }
+            // A written origin has one spelling (§12.2).
+            if let Some(o) = crate::origin::canonical(&s.origin) {
+                s.origin = o;
+            }
             body["stubOf"] = serde_json::to_value(&s).unwrap_or(Value::Null);
         }
         if let Some(p) = provenance {
@@ -657,9 +661,11 @@ impl Api {
 
     /// `POST /api/items {mode: "fork", source}` → the new draft.
     pub fn fork(&self, of: &RemoteRef) -> Result<WireItem> {
+        // A written origin has one spelling (§12.2).
+        let origin = crate::origin::canonical(&of.origin).unwrap_or_else(|| of.origin.clone());
         let body = json!({
             "mode": "fork",
-            "source": { "origin": of.origin, "id": of.id, "version": of.version },
+            "source": { "origin": origin, "id": of.id, "version": of.version },
         });
         let w = self.call_as("POST", "/api/items", Some(body))?;
         Ok(self.resolve(w))
@@ -813,7 +819,7 @@ impl Api {
         let mut body = self.subscribe_body(url);
         body["confirm"] = json!(true);
         if let Some(t) = title {
-            body["title"] = json!(t);
+            body["title"] = json!(crate::text::for_save(t));
         }
         Ok(self
             .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
@@ -835,7 +841,7 @@ impl Api {
             body["inBlogroll"] = json!(b);
         }
         if let Some(t) = title {
-            body["title"] = t.map_or(Value::Null, |t| json!(t));
+            body["title"] = t.map_or(Value::Null, |t| json!(crate::text::for_save(t)));
         }
         self.call(
             "PATCH",
@@ -1182,7 +1188,11 @@ impl Api {
 
     /// `POST /api/hoppers {name}` → the new hopper (201), private and empty.
     pub fn create_hopper(&self, name: &str) -> Result<Hopper> {
-        let h: WireHopper = self.call_as("POST", "/api/hoppers", Some(json!({ "name": name })))?;
+        let h: WireHopper = self.call_as(
+            "POST",
+            "/api/hoppers",
+            Some(json!({ "name": crate::text::for_save(name) })),
+        )?;
         Ok(h.into_hopper(0))
     }
 
@@ -1191,13 +1201,13 @@ impl Api {
     pub fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
         let mut body = serde_json::Map::new();
         if let Some(n) = &edit.name {
-            body.insert("name".into(), json!(n));
+            body.insert("name".into(), json!(crate::text::for_save(n)));
         }
         if let Some(p) = edit.public {
             body.insert("public".into(), json!(p));
         }
         if let Some(d) = &edit.description {
-            body.insert("description".into(), json!(d));
+            body.insert("description".into(), json!(crate::text::for_save(d)));
         }
         let h: WireHopper = self.call_as(
             "PATCH",
@@ -1454,7 +1464,7 @@ pub fn absolute_page(origin: &str, page: &str) -> Option<String> {
 fn command_body(revision: u64, note: Option<&str>) -> Value {
     let mut b = json!({ "expectedRevision": revision });
     if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
-        b["note"] = json!(n);
+        b["note"] = json!(crate::text::for_save(n));
     }
     b
 }

@@ -195,7 +195,7 @@ pub fn now() -> u64 {
 pub fn notification_body(nick: &str, text: &str) -> String {
     let mut s = format!("{nick}: {text}");
     if s.chars().count() > 160 {
-        s = s.chars().take(159).collect::<String>() + "…";
+        s = blyg_core::text::prefix_graphemes(&s, 159).to_string() + "…";
     }
     s
 }

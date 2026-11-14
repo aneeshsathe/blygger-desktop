@@ -1265,7 +1265,7 @@ impl MainView {
 fn post_title(r: &ReadingItem) -> String {
     let first = blyg_core::plain_title(&r.content_md).unwrap_or_default();
     let t = if first.chars().count() > 80 {
-        let cut: String = first.chars().take(78).collect();
+        let cut = blyg_core::text::prefix_graphemes(&first, 78);
         format!("{}…", cut.trim_end())
     } else {
         first
