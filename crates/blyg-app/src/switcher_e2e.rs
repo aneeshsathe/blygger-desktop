@@ -183,7 +183,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
     tokens.set(&s.url, &s.token).unwrap();
     let tokens: Arc<dyn TokenStore> = tokens;
     let config = format!("blyg-url = {}\nblyg = {}\nblyg = {}\n", a.url, a.url, s.url);
-    let first = crate::connection::open_live(&root_path, &a.url, &tokens)
+    let first = crate::connection::open_live(&root_path, &a.url, &tokens, Default::default())
         .expect("open blyg a")
         .expect("a has a sign-in");
     // The window starts on nothing, so no sync thread can reach it before

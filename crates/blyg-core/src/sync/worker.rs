@@ -75,7 +75,7 @@ fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
             continue; // don't pull into a dead network; backoff decides when to retry
         }
         if Instant::now() >= next_pull {
-            next_pull = match engine.pull() {
+            next_pull = match engine.pull_background() {
                 // Offline: try again when the backoff expires, not a full interval later.
                 Err(e) if is_transient(&e) => engine.retry_at().unwrap_or_else(Instant::now),
                 // 15 s with `/api/changes` (an unchanged pull is one small

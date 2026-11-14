@@ -23,6 +23,7 @@ mod provenance;
 mod shelf; // --- shelf ---
 mod syndication; // --- syndication ---
 pub use syndication::ReadingSyndication;
+mod signals; // issue #71: thumbs without a reading walk
 mod trails; // --- trails ---
 pub use provenance::Tracked;
 mod read_sync;

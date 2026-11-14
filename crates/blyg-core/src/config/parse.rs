@@ -496,6 +496,11 @@ impl Config {
         }
     }
 
+    /// `sync-cadence`: how hard the sync worker polls (issue #71).
+    pub fn sync_cadence(&self) -> crate::sync::SyncCadence {
+        crate::sync::SyncCadence::parse(self.get("sync-cadence").unwrap_or("normal"))
+    }
+
     // --- buttons ---
     pub fn show_buttons(&self) -> bool {
         self.get("show-buttons") != Some("false")

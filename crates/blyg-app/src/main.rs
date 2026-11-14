@@ -116,17 +116,19 @@ fn main() -> ExitCode {
     }
     let (inner, mode): (Arc<dyn Backend>, Mode) = match (&fake, store.config().blyg_url()) {
         (Some(f), _) => (f.clone(), Mode::Fake),
-        (None, Some(url)) => match connection::open_live(&data_dir, url, &tokens) {
-            Ok(Some(live)) => (live, Mode::Live),
-            Ok(None) => {
-                eprintln!("blygger: no owner token for {url} in the Keychain; connect again");
-                (Arc::new(Disconnected), Mode::Disconnected)
+        (None, Some(url)) => {
+            match connection::open_live(&data_dir, url, &tokens, store.config().sync_cadence()) {
+                Ok(Some(live)) => (live, Mode::Live),
+                Ok(None) => {
+                    eprintln!("blygger: no owner token for {url} in the Keychain; connect again");
+                    (Arc::new(Disconnected), Mode::Disconnected)
+                }
+                Err(e) => {
+                    eprintln!("blygger: couldn't open the local database: {e}");
+                    (Arc::new(Disconnected), Mode::Disconnected)
+                }
             }
-            Err(e) => {
-                eprintln!("blygger: couldn't open the local database: {e}");
-                (Arc::new(Disconnected), Mode::Disconnected)
-            }
-        },
+        }
         (None, None) => (Arc::new(Disconnected), Mode::Disconnected),
     };
     if std::env::var_os("BLYGGER_TIMING").is_some() {

@@ -97,6 +97,19 @@ fn opts(worker: bool) -> SyncOptions {
         start_worker: worker,
         reading_pages: 4,
         lineage_fetches: 20,
+        reading_gap: Duration::ZERO,
+        server_backoff_initial: Duration::from_millis(200),
+        server_backoff_max: Duration::from_millis(800),
+        ..SyncOptions::default()
+    }
+}
+
+/// Sync timings for `reading_is_walked_only_when_reading_moves`.
+fn walk_opts() -> SyncOptions {
+    SyncOptions {
+        full_pull_every: Duration::from_secs(1),
+        full_pull_max: Duration::from_secs(4),
+        ..opts(false)
     }
 }
 
@@ -2042,6 +2055,102 @@ fn a_subscription_change_is_picked_up_by_revision() {
     api.delete_subscription(&sub).unwrap();
     b.pull_now().unwrap();
     assert!(!b.subscriptions().iter().any(|s| s.id == sub));
+}
+
+/// Issue #71: what a reading refresh costs, in `GET /api/reading/imported`
+/// pages, over a scripted sequence: a signal set elsewhere, a hopper
+/// membership made elsewhere, then idle pulls across several safety-net
+/// (full pull) intervals. Signals and hoppers have their own reads, so
+/// neither walks the reading list, and an idle blyg's safety net backs
+/// off (1 s, 2 s, 4 s, capped at 4 s here).
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn reading_is_walked_only_when_reading_moves() {
+    if !has_changes() {
+        return;
+    }
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("walks");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a wren"), None);
+    let me = manual(d1.path());
+    let sub = me.subscribe(&src_url, Some("Walk count")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+
+    let proxy = Proxy::start(&e.url);
+    let other = LiveBackend::open_with(d3.path(), &proxy.url, e.cred.clone(), walk_opts())
+        .expect("open LiveBackend");
+    other.sync_now().unwrap();
+    assert!(reading_item(&other, &rid).is_some());
+    proxy.take();
+    let count = |seen: &[String], pre: &str| seen.iter().filter(|r| r.starts_with(pre)).count();
+    let pages = |seen: &[String]| count(seen, "GET /api/reading/imported");
+    // A walk starts at a page without a cursor.
+    let walks = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported") && !r.contains("cursor="))
+            .count()
+    };
+
+    // A thumb set on another device.
+    me.signal(&sub.id, &rid, Some(1)).unwrap();
+    other.pull_now().unwrap();
+    let signal = proxy.take_full();
+    assert_eq!(
+        reading_item(&other, &rid).unwrap().thumb,
+        Some(1),
+        "{signal:?}"
+    );
+
+    // A hopper membership made on another device.
+    let h = me.create_hopper(&format!("{t} box")).unwrap();
+    let _gone = DropHopper(&me, h.id.clone());
+    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.sync_now().unwrap();
+    other.pull_now().unwrap();
+    let hopper = proxy.take_full();
+    assert!(
+        reading_item(&other, &rid).unwrap().hoppers.contains(&h.id),
+        "{hopper:?}"
+    );
+
+    // Idle: a pull every 250 ms for 10 s, nothing changing.
+    let start = Instant::now();
+    let mut pulls = 0;
+    while start.elapsed() < Duration::from_secs(10) {
+        other.pull_now().unwrap();
+        pulls += 1;
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let idle = proxy.take_full();
+    eprintln!(
+        "issue #71 reading pages (walks): signal {} ({}) of {} requests, hopper {} ({}) \
+         of {}, idle {} ({}) over {pulls} pulls ({} change checks, {} requests)",
+        pages(&signal),
+        walks(&signal),
+        signal.len(),
+        pages(&hopper),
+        walks(&hopper),
+        hopper.len(),
+        pages(&idle),
+        walks(&idle),
+        count(&idle, "GET /api/changes"),
+        idle.len()
+    );
+    assert_eq!(pages(&signal), 0, "a thumb walks nothing: {signal:?}");
+    assert_eq!(count(&signal, "GET /api/signals"), 1, "{signal:?}");
+    assert_eq!(pages(&hopper), 0, "a hopper walks nothing: {hopper:?}");
+    // 1 s, then 2 s, then 4 s (the cap): at most 4 safety-net passes in
+    // 10 s where a fixed 1 s net made about 10.
+    assert!(walks(&idle) <= 4, "{idle:?}");
+    me.signal(&sub.id, &rid, None).unwrap();
 }
 
 // ------------------------------------------------------ TK generate (0.27)
