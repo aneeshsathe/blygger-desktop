@@ -892,6 +892,26 @@ impl Api {
         .map(|_| ())
     }
 
+    /// Every signal the owner holds (`GET /api/signals`, cursor pages):
+    /// `(subscriptionId, remoteId, thumb)`. `None` when the route isn't
+    /// there.
+    pub fn signals(&self) -> Result<Option<Vec<(String, String, i8)>>> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct S {
+            subscription_id: String,
+            remote_id: String,
+            thumb: i8,
+        }
+        Ok(
+            Self::optional(self.collect::<S>("/api/signals", ""))?.map(|v| {
+                v.into_iter()
+                    .map(|s| (s.subscription_id, s.remote_id, s.thumb))
+                    .collect()
+            }),
+        )
+    }
+
     pub fn clear_signal(&self, sub: &str, remote_id: &str) -> Result<()> {
         self.call(
             "DELETE",

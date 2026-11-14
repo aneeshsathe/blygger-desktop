@@ -1171,8 +1171,12 @@ pub enum SyncStatus {
     Syncing,
     /// Network unreachable; `pending` outbox entries are waiting.
     Offline { pending: usize },
-    /// Last attempt failed for a non-network reason (auth, 5xx).
+    /// Last attempt failed for a non-network reason (auth).
     Error,
+    /// The blyg answered 5xx (its Worker or database failed): Burrow waits
+    /// longer and longer before trying again (issue #71). `quota`: the
+    /// database said its daily limit is spent (Cloudflare D1's free tier).
+    Unavailable { pending: usize, quota: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -21,6 +21,7 @@ mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
+mod signals; // issue #71: thumbs without a reading walk
 mod trails; // --- trails ---
 pub use provenance::Tracked;
 mod read_sync;

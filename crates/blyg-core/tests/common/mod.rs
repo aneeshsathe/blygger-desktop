@@ -1811,6 +1811,10 @@ pub fn fast() -> SyncOptions {
         reading_pages: 4,
         // Seeded rows name made-up origins: never fetch from them.
         lineage_fetches: 0,
+        reading_gap: Duration::ZERO,
+        server_backoff_initial: Duration::from_millis(50),
+        server_backoff_max: Duration::from_millis(200),
+        ..SyncOptions::default()
     }
 }
 

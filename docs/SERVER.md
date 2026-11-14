@@ -300,13 +300,45 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
 - **Older than studio 0.49.12 (a contract before 5):** nothing syncs; see
   [How Burrow checks the contract](#how-burrow-checks-the-contract).
 - **Change counters (`GET /api/changes`):** each sync first reads the counters and
-  fetches only the collections whose domains moved (everything, every 10 minutes), so
-  the app syncs every 15 s.
+  fetches only the collections whose domains moved, so the app syncs every 15 s. The
+  reading list is walked again only when `reading` or `subscriptions` moved: a moved
+  thumb reads `GET /api/signals`, a moved hopper reads the hoppers. As a safety net
+  everything is read whole after 10 minutes; each such pass that finds nothing the
+  counters hadn't said doubles the wait, up to 2 hours. See
+  [Cloudflare's free D1 plan](#cloudflares-free-d1-plan).
+- **The blyg fails (`5xx`):** its Worker or its database is down, or a `D1_ERROR` says
+  the daily limit is spent. Changes stay queued; the status bar says "blyg
+  unavailable" in grey, and Burrow waits 30 s, then twice as long each time, up to
+  30 minutes, before trying again (opening the blyg again tries at once).
 - **Work budgets:** a `429` keeps the change queued and retries after `Retry-After`; the
   app says "The blyg asked Burrow to slow down". Autosave pushes for one post are at
   least 3 s apart, about 20 writes a minute at most.
 - **A list that keeps changing while it's read** (`cursor-expired` three times running):
   left as held for this pull, read again on the next.
+
+## Cloudflare's free D1 plan
+
+A studio on Cloudflare's free plan gets 5 million D1 row reads a day. Once they're
+spent, every route that touches the database answers `500` until 00:00 UTC. What a
+sync costs depends on the studio as much as on Burrow:
+
+- **Update the studio.** Before 0.51 each page of the reading list
+  (`GET /api/reading/imported`) scanned the whole `imported_items` table, about 5,000
+  row reads a page on a blyg with a few thousand imported posts
+  ([blygger-studio#113](https://github.com/blygger/blygger-studio/issues/113)). 0.49.12
+  added the `observedAt` index, 0.51 stopped the page query from materializing the whole
+  list, and 0.52 indexed the per-row hopper lookup. On 0.52 or later a page reads
+  roughly the rows it returns.
+- **Burrow 0.21 reads less.** A moved thumb or hopper no longer walks the reading list
+  (issue #71), the 10-minute safety net backs off to 2 hours while it finds nothing, and
+  a `5xx` backs off to 30 minutes instead of 2.
+- **Set `sync-cadence = low`** in the [config file](config.md) for a blyg with a large
+  reading list on the free plan: change checks every minute instead of every 15 s, the
+  reading list at most every 10 minutes when only it moved (new imports, read marks),
+  and the safety net hourly at first, up to every 6 hours.
+
+The studio has no "changed since" read of the reading list yet: when `reading` moves
+(an import, a read mark from any device), Burrow walks the whole list again.
 
 ## Updating an older server
 

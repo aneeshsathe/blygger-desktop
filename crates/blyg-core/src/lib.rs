@@ -40,5 +40,5 @@ pub use live::LiveBackend;
 pub use model::*;
 pub use pick::{PickQuery, PickSort, PickSource, Pickable};
 pub use profile::{BlogrollEntry, Profile, ProfileKind, ProfilePost, Relation}; // --- profiles ---
-pub use sync::SyncOptions;
+pub use sync::{SyncCadence, SyncOptions};
 pub use trails::{Trail, TrailStop}; // --- trails ---

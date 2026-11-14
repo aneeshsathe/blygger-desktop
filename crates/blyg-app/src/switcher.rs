@@ -262,7 +262,7 @@ impl MainView {
         self.remember_blyg_card(cx);
         let old_host = active_url(cx).and_then(|u| vm::url_host(&u));
         let pending = match self.backend.sync_status() {
-            SyncStatus::Offline { pending } => pending,
+            SyncStatus::Offline { pending } | SyncStatus::Unavailable { pending, .. } => pending,
             SyncStatus::Saving | SyncStatus::Syncing | SyncStatus::Error => 1,
             SyncStatus::Synced => 0,
         };

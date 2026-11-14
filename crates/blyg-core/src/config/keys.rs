@@ -127,6 +127,22 @@ pub const KEYS: &[KeySpec] = &[
          drafts and reading on this Mac.",
     ),
     docs(
+        key(
+            "sync-cadence",
+            ValueKind::Choice(&["normal", "low"]),
+            Some("normal"),
+        ),
+        "How often Burrow asks your blyg what changed. normal (the default) asks every 15 \
+         seconds, like Studio, reads the reading list again at most once a minute when only \
+         it moved, and reads everything whole every 10 minutes as a safety net, backing off \
+         to every 2 hours while that finds nothing new. low asks every minute, reads the \
+         reading list at most every 10 minutes, and starts the safety net at an hour (up to \
+         6 hours). Use low for a blyg on Cloudflare's free D1 plan with a large reading \
+         list: its daily row reads can run out, and the blyg then fails until midnight UTC. \
+         Opening a blyg always syncs it at once. Takes effect the next \
+         time Burrow opens the blyg.",
+    ),
+    docs(
         key("theme", ValueKind::ThemeName, Some("system")),
         "Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of \
          the built-in themes (woody: cutaway, kumiko, shola, fortress; oceanic: portolan, \

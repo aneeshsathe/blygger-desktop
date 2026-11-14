@@ -126,15 +126,16 @@ use blyg_core::config::blygs::{self, DB_OWNER_FILE};
 /// A database there that belongs to a *different* blyg is moved aside first
 /// (`blygger.<host>.db`), so one blyg's unpushed drafts can never be pushed
 /// to another.
+///
+/// `cadence` is the config file's `sync-cadence` (issue #71).
 pub fn open_live(
     data_dir: &Path,
     url: &str,
     tokens: &Arc<dyn TokenStore>,
+    cadence: blyg_core::SyncCadence,
 ) -> Result<Option<Arc<dyn Backend>>> {
-    Ok(
-        open_live_with(data_dir, url, tokens, blyg_core::SyncOptions::default())?
-            .map(|l| Arc::new(l) as Arc<dyn Backend>),
-    )
+    let opts = blyg_core::SyncOptions::for_cadence(cadence);
+    Ok(open_live_with(data_dir, url, tokens, opts)?.map(|l| Arc::new(l) as Arc<dyn Backend>))
 }
 
 /// `open_live` with sync options (`blygger +import-opml` opens it without
@@ -337,8 +338,12 @@ fn open_blyg(url: &str, cx: &gpui_kit::App) -> Result<Option<(Arc<dyn Backend>, 
     let Some(conn) = cx.try_global::<Connection>() else {
         return Ok(None);
     };
-    let tokens = crate::settings::get(cx).tokens.clone();
-    Ok(open_live(&conn.data_dir, url, &tokens)?.map(|b| (b, Mode::Live)))
+    let settings = crate::settings::get(cx);
+    let (tokens, cadence) = (
+        settings.tokens.clone(),
+        settings.store.config().sync_cadence(),
+    );
+    Ok(open_live(&conn.data_dir, url, &tokens, cadence)?.map(|b| (b, Mode::Live)))
 }
 
 /// Swap in `next` (opened for `url`). The live backend going out is marked
