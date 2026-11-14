@@ -989,10 +989,11 @@ pub const STEPS: &[Step] = &[
         id: "quotes",
         since: "0.1.0",
         title: "Links and quotes",
-        caption: "Type [[ to link a post you hold; in a thread, ⌘K (or ![[ on a new line) \
-                  quotes one, a snapshot taken when you publish. Rows lead with each post's \
-                  title, and ⏎ writes [[id | label]]: the label is the link's text on the \
-                  page, so edit the words after | to rename it. A quote's note is yours only.",
+        caption: "⌘K links a post you hold; in a thread it (or ![[ on a new line) quotes \
+                  one, a snapshot taken when you publish. Rows lead with each post's title, \
+                  and ⏎ writes [[id | label]]: the label is the link's text on the page, so \
+                  edit the words after | to rename it. A quote's note is yours only. (A typed \
+                  [[ stays text unless bracket-picker = on.)",
         keys: &[Key::QuotePicker, Key::Picker],
         key_label: "⌘K",
         region: Region::Editor,
@@ -1180,6 +1181,25 @@ pub const STEPS: &[Step] = &[
         pause_ms: 2400,
         settle: false,
         stay: true,
+    },
+    // --- author's site (0.21.0) ---
+    Step {
+        id: "author-site",
+        since: "0.21.0",
+        title: "Read it as its author made it",
+        caption: "In Reader mode, Settings › Reading › Open posts on the author's site shows \
+                  an opened post's own page, styled by its author, in the post pane. j/k still \
+                  move and Space pages down; Burrow reader | Author's site above the post \
+                  switches one view back, and a subscription's menu can always or never do \
+                  it. Press ⌥⌘2.",
+        keys: &[Key::ReaderMode],
+        key_label: "⌥⌘2",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::Stream,
+        pause_ms: 1600,
+        settle: false,
+        stay: false,
     },
     Step {
         id: "reader",
@@ -1373,9 +1393,10 @@ pub const STEPS: &[Step] = &[
         since: "0.11.0",
         title: "cross-post runs beside you",
         caption: "The bundled cross-post (off until you turn it on) puts a published post on \
-                  Substack Notes from this pane: you check the text, it fills in the note, and \
-                  only you click Post. esc folds the pane mid-run: the status bar says “macro \
-                  running · show pane”. (A sample: nothing runs.)",
+                  Substack Notes, Bluesky or Farcaster from this pane: you check the text, it \
+                  fills in the composer, and only you click Post. The copy's link goes on the \
+                  post's Copies Elsewhere list. esc folds the pane mid-run: the status bar says \
+                  “macro running · show pane”. (A sample: nothing runs.)",
         keys: &[Key::MacroFolded],
         key_label: "esc",
         region: Region::MacroRun,
@@ -1503,6 +1524,25 @@ pub const STEPS: &[Step] = &[
         stay: true,
     },
     // --- end studio parity ---
+    // --- 0.21.0 --- copies elsewhere (decision #98) and the author's site.
+    Step {
+        id: "copies-elsewhere",
+        since: "0.21.0",
+        title: "Copies elsewhere",
+        caption: "Posted it somewhere else too? Post › Copies Elsewhere… keeps that list on \
+                  your blyg, with no new version, and a cross-post adds its link for you; the \
+                  versions (⌘Y) show it, and readers see “Also posted at …”. (It shows once \
+                  your blyg's studio supports it.) Press ⌘Y.",
+        keys: &[Key::ShowVersions],
+        key_label: "⌘Y",
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Versioned,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- end 0.21.0 ---
     // --- side dock (0.20.0) --- notes and Nearby beside the draft.
     Step {
         id: "side-dock",

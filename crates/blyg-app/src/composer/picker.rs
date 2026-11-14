@@ -56,9 +56,10 @@ impl PickKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BracketPicker {
     /// `[[` anywhere outside code (a link) and a line-leading `![[` (a quote).
-    #[default]
     On,
-    /// Only a line-leading `![[`; `[[` is plain text.
+    /// Only a line-leading `![[`; `[[` is plain text. The default since
+    /// 0.21.0 (#53), so brackets in prose and TK scopes never pop anything up.
+    #[default]
     Quotes,
     /// Neither: typed brackets are always plain text.
     Off,
@@ -67,9 +68,9 @@ pub enum BracketPicker {
 impl BracketPicker {
     pub fn from_value(v: Option<&str>) -> Self {
         match v {
-            Some("quotes") => BracketPicker::Quotes,
+            Some("on") => BracketPicker::On,
             Some("off") => BracketPicker::Off,
-            _ => BracketPicker::On,
+            _ => BracketPicker::Quotes,
         }
     }
 
@@ -437,14 +438,17 @@ mod tests {
     #[test]
     fn bracket_picker_reads_the_config_value() {
         use PickKind::{Link, Quote};
-        let on = BracketPicker::from_value(None);
-        assert_eq!(on, BracketPicker::On);
+        assert_eq!(BracketPicker::from_value(None), BracketPicker::Quotes);
+        let on = BracketPicker::from_value(Some("on"));
         assert!(on.allows(Link) && on.allows(Quote));
         let quotes = BracketPicker::from_value(Some("quotes"));
         assert!(!quotes.allows(Link) && quotes.allows(Quote));
         let off = BracketPicker::from_value(Some("off"));
         assert!(!off.allows(Link) && !off.allows(Quote));
-        assert_eq!(BracketPicker::from_value(Some("bogus")), BracketPicker::On);
+        assert_eq!(
+            BracketPicker::from_value(Some("bogus")),
+            BracketPicker::Quotes
+        );
     }
 
     #[test]

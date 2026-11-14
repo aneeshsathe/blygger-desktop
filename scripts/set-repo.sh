@@ -2,7 +2,7 @@
 # Point every repo reference at the real GitHub repository, in one go.
 #   scripts/set-repo.sh <owner>/<name>
 # Rewrites the current value (read from packaging/config.env) in:
-#   packaging/config.env, Cargo.toml ([workspace.package] repository/homepage),
+#   packaging/config.env, Cargo.toml ([workspace.package] repository),
 #   scripts/install.sh, README.md, crates/blyg-app/src/update/check.rs
 # The workflows use github.repository at run time and need no edit. Nothing
 # else is compiled into the app binary (update/check.rs names the repo the

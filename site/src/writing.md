@@ -442,13 +442,14 @@ label too, `![[id | note]]`, but there it's a **note** for you: the published
 quote shows the quoted post, not the note. The preview renders labels as
 blygger-studio does.
 
-Typing `[[` anywhere outside code opens the same picker as `![[`, for a link.
-What you type after the brackets keeps going into the editor as the search,
-and a `]` closes the picker, so `[[id]]` typed in full is left as you typed
-it. If you write brackets in prose (or in `[TK]` scopes) and would rather
-nothing popped up, set `bracket-picker = quotes` in the
-[config file](config.md) (only `![[` at the start of a line opens it) or
-`bracket-picker = off` (typing never does); ⌘K still opens the picker.
+For a link, press ⌘K. Typing `[[` is plain text by default, so brackets in
+prose and in `[TK]` scopes never pop anything up. To have a typed `[[`
+anywhere outside code open the same picker as `![[`, set
+`bracket-picker = on` in the [config file](config.md). Then what you type
+after the brackets keeps going into the editor as the search, and a `]`
+closes the picker, so `[[id]]` typed in full is left as you typed it.
+`bracket-picker = off` stops typing from opening the picker at all, even for
+`![[`; ⌘K always opens it.
 Each row leads with the post's title. ⏎ writes the labelled form, and the
 footer says so: "⏎ inserts [[… | label]]" for a link, "⏎ inserts ![[… |
 note]] on its own line" for a quote. The label the picker writes is:

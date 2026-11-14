@@ -16,6 +16,39 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-13
+
+Protocol 0.4's latest revisions (blygger-spec decisions #95–#104), copies elsewhere, cross-posting to Bluesky and Farcaster, and a sync that reads far less from your blyg.
+
+### Added
+
+- **Copies elsewhere** (decision #98, `syndication`). Post › Copies Elsewhere… lists where else a published post appears: each entry is an https link plus the version it copies, saved on your blyg in place, so no new version, changelog line or feed entry. A cross-post adds its copy's link for you (Substack, Bluesky, Farcaster), and when the link can't be found a **Record copy** button in the browser pane does it in one click. In reading, other blygs' copies show as plain "Also posted at {host}" links: Burrow never fetches them, folds posts together or infers who posted them. The web app shows them too, and own posts get Copies elsewhere… in the ⋯ menu. Needs a studio that serves it (Burrow checks for `putSyndication`); until then the menu item stays hidden.
+- **cross-post posts to Bluesky and Farcaster too.** **Cross-post to Bluesky…** and **Cross-post to Farcaster…** run in the browser pane where you signed in by hand, with the same two confirmation sheets as Substack Notes, and no API key, app password or signer. Each site is its own permission (`extension-allow = cross-post browser.automate:https://bsky.app`, `…https://farcaster.xyz`), so allowing one never offers another. The note fits each site's limit (Bluesky 300 characters, `bluesky-max-chars`; Farcaster 320 bytes, `farcaster-max-bytes`, or 1024 for a long cast) without cutting inside a character. Thanks to @patwater ([#69](https://github.com/aneeshsathe/blygger-desktop/pull/69)).
+- **Open posts on the author's site** (Settings › Reading, off by default). An opened post shows its own page as its author styled it, right where Burrow's reader was (macOS; elsewhere the page opens in your default browser). j/k, Space and the reading actions keep working, and the post still counts as read. A **Burrow reader | Author's site** switch above the post changes that one view, a subscription's menu can always or never open its posts this way, and a post with no page of its own falls back to Burrow's reader. The web app has the same choice under ⚙ Reading: a post also opens its page in a new tab, with "Read … here instead" per blyg.
+- **Changelogs** (blygger-studio 0.58+, decision #95). An opened post, yours or a blyg's, can show its latest note, its full history, or an **AI summary** of its notes, written only when you open it and labelled with the model and "not the author's words" (Settings › Reading › Changelog, which also chooses what your own post pages show). Desktop and web. In the publish sheet, **Summarize the full history so far** makes Draft a note cover every version so far.
+- **`sync-cadence = low`** in the config file, for blygs on Cloudflare's free D1 plan or with large reading lists: change checks every minute, the reading list at most every 10 minutes, and the safety-net sync from an hour up to six.
+- **`lang`** in the config file (default `en`): the language the preview and reading pages are marked with, for screen readers and spell-check.
+
+### Changed
+
+- **Sync reads much less from your blyg** ([#71](https://github.com/aneeshsathe/blygger-desktop/issues/71)). A thumb or hopper changed on another device no longer re-reads the whole reading list (thumbs come from `GET /api/signals`); read marks and new imports re-read it at most once a minute; and the 10-minute safety-net sync backs off to every 2 hours while it finds nothing new.
+- **A server error backs off.** When the blyg answers 5xx (including D1's daily limit), Burrow waits 30 s, doubling to 30 minutes, and shows a quiet grey "blyg unavailable" (or "over its daily database limit") instead of retrying every 2 minutes. Queued changes wait and go when it's back.
+- **`bracket-picker` defaults to `quotes`** ([#53](https://github.com/aneeshsathe/blygger-desktop/issues/53)): typing `[[` is plain text, so brackets in prose and TK scopes never pop anything up. `![[` at the start of a line still opens the picker for a quote, ⌘K always opens it, and `bracket-picker = on` brings back the typed `[[` link trigger.
+- **Burrow remembers the permissions you decline** for an extension, across launches, and asks again only when the extension asks for something new. Manage extensions › Allow… still grants them later.
+- **A fragment can't quote** (decision #102): a `![[id]]` line of its own in a fragment, outside code, is refused at publish, with a note saying to quote from a thread or put the line in code. Posts already published still read as text.
+- `![[id@vN | label]]` on its own line is refused like `![[id@vN]]`; inline, both are plain text.
+- A quote's label is baked into the quote as `data-blyg-label`, as plain text.
+- A `[[id]]` link to a post whose blyg gives no page address points at the post's item document, not a guessed address.
+- Relative links and images in your posts are made absolute against your blyg's address, and a quoted post's against its own blyg.
+- Generated (TK) text no longer wraps a quote inside it: the highlight stops before the quote and resumes after.
+- **Unicode on the wire** (decision #103). Text you write is cleaned before it's saved: control characters other than tab and line breaks are removed, and accented letters are stored composed (NFC), in posts, notes, hopper names and subscription titles. Imported posts are never changed.
+- Quoting part of a post matches even when your selection's accents are encoded differently from the post's.
+- Shortened titles and excerpts never cut an emoji or accented letter in half.
+- Burrow writes and compares blyg addresses in the protocol's one spelling (lowercase, no default port, uppercase escapes, a final `/`).
+- An internationalized blyg address shows in Unicode with its `xn--` form beside it, so look-alike hosts can be told apart.
+- Quotes and other blygs' names are isolated for right-to-left text, so they can't reorder the words around them.
+- The Rust toolchain is 1.100.
+
 ## [0.20.0] - 2026-11-07
 
 ### Added

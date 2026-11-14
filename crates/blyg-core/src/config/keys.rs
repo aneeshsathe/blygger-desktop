@@ -185,11 +185,11 @@ pub const KEYS: &[KeySpec] = &[
         key(
             "bracket-picker",
             ValueKind::Choice(&["on", "quotes", "off"]),
-            Some("on"),
+            Some("quotes"),
         ),
-        "Which typed brackets open the post picker. on: typing [[ anywhere outside code opens \
-         it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only \
-         ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. \
+        "Which typed brackets open the post picker. quotes (the default): only ![[ at the start \
+         of a line in a thread opens it, for a quote; [[ stays plain text, for brackets in \
+         prose and TK scopes. on: typing [[ anywhere outside code also opens it, for a link. \
          off: typed brackets never open it. ⌘K always opens the picker.",
     ),
     // --- nearby ---

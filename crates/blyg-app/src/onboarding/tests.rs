@@ -715,7 +715,8 @@ fn do_step(e: &mut Env, id: &str) {
         }),
         "lineage" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
         "ring" => e.cx.simulate_keystrokes("space"),
-        "reader" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2")),
+        "reader" | "author-site" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2")),
+        "copies-elsewhere" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
         "side-dock" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"))
         }
@@ -1587,11 +1588,10 @@ fn the_0_13_steps_show_discard_own_posts_and_links(cx: &mut TestAppContext) {
     assert_eq!(status, Status::Draft);
     assert!(is_stub, "a stub of your own post");
 
-    // Typing [[ opens the link picker.
+    // ⌘K opens the picker (a typed [[ is plain text by default, #53).
     enter(&mut e, "quotes");
-    e.cx.simulate_input("[[");
-    e.cx.run_until_parked();
-    assert!(tour_done(&mut e), "[[ counts");
+    do_step(&mut e, "quotes");
+    assert!(tour_done(&mut e), "⌘K counts");
 
     // Reader: Your blyg in the sources pane.
     enter(&mut e, "reader");
