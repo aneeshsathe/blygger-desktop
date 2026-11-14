@@ -5,6 +5,7 @@ pub mod access_ai; // --- access-ai ---
 pub mod api;
 pub mod backend;
 pub mod browse; // --- browse ---
+pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod config;
 pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod floor;
@@ -15,6 +16,7 @@ pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
+pub mod origin; // --- unicode --- §12.2 origin spelling (decision #103)
 pub mod outbound; // --- contacts --- sent mentions, groups, sources
 pub mod pick;
 pub mod profile; // --- profiles ---
@@ -23,9 +25,11 @@ pub mod site; // --- site ---
 pub mod state;
 pub mod store;
 pub mod sync;
+pub mod syndication; // --- syndication --- (decision #98)
 /// Synthetic data at scale, for performance tests and benchmarks.
 #[doc(hidden)]
 pub mod synth;
+pub mod text; // --- unicode --- §5 text rules (decision #103)
 pub mod tk;
 pub mod trails; // --- trails ---
 pub mod upkeep; // --- upkeep --- stale quotes, signals
@@ -40,5 +44,5 @@ pub use live::LiveBackend;
 pub use model::*;
 pub use pick::{PickQuery, PickSort, PickSource, Pickable};
 pub use profile::{BlogrollEntry, Profile, ProfileKind, ProfilePost, Relation}; // --- profiles ---
-pub use sync::SyncOptions;
+pub use sync::{SyncCadence, SyncOptions};
 pub use trails::{Trail, TrailStop}; // --- trails ---

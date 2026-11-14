@@ -245,11 +245,9 @@ fn with_bracket_picker_off_typed_brackets_never_pop_up(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
-fn with_bracket_picker_quotes_only_bang_brackets_open_it(cx: &mut TestAppContext) {
-    let (view, _, cx) = setup_with(
-        "# test config\nblyg-url = https://blyg.example.com\nbracket-picker = quotes\n",
-        cx,
-    );
+fn by_default_only_bang_brackets_open_the_picker(cx: &mut TestAppContext) {
+    // `quotes` is the default since 0.21.0 (#53).
+    let (view, _, cx) = setup(cx);
     let before = open_at_end(&view, DRAFT_THREAD, cx);
     let up = type_keys(&view, TK_PROSE, cx);
     assert!(up.iter().all(|u| !u), "`[[` is plain text: {up:?}");
@@ -260,8 +258,11 @@ fn with_bracket_picker_quotes_only_bang_brackets_open_it(cx: &mut TestAppContext
 }
 
 #[gpui_kit::test]
-fn by_default_the_link_popup_never_takes_the_typing(cx: &mut TestAppContext) {
-    let (view, _, cx) = setup(cx);
+fn with_bracket_picker_on_the_link_popup_never_takes_the_typing(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup_with(
+        "# test config\nblyg-url = https://blyg.example.com\nbracket-picker = on\n",
+        cx,
+    );
     let before = open_at_end(&view, DRAFT_THREAD, cx);
     let up = type_keys(&view, TK_PROSE, cx);
     // `[[` opens the documented link picker under the caret; `b` keeps

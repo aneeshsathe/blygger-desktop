@@ -1,16 +1,21 @@
 //! What changed, per release: the first launch after an update opens the
 //! tutorial on a short card that links to the release notes on the docs
-//! site (`site/src/releases.md`, one heading per release), with Take the
-//! tour, Show me what's new, and Skip tutorial. Add an entry when a release
-//! adds something the tour teaches, and set its version to the release's
-//! (CHANGELOG.md says when). The notes themselves live on the site, never
-//! in the app: a list long enough to say it all didn't fit on the card.
+//! site (`site/src/releases.md`, one heading per release), with Show me
+//! what's new, Choose a tour… (the chooser), and Skip tutorial. Add an
+//! entry when a release adds something the tour teaches, and set its
+//! version to the release's (CHANGELOG.md says when). The notes themselves
+//! live on the site, never in the app: a list long enough to say it all
+//! didn't fit on the card.
 //!
 //! The rule (every release): a new feature gets a tour step that lands on
-//! it, with `since` set to the release, existing steps are edited when
-//! what they show changed, and the entry's `first_step` is the first of the
-//! release's own steps. The tests below hold every entry from 0.10.0 on to
-//! that, and fail when the crate's version is an x.y.0 with no entry.
+//! it, with `since` set to the release, in the feature tour it belongs to
+//! (`steps::TOURS`), and existing steps are edited when what they show
+//! changed. Show me what's new runs the steps whose `since` is one of the
+//! card's releases, wherever they are, then the end card
+//! (`steps::news_run`); the entry's `first_step` is the first of them in
+//! the table, where that run starts. The tests below hold every entry from
+//! 0.10.0 on to that, and fail when the crate's version is an x.y.0 with no
+//! entry.
 
 /// One release's news.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,6 +26,10 @@ pub struct Release {
 }
 
 pub const RELEASES: &[Release] = &[
+    Release {
+        version: "0.21.0",
+        first_step: Some("author-site"),
+    },
     Release {
         version: "0.20.0",
         first_step: Some("side-dock"),
@@ -188,6 +197,18 @@ mod tests {
                 "{}: what's new should start at its first own step",
                 r.version
             );
+            // Show me what's new runs exactly those, from `first_step`, and
+            // each is in a feature tour too.
+            let run: Vec<&str> = super::super::steps::news_run(&[r.version])
+                .into_iter()
+                .map(|i| STEPS[i].id)
+                .collect();
+            assert_eq!(run[0], own[0], "{}", r.version);
+            assert_eq!(run[..run.len() - 1], own[..], "{}", r.version);
+            assert_eq!(run.last(), Some(&super::super::steps::END));
+            for id in &own {
+                assert!(super::super::steps::tour_of(id).is_some(), "{id}");
+            }
         }
         // No step claims a release that has no entry (a step added for a
         // release whose card would never send anyone to it).

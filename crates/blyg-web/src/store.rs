@@ -344,6 +344,8 @@ impl WebStore {
         now: &str,
         ms: i64,
     ) -> LocalId {
+        // The author's text as a publisher may send it (§5, decision #103).
+        let content_md = &*blyg_core::text::for_save(content_md);
         let n = self.next_id;
         self.next_id += 1;
         let id = format!("local-{n}-{ms}");
@@ -355,6 +357,7 @@ impl WebStore {
 
     /// Every keystroke lands here. Returns false if nothing changed.
     pub fn save(&mut self, id: &LocalId, content_md: &str, now: &str) -> bool {
+        let content_md = &*blyg_core::text::for_save(content_md);
         let Some(it) = self.get_mut(id) else {
             return false;
         };

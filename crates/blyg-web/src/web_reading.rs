@@ -139,6 +139,10 @@ pub struct WebReading {
     pub contract: Option<String>,
     /// This session's browsing trail.
     pub trail: String,
+    // --- reader view / changelog --- the blyg's changelog settings (from
+    // `/api/settings`; the demo's are kept here).
+    pub changelog: blyg_core::changelog::ChangelogSettings,
+    // --- end reader view / changelog ---
     /// Demo: the next id for a made-up subscription or hopper.
     next: u32,
 }
@@ -645,12 +649,19 @@ impl Burrow {
                 let Ok(u) = url::Url::parse(url) else {
                     return error("That isn't an address. Try https://…");
                 };
-                let origin = format!("{}://{}", u.scheme(), u.host_str().unwrap_or(""));
+                // The origin in its one spelling (§12.2): lowercase, A-label
+                // host, no default port, final `/`.
+                let origin = blyg_core::origin::canonical(&format!(
+                    "{}://{}",
+                    u.scheme(),
+                    u.host_str().unwrap_or("")
+                ))
+                .unwrap_or_default();
                 if self
                     .rd
                     .subs
                     .iter()
-                    .any(|s| s.origin.trim_end_matches('/') == origin)
+                    .any(|s| blyg_core::origin::same(&s.origin, &origin))
                 {
                     return error("You already follow that blyg");
                 }
@@ -1130,6 +1141,8 @@ impl Burrow {
                         .and_then(Value::as_bool)
                         .unwrap_or(true),
                 );
+                // --- reader view / changelog ---
+                self.wr.changelog = blyg_core::changelog::ChangelogSettings::from_json(&v);
                 1
             }
             "capabilities" => {
@@ -1477,7 +1490,7 @@ impl Burrow {
                 let mut body = self.wr_subscribe_body(&a.url);
                 body["confirm"] = json!(true);
                 if let Some(t) = a.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
-                    body["title"] = json!(t);
+                    body["title"] = json!(blyg_core::text::for_save(t));
                 }
                 post("/api/subscriptions", body)
             }
@@ -1485,7 +1498,7 @@ impl Burrow {
             "pause" => patch(sub_path(&a.id), json!({ "paused": a.on.unwrap_or(true) })),
             "rename" => patch(
                 sub_path(&a.id),
-                json!({ "title": a.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) }),
+                json!({ "title": a.title.as_deref().map(str::trim).filter(|t| !t.is_empty()).map(blyg_core::text::for_save) }),
             ),
             "blogroll" => patch(
                 sub_path(&a.id),
@@ -1495,15 +1508,15 @@ impl Burrow {
             "resync" => post(&format!("{}/resync", sub_path(&a.id)), json!({})),
             "hopper_new" => post(
                 "/api/hoppers",
-                json!({ "name": a.name.as_deref().unwrap_or("").trim() }),
+                json!({ "name": blyg_core::text::for_save(a.name.as_deref().unwrap_or("").trim()) }),
             ),
             "hopper_edit" => {
                 let mut body = json!({});
                 if let Some(n) = &a.name {
-                    body["name"] = json!(n.trim());
+                    body["name"] = json!(blyg_core::text::for_save(n.trim()));
                 }
                 if let Some(d) = &a.description {
-                    body["description"] = json!(d.trim());
+                    body["description"] = json!(blyg_core::text::for_save(d.trim()));
                 }
                 if let Some(p) = a.public {
                     body["public"] = json!(p);

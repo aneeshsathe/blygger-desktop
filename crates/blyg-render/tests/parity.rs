@@ -34,6 +34,140 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
     ),
 ];
 
+/// Where protocol 0.4's fifteenth revision (decision #102, 2026-11-12) and
+/// #81's label bake differ from the fixtures (stock studio 0.49.1), the
+/// expected output is rewritten here, so the rest of each case is still
+/// compared byte for byte. `docs/RENDER.md` ("Decision #102") explains each.
+///
+/// #81: a directive's label is baked as `data-blyg-label` (escaped), in
+/// the order of the case's top-level quotes; `""` is no label.
+const SPEC_LABELS: &[(&str, &[&str])] = &[
+    (
+        "label_directive_forms",
+        &["tight", "padded", "", "either | or"],
+    ),
+    ("label_directive_in_code", &["real"]),
+    ("label_directive_partial", &["the tools line"]),
+    ("label_directive_quote", &["note to self"]),
+    ("label_directive_remote", &["a friend&#39;s line"]),
+    ("label_tk_output_directive", &["echoed"]),
+];
+
+/// #102 (9): a baked quote is never inside a `blyg-tk-gen` wrapper; an
+/// inline span that a quote interrupts closes before it and reopens after.
+const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
+    (
+        "tr_inline_tk_multiline_directive",
+        &[
+            ("one</p>", "one</span></p>"),
+            ("<p>two</span>", "<p><span class=\"blyg-tk-gen\">two</span>"),
+        ],
+    ),
+    (
+        "label_tk_output_directive",
+        &[
+            ("one</p>", "one</span></p>"),
+            ("<p>two</span>", "<p><span class=\"blyg-tk-gen\">two</span>"),
+        ],
+    ),
+    (
+        "tr_ungenerated_tk_with_directive",
+        &[
+            ("use</p>", "use</span></p>"),
+            (
+                "<p>please</span>",
+                "<p><span class=\"blyg-tk-gen\">please</span>",
+            ),
+        ],
+    ),
+    // #102 (2): the reserved form with a label is reserved too.
+    (
+        "label_directive_malformed",
+        &[(
+            "<p>![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]</p>",
+            "<blockquote class=\"blyg-transclusion unresolved\"><p>⚠ unresolvable: explicit-version references (@vN) are reserved, not supported in v0.1</p></blockquote>",
+        )],
+    ),
+];
+
+/// #102 (1) and (2): publish errors the fixtures (which publish both) lack.
+const SPEC_ERRORS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "tr_in_fragment",
+        &[("![[01j9zq3k4m5n6p7q8r9s0t1v2w]]", FRAGMENT_DIRECTIVE)],
+    ),
+    (
+        "label_directive_fragment",
+        &[("![[01j9zq3k4m5n6p7q8r9s0t1v2w | note]]", FRAGMENT_DIRECTIVE)],
+    ),
+    (
+        "label_directive_malformed",
+        &[(
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w@v2 | pinned]]",
+            "explicit-version references (@vN) are reserved, not supported in v0.1",
+        )],
+    ),
+];
+
+const FRAGMENT_DIRECTIVE: &str = "a fragment cannot carry a transclusion directive; quote from a thread, or put the line in code";
+
+/// The fixture's HTML (normalised) as protocol 0.4 r15 has it.
+fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {
+    let mut out = normalize(html);
+    // #102 (5): a link to an imported item with no `page` names its item
+    // document. The provenance line (`from …`) is presentation and keeps
+    // the convention.
+    for url in no_page {
+        let (base, id) = url
+            .rsplit_once("/f/")
+            .or_else(|| url.rsplit_once("/t/"))
+            .unwrap();
+        let id = id.trim_end_matches('/');
+        let from = format!("<a href=\"{url}\">");
+        let to = format!("<a href=\"{base}/items/{id}.json\">");
+        let mut rebuilt = String::new();
+        let mut rest = out.as_str();
+        while let Some(i) = rest.find(&from) {
+            let after = &rest[i + from.len()..];
+            rebuilt.push_str(&rest[..i]);
+            rebuilt.push_str(if after.starts_with("from ") {
+                &from
+            } else {
+                &to
+            });
+            rest = after;
+        }
+        rebuilt.push_str(rest);
+        out = rebuilt;
+    }
+    if let Some((_, labels)) = SPEC_LABELS.iter().find(|(n, _)| *n == name) {
+        let open = "<blockquote class=\"blyg-transclusion";
+        let mut rebuilt = String::new();
+        let mut rest = out.as_str();
+        let mut labels = labels.iter();
+        while let Some(i) = rest.find(open) {
+            let gt = i + rest[i..].find('>').unwrap();
+            rebuilt.push_str(&rest[..gt]);
+            match labels.next() {
+                Some(l) if !l.is_empty() => {
+                    rebuilt.push_str(&format!(" data-blyg-label=\"{l}\""));
+                }
+                _ => {}
+            }
+            rest = &rest[gt..];
+        }
+        rebuilt.push_str(rest);
+        out = rebuilt;
+    }
+    for (_, pairs) in SPEC_REWRITES.iter().filter(|(n, _)| *n == name) {
+        for (from, to) in *pairs {
+            assert!(out.contains(from), "{name}: rewrite {from:?} found nothing");
+            out = out.replacen(from, to, 1);
+        }
+    }
+    out
+}
+
 fn load_fixtures() -> Vec<Value> {
     let dir = fixtures_dir().join("parity");
     let mut paths: Vec<_> = std::fs::read_dir(&dir)
@@ -65,8 +199,24 @@ fn parity_with_worker() {
         fixtures.len()
     );
 
+    // Imported items with no `page`, by the URL the convention gave them.
+    let no_page: Vec<String> = store.json["imported"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["page"].is_null())
+        .map(|r| {
+            let seg = if r["kind"] == "thread" { "t" } else { "f" };
+            format!(
+                "{}{seg}/{}/",
+                r["origin"].as_str().unwrap(),
+                r["remote_id"].as_str().unwrap()
+            )
+        })
+        .collect();
     let mut exact = 0;
     let mut normalized = 0;
+    let mut rewritten = 0;
     let mut failures = Vec::new();
     let mut unexpected_passes = Vec::new();
     for f in &fixtures {
@@ -83,22 +233,25 @@ fn parity_with_worker() {
         if got.html == expected {
             exact += 1;
         }
-        if normalize(&got.html) == normalize(expected) {
+        let spec = spec_expected(name, expected, &no_page);
+        if spec != normalize(expected) {
+            rewritten += 1;
+        }
+        if normalize(&got.html) == spec {
             normalized += 1;
             if known {
                 unexpected_passes.push(name.to_string());
             }
         } else if !known {
             failures.push(format!(
-                "--- {name}\n  md:       {md:?}\n  expected: {}\n  got:      {}",
-                normalize(expected),
+                "--- {name}\n  md:       {md:?}\n  expected: {spec}\n  got:      {}",
                 normalize(&got.html)
             ));
         }
 
         // Unresolved quotes and links (reason and directive, in order) and
         // quotes must agree with the Worker too.
-        let errors: Vec<(String, String)> = f["errors"]
+        let mut errors: Vec<(String, String)> = f["errors"]
             .as_array()
             .unwrap()
             .iter()
@@ -107,6 +260,13 @@ fn parity_with_worker() {
                 (s("directive"), s("reason"))
             })
             .collect();
+        if let Some((_, extra)) = SPEC_ERRORS.iter().find(|(n, _)| *n == name) {
+            assert!(errors.is_empty(), "{name}: the fixture has errors now");
+            errors = extra
+                .iter()
+                .map(|(d, r)| (d.to_string(), r.to_string()))
+                .collect();
+        }
         let got_errors: Vec<(String, String)> = got
             .stats
             .unresolved
@@ -146,7 +306,7 @@ fn parity_with_worker() {
         }
     }
     eprintln!(
-        "parity: {normalized}/{} match after whitespace normalisation ({exact} byte-identical); {} known divergences",
+        "parity: {normalized}/{} match after whitespace normalisation ({exact} byte-identical, {rewritten} rewritten to protocol 0.4 r15); {} known divergences",
         fixtures.len(),
         KNOWN_DIVERGENCES.len()
     );

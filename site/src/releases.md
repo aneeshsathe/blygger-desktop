@@ -5,6 +5,59 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.21.0
+
+Read a blyg as its author styled it, list where else your posts appear,
+cross-post to Bluesky and Farcaster, and sync with far less load on your blyg.
+Protocol 0.4's latest revisions are in too. The tour is now a quick tour of
+the essentials plus nine feature tours, picked from its first screen, and
+What's new runs just the new steps.
+
+### Reading
+
+- **Open posts on the author's site.** Turn it on in Settings › Reading, and an
+  opened post shows its own page, styled by its author, where Burrow's reader
+  was. j/k still move, Space pages down, and the post still counts as read.
+  **Burrow reader | Author's site** above the post switches that one view, and
+  a subscription's menu can always or never open its posts this way. Posts
+  without a page of their own stay in Burrow's reader. The web app has the
+  same choice under ⚙ Reading.
+- **Changelogs.** An opened post can show its latest note, its full history,
+  or an AI summary of its notes (Settings › Reading › Changelog). A summary is
+  written only when you open the post and is labelled as the model's, not the
+  author's words. Needs blygger-studio 0.58 or later.
+- **Also posted at.** When another blyg lists where else a post appears, the
+  reader shows plain "Also posted at …" links. Burrow never fetches them.
+
+### Writing and cross-posting
+
+- **Copies elsewhere.** Post › Copies Elsewhere… lists where else a published
+  post appears, saved on your blyg without a new version. It appears once your
+  blyg's studio supports it.
+- **Bluesky and Farcaster.** The bundled cross-post can now post to Bluesky
+  and Farcaster as well as Substack Notes, each with its own permission. The
+  copy's link goes on the post's Copies Elsewhere list, or one click on
+  **Record copy** adds it. Thanks to @patwater ([#69](https://github.com/aneeshsathe/blygger-desktop/pull/69)).
+- **Typed `[[` stays text.** `bracket-picker` now defaults to `quotes`: only
+  `![[` at the start of a line opens the picker, and ⌘K always does. Set
+  `bracket-picker = on` for the old behaviour.
+- **A fragment can't quote.** A `![[…]]` line in a fragment is refused at
+  publish, with a note to quote from a thread or put the line in code.
+- Burrow remembers the extension permissions you decline, and asks again only
+  when an extension asks for something new.
+
+### Sync and the protocol
+
+- **Less load on your blyg.** A thumb or hopper change on another device no
+  longer re-reads your whole reading list, and the background full sync backs
+  off to every 2 hours while nothing changes. On Cloudflare's free D1 plan, add
+  `sync-cadence = low` to your [config file](config.md). When the blyg returns
+  a server error, Burrow backs off and says "blyg unavailable" quietly.
+- **Unicode.** Text you write is saved clean and composed (NFC), shortened
+  text never cuts a character in half, international blyg addresses show
+  their `xn--` form, and quotes from right-to-left text can't reorder the
+  words around them. A new `lang` setting marks the preview's language.
+
 ## Burrow 0.20.0
 
 Your notes stay open while you write, the panes beside the editor resize, and

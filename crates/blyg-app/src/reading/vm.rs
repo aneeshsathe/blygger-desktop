@@ -194,9 +194,13 @@ pub fn post_title(r: &ReadingItem) -> String {
     }
 }
 
-/// `rue.blyg.example.com` from an origin.
+/// `rue.blyg.example.com` from an origin, for display: an internationalized
+/// host shows as Unicode with its `xn--` form beside it (spec §14,
+/// `blyg_core::origin::display_host`).
 pub fn host(origin: &str) -> String {
-    crate::vm::url_host(origin).unwrap_or_else(|| origin.trim_end_matches('/').to_string())
+    blyg_core::origin::display_host(origin)
+        .or_else(|| crate::vm::url_host(origin))
+        .unwrap_or_else(|| origin.trim_end_matches('/').to_string())
 }
 
 /// The small badge after the source: `edited · v5`, `new`, `withdrawn`.
@@ -281,6 +285,28 @@ pub fn web_url(r: &ReadingItem) -> Option<String> {
             }
         })
         .or_else(|| blyg_core::item_doc_url(&r.origin, &r.remote_id))
+}
+
+/// --- reader view --- The post's own page, for "Open posts on the
+/// author's site": its declared `page`, made absolute against its origin;
+/// http(s) with a host only, and no fallback (`None`: it has none).
+pub fn page_url(r: &ReadingItem) -> Option<String> {
+    let p = r.page.as_deref()?.trim();
+    if p.is_empty() {
+        return None;
+    }
+    let lower = p.to_ascii_lowercase();
+    let url = if lower.starts_with("http://") || lower.starts_with("https://") {
+        p.to_string()
+    } else {
+        blyg_core::origin_url(&r.origin, p.trim_start_matches('/'))?
+    };
+    let rest = url
+        .split_once("://")
+        .filter(|(scheme, _)| matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"))
+        .map(|(_, rest)| rest)?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    (!host.is_empty() && !host.contains(char::is_whitespace)).then_some(url)
 }
 
 // ---------------------------------------------------------------- version pill
@@ -907,16 +933,27 @@ pub enum QuoteSource {
 ///   source line inside the quote, `> — [title](url)`, when there's a page
 ///   to link (or just the title when there's only that).
 pub fn quote_block(selection: &str, source: &QuoteSource, into_thread: bool) -> Option<String> {
-    let sel = normalize_selection(selection);
+    let typed = normalize_selection(selection);
+    // NFC before the substring test (spec §5, decision #103): the source is
+    // NFC when its publisher followed the SHOULD; the source itself is never
+    // normalized (readers MUST NOT), so a selection from a source that isn't
+    // NFC still matches as typed.
+    let sel = blyg_core::text::nfc(&typed).into_owned();
     if sel.is_empty() {
         return None;
     }
-    let (title, url) = match source {
-        QuoteSource::Blyg { id, html, .. }
-            if into_thread && selection_text(html).contains(&sel) =>
+    if let QuoteSource::Blyg { id, html, .. } = source
+        && into_thread
+    {
+        let text = selection_text(html);
+        if let Some(passage) = [&sel, &typed]
+            .into_iter()
+            .find(|p| text.contains(p.as_str()))
         {
-            return Some(partial_quote(id, &sel));
+            return Some(partial_quote(id, passage));
         }
+    }
+    let (title, url) = match source {
         QuoteSource::Blyg { title, url, .. } | QuoteSource::Page { title, url } => (title, url),
     };
     let q = quote_lines(&sel);
@@ -935,6 +972,9 @@ pub fn blyg_item_for_url<'a>(
     subs: &[Subscription],
 ) -> Option<&'a ReadingItem> {
     let path_of = |u: &str| -> Option<(String, String)> {
+        // A page's URL and an origin, both in the one spelling (§12.2,
+        // §15.4 step 2) before they're compared.
+        let u = &blyg_core::origin::fold_url(u)?;
         let host = crate::vm::url_host(u)?;
         let rest = u.split_once("://")?.1;
         let path = rest.split_once('/').map_or("", |(_, p)| p);
@@ -1351,6 +1391,46 @@ mod tests {
         assert_eq!(
             normalize_selection("  The sea \r\n\n rises  "),
             "The sea\nrises"
+        );
+    }
+
+    /// Decision #103: a selection is put in NFC before the substring test;
+    /// the source is never normalized, so a decomposed source still matches
+    /// a selection as typed.
+    #[test]
+    fn a_selection_is_nfc_before_the_partial_quote_test() {
+        let blyg = |html: &str| QuoteSource::Blyg {
+            id: ID.into(),
+            html: html.into(),
+            title: "T".into(),
+            url: None,
+        };
+        let composed = blyg("<p>A caf\u{e9} by the sea.</p>");
+        assert_eq!(
+            quote_block("cafe\u{301} by", &composed, true).as_deref(),
+            Some(format!("![[{ID}]]\n> caf\u{e9} by").as_str())
+        );
+        let decomposed = blyg("<p>A cafe\u{301} by the sea.</p>");
+        assert_eq!(
+            quote_block("cafe\u{301} by", &decomposed, true).as_deref(),
+            Some(format!("![[{ID}]]\n> cafe\u{301} by").as_str())
+        );
+        // Not in the post at all: a plain blockquote, in NFC.
+        assert_eq!(
+            quote_block("the cafe\u{301}", &composed, true).as_deref(),
+            Some("> the caf\u{e9}\n>\n> — T")
+        );
+    }
+
+    #[test]
+    fn origins_compare_in_one_spelling_and_show_their_unicode_host() {
+        assert_eq!(
+            host("https://xn--bcher-kva.example/"),
+            "bücher.example (xn--bcher-kva.example)"
+        );
+        assert_eq!(
+            host("https://Rue.blyg.example.com/"),
+            "rue.blyg.example.com"
         );
     }
 

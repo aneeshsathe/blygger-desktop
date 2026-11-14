@@ -129,6 +129,7 @@ export function openPostMenu() {
     else if (act === 'tk') openTk();
     else if (act === 'history') openHistory();
     else if (act === 'withdraw') askWithdraw();
+    else if (act === 'copies') openCopies(); // --- syndication ---
     else if (act === 'discard') askDiscard();
     else if (act === 'delete') askDelete();
   };
@@ -393,6 +394,56 @@ function askPin(id, v, h) {
     else go();
   };
 }
+
+// ---------------------------------------------------------------- copies elsewhere
+// --- syndication --- (src/syndication.rs) where a published post is also
+// posted: GET/PUT /api/items/:id/syndication. Each change is one PUT with
+// the item's revision, an in-place rewrite: never a new version. Removing
+// one asks first.
+export async function openCopies() {
+  const b = J(S.B.w_copies_begin());
+  if (b.error) { toast(esc(b.error.text)); return; }
+  openSheet('<h4>Copies elsewhere</h4><p class="w-muted">Reading the list…</p>', { label: 'Copies elsewhere' });
+  const g = await call('GET', b.path);
+  const v = J(S.B.w_copies_view(g.status, g.body));
+  if (v.error) { closeSheet(); toast(esc(v.error.text), 4200); return; }
+  showCopies(b, v, '');
+}
+
+function showCopies(b, v, error) {
+  const { entries, served } = v;
+  const s = openSheet(`<h4>Copies elsewhere · ${esc(b.title)}</h4>
+    <p class="w-muted">Where you've posted this elsewhere. It's listed on the post as your claim; changing it never publishes a new version.</p>
+    ${served ? '' : '<p class="w-muted">Your blyg doesn\'t keep this list yet (it needs a newer studio).</p>'}
+    <div class="w-list">${entries.length ? entries.map((e, i) => `<div class="w-row w-copy"><b>${esc(e.host)}</b><span class="w-flex w-muted" title="${esc(e.url)}">${esc(e.url)}</span><small>v${esc(String(e.version))}</small><button type="button" data-rm="${i}">Remove</button></div>`).join('') : '<p class="w-muted">None listed yet.</p>'}</div>
+    <label class="w-lbl" for="w-curl">Add a copy: its https: address, and the version it was made from (blank: v${esc(String(b.current))})</label>
+    <div class="w-row"><input id="w-curl" class="w-in w-flex" autocomplete="off" inputmode="url" placeholder="https://…"><input id="w-cver" class="w-in" style="width:4.5rem" autocomplete="off" placeholder="v${esc(String(b.current))}"></div>
+    ${error ? `<p class="w-err">${esc(error)}</p>` : ''}
+    <div class="w-row"><span class="w-flex"></span><button type="button" data-x="close">Close</button><button type="button" data-x="add" ${served ? '' : 'disabled'}>Add</button></div>`, { label: 'Copies elsewhere' });
+  const put = async (remove, url, ver) => {
+    const r = J(S.B.w_copies_put(b.path, JSON.stringify(entries), remove, url, ver, b.current, v.revision));
+    if (r.error) { showCopies(b, v, r.error.text); return; }
+    const a = await call(r.req.method, r.req.path, r.req.body);
+    const ans = J(S.B.w_copies_answer(b.id, v.revision, a.status, a.body));
+    if (ans.error) { showCopies(b, v, ans.error.text); return; }
+    await persist({ quiet: true });
+    showCopies(b, { entries: ans.entries, revision: ans.revision, served: true }, '');
+  };
+  const add = () => { if (served) put('', $('#w-curl').value, $('#w-cver').value); };
+  $('#w-curl').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  $('#w-cver').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  s.onclick = (e) => {
+    const rm = e.target.closest('[data-rm]');
+    if (rm) {
+      const it = entries[+rm.dataset.rm];
+      if (it && window.confirm(`Take ${it.host} off this post's copies elsewhere? The copy itself stays where it is.`)) put(it.url, '', '');
+      return;
+    }
+    const x = e.target.closest('[data-x]'); if (!x) return;
+    if (x.dataset.x === 'add') add(); else closeSheet();
+  };
+}
+W.openCopies = openCopies;
 
 // ---------------------------------------------------------------- withdraw, delete, discard
 export function askWithdraw() {

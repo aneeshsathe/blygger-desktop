@@ -194,7 +194,35 @@ pub struct Prefs {
     // --- browser --- (read-only here: set in the config file)
     pub open_links: crate::app::browser::OpenLinks,
     pub content_blocking: bool,
+    // --- lang --- (read-only here: set in the config file)
+    /// `lang`: the `lang` of the preview and reader pages (default `en`).
+    pub lang: String,
+    // --- reader view / changelog ---
+    /// `open-posts-on-site`: an opened post shows its own page, as its
+    /// author styled it, instead of Burrow's reader (off by default).
+    pub author_site: bool,
+    // --- end reader view / changelog ---
 }
+
+// --- lang ---
+static PAGE_LANG: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// The `lang` setting, for the pages the WebViews show (`en` until the
+/// config is read). Kept beside the prefs, like the reader theme, so the
+/// page builders need no prefs of their own.
+pub fn page_lang() -> String {
+    let l = PAGE_LANG.read().map(|l| l.clone()).unwrap_or_default();
+    if l.is_empty() { "en".into() } else { l }
+}
+
+/// `lang` as the config gives it: trimmed, `en` when unset or empty.
+fn lang_of(v: Option<&str>) -> String {
+    v.map(str::trim)
+        .filter(|l| !l.is_empty())
+        .unwrap_or("en")
+        .to_string()
+}
+// --- end lang ---
 
 impl Default for Prefs {
     fn default() -> Self {
@@ -222,7 +250,13 @@ impl Prefs {
     }
 
     pub fn from_config(c: &Config) -> Self {
+        // --- lang ---
+        let lang = lang_of(c.get("lang"));
+        if let Ok(mut l) = PAGE_LANG.write() {
+            l.clone_from(&lang);
+        }
         Self {
+            lang, // --- lang ---
             writing_font: c.font_family_writing().to_string(),
             ui_font: c.font_family_ui().to_string(),
             writing_font_set: c.is_set("font-family-writing"),
@@ -246,6 +280,9 @@ impl Prefs {
             // --- browser ---
             open_links: crate::app::browser::OpenLinks::from_value(c.get("open-links")),
             content_blocking: c.get("content-blocking") != Some("false"),
+            // --- reader view / changelog ---
+            author_site: c.get("open-posts-on-site") == Some("true"),
+            // --- end reader view / changelog ---
         }
     }
 
@@ -284,6 +321,14 @@ impl Prefs {
         if self.show_buttons != old.show_buttons {
             out.push(("show-buttons", Change::Set(self.show_buttons.to_string())));
         }
+        // --- reader view / changelog ---
+        if self.author_site != old.author_site {
+            out.push((
+                "open-posts-on-site",
+                Change::Set(self.author_site.to_string()),
+            ));
+        }
+        // --- end reader view / changelog ---
         out
     }
 
@@ -444,6 +489,34 @@ mod tests {
         );
         assert_eq!(Prefs::from_config(s.config()), new);
     }
+
+    // --- lang ---
+    #[test]
+    fn lang_defaults_to_en() {
+        assert_eq!(Prefs::default().lang, "en");
+        assert_eq!(lang_of(Some("  ")), "en");
+        assert_eq!(lang_of(Some(" pt-BR ")), "pt-BR");
+        let s = ConfigStore::in_memory("lang = fr\n");
+        assert_eq!(Prefs::from_config(s.config()).lang, "fr");
+        // Back to the default, for the other tests' pages (`page_lang`).
+        let _ = Prefs::default();
+    }
+    // --- reader view / changelog ---
+    #[test]
+    fn author_site_is_off_by_default_and_written_when_changed() {
+        assert!(!Prefs::default().author_site);
+        let mut s = ConfigStore::in_memory("theme = dark\n");
+        let old = Prefs::from_config(s.config());
+        let mut new = old.clone();
+        new.author_site = true;
+        s.set(&new.changes_from(&old)).unwrap();
+        assert_eq!(
+            s.text().unwrap(),
+            "theme = dark\nopen-posts-on-site = true\n"
+        );
+        assert!(Prefs::from_config(s.config()).author_site);
+    }
+    // --- end reader view / changelog ---
 
     // --- auto-update ---
     #[test]

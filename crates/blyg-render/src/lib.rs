@@ -45,14 +45,14 @@ pub use links::{
 pub use native::{Block, LINK_LABEL, Span, native_blocks};
 pub use shell::{
     Attachment, Citation, ShellOpts, article_html, csp, fork_lineage_html, media_html, page_shell,
-    page_shell_with, preview_media, stub_citation_html, studio_css,
+    page_shell_with, preview_media, shell_lang, stub_citation_html, studio_css,
 };
 pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
     Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
     Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
-pub use util::{escape_html, is_js_ws};
+pub use util::{absolutize_html, escape_html, is_js_ws, item_document_url};
 
 /// Crockford base32 as blyg ids use it: lowercase, no i/l/o/u.
 pub const ID_ALPHABET: &str = "0123456789abcdefghjkmnpqrstvwxyz";
@@ -64,8 +64,11 @@ pub fn code_ranges(text: &str) -> Vec<(usize, usize)> {
     markdown::code_ranges(text)
 }
 
-/// The kind of item being rendered. Only threads resolve quotes; in a
-/// fragment a `![[id]]` line is literal text, as the Worker publishes it.
+/// The kind of item being rendered. Only threads resolve quotes. In a
+/// fragment a `![[id]]` line renders as literal text (how readers show one
+/// published before decision #102), and it is a publish error: the preview
+/// reports it in `Stats::unresolved` as `DirectiveInFragment`, and
+/// [`publish_grammar_errors`] finds it without a render.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
     Fragment,
@@ -266,6 +269,7 @@ pub fn render_preview(
                     .collect();
                 html = transclusion::inject_provenance(&html, &lines);
             }
+            let html = util::absolutize_html(&html, &our_origin(&opts.mount));
             let line_map = w
                 .block_lines
                 .into_iter()
@@ -279,8 +283,12 @@ pub fn render_preview(
             };
         }
     };
-    stats.unresolved = link_errors.collect();
+    // A directive line in a fragment is a publish error (§10.1, #102); the
+    // HTML keeps it as literal text, as readers show an old one.
+    stats.unresolved = line_grammar_errors(&stripped, Kind::Fragment);
+    stats.unresolved.extend(link_errors);
     let html = splice(tk::apply_wrappers(html, &blocks, annotated.has_inline));
+    let html = util::absolutize_html(&html, &our_origin(&opts.mount));
     let line_map = block_lines
         .into_iter()
         .enumerate()
@@ -291,6 +299,56 @@ pub fn render_preview(
         line_map,
         stats,
     }
+}
+
+/// The identity origin a mount names (`https://blyg.example.com/blyg` →
+/// `https://blyg.example.com/blyg/`): the base an author's relative URL
+/// resolves against (§5.2, decision #102).
+fn our_origin(mount: &str) -> String {
+    if mount.is_empty() || mount.ends_with('/') {
+        mount.to_string()
+    } else {
+        format!("{mount}/")
+    }
+}
+
+/// The publish errors of the line grammar alone, in `text` (TK scopes
+/// already replaced by their output): a reserved `![[id@vN]]` line, labelled
+/// or not, in either kind, and in a fragment any directive line (§10.1,
+/// decision #102). Lines in code are text.
+fn line_grammar_errors(text: &linemap::Mapped, kind: Kind) -> Vec<Unresolved> {
+    let lines: Vec<&str> = text.text.split('\n').collect();
+    grammar::directive_lines(&text.text)
+        .into_iter()
+        .filter(|(_, reserved)| *reserved || kind == Kind::Fragment)
+        .map(|(k, reserved)| Unresolved {
+            line: text.lines.get(k).copied().unwrap_or(k),
+            directive: util::js_trim(lines[k]).to_string(),
+            reason: if reserved {
+                UnresolvedReason::ReservedVersion
+            } else {
+                UnresolvedReason::DirectiveInFragment
+            },
+        })
+        .collect()
+}
+
+/// What publishing `md` as `kind` would refuse for the line grammar alone,
+/// before anything is resolved (protocol 0.4 §10.1, decision #102): in a
+/// fragment, every directive line outside code (`DirectiveInFragment`); in
+/// either kind, the reserved `![[id@vN]]` line with or without a label
+/// (`ReservedVersion`). Inline sequences and lines in code are text. A
+/// thread's preview reports the reserved lines too, through
+/// [`render_preview`]'s `Stats::unresolved`, and so does a fragment's.
+pub fn publish_grammar_errors(md: &str, kind: Kind) -> Vec<Unresolved> {
+    if !md.contains("![[") {
+        return Vec::new();
+    }
+    let md = md.replace("\r\n", "\n").replace('\r', "\n");
+    let (scopes, _) = tk::parse_scopes(&md);
+    let src = linemap::Mapped::identity(&md);
+    let (stripped, _) = tk::preview_strip(&src, &scopes);
+    line_grammar_errors(&stripped, kind)
 }
 
 /// Render plain Markdown exactly as the Worker's `renderMarkdown` (no TK,

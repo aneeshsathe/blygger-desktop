@@ -7,6 +7,7 @@
 //! The store's own lock is never held across network I/O, so UI reads and
 //! saves stay instant while a push is in flight.
 
+mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
 mod worker;
 
@@ -41,14 +42,24 @@ pub const CHANGES_SEEN: &str = "changes_seen:";
 /// collection is fetched again only when one of these moved.
 pub const ITEMS_DEPS: &[&str] = &["items", "settings"];
 pub const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
-pub const READING_DEPS: &[&str] = &["reading", "subscriptions", "signals", "hoppers"];
+/// The rows also carry each post's thumb (`signals`) and hoppers (`hoppers`),
+/// but those have their own, much smaller reads (`SIGNALS_DEPS`,
+/// `HOPPERS_DEPS`): a moved thumb or membership never walks the whole list
+/// again (issue #71).
+pub const READING_DEPS: &[&str] = &["reading", "subscriptions"];
+/// The owner's thumbs on the held reading rows (`GET /api/signals`).
+pub const SIGNALS_DEPS: &[&str] = &["signals"];
 /// --- hoppers --- the hoppers, their memberships and the unheld posts.
 pub const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
 
 /// With `/api/changes`, everything is still read whole this often, as a
 /// safety net (a trigger the server's dependency matrix misses, lineage
-/// fills that wait on a later pull).
+/// fills that wait on a later pull). Each such pass that finds nothing the
+/// counters hadn't already said doubles the wait, up to `FULL_PULL_MAX`;
+/// one that finds something goes back to this (`SyncOptions::full_pull_every`).
 pub const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
+/// The longest the safety net backs off to (`SyncOptions::full_pull_max`).
+pub const FULL_PULL_MAX: Duration = Duration::from_secs(2 * 60 * 60);
 
 /// One item's autosave pushes are at least this far apart (`force` ignores
 /// it): about 20 writes a minute at most from continuous typing, well under
@@ -69,6 +80,29 @@ pub const READ_SYNC_UPLOADED: &str = "read_sync_uploaded";
 /// (mark unread syncs, and reads carry `readAt`).
 pub const READ_CLEAR: &str = "read_clear";
 
+/// How hard Burrow polls the blyg (`sync-cadence` in the config file).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyncCadence {
+    /// Change checks every 15 s, like Studio.
+    #[default]
+    Normal,
+    /// For a blyg on a metered or free database plan (Cloudflare D1's free
+    /// tier): change checks every minute, the reading list read again at
+    /// most every 10 minutes, the safety net hourly at first.
+    Low,
+}
+
+impl SyncCadence {
+    /// `normal` or `low` (anything else: normal).
+    pub fn parse(s: &str) -> SyncCadence {
+        if s.trim().eq_ignore_ascii_case("low") {
+            SyncCadence::Low
+        } else {
+            SyncCadence::Normal
+        }
+    }
+}
+
 /// Timings. Defaults follow the spec; tests shrink them.
 #[derive(Debug, Clone)]
 pub struct SyncOptions {
@@ -86,6 +120,40 @@ pub struct SyncOptions {
     pub reading_pages: u32,
     /// Public item documents fetched per pull to fill in lineage (0 = none).
     pub lineage_fetches: usize,
+    /// The safety net's first interval: everything read whole this long
+    /// after the last such pass ([`FULL_PULL_EVERY`]).
+    pub full_pull_every: Duration,
+    /// The longest the safety net backs off to while it finds nothing
+    /// ([`FULL_PULL_MAX`]).
+    pub full_pull_max: Duration,
+    /// Background pulls read the reading list again at most this often when
+    /// only its own counter (`reading`: imports, read marks) moved. A
+    /// manual sync, a moved subscription and the safety net don't wait.
+    pub reading_gap: Duration,
+    /// The first wait after a 5xx (the blyg's Worker or database failed,
+    /// e.g. a `D1_ERROR` once the free tier's daily reads are spent).
+    /// Doubles on each one, up to `server_backoff_max`.
+    pub server_backoff_initial: Duration,
+    pub server_backoff_max: Duration,
+}
+
+impl SyncOptions {
+    /// The defaults for `cadence`.
+    pub fn for_cadence(cadence: SyncCadence) -> SyncOptions {
+        let normal = SyncOptions::default();
+        match cadence {
+            SyncCadence::Normal => normal,
+            SyncCadence::Low => SyncOptions {
+                pull_interval: Duration::from_secs(4 * 60),
+                full_pull_every: Duration::from_secs(60 * 60),
+                full_pull_max: Duration::from_secs(6 * 60 * 60),
+                reading_gap: Duration::from_secs(10 * 60),
+                server_backoff_initial: Duration::from_secs(2 * 60),
+                server_backoff_max: Duration::from_secs(60 * 60),
+                ..normal
+            },
+        }
+    }
 }
 
 impl Default for SyncOptions {
@@ -98,6 +166,11 @@ impl Default for SyncOptions {
             start_worker: true,
             reading_pages: 20,
             lineage_fetches: 20,
+            full_pull_every: FULL_PULL_EVERY,
+            full_pull_max: FULL_PULL_MAX,
+            reading_gap: Duration::from_secs(60),
+            server_backoff_initial: Duration::from_secs(30),
+            server_backoff_max: Duration::from_secs(30 * 60),
         }
     }
 }
@@ -109,6 +182,11 @@ enum Health {
     Ok,
     Offline,
     Error,
+    /// The blyg answered 5xx: its Worker or database failed (`quota`: a
+    /// `D1_ERROR` that names the daily limit).
+    Unavailable {
+        quota: bool,
+    },
 }
 
 struct NetState {
@@ -131,6 +209,13 @@ struct NetState {
     changes: Option<bool>,
     /// When everything was last read whole.
     full_at: Option<Instant>,
+    /// The safety net's current interval (`full_pull_every`, doubling while
+    /// it finds nothing, up to `full_pull_max`).
+    full_every: Duration,
+    /// When the reading list was last walked whole.
+    reading_at: Option<Instant>,
+    /// The wait before the next try after a 5xx.
+    server_backoff: Duration,
     /// A 429 is being waited out (its notice was sent).
     rate_limited: bool,
     /// A 403 is holding the outbox (its notice was sent).
@@ -197,6 +282,24 @@ const LINEAGE_BUDGET: Duration = Duration::from_secs(8);
 
 /// A list read for a pull: `None` when it changed under every walk
 /// (`CursorExpired`), so this pull leaves it as held and the next reads it.
+/// A 5xx from the blyg: `Some(quota)`, where `quota` says the message names
+/// Cloudflare D1's daily limit (`D1_ERROR: … exceeded D1's free tier daily
+/// row read limit`). A stock studio says only "internal server error";
+/// a Worker that passes the database's message on says which.
+pub(crate) fn server_failure(e: &CoreError) -> Option<bool> {
+    let CoreError::Rejected {
+        status, message, ..
+    } = e
+    else {
+        return None;
+    };
+    if *status < 500 {
+        return None;
+    }
+    let m = message.to_ascii_lowercase();
+    Some(m.contains("d1_error") && (m.contains("limit") || m.contains("exceeded")))
+}
+
 fn settled<T>(r: Result<T>) -> Result<Option<T>> {
     match r {
         Ok(v) => Ok(Some(v)),
@@ -242,6 +345,9 @@ impl Engine {
                 reading_served: false,
                 changes: None,
                 full_at: None,
+                full_every: opts.full_pull_every,
+                reading_at: None,
+                server_backoff: opts.server_backoff_initial,
                 rate_limited: false,
                 scope_blocked: false,
                 pushed: HashMap::new(),
@@ -340,6 +446,10 @@ impl Engine {
                 pending: self.store.pending_count(),
             },
             Health::Error => SyncStatus::Error,
+            Health::Unavailable { quota } => SyncStatus::Unavailable {
+                pending: self.store.pending_count(),
+                quota,
+            },
             Health::Ok if pushing => SyncStatus::Syncing,
             Health::Ok if self.earliest_due().is_some() => SyncStatus::Saving,
             Health::Ok => SyncStatus::Synced,
@@ -366,6 +476,7 @@ impl Engine {
         let mut st = self.state();
         st.health = Health::Ok;
         st.backoff = self.opts.backoff_initial;
+        st.server_backoff = self.opts.server_backoff_initial;
         st.retry_at = None;
         st.rate_limited = false;
         st.scope_blocked = false;
@@ -398,6 +509,18 @@ impl Engine {
                 )));
             }
         }
+        // A 5xx: the blyg's Worker or its database failed. Retrying every
+        // few seconds can't make it recover sooner (a D1 free-tier day
+        // ends at 00:00 UTC), so wait much longer, and say so quietly in
+        // the status bar rather than as an error (issue #71). A manual sync
+        // still tries at once.
+        if let Some(quota) = server_failure(e) {
+            let mut st = self.state();
+            st.health = Health::Unavailable { quota };
+            st.retry_at = Some(Instant::now() + st.server_backoff);
+            st.server_backoff = (st.server_backoff * 2).min(self.opts.server_backoff_max);
+            return;
+        }
         let mut st = self.state();
         let health = match e {
             CoreError::Offline => Health::Offline,
@@ -422,6 +545,12 @@ impl Engine {
         if newly_signed_out {
             self.emit(CoreEvent::SignedOut);
         }
+    }
+
+    /// The wait before the next try after a 5xx (tests).
+    #[cfg(test)]
+    fn server_backoff(&self) -> Duration {
+        self.state().server_backoff
     }
 
     /// The blyg refused the stored credential (401) this session.
@@ -571,6 +700,7 @@ impl Engine {
         }
         match crate::api::contract(self.api.contract_version()?.as_deref()) {
             Contract::Supported => {
+                self.note_syndication_served(); // --- syndication ---
                 let mut st = self.state();
                 st.compatible = true;
                 st.outdated = false;
@@ -648,6 +778,9 @@ impl Engine {
         }
         if op.kind == OpKind::Hopper {
             return self.run_hopper(op); // --- hoppers ---
+        }
+        if op.kind == OpKind::Syndication {
+            return self.run_syndication(op); // --- syndication ---
         }
         if op.kind == OpKind::DeleteRemote {
             // A draft an older Burrow retired: no row holds its revision, so
@@ -807,7 +940,11 @@ impl Engine {
                     Err(e) => Err(e),
                 }
             }
-            OpKind::DeleteRemote | OpKind::Read | OpKind::Unread | OpKind::Hopper => {
+            OpKind::DeleteRemote
+            | OpKind::Read
+            | OpKind::Unread
+            | OpKind::Hopper
+            | OpKind::Syndication => {
                 unreachable!()
             }
         }
@@ -1082,9 +1219,21 @@ impl Engine {
 
     // ------------------------------------------------------------ pull
 
+    /// A pull asked for (a manual sync, a test): nothing waits on
+    /// `reading_gap`.
     pub fn pull(&self) -> Result<()> {
+        self.pull_as(false)
+    }
+
+    /// The worker's own pull: the reading list waits out `reading_gap`
+    /// when only its own counter moved.
+    pub(crate) fn pull_background(&self) -> Result<()> {
+        self.pull_as(true)
+    }
+
+    fn pull_as(&self, background: bool) -> Result<()> {
         let _net = self.net_lock();
-        let r = self.pull_locked();
+        let r = self.pull_locked(background);
         // Re-index any text the pull (or typing) changed (`Store::flush_fts`).
         let _ = self.store.flush_fts();
         match &r {
@@ -1097,19 +1246,24 @@ impl Engine {
 
     /// One pull. `GET /api/changes` comes first and each
     /// collection is fetched only when a domain it depends on moved since
-    /// its last accepted fetch (everything, every `FULL_PULL_EVERY`). The
+    /// its last accepted fetch (everything, every `full_pull_every`, backing
+    /// off while that finds nothing new). The
     /// revisions are captured before any data is loaded and recorded only
     /// after that collection's fetch succeeded, so a failed or partial
     /// fetch is simply done again (docs/d1-polling-cache-design.md R3).
-    fn pull_locked(&self) -> Result<()> {
+    fn pull_locked(&self, background: bool) -> Result<()> {
         self.check_server(false)?;
         let rev = self.revisions()?;
-        let full = rev.is_none()
-            || self
-                .state()
-                .full_at
-                .is_none_or(|t| t.elapsed() >= FULL_PULL_EVERY);
+        let full = rev.is_none() || {
+            let st = self.state();
+            st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
+        };
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
+        // Read only because the safety net is due: what such a read finds
+        // is what the counters missed (`surprise`), which resets the net's
+        // backoff.
+        let forced = |consumer: &str, deps: &[&str]| full && self.unchanged(&rev, consumer, deps);
+        let mut surprise = false;
 
         // Each list is one coherent acquisition (`Api::collect`): read to
         // its end before anything held here is pruned. One that kept
@@ -1118,7 +1272,8 @@ impl Engine {
         if stale("items", ITEMS_DEPS) {
             let settings = full || !self.unchanged(&rev, "items", &["settings"]);
             if let Some(wires) = settled(self.api.list_items_with(settings))? {
-                let out = self.store.merge_all(&wires)?;
+                let mut out = self.store.merge_all(&wires)?;
+                out.changed |= self.store.merge_wire_syndication(&wires)?; // --- syndication ---
                 for (local_id, mine, theirs) in out.conflicts {
                     self.emit(CoreEvent::Conflict {
                         local_id,
@@ -1127,6 +1282,7 @@ impl Engine {
                     });
                 }
                 if out.changed {
+                    surprise |= forced("items", ITEMS_DEPS);
                     self.emit(CoreEvent::ItemsChanged);
                 }
                 self.accept(&rev, "items", ITEMS_DEPS)?;
@@ -1137,7 +1293,9 @@ impl Engine {
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
-                    reading_changed |= self.store.replace_subscriptions(&subs)?;
+                    let changed = self.store.replace_subscriptions(&subs)?;
+                    surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
+                    reading_changed |= changed;
                     self.accept(&rev, "subscriptions", SUBSCRIPTIONS_DEPS)?;
                 }
                 Err(CoreError::NotFound) => {
@@ -1148,22 +1306,37 @@ impl Engine {
             }
         }
         let mut reading_err = None;
+        // Thumbs and hoppers ride on a whole walk (the cursor's generation
+        // covers them); without one they have reads of their own, below.
+        let mut walked_whole = false;
         // Read state advances the `reading` revision, so it needs no
-        // exception here.
-        if stale("reading", READING_DEPS) {
+        // exception here. A background pull where only `reading` moved
+        // (imports, read marks, often this Mac's own) waits out
+        // `reading_gap` since the last walk; a moved subscription doesn't.
+        let gap_open = !background
+            || !self.unchanged(&rev, "reading", &["subscriptions"])
+            || self
+                .state()
+                .reading_at
+                .is_none_or(|t| t.elapsed() >= self.opts.reading_gap);
+        if stale("reading", READING_DEPS) && (full || gap_open) {
+            let forced_reading = forced("reading", READING_DEPS);
             let fetched = self.fetch_reading()?;
             // A list that kept changing while it was read: as held, and
             // read again next pull.
             let mut whole = !matches!(fetched, Reading::Changing);
-            if let Reading::Read(items, complete) = fetched {
+            if let Reading::Read(items, complete, synd) = fetched {
                 let kinds = self
                     .store
                     .subscriptions()
                     .into_iter()
                     .map(|s| (s.id, s.kind))
                     .collect();
-                reading_changed |= self.store.merge_reading(&items, complete, &kinds)?;
-                reading_changed |= self.fill_lineage(&items, complete, &kinds)?;
+                let mut changed = self.store.merge_reading(&items, complete, &kinds)?;
+                changed |= self.store.set_reading_syndication(&synd)?; // --- syndication ---
+                changed |= self.fill_lineage(&items, complete, &kinds)?;
+                surprise |= changed && forced_reading;
+                reading_changed |= changed;
                 if self.read_sync_on() {
                     match self.reconcile_reads(&items) {
                         Ok(cleared) => reading_changed |= cleared,
@@ -1172,9 +1345,29 @@ impl Engine {
                 }
                 // A walk that stopped at its page budget isn't done.
                 whole = complete;
+                walked_whole = complete;
             }
             if whole {
                 self.accept(&rev, "reading", READING_DEPS)?;
+                self.state().reading_at = Some(Instant::now());
+            }
+        }
+        // The owner's thumbs, when only they moved: the signals list, not
+        // the whole reading list again (issue #71).
+        if walked_whole {
+            self.accept(&rev, "signals", SIGNALS_DEPS)?;
+        } else if stale("signals", SIGNALS_DEPS) {
+            match self.fetch_signals() {
+                Ok(changed) => {
+                    surprise |= changed && forced("signals", SIGNALS_DEPS);
+                    reading_changed |= changed;
+                    self.accept(&rev, "signals", SIGNALS_DEPS)?;
+                }
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                // A refused read leaves what's held; asked again next pull.
+                Err(_) => {}
             }
         }
         // --- hoppers --- the hoppers and every membership (yours too), for
@@ -1182,6 +1375,7 @@ impl Engine {
         if stale("hoppers", HOPPERS_DEPS) {
             match self.fetch_hoppers() {
                 Ok(changed) => {
+                    surprise |= changed && forced("hoppers", HOPPERS_DEPS);
                     reading_changed |= changed;
                     self.accept(&rev, "hoppers", HOPPERS_DEPS)?;
                 }
@@ -1201,6 +1395,7 @@ impl Engine {
             match self.fetch_freshness() {
                 Ok(Some((_, changed))) => {
                     if changed {
+                        surprise |= forced("freshness", upkeep::FRESHNESS_DEPS);
                         self.emit(CoreEvent::ItemsChanged);
                     }
                     self.accept(&rev, "freshness", upkeep::FRESHNESS_DEPS)?;
@@ -1217,7 +1412,15 @@ impl Engine {
             self.emit(CoreEvent::ReadingChanged);
         }
         if full && rev.is_some() {
-            self.state().full_at = Some(Instant::now());
+            let mut st = self.state();
+            st.full_at = Some(Instant::now());
+            // Found what the counters missed: back to the first interval.
+            // Found nothing: wait twice as long next time, up to the cap.
+            st.full_every = if surprise {
+                self.opts.full_pull_every
+            } else {
+                (st.full_every * 2).min(self.opts.full_pull_max.max(self.opts.full_pull_every))
+            };
         }
         reading_err.map_or(Ok(()), Err)
     }
@@ -1240,12 +1443,21 @@ impl Engine {
         };
         if self.store.meta(CHANGES_EPOCH).as_deref() != Some(c.epoch.as_str()) {
             // --- upkeep --- `freshness`: the stale quotes (sync/upkeep.rs).
-            for consumer in ["items", "subscriptions", "reading", "hoppers", "freshness"] {
+            for consumer in [
+                "items",
+                "subscriptions",
+                "reading",
+                "signals",
+                "hoppers",
+                "freshness",
+            ] {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
             }
             self.store.set_meta(CHANGES_EPOCH, &c.epoch)?;
-            self.state().full_at = None;
+            let mut st = self.state();
+            st.full_at = None;
+            st.full_every = self.opts.full_pull_every;
         }
         Ok(Some(c))
     }
@@ -1282,6 +1494,17 @@ impl Engine {
             &format!("{CHANGES_SEEN}{consumer}"),
             &serde_json::to_string(&seen).unwrap_or_default(),
         )
+    }
+
+    /// Read the owner's whole signals list (`GET /api/signals`) and lay it
+    /// over the held reading rows (`Store::replace_thumbs`). A server
+    /// without the route (404) leaves the rows' own thumbs. True when a row
+    /// changed.
+    fn fetch_signals(&self) -> Result<bool> {
+        match self.api.signals()? {
+            Some(list) => self.store.replace_thumbs(&list),
+            None => Ok(false),
+        }
     }
 
     // ------------------------------------------------------------ hoppers
@@ -1639,6 +1862,7 @@ impl Engine {
         let pages = self.opts.reading_pages.max(1);
         'walk: for _ in 0..=crate::api::CURSOR_RESTARTS {
             let mut all: Vec<ReadingItem> = Vec::new();
+            let mut synd: Vec<crate::store::ReadingSyndication> = Vec::new(); // --- syndication ---
             let mut cursor: Option<String> = None;
             for _ in 0..pages {
                 let page = match self
@@ -1659,6 +1883,7 @@ impl Engine {
                     st.reading_unavailable = false;
                     st.reading_served = true;
                 }
+                synd.extend(page.syndication); // --- syndication ---
                 // Only a server that advertises read state means it.
                 let keep = self.read_sync_on();
                 all.extend(page.items.into_iter().map(|mut it| {
@@ -1670,10 +1895,10 @@ impl Engine {
                 match page.next {
                     // Opaque cursor: passed back verbatim.
                     Some(n) => cursor = Some(n),
-                    None => return Ok(Reading::Read(all, true)),
+                    None => return Ok(Reading::Read(all, true, synd)),
                 }
             }
-            return Ok(Reading::Read(all, false));
+            return Ok(Reading::Read(all, false, synd));
         }
         Ok(Reading::Changing)
     }
@@ -1772,8 +1997,13 @@ impl Engine {
 
 /// What one reading pull read.
 enum Reading {
-    /// The rows, and whether the walk reached the list's end.
-    Read(Vec<ReadingItem>, bool),
+    /// The rows, whether the walk reached the list's end, and (---
+    /// syndication ---) each row's served copies elsewhere.
+    Read(
+        Vec<ReadingItem>,
+        bool,
+        Vec<crate::store::ReadingSyndication>,
+    ),
     /// The server has no imported reading list.
     Unavailable,
     /// The list changed under every walk (`cursor-expired`): nothing taken.
@@ -1782,3 +2012,6 @@ enum Reading {
 
 #[cfg(test)]
 mod read_held_tests; // --- read/unread ---
+
+#[cfg(test)]
+mod cadence_tests; // issue #71

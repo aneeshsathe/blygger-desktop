@@ -161,21 +161,11 @@ impl Connection {
 
 // ================================================================ origins
 
-/// `https://x.example/blyg` → `https://x.example/blyg/`: an origin with a
-/// trailing slash, query and fragment stripped, scheme and host lowercased.
-/// `None` unless it's an absolute http(s) URL.
+/// `https://x.example/blyg` → `https://x.example/blyg/`: the one spelling
+/// of an origin (§12.2, [`crate::origin::canonical`]). `None` unless it's an
+/// absolute http(s) URL with a host.
 pub fn normalize_origin(url: &str) -> Option<String> {
-    let mut u = url::Url::parse(url.trim()).ok()?;
-    if !matches!(u.scheme(), "http" | "https") {
-        return None;
-    }
-    u.set_query(None);
-    u.set_fragment(None);
-    let mut s = u.to_string();
-    if !s.ends_with('/') {
-        s.push('/');
-    }
-    Some(s)
+    crate::origin::canonical(url)
 }
 
 /// The URL as the user gave it, cleaned for use as a cache key: trimmed,
@@ -198,12 +188,10 @@ pub fn clean_url(url: &str) -> Option<String> {
     Some(u.to_string())
 }
 
-/// `a` and `b` name the same origin (trailing slash and case tolerated).
+/// `a` and `b` name the same origin once both are in the one spelling
+/// (§12.2: scheme and host case, default port, escapes, the final `/`).
 pub fn same_origin(a: &str, b: &str) -> bool {
-    match (normalize_origin(a), normalize_origin(b)) {
-        (Some(x), Some(y)) => x == y,
-        _ => a.trim_end_matches('/') == b.trim_end_matches('/'),
-    }
+    crate::origin::same(a, b)
 }
 
 /// `url` is at or under `origin` (a permalink of that blyg, say).
@@ -695,8 +683,9 @@ pub fn first_line(md: &str) -> Option<String> {
         // A labelled link reads as its label (studio 0.47).
         .map(crate::grammar::with_link_labels)
         .map(|l| {
-            let mut s: String = l.chars().take(120).collect();
-            if l.chars().count() > 120 {
+            // Never inside a grapheme cluster (§5.3).
+            let mut s = crate::text::prefix_graphemes(&l, 120).to_string();
+            if s.len() < l.len() {
                 s.push('…');
             }
             s

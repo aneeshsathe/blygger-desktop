@@ -19,7 +19,7 @@ use crate::grammar::{self, Ids};
 use crate::linemap::Mapped;
 use crate::markdown;
 use crate::transclusion::{Found, Resolution, Resolver, Unresolved, UnresolvedReason};
-use crate::util::{blyg_item_url, escape_html, is_js_ws};
+use crate::util::{blyg_item_url, escape_html, is_js_ws, item_document_url};
 
 /// The token a link becomes before rendering (the Worker's U+E003).
 const SENTINEL: char = '\u{E003}';
@@ -357,6 +357,11 @@ fn substitute(
         let (html, label) = match reason(resolver.resolve_link(id)) {
             Ok(f) => {
                 let href = match &f.origin {
+                    // No `page` held: the item document, never the
+                    // permalink convention (§10.1, decision #102).
+                    Some(o) if f.page.as_deref().is_none_or(str::is_empty) => {
+                        item_document_url(o, &f.id)
+                    }
                     Some(o) => blyg_item_url(o, f.kind, &f.id, f.page.as_deref()),
                     None => blyg_item_url(&origin, f.kind, &f.id, None),
                 };

@@ -714,7 +714,7 @@ pub struct Suggestion {
 }
 
 fn snippet(s: &str, max: usize) -> String {
-    let t: String = s.chars().take(max).collect();
+    let t = blyg_core::text::prefix_graphemes(s, max).to_string();
     if s.chars().count() > max {
         format!("{}…", t.trim_end())
     } else {

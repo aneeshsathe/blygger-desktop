@@ -472,7 +472,8 @@ impl MainView {
                                     }
                                 }))
                                 // --- upkeep --- "Changes from vN": a word diff.
-                                .children(self.upkeep_diff_chip(&own.id, list, v, cx)),
+                                .children(self.upkeep_diff_chip(&own.id, list, v, cx))
+                                .children(self.syndication_chip(&own.id, cx)), // --- syndication ---
                         )
                     })
                     .into_any_element()

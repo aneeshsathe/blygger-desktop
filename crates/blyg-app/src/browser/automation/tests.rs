@@ -297,9 +297,11 @@ impl Dom {
                 signed_out,
             } => (sel, text.as_deref(), signed_out.as_deref()),
             Op::Focus { sel, text } | Op::Click { sel, text } => (sel, text.as_deref(), None),
-            Op::Prep { sel } | Op::Read { sel } | Op::Exec { sel, .. } | Op::Synth { sel, .. } => {
-                (sel, None, None)
-            }
+            Op::Prep { sel }
+            | Op::Read { sel }
+            | Op::Href { sel }
+            | Op::Exec { sel, .. }
+            | Op::Synth { sel, .. } => (sel, None, None),
         };
         if let Some(so) = signed_out {
             r.signed_out = self.pick(so, None).is_some();
@@ -314,7 +316,7 @@ impl Dom {
         r.found = true;
         r.visible = true;
         match op {
-            Op::Outline | Op::Find { .. } | Op::Read { .. } => {}
+            Op::Outline | Op::Find { .. } | Op::Read { .. } | Op::Href { .. } => {}
             Op::Focus { .. } => {
                 self.focused = Some(i);
                 r.refused = Self::credential(&self.els[i]);

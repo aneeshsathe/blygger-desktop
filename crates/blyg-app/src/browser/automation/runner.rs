@@ -46,6 +46,9 @@ pub struct MacroRun {
     pub payload: String,
     /// `macro.prepare`'s line for the Preview sheet ("cut to 280 characters").
     pub note: Option<String>,
+    /// --- syndication --- the published post it cross-posts: (local id,
+    /// version, title), so the copy can be listed on it afterwards.
+    pub copy_of: Option<(blyg_core::LocalId, u32, String)>,
 }
 
 impl MacroRun {
@@ -56,7 +59,14 @@ impl MacroRun {
             spec,
             payload,
             note: None,
+            copy_of: None,
         }
+    }
+
+    /// --- syndication --- The published post this run copies.
+    pub fn with_copy_of(mut self, id: blyg_core::LocalId, version: u32, title: String) -> Self {
+        self.copy_of = Some((id, version, title));
+        self
     }
 
     pub fn with_note(mut self, note: Option<String>) -> Self {
@@ -312,6 +322,8 @@ pub(crate) trait Page {
     /// A trace entry for `macro.log`: a first line (`trace step=…`), then
     /// `  dom:` lines.
     fn trace(&mut self, _lines: &[String]) {}
+    /// --- syndication --- The link to the new post, read before `done`.
+    fn captured(&mut self, _url: &str) {}
 }
 
 struct Ctx {
@@ -642,7 +654,18 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
                     submitted = true;
                     Ok(Flow::Next)
                 }
-                Step::Done { text } => Ok(Flow::Done(text.clone())),
+                Step::Done { text } => {
+                    // --- syndication --- before `done`: the link to the new
+                    // post the site shows, when it's known to show one.
+                    if run.copy_of.is_some()
+                        && let Some(sel) =
+                            blyg_ext_crosspost::copy::capture_selector(&run.ext, &run.site.origin)
+                        && let Some(href) = capture_link(page, sel).await
+                    {
+                        page.captured(&href);
+                    }
+                    Ok(Flow::Done(text.clone()))
+                }
             }
         }
         .await;
@@ -679,6 +702,28 @@ async fn steps<P: Page>(page: &mut P, run: &MacroRun) -> Outcome {
     Outcome::Posted {
         message: format!("Posted to {}", run.site.title),
         via,
+    }
+}
+
+/// --- syndication --- How long the end of a run looks for the link to the
+/// new post (a toast shows for a few seconds).
+pub const CAPTURE_FOR: Duration = Duration::from_secs(5);
+
+/// The address of the first link matching `sel`, looked for over
+/// [`CAPTURE_FOR`]; `None` when none shows.
+async fn capture_link<P: Page>(page: &mut P, sel: &str) -> Option<String> {
+    let until = page.now() + CAPTURE_FOR;
+    loop {
+        if let Some(r) = page.eval(&Op::Href { sel: sel.into() }).await
+            && r.found
+            && r.href.starts_with("https://")
+        {
+            return Some(r.href);
+        }
+        if page.now() >= until || page.stopped() {
+            return None;
+        }
+        page.sleep(Duration::from_millis(250)).await;
     }
 }
 

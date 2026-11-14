@@ -102,8 +102,8 @@ pub fn blockquote(text: &str) -> String {
 /// > — [Source title](https://…)
 /// ```
 pub fn quote_with_source(selection: &str, title: &str, url: Option<&str>) -> String {
-    let sel: String = selection.chars().take(MAX_QUOTE).collect();
-    let q = blockquote(&sel);
+    let sel = blyg_core::text::prefix_graphemes(selection, MAX_QUOTE);
+    let q = blockquote(sel);
     match url {
         Some(u) => format!("{q}\n>\n> — {}", link(title, u)),
         None if !title.trim().is_empty() => format!("{q}\n>\n> — {}", title.trim()),

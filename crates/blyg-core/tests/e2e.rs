@@ -97,6 +97,19 @@ fn opts(worker: bool) -> SyncOptions {
         start_worker: worker,
         reading_pages: 4,
         lineage_fetches: 20,
+        reading_gap: Duration::ZERO,
+        server_backoff_initial: Duration::from_millis(200),
+        server_backoff_max: Duration::from_millis(800),
+        ..SyncOptions::default()
+    }
+}
+
+/// Sync timings for `reading_is_walked_only_when_reading_moves`.
+fn walk_opts() -> SyncOptions {
+    SyncOptions {
+        full_pull_every: Duration::from_secs(1),
+        full_pull_max: Duration::from_secs(4),
+        ..opts(false)
     }
 }
 
@@ -152,7 +165,7 @@ fn owner_as(
             &format!("Bearer {}", s.access_token().expect("access token")),
         ),
         Credential::Password(p) => {
-            let s = auth::login(base, p).expect("studio sign-in");
+            let s = studio_login(base, p);
             req.set("cookie", &format!("{}={s}", auth::SESSION_COOKIE))
         }
     };
@@ -2044,6 +2057,102 @@ fn a_subscription_change_is_picked_up_by_revision() {
     assert!(!b.subscriptions().iter().any(|s| s.id == sub));
 }
 
+/// Issue #71: what a reading refresh costs, in `GET /api/reading/imported`
+/// pages, over a scripted sequence: a signal set elsewhere, a hopper
+/// membership made elsewhere, then idle pulls across several safety-net
+/// (full pull) intervals. Signals and hoppers have their own reads, so
+/// neither walks the reading list, and an idle blyg's safety net backs
+/// off (1 s, 2 s, 4 s, capped at 4 s here).
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn reading_is_walked_only_when_reading_moves() {
+    if !has_changes() {
+        return;
+    }
+    let e = e2e();
+    let src_url = url_b();
+    let (d1, d2, d3) = (
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+        tempfile::tempdir().unwrap(),
+    );
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("walks");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} a wren"), None);
+    let me = manual(d1.path());
+    let sub = me.subscribe(&src_url, Some("Walk count")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+
+    let proxy = Proxy::start(&e.url);
+    let other = LiveBackend::open_with(d3.path(), &proxy.url, e.cred.clone(), walk_opts())
+        .expect("open LiveBackend");
+    other.sync_now().unwrap();
+    assert!(reading_item(&other, &rid).is_some());
+    proxy.take();
+    let count = |seen: &[String], pre: &str| seen.iter().filter(|r| r.starts_with(pre)).count();
+    let pages = |seen: &[String]| count(seen, "GET /api/reading/imported");
+    // A walk starts at a page without a cursor.
+    let walks = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported") && !r.contains("cursor="))
+            .count()
+    };
+
+    // A thumb set on another device.
+    me.signal(&sub.id, &rid, Some(1)).unwrap();
+    other.pull_now().unwrap();
+    let signal = proxy.take_full();
+    assert_eq!(
+        reading_item(&other, &rid).unwrap().thumb,
+        Some(1),
+        "{signal:?}"
+    );
+
+    // A hopper membership made on another device.
+    let h = me.create_hopper(&format!("{t} box")).unwrap();
+    let _gone = DropHopper(&me, h.id.clone());
+    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.sync_now().unwrap();
+    other.pull_now().unwrap();
+    let hopper = proxy.take_full();
+    assert!(
+        reading_item(&other, &rid).unwrap().hoppers.contains(&h.id),
+        "{hopper:?}"
+    );
+
+    // Idle: a pull every 250 ms for 10 s, nothing changing.
+    let start = Instant::now();
+    let mut pulls = 0;
+    while start.elapsed() < Duration::from_secs(10) {
+        other.pull_now().unwrap();
+        pulls += 1;
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    let idle = proxy.take_full();
+    eprintln!(
+        "issue #71 reading pages (walks): signal {} ({}) of {} requests, hopper {} ({}) \
+         of {}, idle {} ({}) over {pulls} pulls ({} change checks, {} requests)",
+        pages(&signal),
+        walks(&signal),
+        signal.len(),
+        pages(&hopper),
+        walks(&hopper),
+        hopper.len(),
+        pages(&idle),
+        walks(&idle),
+        count(&idle, "GET /api/changes"),
+        idle.len()
+    );
+    assert_eq!(pages(&signal), 0, "a thumb walks nothing: {signal:?}");
+    assert_eq!(count(&signal, "GET /api/signals"), 1, "{signal:?}");
+    assert_eq!(pages(&hopper), 0, "a hopper walks nothing: {hopper:?}");
+    // 1 s, then 2 s, then 4 s (the cap): at most 4 safety-net passes in
+    // 10 s where a fixed 1 s net made about 10.
+    assert!(walks(&idle) <= 4, "{idle:?}");
+    me.signal(&sub.id, &rid, None).unwrap();
+}
+
 // ------------------------------------------------------ TK generate (0.27)
 
 #[test]
@@ -2220,14 +2329,11 @@ fn no_redirects() -> ureq::Agent {
         .build()
 }
 
-/// What the owner does in the browser: sign in to the studio, open the
-/// authorize page, and allow every permission it offers. Returns where the
-/// studio sends the browser next (the loopback callback).
-fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
-    // Other tests sign in with the password too and can spend the studio's
-    // sign-in budget (429): wait it out.
+/// `auth::login`, waiting out the studio's sign-in budget (429): other
+/// tests sign in with the password too and can spend it.
+fn studio_login(base: &str, password: &str) -> String {
     let t0 = Instant::now();
-    let session = loop {
+    loop {
         match auth::login(base, password) {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
@@ -2236,7 +2342,14 @@ fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
             }
             r => break r.expect("studio sign-in"),
         }
-    };
+    }
+}
+
+/// What the owner does in the browser: sign in to the studio, open the
+/// authorize page, and allow every permission it offers. Returns where the
+/// studio sends the browser next (the loopback callback).
+fn owner_allows(base: &str, authorize_url: &str, password: &str) -> String {
+    let session = studio_login(base, password);
     let mut jar = Jar(vec![(auth::SESSION_COOKIE.to_string(), session)]);
     let page = no_redirects()
         .get(authorize_url)
@@ -2490,7 +2603,7 @@ fn a_token_without_a_scope_says_which() {
         return;
     };
     // A read-only manual token, minted as Studio → More → Client access does.
-    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let session = studio_login(&e.url, &password);
     let minted = match agent()
         .post(&format!("{}/api/authorizations", e.url))
         .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
@@ -2547,7 +2660,7 @@ fn a_token_without_a_scope_says_which() {
 fn minted_token(scope: &[&str]) -> Option<String> {
     let e = e2e();
     let password = owner_password()?;
-    let session = auth::login(&e.url, &password).expect("studio sign-in");
+    let session = studio_login(&e.url, &password);
     let minted = match agent()
         .post(&format!("{}/api/authorizations", e.url))
         .set("cookie", &format!("{}={session}", auth::SESSION_COOKIE))
@@ -5303,6 +5416,120 @@ fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
     b.save_server_ai_settings(&original).unwrap();
 }
 // --- end access-ai ---
+// --- changelog display --- studio 0.58 (contract 5.8.0): the reader's and
+// the item pages' changelog display round-trip as Studio sends them, a
+// summary is asked of the blyg (refused plainly with no provider key, never
+// a crash; 409 when there's nothing to summarize), and a change note can be
+// drafted over the whole history.
+
+#[test]
+#[ignore]
+fn changelog_display_settings_and_summaries() {
+    use blyg_core::access_ai::{AiFunction, ServerAiSettings};
+    use blyg_core::changelog::{ChangelogDisplay, ChangelogSettings, SummaryOf};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let Some(original) = b.changelog_settings().expect("settings") else {
+        eprintln!("skipped: this studio is older than 0.58 (contract 5.8)");
+        return;
+    };
+    assert!(original.served());
+    let title_before = owner("GET", &e.url, "/api/settings", None).1["siteTitle"].clone();
+
+    // A partial save: only the key that's set is sent.
+    let saved = b
+        .save_changelog_settings(&ChangelogSettings {
+            reader: Some(ChangelogDisplay::Summary),
+            ..Default::default()
+        })
+        .expect("save the reader's display");
+    assert_eq!(saved.reader, Some(ChangelogDisplay::Summary));
+    assert_eq!(saved.page, original.page, "the page's display untouched");
+    let raw = owner("GET", &e.url, "/api/settings", None).1;
+    assert_eq!(raw["readerChangelogDisplay"], "summary");
+    assert_eq!(raw["siteTitle"], title_before, "other settings untouched");
+    b.save_changelog_settings(&ChangelogSettings {
+        page: Some(ChangelogDisplay::History),
+        ..Default::default()
+    })
+    .unwrap();
+    let now = b.changelog_settings().unwrap().unwrap();
+    assert_eq!(
+        (now.page, now.reader),
+        (
+            Some(ChangelogDisplay::History),
+            Some(ChangelogDisplay::Summary)
+        )
+    );
+    // Studio refuses a value it doesn't know.
+    let (st, _) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "readerChangelogDisplay": "everything" })),
+    );
+    assert_eq!(st, 400);
+
+    // A first version without a note: nothing to summarize (409).
+    let t = tag("changelog");
+    let (id1, _) = published(&b, Kind::Fragment, &format!("{t} one version"), None);
+    match b.summarize_own_changelog(&id1) {
+        Err(CoreError::Rejected { status: 409, .. }) => {}
+        other => panic!("nothing to summarize: {other:?}"),
+    }
+
+    // Two versions with notes: a summary, or a plain refusal with no key.
+    let ai = b.server_ai_settings().unwrap();
+    let text_model = b.ai_models().unwrap().for_function(AiFunction::Changelog)[0]
+        .id
+        .clone();
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_changelog: Some(text_model),
+        ..Default::default()
+    })
+    .unwrap();
+    let (id, sid) = published(
+        &b,
+        Kind::Fragment,
+        &format!("{t} first words"),
+        Some("first"),
+    );
+    b.save(&id, &format!("{t} first words, and more")).unwrap();
+    b.sync_now().unwrap();
+    // The history note is drafted from every version so far.
+    match b.draft_note_history(&id) {
+        Ok(d) => assert!(!d.note.is_empty()),
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("note-draft with history: {other:?}"),
+    }
+    b.publish(&id, Some("added more")).unwrap();
+    match b.summarize_own_changelog(&id) {
+        Ok(s) => {
+            assert!(!s.summary.is_empty());
+            assert_eq!(s.version, 2);
+            assert!(s.label().contains("not the author's words"));
+        }
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("summary: {other:?}"),
+    }
+    // The summary is never on the wire.
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert!(!doc.to_string().contains("summary"), "{doc}");
+    // An imported item of a subscription that isn't there: not found.
+    match b.summarize_reading_changelog("no-such-subscription", "01aaaaaaaaaaaaaaaaaaaaaaaa") {
+        Err(CoreError::NotFound) | Err(CoreError::Rejected { status: 404, .. }) => {}
+        other => panic!("no subscription: {other:?}"),
+    }
+    let _ = SummaryOf::Own(sid);
+
+    // Put the settings back.
+    b.save_server_ai_settings(&ai).unwrap();
+    b.save_changelog_settings(&original).unwrap();
+}
+// --- end changelog display ---
 // ---------------------------------------------------------------- site
 // --- site --- Blyg › Site…: the public site's settings round-trip through
 // the studio as Studio sends them, a refusal comes back in its words, and
@@ -5896,4 +6123,166 @@ fn signals_list_thumbs_and_activity() {
         log.items
     );
     b.signal(&sub.id, &rid, None).unwrap();
+}
+
+/// Decision #103: what Burrow publishes is text (no C0 controls but tab,
+/// LF and CR; no U+FFFE/U+FFFF) in NFC, the hash is over exactly those
+/// bytes, and the studio's copy coming back on the next pull is the one
+/// Burrow kept, so nothing reads as a conflict or an edit.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn published_text_is_clean_nfc_and_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let t = tag("unicode");
+    let typed = format!("{t} cafe\u{301}\u{0} by the sea\u{1b}\u{FFFF}\tend");
+    let kept = format!("{t} caf\u{e9} by the sea\tend");
+    let (id, sid) = published(&b, Kind::Fragment, &typed, Some("note\u{7} e\u{301}"));
+
+    assert_eq!(b.item(&id).unwrap().content_md, kept);
+    assert_eq!(server_item(&sid)["contentMd"], kept.as_str());
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert_eq!(doc["content_md"], kept.as_str());
+    assert_eq!(doc["content_hash"], content_hash(&kept));
+    assert_eq!(doc["changelog"][0]["note"], "note \u{e9}");
+    let (s, feed) = public_get(&format!("{}/feed.xml", e.url));
+    assert_eq!(s, 200);
+    assert!(!feed.contains('\u{0}') && !feed.contains('\u{1b}'));
+
+    // A pull brings the studio's copy back: unchanged, clean, no conflict.
+    b.sync_now().unwrap();
+    let it = b.item(&id).unwrap();
+    assert_eq!(it.content_md, kept);
+    assert!(!it.conflict && !it.dirty && !it.pending_sync, "{it:?}");
+
+    // An edit typed in NFD saves as NFC, and pushes as NFC.
+    b.save(&id, &format!("{t} cafe\u{301} again")).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(
+        server_item(&sid)["contentMd"],
+        format!("{t} caf\u{e9} again").as_str()
+    );
+    assert!(!b.item(&id).unwrap().conflict);
+}
+
+// ---------------------------------------------------------------- syndication
+// --- syndication --- decision #98's gate: one client lists a copy of its
+// post without spending a version, and a second client shows it from the
+// imported item, with no fetch of the copy. Needs a studio whose
+// capabilities list `putSyndication` (studio feat/syndication, contract
+// 5.9.0); against an older one it says so and passes.
+
+#[test]
+#[ignore = "needs a local Worker (scripts/e2e-local.sh) with studio syndication (putSyndication); skips on an older studio"]
+fn syndication_is_written_in_place_and_read_by_a_second_client() {
+    e2e();
+    let src_url = url_b();
+    let src_api = Api::new(&src_url, cred_b());
+    if !src_api.serves_syndication().unwrap() {
+        eprintln!("skipped: this studio doesn't serve putSyndication yet");
+        return;
+    }
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("synd");
+    let (id, sid) = published(&source, Kind::Fragment, &format!("{t} v1"), None);
+    let versions_before = src_api.item_versions(&sid).unwrap().len();
+    let route = format!("/api/items/{sid}/syndication");
+
+    // The first client: a copy listed, local first, then sent.
+    let copy = syndication::SyndicationEntry::new("https://social.example.net/@burrow/111", 1);
+    let kept = source
+        .set_syndication(
+            &id,
+            &[
+                copy.clone(),
+                syndication::SyndicationEntry::new("http://plain.example.net/1", 1),
+            ],
+        )
+        .unwrap();
+    assert_eq!(kept, std::slice::from_ref(&copy), "https only");
+    source.sync_now().unwrap();
+    assert!(source.syndication_served());
+    let (st, list) = owner_as(&cred_b(), "GET", &src_url, &route, None);
+    assert_eq!(st, 200, "{list}");
+    let ans = syndication::parse_answer(&list).unwrap();
+    assert_eq!(ans.entries, std::slice::from_ref(&copy));
+    // The PUT bumped the item's revision, and nothing else.
+    let (_, item) = owner_as(
+        &cred_b(),
+        "GET",
+        &src_url,
+        &format!("/api/items/{sid}"),
+        None,
+    );
+    assert_eq!(item["revision"].as_u64(), Some(ans.revision));
+    assert_eq!(item["version"].as_u64(), Some(1), "no version spent");
+    assert_eq!(src_api.item_versions(&sid).unwrap().len(), versions_before);
+    assert_eq!(source.item(&id).unwrap().version, 1);
+    assert!(!source.item(&id).unwrap().pending_sync);
+    // The public item document carries it.
+    let doc = public_json(&format!("{src_url}/items/{sid}.json"));
+    assert_eq!(
+        syndication::parse_member(doc.get("syndication")).unwrap(),
+        std::slice::from_ref(&copy)
+    );
+
+    // The route refuses a non-https address (400) and an unpublished
+    // version (409).
+    let put = |entries: Value| {
+        owner_as(
+            &cred_b(),
+            "PUT",
+            &src_url,
+            &route,
+            Some(json!({"entries": entries, "expectedRevision": ans.revision})),
+        )
+        .0
+    };
+    assert_eq!(
+        put(json!([{"url": "http://plain.example.net/1", "version": 1}])),
+        400
+    );
+    assert_eq!(
+        put(json!([{"url": "https://social.example.net/@b/2", "version": 9}])),
+        409
+    );
+
+    // Burrow kept the revision the PUT answered: a later command on the
+    // post goes through, and a fresh read agrees.
+    source.pin(&id, 1).unwrap();
+    assert_eq!(
+        source.refresh_syndication(&id).unwrap(),
+        std::slice::from_ref(&copy)
+    );
+
+    // The second client: subscribed, it holds the entry with the post.
+    let sub = me.subscribe(&src_url, Some("Synd source")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&sid]);
+    wait_until(
+        "the entry on the imported row",
+        Duration::from_secs(20),
+        || {
+            me.sync_now().unwrap();
+            me.reading_syndication(&sub.id, &sid) == std::slice::from_ref(&copy)
+        },
+    );
+    assert_eq!(reading_item(&me, &sid).unwrap().version, 1);
+
+    // Removing it is in place too.
+    source.set_syndication(&id, &[]).unwrap();
+    source.sync_now().unwrap();
+    let (_, list) = owner_as(&cred_b(), "GET", &src_url, &route, None);
+    assert_eq!(syndication::parse_answer(&list).unwrap().entries, []);
+    let (_, item) = owner_as(
+        &cred_b(),
+        "GET",
+        &src_url,
+        &format!("/api/items/{sid}"),
+        None,
+    );
+    assert_eq!(item["version"].as_u64(), Some(1));
 }

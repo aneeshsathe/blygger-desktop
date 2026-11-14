@@ -209,7 +209,7 @@ fn short(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
     }
-    let mut out: String = s.chars().take(max).collect();
+    let mut out = blyg_core::text::prefix_graphemes(s, max).to_string();
     out.push('…');
     out
 }

@@ -45,6 +45,10 @@ pub enum Op {
     Prep { sel: String },
     /// What the element holds now (`value`, else `innerText`).
     Read { sel: String },
+    /// --- syndication --- The address the link (the element, or the `<a>`
+    /// it's in) points at, resolved: the new post a site links to once
+    /// it's posted.
+    Href { sel: String },
     /// Prep, then `document.execCommand("insertText", false, payload)`.
     Exec { sel: String, payload: String },
     /// Prep, then a synthetic `paste` ClipboardEvent carrying `payload`.
@@ -80,6 +84,8 @@ pub struct Reply {
     pub disabled: bool,
     /// [`Op::Outline`]'s answer.
     pub outline: Option<Outline>,
+    /// --- syndication --- [`Op::Href`]'s answer (`""`: not a link).
+    pub href: String,
 }
 
 /// What [`Op::Outline`] sees: the page's path (no query), the title's
@@ -330,6 +336,7 @@ function run(op) {
       break;
     }
     case "read": break;
+    case "href": { const a = el.closest("a"); out.href = a && a.href ? String(a.href) : ""; break; }
     case "exec": {
       const why = prep(el);
       if (why) { out.refused = why; break; }

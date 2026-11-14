@@ -9,18 +9,28 @@ keyboard?** (`show-buttons`). esc skips it at any step.
 
 Then comes an optional **interactive tour** of the real window: each step
 highlights a part of it and waits for you to press the key (⌘N, ⌘T, ⌘⏎, ⌘3,
-⌘G, ⌘Y, ⌘R, ⌘J, ⌘K, ⇧⌘C, ⇧⌘P, ⌥⌘F…). It covers writing, reading, lineage, the
-notes pane, the browser pane, and extensions: the bundled markdown-notes,
-reading-time and inspect run on sample notes during the tour, even if yours
-are off. The tour runs on sample data, so your own blyg isn't touched, nothing
-it does changes your config file, and your posts come back when it ends.
-Replay it from **Help › Burrow Tutorial** or **Settings (⌘,) › Help**, or set
-`tutorial-on-launch = true` to see it every time.
+⌘G, ⌘Y, ⌘R, ⌘J, ⌘K, ⇧⌘C, ⇧⌘P, ⌥⌘F…). The first tour screen offers:
+
+- **Quick tour** (⏎): the essentials in a couple of minutes: search, a new
+  post, autosave, fragments and threads, publishing, versions, reading, and
+  notes beside your draft. Its last card lists the feature tours.
+- **Feature tours** (1–9, or a click): Writing; AI and TK; Publishing and
+  versions; Reading; Hoppers, lineage and quotes; Notes, browser and capture;
+  Extensions and cross-post; Your blyg; Workspace. Each says how many steps it
+  has, and a tour you've walked to the end is ticked. When one ends, **Back to
+  the tours** picks another, or **Done** ends.
+- **Skip** (esc).
+
+The bundled markdown-notes, reading-time and inspect run on sample notes
+during the tour, even if yours are off. The tour runs on sample data, so your
+own blyg isn't touched, nothing it does changes your config file, and your
+posts come back when it ends. The same choice opens from **Help › Burrow
+Tutorial** or **Settings (⌘,) › Help › Take a tour…**, and
+`tutorial-on-launch = true` shows it every time.
 
 **After an update**, the first launch opens the tour on a **What's new**
-card: ⏎ starts at the steps that teach the new things (each says **NEW IN**
-its version), **Take the whole tour** starts at the beginning, and esc skips
-it. If your read marks stop syncing between Macs after an update, see
+card: ⏎ runs just the steps that teach the new things (each says **NEW IN**
+its version), **Choose a tour…** opens the tours, and esc skips it. If your read marks stop syncing between Macs after an update, see
 [the FAQ](faq.md#do-i-need-to-sign-in-again-after-updating).
 
 **Coming from another feed reader?** Blyg › Import Subscriptions from OPML…

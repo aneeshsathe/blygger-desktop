@@ -687,6 +687,45 @@ impl Backend for LiveBackend {
     }
 
     // --- contacts ---
+    // --- syndication ---
+    fn syndication(&self, id: &LocalId) -> Vec<crate::syndication::SyndicationEntry> {
+        self.engine.store.syndication(id)
+    }
+
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[crate::syndication::SyndicationEntry],
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let kept = self.e().store.set_syndication(id, entries)?;
+        self.e().emit(CoreEvent::ItemsChanged);
+        self.wake();
+        Ok(kept)
+    }
+
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let sid = self.server_id(id)?;
+        let _net = self.e().net_lock();
+        self.e().track(self.e().fetch_syndication(id, &sid))?;
+        Ok(self.e().store.syndication(id))
+    }
+
+    fn syndication_served(&self) -> bool {
+        self.engine.syndication_served()
+    }
+
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<crate::syndication::SyndicationEntry> {
+        self.engine.store.reading_syndication(sub_id, remote_id)
+    }
+    // --- end syndication ---
+
     fn contacts(&self) -> Vec<crate::contacts::Contact> {
         self.engine
             .store
@@ -1064,7 +1103,19 @@ impl Backend for LiveBackend {
         note: Option<&str>,
         extras: &crate::access_ai::PublishExtras,
     ) -> Result<PublishOutcome> {
-        let content = self.row(id)?.item.content_md;
+        let row = self.row(id)?;
+        let content = row.item.content_md;
+        // Decision #102: refused here, before anything is sent. A scratch
+        // note's kind is chosen when it's promoted, and is checked then.
+        if row.item.status != Status::Scratch
+            && let Some(message) = crate::grammar::publish_error(row.item.kind, &content)
+        {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message,
+                details: vec![],
+            });
+        }
         self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
             // A scratch note publishes by being promoted first.
@@ -2083,6 +2134,43 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.interactions(cursor))
     }
     // --- end upkeep ---
+    // --- changelog display ---
+
+    fn changelog_settings(&self) -> Result<Option<crate::changelog::ChangelogSettings>> {
+        self.e().track(self.e().api.changelog_settings())
+    }
+
+    fn save_changelog_settings(
+        &self,
+        s: &crate::changelog::ChangelogSettings,
+    ) -> Result<crate::changelog::ChangelogSettings> {
+        self.e().track(self.e().api.put_changelog_settings(s))
+    }
+
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<crate::changelog::ChangelogSummary> {
+        let of = crate::changelog::SummaryOf::Imported {
+            subscription_id: sub_id.to_string(),
+            remote_id: remote_id.to_string(),
+        };
+        self.e().track(self.e().api.summarize_changelog(&of))
+    }
+
+    fn summarize_own_changelog(&self, id: &LocalId) -> Result<crate::changelog::ChangelogSummary> {
+        let sid = self.server_id(id)?;
+        let of = crate::changelog::SummaryOf::Own(sid);
+        self.e().track(self.e().api.summarize_changelog(&of))
+    }
+
+    fn draft_note_history(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.draft_note_history(&sid, rev))
+    }
+    // --- end changelog display ---
 }
 
 impl LiveBackend {

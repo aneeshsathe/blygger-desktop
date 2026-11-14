@@ -23,6 +23,7 @@
 pub mod access_ai; // --- access-ai --- (client access, AI on the blyg)
 pub mod auth;
 pub mod browse; // --- browse --- (studio 0.49)
+pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
@@ -34,7 +35,8 @@ pub mod site;
 // --- upkeep --- stale quotes, signals, a version's text
 pub mod upkeep;
 // --- end upkeep ---
-pub mod wire;
+pub mod syndication_api;
+pub mod wire; // --- syndication --- (decision #98)
 
 use std::io::Read;
 use std::sync::Mutex;
@@ -496,6 +498,10 @@ impl Api {
             if s.cited.as_ref().is_some_and(|c| !c.complete()) {
                 s.cited = None;
             }
+            // A written origin has one spelling (§12.2).
+            if let Some(o) = crate::origin::canonical(&s.origin) {
+                s.origin = o;
+            }
             body["stubOf"] = serde_json::to_value(&s).unwrap_or(Value::Null);
         }
         if let Some(p) = provenance {
@@ -657,9 +663,11 @@ impl Api {
 
     /// `POST /api/items {mode: "fork", source}` → the new draft.
     pub fn fork(&self, of: &RemoteRef) -> Result<WireItem> {
+        // A written origin has one spelling (§12.2).
+        let origin = crate::origin::canonical(&of.origin).unwrap_or_else(|| of.origin.clone());
         let body = json!({
             "mode": "fork",
-            "source": { "origin": of.origin, "id": of.id, "version": of.version },
+            "source": { "origin": origin, "id": of.id, "version": of.version },
         });
         let w = self.call_as("POST", "/api/items", Some(body))?;
         Ok(self.resolve(w))
@@ -813,7 +821,7 @@ impl Api {
         let mut body = self.subscribe_body(url);
         body["confirm"] = json!(true);
         if let Some(t) = title {
-            body["title"] = json!(t);
+            body["title"] = json!(crate::text::for_save(t));
         }
         Ok(self
             .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
@@ -835,7 +843,7 @@ impl Api {
             body["inBlogroll"] = json!(b);
         }
         if let Some(t) = title {
-            body["title"] = t.map_or(Value::Null, |t| json!(t));
+            body["title"] = t.map_or(Value::Null, |t| json!(crate::text::for_save(t)));
         }
         self.call(
             "PATCH",
@@ -890,6 +898,26 @@ impl Api {
             Some(json!({ "thumb": thumb })),
         )
         .map(|_| ())
+    }
+
+    /// Every signal the owner holds (`GET /api/signals`, cursor pages):
+    /// `(subscriptionId, remoteId, thumb)`. `None` when the route isn't
+    /// there.
+    pub fn signals(&self) -> Result<Option<Vec<(String, String, i8)>>> {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct S {
+            subscription_id: String,
+            remote_id: String,
+            thumb: i8,
+        }
+        Ok(
+            Self::optional(self.collect::<S>("/api/signals", ""))?.map(|v| {
+                v.into_iter()
+                    .map(|s| (s.subscription_id, s.remote_id, s.thumb))
+                    .collect()
+            }),
+        )
     }
 
     pub fn clear_signal(&self, sub: &str, remote_id: &str) -> Result<()> {
@@ -995,6 +1023,7 @@ impl Api {
             return Ok(None);
         };
         let mut items = Vec::with_capacity(page.items.len());
+        let mut syndication = Vec::new(); // --- syndication ---
         for row in &page.items {
             let mut it = imported_row(row).map_err(|e| {
                 CoreError::Other(format!(
@@ -1002,11 +1031,18 @@ impl Api {
                 ))
             })?;
             it.page = it.page.take().and_then(|pg| absolute_page(&it.origin, &pg));
+            // --- syndication --- endcaps carry none (§16.14 rule 4).
+            let served = (it.state != "tombstone")
+                .then(|| crate::syndication::parse_member(row.get(crate::syndication::MEMBER)))
+                .flatten()
+                .unwrap_or_default();
+            syndication.push((it.subscription_id.clone(), it.remote_id.clone(), served));
             items.push(it);
         }
         Ok(Some(ReadingPage {
             items,
             next: page.page.next_cursor,
+            syndication,
         }))
     }
 
@@ -1182,7 +1218,11 @@ impl Api {
 
     /// `POST /api/hoppers {name}` → the new hopper (201), private and empty.
     pub fn create_hopper(&self, name: &str) -> Result<Hopper> {
-        let h: WireHopper = self.call_as("POST", "/api/hoppers", Some(json!({ "name": name })))?;
+        let h: WireHopper = self.call_as(
+            "POST",
+            "/api/hoppers",
+            Some(json!({ "name": crate::text::for_save(name) })),
+        )?;
         Ok(h.into_hopper(0))
     }
 
@@ -1191,13 +1231,13 @@ impl Api {
     pub fn update_hopper(&self, id: &str, edit: &HopperEdit) -> Result<Hopper> {
         let mut body = serde_json::Map::new();
         if let Some(n) = &edit.name {
-            body.insert("name".into(), json!(n));
+            body.insert("name".into(), json!(crate::text::for_save(n)));
         }
         if let Some(p) = edit.public {
             body.insert("public".into(), json!(p));
         }
         if let Some(d) = &edit.description {
-            body.insert("description".into(), json!(d));
+            body.insert("description".into(), json!(crate::text::for_save(d)));
         }
         let h: WireHopper = self.call_as(
             "PATCH",
@@ -1454,7 +1494,7 @@ pub fn absolute_page(origin: &str, page: &str) -> Option<String> {
 fn command_body(revision: u64, note: Option<&str>) -> Value {
     let mut b = json!({ "expectedRevision": revision });
     if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
-        b["note"] = json!(n);
+        b["note"] = json!(crate::text::for_save(n));
     }
     b
 }

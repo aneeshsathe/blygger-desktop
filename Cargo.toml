@@ -4,14 +4,21 @@ members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/b
 
 [workspace.package]
 edition = "2024"
-version = "0.20.0"
+version = "0.21.0"
 license = "MIT"
 description = "A fast, local-first macOS studio for Blygger blogs"
 # Placeholder repo; set it with scripts/set-repo.sh (see packaging/config.env).
 repository = "https://github.com/aneeshsathe/blygger-desktop"
-homepage = "https://github.com/aneeshsathe/blygger-desktop"
 authors = ["Blygger Desktop contributors"]
 keywords = ["blygger", "blog", "gpui", "macos", "writing"]
+
+# Shared third-party versions (a crate opts in with `{ workspace = true }`).
+[workspace.dependencies]
+# Unicode on the wire (spec decision #103): NFC on save, grapheme-safe cuts,
+# U-label display of an internationalized host.
+unicode-normalization = "0.1"
+unicode-segmentation = "1"
+idna = "1"
 
 [profile.release]
 lto = "thin"

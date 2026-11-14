@@ -192,7 +192,7 @@ fn cap(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
     }
-    let head: String = s.chars().take(max.saturating_sub(1)).collect();
+    let head = blyg_core::text::prefix_graphemes(s, max.saturating_sub(1)).to_string();
     // On a paragraph boundary when there's one in the last quarter.
     let cut = head
         .rfind("\n\n")

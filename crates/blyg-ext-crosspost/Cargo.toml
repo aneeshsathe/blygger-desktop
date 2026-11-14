@@ -3,7 +3,7 @@ name = "blyg-ext-crosspost"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
-description = "cross-post: Burrow's bundled extension that cross-posts a published post to Substack Notes"
+description = "cross-post: Burrow's bundled extension that cross-posts a published post to Substack Notes, Bluesky or Farcaster"
 
 [dependencies]
 blyg-ext = { path = "../blyg-ext" }

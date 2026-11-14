@@ -386,7 +386,7 @@ fn clip(s: &str, n: usize) -> String {
     if s.chars().count() <= n {
         s.to_string()
     } else {
-        let mut t: String = s.chars().take(n - 1).collect();
+        let mut t = blyg_core::text::prefix_graphemes(s, n - 1).to_string();
         t.push('…');
         t
     }

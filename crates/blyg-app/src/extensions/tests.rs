@@ -1745,3 +1745,117 @@ fn turn_off_after_not_now_clears_the_notice(cx: &mut TestAppContext) {
         "gone from the status bar"
     );
 }
+
+// ------------------------------------------------------------ declines
+
+/// A new launch, as far as consent goes: the session's questions and
+/// notices are gone; only the data folder remembers.
+fn new_session(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+    view.update_in(cx, |v, _, _| {
+        v.ext.asked.clear();
+        v.ext.notices.clear();
+        v.ext.overlay = None;
+    });
+}
+
+fn needs_consent(view: &Entity<MainView>, cx: &mut VisualTestContext, requested: Vec<Capability>) {
+    view.update_in(cx, |v, window, cx| {
+        v.ext_event(
+            blyg_ext::ExtEvent::NeedsConsent {
+                name: NOTES.into(),
+                requested,
+            },
+            window,
+            cx,
+        )
+    });
+}
+
+#[gpui_kit::test]
+fn not_now_is_remembered_across_launches(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    let config =
+        format!("extension = markdown-notes\nextension-setting = markdown-notes vault={r}\n");
+    let (view, _, cx) = setup(cx, &v, &config);
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| v.ext.overlay.is_some())
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(
+        super::declines::Declines::path(&v.data).exists(),
+        "kept in the data folder"
+    );
+    assert!(!config_text(cx).contains("extension-allow"));
+
+    // The next launch: the same question isn't asked; the notice stays.
+    new_session(&view, cx);
+    let requested = vec![Capability::Fs(r.clone()), Capability::Ui];
+    needs_consent(&view, cx, requested.clone());
+    view.read_with(cx, |v, _| {
+        assert!(v.ext.overlay.is_none(), "not asked again");
+        assert_eq!(v.ext.notices.get(NOTES), Some(&Notice::NeedsPermission));
+    });
+
+    // Undo: the notice (or Manage › Allow…) still asks.
+    view.update_in(cx, |v, window, cx| v.ext_ask_again(NOTES, window, cx));
+    assert!(view.read_with(cx, |v, _| matches!(
+        v.ext.overlay,
+        Some(Overlay::Consent { .. })
+    )));
+
+    // A manifest asking for something new is asked about.
+    new_session(&view, cx);
+    let mut grown = requested;
+    grown.push(Capability::Fs("~/Elsewhere".into()));
+    needs_consent(&view, cx, grown);
+    view.read_with(cx, |v, _| {
+        let Some(Overlay::Consent { caps, .. }) = &v.ext.overlay else {
+            panic!("asked about the new list")
+        };
+        assert_eq!(caps.len(), 3);
+    });
+}
+
+#[gpui_kit::test]
+fn a_declined_extra_capability_is_not_asked_about_again(cx: &mut TestAppContext) {
+    let v = vault();
+    let r = root_text(&v);
+    // The folder was allowed before; the manifest also asks for `ui`.
+    let config = format!(
+        "extension = markdown-notes\nextension-allow = markdown-notes fs:{r}\n\
+         extension-setting = markdown-notes vault={r}\n"
+    );
+    let (view, _, cx) = setup(cx, &v, &config);
+    view.update_in(cx, |v, window, cx| v.ext_start(window, cx));
+    wait(&view, cx, "the consent sheet", |cx| {
+        view.read_with(cx, |v, _| v.ext.overlay.is_some())
+    });
+    view.read_with(cx, |v, _| {
+        let Some(Overlay::Consent { caps, .. }) = &v.ext.overlay else {
+            unreachable!()
+        };
+        let caps: Vec<&Capability> = caps.iter().map(|c| &c.0).collect();
+        assert_eq!(caps, [&Capability::Ui]);
+    });
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+
+    // Every later launch: no sheet, no notice.
+    for _ in 0..2 {
+        new_session(&view, cx);
+        view.update_in(cx, |v, window, cx| v.ext_check_missing(window, cx));
+        view.read_with(cx, |v, _| {
+            assert!(v.ext.overlay.is_none(), "not asked again");
+            assert!(v.ext.notices.is_empty(), "no nag");
+        });
+    }
+
+    // Turning it off forgets the decline.
+    view.update_in(cx, |v, window, cx| v.ext_turn_off(NOTES, false, window, cx));
+    cx.run_until_parked();
+    let kept = std::fs::read_to_string(super::declines::Declines::path(&v.data));
+    assert!(!kept.unwrap_or_default().contains(NOTES));
+}

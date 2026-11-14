@@ -122,9 +122,10 @@ struct Created {
     id: i64,
 }
 
-/// A title cut to the server's limit, on a character boundary.
+/// A title cut to the server's limit (code points), on a grapheme cluster
+/// boundary (§5.3).
 pub fn clip_title(t: &str) -> String {
-    t.chars().take(BROWSE_TITLE_MAX).collect()
+    crate::text::prefix_graphemes(t, BROWSE_TITLE_MAX).to_string()
 }
 
 impl Api {

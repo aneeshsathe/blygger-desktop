@@ -126,15 +126,16 @@ use blyg_core::config::blygs::{self, DB_OWNER_FILE};
 /// A database there that belongs to a *different* blyg is moved aside first
 /// (`blygger.<host>.db`), so one blyg's unpushed drafts can never be pushed
 /// to another.
+///
+/// `cadence` is the config file's `sync-cadence` (issue #71).
 pub fn open_live(
     data_dir: &Path,
     url: &str,
     tokens: &Arc<dyn TokenStore>,
+    cadence: blyg_core::SyncCadence,
 ) -> Result<Option<Arc<dyn Backend>>> {
-    Ok(
-        open_live_with(data_dir, url, tokens, blyg_core::SyncOptions::default())?
-            .map(|l| Arc::new(l) as Arc<dyn Backend>),
-    )
+    let opts = blyg_core::SyncOptions::for_cadence(cadence);
+    Ok(open_live_with(data_dir, url, tokens, opts)?.map(|l| Arc::new(l) as Arc<dyn Backend>))
 }
 
 /// `open_live` with sync options (`blygger +import-opml` opens it without
@@ -337,8 +338,12 @@ fn open_blyg(url: &str, cx: &gpui_kit::App) -> Result<Option<(Arc<dyn Backend>, 
     let Some(conn) = cx.try_global::<Connection>() else {
         return Ok(None);
     };
-    let tokens = crate::settings::get(cx).tokens.clone();
-    Ok(open_live(&conn.data_dir, url, &tokens)?.map(|b| (b, Mode::Live)))
+    let settings = crate::settings::get(cx);
+    let (tokens, cadence) = (
+        settings.tokens.clone(),
+        settings.store.config().sync_cadence(),
+    );
+    Ok(open_live(&conn.data_dir, url, &tokens, cadence)?.map(|b| (b, Mode::Live)))
 }
 
 /// Swap in `next` (opened for `url`). The live backend going out is marked
@@ -696,6 +701,34 @@ impl Backend for SwitchBackend {
         self.cur().search(q)
     }
     // --- contacts ---
+    // --- syndication ---
+    fn syndication(&self, id: &LocalId) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        self.cur().syndication(id)
+    }
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[blyg_core::syndication::SyndicationEntry],
+    ) -> blyg_core::Result<Vec<blyg_core::syndication::SyndicationEntry>> {
+        self.cur().set_syndication(id, entries)
+    }
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> blyg_core::Result<Vec<blyg_core::syndication::SyndicationEntry>> {
+        self.cur().refresh_syndication(id)
+    }
+    fn syndication_served(&self) -> bool {
+        self.cur().syndication_served()
+    }
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<blyg_core::syndication::SyndicationEntry> {
+        self.cur().reading_syndication(sub_id, remote_id)
+    }
+    // --- end syndication ---
     fn contacts(&self) -> Vec<blyg_core::contacts::Contact> {
         self.cur().contacts()
     }
@@ -1264,6 +1297,33 @@ impl Backend for SwitchBackend {
         self.cur().interactions_page(cursor)
     }
     // --- end upkeep ---
+    // --- changelog display ---
+    fn changelog_settings(&self) -> Result<Option<blyg_core::changelog::ChangelogSettings>> {
+        self.cur().changelog_settings()
+    }
+    fn save_changelog_settings(
+        &self,
+        s: &blyg_core::changelog::ChangelogSettings,
+    ) -> Result<blyg_core::changelog::ChangelogSettings> {
+        self.cur().save_changelog_settings(s)
+    }
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<blyg_core::changelog::ChangelogSummary> {
+        self.cur().summarize_reading_changelog(sub_id, remote_id)
+    }
+    fn summarize_own_changelog(
+        &self,
+        id: &LocalId,
+    ) -> Result<blyg_core::changelog::ChangelogSummary> {
+        self.cur().summarize_own_changelog(id)
+    }
+    fn draft_note_history(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        self.cur().draft_note_history(id)
+    }
+    // --- end changelog display ---
 }
 
 #[cfg(test)]

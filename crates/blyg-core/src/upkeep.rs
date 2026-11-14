@@ -337,11 +337,10 @@ impl<T> Default for Page<T> {
 }
 
 /// `https://www.lin.example.org/` → `lin.example.org` (for a row's subtitle).
+/// An internationalized host shows as Unicode with its `xn--` form beside
+/// it (§14, [`crate::origin::display_host`]).
 pub fn host(origin: &str) -> String {
-    url::Url::parse(origin)
-        .ok()
-        .and_then(|u| u.host_str().map(str::to_string))
-        .unwrap_or_else(|| origin.to_string())
+    crate::origin::display_host(origin).unwrap_or_else(|| origin.to_string())
 }
 
 /// What a signal row is called: its label, else `host · id`.

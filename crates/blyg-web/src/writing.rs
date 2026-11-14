@@ -1393,7 +1393,7 @@ impl Burrow {
             Ok((_, sid)) => {
                 let mut body = json!({ "expectedRevision": self.w_rev(id) });
                 if !note.is_empty() {
-                    body["note"] = json!(note);
+                    body["note"] = json!(blyg_core::text::for_save(note));
                 }
                 req(post(format!("{}/withdraw", api::item_path(&sid)), body))
             }
@@ -1793,6 +1793,15 @@ impl Burrow {
             },
             it.version > 0,
         );
+        // --- syndication ---
+        if it.status == Status::Public {
+            add(
+                "copies",
+                "⇢  Copies elsewhere…",
+                "Where you've also posted it (no new version)".into(),
+                self.is_live(),
+            );
+        }
         if it.status == Status::Public {
             add(
                 "withdraw",

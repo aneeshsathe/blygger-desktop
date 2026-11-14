@@ -121,7 +121,7 @@ fn hex_lines(title: &str, width: usize) -> Vec<String> {
     }
     for l in &mut lines {
         if l.chars().count() > width + 1 {
-            *l = l.chars().take(width).collect::<String>() + "…";
+            *l = blyg_core::text::prefix_graphemes(l, width).to_string() + "…";
         }
     }
     lines.retain(|l| !l.is_empty());

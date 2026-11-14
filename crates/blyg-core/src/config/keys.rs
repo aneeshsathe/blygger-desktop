@@ -127,6 +127,22 @@ pub const KEYS: &[KeySpec] = &[
          drafts and reading on this Mac.",
     ),
     docs(
+        key(
+            "sync-cadence",
+            ValueKind::Choice(&["normal", "low"]),
+            Some("normal"),
+        ),
+        "How often Burrow asks your blyg what changed. normal (the default) asks every 15 \
+         seconds, like Studio, reads the reading list again at most once a minute when only \
+         it moved, and reads everything whole every 10 minutes as a safety net, backing off \
+         to every 2 hours while that finds nothing new. low asks every minute, reads the \
+         reading list at most every 10 minutes, and starts the safety net at an hour (up to \
+         6 hours). Use low for a blyg on Cloudflare's free D1 plan with a large reading \
+         list: its daily row reads can run out, and the blyg then fails until midnight UTC. \
+         Opening a blyg always syncs it at once. Takes effect the next \
+         time Burrow opens the blyg.",
+    ),
+    docs(
         key("theme", ValueKind::ThemeName, Some("system")),
         "Colour theme: system (follow macOS light and dark), light (Paper), dark (Ink), one of \
          the built-in themes (woody: cutaway, kumiko, shola, fortress; oceanic: portolan, \
@@ -169,11 +185,11 @@ pub const KEYS: &[KeySpec] = &[
         key(
             "bracket-picker",
             ValueKind::Choice(&["on", "quotes", "off"]),
-            Some("on"),
+            Some("quotes"),
         ),
-        "Which typed brackets open the post picker. on: typing [[ anywhere outside code opens \
-         it for a link, and ![[ at the start of a line in a thread for a quote. quotes: only \
-         ![[ at the start of a line; [[ stays plain text, for brackets in prose and TK scopes. \
+        "Which typed brackets open the post picker. quotes (the default): only ![[ at the start \
+         of a line in a thread opens it, for a quote; [[ stays plain text, for brackets in \
+         prose and TK scopes. on: typing [[ anywhere outside code also opens it, for a link. \
          off: typed brackets never open it. ⌘K always opens the picker.",
     ),
     // --- nearby ---
@@ -264,6 +280,25 @@ pub const KEYS: &[KeySpec] = &[
          button turns it off for one site. false turns it off everywhere.",
     ),
     // --- end browser ---
+    // --- lang ---
+    docs(
+        key("lang", ValueKind::Text, Some("en")),
+        "The language your posts are written in, as a language tag (en, fr, pt-BR, ar…). \
+         The preview and the reading view mark their pages with it, so a screen reader \
+         speaks them in the right voice and the browser hyphenates and spell-checks them \
+         as that language. It is not published: a blyg has no field for it.",
+    ),
+    // --- end lang ---
+    // --- reader view / changelog ---
+    docs(
+        key("open-posts-on-site", ValueKind::Bool, Some("false")),
+        "Open a post you read on its author's own site, styled as they styled it, where \
+         Burrow's reader would show it (macOS; elsewhere the page opens in your default \
+         browser). A post without a page of its own still opens in Burrow's reader. The \
+         toggle above an open post switches that one view; a subscription's menu can \
+         always or never open its posts this way. Settings (⌘,) toggles it.",
+    ),
+    // --- end reader view / changelog ---
     // --- chat --- (experimental: the #thicket tab; may be removed)
     docs(
         key("chat-tab", ValueKind::Bool, Some("true")),

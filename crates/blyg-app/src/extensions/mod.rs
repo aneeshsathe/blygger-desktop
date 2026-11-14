@@ -17,6 +17,7 @@
 //! Nothing here needs a blyg: the host answers extensions from the window's
 //! backend, whatever it holds (a blyg, the fake, or none).
 
+mod declines;
 mod library;
 mod macros;
 pub(crate) mod reading_slots; // --- reading slots ---
@@ -344,10 +345,9 @@ pub(crate) struct Extensions {
     pub notices: BTreeMap<String, Notice>,
     /// Consent requests not shown yet (a sheet was up).
     pub asks: std::collections::VecDeque<Ask>,
-    /// `(name, missing)` already asked about this session.
+    /// `(name, missing)` already asked about this session. What the
+    /// owner declined is kept across launches ([`declines`]).
     pub asked: Vec<(String, Vec<Capability>)>,
-    /// `(name, caps)` the user unticked when allowing the rest.
-    pub declined: Vec<(String, Vec<Capability>)>,
     pub overlay: Option<Overlay>,
     pub overlay_gen: usize,
     /// Events from the host's threads, for the UI to handle.
@@ -493,10 +493,12 @@ impl MainView {
             if matches!(s.state, ExtState::Missing) {
                 continue;
             }
-            let key = (s.name.clone(), s.missing.clone());
-            if self.ext.declined.contains(&key) {
-                continue; // the user unticked these: not a problem to nag about
+            // Declined before (on any launch): not a problem to nag about.
+            let caps = self.ext_to_ask(&s.name, &s.requested, &s.missing);
+            if caps.is_empty() {
+                continue;
             }
+            let key = (s.name.clone(), caps.clone());
             if self.ext.asked.contains(&key) {
                 self.ext
                     .notices
@@ -507,7 +509,7 @@ impl MainView {
             self.ext_ask(
                 Ask {
                     name: s.name,
-                    caps: s.missing,
+                    caps,
                     reply: None,
                 },
                 window,
@@ -559,10 +561,17 @@ impl MainView {
             },
             ExtEvent::NeedsConsent { name, requested } => {
                 self.ext.asked.push((name.clone(), requested.clone()));
+                // All of it declined before: a notice, not the sheet again.
+                let caps = self.ext_to_ask(&name, &requested, &requested);
+                if caps.is_empty() {
+                    self.ext.notices.insert(name, Notice::NeedsPermission);
+                    cx.notify();
+                    return;
+                }
                 self.ext_ask(
                     Ask {
                         name,
-                        caps: requested,
+                        caps,
                         reply: None,
                     },
                     window,
@@ -962,6 +971,47 @@ impl MainView {
                 )
                 .into_any_element(),
         )
+    }
+
+    /// The data folder for consent answers kept across launches (none in
+    /// the tour, whose answers are never kept).
+    fn ext_declines_dir(&self) -> Option<std::path::PathBuf> {
+        if self.ext_tour_on() {
+            return None;
+        }
+        self.ext.launch.as_ref().map(|l| l.data_dir.clone())
+    }
+
+    /// Of `missing`, what to ask `name` about: not what the owner declined
+    /// against this same capability list.
+    fn ext_to_ask(
+        &self,
+        name: &str,
+        requested: &[Capability],
+        missing: &[Capability],
+    ) -> Vec<Capability> {
+        match self.ext_declines_dir() {
+            Some(d) => declines::Declines::load(&d).to_ask(name, requested, missing),
+            None => missing.to_vec(),
+        }
+    }
+
+    /// Remember, across launches, that the owner declined `caps` for `name`.
+    pub(crate) fn ext_record_declines(&self, name: &str, caps: &[Capability]) {
+        let (Some(d), Some(host)) = (self.ext_declines_dir(), self.ext.host.as_ref()) else {
+            return;
+        };
+        let Some(s) = host.status().into_iter().find(|s| s.name == name) else {
+            return;
+        };
+        let _ = declines::Declines::update(&d, |x| x.record(name, &s.requested, caps));
+    }
+
+    /// Forget what `name` was refused (turned off, or permissions forgotten).
+    pub(crate) fn ext_forget_declines(&self, name: &str) {
+        if let Some(d) = self.ext_declines_dir() {
+            let _ = declines::Declines::update(&d, |x| x.forget(name));
+        }
     }
 
     /// Reopen the consent sheet for what `name` still lacks.

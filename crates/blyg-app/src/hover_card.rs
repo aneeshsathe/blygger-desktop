@@ -157,7 +157,7 @@ pub fn clip_excerpt(text: &str) -> Option<String> {
     if text.chars().count() <= EXCERPT_CHARS {
         return Some(text);
     }
-    let cut: String = text.chars().take(EXCERPT_CHARS - 1).collect();
+    let cut = blyg_core::text::prefix_graphemes(&text, EXCERPT_CHARS - 1);
     Some(format!("{}…", cut.trim_end()))
 }
 

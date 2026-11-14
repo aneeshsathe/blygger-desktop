@@ -103,7 +103,9 @@ pub fn pick_passage(
         return None;
     }
     let nth = mine.iter().position(|&i| i == pick.index)?;
-    let passage = blyg_render::normalize_selection(&pick.text);
+    // NFC, as a selection is normalized before publish's substring test
+    // (spec §5, decision #103).
+    let passage = blyg_core::text::nfc(&blyg_render::normalize_selection(&pick.text)).into_owned();
     (!passage.is_empty()).then_some((nth, passage))
 }
 

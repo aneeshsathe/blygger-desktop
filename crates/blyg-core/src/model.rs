@@ -63,6 +63,13 @@ pub fn strip_tk(md: &str) -> String {
 }
 
 /// Published length in UTF-16 code units, the unit the Worker's 1000 cap uses.
+///
+/// Deliberately not code points: the protocol's caps count code points
+/// (§5.3, decision #103), but this 1000 is the studio's own, stricter cap,
+/// checked by the studio in UTF-16 units at publish. Counting the same way
+/// keeps Burrow from offering a publish the studio refuses, and a text
+/// within 1000 UTF-16 units is always within the protocol's 2,000 code
+/// points.
 pub fn published_len(md: &str) -> usize {
     strip_tk(md).encode_utf16().count()
 }
@@ -1171,8 +1178,12 @@ pub enum SyncStatus {
     Syncing,
     /// Network unreachable; `pending` outbox entries are waiting.
     Offline { pending: usize },
-    /// Last attempt failed for a non-network reason (auth, 5xx).
+    /// Last attempt failed for a non-network reason (auth).
     Error,
+    /// The blyg answered 5xx (its Worker or database failed): Burrow waits
+    /// longer and longer before trying again (issue #71). `quota`: the
+    /// database said its daily limit is spent (Cloudflare D1's free tier).
+    Unavailable { pending: usize, quota: bool },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

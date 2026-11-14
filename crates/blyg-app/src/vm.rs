@@ -378,6 +378,24 @@ pub fn sync_label(status: SyncStatus, publishing: bool) -> (String, SyncDot) {
             SyncDot::Grey,
         ),
         SyncStatus::Error => ("sync error".into(), SyncDot::Red),
+        // A 5xx: the blyg itself failed. Quiet (grey, like offline): Burrow
+        // waits longer each time, and nothing here is lost (issue #71).
+        SyncStatus::Unavailable { pending, quota } => {
+            let what = if quota {
+                "blyg over its daily database limit"
+            } else {
+                "blyg unavailable"
+            };
+            let label = if pending == 0 {
+                format!("{what} · retrying later")
+            } else {
+                format!(
+                    "{what} · {pending} change{} waiting",
+                    if pending == 1 { "" } else { "s" }
+                )
+            };
+            (label, SyncDot::Grey)
+        }
     }
 }
 
@@ -490,7 +508,8 @@ pub fn truncate_chars(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
     }
-    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    // Code points, never inside a grapheme cluster (spec §5.3).
+    let mut out = blyg_core::text::prefix_graphemes(s, max.saturating_sub(1)).to_string();
     out.truncate(out.trim_end().len());
     out.push('…');
     out
@@ -1322,6 +1341,28 @@ mod tests {
         assert_eq!(
             sync_label(SyncStatus::Offline { pending: 2 }, false).0,
             "offline · 2 changes waiting"
+        );
+        // A 5xx is quiet (grey), not a red error (issue #71).
+        assert_eq!(
+            sync_label(
+                SyncStatus::Unavailable {
+                    pending: 0,
+                    quota: false
+                },
+                false
+            ),
+            ("blyg unavailable · retrying later".into(), SyncDot::Grey)
+        );
+        assert_eq!(
+            sync_label(
+                SyncStatus::Unavailable {
+                    pending: 2,
+                    quota: true
+                },
+                false
+            )
+            .0,
+            "blyg over its daily database limit · 2 changes waiting"
         );
         assert_eq!(sync_label(SyncStatus::Synced, true).1, SyncDot::Busy);
         assert_eq!(

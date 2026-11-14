@@ -917,3 +917,29 @@ fn reading_cache_follows_every_write() {
     assert_eq!(s.reading()[0].read_version, None);
     assert_eq!(s.unread_count(), 1);
 }
+
+// --- unicode --- A reader MUST NOT normalize an import (§5, decision #103):
+// the bytes the hash covers are the bytes kept.
+#[test]
+fn imported_text_keeps_its_exact_bytes() {
+    let s = store();
+    let k = kinds(&[("s1", SubscriptionKind::Blyg)]);
+    let nfd = "Cafe\u{301} \u{1112}\u{1161}\u{11ab}";
+    s.merge_reading(
+        &[ri(
+            "s1",
+            "A1",
+            "https://a.example/",
+            None,
+            1,
+            "2026-01-01T00:00:00Z",
+            nfd,
+        )],
+        true,
+        &k,
+    )
+    .unwrap();
+    let r = &s.reading()[0];
+    assert_eq!(r.content_md, nfd);
+    assert_eq!(content_hash(&r.content_md), content_hash(nfd));
+}

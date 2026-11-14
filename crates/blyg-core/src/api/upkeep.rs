@@ -46,7 +46,7 @@ impl Api {
     pub fn refresh_quotes(&self, id: &str, revision: u64, note: Option<&str>) -> Result<Refreshed> {
         let mut body = json!({ "expectedRevision": revision });
         if let Some(n) = note.map(str::trim).filter(|n| !n.is_empty()) {
-            body["note"] = json!(n);
+            body["note"] = json!(crate::text::for_save(n));
         }
         self.call_as(
             "POST",

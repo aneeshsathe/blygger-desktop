@@ -667,6 +667,7 @@ impl Burrow {
     /// on top of what the blyg says.
     pub fn live_reading(&mut self, rows_json: &str, hoppers_json: &str) -> String {
         let rows: Vec<Value> = serde_json::from_str(rows_json).unwrap_or_default();
+        crate::syndication::note_rows(&rows); // --- syndication ---
         let mut out = Vec::with_capacity(rows.len());
         for r in &rows {
             if let Ok(mut it) = imported_row(r) {
@@ -932,13 +933,22 @@ impl Burrow {
 
     /// The blyg's public base from `GET /api/settings` (`siteUrl`), else
     /// `origin`.
+    ///
+    /// Folded to the origin's one spelling (§12.2: lowercase scheme and host,
+    /// no default port, uppercase escapes), then held without its final `/`
+    /// because it is the base URLs are built on; comparisons go through
+    /// `blyg_core::origin::same`, which puts the `/` back.
     pub fn public_base(settings_json: &str, origin: &str) -> String {
+        let base = |s: &str| {
+            blyg_core::origin::canonical(s)
+                .map(|o| o.trim_end_matches('/').to_string())
+                .unwrap_or_else(|| s.trim_end_matches('/').to_string())
+        };
         serde_json::from_str::<Value>(settings_json)
             .ok()
-            .and_then(|v| v.get("siteUrl").and_then(Value::as_str).map(str::to_string))
-            .map(|s| s.trim_end_matches('/').to_string())
+            .and_then(|v| v.get("siteUrl").and_then(Value::as_str).map(base))
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| origin.trim_end_matches('/').to_string())
+            .unwrap_or_else(|| base(origin))
     }
 
     /// What one API answer means, as `{code, text, …}` (or `null` for 2xx).

@@ -33,10 +33,14 @@ pub mod theme;
 // --- web-reading ---
 pub mod web_reading;
 // --- end web-reading ---
+// --- reader view / changelog --- the author's site, changelog display.
+pub mod web_changelog;
+// --- end reader view / changelog ---
 // --- web-writing ---
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
+pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
@@ -969,18 +973,33 @@ fn capitalise(s: &str) -> String {
     }
 }
 
+// --- lang ---
+static PAGE_LANG: std::sync::RwLock<String> = std::sync::RwLock::new(String::new());
+
+/// The `lang` of the preview pages (`en` until set): the desktop's `lang`
+/// setting, for the web app. Nothing calls it from the page yet.
+#[wasm_bindgen]
+pub fn set_page_lang(lang: &str) {
+    if let Ok(mut l) = PAGE_LANG.write() {
+        *l = lang.trim().to_string();
+    }
+}
+// --- end lang ---
+
 /// `blyg_render::page_shell_with`, with the nonce passed in: the original
 /// seeds its nonce from `SystemTime::now()`, which panics in
 /// `wasm32-unknown-unknown`. Same document otherwise.
 pub fn page_shell(theme_css: &str, body: &str, nonce: &str) -> String {
     let style_safe = |css: &str| css.replace("</", "<\\/");
+    let lang = PAGE_LANG.read().map(|l| l.clone()).unwrap_or_default();
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
+        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>Preview</title>\n<style>{theme}</style>\n<style>{studio}</style>\n</head>\n<body>\n{body}\n\
          <script nonce=\"{nonce}\">{script}</script>\n</body>\n</html>\n",
         csp = blyg_render::escape_html(&blyg_render::csp(nonce)),
+        lang = blyg_render::shell_lang(Some(&lang)),
         theme = style_safe(theme_css),
         studio = style_safe(&blyg_render::studio_css()),
         script = blyg_render::preview_script(),

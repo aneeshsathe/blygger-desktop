@@ -58,7 +58,10 @@ pub fn is_own_row(r: &ReadingItem) -> bool {
 /// An origin as a citation spells it: absolute, with a trailing slash
 /// (blygger-studio's `normalizeOrigin`, which a reference is compared in).
 pub fn citation_origin(origin: &str) -> String {
-    format!("{}/", origin.trim_end_matches('/'))
+    // The one spelling of §12.2 (blyg_core::origin); a string that isn't a
+    // URL keeps the old shape.
+    blyg_core::origin::canonical(origin)
+        .unwrap_or_else(|| format!("{}/", origin.trim_end_matches('/')))
 }
 
 /// Your published post as a reading row; `None` for a draft, a scratch
@@ -360,6 +363,7 @@ impl MainView {
                 if let Some(i) = pick {
                     v.select_version(i, cx);
                 }
+                v.changelog_maybe_summarize(cx); // --- changelog display ---
                 cx.notify();
             });
         })
@@ -724,6 +728,11 @@ mod tests {
         assert_eq!(
             citation_origin("https://blyg.example.com/m/"),
             "https://blyg.example.com/m/"
+        );
+        // The one spelling (§12.2): case, default port, escapes.
+        assert_eq!(
+            citation_origin("HTTPS://Blyg.example.com:443/caf%c3%a9"),
+            "https://blyg.example.com/caf%C3%A9/"
         );
     }
 

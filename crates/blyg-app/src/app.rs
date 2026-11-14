@@ -128,6 +128,10 @@ pub(crate) mod server_ai;
 #[path = "upkeep/mod.rs"]
 pub(crate) mod upkeep;
 
+// --- syndication --- copies elsewhere (decision #98; hooks marked the same way)
+#[path = "syndication_ui.rs"]
+pub(crate) mod syndication;
+
 // --- tangles --- trails, the quote tray and drag-to-quote, split view
 // (hooks marked `// --- trails ---`, `// --- tray ---`, `// --- split ---`)
 #[path = "split.rs"]
@@ -312,6 +316,8 @@ enum Sheet {
     StaleQuotes(upkeep::StaleSheet),
     Signals(upkeep::SignalsSheet),
     AltText(upkeep::AltSheet),
+    // --- syndication --- Post › Copies Elsewhere…
+    Copies(Box<syndication::CopiesSheet>),
 }
 
 struct Toast {
@@ -718,6 +724,8 @@ impl MainView {
                         "layout" => p.layout = self.prefs.layout,
                         "capture-hotkey" => p.hotkey = self.prefs.hotkey.clone(),
                         "show-buttons" => p.show_buttons = self.prefs.show_buttons, // --- buttons ---
+                        // --- reader view / changelog ---
+                        "open-posts-on-site" => p.author_site = self.prefs.author_site,
                         _ => {}
                     }
                 }
@@ -1923,6 +1931,7 @@ impl MainView {
             hotkey_error: None,
             focus,
         });
+        self.changelog_settings_refresh(cx); // --- reader view / changelog ---
         cx.notify();
     }
 
@@ -2408,6 +2417,7 @@ impl Render for MainView {
         self.nearby.window_w = f32::from(window.viewport_size().width); // --- side ---
         self.nearby.dock_w = self.nearby_dock_w(cx); // --- side ---
         self.browser_frame(window, cx); // --- browser --- (after the drawers fit)
+        self.site_frame(window, cx); // --- reader view --- the author's site
         self.tray_frame(cx); // --- tray ---
         self.split_frame(cx); // --- split ---
         // --- reading compose ---
@@ -2525,6 +2535,7 @@ impl Render for MainView {
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.contacts_actions(d, cx)) // --- contacts ---
             .map(|d| self.upkeep_actions(d, cx)) // --- upkeep ---
+            .map(|d| self.syndication_actions(d, cx)) // --- syndication ---
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
@@ -3566,6 +3577,7 @@ impl MainView {
             Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
             Sheet::Signals(s) => self.render_signals_sheet(s, cx),
             Sheet::AltText(s) => self.render_alt_sheet(s, cx),
+            Sheet::Copies(s) => self.render_copies_sheet(s, cx), // --- syndication ---
             Sheet::Publish {
                 title,
                 next_version,
@@ -4362,6 +4374,7 @@ impl MainView {
             .child(self.render_chat_setting(cx)) // --- chat ---
             .child(self.render_flow_settings(cx)) // --- flow ---
             .child(self.render_nearby_setting(cx)) // --- nearby ---
+            .child(self.render_reader_view_settings(cx)) // --- reader view / changelog ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

@@ -131,6 +131,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .lineage{display:flex;gap:.4rem;flex-wrap:wrap;margin:-.25rem 0 .9rem}
 .lineage .lin{font:.75rem var(--ui);border:1px solid var(--pline);border-radius:14px;padding:.3rem .6rem;color:var(--pmuted);background:none;text-align:left}
 .lineage button.lin{color:var(--pacc);cursor:pointer;min-height:32px}
+/* --- syndication --- an imported post's copies elsewhere: plain links, the author's claim */
+.also-posted{font:.75rem var(--ui);color:var(--pmuted);margin:-.25rem 0 .9rem}
+.also-posted a{color:var(--pacc)}
 .pmenu{position:absolute;left:50%;transform:translateX(-50%);background:#1c1b18;color:#f3efe6;border-radius:12px;display:none;font:.85rem var(--ui);z-index:45;box-shadow:0 8px 24px rgba(0,0,0,.35);white-space:nowrap}
 .pmenu.on{display:flex}
 .pmenu button{background:none;border:0;color:inherit;padding:0 .75rem;min-height:44px;cursor:pointer;font:inherit}

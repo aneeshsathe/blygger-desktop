@@ -425,7 +425,7 @@ pub fn short(title: &str, width: usize) -> String {
     if t.chars().count() <= width {
         return t.to_string();
     }
-    let mut s: String = t.chars().take(width.saturating_sub(1)).collect();
+    let mut s = blyg_core::text::prefix_graphemes(t, width.saturating_sub(1)).to_string();
     s = s.trim_end().to_string();
     s.push('…');
     s

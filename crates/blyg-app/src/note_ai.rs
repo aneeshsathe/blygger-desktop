@@ -59,6 +59,11 @@ pub struct NoteAi {
     pub draft_error: Option<String>,
     /// `Some` while the classifier is on.
     pub classify: Option<Classified>,
+    // --- changelog display --- "Summarize the full history so far" (studio
+    // 0.58): offered when the blyg has it; off each time the sheet opens.
+    pub history_offered: bool,
+    pub history: bool,
+    // --- end changelog display ---
 }
 
 impl NoteAi {
@@ -128,9 +133,14 @@ impl MainView {
             ai.sheet = sheet;
         }
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.server_ai_settings() });
+        let task = cx.background_spawn(async move {
+            let s = backend.server_ai_settings();
+            // --- changelog display --- the history option needs 0.58.
+            let history = s.is_ok() && matches!(backend.changelog_settings(), Ok(Some(_)));
+            (s, history)
+        });
         cx.spawn_in(window, async move |this, cx| {
-            let r = task.await;
+            let (r, history) = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
                 let Ok(s) = r else { return };
                 let h = s.helpers();
@@ -141,6 +151,7 @@ impl MainView {
                     return;
                 };
                 ai.helpers = Some(h);
+                ai.history_offered = history && h.draft; // --- changelog display ---
                 let empty = note.read(cx).value().trim().is_empty();
                 if h.classify {
                     ai.classify = Some(Classified {
@@ -192,9 +203,16 @@ impl MainView {
         ai.drafting = true;
         ai.draft_error = None;
         let id = id.clone();
+        let history = ai.history_offered && ai.history; // --- changelog display ---
         cx.notify();
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.draft_note(&id) });
+        let task = cx.background_spawn(async move {
+            if history {
+                backend.draft_note_history(&id)
+            } else {
+                backend.draft_note(&id)
+            }
+        });
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
@@ -364,6 +382,31 @@ impl MainView {
             );
             line = line.child(crate::keymap::hint("⌥⌘N"));
         }
+        // --- changelog display --- off each time; a drafted note then
+        // covers every version so far, ending with this one.
+        if h.draft && ai.history_offered {
+            let on = ai.history;
+            line = line.child(
+                div()
+                    .id("note-history")
+                    .debug_selector(|| "note-history".into())
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .cursor_pointer()
+                    .hover(|d| d.text_color(p.ink))
+                    .when(on, |d| d.text_color(p.ink))
+                    .child(if on { "☑" } else { "☐" })
+                    .child("Summarize the full history so far")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if let Some(Sheet::Publish { ai, .. }) = this.sheet.as_mut() {
+                            ai.history = !ai.history;
+                            cx.notify();
+                        }
+                    })),
+            );
+        }
+        // --- end changelog display ---
         let mut out = div().flex().flex_col().child(line);
         let text = note.read(cx).value().to_string();
         let said = if ai.drafted.is_some() && note_is_generated(&text, ai.machine().as_deref()) {

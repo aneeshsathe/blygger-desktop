@@ -353,6 +353,7 @@ pub fn reader_page_named(
             title: "Reading".into(),
             base_href: doc.base.clone(),
             reader: true,
+            lang: Some(crate::prefs::page_lang()), // --- lang ---
         },
     )
 }
@@ -498,7 +499,7 @@ pub fn render_remote_md(
             .filter(|s| s.kind == SubscriptionKind::Rss)
             .map(|s| s.id)
             .collect();
-        let same = |a: &str| a.trim_end_matches('/') == mount;
+        let same = |a: &str| blyg_core::origin::same(a, origin);
         let reading = backend
             .reading()
             .into_iter()
@@ -529,6 +530,10 @@ impl MainView {
     pub(crate) fn reader_doc(&self) -> Option<Doc> {
         match self.reading.view {
             View::Reading => {
+                // --- reader view --- the author's own page instead.
+                if self.site_view_shown() {
+                    return None;
+                }
                 let o = self.reading.opened.as_ref()?;
                 let item = &o.item;
                 let base = origin_base(&item.origin);

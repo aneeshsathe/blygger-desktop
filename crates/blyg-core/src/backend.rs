@@ -140,6 +140,50 @@ pub trait Backend: Send + Sync {
         crate::loose::Facts::from_reading(self.base_url().as_deref(), &self.reading())
     }
     fn item(&self, id: &LocalId) -> Option<Item>;
+    // --- syndication --- (decision #98, `crate::syndication`) copies of a
+    // post on other networks. Additive; the defaults keep none and refuse
+    // changes, so implementors compile.
+    /// Your post's copies elsewhere, as last left here. Local, instant.
+    fn syndication(&self, id: &LocalId) -> Vec<crate::syndication::SyndicationEntry> {
+        let _ = id;
+        Vec::new()
+    }
+    /// Replace your published post's list. Local first and queued (written
+    /// to the blyg in place: never a new version). Returns the list as kept
+    /// (normalized: https only, one per address).
+    fn set_syndication(
+        &self,
+        id: &LocalId,
+        entries: &[crate::syndication::SyndicationEntry],
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        let _ = (id, entries);
+        Err(CoreError::Other("copies elsewhere aren't kept here".into()))
+    }
+    /// Read your published post's list from the blyg again (blocking);
+    /// what's kept here after. An edit still waiting to be sent wins.
+    fn refresh_syndication(
+        &self,
+        id: &LocalId,
+    ) -> Result<Vec<crate::syndication::SyndicationEntry>> {
+        Ok(self.syndication(id))
+    }
+    /// Whether the blyg keeps copies elsewhere (its capabilities, as last
+    /// checked). The list can still be edited here when it doesn't; it
+    /// waits on this Mac.
+    fn syndication_served(&self) -> bool {
+        false
+    }
+    /// An imported post's copies elsewhere, as its blyg served them. Local;
+    /// nothing is fetched from the copies.
+    fn reading_syndication(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Vec<crate::syndication::SyndicationEntry> {
+        let _ = (sub_id, remote_id);
+        Vec::new()
+    }
+    // --- end syndication ---
     /// --- contacts --- The owner's address book as last fetched (local,
     /// instant). Empty when the blyg doesn't serve contacts.
     fn contacts(&self) -> Vec<crate::contacts::Contact> {
@@ -1236,4 +1280,56 @@ pub trait Backend: Send + Sync {
         Err(CoreError::Other("signals aren't supported here".into()))
     }
     // --- end upkeep ---
+    // --- changelog display --- studio 0.58 (contract 5.8.0): what a
+    // reader sees of a changelog, and the blyg's AI summaries of one
+    // (`crate::changelog`). All additive with defaults.
+
+    /// The blyg's changelog settings. `Ok(None)`: not served (a studio
+    /// before 0.58, or a backend without them).
+    fn changelog_settings(&self) -> Result<Option<crate::changelog::ChangelogSettings>> {
+        Ok(None)
+    }
+
+    /// Save the changelog settings (only the keys that are `Some`); the
+    /// stored values back.
+    fn save_changelog_settings(
+        &self,
+        s: &crate::changelog::ChangelogSettings,
+    ) -> Result<crate::changelog::ChangelogSettings> {
+        let _ = s;
+        Err(CoreError::Other(
+            "changelog settings aren't supported here".into(),
+        ))
+    }
+
+    /// The blyg's AI summary of a held post's changelog notes. Asked only
+    /// when the post is opened, never for a card.
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<crate::changelog::ChangelogSummary> {
+        let _ = (sub_id, remote_id);
+        Err(CoreError::Other(
+            "changelog summaries aren't supported here".into(),
+        ))
+    }
+
+    /// The same for one of your own published posts.
+    fn summarize_own_changelog(&self, id: &LocalId) -> Result<crate::changelog::ChangelogSummary> {
+        let _ = id;
+        Err(CoreError::Other(
+            "changelog summaries aren't supported here".into(),
+        ))
+    }
+
+    /// Draft a change note that summarizes the whole history so far, ending
+    /// with the next version ("summarize the full history so far").
+    fn draft_note_history(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let _ = id;
+        Err(CoreError::Other(
+            "your blyg needs blygger-studio 0.58 or later to summarize the history".into(),
+        ))
+    }
+    // --- end changelog display ---
 }

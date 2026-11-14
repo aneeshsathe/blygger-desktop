@@ -196,6 +196,14 @@ impl MainView {
                 cx,
             );
         }
+        // --- syndication --- a macro on a published post makes a copy of it.
+        let copy_of = (entry.spec.when == blyg_ext::protocol::When::Published).then(|| {
+            (
+                item.local_id.clone(),
+                item.version,
+                crate::vm::truncate_chars(&item.title(), 48),
+            )
+        });
         let text = recipe::expand(&entry.spec.template, &vars(&item, &permalink));
         let params = MacroPrepareParams {
             macro_id: entry.spec.id.clone(),
@@ -218,7 +226,10 @@ impl MainView {
                         Some(r) => (r.text, r.note),
                         None => (text, None),
                     };
-                    let run = MacroRun::new(ext, entry.site, entry.spec, text).with_note(note);
+                    let mut run = MacroRun::new(ext, entry.site, entry.spec, text).with_note(note);
+                    if let Some((id, version, title)) = copy_of {
+                        run = run.with_copy_of(id, version, title); // --- syndication ---
+                    }
                     automation::start(v, run, window, cx);
                 }
             });

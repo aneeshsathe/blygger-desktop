@@ -259,7 +259,7 @@ impl Trail {
             version: s.version,
             via,
             title: (!s.title.trim().is_empty() && s.title != "…")
-                .then(|| s.title.chars().take(TITLE_MAX).collect()),
+                .then(|| blyg_core::text::prefix_graphemes(&s.title, TITLE_MAX).to_string()),
         }
     }
 }
