@@ -188,10 +188,20 @@ moves the page a macro fills in. `browser.open` shows the pane, full
 width, at the URL.
 
 The bundled `cross-post` extension (`crates/blyg-ext-crosspost`, run as
-`blygger +ext cross-post`) is the worked example: one site, one macro for
-Substack Notes (`tested = "2026-10-09"`), and a `macro.prepare` that fits
-the opening paragraph and the link into `max-chars` (280) characters,
-counted as grapheme clusters.
+`blygger +ext cross-post`) is the worked example: three sites, each with
+one macro and its own `browser.automate` grant. Substack Notes
+(`tested = "2026-10-09"`) opens the home feed and clicks "What's on your
+mind?". Bluesky (`https://bsky.app`) and Farcaster (`https://farcaster.xyz`)
+are `tested = "unverified"`; each opens the site's compose link
+(`/intent/compose`, `/~/compose`), which shows the composer at any pane
+width. Its `macro.prepare` fits the opening paragraph and the link into each
+site's limit: `max-chars` (280) and `bluesky-max-chars` (300) count
+grapheme clusters, and `farcaster-max-bytes` (320) counts bytes of UTF-8,
+as Farcaster does, never cutting inside a cluster. A run records nothing on
+the blyg: the protocol's place for a copy's address is the item's optional
+`syndication` member (blygger-spec 0.4 §16.14, decision #98), written in place
+without a new version, and recording one needs both a server that stores it and
+a recipe step that reads the new post's address, which macros can't do today.
 
 ## Reading slots
 
