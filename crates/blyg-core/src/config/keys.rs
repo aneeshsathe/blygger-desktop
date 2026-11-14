@@ -264,6 +264,15 @@ pub const KEYS: &[KeySpec] = &[
          button turns it off for one site. false turns it off everywhere.",
     ),
     // --- end browser ---
+    // --- lang ---
+    docs(
+        key("lang", ValueKind::Text, Some("en")),
+        "The language your posts are written in, as a language tag (en, fr, pt-BR, ar…). \
+         The preview and the reading view mark their pages with it, so a screen reader \
+         speaks them in the right voice and the browser hyphenates and spell-checks them \
+         as that language. It is not published: a blyg has no field for it.",
+    ),
+    // --- end lang ---
     // --- chat --- (experimental: the #thicket tab; may be removed)
     docs(
         key("chat-tab", ValueKind::Bool, Some("true")),

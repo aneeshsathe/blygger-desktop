@@ -1064,7 +1064,19 @@ impl Backend for LiveBackend {
         note: Option<&str>,
         extras: &crate::access_ai::PublishExtras,
     ) -> Result<PublishOutcome> {
-        let content = self.row(id)?.item.content_md;
+        let row = self.row(id)?;
+        let content = row.item.content_md;
+        // Decision #102: refused here, before anything is sent. A scratch
+        // note's kind is chosen when it's promoted, and is checked then.
+        if row.item.status != Status::Scratch
+            && let Some(message) = crate::grammar::publish_error(row.item.kind, &content)
+        {
+            return Err(CoreError::Rejected {
+                status: 400,
+                message,
+                details: vec![],
+            });
+        }
         self.e().check_publish(&content)?;
         if self.row(id)?.item.status == Status::Scratch {
             // A scratch note publishes by being promoted first.

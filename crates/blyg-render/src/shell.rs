@@ -34,6 +34,11 @@ blockquote.blyg-transclusion.unresolved {
   blockquote.blyg-transclusion.unresolved { --alert: #f0a19a; --alert-wash: rgba(240,161,154,0.12); }
 }
 .item-content img { max-width: 100%; }
+/* Protocol §14 (decision #103): what another publisher wrote cannot
+   reorder what stands next to it. Every baked quote and every attributed
+   string (a source's name, a citation, a label) is isolated directionally. */
+blockquote.blyg-transclusion, .provenance em, .stub-cite cite, .stub-cite bdi,
+.blyg-qorigin, [data-blyg-label] { unicode-bidi: isolate; }
 "#,
         embed_css()
     )
@@ -51,6 +56,19 @@ pub struct ShellOpts {
     /// [`reader_csp`] (images over https or `data:` only, no remote styles
     /// or fonts) and no `Referer` on anything the page loads.
     pub reader: bool,
+    /// The document's `lang` (a BCP 47 tag, the `lang` setting); `None` is
+    /// `en`. There is no wire member for an item's language (#103 parked
+    /// a manifest `lang`), so this is the client's own setting.
+    pub lang: Option<String>,
+}
+
+/// The `lang` attribute's value: the setting, else `en`.
+pub fn shell_lang(lang: Option<&str>) -> String {
+    escape_html(
+        lang.map(str::trim)
+            .filter(|l| !l.is_empty())
+            .unwrap_or("en"),
+    )
 }
 
 fn nonce() -> String {
@@ -116,12 +134,13 @@ pub fn page_shell_with(theme_css: &str, body: &str, opts: &ShellOpts) -> String 
         (csp(&nonce), "")
     };
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n{base}\
+        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n{base}\
          <meta http-equiv=\"Content-Security-Policy\" content=\"{csp}\">\n{referrer}\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{title}</title>\n<style>{theme}</style>\n<style>{studio}</style>\n</head>\n<body>\n{body}\n\
          <script nonce=\"{nonce}\">{script}</script>\n</body>\n</html>\n",
         csp = escape_html(&policy),
+        lang = shell_lang(opts.lang.as_deref()),
         title = escape_html(&opts.title),
         theme = style_safe(theme_css),
         studio = style_safe(&studio_css()),
@@ -180,11 +199,12 @@ fn citation_html(label: &str, c: &Citation, compact: bool, item_part: Option<Str
     if let Some(s) = &c.source {
         parts.push(format!("<cite>{}</cite>", escape_html(s)));
     }
+    // Another publisher's strings, each isolated directionally (§14, #103).
     if let Some(a) = &c.author {
-        parts.push(escape_html(a));
+        parts.push(format!("<bdi>{}</bdi>", escape_html(a)));
     }
     if let Some(e) = &c.excerpt {
-        parts.push(format!("&ldquo;{}&rdquo;", escape_html(e)));
+        parts.push(format!("&ldquo;<bdi>{}</bdi>&rdquo;", escape_html(e)));
     }
     if let Some(p) = item_part {
         parts.push(p);
@@ -326,6 +346,19 @@ mod tests {
         assert!(reader.contains("<meta name=\"referrer\" content=\"no-referrer\">"));
         assert!(reader.contains("<base href=\"https://blyg.example.com/\">"));
         assert!(reader.find("<base").unwrap() < reader.find("Content-Security-Policy").unwrap());
+        // The `lang` setting, not a hardcoded `en` (#103).
+        assert!(page.contains("<html lang=\"en\">"));
+        let fr = page_shell_with(
+            "",
+            "",
+            &ShellOpts {
+                lang: Some("fr-CA".into()),
+                ..Default::default()
+            },
+        );
+        assert!(fr.contains("<html lang=\"fr-CA\">"));
+        assert_eq!(shell_lang(Some(" \"x ")), "&quot;x");
+        assert_eq!(shell_lang(Some("")), "en");
         let n1 = nonce();
         assert_eq!(n1.len(), 32);
         assert_ne!(n1, nonce());

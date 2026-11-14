@@ -326,6 +326,7 @@ impl Studio {
                 &ShellOpts {
                     title: "Preview".into(),
                     base_href: base,
+                    lang: Some(crate::prefs::page_lang()), // --- lang ---
                     ..Default::default()
                 },
             );
@@ -436,18 +437,31 @@ pub fn stats_label(s: &Stats) -> Option<String> {
 
 /// "⚠ N quote(s) and M link(s) can't be resolved" (publish would refuse them).
 pub fn unresolved_warning(s: &Stats) -> Option<String> {
+    // Decision #102: a fragment's `![[id]]` line isn't a quote that failed
+    // to resolve; it can't be one at all.
+    let in_fragment = |u: &&blyg_render::Unresolved| {
+        u.reason == blyg_render::UnresolvedReason::DirectiveInFragment
+    };
+    let fragment_lines = s.unresolved.iter().filter(in_fragment).count();
     let quotes = s
         .unresolved
         .iter()
-        .filter(|u| u.directive.starts_with('!'))
+        .filter(|u| !in_fragment(u) && u.directive.starts_with('!'))
         .count();
-    let links = s.unresolved.len() - quotes;
+    let links = s.unresolved.len() - quotes - fragment_lines;
     let parts: Vec<String> = [(quotes, "quote", "quotes"), (links, "link", "links")]
         .into_iter()
         .filter(|(n, ..)| *n > 0)
         .map(|(n, one, many)| count(n, one, many))
         .collect();
-    (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")))
+    let unresolved =
+        (!parts.is_empty()).then(|| format!("⚠ {} can't be resolved", parts.join(" and ")));
+    let fragment = (fragment_lines > 0)
+        .then(|| "⚠ A fragment can't quote: quote from a thread, or put the line in code".into());
+    match (fragment, unresolved) {
+        (Some(a), Some(b)) => Some(format!("{a} · {b}")),
+        (a, b) => a.or(b),
+    }
 }
 
 /// Decision #60: an own-line `![[id]]` left in generated text is a real
@@ -1108,6 +1122,19 @@ mod tests {
         assert_eq!(
             unresolved_warning(&s).as_deref(),
             Some("⚠ 2 quotes and 1 link can't be resolved")
+        );
+        // Decision #102: a fragment's directive line is said as what it is.
+        s.unresolved.push(blyg_render::Unresolved {
+            line: 7,
+            directive: "![[x]]".into(),
+            reason: blyg_render::UnresolvedReason::DirectiveInFragment,
+        });
+        assert_eq!(
+            unresolved_warning(&s).as_deref(),
+            Some(
+                "⚠ A fragment can't quote: quote from a thread, or put the line in code · \
+                 ⚠ 2 quotes and 1 link can't be resolved"
+            )
         );
         s.links = 1;
         assert!(stats_label(&s).unwrap().contains("1 link"));

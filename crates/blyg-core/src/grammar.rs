@@ -77,11 +77,73 @@ pub fn with_link_labels(text: &str) -> String {
     replace_links(text, |r| r.label.clone())
 }
 
+/// Why publishing `md` as `kind` would be refused for the line grammar
+/// alone (protocol 0.4 §10.1, decision #102), as one sentence for the UI;
+/// `None` when nothing is. A fragment can't carry a `![[id]]` line outside
+/// code (only a thread quotes), and an own-line `![[id@vN]]`, labelled or
+/// not, is reserved in either kind. Checked before anything is sent.
+pub fn publish_error(kind: crate::Kind, md: &str) -> Option<String> {
+    use blyg_render::UnresolvedReason as R;
+    let k = match kind {
+        crate::Kind::Fragment => blyg_render::Kind::Fragment,
+        crate::Kind::Thread => blyg_render::Kind::Thread,
+    };
+    let errs = blyg_render::publish_grammar_errors(md, k);
+    let first = errs.first()?;
+    let more = match errs.len() - 1 {
+        0 => String::new(),
+        1 => " (and 1 more line)".into(),
+        n => format!(" (and {n} more lines)"),
+    };
+    Some(match first.reason {
+        R::DirectiveInFragment => format!(
+            "A fragment can't quote: {} is on its own line (line {}){more}. \
+             Quote it from a thread, or put the line in code to show it.",
+            first.directive,
+            first.line + 1
+        ),
+        _ => format!(
+            "{} on its own line (line {}){more} names a version, which is reserved: \
+             quoting a specific version isn't supported yet.",
+            first.directive,
+            first.line + 1
+        ),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const ID: &str = "7c9wk2n4h6q1x8v0z3m5rjy2ke";
+
+    #[test]
+    fn publish_errors_of_the_line_grammar() {
+        use crate::Kind;
+        let md = format!("Hi.\n\n![[{ID}]]\n");
+        let e = publish_error(Kind::Fragment, &md).expect("a fragment can't quote");
+        assert!(
+            e.starts_with(&format!(
+                "A fragment can't quote: ![[{ID}]] is on its own line (line 3)."
+            )),
+            "{e}"
+        );
+        assert_eq!(publish_error(Kind::Thread, &md), None);
+        assert_eq!(
+            publish_error(Kind::Fragment, &format!("```\n![[{ID}]]\n```")),
+            None
+        );
+        assert_eq!(
+            publish_error(Kind::Fragment, &format!("see ![[{ID}]]")),
+            None
+        );
+        let e = publish_error(Kind::Thread, &format!("![[{ID}@v2 | x]]\n![[{ID}@v3]]"))
+            .expect("reserved");
+        assert!(
+            e.contains("(and 1 more line)") && e.contains("reserved"),
+            "{e}"
+        );
+    }
 
     #[test]
     fn source_ids_take_labelled_refs_by_id() {

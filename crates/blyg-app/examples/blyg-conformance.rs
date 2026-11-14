@@ -29,7 +29,8 @@
 //! per generated scope, its recorded sources). `links[]` is not reported:
 //! Burrow does not compute it. A publish the studio refuses for what the
 //! preview counts (an unresolved quote or link, an ungenerated or malformed
-//! TK scope) is `{error}`.
+//! TK scope) is `{error}`, and so is one Burrow itself refuses before
+//! sending (a fragment's directive line, a reserved `@vN` line: #102).
 
 use std::io::Read;
 
