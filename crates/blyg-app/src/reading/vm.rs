@@ -283,6 +283,28 @@ pub fn web_url(r: &ReadingItem) -> Option<String> {
         .or_else(|| blyg_core::item_doc_url(&r.origin, &r.remote_id))
 }
 
+/// --- reader view --- The post's own page, for "Open posts on the
+/// author's site": its declared `page`, made absolute against its origin;
+/// http(s) with a host only, and no fallback (`None`: it has none).
+pub fn page_url(r: &ReadingItem) -> Option<String> {
+    let p = r.page.as_deref()?.trim();
+    if p.is_empty() {
+        return None;
+    }
+    let lower = p.to_ascii_lowercase();
+    let url = if lower.starts_with("http://") || lower.starts_with("https://") {
+        p.to_string()
+    } else {
+        blyg_core::origin_url(&r.origin, p.trim_start_matches('/'))?
+    };
+    let rest = url
+        .split_once("://")
+        .filter(|(scheme, _)| matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https"))
+        .map(|(_, rest)| rest)?;
+    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+    (!host.is_empty() && !host.contains(char::is_whitespace)).then_some(url)
+}
+
 // ---------------------------------------------------------------- version pill
 
 /// The `‹ vN ▾ ›` control for someone else's post. Built only from the

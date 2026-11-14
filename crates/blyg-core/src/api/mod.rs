@@ -23,6 +23,7 @@
 pub mod access_ai; // --- access-ai --- (client access, AI on the blyg)
 pub mod auth;
 pub mod browse; // --- browse --- (studio 0.49)
+pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;

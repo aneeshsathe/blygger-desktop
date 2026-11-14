@@ -139,6 +139,10 @@ pub struct WebReading {
     pub contract: Option<String>,
     /// This session's browsing trail.
     pub trail: String,
+    // --- reader view / changelog --- the blyg's changelog settings (from
+    // `/api/settings`; the demo's are kept here).
+    pub changelog: blyg_core::changelog::ChangelogSettings,
+    // --- end reader view / changelog ---
     /// Demo: the next id for a made-up subscription or hopper.
     next: u32,
 }
@@ -1130,6 +1134,8 @@ impl Burrow {
                         .and_then(Value::as_bool)
                         .unwrap_or(true),
                 );
+                // --- reader view / changelog ---
+                self.wr.changelog = blyg_core::changelog::ChangelogSettings::from_json(&v);
                 1
             }
             "capabilities" => {

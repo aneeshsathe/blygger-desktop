@@ -101,6 +101,11 @@ pub struct AppState {
     /// view, in thousandths, when the user dragged the divider.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub split_left: Option<u32>,
+    /// --- reader view --- Subscriptions whose posts always (`true`) or
+    /// never (`false`) open on the author's site, whatever
+    /// `open-posts-on-site` says, by subscription id.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub author_site_subs: std::collections::BTreeMap<String, bool>,
 }
 
 /// --- tray --- A post waiting in the quote tray: what the picker writes

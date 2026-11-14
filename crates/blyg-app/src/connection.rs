@@ -1264,6 +1264,33 @@ impl Backend for SwitchBackend {
         self.cur().interactions_page(cursor)
     }
     // --- end upkeep ---
+    // --- changelog display ---
+    fn changelog_settings(&self) -> Result<Option<blyg_core::changelog::ChangelogSettings>> {
+        self.cur().changelog_settings()
+    }
+    fn save_changelog_settings(
+        &self,
+        s: &blyg_core::changelog::ChangelogSettings,
+    ) -> Result<blyg_core::changelog::ChangelogSettings> {
+        self.cur().save_changelog_settings(s)
+    }
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<blyg_core::changelog::ChangelogSummary> {
+        self.cur().summarize_reading_changelog(sub_id, remote_id)
+    }
+    fn summarize_own_changelog(
+        &self,
+        id: &LocalId,
+    ) -> Result<blyg_core::changelog::ChangelogSummary> {
+        self.cur().summarize_own_changelog(id)
+    }
+    fn draft_note_history(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
+        self.cur().draft_note_history(id)
+    }
+    // --- end changelog display ---
 }
 
 #[cfg(test)]

@@ -264,6 +264,16 @@ pub const KEYS: &[KeySpec] = &[
          button turns it off for one site. false turns it off everywhere.",
     ),
     // --- end browser ---
+    // --- reader view / changelog ---
+    docs(
+        key("open-posts-on-site", ValueKind::Bool, Some("false")),
+        "Open a post you read on its author's own site, styled as they styled it, where \
+         Burrow's reader would show it (macOS; elsewhere the page opens in your default \
+         browser). A post without a page of its own still opens in Burrow's reader. The \
+         toggle above an open post switches that one view; a subscription's menu can \
+         always or never open its posts this way. Settings (⌘,) toggles it.",
+    ),
+    // --- end reader view / changelog ---
     // --- chat --- (experimental: the #thicket tab; may be removed)
     docs(
         key("chat-tab", ValueKind::Bool, Some("true")),

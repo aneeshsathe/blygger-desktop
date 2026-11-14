@@ -277,6 +277,68 @@ impl MainView {
             // The list with an edited post open: notes + pinned diff.
             ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
             ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),
+            // --- reader view / changelog --- the same post on its author's
+            // site (`BLYGGER_DEMO_SITE_URL`: the page to show, since the
+            // sample blygs don't exist), and in the reader with the full
+            // history (`rd-changelog`) or a summary (`rd-summary`).
+            ("rd-author-site" | "rd-changelog" | "rd-summary", 0) => {
+                use blyg_core::changelog::{ChangelogDisplay, ChangelogSettings};
+                let mode = match scenario {
+                    "rd-changelog" => ChangelogDisplay::History,
+                    "rd-summary" => ChangelogDisplay::Summary,
+                    _ => ChangelogDisplay::Latest,
+                };
+                self.reading.changelogs.settings = super::Load::Ready(ChangelogSettings {
+                    reader: Some(mode),
+                    page: Some(ChangelogDisplay::Latest),
+                    summary_prompt: None,
+                });
+                self.prefs.author_site = scenario == "rd-author-site";
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-author-site" | "rd-changelog" | "rd-summary", 1) => {
+                open(self, RUE_TRUST, window, cx);
+                if let Some(o) = self.reading.opened.as_mut()
+                    && scenario == "rd-summary"
+                {
+                    let at = (o.key.clone(), o.item.version);
+                    self.reading.changelogs.summaries.insert(
+                        at,
+                        super::Load::Ready(blyg_core::changelog::ChangelogSummary {
+                            summary: "Started as a short note on trust, rewritten twice as \
+                                          the argument sharpened; the author pinned the second \
+                                          version, and the latest adds an example."
+                                .into(),
+                            model: "@cf/example/sample-model".into(),
+                            version: o.item.version,
+                            cached: true,
+                        }),
+                    );
+                }
+            }
+            // A window a screenshot run never activates may not redraw by
+            // itself (nor load the page into its web view): draw it a few
+            // times so a capture of the window shows the last step.
+            ("rd-author-site" | "rd-changelog" | "rd-summary", 2) => {
+                // Set once the post has loaded (opening it reloads the item).
+                if let (Some(o), Ok(u)) = (
+                    self.reading.opened.as_mut(),
+                    std::env::var("BLYGGER_DEMO_SITE_URL"),
+                ) && !u.is_empty()
+                {
+                    o.item.page = Some(u);
+                }
+                cx.notify();
+                cx.spawn_in(window, async move |_, cx| {
+                    for _ in 0..80 {
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(300))
+                            .await;
+                        let _ = cx.update(|window, cx| window.draw(cx).clear(cx));
+                    }
+                })
+                .detach();
+            }
             // The reading search, with the first match open (#6).
             ("rd-search", 0) => self.show_view(View::Reading, window, cx),
             ("rd-search", 1) => {

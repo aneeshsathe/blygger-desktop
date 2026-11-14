@@ -718,6 +718,8 @@ impl MainView {
                         "layout" => p.layout = self.prefs.layout,
                         "capture-hotkey" => p.hotkey = self.prefs.hotkey.clone(),
                         "show-buttons" => p.show_buttons = self.prefs.show_buttons, // --- buttons ---
+                        // --- reader view / changelog ---
+                        "open-posts-on-site" => p.author_site = self.prefs.author_site,
                         _ => {}
                     }
                 }
@@ -1923,6 +1925,7 @@ impl MainView {
             hotkey_error: None,
             focus,
         });
+        self.changelog_settings_refresh(cx); // --- reader view / changelog ---
         cx.notify();
     }
 
@@ -2408,6 +2411,7 @@ impl Render for MainView {
         self.nearby.window_w = f32::from(window.viewport_size().width); // --- side ---
         self.nearby.dock_w = self.nearby_dock_w(cx); // --- side ---
         self.browser_frame(window, cx); // --- browser --- (after the drawers fit)
+        self.site_frame(window, cx); // --- reader view --- the author's site
         self.tray_frame(cx); // --- tray ---
         self.split_frame(cx); // --- split ---
         // --- reading compose ---
@@ -4362,6 +4366,7 @@ impl MainView {
             .child(self.render_chat_setting(cx)) // --- chat ---
             .child(self.render_flow_settings(cx)) // --- flow ---
             .child(self.render_nearby_setting(cx)) // --- nearby ---
+            .child(self.render_reader_view_settings(cx)) // --- reader view / changelog ---
             .child(row(
                 "QUICK CAPTURE",
                 div()

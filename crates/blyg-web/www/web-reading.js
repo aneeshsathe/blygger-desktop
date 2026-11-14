@@ -17,7 +17,7 @@
 // as a sheet). Both layouts also list them on the Blyg tab (hub.js).
 
 import { Pager } from './pkg/blyg_web.js';
-import { $, $$, S, esc, now, persist, toast, isPhone } from './core.js';
+import { $, $$, S, esc, now, persist, toast, isPhone, pref } from './core.js';
 import { call } from './live.js';
 
 const panel = () => $('#wr-panel');
@@ -134,6 +134,7 @@ function sourcesHtml(d, { manage = true } = {}) {
       <button type="button" data-go="hoppers">⊕ Hoppers</button>
       <button type="button" data-go="peek-url">⌕ Peek</button>
       <button type="button" data-go="history">⟲ History</button>
+      <button type="button" data-go="reading">⚙ Reading</button>
     </div>` : ''}
     <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
     ${rows}`;
@@ -219,6 +220,7 @@ function redraw() { if (screen) draw(); }
 const TITLES = {
   sources: 'Sources', subs: 'Subscriptions', subscribe: 'Subscribe', mentions: 'Mentions',
   hoppers: 'Hoppers', 'peek-url': 'Peek at a post', peek: 'Peek', history: 'History', opml: 'Import OPML',
+  reading: 'Reading', // --- reader view / changelog ---
 };
 
 function draw({ focus = false } = {}) {
@@ -245,6 +247,19 @@ function draw({ focus = false } = {}) {
 
 const loadingP = '<p class="wr-muted">Reading it from the blyg…</p>';
 const SCREENS = {
+  // --- reader view / changelog --- this browser's author's-site choice,
+  // and the blyg's changelog display (saved on the blyg).
+  reading() {
+    ensure('capabilities'); ensure('settings');
+    const c = JSON.parse(S.B.wr_changelog_settings());
+    const radios = (which, legend) => `<fieldset class="wr-fs"><legend>${legend}</legend>${c.modes.map((m) => `<label class="wr-row wr-radio"><input type="radio" name="cl-${which}" data-cl="${which}" value="${m.value}" ${c[which] === m.value ? 'checked' : ''}><div class="wr-l"><b>${esc(m.label)}</b><small>${esc(m.hint)}</small></div></label>`).join('')}</fieldset>`;
+    return `<label class="wr-row wr-radio"><input type="checkbox" data-site-pref ${siteOn() ? 'checked' : ''}>
+        <div class="wr-l"><b>Open posts on the author's site</b><small>A post you open also opens its own page, as its author styled it, in a new tab. This browser only.</small></div></label>
+      ${c.served ? `${radios('reader', 'In your reader, show of a changelog')}${radios('page', 'On your post pages, show')}
+        <p class="wr-muted">Saved on your blyg. A summary is written from the notes by its change-notes model, labelled as AI, and only when you open a post.</p>`
+        : !c.known && S.live ? loadingP : '<p class="wr-muted">Your blyg needs blygger-studio 0.58 or later to show more of a changelog.</p>'}`;
+  },
+
   sources() {
     ensure('subs', 120_000);
     return `<div class="wr-sources in-sheet">${sourcesHtml(JSON.parse(S.B.wr_sources(now())), { manage: false })}</div>`;
@@ -578,6 +593,95 @@ export function opened(key, host) {
   }
   const content = host.querySelector('.item-content');
   if (content) classifyLinks(content);
+  siteBar(key, host); // --- reader view ---
+  changelogBlock(key, host); // --- changelog display ---
+}
+
+// ---------------------------------------------------------------- reader view / changelog
+// "Open posts on the author's site": this browser's choice (localStorage),
+// with an override per subscription. A post opened with a tap or a click
+// also opens its own page in a new tab (never while moving with j/k); the
+// post stays here, with a line to open the page again. No page: said
+// quietly, and the post is read here.
+const siteSubs = () => { try { return JSON.parse(pref.get('author-site-subs') || '{}'); } catch { return {}; } };
+function siteOn(sub) {
+  const per = sub ? siteSubs()[sub] : undefined;
+  return per ?? pref.get('author-site') === 'true';
+}
+function setSiteSub(sub, on) {
+  const m = siteSubs();
+  if (on === null) delete m[sub]; else m[sub] = on;
+  pref.set('author-site-subs', JSON.stringify(m));
+}
+function siteBar(key, host) {
+  host.querySelector('.wr-site')?.remove();
+  const x = JSON.parse(S.B.wr_post_site(key));
+  if (!siteOn(x.sub)) return;
+  const bar = document.createElement('div');
+  bar.className = 'wr-site';
+  if (!x.page) {
+    bar.innerHTML = '<span class="wr-muted">No page of its own · shown here</span>';
+    host.prepend(bar);
+    return;
+  }
+  // Only a page's address, and only http(s) (Rust checked it): a link, never HTML.
+  const a = document.createElement('a');
+  a.href = x.page; a.target = '_blank'; a.rel = 'noopener noreferrer';
+  a.textContent = 'On the author’s site ↗';
+  const never = document.createElement('button');
+  never.type = 'button'; never.className = 'wr-btn';
+  never.textContent = `Read ${x.subTitle || 'this blyg'} here instead`;
+  never.addEventListener('click', () => { setSiteSub(x.sub, false); bar.remove(); toast('Its posts open here from now on · ⚙ Reading changes it'); });
+  bar.append(a, never);
+  host.prepend(bar);
+  const ev = window.event;
+  if (ev && (ev.type === 'click' || ev.type === 'pointerup' || (ev.type === 'keydown' && ev.key === 'Enter'))) {
+    window.open(x.page, '_blank', 'noopener,noreferrer');
+  }
+}
+
+// Changelog display: only an opened post asks (never a card), once per
+// post version; a summary is the blyg's, labelled as AI.
+const clCache = new Map(); // `${key}@${version}` → {history, sStatus, sBody}
+let clKey = null;          // the post the block is for (a newer open wins)
+async function changelogBlock(key, host) {
+  host.querySelector('.wr-changelog')?.remove();
+  clKey = key;
+  if (!S.B) return;
+  const ask = JSON.parse(S.B.wr_changelog_ask(key));
+  if (!ask) return;
+  const ck = `${key}@${ask.version}`;
+  let c = clCache.get(ck);
+  const draw = () => {
+    if (clKey !== key) return;
+    const v = JSON.parse(S.B.wr_changelog_view(key, c.history || '', c.sStatus || 0, c.sBody || ''));
+    host.querySelector('.wr-changelog')?.remove();
+    if (v.kind === 'none') return;
+    const box = document.createElement('div');
+    box.className = 'wr-changelog';
+    const rows = (v.rows || []).map((r) => `<li>${esc(r)}</li>`).join('');
+    box.innerHTML = v.kind === 'summary'
+      ? `<div class="wr-cl-h">${esc(v.heading)} <span class="wr-ai" title="${esc(v.label)}">AI summary</span></div><p>${esc(v.summary)}</p><small class="wr-muted">${esc(v.label)}</small>`
+      : `${v.why ? `<p class="wr-muted">${esc(v.why)}</p>` : ''}<div class="wr-cl-h">${esc(v.heading)}</div><ol>${rows}</ol>`;
+    const by = host.querySelector('.by');
+    if (by) by.after(box); else host.prepend(box);
+  };
+  if (c) { draw(); if (c.history !== undefined && c.sStatus !== undefined) return; }
+  else { c = {}; clCache.set(ck, c); }
+  if (c.history === undefined) {
+    if (!S.live) return;
+    const r = await call('GET', ask.path);
+    if (r.status !== 200) { clCache.delete(ck); return; }
+    c.history = r.body;
+    draw();
+  }
+  const sum = JSON.parse(S.B.wr_summary_ask(key, c.history));
+  if (!sum || c.sStatus !== undefined) return;
+  c.sStatus = 0;
+  draw();
+  const r = await call(sum.method, sum.path, sum.body);
+  c.sStatus = r.status || 502; c.sBody = r.body;
+  draw();
 }
 function thumbs(t) {
   return `<button type="button" data-thumb="1" aria-pressed="${t === 1}" class="${t === 1 ? 'on' : ''}" title="Thumbs up: it goes in Thumbed">👍</button><button type="button" data-thumb="-1" aria-pressed="${t === -1}" class="${t === -1 ? 'on' : ''}" title="Thumbs down">👎</button>`;
@@ -611,8 +715,21 @@ export function initWebReading() {
   if (!p) return;
   p.addEventListener('click', onClick);
   p.addEventListener('submit', onSubmit);
-  p.addEventListener('change', (e) => {
+  p.addEventListener('change', async (e) => {
     const t = e.target;
+    // --- reader view / changelog ---
+    if (t.matches('[data-site-pref]')) { pref.set('author-site', String(t.checked)); toast(t.checked ? 'Posts open on their author’s site too' : 'Posts open here only'); return; }
+    if (t.matches('[data-cl]')) {
+      const o = JSON.parse(S.B.wr_set_changelog_display(t.dataset.cl, t.value));
+      if (o.error) { toast(esc(o.error)); return; }
+      if (o.req) {
+        const r = await call(o.req.method, o.req.path, o.req.body);
+        if (!S.B.wr_changelog_saved(r.status, r.body)) { const er = JSON.parse(S.B.constructor.api_error(r.status, r.body)); toast(esc(er?.text || 'Couldn’t save it'), 4200); }
+        else toast('Saved on your blyg');
+      }
+      clCache.clear(); redraw(); return;
+    }
+    // --- end reader view / changelog ---
     if (t.matches('[data-accept]')) act('accept_mentions', { on: t.checked });
     else if (t.matches('[data-feed]') && screen?.picked) {
       if (t.checked) screen.picked.add(t.dataset.feed); else screen.picked.delete(t.dataset.feed);

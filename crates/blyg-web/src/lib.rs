@@ -33,6 +33,9 @@ pub mod theme;
 // --- web-reading ---
 pub mod web_reading;
 // --- end web-reading ---
+// --- reader view / changelog --- the author's site, changelog display.
+pub mod web_changelog;
+// --- end reader view / changelog ---
 // --- web-writing ---
 pub mod composer;
 pub mod writing;

@@ -360,6 +360,7 @@ impl MainView {
                 if let Some(i) = pick {
                     v.select_version(i, cx);
                 }
+                v.changelog_maybe_summarize(cx); // --- changelog display ---
                 cx.notify();
             });
         })

@@ -5303,6 +5303,120 @@ fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
     b.save_server_ai_settings(&original).unwrap();
 }
 // --- end access-ai ---
+// --- changelog display --- studio 0.58 (contract 5.8.0): the reader's and
+// the item pages' changelog display round-trip as Studio sends them, a
+// summary is asked of the blyg (refused plainly with no provider key, never
+// a crash; 409 when there's nothing to summarize), and a change note can be
+// drafted over the whole history.
+
+#[test]
+#[ignore]
+fn changelog_display_settings_and_summaries() {
+    use blyg_core::access_ai::{AiFunction, ServerAiSettings};
+    use blyg_core::changelog::{ChangelogDisplay, ChangelogSettings, SummaryOf};
+    let dir = tempfile::tempdir().unwrap();
+    let e = e2e();
+    let b = manual(dir.path());
+    let Some(original) = b.changelog_settings().expect("settings") else {
+        eprintln!("skipped: this studio is older than 0.58 (contract 5.8)");
+        return;
+    };
+    assert!(original.served());
+    let title_before = owner("GET", &e.url, "/api/settings", None).1["siteTitle"].clone();
+
+    // A partial save: only the key that's set is sent.
+    let saved = b
+        .save_changelog_settings(&ChangelogSettings {
+            reader: Some(ChangelogDisplay::Summary),
+            ..Default::default()
+        })
+        .expect("save the reader's display");
+    assert_eq!(saved.reader, Some(ChangelogDisplay::Summary));
+    assert_eq!(saved.page, original.page, "the page's display untouched");
+    let raw = owner("GET", &e.url, "/api/settings", None).1;
+    assert_eq!(raw["readerChangelogDisplay"], "summary");
+    assert_eq!(raw["siteTitle"], title_before, "other settings untouched");
+    b.save_changelog_settings(&ChangelogSettings {
+        page: Some(ChangelogDisplay::History),
+        ..Default::default()
+    })
+    .unwrap();
+    let now = b.changelog_settings().unwrap().unwrap();
+    assert_eq!(
+        (now.page, now.reader),
+        (
+            Some(ChangelogDisplay::History),
+            Some(ChangelogDisplay::Summary)
+        )
+    );
+    // Studio refuses a value it doesn't know.
+    let (st, _) = owner(
+        "PATCH",
+        &e.url,
+        "/api/settings",
+        Some(json!({ "readerChangelogDisplay": "everything" })),
+    );
+    assert_eq!(st, 400);
+
+    // A first version without a note: nothing to summarize (409).
+    let t = tag("changelog");
+    let (id1, _) = published(&b, Kind::Fragment, &format!("{t} one version"), None);
+    match b.summarize_own_changelog(&id1) {
+        Err(CoreError::Rejected { status: 409, .. }) => {}
+        other => panic!("nothing to summarize: {other:?}"),
+    }
+
+    // Two versions with notes: a summary, or a plain refusal with no key.
+    let ai = b.server_ai_settings().unwrap();
+    let text_model = b.ai_models().unwrap().for_function(AiFunction::Changelog)[0]
+        .id
+        .clone();
+    b.save_server_ai_settings(&ServerAiSettings {
+        model_changelog: Some(text_model),
+        ..Default::default()
+    })
+    .unwrap();
+    let (id, sid) = published(
+        &b,
+        Kind::Fragment,
+        &format!("{t} first words"),
+        Some("first"),
+    );
+    b.save(&id, &format!("{t} first words, and more")).unwrap();
+    b.sync_now().unwrap();
+    // The history note is drafted from every version so far.
+    match b.draft_note_history(&id) {
+        Ok(d) => assert!(!d.note.is_empty()),
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("note-draft with history: {other:?}"),
+    }
+    b.publish(&id, Some("added more")).unwrap();
+    match b.summarize_own_changelog(&id) {
+        Ok(s) => {
+            assert!(!s.summary.is_empty());
+            assert_eq!(s.version, 2);
+            assert!(s.label().contains("not the author's words"));
+        }
+        Err(CoreError::Rejected { status, .. }) => assert!(status >= 400, "{status}"),
+        Err(CoreError::RateLimited { .. }) => {}
+        Err(other) => panic!("summary: {other:?}"),
+    }
+    // The summary is never on the wire.
+    let doc = public_json(&format!("{}/items/{sid}.json", e.url));
+    assert!(!doc.to_string().contains("summary"), "{doc}");
+    // An imported item of a subscription that isn't there: not found.
+    match b.summarize_reading_changelog("no-such-subscription", "01aaaaaaaaaaaaaaaaaaaaaaaa") {
+        Err(CoreError::NotFound) | Err(CoreError::Rejected { status: 404, .. }) => {}
+        other => panic!("no subscription: {other:?}"),
+    }
+    let _ = SummaryOf::Own(sid);
+
+    // Put the settings back.
+    b.save_server_ai_settings(&ai).unwrap();
+    b.save_changelog_settings(&original).unwrap();
+}
+// --- end changelog display ---
 // ---------------------------------------------------------------- site
 // --- site --- Blyg › Site…: the public site's settings round-trip through
 // the studio as Studio sends them, a refusal comes back in its words, and

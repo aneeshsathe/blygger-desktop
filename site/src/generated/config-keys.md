@@ -132,6 +132,14 @@ Where a link clicked in a post opens: app opens it in Burrow's browser pane (fro
 Block ads and trackers in the browser pane, with uBlock Origin's default filter lists (downloaded about once a week; a small built-in list until then). The shield button turns it off for one site. false turns it off everywhere.
 
 
+### `open-posts-on-site`
+
+- **Values:** `true` or `false`
+- **Default:** `false`
+
+Open a post you read on its author's own site, styled as they styled it, where Burrow's reader would show it (macOS; elsewhere the page opens in your default browser). A post without a page of its own still opens in Burrow's reader. The toggle above an open post switches that one view; a subscription's menu can always or never open its posts this way. Settings (⌘,) toggles it.
+
+
 ### `chat-tab`
 
 - **Values:** `true` or `false`
