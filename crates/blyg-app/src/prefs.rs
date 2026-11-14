@@ -197,6 +197,11 @@ pub struct Prefs {
     // --- lang --- (read-only here: set in the config file)
     /// `lang`: the `lang` of the preview and reader pages (default `en`).
     pub lang: String,
+    // --- reader view / changelog ---
+    /// `open-posts-on-site`: an opened post shows its own page, as its
+    /// author styled it, instead of Burrow's reader (off by default).
+    pub author_site: bool,
+    // --- end reader view / changelog ---
 }
 
 // --- lang ---
@@ -275,6 +280,9 @@ impl Prefs {
             // --- browser ---
             open_links: crate::app::browser::OpenLinks::from_value(c.get("open-links")),
             content_blocking: c.get("content-blocking") != Some("false"),
+            // --- reader view / changelog ---
+            author_site: c.get("open-posts-on-site") == Some("true"),
+            // --- end reader view / changelog ---
         }
     }
 
@@ -313,6 +321,14 @@ impl Prefs {
         if self.show_buttons != old.show_buttons {
             out.push(("show-buttons", Change::Set(self.show_buttons.to_string())));
         }
+        // --- reader view / changelog ---
+        if self.author_site != old.author_site {
+            out.push((
+                "open-posts-on-site",
+                Change::Set(self.author_site.to_string()),
+            ));
+        }
+        // --- end reader view / changelog ---
         out
     }
 
@@ -485,6 +501,22 @@ mod tests {
         // Back to the default, for the other tests' pages (`page_lang`).
         let _ = Prefs::default();
     }
+    // --- reader view / changelog ---
+    #[test]
+    fn author_site_is_off_by_default_and_written_when_changed() {
+        assert!(!Prefs::default().author_site);
+        let mut s = ConfigStore::in_memory("theme = dark\n");
+        let old = Prefs::from_config(s.config());
+        let mut new = old.clone();
+        new.author_site = true;
+        s.set(&new.changes_from(&old)).unwrap();
+        assert_eq!(
+            s.text().unwrap(),
+            "theme = dark\nopen-posts-on-site = true\n"
+        );
+        assert!(Prefs::from_config(s.config()).author_site);
+    }
+    // --- end reader view / changelog ---
 
     // --- auto-update ---
     #[test]

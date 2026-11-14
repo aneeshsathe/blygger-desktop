@@ -1280,4 +1280,56 @@ pub trait Backend: Send + Sync {
         Err(CoreError::Other("signals aren't supported here".into()))
     }
     // --- end upkeep ---
+    // --- changelog display --- studio 0.58 (contract 5.8.0): what a
+    // reader sees of a changelog, and the blyg's AI summaries of one
+    // (`crate::changelog`). All additive with defaults.
+
+    /// The blyg's changelog settings. `Ok(None)`: not served (a studio
+    /// before 0.58, or a backend without them).
+    fn changelog_settings(&self) -> Result<Option<crate::changelog::ChangelogSettings>> {
+        Ok(None)
+    }
+
+    /// Save the changelog settings (only the keys that are `Some`); the
+    /// stored values back.
+    fn save_changelog_settings(
+        &self,
+        s: &crate::changelog::ChangelogSettings,
+    ) -> Result<crate::changelog::ChangelogSettings> {
+        let _ = s;
+        Err(CoreError::Other(
+            "changelog settings aren't supported here".into(),
+        ))
+    }
+
+    /// The blyg's AI summary of a held post's changelog notes. Asked only
+    /// when the post is opened, never for a card.
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<crate::changelog::ChangelogSummary> {
+        let _ = (sub_id, remote_id);
+        Err(CoreError::Other(
+            "changelog summaries aren't supported here".into(),
+        ))
+    }
+
+    /// The same for one of your own published posts.
+    fn summarize_own_changelog(&self, id: &LocalId) -> Result<crate::changelog::ChangelogSummary> {
+        let _ = id;
+        Err(CoreError::Other(
+            "changelog summaries aren't supported here".into(),
+        ))
+    }
+
+    /// Draft a change note that summarizes the whole history so far, ending
+    /// with the next version ("summarize the full history so far").
+    fn draft_note_history(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let _ = id;
+        Err(CoreError::Other(
+            "your blyg needs blygger-studio 0.58 or later to summarize the history".into(),
+        ))
+    }
+    // --- end changelog display ---
 }

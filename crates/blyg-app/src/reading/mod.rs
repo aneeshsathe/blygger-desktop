@@ -19,6 +19,12 @@
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
 mod change_lead; // --- background ---
+// --- reader view / changelog --- the author's own page in the reader's
+// slot, and what an opened post shows of its changelog.
+pub(crate) mod changelog_view;
+pub(crate) mod site_view;
+#[cfg(test)]
+mod site_view_tests;
 // --- reading compose --- the compose box along the reading screen's foot.
 pub(crate) mod compose;
 // --- browse --- following links, quotes and stubs inside the reader.
@@ -154,8 +160,9 @@ impl View {
 }
 
 /// Something fetched from the server on demand.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum Load<T> {
+    #[default]
     Idle,
     Loading,
     Ready(T),
@@ -417,6 +424,12 @@ pub struct State {
     pub trails: crate::app::trails::Trails,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
+    // --- reader view / changelog ---
+    /// The author's-site view (`open-posts-on-site`).
+    pub site: site_view::SiteView,
+    /// The blyg's changelog settings and the summaries asked this session.
+    pub changelogs: changelog_view::Changelogs,
+    // --- end reader view / changelog ---
 }
 
 impl State {
@@ -483,6 +496,9 @@ impl State {
             ),
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
             mentioned: Default::default(),                     // --- contacts ---
+            // --- reader view / changelog ---
+            site: site_view::SiteView::new(data_dir.clone()),
+            changelogs: Default::default(),
         }
         .refiltered()
     }

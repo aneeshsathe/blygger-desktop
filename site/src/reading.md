@@ -280,6 +280,62 @@ The selected post shows its actions. Each says what it makes:
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
 - **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
 
+### Read it on the author's site
+
+Some blygs are worth seeing as their author styled them. Settings (⌘,) ›
+Reading › **Open posts on the author's site** (`open-posts-on-site = true`)
+shows an opened post's own page, the one its author published, where
+Burrow's reader would show it. Nothing else moves: the list or stream stays
+beside it, the header, the version pill and the actions stay above and
+below, and the post counts as read when you open it.
+
+- **j / k** and ↑ / ↓ still move through posts. Space pages down the page,
+  and at its end opens the next post to read. A click in the page hands the
+  keys back to the list unless you clicked into a text field.
+- **Burrow reader | Author's site**, above the post, switches that one view.
+  The next post you open follows the setting again.
+- A subscription's menu (right-click it in the sources pane) can **Open
+  Posts on the Author's Site** always, **in Burrow's Reader** always, or **as
+  Settings Says**: some blygs look great, some don't.
+- A post without a page of its own opens in Burrow's reader, and a quiet line
+  says so. A pinned version, a diff and a withdrawn post are always Burrow's.
+- The page is shown by a web view of the [browser pane](notes-and-browser.md#the-browser-pane)'s
+  kind: its own cookies, no access to the app, content blocking and the
+  browser's per-site shields. Links you click in it stay in it. **Open in
+  browser ↗** above the page, or **Open on web**, opens it in your default
+  browser.
+- Elsewhere than macOS, opening a post opens its page in your default browser
+  (not while you move with the keys), and Burrow's reader shows it here.
+
+In the web app, ⚙ Reading has the same choice for that browser: opening a
+post also opens its page in a new tab, and the post stays in Burrow with a
+link back to the page and **Read … here instead** for its blyg.
+
+### The changelog
+
+Every version of a blyg post can carry its author's note. By default Burrow
+shows the latest one: on a stream card (`V3: …`) and, when a post you've read
+was edited, the notes since you read it. Settings › Reading › Changelog (a
+blyg on blygger-studio 0.58 or later) chooses, on your blyg, what an opened
+post shows:
+
+- **The latest note**, as before.
+- **The full history**: every version's note, newest first, with its date and
+  📌 for a pinned version.
+- **An AI summary**: your blyg's change-notes model summarizes the notes
+  (never the versions' text) once per version, and keeps it. It is asked for
+  only when you open a post, never for a card in a list, and it is always
+  labelled with the model's name and **not the author's words**. While it's
+  being written, or if it can't be (no model key, say), the history shows.
+
+The same setting applies to your own posts read in the Reader. The second row
+chooses what **your post pages** show of their changelog (the studio draws
+those). Burrow never sorts, hides or files a post by what its note says.
+
+When you publish a new version, the publish sheet's **Summarize the full
+history so far** (off each time) makes **Draft a note** write a note that
+covers every version so far, ending with this one.
+
 ### Signals
 
 **Blyg › Signals…** is your private record: the posts you liked, the ones

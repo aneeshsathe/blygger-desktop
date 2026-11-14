@@ -2134,6 +2134,43 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.interactions(cursor))
     }
     // --- end upkeep ---
+    // --- changelog display ---
+
+    fn changelog_settings(&self) -> Result<Option<crate::changelog::ChangelogSettings>> {
+        self.e().track(self.e().api.changelog_settings())
+    }
+
+    fn save_changelog_settings(
+        &self,
+        s: &crate::changelog::ChangelogSettings,
+    ) -> Result<crate::changelog::ChangelogSettings> {
+        self.e().track(self.e().api.put_changelog_settings(s))
+    }
+
+    fn summarize_reading_changelog(
+        &self,
+        sub_id: &str,
+        remote_id: &str,
+    ) -> Result<crate::changelog::ChangelogSummary> {
+        let of = crate::changelog::SummaryOf::Imported {
+            subscription_id: sub_id.to_string(),
+            remote_id: remote_id.to_string(),
+        };
+        self.e().track(self.e().api.summarize_changelog(&of))
+    }
+
+    fn summarize_own_changelog(&self, id: &LocalId) -> Result<crate::changelog::ChangelogSummary> {
+        let sid = self.server_id(id)?;
+        let of = crate::changelog::SummaryOf::Own(sid);
+        self.e().track(self.e().api.summarize_changelog(&of))
+    }
+
+    fn draft_note_history(&self, id: &LocalId) -> Result<crate::access_ai::DraftedNote> {
+        let sid = self.ensure_on_server(id)?;
+        let _net = self.e().net_lock();
+        self.command(id, &sid, |rev| self.e().api.draft_note_history(&sid, rev))
+    }
+    // --- end changelog display ---
 }
 
 impl LiveBackend {

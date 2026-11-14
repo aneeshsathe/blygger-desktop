@@ -240,7 +240,11 @@ impl MainView {
         self.reading
             .list_scroll
             .scroll_to_item(next, ScrollStrategy::Nearest);
+        // --- reader view --- moving with the keys doesn't hand pages to
+        // the default browser (elsewhere than macOS).
+        self.reading.site.moving = true;
         self.open_reading(key, window, cx);
+        self.reading.site.moving = false;
     }
 
     /// Open a post: show it, fetch its versions (and the pinned diff base
@@ -279,6 +283,10 @@ impl MainView {
             diff_vs_now: false,
         });
         self.browse_visited(cx); // --- browse --- the walk, and its links
+        // --- reader view / changelog ---
+        self.site_opened(cx);
+        self.ensure_changelog_settings(cx);
+        // --- end reader view / changelog ---
         cx.notify();
         // --- own posts --- your history, never a read mark.
         if super::own::is_own(&key) {
@@ -317,6 +325,7 @@ impl MainView {
                 if let Some(i) = pick {
                     v.select_version(i, cx);
                 }
+                v.changelog_maybe_summarize(cx); // --- changelog display ---
                 cx.notify();
             });
         })
@@ -1038,6 +1047,7 @@ impl MainView {
             .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
             .children(self.slots_byline(item, cx)) // --- reading slots ---
             .child(div().flex_1())
+            .children(self.render_site_toggle(o, cx)) // --- reader view ---
             .when(
                 !super::original::is_external(&o.key) && !super::own::is_own(&o.key),
                 |d| d.child(self.render_thumbs(item.thumb, cx)),
@@ -1118,6 +1128,7 @@ impl MainView {
                 )
             })
             .children(edited)
+            .children(self.render_changelog_block(o)) // --- changelog display ---
             .when(diffing, |d| {
                 let now_text = item.content_md.clone();
                 let base = text.clone().unwrap_or_default();
@@ -1134,7 +1145,10 @@ impl MainView {
             });
 
         // The body: the post as its blyg published it, in the WebView.
-        let body = if self.studio.reader.active() {
+        let body = if self.site_view_shown() {
+            // --- reader view --- the author's own page instead.
+            self.render_site_pane(cx)
+        } else if self.studio.reader.active() {
             self.reader_pane(&p)
         } else {
             div()

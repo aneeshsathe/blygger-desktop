@@ -530,6 +530,10 @@ impl MainView {
     pub(crate) fn reader_doc(&self) -> Option<Doc> {
         match self.reading.view {
             View::Reading => {
+                // --- reader view --- the author's own page instead.
+                if self.site_view_shown() {
+                    return None;
+                }
                 let o = self.reading.opened.as_ref()?;
                 let item = &o.item;
                 let base = origin_base(&item.origin);

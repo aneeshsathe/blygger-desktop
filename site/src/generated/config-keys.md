@@ -20,14 +20,6 @@ Your sign-in for this blyg is kept in the macOS Keychain, never in this file.
 Every blyg you're signed in to, one line each, e.g. blyg = https://notes.example.org. The blyg switcher (click the blyg's name in the title bar, or Blyg › Switch To) lists them in this order, and ⌃⌘1 to ⌃⌘9 switch to the first nine. blyg-url is the one you're writing to now, and is always in the list whether a line names it or not. Burrow writes these lines when you add a second blyg and removes them when you're back to one. Each blyg keeps its own sign-in in the Keychain and its own posts, drafts and reading on this Mac.
 
 
-### `sync-cadence`
-
-- **Values:** `normal`, `low`
-- **Default:** `normal`
-
-How often Burrow asks your blyg what changed. normal (the default) asks every 15 seconds, like Studio, reads the reading list again at most once a minute when only it moved, and reads everything whole every 10 minutes as a safety net, backing off to every 2 hours while that finds nothing new. low asks every minute, reads the reading list at most every 10 minutes, and starts the safety net at an hour (up to 6 hours). Use low for a blyg on Cloudflare's free D1 plan with a large reading list: its daily row reads can run out, and the blyg then fails until midnight UTC. Opening a blyg always syncs it at once. Takes effect the next time Burrow opens the blyg.
-
-
 ### `theme`
 
 - **Values:** `system`, `light`, `dark`, a built-in theme (`cutaway`, `kumiko`, `shola`, `fortress`, `portolan`, `aizome`, `saltspace`, `konkan`) or a theme file's name (see Themes)
@@ -140,12 +132,12 @@ Where a link clicked in a post opens: app opens it in Burrow's browser pane (fro
 Block ads and trackers in the browser pane, with uBlock Origin's default filter lists (downloaded about once a week; a small built-in list until then). The shield button turns it off for one site. false turns it off everywhere.
 
 
-### `lang`
+### `open-posts-on-site`
 
-- **Values:** text
-- **Default:** `en`
+- **Values:** `true` or `false`
+- **Default:** `false`
 
-The language your posts are written in, as a language tag (en, fr, pt-BR, ar…). The preview and the reading view mark their pages with it, so a screen reader speaks them in the right voice and the browser hyphenates and spell-checks them as that language. It is not published: a blyg has no field for it.
+Open a post you read on its author's own site, styled as they styled it, where Burrow's reader would show it (macOS; elsewhere the page opens in your default browser). A post without a page of its own still opens in Burrow's reader. The toggle above an open post switches that one view; a subscription's menu can always or never open its posts this way. Settings (⌘,) toggles it.
 
 
 ### `chat-tab`

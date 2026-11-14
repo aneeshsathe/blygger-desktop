@@ -5,6 +5,7 @@ pub mod access_ai; // --- access-ai ---
 pub mod api;
 pub mod backend;
 pub mod browse; // --- browse ---
+pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod config;
 pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod floor;

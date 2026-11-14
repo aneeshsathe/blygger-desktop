@@ -284,6 +284,23 @@ impl Browser {
         self.placed.borrow_mut().with(f)
     }
 
+    /// --- reader view --- The compiled block lists and the "does blocking
+    /// apply here" rule, shared with the reader's author's-site view (its
+    /// own web view: same lists, shields and `content-blocking`).
+    pub(crate) fn blocking_for(&self) -> (rules_handle::Handle, surface::BlockingFor) {
+        let (global, unblocked) = (self.global.clone(), self.unblocked.clone());
+        let run_unblocked = self.automation.run_unblocked.clone();
+        let blocking: surface::BlockingFor = Rc::new(move |url| {
+            super::blocking_applies_in_run(
+                global.get(),
+                &unblocked.borrow(),
+                &run_unblocked.borrow(),
+                url,
+            )
+        });
+        (self.rules.clone(), blocking)
+    }
+
     /// --- notes --- Ask the page for its selected text (`false`: no page).
     pub fn selection(&self, reply: async_channel::Sender<String>) -> bool {
         self.open && self.with(|s| s.selection(reply)).is_some()
@@ -581,7 +598,8 @@ impl MainView {
     }
 
     /// Start keeping the compiled block lists current (once per launch).
-    fn browser_start_blocker(&mut self, cx: &mut Context<Self>) {
+    /// (`pub(crate)`: --- reader view --- the author's-site view starts it too.)
+    pub(crate) fn browser_start_blocker(&mut self, cx: &mut Context<Self>) {
         if self.browser.blocker_started || !self.prefs.content_blocking {
             return;
         }

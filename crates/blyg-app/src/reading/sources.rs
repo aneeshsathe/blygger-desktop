@@ -134,6 +134,9 @@ pub enum MenuCmd {
     SetHopperPublic(String, bool),
     /// Delete Hopper… (asks first; the posts stay).
     DeleteHopper(String),
+    /// --- reader view --- A subscription's posts open on the author's
+    /// site always (`Some(true)`), never, or as Settings says (`None`).
+    SiteFor(String, Option<bool>),
 }
 
 /// A subscription being dragged onto a folder.
@@ -415,6 +418,7 @@ impl MainView {
             MenuCmd::FollowSource(id) => self.follow_source_name(id, window, cx),
             MenuCmd::CheckNow(id) => self.check_feeds(Some(id), window, cx),
             MenuCmd::CheckAll => self.check_feeds(None, window, cx),
+            MenuCmd::SiteFor(sub, on) => self.set_site_for_sub(sub, on, cx), // --- reader view ---
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
             // --- hoppers ---
             MenuCmd::HopperMenu => {}
@@ -554,6 +558,21 @@ impl MainView {
                     Some(MenuCmd::CheckNow(sub.clone())),
                     false,
                 ));
+                // --- reader view --- where this subscription's posts open.
+                let site = self.reading.site.subs.get(sub).copied();
+                v.push(sep());
+                for (label, on) in [
+                    ("Open Posts on the Author's Site", Some(true)),
+                    ("Open Posts in Burrow's Reader", Some(false)),
+                    ("Open Posts as Settings Says", None),
+                ] {
+                    v.push((
+                        label.into(),
+                        Some(MenuCmd::SiteFor(sub.clone(), on)),
+                        site == on,
+                    ));
+                }
+                // --- end reader view ---
                 v.push(sep());
                 v.push(("New Folder…".into(), Some(MenuCmd::NewFolder), false));
                 v
@@ -1027,7 +1046,10 @@ impl MainView {
                 true
             }
             "up" | "down" if pane == Pane::Post => {
-                if !self.reader_eval(&crate::app::studio::webview::nudge_js(key == "down")) {
+                // --- reader view --- the author's page scrolls too.
+                if !self.reader_eval(&crate::app::studio::webview::nudge_js(key == "down"))
+                    && !self.site_nudge(key == "down")
+                {
                     self.move_reading(if key == "down" { 1 } else { -1 }, window, cx);
                 }
                 true
@@ -1060,7 +1082,8 @@ impl MainView {
     /// open), the next post to read.
     fn reader_space(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.reading.opened.is_some()
-            && self.reader_eval(crate::app::studio::webview::PAGE_DOWN_JS)
+            && (self.reader_eval(crate::app::studio::webview::PAGE_DOWN_JS)
+                || self.site_page_down(window, cx))
         {
             // The page answers `end` (`SurfaceEvent::PageEnd`) when it was
             // already at the bottom.
