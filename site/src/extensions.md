@@ -176,6 +176,15 @@ extension-setting = cross-post farcaster-max-bytes=1024
 - **A cross-post is a copy, not a link that follows the post.** Publishing a
   new version or withdrawing the post on your blyg leaves the copy on Substack,
   Bluesky or Farcaster as it was. Edit or delete it there by hand.
+- **Your blyg doesn't list the copy yet.** The blygger protocol has a place for
+  it: an optional `syndication` member on the post, a list of each copy's
+  address and the version it was made from, so other people's readers can show
+  where the conversation is
+  ([spec 0.4 §16.14](https://blygger.org/spec/0.4/), ruled but not yet built
+  anywhere). It's written into the post in place, without publishing a new
+  version. Burrow can't add it yet, for two reasons: your blyg has to be able
+  to store it, and a cross-post run never learns the new post's address,
+  because Burrow doesn't read the page it posts on.
 - **It's your account.** cross-post acts as you on each site, the same as if
   you typed and clicked yourself. If a site limits or acts on an account for
   automated posting, that's your risk; check its terms.

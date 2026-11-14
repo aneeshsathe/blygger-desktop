@@ -197,7 +197,11 @@ are `tested = "unverified"`; each opens the site's compose link
 width. Its `macro.prepare` fits the opening paragraph and the link into each
 site's limit: `max-chars` (280) and `bluesky-max-chars` (300) count
 grapheme clusters, and `farcaster-max-bytes` (320) counts bytes of UTF-8,
-as Farcaster does, never cutting inside a cluster.
+as Farcaster does, never cutting inside a cluster. A run records nothing on
+the blyg: the protocol's place for a copy's address is the item's optional
+`syndication` member (blygger-spec 0.4 §16.14, decision #98), written in place
+without a new version, and recording one needs both a server that stores it and
+a recipe step that reads the new post's address, which macros can't do today.
 
 ## Reading slots
 
