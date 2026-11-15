@@ -273,7 +273,7 @@ impl MainView {
     // ------------------------------------------------------------ the summary
 
     /// Stop a running summary (closing the sheet, opening a post, esc).
-    pub(super) fn cancel_catch_up_summary(&mut self) {
+    pub(crate) fn cancel_catch_up_summary(&mut self) {
         if let Some(s) = self.catch_up_mut()
             && let Some(c) = s.cancel.take()
         {

@@ -607,6 +607,15 @@ impl MainView {
             (Key::SpellMenu, assist.menu_open()),
             (Key::Lineage, self.lineage_open()),
             (Key::LineageRing, self.lineage_ring_open()),
+            // --- catch up ---
+            (
+                Key::CatchUp,
+                reading
+                    && matches!(
+                        self.reading.sheet,
+                        Some(crate::app::reading::RSheet::CatchUp(_))
+                    ),
+            ),
             // --- extensions ---
             (
                 Key::ExtPalette,
@@ -799,6 +808,7 @@ impl MainView {
         if self.ai.has_overlay() {
             self.ai_escape(window, cx);
         }
+        self.cancel_catch_up_summary(); // --- catch up ---
         self.reading.sheet = None;
         self.leave_reading();
         self.reading.opened = None;
@@ -1079,6 +1089,18 @@ impl MainView {
                     self.open_lineage(origin, steps::QUOTING.into(), window, cx);
                 }
             }
+            // --- catch up ---
+            Setup::StreamCatchUp => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == steps::CATCH_UP);
+                match ix {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
             Setup::Reader => {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 if let Some(key) = self.tutorial_reading_key(steps::QUOTED) {
@@ -1240,6 +1262,7 @@ impl MainView {
             "own-post" => self.post_action("Reply", window, cx),
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
+            "catch-up" => self.catch_up_key(window, cx), // --- catch up ---
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
