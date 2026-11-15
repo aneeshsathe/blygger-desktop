@@ -38,6 +38,9 @@ mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
 mod vm;
+// The WebView2 hosting shared by the preview and the browser pane.
+#[cfg(all(target_os = "windows", not(test)))]
+mod webview2_host;
 #[cfg(target_os = "windows")]
 mod windows_menu;
 

@@ -1371,10 +1371,17 @@ pub const STEPS: &[Step] = &[
         id: "browser",
         since: "0.4.0",
         title: "Links open beside your reading",
-        caption: "A link in a post opens in this pane (a blank sample here); ⌘-click opens it \
-                  over the whole area. 🛡 turns ad and tracker blocking off for one site; ↗, or \
-                  ⌥-click on the link, uses your default browser. esc closes it; ⇧⌘B brings it \
-                  back.",
+        // No content blocking on Windows yet: no word about 🛡 there.
+        caption: if cfg!(target_os = "windows") {
+            "A link in a post opens in this pane (a blank sample here); Ctrl+click opens it \
+             over the whole area. ↗, or Alt+click on the link, uses your default browser. \
+             esc closes it; Ctrl+Shift+B brings it back."
+        } else {
+            "A link in a post opens in this pane (a blank sample here); ⌘-click opens it \
+             over the whole area. 🛡 turns ad and tracker blocking off for one site; ↗, or \
+             ⌥-click on the link, uses your default browser. esc closes it; ⇧⌘B brings it \
+             back."
+        },
         keys: &[Key::CloseBrowser],
         key_label: "esc",
         region: Region::BrowserChrome,
@@ -1384,6 +1391,38 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: false,
     },
+    // --- browser on Windows (0.22.0) --- the pane and cross-post on Windows.
+    Step {
+        id: "browser-windows",
+        since: "0.22.0",
+        title: if cfg!(target_os = "windows") {
+            "The browser pane, on Windows"
+        } else {
+            "The browser pane runs on Windows too"
+        },
+        caption: if cfg!(target_os = "windows") {
+            "Links in posts now open in this pane on Windows, and cross-post's macros run \
+             here too. Sign-ins are kept in the pane's own profile, so they survive a \
+             relaunch. Ad and tracker blocking isn't on Windows yet. Press Ctrl+Shift+B to \
+             hide the pane; it brings it back too."
+        } else {
+            "The same pane, and the same cross-post macros, now run on Windows too. Press \
+             ⇧⌘B to hide the pane; it brings it back too."
+        },
+        keys: &[Key::CloseBrowser],
+        key_label: if cfg!(target_os = "windows") {
+            "Ctrl+Shift+B"
+        } else {
+            "⇧⌘B"
+        },
+        region: Region::BrowserChrome,
+        button: None,
+        setup: Setup::Browser,
+        pause_ms: 700,
+        settle: false,
+        stay: false,
+    },
+    // --- end browser on Windows ---
     Step {
         id: "clip",
         since: "0.10.0",
@@ -1407,7 +1446,8 @@ pub const STEPS: &[Step] = &[
                   Substack Notes, Bluesky or Farcaster from this pane: you check the text, it \
                   fills in the composer, and only you click Post. The copy's link goes on the \
                   post's Copies Elsewhere list. esc folds the pane mid-run: the status bar says \
-                  “macro running · show pane”. (A sample: nothing runs.)",
+                  “macro running · show pane”. It works on Windows as well. (A sample: nothing \
+                  runs.)",
         keys: &[Key::MacroFolded],
         key_label: "esc",
         region: Region::MacroRun,
@@ -1739,6 +1779,7 @@ pub const TOURS: &[Tour] = &[
             "notes",
             "notes-library",
             "browser",
+            "browser-windows",
             "clip",
         ],
     },

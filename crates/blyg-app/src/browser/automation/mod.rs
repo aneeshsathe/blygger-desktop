@@ -521,7 +521,12 @@ impl MainView {
             ),
             Outcome::Handed { manual: true } => (
                 format!("{site}: the box didn't take the text"),
-                Some("It's on the clipboard: paste it (⌘V), then click Post yourself".into()),
+                Some(
+                    crate::keymap::hint(
+                        "It's on the clipboard: paste it (⌘V), then click Post yourself",
+                    )
+                    .into(),
+                ),
             ),
             Outcome::Cancelled {
                 after_submit: false,
@@ -862,7 +867,7 @@ impl MainView {
                     .gap(px(14.))
                     .text_color(p.muted)
                     .child(
-                        sheet_key(theme, "⌘⏎", "continue")
+                        sheet_key(theme, crate::keymap::hint("⌘⏎"), "continue")
                             .id("macro-continue")
                             .debug_selector(|| "macro-continue".into())
                             .cursor_pointer()
@@ -1034,7 +1039,10 @@ impl MainView {
                 .tooltip(|_, cx| {
                     cx.new(|_| {
                         crate::app::reading::Tip(
-                            "A macro is running in the folded browser pane: show it  ⇧⌘B".into(),
+                            crate::keymap::hint(
+                                "A macro is running in the folded browser pane: show it  ⇧⌘B",
+                            )
+                            .into(),
                         )
                     })
                     .into()

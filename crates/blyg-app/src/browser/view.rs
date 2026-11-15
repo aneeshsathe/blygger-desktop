@@ -258,12 +258,13 @@ impl Browser {
 
     /// Blocking applies to the current page.
     pub fn blocking_here(&self) -> bool {
-        super::blocking_applies_in_run(
-            self.global.get(),
-            &self.unblocked.borrow(),
-            &self.automation.run_unblocked.borrow(),
-            &self.page.url,
-        )
+        super::blocking_available()
+            && super::blocking_applies_in_run(
+                self.global.get(),
+                &self.unblocked.borrow(),
+                &self.automation.run_unblocked.borrow(),
+                &self.page.url,
+            )
     }
 
     /// The window became active again: if the keyboard fell to the window
@@ -334,10 +335,12 @@ impl MainView {
             }
             return;
         }
-        let (cmd, alt) = crate::app::studio::webview::take_click_modifiers().unwrap_or_else(|| {
-            let m = window.modifiers();
-            (m.platform, m.alt)
-        });
+        let (cmd, alt) = crate::app::studio::webview::take_click_modifiers()
+            .or_else(crate::platform::held_link_modifiers)
+            .unwrap_or_else(|| {
+                let m = window.modifiers();
+                (m.platform, m.alt)
+            });
         match super::link_action(self.prefs.open_links, cmd, alt) {
             super::LinkAction::Pane(mode) => self.open_url_in_app(&url, mode, window, cx),
             super::LinkAction::DefaultBrowser => cx.open_url(&url),
@@ -355,9 +358,9 @@ impl MainView {
         if !super::is_web_url(url) {
             return;
         }
-        // The pane is a WKWebView, macOS only for now: elsewhere links go to
-        // the default browser, as they did before the pane existed.
-        if cfg!(all(not(target_os = "macos"), not(test))) {
+        // No pane on this platform: links go to the default browser, as
+        // they did before the pane existed.
+        if !super::pane_available() {
             cx.open_url(url);
             return;
         }
@@ -394,12 +397,12 @@ impl MainView {
         self.browser_open_for_address(window, cx);
     }
 
-    /// The pane with its address field focused (⌘L). Elsewhere than macOS
-    /// there is no pane: say so (links open in the default browser).
+    /// The pane with its address field focused (⌘L). Where there is no pane
+    /// (not macOS or Windows): say so (links open in the default browser).
     fn browser_open_for_address(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if cfg!(all(not(target_os = "macos"), not(test))) {
+        if !super::pane_available() {
             return self.show_toast(
-                "The browser pane is macOS-only for now",
+                "There's no browser pane on this platform",
                 Some("Links open in your default browser".into()),
                 cx,
             );
@@ -568,7 +571,10 @@ impl MainView {
     /// Load now if the block lists are ready (or blocking is off), else
     /// after they are, waiting at most `RULES_WAIT`.
     fn browser_load(&mut self, url: String, cx: &mut Context<Self>) {
-        let ready = self.browser.rules.borrow().ready() || !self.browser.global.get();
+        // Nothing to wait for where there's no blocking (Windows).
+        let ready = self.browser.rules.borrow().ready()
+            || !self.browser.global.get()
+            || !super::blocking_available();
         if ready || cfg!(test) {
             #[cfg(test)]
             self.browser.loads.push(url.clone());
@@ -1043,7 +1049,9 @@ impl MainView {
             || self.reading.sheet.is_some()
             || self.onboarding.flow.is_some()
             || self.onboarding.tutorial.is_some()
-            || self.profile_sheet_open();
+            || self.profile_sheet_open()
+            // --- browser on Windows --- the Menu button's panel.
+            || crate::platform::menu_open(cx);
         let showing = self.browser.open && !covered;
         // --- browser macros --- folded while a macro runs: parked.
         let park = !self.browser.open && self.browser.automation.running();
@@ -1265,6 +1273,9 @@ impl MainView {
         };
         let loading = pg.loading;
         let shield_on = b.blocking_here();
+        // --- browser on Windows --- no content blocking there yet: the
+        // shield stays, greyed out, and says so.
+        let blocking = super::blocking_available();
         let has_page = super::is_web_url(&pg.url);
         let tour_page = self.browser_tour_page(); // --- onboarding --- ✂ Clip works on it
         let address: AnyElement = match (&b.address, b.editing) {
@@ -1340,12 +1351,24 @@ impl MainView {
             .bg(p.bg)
             .rule_b(p)
             .child(
-                button("browser-back", "←", pg.can_back, "Back  ⌘[").on_click(
+                button(
+                    "browser-back",
+                    "←",
+                    pg.can_back,
+                    crate::keymap::hint("Back  ⌘["),
+                )
+                .on_click(
                     cx.listener(|this, _, window, cx| this.browser_back(&BrowserBack, window, cx)),
                 ),
             )
             .child(
-                button("browser-forward", "→", pg.can_forward, "Forward  ⌘]").on_click(
+                button(
+                    "browser-forward",
+                    "→",
+                    pg.can_forward,
+                    crate::keymap::hint("Forward  ⌘]"),
+                )
+                .on_click(
                     cx.listener(|this, _, window, cx| {
                         this.browser_forward(&BrowserForward, window, cx)
                     }),
@@ -1356,7 +1379,11 @@ impl MainView {
                     "browser-reload",
                     if loading { "✕" } else { "↻" },
                     has_page,
-                    if loading { "Stop" } else { "Reload  ⌘R" },
+                    if loading {
+                        "Stop"
+                    } else {
+                        crate::keymap::hint("Reload  ⌘R")
+                    },
                 )
                 .on_click(cx.listener(|this, _, window, cx| {
                     this.browser_reload(&BrowserReload, window, cx)
@@ -1369,11 +1396,19 @@ impl MainView {
                 button(
                     "browser-shield",
                     if shield_on { "🛡 On" } else { "🛡 Off" },
-                    has_page,
-                    "Content blocking for this site",
+                    has_page && blocking,
+                    if blocking {
+                        "Content blocking for this site"
+                    } else {
+                        "Content blocking isn't on Windows yet"
+                    },
                 )
                 .when(!shield_on, |d| d.text_color(p.muted))
-                .on_click(cx.listener(|this, _, _, cx| this.browser_toggle_shield(cx))),
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if super::blocking_available() {
+                        this.browser_toggle_shield(cx);
+                    }
+                })),
             )
             .child(
                 button("browser-external", "↗", has_page, "Open in default browser").on_click(
@@ -1390,7 +1425,7 @@ impl MainView {
                     "browser-notes",
                     "→ Notes",
                     has_page,
-                    "Add [title](url) to your notes (a selection on the page is quoted)  ⇧⌘N",
+                    crate::keymap::hint("Add [title](url) to your notes (a selection on the page is quoted)  ⇧⌘N"),
                 )
                 .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(
@@ -1406,7 +1441,7 @@ impl MainView {
                         "→ Draft"
                     },
                     has_page,
-                    "Quote the passage selected on the page in your draft, with the page's link  ⇧⌘D",
+                    crate::keymap::hint("Quote the passage selected on the page in your draft, with the page's link  ⇧⌘D"),
                 )
                 .when(b.selected && has_page, |d| {
                     d.text_color(p.accent_text()).bg(p.pick())
@@ -1422,7 +1457,7 @@ impl MainView {
                     "browser-clip",
                     "✂ Clip",
                     has_page || tour_page,
-                    "Clip the page (or the passage selected on it) into your draft, with its link  ⇧⌘C",
+                    crate::keymap::hint("Clip the page (or the passage selected on it) into your draft, with its link  ⇧⌘C"),
                 )
                 .on_mouse_down(MouseButton::Left, keep_selection())
                 .on_click(cx.listener(|this, _, window, cx| this.browser_clip(window, cx))),
