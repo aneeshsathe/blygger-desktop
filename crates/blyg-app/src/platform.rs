@@ -86,6 +86,43 @@ pub fn key_button(
     })
 }
 
+/// --- browser --- (link modifier, alt) held right now, for a link just
+/// followed in a post: Windows only (Ctrl+click opens the pane over the
+/// whole reading area, Alt+click goes to the default browser). WebView2
+/// doesn't say which keys a click carried, and GPUI's own modifier state
+/// misses keys pressed while the page has the keyboard, so this reads the
+/// keyboard itself, as macOS reads `NSEvent.modifierFlags`. `None` on
+/// macOS, where the reader's navigation delegate records them.
+pub fn held_link_modifiers() -> Option<(bool, bool)> {
+    #[cfg(target_os = "windows")]
+    {
+        #[link(name = "user32")]
+        unsafe extern "system" {
+            fn GetAsyncKeyState(vkey: i32) -> i16;
+        }
+        const VK_CONTROL: i32 = 0x11;
+        const VK_MENU: i32 = 0x12;
+        // SAFETY: a plain query of the keyboard's state; no pointers.
+        let down = |vk| unsafe { GetAsyncKeyState(vk) } < 0;
+        Some((down(VK_CONTROL), down(VK_MENU)))
+    }
+    #[cfg(not(target_os = "windows"))]
+    None
+}
+
+/// Whether the Windows Menu button's panel is open (never, elsewhere): a
+/// native view under it (the browser pane) is hidden meanwhile, since a
+/// child window paints above everything GPUI draws.
+pub fn menu_open(cx: &gpui_kit::App) -> bool {
+    #[cfg(target_os = "windows")]
+    return crate::windows_menu::is_open(cx);
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = cx;
+        false
+    }
+}
+
 /// Off macOS the taskbar and window icon is embedded in the executable.
 #[cfg(not(target_os = "macos"))]
 pub fn set_dock_icon_unless_bundled() {}

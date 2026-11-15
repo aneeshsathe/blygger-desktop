@@ -14,7 +14,7 @@ use gpui_kit::{Bounds, Pixels};
 use super::insert::{self, Via};
 use super::js::{self, Op, Reply};
 use super::runner::{self, Confirm, MacroRun, Outcome, Pacing, Page, PostChoice, Preview, Reason};
-use crate::app::browser::surface::{BrowserSurface, PageState};
+use crate::app::browser::surface::{BrowserSurface, NavCounter, PageState};
 
 // ------------------------------------------------------------ the DOM
 
@@ -111,6 +111,16 @@ pub struct Dom {
     pub never_finish: bool,
     /// `document.readyState` instead of the load's (`complete` once loaded).
     pub ready: Option<&'static str>,
+    /// --- browser on Windows --- Report navigations as the WebView2
+    /// surface does: through its `NavCounter`, in WebView2's order (allowed
+    /// start, `ContentLoading` halfway through the load, then
+    /// `NavigationCompleted`), instead of the counts above.
+    pub webview2: Option<NavCounter>,
+    /// The current WebView2 navigation's id.
+    pub nav_id: u64,
+    /// With `webview2`: a navigation the policy cancels, started and
+    /// completed just after each load starts (WebView2 completes those).
+    pub stray_cancel: bool,
 }
 
 impl Dom {
@@ -138,6 +148,9 @@ impl Dom {
             finish_pending: false,
             never_finish: false,
             ready: None,
+            webview2: None,
+            nav_id: 0,
+            stray_cancel: false,
         }))
     }
 
@@ -165,9 +178,23 @@ impl Dom {
             self.finish_pending = false;
             self.finishes += 1;
         }
+        // --- browser on Windows ---
+        let (id, half) = (self.nav_id, self.load_time / 2);
+        let (loaded_at, never) = (self.loaded_at, self.never_finish);
+        if let Some(n) = self.webview2.as_mut() {
+            if now + half >= loaded_at {
+                n.committed(id);
+            }
+            if !never && now >= loaded_at {
+                n.completed(id);
+            }
+        }
     }
 
     fn loading(&self) -> bool {
+        if let Some(n) = &self.webview2 {
+            return n.loading();
+        }
         self.never_finish || self.now() < self.loaded_at
     }
 
@@ -388,6 +415,16 @@ impl BrowserSurface for ScriptedDom {
         d.loaded_at = d.now() + d.load_time;
         d.commits += 1;
         d.finish_pending = true;
+        // --- browser on Windows ---
+        d.nav_id += 1;
+        let (id, stray) = (d.nav_id, d.stray_cancel);
+        if let Some(n) = d.webview2.as_mut() {
+            n.started(id, true);
+            if stray {
+                n.started(id + 1_000, false);
+                n.completed(id + 1_000);
+            }
+        }
     }
     fn back(&mut self) {}
     fn forward(&mut self) {}
@@ -396,12 +433,16 @@ impl BrowserSurface for ScriptedDom {
     fn state(&self) -> PageState {
         let mut d = self.0.borrow_mut();
         d.tick();
+        let (commits, finishes) = match &d.webview2 {
+            Some(n) => (n.commits, n.finishes),
+            None => (d.commits, d.finishes),
+        };
         PageState {
             url: d.url.clone(),
             title: "Fixture Notes".into(),
             loading: d.loading(),
-            commits: d.commits,
-            finishes: d.finishes,
+            commits,
+            finishes,
             ..PageState::default()
         }
     }
@@ -1112,6 +1153,36 @@ fn open_counts_a_complete_document_when_loading_never_ends() {
     let e = failed(&out);
     assert_eq!((e.step, e.do_, &e.reason), (1, "open", &Reason::Timeout));
     assert!(page.now() >= recipe::MAX_STEP_TIMEOUT, "{:?}", page.now());
+}
+
+/// --- browser on Windows --- WebView2 reports a navigation's start
+/// before it commits, and completes navigations its policy cancelled. The
+/// surface counts only the allowed ones, so `open` still waits for the
+/// page's own load (here 2 s) rather than a stray completion at once.
+#[test]
+fn open_waits_for_the_load_in_webview2s_event_order() {
+    let dom = Dom::new(notes_site(pm_editor()));
+    {
+        let mut d = dom.borrow_mut();
+        d.webview2 = Some(NavCounter::default());
+        d.stray_cancel = true;
+        d.load_time = Duration::from_secs(2);
+    }
+    let mut page = TestPage::new(dom.clone());
+    let out = go(&mut page, standard_steps()[..2].to_vec());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    assert!(page.now() >= Duration::from_secs(2), "{:?}", page.now());
+    assert!(page.now() < runner::LONG_SETTLE, "{:?}", page.now());
+    let n = dom.borrow().webview2.clone().unwrap();
+    assert_eq!((n.commits, n.finishes), (1, 1));
+    // And a whole run posts the same way.
+    let dom = Dom::new(notes_site(pm_editor()));
+    dom.borrow_mut().webview2 = Some(NavCounter::default());
+    dom.borrow_mut().stray_cancel = true;
+    let mut page = TestPage::new(dom.clone());
+    let out = go(&mut page, standard_steps());
+    assert!(matches!(out, Outcome::Posted { .. }), "{out:?}");
+    assert_eq!(dom.borrow().posted, vec![PAYLOAD.to_string()]);
 }
 
 const SECRET: &str = "SECRET-BODY-7f3a";

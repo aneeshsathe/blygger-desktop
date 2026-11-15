@@ -29,6 +29,25 @@ teaches something new in the tour, set the newest entry's `version` in
 
 - **Web app: Reading was in the wrong order.** The web kept the order the server sent, which is by fetch time and the same for a whole backfill, so posts came out shuffled. Every client now sorts with one function in blyg-core (newest first, ties by source then id, descending). Your posts list compares real times, not text, then the server id. A test against a real local studio checks the web, the desktop and the studio agree. On the desktop, reading posts with the same date may swap places once (ties now break descending).
 - **Web app: posts didn't update while the tab was open.** It now asks `/api/changes` every 15 s while visible (the studio's pace), checks right after you publish, restore or withdraw, stops while hidden, backs off on 429 and 5xx, and runs one refresh at a time. Hopper and thumb changes made elsewhere now show too. The occasional full re-read backs off like the desktop's (10 min, doubling to 2 h while nothing changes). Checked by `scripts/browser-web-live-check.sh`: every change shows within about 15 s.
+- **Web app: starts faster than the studio.** On a first start, the first page of Reading is drawn as soon as it arrives, with the rest paging in behind. Posts, Reading and hoppers load in parallel, and scrolling adds cards instead of redrawing the list. With 3,000 reading posts on localhost, Reading shows in about 0.25–0.35 s (it was about 1.1 s; the studio takes 0.74 s), and scrolling has no long tasks. Checked by `scripts/browser-web-perf-check.sh`.
+
+## [0.22.0] - 2026-11-15
+
+The browser pane and cross-post on Windows.
+
+### Added
+
+- **The browser pane on Windows.** Links in posts open in the pane beside your reading, as on the Mac: a WebView2 (through wry), hosted like the preview, with its own persistent profile (`%LOCALAPPDATA%\Blygger\browser\webview2`), so sign-ins survive a relaunch and stay apart from the preview's. The same keys, written with Ctrl: Ctrl+click opens it over the whole reading area, Alt+click goes to your default browser, Ctrl+Shift+B hides it and brings it back, Ctrl+L edits the address, Ctrl+[ / Ctrl+] / Ctrl+R go back, forward and reload, and Ctrl+Shift+C clips the page. The page has no bridge to the app, as on macOS. New-window links navigate the pane, and downloads go to your default browser. The Menu button's panel hides the pane while it's open.
+- **cross-post on Windows.** All three sites (Substack Notes, Bluesky, Farcaster), each its own permission, with the same two confirmation sheets, run in the Windows pane. The palette's **Open Substack Notes / Open Bluesky / Open Farcaster** rows now appear there too, to sign in by hand. Windows has no trusted paste, so the text goes in through the editor's own insert command (or a script paste event); a composer that takes neither leaves the text on your clipboard and says so. `macro.log` is in `%LOCALAPPDATA%\Blygger\extensions\cross-post\`.
+
+### Changed
+
+- **Content blocking and "Open posts on the author's site" remain macOS only.** The block lists compile to WebKit content rules, which WebView2 doesn't read. On Windows the pane's 🛡 is greyed out and says so, and `content-blocking` has no effect there.
+- Tooltips and messages in the browser pane and the macro sheets (back, forward, reload, → Notes, → Draft, ✂ Clip, the folded-run notice, ⌘⏎ continue, "paste it (⌘V)") show Windows keys on Windows.
+
+### Not verified
+
+- This release was built and checked on Linux only. The Windows code was type-checked and linted with the MinGW target (`x86_64-pc-windows-gnu`). Every crate's tests ran on Linux, the app's with wry's Linux backend switched on locally (a change that isn't committed). The app's 13 failures there fail the same way on unmodified 0.21.0: Linux keystroke and clipboard behaviour, and one flaky layout test. Burrow was **not** run on a Windows or macOS machine, and none of the three cross-post recipes was run against its live site on any platform, so their `tested` values are unchanged (Substack Notes 2026-10-09, Bluesky and Farcaster `unverified`).
 
 ## [0.21.0] - 2026-11-14
 

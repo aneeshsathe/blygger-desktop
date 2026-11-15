@@ -775,6 +775,11 @@ fn do_step(e: &mut Env, id: &str) {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-n"))
         }
         "browser" => e.cx.simulate_keystrokes("escape"),
+        // --- browser on Windows --- its key hides the pane (and brings it
+        // back): ⇧⌘B, Ctrl+Shift+B on Windows.
+        "browser-windows" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-b"))
+        }
         "new" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-n")),
         // A click on Import OPML… (the chip's own call).
         "opml" => e

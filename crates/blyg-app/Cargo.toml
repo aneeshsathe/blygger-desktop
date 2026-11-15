@@ -101,6 +101,13 @@ block2 = "0.6"
 # --- spellcheck --- (the system spell checker: NSSpellChecker)
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSSpellChecker"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# --- browser --- The WebView2 events wry doesn't pass on (which navigation
+# started, committed and finished; the page's process failing; keyboard
+# focus), for the browser pane. The versions wry already pulls in.
+webview2-com = "0.39"
+windows-core = "0.62"
+
 [build-dependencies]
 # Windows resources (icon, manifest); build.rs does nothing on other targets.
 embed-resource = "3.0"

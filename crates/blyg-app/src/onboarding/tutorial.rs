@@ -1233,7 +1233,7 @@ impl MainView {
             "hoppers" => self.open_hopper_picker(window, cx),
             "stub-passage" => self.studio_demo_select_passage(),
             "notes" => self.open_notes(window, cx),
-            "browser" => self.close_browser(window, cx),
+            "browser" | "browser-windows" => self.close_browser(window, cx),
             "mentions" => self.demo_type("@", window, cx),
             "quotes" => self.open_quote_picker(window, cx),
             "discard" => window.dispatch_action(Box::new(crate::app::discard::DiscardChanges), cx),

@@ -96,9 +96,9 @@ pub(crate) mod server_notice;
 mod update_view;
 // --- browser --- (the in-app browser pane; hooks marked the same way)
 #[path = "browser/mod.rs"]
-// The pane is macOS only for now (a WKWebView); elsewhere links open in
-// the default browser, which leaves its machinery unused.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+// The pane is macOS and Windows only (WKWebView, WebView2); elsewhere links
+// open in the default browser, which leaves its machinery unused.
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) mod browser;
 // --- notes --- (the notes drawer; hooks marked the same way)
 #[path = "notes/mod.rs"]

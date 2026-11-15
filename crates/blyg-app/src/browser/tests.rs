@@ -557,3 +557,106 @@ mod pane {
         });
     }
 }
+
+// --- browser on Windows --- the WebView2 surface's pure pieces, and the
+// gates, tested on every platform.
+
+#[test]
+fn the_pane_exists_on_macos_and_windows_only() {
+    assert!(pane_available_on("macos"));
+    assert!(pane_available_on("windows"));
+    for os in ["linux", "freebsd", "ios", "android", ""] {
+        assert!(!pane_available_on(os), "{os}");
+    }
+    // Tests run the pane on a stub surface everywhere, blocking included.
+    assert!(pane_available());
+    assert!(blocking_available());
+}
+
+#[test]
+fn eval_results_are_decoded_once() {
+    use surface::decode_eval_result;
+    // A script that evaluates to a JSON string arrives encoded again.
+    let reply = r#"{"found":true,"text":"Tides \"rise\"\nand fall"}"#;
+    let wire = serde_json::to_string(reply).unwrap();
+    assert!(wire.starts_with("\"{\\\"found\\\""));
+    assert_eq!(decode_eval_result(&wire), reply);
+    assert_eq!(
+        automation::js::Reply::parse(&decode_eval_result(&wire)).map(|r| r.text),
+        Some("Tides \"rise\"\nand fall".to_string())
+    );
+    // Non-ASCII and the line separators the call escapes survive.
+    let s = "Gezeiten · 潮 \u{2028} 🌊";
+    assert_eq!(decode_eval_result(&serde_json::to_string(s).unwrap()), s);
+    // A script that threw (`null`), anything else, or garbage: "null".
+    for bad in ["null", "42", "true", "{\"a\":1}", "", "\"unterminated"] {
+        assert_eq!(decode_eval_result(bad), "null", "{bad}");
+    }
+    // An empty string is a string.
+    assert_eq!(decode_eval_result("\"\""), "");
+}
+
+#[test]
+fn webview2_navigations_count_like_webkit() {
+    use surface::NavCounter;
+    let mut n = NavCounter::default();
+    assert!(!n.loading());
+    assert_eq!(n.progress(), 1.0);
+    // An allowed navigation: started, committed, completed.
+    n.started(1, true);
+    assert!(n.loading());
+    assert_eq!((n.commits, n.finishes), (0, 0));
+    assert_eq!(n.progress(), 0.15);
+    // A redirect keeps its id: still one navigation.
+    n.started(1, true);
+    assert!(n.committed(1));
+    assert!(!n.committed(1), "one commit per navigation");
+    assert_eq!(n.progress(), 0.6);
+    assert_eq!((n.commits, n.finishes), (1, 0));
+    assert!(n.loading());
+    assert!(n.completed(1));
+    assert_eq!((n.commits, n.finishes), (1, 1));
+    assert!(!n.loading());
+    // A navigation the policy cancelled (mailto:, a custom scheme):
+    // WebView2 still completes it, and that must not count.
+    n.started(2, false);
+    assert!(!n.loading());
+    assert!(!n.committed(2));
+    assert!(!n.completed(2));
+    assert_eq!((n.commits, n.finishes), (1, 1));
+    // Cancelled while a real load is under way: the real one still loads.
+    n.started(3, true);
+    n.started(4, false);
+    assert!(!n.completed(4));
+    assert!(n.loading());
+    assert_eq!(n.finishes, 1);
+    // A load that fails before it commits ends (as WebKit's didFail).
+    assert!(n.completed(3));
+    assert_eq!((n.commits, n.finishes), (1, 2));
+    assert!(!n.loading());
+    // Unknown ids are ignored.
+    assert!(!n.completed(99));
+}
+
+#[test]
+fn page_state_comes_from_the_view_and_the_counter() {
+    use surface::{NavCounter, page_state};
+    let mut n = NavCounter::default();
+    n.started(7, true);
+    let s = page_state(
+        "https://blyg.example.com/f/abc/".into(),
+        "Tide tables".into(),
+        true,
+        false,
+        &n,
+    );
+    assert_eq!(s.url, "https://blyg.example.com/f/abc/");
+    assert_eq!(s.title, "Tide tables");
+    assert!(s.loading && s.can_back && !s.can_forward);
+    assert_eq!((s.commits, s.finishes), (0, 0));
+    n.committed(7);
+    n.completed(7);
+    let s = page_state(String::new(), String::new(), false, true, &n);
+    assert!(!s.loading && s.can_forward);
+    assert_eq!((s.commits, s.finishes, s.progress), (1, 1, 1.0));
+}

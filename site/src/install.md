@@ -183,8 +183,13 @@ WebView2 download page.
   are the same everywhere.
 - **About.** Menu › About Burrow names Windows as the system, and opens
   Explorer where the Mac app opens Finder.
-- **The browser pane** is macOS only for now: links open in your default
-  browser.
+- **The browser pane.** Links open in the pane beside your reading, as on
+  the Mac (Ctrl+click opens it over the whole reading area, Alt+click goes to
+  your default browser, Ctrl+Shift+B brings it back). It's a WebView2 with
+  its own profile in `%LOCALAPPDATA%\Blygger\browser\webview2\`, so
+  sign-ins survive a relaunch and stay apart from the preview. It has no
+  content blocking yet (🛡 is greyed out), and "Open posts on the author's
+  site" is Mac only.
 - **Updates.** The Windows build doesn't update itself yet. Download new
   versions from the Releases page; your posts, settings and sign-ins aren't in
   the folder, so they carry over.
@@ -202,6 +207,10 @@ when you report the bug.
 No installer, auto-update or code signing yet. Keyboard focus between the
 preview and the editor is simpler than on the Mac: when the preview hides or
 the window regains focus, the keyboard goes back to the editor.
+
+The browser pane has no content blocking on Windows yet: the block lists are
+compiled to WebKit's content rules, which WebView2 doesn't read. "Open posts
+on the author's site" is Mac only too.
 
 ### Uninstall on Windows
 

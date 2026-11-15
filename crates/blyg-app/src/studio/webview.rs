@@ -760,79 +760,20 @@ mod wry_surface {
 /// GPUI normally draws through a topmost DirectComposition visual, which
 /// would cover any child window; `main` turns that off on Windows
 /// (`GPUI_DISABLE_DIRECT_COMPOSITION`) so this view shows above the app.
+/// The view is built later, outside GPUI's frame: see
+/// [`crate::webview2_host`], shared with the browser pane.
 #[cfg(all(target_os = "windows", not(test)))]
 mod wry_surface_windows {
     use super::*;
-    use raw_window_handle::{
-        HandleError, HasWindowHandle, RawWindowHandle, Win32WindowHandle, WindowHandle,
-    };
-    use std::cell::{Cell, RefCell};
-    use std::num::NonZeroIsize;
-    use std::rc::{Rc, Weak};
+    use crate::webview2_host::Deferred;
+    use raw_window_handle::HasWindowHandle;
+    use std::cell::Cell;
+    use std::rc::Rc;
     use wry::{NewWindowResponse, Theme, WebView, WebViewBuilder, WebViewExtWindows};
-
-    // Creating a WebView2 waits for it in a nested message loop
-    // (webview2-com's `wait_with_pump`). GPUI asks for the surface while it
-    // draws a frame, with the app borrowed, and a GPUI task or event that the
-    // nested loop dispatches then borrows the app again and panics, which
-    // aborts the process. So the WebView is built later, from a Win32 thread
-    // timer that GPUI's top-level message loop dispatches while nothing is
-    // borrowed; until then `DeferredSurface` records what it is asked to do.
-
-    #[link(name = "user32")]
-    unsafe extern "system" {
-        fn SetTimer(
-            hwnd: isize,
-            id: usize,
-            elapse_ms: u32,
-            timer_proc: Option<unsafe extern "system" fn(isize, u32, usize, u32)>,
-        ) -> usize;
-        fn KillTimer(hwnd: isize, id: usize) -> i32;
-    }
-
-    type Job = Box<dyn FnOnce()>;
-
-    thread_local! {
-        static JOBS: RefCell<Vec<Job>> = const { RefCell::new(Vec::new()) };
-        static TIMER: Cell<usize> = const { Cell::new(0) };
-    }
-
-    unsafe extern "system" fn run_jobs(_: isize, _: u32, id: usize, _: u32) {
-        // SAFETY: a thread timer this module set; killing it is always valid.
-        unsafe { KillTimer(0, id) };
-        TIMER.with(|t| t.set(0));
-        let jobs = JOBS.with(|j| std::mem::take(&mut *j.borrow_mut()));
-        for job in jobs {
-            job();
-        }
-    }
-
-    /// Run `job` soon, from the top-level message loop.
-    fn defer(job: Job) {
-        JOBS.with(|j| j.borrow_mut().push(job));
-        if TIMER.with(Cell::get) == 0 {
-            // SAFETY: a plain thread timer with a static callback.
-            let id = unsafe { SetTimer(0, 0, 1, Some(run_jobs)) };
-            TIMER.with(|t| t.set(id));
-        }
-    }
-
-    /// GPUI's window, by its HWND, for building the child WebView later.
-    struct Hwnd(NonZeroIsize);
-
-    impl HasWindowHandle for Hwnd {
-        fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-            let raw = RawWindowHandle::Win32(Win32WindowHandle::new(self.0));
-            // SAFETY: GPUI's window HWND. If the window has closed since, the
-            // build fails, and that is handled.
-            Ok(unsafe { WindowHandle::borrow_raw(raw) })
-        }
-    }
 
     /// What the surface was asked to do before its WebView existed.
     #[derive(Default)]
     struct Pending {
-        view: Option<WrySurface>,
         frame: Option<Bounds<Pixels>>,
         visible: bool,
         dark: Option<bool>,
@@ -841,120 +782,107 @@ mod wry_surface_windows {
     }
 
     /// A WebView2 surface built outside GPUI's frame (see above).
-    pub struct DeferredSurface(Rc<RefCell<Pending>>);
+    pub struct DeferredSurface(Deferred<WrySurface, Pending>);
 
     impl DeferredSurface {
         pub fn new(window: &mut Window, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
-            let hwnd = match HasWindowHandle::window_handle(&*window).map(|h| h.as_raw()) {
-                Ok(RawWindowHandle::Win32(h)) => Hwnd(h.hwnd),
-                _ => return Err("The preview couldn't find its window.".into()),
-            };
-            let pending = Rc::new(RefCell::new(Pending::default()));
-            let weak: Weak<RefCell<Pending>> = Rc::downgrade(&pending);
-            defer(Box::new(move || {
-                if weak.upgrade().is_none() {
-                    return; // the pane went away first
-                }
-                let built = WrySurface::new(&hwnd, tx);
-                let Some(pending) = weak.upgrade() else {
-                    return;
-                };
-                match built {
-                    Ok(mut view) => {
-                        let mut p = pending.borrow_mut();
-                        if let Some(b) = p.frame {
-                            view.set_frame(b);
-                        }
-                        if let Some(d) = p.dark {
-                            view.set_dark(d);
-                        }
-                        if let Some(h) = p.html.take() {
-                            view.load(&h);
-                        }
-                        for js in std::mem::take(&mut p.evals) {
-                            view.eval(&js);
-                        }
-                        view.set_visible(p.visible);
-                        p.view = Some(view);
+            Deferred::start(
+                window,
+                "The preview couldn't find its window.",
+                move |hwnd| WrySurface::new(hwnd, tx),
+                |view: &mut WrySurface, p: &mut Pending| {
+                    if let Some(b) = p.frame {
+                        view.set_frame(b);
                     }
-                    Err(msg) => eprintln!("blygger: {msg}"),
-                }
-            }));
-            Ok(DeferredSurface(pending))
+                    if let Some(d) = p.dark {
+                        view.set_dark(d);
+                    }
+                    if let Some(h) = p.html.take() {
+                        view.load(&h);
+                    }
+                    for js in std::mem::take(&mut p.evals) {
+                        view.eval(&js);
+                    }
+                    view.set_visible(p.visible);
+                },
+                |_: &mut Pending, msg: String| eprintln!("blygger: {msg}"),
+            )
+            .map(DeferredSurface)
         }
     }
 
     impl PreviewSurface for DeferredSurface {
         fn set_frame(&mut self, bounds: Bounds<Pixels>) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.set_frame(bounds),
-                None => p.frame = Some(bounds),
-            }
+                None => s.pending.frame = Some(bounds),
+            })
         }
 
         fn set_visible(&mut self, visible: bool) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.set_visible(visible),
-                None => p.visible = visible,
-            }
+                None => s.pending.visible = visible,
+            })
         }
 
         fn reclaim_keyboard(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.reclaim_keyboard();
-            }
+            self.0.with(|s| {
+                if let Some(v) = s.view.as_mut() {
+                    v.reclaim_keyboard();
+                }
+            })
         }
 
         fn load(&mut self, html: &str) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.load(html),
                 None => {
                     // A new page makes script queued for the old one moot.
-                    p.html = Some(html.to_string());
-                    p.evals.clear();
+                    s.pending.html = Some(html.to_string());
+                    s.pending.evals.clear();
                 }
-            }
+            })
         }
 
         fn eval(&mut self, js: &str) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.eval(js),
-                None => p.evals.push(js.to_string()),
-            }
+                None => s.pending.evals.push(js.to_string()),
+            })
         }
 
         fn focus_parent(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.focus_parent();
-            }
+            self.0.with(|s| {
+                if let Some(v) = s.view.as_mut() {
+                    v.focus_parent();
+                }
+            })
         }
 
         fn probe(&mut self) {
-            if let Some(v) = self.0.borrow_mut().view.as_mut() {
-                v.probe();
-            }
+            self.0.with(|s| {
+                if let Some(v) = s.view.as_mut() {
+                    v.probe();
+                }
+            })
         }
 
         fn set_dark(&mut self, dark: bool) {
-            let mut p = self.0.borrow_mut();
-            match p.view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.set_dark(dark),
-                None => p.dark = Some(dark),
-            }
+                None => s.pending.dark = Some(dark),
+            })
         }
 
         // --- notes --- (nothing is selected before the page exists)
         fn selection(&mut self, reply: async_channel::Sender<String>) {
-            match self.0.borrow_mut().view.as_mut() {
+            self.0.with(|s| match s.view.as_mut() {
                 Some(v) => v.selection(reply),
                 None => {
                     let _ = reply.try_send(String::new());
                 }
-            }
+            })
         }
     }
 
