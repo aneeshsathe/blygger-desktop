@@ -180,6 +180,7 @@ fn main() -> ExitCode {
     app.run(move |cx: &mut App| {
         gpui_kit::init(cx);
         platform::set_dock_icon_unless_bundled();
+        platform::init(cx); // Windows: Esc closes the Menu panel
         settings::init(store, tokens, notice, cx);
         cx.set_global(themes); // --- themes ---
         ai::init(cx);

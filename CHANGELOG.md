@@ -16,6 +16,18 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Esc on Windows, everywhere.** A WebView2 that has the keyboard (the browser pane's page, the preview, the reader's post) keeps every key from the app, so after a click in a page Esc did nothing to an open sheet, palette or the pane. Each web view now passes Esc on: the keyboard comes back to the app and Esc is handled there, as on the Mac. The pane's page still sees the key too, and a page in full screen keeps it to leave full screen. The Menu button's panel now closes on Esc, before the search field can take the key. A click anywhere in the window (outside a page) now takes the keyboard back from the web views, as clicking the app does on the Mac, so typing in a palette opened that way reaches it.
+
+### Documentation
+
+- **Cross-posting on Windows, step by step.** The extensions guide has a numbered path for Windows: turning cross-post on from Menu › Post › Extensions…, choosing the sites in the consent sheet, signing in to each site once in the pane, and the two sheets with their Windows keys. The install guide links to it, and notes how Esc works on Windows.
+
+### Not verified
+
+- Built and checked on Linux only, as for 0.22.0: the Windows code was type-checked and linted with the MinGW target, and the new tests (Esc from the preview closes the open sheet, Esc from the pane's page closes the pane, a click takes the keyboard back) ran on Linux with stub web views. The WebView2 accelerator-key hook and the Menu panel's Esc have **not** been run on Windows.
+
 ## [0.22.0] - 2026-11-15
 
 The browser pane and cross-post on Windows.

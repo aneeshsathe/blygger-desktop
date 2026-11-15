@@ -181,6 +181,37 @@ fn reactivating_the_window_reclaims_the_keyboard(cx: &mut TestAppContext) {
     assert_eq!(reclaims(&log), before + 1);
 }
 
+/// --- esc --- Windows: Esc pressed while the preview had the keyboard
+/// (WebView2 keeps keys from the app) reaches the app: the preview hands the
+/// keyboard back and the open sheet closes, as Esc in the app does.
+#[gpui_kit::test]
+fn esc_in_the_preview_closes_the_open_sheet(cx: &mut TestAppContext) {
+    let (view, fake, log, cx) = setup(cx, true);
+    open_sample(&view, &fake, cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-3"));
+    frame(cx);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
+    cx.run_until_parked();
+    assert!(
+        view.read_with(cx, |v, _| matches!(
+            v.sheet,
+            Some(Sheet::DeleteDraft { .. })
+        )),
+        "the delete sheet is open"
+    );
+    let parented = |log: &Rc<RefCell<Log>>| {
+        log.borrow()
+            .0
+            .iter()
+            .filter(|c| **c == Call::FocusParent)
+            .count()
+    };
+    let before = parented(&log);
+    send(&view, SurfaceEvent::Escape, cx);
+    assert!(parented(&log) > before, "the keyboard comes back");
+    view.read_with(cx, |v, _| assert!(v.sheet.is_none(), "closed"));
+}
+
 #[gpui_kit::test]
 fn mode_keys_switch_panes(cx: &mut TestAppContext) {
     let (view, _, log, cx) = setup(cx, true);
