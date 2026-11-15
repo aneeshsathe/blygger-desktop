@@ -71,6 +71,9 @@ or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
 
+The [web app](web-self-host.md#using-it) shows your posts in Reading the
+same way.
+
 ### Hoppers
 
 A hopper is a collection of posts on your blyg: other people's posts and your

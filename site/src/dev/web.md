@@ -128,7 +128,7 @@ is one pass over the rows it already orders. The code is
 <!-- --- web-parity --- -->
 ## Studio parity
 
-What the studio's own app does that the web app lacked (0.22.0). Each
+What the studio's own app does that the web app lacked (0.23.0). Each
 needs the blyg to advertise the operation in `GET /api/capabilities`;
 otherwise it's hidden or says why.
 

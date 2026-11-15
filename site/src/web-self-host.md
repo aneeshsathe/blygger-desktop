@@ -203,6 +203,43 @@ back to the tab and it catches up.
 On a phone: open `/burrow/`, then use Share → Add to Home Screen (iOS
 Safari) or Install app (Android Chrome).
 
+## Using it
+
+The web app is Burrow's writing and reading screens in a tab, with the
+studio's own extras. A feature that needs something your blyg's studio may
+not have is hidden, or says why, until the studio offers it.
+
+- **Reading** lists everything you follow newest first, in the same order as
+  the desktop app and the studio (posts with the same date by source, then
+  id). Your own published posts are in it too, as on the desktop: never
+  unread, no 👍 / 👎, and nothing sent about them. See
+  [Your blyg](reading.md#your-blyg).
+- **It keeps itself up to date** while the tab is open: every 15 seconds it
+  asks your blyg what changed (as the studio does), and right after you
+  publish, restore or withdraw. A post, hopper or 👍 changed in another
+  studio or on another device shows within about 15 seconds. A hidden tab
+  asks nothing, and when the blyg is busy or failing it waits longer
+  between tries.
+- **It starts fast.** On a first start the first page of Reading shows as
+  soon as it arrives, and the rest pages in behind it. With 3,000 posts to
+  read it shows in about a third of a second.
+- **Mark all read**: ✓ Mark all read… in the sources pane (⌃⌥A), or ✓ All
+  read on a phone, after asking. See
+  [Read it on the author's site](reading.md#read-it-on-the-authors-site)
+  and the paragraph after it. Needs a studio with `markReadBatch`.
+- **Filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with
+  counts (⌃⌥F steps through them). See
+  [Filters in the web app](writing.md#filters-in-the-web-app).
+- **Updates** (⚙ Blyg › Updates): your threads whose quotes have newer
+  versions, and Refresh. See
+  [Updates in the web app](writing.md#updates-in-the-web-app). Needs a
+  studio with `listStaleThreads`.
+- **Access tokens** (⚙ Blyg › Access tokens) lists the tools that can act
+  as you on your blyg, makes a manual token for a tool that can't sign in
+  with OAuth (shown once: copy it into the tool's credential store), and
+  revokes one or all, each after asking. Revoking doesn't sign the web app
+  out: it uses your Studio session, not a token.
+
 ## Updating
 
 Repeat steps 1–3, 5 and 6 with the new version. Step 4's config stays. The
@@ -252,11 +289,5 @@ so `icons/` differs too. The path to the checkout must not contain spaces.
 - **An old version keeps opening.** `static/_headers` is missing the
   `no-cache` rule for `/burrow/sw.js`. Add it, deploy, then reopen the app
   twice.
-
-**Access tokens.** ⚙ Blyg › Access tokens lists the tools that can act as
-you on your blyg, makes a manual token for a tool that can't sign in with
-OAuth (shown once: copy it into the tool's credential store), and revokes
-one or all. Revoking doesn't sign the web app out: it uses your Studio
-session, not a token.
 
 How the app works inside: [blyg-web](dev/web.md).
