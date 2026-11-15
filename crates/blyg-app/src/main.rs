@@ -508,6 +508,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     "Export Subscriptions as OPML…",
                     app::reading::opml::ExportOpml,
                 ),
+                // --- discover ---
+                MenuItem::action("Discover Blygs…", app::reading::discover::ShowDiscover),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),

@@ -172,10 +172,16 @@ impl MainView {
             .chip("opml-export-chip", "Export OPML…")
             .on_click(cx.listener(|this, _, window, cx| this.opml_export(window, cx)))
             .into_any_element();
+        // --- discover ---
+        let discover = self
+            .chip("discover-chip", "Discover…")
+            .debug_selector(|| "discover-chip".into())
+            .on_click(cx.listener(|this, _, window, cx| this.open_discover(window, cx)))
+            .into_any_element();
         let header = self.screen_header(
             "Subscriptions",
             "following is private to this blyg · esc back".into(),
-            vec![import, export, add],
+            vec![discover, import, export, add],
         );
         let rows = self.reading.subs.iter().enumerate().map(|(i, s)| {
             let paused = s.status == "paused";

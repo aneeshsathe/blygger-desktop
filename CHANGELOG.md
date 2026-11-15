@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Discover blygs** (desktop), as the studio has it. **Blyg › Discover Blygs…** (or **Discover…** on the Subscriptions screen) lists the blygs on blygger.com's public directory that you don't follow yet, newest listing first, five at a time (**m** shows more), each with its address and how active it is. Blygs listed since you last looked say **new**; your blyg keeps that mark (`discoverSeenAt`, written on its own), so the studio and Burrow agree. j/k move, ⏎ subscribes, **o** opens the blyg in your browser, esc closes. Burrow reads the directory only when you open Discover, signed in to nothing, and shows its text as plain text. Not in the web app, which talks only to your own blyg. Needs blygger-studio 0.60 or later for the **new** marks.
+
 ## [0.23.0] - 2026-11-15
 
 Catch up on a conversation, oldest first, and the web app gains the studio's Mark all read, Posts filters, Updates and Access tokens, keeps Reading in order and up to date, and starts faster.
