@@ -1178,6 +1178,11 @@ impl MainView {
             .right_0()
             .flex()
             .justify_center()
+            // During the tour, the sheet centres in the room right of the
+            // tour card, so the card never covers it.
+            .when_some(self.tutorial_card_inset(), |d, inset| {
+                d.pl(px(inset)).pr(px(14.))
+            })
             .child(
                 div()
                     .id("reading-sheet")

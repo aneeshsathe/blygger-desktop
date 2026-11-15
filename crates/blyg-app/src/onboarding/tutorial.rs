@@ -838,6 +838,15 @@ impl MainView {
         }
     }
 
+    /// How far a reading sheet must start from the window's left edge to
+    /// clear the tour card, while the card sits bottom left (the lineage
+    /// sheet moves the card right instead). `None` when no card shows.
+    pub(crate) fn tutorial_card_inset(&self) -> Option<f32> {
+        let t = self.onboarding.tutorial.as_ref()?;
+        (t.news.is_empty() && !t.chooser && !self.lineage_open())
+            .then_some(CARD_LEFT + CARD_W + 12.)
+    }
+
     /// --- flow --- Whether the tour is on the step `id` (serendipity's step
     /// shows the card on the samples, whatever the config says).
     pub(crate) fn tutorial_on_step(&self, id: &str) -> bool {
