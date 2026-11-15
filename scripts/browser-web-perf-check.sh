@@ -68,7 +68,7 @@ fi
 [ -d "$PW/playwright" ] || die "no playwright in $PW"
 
 if [ -z "${BLYG_WEB_NO_BUILD:-}" ]; then
-  "$ROOT/crates/blyg-web/serve.sh" --build-only
+  PRECOMPRESS=1 "$ROOT/crates/blyg-web/serve.sh" --build-only
 fi
 [ -f "$ROOT/crates/blyg-web/dist/index.html" ] || die "no crates/blyg-web/dist (build it first)"
 

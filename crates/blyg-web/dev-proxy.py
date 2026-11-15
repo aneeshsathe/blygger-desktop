@@ -14,9 +14,16 @@ http://localhost:<port>/studio/login.
 Never point this at a real blyg. It refuses any upstream that isn't a
 loopback address. It logs the method, path and status of each request,
 never a header (so never a cookie).
+
+The app's files go out as a blyg on Cloudflare sends them: compressed when
+the browser accepts it (Brotli from a `.br` file beside the original, as
+serve.sh writes them, else gzip made here), with an ETag, revalidated
+(`no-cache`) and answered 304 when unchanged.
 """
 
 import argparse
+import gzip
+import hashlib
 import http.client
 import http.server
 import ipaddress
@@ -28,6 +35,9 @@ import sys
 import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# What a blyg on Cloudflare compresses (text, JSON, wasm, SVG), here.
+COMPRESSIBLE = ("text/", "application/javascript", "application/json", "application/wasm",
+                "application/manifest+json", "image/svg+xml")
 HOP = {"connection", "keep-alive", "proxy-authenticate", "proxy-authorization", "te",
        "trailers", "transfer-encoding", "upgrade", "content-length"}
 
@@ -40,8 +50,18 @@ def loopback(host):
         return False
 
 
+def accepts(header, coding):
+    """Whether an Accept-Encoding header allows `coding` (q=0 refuses it)."""
+    for part in (header or "").split(","):
+        name, _, params = part.strip().partition(";")
+        if name.strip().lower() == coding:
+            return params.replace(" ", "").lower() not in ("q=0", "q=0.0", "q=0.00", "q=0.000")
+    return False
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    gz = {}  # path -> (mtime, gzipped bytes)
     dist = os.path.join(HERE, "dist")
     upstream = ("127.0.0.1", 8790)
 
@@ -79,10 +99,41 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ctype = "application/wasm"
         elif full.endswith(".webmanifest"):
             ctype = "application/manifest+json"
+        elif full.endswith(".js"):
+            ctype = "text/javascript"
+        etag = '"%s"' % hashlib.sha256(data).hexdigest()[:20]
+        coding = None
+        if ctype.startswith(COMPRESSIBLE) and len(data) > 1024:
+            ae = self.headers.get("Accept-Encoding")
+            if accepts(ae, "br") and os.path.isfile(full + ".br"):
+                coding = "br"
+                with open(full + ".br", "rb") as f:
+                    data = f.read()
+            elif accepts(ae, "gzip"):
+                coding = "gzip"
+                mtime = os.path.getmtime(full)
+                hit = self.gz.get(full)
+                if not hit or hit[0] != mtime:
+                    hit = (mtime, gzip.compress(data, 6, mtime=0))
+                    self.gz[full] = hit
+                data = hit[1]
+        if coding:
+            etag = etag[:-1] + '-' + coding + '"'
+        if etag in [t.strip() for t in (self.headers.get("If-None-Match") or "").split(",")]:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Vary", "Accept-Encoding")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("ETag", etag)
+        self.send_header("Vary", "Accept-Encoding")
+        if coding:
+            self.send_header("Content-Encoding", coding)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)

@@ -158,7 +158,10 @@ apps. Create `static/_headers`, or add to it if it exists:
 ```
 
 Static assets don't count towards the Worker's script-size limit (3 MiB on
-the free plan), so the app's 4 MB or so doesn't affect it.
+the free plan), so the app's 4 MB or so doesn't affect it. Cloudflare
+compresses the WebAssembly, JavaScript and CSS as it serves them (about
+1 MB for the wasm instead of 3.8 MB), so there's nothing to set up for that,
+and no compressed copies to add.
 
 ## 5. Deploy
 
@@ -185,6 +188,8 @@ curl -sI "$H/burrow/"       | grep -iE '^(HTTP|content-type)'   # 200, text/html
 curl -sI "$H/burrow"        | grep -iE '^(HTTP|location)'       # 307 to /burrow/
 curl -sI "$H/burrow/sw.js"  | grep -i  '^cache-control'          # no-cache
 curl -sI "$H/burrow/pkg/blyg_web_bg.wasm" | grep -i '^content-type'  # application/wasm
+curl -s -o /dev/null -w '%{size_download}\n' -H 'Accept-Encoding: br, gzip' \
+  "$H/burrow/pkg/blyg_web_bg.wasm"   # about 1 MB (compressed), not about 3.8 MB
 curl -s -o /dev/null -w '%{http_code}\n' "$H/api/capabilities" # 200 or 401, as before
 curl -s -o /dev/null -w '%{http_code}\n' "$H/studio/login"     # 200, as before
 curl -s -o /dev/null -w '%{http_code}\n' "$H/"                 # the blyg's front page, as before
