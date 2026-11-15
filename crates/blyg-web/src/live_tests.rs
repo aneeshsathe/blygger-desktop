@@ -725,6 +725,7 @@ const PAGE_MODULES: &[(&str, &str)] = &[
     ("hub.js", include_str!("../www/hub.js")),
     ("live.js", include_str!("../www/live.js")),
     ("net.js", include_str!("../www/net.js")),
+    ("parity.js", include_str!("../www/parity.js")),
     ("phone.js", include_str!("../www/phone.js")),
     ("web-reading.js", include_str!("../www/web-reading.js")),
     ("writing.js", include_str!("../www/writing.js")),

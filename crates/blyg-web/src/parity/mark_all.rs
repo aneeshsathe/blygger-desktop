@@ -66,8 +66,13 @@ impl Burrow {
     /// A row's read state, here only (nothing queued in the outbox).
     fn set_read_quiet(&mut self, key: &str, read: Option<u32>) {
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key) {
+            let changed = r.read_version != read;
             r.read_version = read;
             self.store.read.insert(key.to_string(), read);
+            if changed {
+                // Read state moves a post in the stream (edited-since-read first).
+                self.rows_changed();
+            }
             self.reading_dirty = true;
         }
     }
