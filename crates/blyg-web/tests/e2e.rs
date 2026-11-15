@@ -221,10 +221,13 @@ fn web_reading_and_posts_follow_native_order() {
     let shown = web.reading();
     assert_eq!(shown, native, "Burrow web lists Reading as native Burrow");
     // Newest first by the posts' own dates, whatever the import order.
-    let ours: Vec<&String> = shown
+    // Only this test's posts: `b` may hold others (the core e2e, run first
+    // by e2e-local.sh, publishes there too).
+    let want_keys: Vec<String> = posts
         .iter()
-        .filter(|k| k.starts_with(&format!("{}|", sub.id)))
+        .map(|(_, rid)| format!("{}|{rid}", sub.id))
         .collect();
+    let ours: Vec<&String> = shown.iter().filter(|k| want_keys.contains(k)).collect();
     assert_eq!(ours.len(), 30);
     let want: Vec<String> = posts
         .iter()
@@ -232,7 +235,7 @@ fn web_reading_and_posts_follow_native_order() {
         .map(|(_, rid)| format!("{}|{rid}", sub.id))
         .collect();
     let mut by_date = me.reading();
-    by_date.retain(|r| r.subscription_id == sub.id);
+    by_date.retain(|r| want_keys.contains(&format!("{}|{}", r.subscription_id, r.remote_id)));
     blyg_core::order::sort_reading(&mut by_date);
     let by_date: Vec<String> = by_date
         .iter()

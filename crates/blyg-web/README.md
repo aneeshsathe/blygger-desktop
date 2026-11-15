@@ -293,11 +293,11 @@ local studios under `wrangler dev`, `dev-proxy.py`, 3,000 reading posts and
 
 | | before | now | the studio |
 |---|---:|---:|---:|
-| Cold: first own-posts list | 950–1,100 ms | 145–250 ms | 495 ms |
-| Cold: Reading shown | 1,050–1,220 ms | 240–350 ms | 742 ms |
+| Cold: first own-posts list | 950–1,100 ms | 145–370 ms | 495–499 ms |
+| Cold: Reading shown | 1,050–1,220 ms | 240–470 ms | 742–743 ms |
 | Cold: requests | 56 | 57 (30 of them Reading pages) | 30 |
-| Cold: bytes on the wire | 4.1 MB | 1.25 MB | 0.53 MB |
-| Warm: Reading shown | 220–240 ms | 170–210 ms | |
+| Cold: bytes on the wire | 4.1 MB | 1.2–1.3 MB | 0.53 MB |
+| Warm: Reading shown | 220–240 ms | 170–210 ms | 232 ms |
 | Scroll, 60 steps over the stream | 2–3 long tasks (65–87 ms) | none | none |
 
 What a start does, in order:
