@@ -1,9 +1,11 @@
 //! --- background --- Reading the studio's Background lens, and the
 //! owner's choices (`crate::background`). The lens is read whole (`GET
 //! /api/reading?background=true`, every page) when something it's worked
-//! out from moved: `reading` (imports, withdrawals, placements, own
-//! versions' reasons), `subscriptions` (a whole blyg moved), `settings`
-//! (a rule turned off) or `items` (own versions). A choice is sent at once
+//! out from moved: `reading` (imports, withdrawals, placements, and your
+//! own posts' status, versions and reasons: the studio's `items` trigger
+//! moves `reading` for those), `subscriptions` (a whole blyg moved) or
+//! `settings` (a rule turned off). Not `items` alone: a draft edit can't
+//! move the lens, and the studio's own lens doesn't depend on it. A choice is sent at once
 //! and shows here at once; the next read of the lens settles it.
 
 use super::Engine;
@@ -12,7 +14,7 @@ use crate::background::{BackgroundSet, Key, Placement};
 use crate::model::{CoreEvent, ReadingItem};
 
 /// What the Background lens depends on (`GET /api/changes` domains).
-pub const BACKGROUND_DEPS: &[&str] = &["reading", "subscriptions", "settings", "items"];
+pub const BACKGROUND_DEPS: &[&str] = &["reading", "subscriptions", "settings"];
 
 impl Engine {
     /// Note whether the blyg serves Background (its capabilities list
