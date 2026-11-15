@@ -788,29 +788,49 @@ fn the_stream_is_drawn_a_page_at_a_time() {
 }
 
 fn changes(epoch: &str, items: u64, reading: u64) -> String {
+    changes_all(epoch, items, reading, 4, 0)
+}
+
+fn changes_all(epoch: &str, items: u64, reading: u64, hoppers: u64, signals: u64) -> String {
     json!({ "epoch": epoch, "domains": {
         "items": items, "settings": 1, "reading": reading, "subscriptions": 2,
-        "signals": 0, "hoppers": 4, "feed": 9
+        "signals": signals, "hoppers": hoppers, "feed": 9
     } })
     .to_string()
 }
 
 fn plan(b: &mut Burrow, status: u16, body: &str, now: f64) -> (bool, bool) {
-    let p = v(b.changes_plan(status, body, now));
+    let p = v(b.changes_plan(status, body, None, true, now));
     (
         p["items"].as_bool().unwrap(),
         p["reading"].as_bool().unwrap(),
     )
 }
 
+/// Accept every list `p` (a `changes_plan` answer) said to read, as a
+/// refresh that read them all would.
+fn accept_all(b: &mut Burrow, p: &Value, now: f64) {
+    let rev = p["rev"].to_string();
+    for list in ["items", "reading", "hoppers", "signals"] {
+        if p[list] == true {
+            b.changes_accept(list, &rev, now, Some(String::new()));
+        }
+    }
+}
+
+/// Which of items, reading, hoppers, signals a plan reads.
+fn lists(p: &Value) -> [bool; 4] {
+    ["items", "reading", "hoppers", "signals"].map(|l| p[l].as_bool().unwrap())
+}
+
 #[test]
 fn a_refresh_reads_only_what_changed() {
     let mut b = live();
     let soon = NOW + 1000.0;
-    // Never read under these revisions: both lists.
-    assert_eq!(plan(&mut b, 200, &changes("e1", 5, 7), NOW), (true, true));
-    b.changes_accept("items", NOW);
-    b.changes_accept("reading", NOW);
+    // Never read under these revisions: every list.
+    let p = v(b.changes_plan(200, &changes("e1", 5, 7), None, true, NOW));
+    assert_eq!(lists(&p), [true; 4]);
+    accept_all(&mut b, &p, NOW);
     // Nothing moved: nothing to read.
     assert_eq!(
         plan(&mut b, 200, &changes("e1", 5, 7), soon),
@@ -836,6 +856,244 @@ fn a_refresh_reads_only_what_changed() {
     );
     // An accept without a captured answer records nothing.
     let mut c = live();
-    c.changes_accept("items", NOW);
+    c.changes_accept("items", "null", NOW, Some(String::new()));
+    c.changes_accept("items", "{", NOW, Some(String::new()));
     assert_eq!(plan(&mut c, 200, &changes("e1", 5, 7), NOW), (true, true));
+}
+
+#[test]
+fn each_list_follows_its_own_counters_as_native_does() {
+    // The web's map is native sync's, constant for constant.
+    use blyg_core::sync::{HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS};
+    assert_eq!(
+        crate::live::LISTS,
+        &[
+            ("items", ITEMS_DEPS),
+            ("reading", READING_DEPS),
+            ("hoppers", HOPPERS_DEPS),
+            ("signals", SIGNALS_DEPS),
+        ]
+    );
+    let mut b = live();
+    let soon = NOW + 1000.0;
+    let p = v(b.changes_plan(200, &changes_all("e1", 5, 7, 4, 0), None, true, NOW));
+    accept_all(&mut b, &p, NOW);
+    let at = |b: &mut Burrow, body: String| lists(&v(b.changes_plan(200, &body, None, true, soon)));
+    // A hopper changed elsewhere (made, renamed, a post added): the
+    // hoppers only, not the whole reading list.
+    assert_eq!(
+        at(&mut b, changes_all("e1", 5, 7, 5, 0)),
+        [false, false, true, false]
+    );
+    // A thumb changed elsewhere: the signals only.
+    assert_eq!(
+        at(&mut b, changes_all("e1", 5, 7, 4, 1)),
+        [false, false, false, true]
+    );
+    // Items or settings: the items only.
+    assert_eq!(
+        at(&mut b, changes_all("e1", 6, 7, 4, 0)),
+        [true, false, false, false]
+    );
+    // A subscription moved: the reading list and the hoppers.
+    let mut subs: Value = serde_json::from_str(&changes_all("e1", 5, 7, 4, 0)).unwrap();
+    subs["domains"]["subscriptions"] = json!(3);
+    assert_eq!(at(&mut b, subs.to_string()), [false, true, true, false]);
+    // Accepting one list leaves the others' counters alone.
+    let p = v(b.changes_plan(200, &changes_all("e1", 5, 7, 5, 1), None, true, soon));
+    b.changes_accept("hoppers", &p["rev"].to_string(), soon, Some(String::new()));
+    assert_eq!(
+        at(&mut b, changes_all("e1", 5, 7, 5, 1)),
+        [false, false, false, true]
+    );
+}
+
+#[test]
+fn each_refresh_keeps_its_own_change_state() {
+    // Two refreshes overlap: the first planned under reading 7, then a
+    // second under reading 8. The first finishing last must record 7,
+    // not the 8 the later plan saw, or the change made between them
+    // would never be read.
+    let mut b = live();
+    let first = v(b.changes_plan(200, &changes("e1", 5, 7), None, true, NOW));
+    let second = v(b.changes_plan(200, &changes("e1", 5, 8), None, true, NOW));
+    b.changes_accept(
+        "reading",
+        &second["rev"].to_string(),
+        NOW,
+        Some(String::new()),
+    );
+    b.changes_accept(
+        "reading",
+        &first["rev"].to_string(),
+        NOW,
+        Some(String::new()),
+    );
+    assert!(plan(&mut b, 200, &changes("e1", 5, 8), NOW + 1.0).1);
+    // A run that failed accepts nothing: its lists are still due.
+    let mut c = live();
+    let _failed = v(c.changes_plan(200, &changes("e1", 5, 7), None, true, NOW));
+    assert_eq!(
+        plan(&mut c, 200, &changes("e1", 5, 7), NOW + 1.0),
+        (true, true)
+    );
+}
+
+#[test]
+fn polling_paces_itself_and_backs_off() {
+    let mut b = live();
+    // With /api/changes: every 15 s, as Studio (and native's normal cadence).
+    let p = v(b.changes_plan(200, &changes("e1", 5, 7), None, true, NOW));
+    assert_eq!(p["every"], 15_000.0);
+    // Without: native's whole pull interval.
+    assert_eq!(
+        v(b.changes_plan(404, "", None, true, NOW))["every"],
+        60_000.0
+    );
+    // A 429: read nothing, wait what the blyg asked.
+    let p = v(b.changes_plan(429, "", Some("42".into()), true, NOW));
+    assert_eq!(p, json!({ "wait": 42_000.0 }));
+    assert_eq!(
+        v(b.changes_plan(429, "", None, true, NOW)),
+        json!({ "wait": 60_000.0 })
+    );
+    // A 5xx: 30 s, doubling, up to 30 min; a good answer starts over.
+    let waits: Vec<f64> = (0..8)
+        .map(|_| {
+            v(b.changes_plan(503, "", None, true, NOW))["wait"]
+                .as_f64()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(
+        waits,
+        [30e3, 60e3, 120e3, 240e3, 480e3, 960e3, 1800e3, 1800e3]
+    );
+    b.changes_plan(200, &changes("e1", 5, 7), None, true, NOW);
+    assert_eq!(v(b.changes_plan(500, "", None, true, NOW))["wait"], 30e3);
+    // A failed read mid-refresh backs off the same way.
+    assert_eq!(b.poll_failed(502, None), Some(60e3));
+    assert_eq!(b.poll_failed(429, Some("7".into())), Some(7e3));
+    assert_eq!(b.poll_failed(404, None), None);
+    // Offline and signed out are errors, not plans.
+    assert_eq!(
+        v(b.changes_plan(0, "", None, true, NOW))["error"]["code"],
+        "offline"
+    );
+    assert_eq!(
+        v(b.changes_plan(401, "", None, true, NOW))["error"]["code"],
+        "unauthorized"
+    );
+}
+
+#[test]
+fn hoppers_and_thumbs_changed_elsewhere_reach_the_rows() {
+    let mut b = live();
+    let mut rows = reading_rows(3);
+    rows[0]["hoppers"] = json!(["h1"]);
+    rows[1]["thumb"] = json!(1);
+    let hoppers = json!([{ "id": "h1", "name": "Tides", "slug": null, "public": false }]);
+    b.live_reading(&rows.to_string(), &hoppers.to_string());
+    b.reading_json();
+    let on = |b: &Burrow, key: &str| -> Vec<String> {
+        v(b.hoppers(key))
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|h| h["on"] == true)
+            .map(|h| h["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(on(&b, "sub1|r0"), ["h1"]);
+    // Elsewhere: r0 left h1, r2 joined it, and a new hopper h2 holds r1.
+    let hoppers = json!([
+        { "id": "h1", "name": "Tides", "slug": null, "public": false },
+        { "id": "h2", "name": "Shells", "slug": null, "public": true }
+    ]);
+    let members = json!({
+        "h1": [{ "subscriptionId": "sub1", "remoteId": "r2", "addedAt": "2026-11-05T00:00:00Z" }],
+        "h2": [{ "subscriptionId": "sub1", "remoteId": "r1", "addedAt": "2026-11-05T00:00:00Z" }]
+    });
+    let r = v(b.live_hoppers(&hoppers.to_string(), &members.to_string()));
+    assert_eq!(r["changed"], true);
+    assert!(b.reading_dirty());
+    assert!(on(&b, "sub1|r0").is_empty());
+    assert_eq!(on(&b, "sub1|r1"), ["h2"]);
+    assert_eq!(on(&b, "sub1|r2"), ["h1"]);
+    // The same answer again changes nothing.
+    b.reading_json();
+    let r = v(b.live_hoppers(&hoppers.to_string(), &members.to_string()));
+    assert_eq!(r["changed"], false);
+    assert!(!b.reading_dirty());
+    // An unsent change of yours stays on top of what the blyg says.
+    b.toggle_hopper("sub1|r0", "h2");
+    b.live_hoppers(&hoppers.to_string(), &members.to_string());
+    assert_eq!(on(&b, "sub1|r0"), ["h2"]);
+
+    // Thumbs: r1's went, r2 got a thumbs-down.
+    let thumb = |b: &Burrow, key: &str| v(b.wr_post_extra(key))["thumb"].clone();
+    assert_eq!(thumb(&b, "sub1|r1"), 1);
+    let signals = json!([{ "subscriptionId": "sub1", "remoteId": "r2", "thumb": -1 }]);
+    let r = v(b.live_signals(&signals.to_string()));
+    assert_eq!(r["changed"], true);
+    assert_eq!(thumb(&b, "sub1|r1"), Value::Null);
+    assert_eq!(thumb(&b, "sub1|r2"), -1);
+    assert_eq!(v(b.live_signals(&signals.to_string()))["changed"], false);
+}
+
+#[test]
+fn the_safety_net_backs_off_per_list_as_native_does() {
+    const MIN: f64 = 60_000.0;
+    let body = changes("e1", 5, 7);
+    let due = |b: &mut Burrow, at: f64, visible: bool| -> bool {
+        v(b.changes_plan(200, &body, None, visible, at))["items"]
+            .as_bool()
+            .unwrap()
+    };
+    let read = |b: &mut Burrow, body: &str, at: f64, fetched: &str| {
+        let p = v(b.changes_plan(200, body, None, true, at));
+        b.changes_accept("items", &p["rev"].to_string(), at, Some(fetched.into()));
+    };
+    let mut b = live();
+    let mut t = NOW;
+    read(&mut b, &body, t, "list 1");
+    // The first net: 10 min after the read, and never while hidden.
+    assert!(!due(&mut b, t + 10.0 * MIN - 1.0, true));
+    assert!(due(&mut b, t + 10.0 * MIN, true));
+    assert!(!due(&mut b, t + 10.0 * MIN, false));
+    // Each net read that finds the same list doubles the wait: 20, 40,
+    // 80 min, then the 2 h cap.
+    let mut waits = vec![];
+    let mut every = 10.0 * MIN;
+    for _ in 0..5 {
+        t += every;
+        read(&mut b, &body, t, "list 1");
+        every = (1..)
+            .map(|m| m as f64 * MIN)
+            .find(|w| due(&mut b, t + w, true))
+            .unwrap();
+        waits.push(every / MIN);
+    }
+    assert_eq!(waits, [20.0, 40.0, 80.0, 120.0, 120.0]);
+    // A net read that finds something new: back to 10 min.
+    t += every;
+    read(&mut b, &body, t, "list 2");
+    assert!(due(&mut b, t + 10.0 * MIN, true));
+    // Grown again (20 min), then the counters move: back to 10 min too.
+    t += 10.0 * MIN;
+    read(&mut b, &body, t, "list 2");
+    assert!(!due(&mut b, t + 10.0 * MIN, true));
+    let moved = changes("e1", 6, 7);
+    read(&mut b, &moved, t + MIN, "list 3");
+    assert_eq!(
+        v(b.changes_plan(200, &moved, None, true, t + 11.0 * MIN))["items"],
+        true
+    );
+    // Settled along with another list (`fetched: None`): its net is left
+    // alone, still due 10 min after.
+    let mut c = live();
+    let p = v(c.changes_plan(200, &body, None, true, NOW));
+    c.changes_accept("signals", &p["rev"].to_string(), NOW, None);
+    let p = v(c.changes_plan(200, &body, None, true, NOW + 10.0 * MIN));
+    assert_eq!(p["signals"], true);
 }

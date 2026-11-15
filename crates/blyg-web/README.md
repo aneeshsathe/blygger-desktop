@@ -186,9 +186,19 @@ cookie.
   page to `nextCursor: null` (`Pager`), and an expired cursor drops what
   was read and starts over (at most `CURSOR_RESTARTS` times), so a list is
   never partial.
-- **What it reads.** `GET /api/settings` (`siteUrl`, for permalinks),
-  `/api/items`, `/api/reading/imported` and `/api/hoppers`, on start,
-  after reconnecting, and when the tab comes back after a minute.
+- **What it reads.** `GET /api/settings` (`siteUrl`, for permalinks) on
+  start. Then `GET /api/changes` on start, every 15 s while the tab is
+  visible (Studio's cadence), at once when the tab is shown again or
+  reconnects, and right after your own publish, restore, withdraw or
+  draft delete. It reads a list again only when its counters moved
+  (`live::LISTS`, native sync's map): `/api/items`;
+  `/api/reading/imported` with `/api/hoppers`; the hoppers alone
+  (`/api/hoppers` and `/api/hoppers/{id}/memberships`); and the thumbs
+  alone (`/api/signals`). A hidden tab asks nothing. A 429 waits its
+  `Retry-After` and a 5xx backs off from 30 s to 30 min. Only one refresh
+  runs at a time: a call made during one queues a single run after it.
+  `scripts/browser-web-live-check.sh` checks all of this against a local
+  studio.
 - **What it writes.** `POST /api/items` (a new draft, or a reply stub
   with `stubOf`), `PATCH /api/items/{id}` (`expectedRevision`,
   `contentMd`, and `kind` until first published), `DELETE` a draft,

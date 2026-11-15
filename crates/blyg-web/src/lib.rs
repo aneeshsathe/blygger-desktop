@@ -308,8 +308,14 @@ pub struct Burrow {
     reading_seen: store::Seen,
     /// The reading list changed since `reading_json` last wrote it.
     reading_dirty: bool,
-    /// `GET /api/changes`, captured before a refresh reads anything.
-    changes: Option<blyg_core::api::wire::ChangeState>,
+    /// Live: what the hoppers and the thumbs were last read whole under,
+    /// when they're read on their own (`live::LISTS`). Not persisted: the
+    /// first refresh after a load reads them once.
+    side_seen: std::collections::BTreeMap<String, store::Seen>,
+    /// Live: how often to check `GET /api/changes`, and the backoff.
+    pace: live::Pace,
+    /// Live: each list's safety net (`live::Net`). Not persisted.
+    nets: std::collections::BTreeMap<String, live::Net>,
     /// Each reading row's stream excerpt, by key, for the version it was
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
@@ -355,7 +361,9 @@ impl Burrow {
             offline: false,
             reading_seen: store::Seen::default(),
             reading_dirty: false,
-            changes: None,
+            side_seen: Default::default(),
+            pace: Default::default(),
+            nets: Default::default(),
             excerpts: Default::default(),
             // --- web-reading ---
             wr: Default::default(),
