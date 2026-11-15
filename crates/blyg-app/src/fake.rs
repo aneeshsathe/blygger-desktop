@@ -505,7 +505,7 @@ impl FakeBackend {
 
     fn sorted(items: &[Item]) -> Vec<Item> {
         let mut v = items.to_vec();
-        v.sort_by(|a, b| b.updated.cmp(&a.updated));
+        blyg_core::order::sort_own(&mut v);
         v
     }
 
@@ -1334,7 +1334,7 @@ impl Backend for FakeBackend {
         v.push(sample_reading());
         fake_hoppered(&st.rd.hopper_items, &mut v); // --- hoppers ---
         // Newest first by the post's own date, as the store sorts (#6).
-        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
+        blyg_core::order::sort_reading(&mut v);
         v
     }
 
@@ -2529,7 +2529,7 @@ impl Backend for FakeBackend {
             .cloned()
             .collect();
         fake_hoppered(&st.rd.hopper_items, &mut v); // --- hoppers ---
-        v.sort_by_cached_key(|r| std::cmp::Reverse(r.sort_at()));
+        blyg_core::order::sort_reading(&mut v);
         v
     }
 

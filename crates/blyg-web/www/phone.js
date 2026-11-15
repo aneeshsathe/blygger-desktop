@@ -8,7 +8,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, draw, onNearEnd, settle,
+  swipeCards, cardHtml, draw, drawMore, onNearEnd, settle,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -18,6 +18,7 @@ import { phoneChip, opened, wrUse } from './web-reading.js';
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
@@ -115,11 +116,18 @@ function renderList() {
     ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
     : '<span class="empty">Hold a post to shelve it</span>');
   const query = V.query.trim();
+  // --- web-parity --- the filters (hidden with no posts, and while searching).
+  const pf = filterChips();
+  const pfh = $('#p-pfilter');
+  pfh.hidden = !pf.all || !!query;
+  draw(pfh, pf.html);
+  // --- end web-parity ---
   const rows = V.rows.slice(0, listN);
   draw($('#p-list'), rows.map((r, i) => `<button type="button" role="listitem" class="prow${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" data-id="${esc(r.id)}" data-shelved="${r.shelved}">
       <div class="ti">${r.shelved ? '📚 ' : ''}${r.title_html}</div>
       <div class="meta">${esc(r.kind)} <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span>${r.dot ? `<span class="dot${r.dot === 'amber' ? ' amber' : ''}" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}<span>${esc(r.when)}</span></div></button>`).join('')
     + (V.rows.length > rows.length ? `<p class="list-more">${V.rows.length - rows.length} more…</p>` : '')
+    + (!V.rows.length && !query && pf.on !== 'all' ? `<p class="list-more">${esc(pf.empty)}</p>` : '') // --- web-parity ---
     + (V.wants_create && query
       ? `<button type="button" class="prow start" data-new="1"><div class="ti">＋ Start “${esc(query)}”</div><div class="meta">${V.rows.length ? 'a new post' : 'no matches · tap to write it'}</div></button>`
       : ''));
@@ -137,9 +145,21 @@ function renderStream() {
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
   if (!reading) return;
   phoneChip(); // --- web-reading --- what the stream shows --- end web-reading ---
+  streamShown = R.rows.length;
   draw($('#p-stream'), R.rows.length
-    ? R.rows.map(cardHtml).join('') + (R.total > R.rows.length ? `<p class="stream-more">${R.total - R.rows.length} more…</p>` : '')
+    ? R.rows.map(cardHtml).join('') + streamMore(R.total - R.rows.length)
     : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
+}
+const streamMore = (n) => (n > 0 ? `<p class="stream-more">${n} more…</p>` : '');
+let streamShown = 0; // Read cards on screen
+/** The next page of the stream, below the cards drawn (not all of them
+    again). */
+function streamNext() {
+  const R = JSON.parse(S.B.reading_range(now(), $('#p-rq').value, unreadOnly, streamShown, PAGE));
+  if (!R.rows.length || R.total <= streamShown) { streamN += PAGE; renderStream(); return; }
+  streamShown += R.rows.length;
+  streamN = streamShown;
+  drawMore($('#p-stream'), R.rows.map(cardHtml).join('') + streamMore(R.total - streamShown));
 }
 /** Back to the top of the stream: one page again. */
 function streamFromTop() {
@@ -371,6 +391,12 @@ export function initPhone() {
     if (o.action === 'create') { q.value = ''; openEditor(); touched(); toast('New draft created'); }
     else if (o.action === 'open') openEditor();
   });
+  // --- web-parity --- the Posts filters.
+  $('#p-pfilter').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pf]');
+    if (b) { pickFilter(b.dataset.pf, false); render(); }
+  });
+  // --- end web-parity ---
   let hold = null;
   const list = $('#p-list');
   list.addEventListener('pointerdown', (e) => {
@@ -471,8 +497,7 @@ export function initPhone() {
   $('#p-unreadOnly').addEventListener('click', () => { unreadOnly = !unreadOnly; streamFromTop(); renderStream(); });
   onNearEnd($('#p-stream'), () => {
     if (pview !== 'read' || !$('#p-stream .stream-more')) return;
-    streamN += PAGE;
-    renderStream();
+    streamNext();
   });
   swipeCards($('#p-stream'), {
     onRight: (key, c) => { outcome(S.B.set_read(key, true)); persist(); renderStream(); settle(c); },

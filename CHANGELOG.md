@@ -16,6 +16,35 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-15
+
+Catch up on a conversation, oldest first, and the web app gains the studio's Mark all read, Posts filters, Updates and Access tokens, keeps Reading in order and up to date, and starts faster.
+
+### Added
+
+- **Catch up** on a conversation. ⇧C on the reading screen (or the **Catch up** chip under a post that quotes, replies to or forks another, Post › Catch Up…, or ⇧C in the lineage view) lays out the conversation that leads to the post, oldest first: each post's author, date, how the next one uses it, and its own words, with its quotes shown as "↪ quotes Ada" since the quoted post is the card above. j/k move, ⏎ opens a post in the reader, **w** adds side replies (Whole conversation), and **s** asks your AI provider for a short in-order summary, shown at the top as "AI summary" and never put into a post (esc cancels). Posts this Mac doesn't hold show what was cited of them, and nothing is fetched until you open one. It goes back at most 8 steps and 60 posts.
+- **Web app: Mark all read**, as the studio has it. ✓ Mark all read… in the sources pane (⌃⌥A), ✓ All read on a phone: every unread post of the chosen source and lens, after a confirmation, sent to your blyg in batches of 500 and put back if the blyg refuses. Needs a studio that advertises `markReadBatch`.
+- **Web app: filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with counts, over the list on a desk and a phone (⌃⌥F steps through them), as the studio's compose page has them. A search still looks through every post.
+- **Web app: Updates** (⚙ Blyg › Updates): your threads whose quotes have newer versions, stalest first, what changed in each quote, and Refresh (one, or all that can be) with a version note, as the studio's Updates tab and the desktop's Stale Quotes… do. Needs a studio that advertises `listStaleThreads` (and `refreshItem` to refresh).
+- **Web app: your own posts in Reading**, as the desktop and the studio show them (never unread, no thumbs, nothing sent).
+- **Web app: Access tokens** (⚙ Blyg › Access tokens): what can act as you on your blyg, a manual token for a tool (shown once, never stored), and revoke one or all, each confirmed, as the studio's Client access page does.
+- **Development skills** in `skills/`: the checks reviewers used to make in PRs, now plain-Markdown checklists that any coding agent (or person) can follow while working. They cover the release, the tutorial, Windows + macOS, the pre-PR gate, agent cohorts and the web hand-off. Spec-level skills cover capability gating, real-studio testing, list order and refresh, client security, conformance and upstream sync. `AGENTS.md` and the README say how to use them. Thanks to @patwater for the idea.
+
+### Fixed
+
+- **Web app: Reading was in the wrong order.** The web kept the order the server sent, which is by fetch time and the same for a whole backfill, so posts came out shuffled. Every client now sorts with one function in blyg-core (newest first, ties by source then id, descending). Your posts list compares real times, not text, then the server id. A test against a real local studio checks the web, the desktop and the studio agree. On the desktop, reading posts with the same date may swap places once (ties now break descending).
+- **Web app: posts didn't update while the tab was open.** It now asks `/api/changes` every 15 s while visible (the studio's pace), checks right after you publish, restore or withdraw, stops while hidden, backs off on 429 and 5xx, and runs one refresh at a time. Hopper and thumb changes made elsewhere now show too. The occasional full re-read backs off like the desktop's (10 min, doubling to 2 h while nothing changes). Checked by `scripts/browser-web-live-check.sh`: every change shows within about 15 s.
+- **Web app: starts faster than the studio.** On a first start, the first page of Reading is drawn as soon as it arrives, with the rest paging in behind. Posts, Reading and hoppers load in parallel, and scrolling adds cards instead of redrawing the list. With 3,000 reading posts on localhost, Reading shows in about 0.25–0.35 s (it was about 1.1 s; the studio takes 0.74 s), and scrolling has no long tasks. Checked by `scripts/browser-web-perf-check.sh`.
+
+### Changed
+
+- **The tour teaches Catch up.** The Reading feature tour has a Catch up step on the sample four-post conversation (⇧C), and What's new runs it after an update. The lineage step says ⇧C catches up from the lineage view.
+
+### Not verified
+
+- Catch up's AI summary (**s**) was tested only at the prompt level (the request it builds and how its answer is shown), not against a live AI provider.
+- The web app's phone layout was not walked screen by screen for the new parity features (Mark all read, Posts filters, Updates, Access tokens).
+
 ## [0.22.0] - 2026-11-15
 
 The browser pane and cross-post on Windows.

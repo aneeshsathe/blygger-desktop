@@ -688,9 +688,138 @@ pub fn apply_suggestions(text: &str, suggestions: &[Suggestion]) -> String {
     out
 }
 
+// ------------------------------------------------------------------ catch up
+
+/// The catch-up summary's instructions. Reading-only output: it's shown in
+/// the catch-up sheet, labelled "AI summary", never put into a post.
+pub const CATCH_UP_SYSTEM_PROMPT: &str = concat!(
+    "You help someone catch up on a conversation between blyg posts before they join it. ",
+    "You are given the posts in the order to read them, oldest first, each with its author, ",
+    "its date, what it quotes, replies to or forks, and its own words (a line like ",
+    "\"↪ quotes Ada\" marks where it quoted an earlier post, which is listed above it). ",
+    "Write a short catch-up, in the same order: who said what, how each turn responds to ",
+    "the one before, and where the conversation stands now, at the last post. Attribute ",
+    "every point to its author by name. Use only what the posts say: do not invent ",
+    "positions, quotes, facts or motives, and say so when a post isn't available. ",
+    "Plain prose or a few short bullet points, under 200 words, no headings."
+);
+
+/// One line per post: `1. <author>, <date>, quoting <author>: <own words>`.
+fn catch_up_line(n: usize, e: &blyg_core::catchup::Entry) -> String {
+    use blyg_core::catchup::side_verb;
+    let mut head = format!("{n}. {}", e.who);
+    if let Some(d) = e.day() {
+        head.push_str(&format!(", {d}"));
+    }
+    for d in &e.draws_on {
+        let verb = match side_verb(d.relation, d.partial) {
+            "quotes" => "quoting",
+            "quotes a passage of" => "quoting a passage of",
+            "replies to" => "replying to",
+            "replies to a passage of" => "replying to a passage of",
+            _ => "forked from",
+        };
+        head.push_str(&format!(", {verb} {}", d.who));
+    }
+    if e.side {
+        head.push_str(" (a side reply)");
+    }
+    if e.start {
+        head.push_str(" (the latest post, the one being read)");
+    }
+    format!("{head}: {}", e.text())
+}
+
+/// The catch-up summary prompt over a conversation, oldest first
+/// (`blyg_core::catchup::build`).
+pub fn catch_up_summary(c: &blyg_core::catchup::Conversation) -> Prompt {
+    let lines: Vec<String> = c
+        .entries
+        .iter()
+        .enumerate()
+        .map(|(i, e)| catch_up_line(i + 1, e))
+        .collect();
+    let mut user = format!(
+        "The conversation, {} posts, oldest first:\n\n{}",
+        c.entries.len(),
+        lines.join("\n\n")
+    );
+    if c.truncated {
+        user.push_str("\n\n(Earlier or further posts were left out: the conversation is longer.)");
+    }
+    user.push_str("\n\nCatch me up, in order.");
+    Prompt {
+        system: CATCH_UP_SYSTEM_PROMPT.to_string(),
+        user,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_catch_up_prompt_lists_the_turns_in_order() {
+        use blyg_core::catchup::{Conversation, DrawsOn, Entry, Words};
+        use blyg_core::lineage::Peer;
+        use blyg_core::profile::Relation;
+        let e = |who: &str, at: Option<i64>, words: Words, on: Vec<DrawsOn>| Entry {
+            peer: Peer::Bare(who.into()),
+            who: who.into(),
+            at,
+            depth: 0,
+            held: None,
+            words,
+            link: None,
+            draws_on: on,
+            side: false,
+            start: false,
+        };
+        let on = |who: &str, relation| DrawsOn {
+            who: who.into(),
+            relation,
+            partial: false,
+        };
+        let day = 86_400_000;
+        let mut last = e(
+            "Lin",
+            Some(20_000 * day),
+            Words::Own("↪ quotes Ada\n\nPins.".into()),
+            vec![on("Ada", Relation::Quotes)],
+        );
+        last.start = true;
+        let c = Conversation {
+            entries: vec![
+                e(
+                    "Rue",
+                    None,
+                    Words::Cited("Quotes carry words.".into()),
+                    vec![],
+                ),
+                e(
+                    "Ada",
+                    Some(19_999 * day),
+                    Words::Own("Heavier.".into()),
+                    vec![on("Rue", Relation::Stubs)],
+                ),
+                last,
+            ],
+            truncated: false,
+        };
+        let p = catch_up_summary(&c);
+        assert_eq!(p.system, CATCH_UP_SYSTEM_PROMPT);
+        assert!(p.system.contains("do not invent"));
+        assert!(p.system.contains("Attribute"));
+        assert_eq!(
+            p.user,
+            "The conversation, 3 posts, oldest first:\n\n\
+             1. Rue: (not held here; the quoting post cited:) Quotes carry words.\n\n\
+             2. Ada, 2024-10-03, replying to Rue: Heavier.\n\n\
+             3. Lin, 2024-10-04, quoting Ada (the latest post, the one being read): \
+             ↪ quotes Ada\n\nPins.\n\n\
+             Catch me up, in order."
+        );
+    }
 
     const ID: &str = "0123456789abcdefghjkmnpqrs";
 

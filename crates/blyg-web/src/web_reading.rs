@@ -137,6 +137,11 @@ pub struct WebReading {
     pub history: Option<Vec<Step>>,
     /// The blyg's `contractVersion`, for `wholeBlyg`.
     pub contract: Option<String>,
+    // --- web-parity --- the operations `/api/capabilities` advertises (the
+    // studio may reuse a contract number without a feature, so features are
+    // gated on these, never on `contractVersion`).
+    pub ops: Option<HashSet<String>>,
+    // --- end web-parity ---
     /// This session's browsing trail.
     pub trail: String,
     // --- reader view / changelog --- the blyg's changelog settings (from
@@ -589,6 +594,7 @@ impl Burrow {
         self.rd.subs.retain(|s| s.id != id);
         self.wr.diags.remove(id);
         let before = self.rd.rows.len();
+        self.rows_changed();
         self.rd.rows.retain(|r| r.subscription_id != id);
         if self.rd.rows.len() != before {
             self.reading_dirty = true;
@@ -600,6 +606,7 @@ impl Burrow {
 
     fn wr_drop_hopper(&mut self, id: &str) {
         self.rd.hoppers.retain(|h| h.id != id);
+        self.rows_changed();
         for r in self.rd.rows.iter_mut() {
             if r.hoppers.iter().any(|h| h == id) {
                 r.hoppers.retain(|h| h != id);
@@ -616,6 +623,7 @@ impl Burrow {
     }
 
     fn wr_set_thumb(&mut self, key: &str, thumb: Option<i8>) {
+        self.rows_changed();
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key)
             && r.thumb != thumb
         {
@@ -1151,6 +1159,19 @@ impl Burrow {
                     .and_then(Value::as_str)
                     .map(str::to_string)
                     .or(Some(String::new()));
+                // --- web-parity ---
+                self.wr.ops = Some(
+                    v.get("operations")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                );
+                // --- end web-parity ---
                 1
             }
             _ => 0,

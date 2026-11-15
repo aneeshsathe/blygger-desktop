@@ -177,3 +177,12 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   .pview,.psheet,.scrim,.card,.ptoast{transition:none !important}
   .psync.busy b{animation:none}
 }
+
+/* --- web-parity --- the Posts filters */
+#phone .pfilter{display:flex;flex-wrap:nowrap;gap:.4rem;padding:.1rem 1rem .5rem;overflow-x:auto;scrollbar-width:none}
+#phone .pfilter::-webkit-scrollbar{display:none}
+#phone .pfilter[hidden]{display:none}
+#phone .pfilter .pf{flex:none;min-height:36px;border:1px solid var(--pline);border-radius:18px;padding:0 .75rem;font:.85rem var(--ui);background:var(--pbg);color:var(--pmuted)}
+#phone .pfilter .pf.on{border-color:var(--pacc);color:var(--pacc)}
+#phone .pfilter .pf b{font-weight:600}
+/* --- end web-parity --- */

@@ -382,15 +382,19 @@ impl Store {
         let mut st = c.prepare_cached(&format!(
             "SELECT {ITEM_COLS} FROM items ORDER BY updated DESC, rid DESC"
         ))?;
-        let v = Arc::new(
-            st.query_map([], row_to_item)?
-                .collect::<rusqlite::Result<Vec<_>>>()?,
-        );
+        let mut v = st
+            .query_map([], row_to_item)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        // The list's order is `crate::order`'s (dates as instants, then the
+        // server id); `rid DESC` only settles posts it can't tell apart.
+        crate::order::sort_own(&mut v);
+        let v = Arc::new(v);
         *cache = Some((stamp, v.clone()));
         Ok(v)
     }
 
-    /// Case-insensitive substring match over content, newest-updated first.
+    /// Case-insensitive substring match over content, in the list's order
+    /// (`crate::order`).
     /// Three or more chars uses the FTS5 trigram index; shorter queries (which trigrams
     /// can't index) scan in Rust, as do rows whose text changed since they
     /// were indexed (`flush_fts`).
@@ -420,7 +424,7 @@ impl Store {
              (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1) \
              OR rid IN (SELECT rid FROM items_fts_stale) ORDER BY updated DESC, rid DESC"
         ))?;
-        let v = st
+        let mut v = st
             .query_map([phrase], |r| Ok((row_to_item(r)?, r.get::<_, bool>(21)?)))?
             .filter(|r| match r {
                 // Indexed under its old text: what it says now decides.
@@ -429,6 +433,7 @@ impl Store {
             })
             .map(|r| r.map(|(item, _)| item))
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        crate::order::sort_own(&mut v);
         Ok(v)
     }
 

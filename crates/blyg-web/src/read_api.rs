@@ -196,12 +196,77 @@ impl Burrow {
         self.touched();
     }
 
+    /// Live mode: the reading list in the one list order
+    /// (`blyg_core::order`), with your published posts among the rows as
+    /// native Burrow lists them (`blyg_core::own`): read, never thumbed,
+    /// nothing about them sent. Built again from the posts each time, so a
+    /// post you withdrew or edited follows; the hoppers a row of yours was
+    /// put in here stay with it. The blyg's own order is never kept.
+    pub(crate) fn place_reading_rows(&mut self) {
+        self.rows_changed();
+        let rows = std::mem::take(&mut self.rd.rows);
+        let (old_own, mut theirs): (Vec<_>, Vec<_>) =
+            rows.into_iter().partition(blyg_core::own::is_own_row);
+        blyg_core::order::sort_reading(&mut theirs);
+        let mut own = if self.is_live() {
+            blyg_core::own::rows(&self.store.items(), &self.origin_str())
+        } else {
+            vec![]
+        };
+        let mut hoppers: std::collections::HashMap<String, Vec<String>> = old_own
+            .into_iter()
+            .map(|o| (o.remote_id, o.hoppers))
+            .collect();
+        for r in &mut own {
+            if let Some(h) = hoppers.remove(&r.remote_id) {
+                r.hoppers = h;
+            }
+        }
+        self.rd.rows = blyg_core::own::merge(theirs, own);
+    }
+
+    /// The reading rows changed (which there are, or a row's read state,
+    /// thumb, hoppers or withdrawal): the stream's order is worked out
+    /// again on the next draw.
+    pub(crate) fn rows_changed(&mut self) {
+        *self.placed.get_mut() = None;
+    }
+
+    /// The stream in its order: [`rvm::order_refs`] (withdrawn posts hidden
+    /// unless kept, one row per post, edited-since-read first, otherwise
+    /// the list order `place_reading_rows` sorted the rows into). Worked
+    /// out once per change of the rows, not on every redraw.
+    fn placed(&self) -> Vec<&ReadingItem> {
+        let rows = &self.rd.rows;
+        let mut cache = self.placed.borrow_mut();
+        // The length is a guard, not the key: a change keeps it, and every
+        // change calls `rows_changed`. Under test each use checks that.
+        let order = match cache.take() {
+            Some((n, order)) if n == rows.len() => order,
+            _ => order_indices(rows),
+        };
+        #[cfg(test)]
+        assert_eq!(
+            order,
+            order_indices(rows),
+            "the reading rows changed without `rows_changed`"
+        );
+        let out = order.iter().filter_map(|&i| rows.get(i)).collect();
+        *cache = Some((rows.len(), order));
+        out
+    }
+
     fn set_read_state(&mut self, key: &str, read: Option<u32>) {
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key) {
+            // Yours are never unread, and no read state is sent for them.
+            if blyg_core::own::is_own_row(r) {
+                return;
+            }
             let changed = r.read_version != read;
             r.read_version = read;
             self.store.read.insert(key.to_string(), read);
             if changed {
+                self.rows_changed();
                 self.queue_read(key, read);
                 self.reading_dirty = true;
             }
@@ -230,8 +295,22 @@ impl Burrow {
         unread_only: bool,
         limit: usize,
     ) -> String {
+        self.reading_range(now_ms, query, unread_only, 0, limit)
+    }
+
+    /// Rows `from..from + limit` of [`Burrow::reading_page`]'s stream: the
+    /// next page as you scroll, added below the cards already drawn rather
+    /// than drawing them all again.
+    pub fn reading_range(
+        &self,
+        now_ms: f64,
+        query: &str,
+        unread_only: bool,
+        from: usize,
+        limit: usize,
+    ) -> String {
         let now = at(now_ms);
-        let rows = rvm::order_refs(&self.rd.rows);
+        let rows = self.placed();
         let unread = rows.iter().filter(|r| r.is_unread()).count();
         // --- web-reading --- the chosen source and lens.
         let rows = self.wr_filter(rows, now);
@@ -244,6 +323,7 @@ impl Burrow {
         let total = matching.len();
         let shown: Vec<ReadRow> = matching
             .into_iter()
+            .skip(from)
             .take(limit)
             .map(|r| {
                 let title = rvm::post_title(r);
@@ -474,6 +554,7 @@ impl Burrow {
         else {
             return json(&Outcome::Nothing);
         };
+        self.rows_changed(); // its hoppers change
         let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key) else {
             return json(&Outcome::Nothing);
         };
@@ -522,6 +603,7 @@ impl Burrow {
             });
         let theirs = rvm::order(self.rd.rows.clone())
             .into_iter()
+            .filter(|r| !blyg_core::own::is_own_row(r))
             .map(|r| Target {
                 id: r.remote_id.clone(),
                 title: rvm::post_title(&r),
@@ -667,4 +749,15 @@ impl Burrow {
     pub fn origin(&self) -> String {
         self.origin_str()
     }
+}
+
+/// [`rvm::order_refs`] as indices into `rows` (the rows it returns are
+/// `rows`' own, so each one's place is its offset in the slice).
+fn order_indices(rows: &[ReadingItem]) -> Vec<usize> {
+    let base = rows.as_ptr().addr();
+    let size = std::mem::size_of::<ReadingItem>().max(1);
+    rvm::order_refs(rows)
+        .into_iter()
+        .map(|r| (std::ptr::from_ref(r).addr() - base) / size)
+        .collect()
 }

@@ -20,11 +20,9 @@ pub mod own {
     /// `crates/blyg-app/src/reading/own.rs`.
     pub const FORK_OWN: bool = true;
     // --- web-reading --- what `sources_vm.rs` reads of `own.rs`.
-    pub const OWN: &str = "~own";
+    pub use blyg_core::OWN_SUBSCRIPTION as OWN;
+    pub use blyg_core::own::is_own_row;
     pub const OWN_LABEL: &str = "Your blyg";
-    pub fn is_own_row(r: &blyg_core::ReadingItem) -> bool {
-        r.subscription_id == OWN
-    }
     // --- end web-reading ---
 }
 

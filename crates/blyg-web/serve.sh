@@ -6,6 +6,11 @@
 #   PORT=9000 ./crates/blyg-web/serve.sh     another port
 #   WASM_OPT=1 ./crates/blyg-web/serve.sh    also run wasm-opt -Oz (smaller raw,
 #                                            but a little larger gzipped; see README)
+#   PRECOMPRESS=1 ./crates/blyg-web/serve.sh also write a Brotli copy (`.br`) beside
+#                                            each text and wasm file, for a server that
+#                                            sends those itself (dev-proxy.py does). Not
+#                                            for a blyg on Cloudflare, which compresses
+#                                            as it serves (see README, Size). Needs node.
 #
 # Needs: rustup's wasm32-unknown-unknown target and python3 (for the static
 # server). wasm-bindgen-cli is installed on first run, pinned to the
@@ -110,11 +115,23 @@ fi
 # The service worker caches every file of this build under a name that
 # changes when any file does, so an update replaces the offline copy.
 (cd "$DIST" && {
-  FILES="$(find . -type f ! -name sw.js | sed 's|^\./||' | LC_ALL=C sort)"
+  FILES="$(find . -type f ! -name sw.js ! -name '*.br' | sed 's|^\./||' | LC_ALL=C sort)"
   BUILD="$(printf '%s\n' "$FILES" | while read -r f; do cat "$f"; done | shasum | cut -c1-12)"
   LIST="[$(printf '%s\n' "$FILES" | sed 's/.*/"&"/' | paste -sd, -)]"
   sed -e "s|__BUILD__|$BUILD|" -e "s|__FILES__|$LIST|" sw.js > sw.js.tmp && mv sw.js.tmp sw.js
 })
+# Brotli copies last, so the service worker's stamp is the same either way.
+if [[ "${PRECOMPRESS:-0}" == 1 ]]; then
+  find "$DIST" -type f \( -name '*.wasm' -o -name '*.js' -o -name '*.css' -o -name '*.html' \
+    -o -name '*.webmanifest' -o -name '*.svg' \) -size +1k -print0 \
+    | xargs -0 node -e '
+      const fs = require("fs"), z = require("zlib");
+      for (const f of process.argv.slice(1)) {
+        const b = fs.readFileSync(f);
+        fs.writeFileSync(f + ".br", z.brotliCompressSync(b, { params: {
+          [z.constants.BROTLI_PARAM_QUALITY]: 11, [z.constants.BROTLI_PARAM_SIZE_HINT]: b.length } }));
+      }'
+fi
 W="$DIST/pkg/blyg_web_bg.wasm"
 echo "Built $DIST: wasm $(wc -c <"$W" | tr -d ' ') bytes, $(gzip -9 -n -c "$W" | wc -c | tr -d ' ') gzipped, sha256 $(shasum -a 256 "$W" | cut -c1-16)"
 

@@ -5,6 +5,56 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.23.0
+
+Catch up on a conversation without reading it backwards. The web app gains
+the studio's Mark all read, Posts filters, Updates and Access tokens, shows
+your own posts in Reading, keeps Reading in order and up to date while it's
+open, and starts faster than the studio.
+
+### Catch up
+
+- **The conversation, oldest first.** A post that quotes a post that quotes
+  another is a conversation. Press **⇧C** on the reading screen (or click the
+  **Catch up** chip under the post, or Post › Catch Up…, or ⇧C in the lineage
+  view) and a sheet lays it out from the start: each post's author, date and
+  own words, and how the next one uses it.
+- **j/k** move, **⏎** opens a post in the reader, and **w** adds the side
+  replies you hold (Whole conversation). Posts this Mac doesn't hold show
+  what was quoted of them, and nothing is fetched until you open one.
+- **s** asks your AI provider for a short summary, in order and by author,
+  shown at the top of the sheet as **AI summary**. It's for you: it never
+  goes into a post.
+- The Reading tour has a step for it, on the sample conversation. See
+  [Catch up](reading.md#catch-up).
+
+### The web app
+
+- **Mark all read**: ✓ Mark all read… in the sources pane (⌃⌥A), or ✓ All
+  read on a phone, marks every unread post of the source you're looking at,
+  after asking.
+- **Filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with
+  counts, as the studio's compose page has them (⌃⌥F steps through them).
+- **Updates** (⚙ Blyg › Updates): your threads whose quotes have newer
+  versions, stalest first, and Refresh, one or all.
+- **Access tokens** (⚙ Blyg › Access tokens): what can act as you on your
+  blyg, a manual token for a tool (shown once), and revoke one or all.
+- **Your own posts in Reading**, as on the desktop: never unread, and nothing
+  sent about them.
+- **Fixed:** Reading came out shuffled after a big first load; it's now in
+  the same order as the desktop and the studio. Posts changed elsewhere show
+  within about 15 seconds while the tab is open. And Reading's first page
+  shows as soon as it arrives, in about a third of a second with 3,000
+  posts to read.
+- Some of these need a recent studio; until yours offers them they stay
+  hidden or say why. See [Using it](web-self-host.md#using-it).
+
+### For contributors
+
+- **Development skills** in `skills/`: plain-Markdown checklists for the
+  release, the tour, Windows and macOS, the pre-PR gate and more, for any
+  coding agent or person. Thanks to @patwater for the idea.
+
 ## Burrow 0.22.0
 
 The browser pane and cross-post now run on Windows. Links in posts open

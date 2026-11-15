@@ -46,6 +46,8 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- catch up ---
+use crate::app::reading::catchup::CatchUp;
 // --- browse ---
 use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
 // --- reading compose ---
@@ -600,6 +602,13 @@ pub fn mac_table() -> Vec<Keybind> {
             ShowLineage,
             "Lineage: what this post draws on and what draws on it",
             Some("Post › Lineage…")
+        ),
+        // --- catch up --- (⇧C on the reading screen is its own key, as
+        // `t` is: a single key can't be bound while you type)
+        menu_only!(
+            CatchUp,
+            "Catch up: the conversation leading to this post, oldest first (⇧C in Reading)",
+            "Post › Catch Up…"
         ),
         kb!(
             "cmd-k",

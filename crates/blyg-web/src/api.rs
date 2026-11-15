@@ -404,6 +404,11 @@ impl Pager {
         Some(url)
     }
 
+    /// What's been read so far (the first pages, while the rest are read).
+    pub fn so_far(&self) -> &[Value] {
+        &self.items
+    }
+
     /// One page's answer. `Ok(true)`: there's more to read.
     pub fn feed(
         &mut self,

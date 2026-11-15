@@ -120,6 +120,7 @@
 | Manage blygs: sign out of one, keeping or deleting its posts on this Mac | Blyg › Manage Blygs… |
 | Check for a new release now (whatever auto-update says) | Burrow › Check for Updates… |
 | Quick capture (the global hotkey, capture-hotkey) | Burrow › Quick Capture |
+| Catch up: the conversation leading to this post, oldest first (⇧C in Reading) | Post › Catch Up… |
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |

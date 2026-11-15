@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
 
 impl MainView {
     pub(crate) fn reading_demo(
@@ -67,6 +67,32 @@ impl MainView {
                     for _ in 0..=ix {
                         self.stream_move(1, window, cx);
                     }
+                }
+            }
+            // --- catch up --- Rue's "Back to links, then" selected (the
+            // end of a four-deep quote chain), then its Catch up sheet;
+            // `-whole` with the side branches on.
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == TALK_D);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 2) => {
+                if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
+                    let (o, i) = (r.origin.clone(), r.remote_id.clone());
+                    self.open_catch_up(o, i, window, cx);
+                }
+                if scenario.ends_with("-whole") {
+                    self.catch_up_toggle_whole(cx);
                 }
             }
             // "Read more": the side pane beside the stream.

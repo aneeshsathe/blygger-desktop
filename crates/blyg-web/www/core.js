@@ -36,17 +36,20 @@ function idb() {
     req.onerror = () => reject(req.error);
   });
 }
+// One connection for every read and write (opening one costs a start
+// tens of milliseconds).
+let dbp;
 export async function load(key = 'store') {
   try {
-    const db = await idb();
+    dbp ??= idb();
+    const db = await dbp;
     return await new Promise((resolve) => {
       const r = db.transaction(OS).objectStore(OS).get(key);
       r.onsuccess = () => resolve(typeof r.result === 'string' ? r.result : undefined);
       r.onerror = () => resolve(undefined);
     });
-  } catch { return undefined; }
+  } catch { dbp = undefined; return undefined; }
 }
-let dbp;
 async function put(key, value) {
   try {
     dbp ??= idb();
@@ -57,7 +60,7 @@ async function put(key, value) {
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
     });
     return true;
-  } catch { return false; }
+  } catch { dbp = undefined; return false; }
 }
 let saving = null;
 /** Write the store to IndexedDB. Live, a change saved this way (a read
@@ -115,6 +118,16 @@ export function draw(el, html) {
   el.innerHTML = html;
   el._html = html;
   return true;
+}
+/** The next page of a long list, added at its end: the rows above stay as
+    they are (drawing them all again is what made scrolling a long stream
+    stutter). `html` replaces the list's "N more…" line (`.stream-more`). */
+export function drawMore(el, html) {
+  el.querySelector(':scope > .stream-more')?.remove();
+  const page = document.createElement('div');
+  draw(page, html);
+  el.append(...page.childNodes);
+  el._html = null; // no longer one `draw`'s html: the next draw redraws
 }
 /** Long lists are drawn a page at a time: `more()` runs when `scroller`
     (an element, or `window` for the page) nears its end, to draw the next

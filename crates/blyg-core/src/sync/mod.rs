@@ -61,6 +61,19 @@ pub const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
 /// The longest the safety net backs off to (`SyncOptions::full_pull_max`).
 pub const FULL_PULL_MAX: Duration = Duration::from_secs(2 * 60 * 60);
 
+/// The safety net's next interval after a pass that read everything whole
+/// because it was due: back to `opts.full_pull_every` when it found what
+/// the counters missed (`surprise`), else twice `last`, up to
+/// `opts.full_pull_max` (issue #71: fewer D1 reads). Native sync and the
+/// web (`blyg-web`, per list) both pace their safety net with it.
+pub fn next_full_every(last: Duration, surprise: bool, opts: &SyncOptions) -> Duration {
+    if surprise {
+        opts.full_pull_every
+    } else {
+        (last * 2).min(opts.full_pull_max.max(opts.full_pull_every))
+    }
+}
+
 /// One item's autosave pushes are at least this far apart (`force` ignores
 /// it): about 20 writes a minute at most from continuous typing, well under
 /// studio 0.28's budgets (60 writes a minute across all tokens, 120 for the
@@ -1416,11 +1429,7 @@ impl Engine {
             st.full_at = Some(Instant::now());
             // Found what the counters missed: back to the first interval.
             // Found nothing: wait twice as long next time, up to the cap.
-            st.full_every = if surprise {
-                self.opts.full_pull_every
-            } else {
-                (st.full_every * 2).min(self.opts.full_pull_max.max(self.opts.full_pull_every))
-            };
+            st.full_every = next_full_every(st.full_every, surprise, &self.opts);
         }
         reading_err.map_or(Ok(()), Err)
     }

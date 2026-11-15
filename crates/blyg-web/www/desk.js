@@ -7,15 +7,16 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, outcome, publishedToast, copyText,
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
+  swipeCards, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
 } from './core.js';
 // --- web-reading ---
-import { deskSources, opened, wrUse } from './web-reading.js';
+import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
 // --- end web-reading ---
 // --- web-writing ---
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
 
@@ -36,11 +37,18 @@ export function render({ loadEditor = false } = {}) {
   if (S.layout === 'desk') document.title = view === 'reading' ? 'Reading · Burrow' : view === 'blyg' ? 'Blyg · Burrow' : V.title;
   $('#hint').textContent = view === 'posts' && mode === 'search' ? V.hint : '';
 
+  // --- web-parity --- the filters over the list (hidden with no posts).
+  const pf = filterChips();
+  const pfh = $('#d-pfilter');
+  pfh.hidden = !pf.all;
+  draw(pfh, pf.html);
+  // --- end web-parity ---
   list.innerHTML = V.rows.length
     ? V.rows.map((r, i) => `<div class="row${r.selected ? ' sel' : ''}${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" role="option" aria-selected="${r.selected}" data-id="${esc(r.id)}">
         ${r.shelved ? '<span class="shelfmark" title="On your shelf">📚</span>' : ''}<span class="ti">${r.title_html}</span>
         <span class="meta">${r.dot ? `<span class="dot" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}${esc(r.kind)}
         <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span><span>${esc(r.when)}</span></span></div>`).join('')
+    : !V.query.trim() && pf.on !== 'all' ? `<div class="empty">${esc(pf.empty)} ⌃⌥F shows the next filter.</div>` // --- web-parity ---
     : `<div class="empty">No matches. Press ⏎ to start “${esc(V.query.trim())}”.</div>`;
   list.querySelector('.row.sel')?.scrollIntoView({ block: 'nearest' });
 
@@ -139,11 +147,24 @@ function renderReading() {
   rmore = R.total > R.rows.length;
   const host = $('#d-stream');
   draw(host, R.rows.length
-    ? R.rows.map(cardHtml).join('') + (rmore ? `<div class="empty">${R.total - R.rows.length} more…</div>` : '')
+    ? R.rows.map(cardHtml).join('') + moreLine(R.total - R.rows.length)
     : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`);
   host.querySelector('.card.cur')?.classList.remove('cur');
   if (rcur) host.querySelector(`.card[data-key="${CSS.escape(rcur)}"]`)?.classList.add('cur');
   deskSources(); // --- web-reading --- the sources pane --- end web-reading ---
+}
+
+const moreLine = (n) => (n > 0 ? `<div class="empty stream-more">${n} more…</div>` : '');
+/** The next page of the stream, below the cards drawn (not all of them
+    again). Anything else that changes the stream draws it whole. */
+function moreReading() {
+  if (S.layout !== 'desk' || view !== 'reading' || !rmore) return;
+  const R = JSON.parse(S.B.reading_range(now(), rq, false, rkeys.length, RPAGE));
+  if (!R.rows.length || R.total <= rkeys.length) { rlimit = rkeys.length + RPAGE; renderReading(); return; }
+  rkeys = rkeys.concat(R.rows.map((r) => r.key));
+  rlimit = rkeys.length;
+  rmore = R.total > rkeys.length;
+  drawMore($('#d-stream'), R.rows.map(cardHtml).join('') + moreLine(R.total - rkeys.length));
 }
 
 // ---------------------------------------------------------------- preview
@@ -348,7 +369,7 @@ export function initDesk() {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const i = rkeys.indexOf(rcur) + (e.key === 'ArrowDown' ? 1 : -1);
-        if (i >= rkeys.length && rmore) { rlimit += RPAGE; renderReading(); }
+        if (i >= rkeys.length && rmore) moreReading();
         const k = rkeys[Math.max(0, Math.min(rkeys.length - 1, i))];
         if (k) openReading(k);
       } else if (e.key === 'Escape') { omni.value = ''; rq = ''; rlimit = RPAGE; render(); }
@@ -381,6 +402,14 @@ export function initDesk() {
     S.B.open(r.dataset.id); openSelected();
   });
   $('#kind').addEventListener('click', toggleKind);
+  // --- web-parity --- the Posts filters.
+  $('#d-pfilter').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pf]');
+    if (!b) return;
+    pickFilter(b.dataset.pf, mode === 'edit');
+    render({ loadEditor: mode !== 'edit' });
+  });
+  // --- end web-parity ---
   $('#sheet').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); sheetOpen?.onEnter(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet(); }
@@ -414,7 +443,6 @@ export function initDesk() {
     readAction(b.dataset.act, b.dataset.key);
   });
   // The stream scrolls itself, or (when the window is taller) the page does.
-  const moreReading = () => { if (S.layout === 'desk' && view === 'reading' && rmore) { rlimit += RPAGE; renderReading(); } };
   onNearEnd($('#d-stream'), moreReading);
   onNearEnd(window, moreReading);
   $('#d-ractions').addEventListener('click', (e) => { const b = e.target.closest('[data-ra]'); if (b) readAction(b.dataset.ra); });
@@ -433,6 +461,8 @@ export function initDesk() {
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;
     if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(['⌃', code.slice(-1)]); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyF' && view === 'posts') { e.preventDefault(); hud(['⌃', '⌥', 'F']); toast(esc(pickFilter('next', mode === 'edit'))); render({ loadEditor: mode !== 'edit' }); } // --- web-parity ---
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyA' && view === 'reading') { e.preventDefault(); hud(['⌃', '⌥', 'A']); wrGo('markall'); } // --- web-parity ---
     else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(['⌃', '3']); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
     else if (mod && e.key === 'Enter') { e.preventDefault(); hud(['⌘', '⏎']); askPublish(); }
     else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(['⇧', '⌘', '⌫']); askDelete(); }

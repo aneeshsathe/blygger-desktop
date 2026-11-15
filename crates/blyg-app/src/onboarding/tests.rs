@@ -766,6 +766,7 @@ fn do_step(e: &mut Env, id: &str) {
         }),
         "lineage" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
         "ring" => e.cx.simulate_keystrokes("space"),
+        "catch-up" => e.cx.simulate_keystrokes("shift-c"), // --- catch up ---
         "reader" | "author-site" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2")),
         "copies-elsewhere" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
         "side-dock" => {

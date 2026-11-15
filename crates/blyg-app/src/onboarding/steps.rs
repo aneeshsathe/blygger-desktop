@@ -141,6 +141,10 @@ pub enum Key {
     Tray,
     /// ⌥⌘⏎: a post opened beside the one being written.
     Split,
+    // --- catch up (0.23.0) ---
+    /// The Catch up sheet is open (⇧C, the Catch up chip, Post › Catch
+    /// Up…, or ⇧C in the lineage sheet).
+    CatchUp,
     // --- nearby ---
     /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
     Nearby,
@@ -241,6 +245,9 @@ pub enum Setup {
     StreamGenerated,
     /// Reading, in the Stream, the quoting post's lineage open (⌘J).
     Lineage,
+    /// Reading, in the Stream, the last post of the sample four-post quote
+    /// chain selected, the side pane closed.
+    StreamCatchUp,
     /// Reading, in Reader mode, a post open.
     Reader,
     /// Reading, in Reader mode, the quoting post open (a walk starts at it).
@@ -323,6 +330,9 @@ pub const REVISED: &str = crate::fake::reading_seed::ADA_TIDES;
 pub const CONFLICTED: &str = "01J9K7T";
 /// The sample reading post the stub step replies to.
 pub const STUBBED: &str = crate::fake::reading_seed::LIN_GARDENS;
+/// The sample reading post at the end of a four-post quote chain (Catch
+/// up's sample conversation).
+pub const CATCH_UP: &str = crate::fake::reading_seed::TALK_D;
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -1159,6 +1169,24 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- catch up (0.23.0) ---
+    Step {
+        id: "catch-up",
+        since: "0.23.0",
+        title: "Catch up on a conversation",
+        caption: "Rue's post quotes Lin, who quotes Ada, who quotes Rue. ⇧C (or the Catch up \
+                  chip under the post) lays the conversation out oldest first: each post's \
+                  author, date and own words. j/k move, ⏎ opens one, w adds the side replies, \
+                  and s asks your AI for a short summary, never put in a post.",
+        keys: &[Key::CatchUp],
+        key_label: "⇧C",
+        region: Region::StreamPost,
+        button: None,
+        setup: Setup::StreamCatchUp,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "lineage",
         since: "0.8.0",
@@ -1166,7 +1194,8 @@ pub const STEPS: &[Step] = &[
         caption: "The glyph beside a post's name shows the kinds of post it draws on (left) \
                   and that draw on it (right): fork, reply, quote. “1 · 2” beside it counts \
                   them: up · down. ⌘J, or a click on it, opens the map, with the counts by the \
-                  post: arrows move, ⏎ makes a neighbour the centre, ⌫ walks back.",
+                  post: arrows move, ⏎ makes a neighbour the centre, ⌫ walks back, and ⇧C \
+                  catches up on the conversation.",
         keys: &[Key::Lineage],
         key_label: "⌘J",
         region: Region::StreamPost,
@@ -1739,13 +1768,14 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "reading",
         title: "Reading",
-        blurb: "Stream, Reader, the author's site, OPML.",
+        blurb: "Stream, catch up, Reader, the author's site, OPML.",
         steps: &[
             "stream",
             "compose",
             "slots",
             "generated",
             "original",
+            "catch-up",
             "author-site",
             "reader",
             "opml",
@@ -1949,7 +1979,8 @@ mod tests {
             Key::Trail,       // --- tangles ---
             Key::Tray,
             Key::Split,
-            Key::Nearby, // --- nearby ---
+            Key::Nearby,  // --- nearby ---
+            Key::CatchUp, // --- catch up ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
@@ -1999,6 +2030,7 @@ mod tests {
             ids(news_run(&["0.21.0"])),
             ["author-site", "copies-elsewhere", END]
         );
+        assert_eq!(ids(news_run(&["0.23.0"])), ["catch-up", END]);
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);
         assert_eq!(tour_of("author-site"), Some(3));
