@@ -248,7 +248,8 @@ fn a_blogroll_entry_opens_its_profile_and_back_returns(cx: &mut TestAppContext) 
         .map(|r| (r.title.clone(), r.sub.clone()))
         .collect();
     assert!(
-        subs.contains(&("ada.blyg.example.com".into(), "stubbed 1 post".into())),
+        // Lin's Gardens and the catch-up chain's side reply.
+        subs.contains(&("ada.blyg.example.com".into(), "stubbed 2 posts".into())),
         "{subs:?}"
     );
     assert!(

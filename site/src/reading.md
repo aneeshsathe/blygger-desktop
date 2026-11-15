@@ -490,6 +490,29 @@ no pinned version, say) says why.
 
 ![The action ring, previewing Reply](screenshots/lineage-ring.png)
 
+## Catch up
+
+A post that quotes a post that quotes another is a conversation, and reading
+it means starting at the bottom. **Catch up** lays it out for you: press
+**⇧C** on the reading screen (or click the **Catch up** chip under a post, or
+Post › Catch Up…, or **⇧C** in the lineage view) and a sheet lists every post
+the conversation leads through, oldest first, the one you were reading last.
+Each post shows its author, its date, how the next one uses it ("quoted by
+Ada"), and its own words: where it quoted the post before, it says
+"↪ quotes Rue" instead, since that post is the card above. The chip shows only
+when the post draws on something.
+
+**j**/**k** move, **⏎** (or **o**) opens a post in the reader, and **esc**
+closes. **w** turns on **Whole conversation**, which adds the posts you hold
+that reply to or quote any of them (side branches). A post this Mac doesn't
+hold shows what the quoting post cited of it, and opening it fetches it then,
+never before. It goes back at most eight steps and 60 posts.
+
+**s** asks your AI provider for a short summary, in order and by author,
+shown at the top of the sheet as **AI summary**. It's for you to read: it
+never goes into a post. esc stops it. With no provider set up, the panel says
+so and links to Settings › AI.
+
 ## Reading time and inspect
 
 Two bundled [extensions](extensions.md#reading-time-and-inspect), off until

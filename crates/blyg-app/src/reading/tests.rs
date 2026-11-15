@@ -687,7 +687,8 @@ fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) 
     let rue = shown(&view, cx);
     assert!(rue.contains(&RUE_TRUST.to_string()), "{rue:?}");
     assert!(
-        rue.iter().all(|id| id == RUE_TRUST || id == RUE_KEPT),
+        rue.iter()
+            .all(|id| [RUE_TRUST, RUE_KEPT, TALK_A, TALK_D].contains(&id.as_str())),
         "{rue:?}"
     );
     // Held rows only: the hidden tombstone never turns up.

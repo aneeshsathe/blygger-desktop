@@ -453,7 +453,7 @@ impl MainView {
             // selected one too); "AI reply" never on a pinned view. Reply
             // quotes the whole post; a passage is chosen in the stub editor
             // (studio 0.31).
-            "Quote" | "Reply" | "Link post" | "Open on web" => {
+            "Quote" | "Reply" | "Link post" | "Open on web" | "Catch up" => {
                 self.item_action(item, action, window, cx)
             }
             // --- own posts --- no AI reply to yourself.
@@ -559,6 +559,10 @@ impl MainView {
                 Err(e) => self.show_toast(format!("Couldn't start a post: {e}"), None, cx),
             },
             "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
+            // --- catch up --- the conversation leading to it.
+            "Catch up" => {
+                self.open_catch_up(item.origin.clone(), item.remote_id.clone(), window, cx)
+            }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
@@ -661,11 +665,15 @@ impl MainView {
                 .collect(),
         };
         // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).
-        let ids = if super::own::is_own(&o.key) {
+        let mut ids = if super::own::is_own(&o.key) {
             super::own::own_action_ids(ids)
         } else {
             ids
         };
+        // --- catch up --- only when it draws on something known here.
+        if !ids.is_empty() && self.has_ancestors(&item.origin, &item.remote_id) {
+            ids.push("Catch up");
+        }
         ids.into_iter()
             // A feed post has no id to link.
             .filter(|id| *id != "Link post" || ctx.blyg)

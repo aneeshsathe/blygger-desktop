@@ -37,6 +37,8 @@ pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
 mod marks; // --- read/unread ---
+// --- catch up --- the conversation leading to a post, oldest first (⇧C).
+pub(crate) mod catchup;
 mod mentions;
 pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
 // --- contacts --- the address book, the Mentions screen's Sent side, and
@@ -285,6 +287,8 @@ pub enum RSheet {
     },
     /// Lineage (⌘J).
     Lineage(Box<lineage::Sheet>),
+    /// --- catch up --- the conversation leading to a post (⇧C).
+    CatchUp(Box<catchup::Sheet>),
     /// --- hoppers --- Hopper › on a post: each hopper with a check.
     HopperPick {
         /// The open post, or the posts picked in the list.
@@ -692,6 +696,7 @@ impl MainView {
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
         .map(|d| self.hopper_actions(d, cx)) // --- hoppers ---
+        .map(|d| self.catch_up_actions(d, cx)) // --- catch up ---
     }
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
@@ -1070,6 +1075,11 @@ impl MainView {
             }
             // --- trails --- `t` adds the post in front of you, ⇧T a new trail.
             (View::Reading, "t") => self.trail_key(k.modifiers.shift, window, cx),
+            // --- catch up --- ⇧C: the conversation leading to the post.
+            (View::Reading, "c") if k.modifiers.shift => {
+                self.catch_up_key(window, cx);
+                true
+            }
             // --- reading compose --- `c` writes a post, as in social apps.
             (View::Reading, "c") => {
                 self.focus_compose(window, cx);
@@ -1126,6 +1136,7 @@ impl MainView {
             RSheet::Site { .. } => (540., self.render_site_sheet(sheet, cx)),
             RSheet::Quote { .. } => (520., self.render_quote_sheet(sheet, cx)),
             RSheet::Lineage(s) => (880., self.render_lineage_sheet(s, cx)),
+            RSheet::CatchUp(s) => (760., self.render_catch_up_sheet(s, cx)), // --- catch up ---
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
             RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
@@ -1138,6 +1149,7 @@ impl MainView {
     }
 
     pub(super) fn close_reading_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_catch_up_summary(); // --- catch up ---
         self.reading.sheet = None;
         if self.reading.view == View::Posts {
             self.focus_after_sheet(window, cx);

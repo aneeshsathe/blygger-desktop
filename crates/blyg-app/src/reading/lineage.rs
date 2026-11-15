@@ -150,7 +150,7 @@ impl MainView {
         }
     }
 
-    fn lineage_target(&self) -> Option<(String, String)> {
+    pub(super) fn lineage_target(&self) -> Option<(String, String)> {
         if self.reading.view == super::View::Reading {
             if let Some(o) = &self.reading.opened {
                 return Some((o.item.origin.clone(), o.item.remote_id.clone()));
@@ -646,10 +646,33 @@ impl MainView {
 
     // ------------------------------------------------------------ the sheet
 
+    /// `C` in the sheet (not on the ring or the map): Catch up on the
+    /// centre, or on the selected neighbour when it's a post.
+    pub(crate) fn lineage_catch_up(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(s) = self.lineage_mut() else {
+            return false;
+        };
+        if s.ring || s.map.is_some() {
+            return false;
+        }
+        let (origin, id) = match s.model.node(s.sel).filter(|n| n.is_post()) {
+            Some(n) => (n.origin.clone(), n.id.clone()),
+            None => (s.model.centre.origin.clone(), s.model.centre.id.clone()),
+        };
+        self.open_catch_up(origin, id, window, cx);
+        true
+    }
+
     pub(super) fn lineage_sheet_keys(&self, d: Div, cx: &mut Context<Self>) -> Div {
         d.on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
             let k = &ev.keystroke;
             if k.modifiers.platform || k.modifiers.control || k.modifiers.alt {
+                return;
+            }
+            // --- catch up --- `C` on the centre (or a neighbour that's a
+            // post): the conversation leading to it.
+            if k.key == "c" && k.modifiers.shift && this.lineage_catch_up(window, cx) {
+                cx.stop_propagation();
                 return;
             }
             // --- lineage --- `−` and `+` (⇧= on most layouts) zoom.
@@ -692,7 +715,7 @@ impl MainView {
             } else {
                 crate::keymap::hint("Responses: what this Mac holds")
             })
-            .child(crate::keymap::hint("⌘J / esc closes"));
+            .child(crate::keymap::hint("⇧C catch up · ⌘J / esc closes"));
         // --- lineage --- zoomed out: the neighbourhood map.
         let body = match &s.map {
             Some(m) => div()

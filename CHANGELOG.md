@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Catch up** on a conversation. ⇧C on the reading screen (or the **Catch up** chip under a post that quotes, replies to or forks another, Post › Catch Up…, or ⇧C in the lineage view) lays out the conversation that leads to the post, oldest first: each post's author, date, how the next one uses it, and its own words, with its quotes shown as "↪ quotes Ada" since the quoted post is the card above. j/k move, ⏎ opens a post in the reader, **w** adds side replies (Whole conversation), and **s** asks your AI provider for a short in-order summary, shown at the top as "AI summary" and never put into a post (esc cancels). Posts this Mac doesn't hold show what was cited of them, and nothing is fetched until you open one. It goes back at most 8 steps and 60 posts.
+
 ## [0.21.0] - 2026-11-14
 
 Protocol 0.4's latest revisions (blygger-spec decisions #95–#104), copies elsewhere, cross-posting to Bluesky and Farcaster, and a sync that reads far less from your blyg.
