@@ -13,11 +13,13 @@
 //! overwrites: the blyg's copy is fetched and kept beside yours until you
 //! choose one.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use blyg_core::api::absolute_page;
 use blyg_core::api::wire::{ChangeState, WireItem, imported_row};
-use blyg_core::sync::{FULL_PULL_EVERY, ITEMS_DEPS, READING_DEPS};
+use blyg_core::sync::{
+    FULL_PULL_EVERY, HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS, SyncOptions,
+};
 use blyg_core::{Hopper, Item, Kind, LocalId, ReadingItem, ServerId, Status};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -705,49 +707,66 @@ impl Burrow {
         self.reading_dirty
     }
 
-    /// Before a refresh: the blyg's `GET /api/changes` answer, and `now`.
-    /// Returns which lists to read again, `{items, reading}`: those whose
-    /// revisions moved since they were last read whole (the native sync's
-    /// rule, `blyg_core::sync`), and all of them on a new epoch, without a
-    /// usable answer, or every `FULL_PULL_EVERY` as a safety net.
-    pub fn changes_plan(&mut self, status: u16, body: &str, now_ms: f64) -> String {
-        self.changes = (status == 200)
-            .then(|| serde_json::from_str::<ChangeState>(body).ok())
-            .flatten();
-        let every = FULL_PULL_EVERY.as_millis() as f64;
-        let stale = |seen: &Seen, deps: &[&str]| match &self.changes {
-            None => true,
-            Some(c) => {
-                c.epoch != seen.epoch
-                    || now_ms - seen.at_ms >= every
-                    || !deps.iter().all(|d| {
-                        c.domains
-                            .get(*d)
-                            .is_some_and(|n| seen.revisions.get(*d) == Some(n))
-                    })
-            }
-        };
-        json(&json!({
-            "items": stale(&self.store.live.seen, ITEMS_DEPS),
-            "reading": stale(&self.reading_seen, READING_DEPS),
-        }))
+    /// Before a refresh: the blyg's `GET /api/changes` answer (with its
+    /// `Retry-After`), and `now`. Returns what this refresh reads:
+    ///
+    /// - `{items, reading, hoppers, signals, rev, every}`: which lists to
+    ///   read again (those whose [`LISTS`] dependencies moved since they
+    ///   were last read whole: native sync's map and rule), the change
+    ///   state they're read under (`rev`, handed back to `changes_accept`
+    ///   by the run that read them, so overlapping runs never share one),
+    ///   and when to check again (`every`, ms). Without a usable answer
+    ///   (no route, not JSON): every list, `rev: null`, and native's
+    ///   slower interval.
+    /// - `{wait}`: the blyg is rate-limiting (429: its `Retry-After`) or
+    ///   failing (5xx: a doubling backoff). Read nothing; ask again in
+    ///   `wait` ms.
+    /// - `{error}`: offline or signed out.
+    pub fn changes_plan(
+        &mut self,
+        status: u16,
+        body: &str,
+        retry_after: Option<String>,
+        now_ms: f64,
+    ) -> String {
+        if let Some(wait) = self.pace.failed(status, retry_after.as_deref()) {
+            return json(&json!({ "wait": wait }));
+        }
+        if status == 0 || status == 401 {
+            let e = api::read(status, body, None)
+                .err()
+                .unwrap_or(ApiError::Offline);
+            return json(&json!({ "error": e.to_json() }));
+        }
+        self.pace.ok();
+        let rev = (status == 200)
+            .then(|| serde_json::from_str::<Value>(body).ok())
+            .flatten()
+            .and_then(|v| Some((serde_json::from_value::<ChangeState>(v.clone()).ok()?, v)));
+        let mut out = serde_json::Map::new();
+        for (list, deps) in LISTS {
+            let seen = self.seen_of(list);
+            let stale = stale(rev.as_ref().map(|(c, _)| c), seen, deps, now_ms);
+            out.insert(list.to_string(), json!(stale));
+        }
+        out.insert("every".into(), json!(Pace::every(rev.is_some())));
+        out.insert("rev".into(), rev.map(|(_, v)| v).unwrap_or(Value::Null));
+        json(&Value::Object(out))
     }
 
-    /// A list (`items` or `reading`) was read whole and installed: record
-    /// the revisions `changes_plan` captured before it was read.
-    pub fn changes_accept(&mut self, list: &str, now_ms: f64) {
-        let Some(c) = &self.changes else {
+    /// A list (`items`, `reading`, `hoppers` or `signals`) was read whole
+    /// and installed: record `rev_json`, the change state the same run's
+    /// `changes_plan` returned, as what it was read under. (A whole
+    /// reading list carries each row's hoppers and thumb too, so the
+    /// caller accepts those with it.) Nothing is recorded without one.
+    pub fn changes_accept(&mut self, list: &str, rev_json: &str, now_ms: f64) {
+        let Ok(c) = serde_json::from_str::<ChangeState>(rev_json) else {
             return;
         };
-        let (seen, deps) = match list {
-            "items" => (&mut self.store.live.seen, ITEMS_DEPS),
-            "reading" => {
-                self.reading_dirty = true;
-                (&mut self.reading_seen, READING_DEPS)
-            }
-            _ => return,
+        let Some((_, deps)) = LISTS.iter().find(|(l, _)| *l == list) else {
+            return;
         };
-        *seen = Seen {
+        let seen = Seen {
             epoch: c.epoch.clone(),
             revisions: deps
                 .iter()
@@ -755,6 +774,93 @@ impl Burrow {
                 .collect(),
             at_ms: now_ms,
         };
+        match list {
+            "items" => self.store.live.seen = seen,
+            "reading" => {
+                self.reading_dirty = true;
+                self.reading_seen = seen;
+            }
+            _ => {
+                self.side_seen.insert(list.to_string(), seen);
+            }
+        }
+    }
+
+    /// A read during a refresh failed with `status`: after a 429 or a 5xx,
+    /// how long to wait before the next check (ms), as `changes_plan`'s
+    /// `wait`; otherwise nothing (the usual interval).
+    pub fn poll_failed(&mut self, status: u16, retry_after: Option<String>) -> Option<f64> {
+        self.pace.failed(status, retry_after.as_deref())
+    }
+
+    /// The hoppers (`GET /api/hoppers` pages) and each one's memberships
+    /// (`{hopperId: [GET /api/hoppers/{id}/memberships rows]}`), read when
+    /// they moved but the reading list didn't: each held row's hoppers
+    /// follow, with the changes not yet sent on top. Returns `{changed}`.
+    pub fn live_hoppers(&mut self, hoppers_json: &str, members_json: &str) -> String {
+        let hoppers: Vec<Value> = serde_json::from_str(hoppers_json).unwrap_or_default();
+        let hoppers: Vec<Hopper> = hoppers.iter().filter_map(hopper_of).collect();
+        let members: BTreeMap<String, Vec<Value>> =
+            serde_json::from_str(members_json).unwrap_or_default();
+        let mut of: HashMap<String, Vec<String>> = HashMap::new();
+        for h in &hoppers {
+            for m in members.get(&h.id).into_iter().flatten() {
+                let s = |k: &str| m.get(k).and_then(Value::as_str);
+                if let (Some(sub), Some(rid)) = (s("subscriptionId"), s("remoteId")) {
+                    of.entry(format!("{sub}|{rid}"))
+                        .or_default()
+                        .push(h.id.clone());
+                }
+            }
+        }
+        let mut changed = self.rd.hoppers != hoppers;
+        self.rd.hoppers = hoppers;
+        for r in &mut self.rd.rows {
+            let want = of.remove(&key_of(r)).unwrap_or_default();
+            let (mut a, mut b) = (r.hoppers.clone(), want.clone());
+            a.sort();
+            b.sort();
+            if a != b {
+                r.hoppers = want;
+                changed = true;
+            }
+        }
+        // As `live_reading`: the blyg's memberships, then what's unsent.
+        self.store.hopped.clear();
+        self.overlay_reading();
+        if changed {
+            self.reading_dirty = true;
+        }
+        json(&json!({ "changed": changed }))
+    }
+
+    /// The owner's thumbs (`GET /api/signals` pages: `{subscriptionId,
+    /// remoteId, thumb}`), read when they moved but the reading list
+    /// didn't: laid over the held rows (a row not listed has none).
+    /// Returns `{changed}`.
+    pub fn live_signals(&mut self, signals_json: &str) -> String {
+        let list: Vec<Value> = serde_json::from_str(signals_json).unwrap_or_default();
+        let thumbs: HashMap<String, i8> = list
+            .iter()
+            .filter_map(|v| {
+                let s = |k: &str| v.get(k).and_then(Value::as_str);
+                let t = v.get("thumb").and_then(Value::as_i64)?;
+                let t = i8::try_from(t).ok().filter(|t| *t == 1 || *t == -1)?;
+                Some((format!("{}|{}", s("subscriptionId")?, s("remoteId")?), t))
+            })
+            .collect();
+        let mut changed = false;
+        for r in &mut self.rd.rows {
+            let t = thumbs.get(&key_of(r)).copied();
+            if r.thumb != t {
+                r.thumb = t;
+                changed = true;
+            }
+        }
+        if changed {
+            self.reading_dirty = true;
+        }
+        json(&json!({ "changed": changed }))
     }
 
     /// The next outbox entry to send, as `{op, id, …, req: {method, path,
@@ -1016,6 +1122,111 @@ impl Burrow {
                     r.hoppers.retain(|x| x != &h.hopper);
                 }
             }
+        }
+    }
+}
+
+/// The lists a refresh reads, each with the `GET /api/changes` domains it
+/// depends on: native sync's map (`blyg_core::sync`), so the web reads a
+/// list again exactly when native Burrow would.
+/// - `items`: `GET /api/items`.
+/// - `reading`: `GET /api/reading/imported` (with `GET /api/hoppers`). Its
+///   rows carry each post's hoppers and thumb, so a whole read settles
+///   `hoppers` and `signals` too.
+/// - `hoppers`: `GET /api/hoppers` and each one's memberships, when only
+///   they moved (`Burrow::live_hoppers`).
+/// - `signals`: `GET /api/signals`, the thumbs, when only they moved
+///   (`Burrow::live_signals`).
+pub const LISTS: &[(&str, &[&str])] = &[
+    ("items", ITEMS_DEPS),
+    ("reading", READING_DEPS),
+    ("hoppers", HOPPERS_DEPS),
+    ("signals", SIGNALS_DEPS),
+];
+
+/// Whether a list last read under `seen` must be read again: no usable
+/// change state, a new epoch, a moved dependency, or `FULL_PULL_EVERY`
+/// since its last whole read (the safety net).
+fn stale(c: Option<&ChangeState>, seen: &Seen, deps: &[&str], now_ms: f64) -> bool {
+    let Some(c) = c else {
+        return true;
+    };
+    c.epoch != seen.epoch
+        || now_ms - seen.at_ms >= FULL_PULL_EVERY.as_millis() as f64
+        || !deps.iter().all(|d| {
+            c.domains
+                .get(*d)
+                .is_some_and(|n| seen.revisions.get(*d) == Some(n))
+        })
+}
+
+/// How often the page checks `GET /api/changes` while it's visible, and
+/// how it backs off: native sync's normal cadence (`SyncOptions`).
+#[derive(Debug, Default)]
+pub(crate) struct Pace {
+    /// The next wait after a 5xx (ms); 0 until one happens.
+    backoff_ms: f64,
+}
+
+impl Pace {
+    /// The interval between checks (ms): native's `pull_every`, a quarter
+    /// of the pull interval (15 s, Studio's) with `/api/changes`, the whole
+    /// interval without it.
+    pub(crate) fn every(changes: bool) -> f64 {
+        let pull = SyncOptions::default().pull_interval;
+        let d = if changes {
+            (pull / 4).max(std::time::Duration::from_secs(1))
+        } else {
+            pull
+        };
+        d.as_millis() as f64
+    }
+
+    /// An answer that means wait: a 429 waits its `Retry-After` (60 s
+    /// without one); a 5xx (the Worker or its database failed) waits the
+    /// server backoff, which doubles on each, up to its cap. Anything
+    /// else: `None`.
+    pub(crate) fn failed(&mut self, status: u16, retry_after: Option<&str>) -> Option<f64> {
+        let opts = SyncOptions::default();
+        match status {
+            429 => {
+                let secs = retry_after
+                    .and_then(|s| s.trim().parse::<u64>().ok())
+                    .unwrap_or(60);
+                Some((secs * 1000) as f64)
+            }
+            500..=599 => {
+                let first = opts.server_backoff_initial.as_millis() as f64;
+                let max = opts.server_backoff_max.as_millis() as f64;
+                let wait = if self.backoff_ms > 0.0 {
+                    self.backoff_ms
+                } else {
+                    first
+                };
+                self.backoff_ms = (wait * 2.0).min(max);
+                Some(wait)
+            }
+            _ => None,
+        }
+    }
+
+    /// A usable answer: the backoff starts over.
+    pub(crate) fn ok(&mut self) {
+        self.backoff_ms = 0.0;
+    }
+}
+
+impl Burrow {
+    /// What `list` was last read whole under.
+    fn seen_of(&self, list: &str) -> &Seen {
+        static NONE: std::sync::OnceLock<Seen> = std::sync::OnceLock::new();
+        match list {
+            "items" => &self.store.live.seen,
+            "reading" => &self.reading_seen,
+            _ => self
+                .side_seen
+                .get(list)
+                .unwrap_or_else(|| NONE.get_or_init(Seen::default)),
         }
     }
 }

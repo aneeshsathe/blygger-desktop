@@ -57,12 +57,17 @@ It runs in one of two modes, and says which:
   pause the outbox sends what waits: edits (each with the revision it was
   based on), new drafts, draft deletes, read marks and hopper changes.
   Offline, they wait, survive a reload, and replay when the blyg answers.
-- **Refreshing.** On start, and when the page comes back after a minute,
-  it asks `GET /api/changes` first and reads again only the lists whose
-  revisions moved since they were last read (`changes_plan` in
-  `src/live.rs`, on the native sync's dependency lists), and everything
-  every 10 minutes as the native sync does. Without a usable answer it
-  reads everything, as before.
+- **Refreshing.** While the tab is visible, it asks `GET /api/changes`
+  every 15 s, as Studio does. It also asks on start, as soon as the tab is
+  shown again, and right after your own publish, restore, withdraw or
+  delete. It reads again only the lists whose revisions moved since they
+  were last read (`changes_plan` in `src/live.rs`, on the native sync's
+  dependency map `live::LISTS`), so a hopper or thumb changed elsewhere
+  reads only the hoppers or the thumbs. Every list is also read whole
+  every 10 minutes, as the native sync does. A hidden tab asks nothing. A
+  429 waits its `Retry-After`, and a 5xx backs off from 30 s up to 30 min.
+  Only one refresh runs at a time. Without a usable answer it reads
+  everything, once a minute.
 - **Conflicts.** A 409 `revision-conflict` fetches the blyg's copy and
   shows it beside yours: "Keep mine" sends yours over it, "Use theirs"
   takes it. Nothing is overwritten without that choice.

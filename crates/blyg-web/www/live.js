@@ -62,14 +62,15 @@ export async function detect() {
   return JSON.parse(Burrow.detect(r.status, r.body, r.www));
 }
 
-/** A whole cursor-paged list (restarted on cursor-expired, never partial). */
+/** A whole cursor-paged list (restarted on cursor-expired, never partial).
+    A failure carries the answer's status and Retry-After, for the backoff. */
 async function readAll(path, query = '', limit = 100) {
   const p = new Pager(path, query, limit);
   try {
     for (let next = p.next_path(); next !== undefined; next = p.next_path()) {
       const r = await call('GET', next);
       const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
-      if (err) return { error: err };
+      if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
     }
     return { json: p.items() };
   } finally { p.free(); }
@@ -95,23 +96,66 @@ export async function start(online) {
   // --- end web-writing ---
 }
 
-let lastRefresh = 0;
+// ---------------------------------------------------------------- refresh
+// How updates arrive (docs/SPEC.md, "Burrow on the web"): while the tab is
+// visible and online, a `GET /api/changes` every 15 s (Studio's cadence),
+// which costs one small request when nothing moved; a list is read again
+// only when its counters moved. Hidden, it waits; shown again, it checks at
+// once. A 429 waits its Retry-After and a 5xx backs off (src/live.rs `Pace`).
+let refreshing = null; // the run in progress
+let refreshAgain = false; // a call came in during it: one more run after
+let pollT = 0;
+let nextDelay = 15_000; // until the next check, as the last run decided
+let holdUntil = 0; // a 429 or 5xx: no check before this (Date.now() ms)
+let refreshFailed = false;
+
 /** Send what waits, then read again what changed on the blyg: its
     `/api/changes` revisions say which lists moved since they were last
     read (src/live.rs `changes_plan`), so a refresh that finds nothing new
-    costs one request, not every post. */
-export async function refresh() {
-  if (!S.B?.is_live_mode()) return;
-  await flush();
+    costs one request, not every post. One run at a time: a call while one
+    runs queues exactly one more run after it (so a change made meanwhile
+    is still read), and returns when that's done. */
+export function refresh() {
+  if (!S.B?.is_live_mode()) return Promise.resolve();
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  clearTimeout(pollT);
+  refreshing = (async () => {
+    try {
+      do { refreshAgain = false; await refreshOnce(); } while (refreshAgain && !S.B.is_offline());
+    } finally { refreshing = null; schedule(); }
+  })();
+  return refreshing;
+}
+
+/** One refresh. Each run plans under its own `/api/changes` answer
+    (`plan.rev`) and records it for a list only once that list was read
+    and installed, so a failed or overlapping read never marks a list
+    seen. */
+async function refreshOnce() {
+  // The outbox is sent after typing stops anyway; here only if it holds
+  // something (an empty flush redraws the page).
+  if (JSON.parse(S.B.outbox_next('[]'))) await flush();
   if (S.B.is_offline()) return;
   const ch = await call('GET', '/api/changes');
-  const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, now()));
+  const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, ch.retryAfter, now()));
+  if (plan.error) { problem(plan.error); return; }
+  if (plan.wait) { hold(plan.wait); return; }
+  holdUntil = 0;
+  nextDelay = plan.every;
+  const rev = JSON.stringify(plan.rev);
+  // A read that failed: back off on a 429 or 5xx, say what went wrong.
+  const failed = (r) => {
+    const w = S.B.poll_failed(r.status, r.retryAfter);
+    if (w) hold(w);
+    refreshFailed = true;
+    problem(r.error);
+  };
   let changed = false;
   if (plan.items) {
     const items = await readAll('/api/items');
-    if (items.error) { problem(items.error); return; }
+    if (items.error) { failed(items); return; }
     S.B.live_items(items.json);
-    S.B.changes_accept('items', now());
+    S.B.changes_accept('items', rev, now());
     changed = true;
   }
   if (plan.reading) {
@@ -119,15 +163,59 @@ export async function refresh() {
     const hops = await readAll('/api/hoppers');
     if (!rows.error || rows.error.code === 'not-found') {
       S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
-      if (!rows.error && !hops.error) S.B.changes_accept('reading', now());
+      // Each row carries its hoppers and thumb: those are settled too.
+      if (!rows.error && !hops.error) for (const l of ['reading', 'hoppers', 'signals']) S.B.changes_accept(l, rev, now());
       changed = true;
-    } else problem(rows.error);
+    } else { failed(rows); return; }
+  } else {
+    if (plan.hoppers) {
+      const r = await readHoppers();
+      if (r.error) { failed(r); return; }
+      if (JSON.parse(S.B.live_hoppers(r.hoppers, r.members)).changed) changed = true;
+      S.B.changes_accept('hoppers', rev, now());
+    }
+    if (plan.signals) {
+      const sig = await readAll('/api/signals');
+      if (sig.error && sig.error.code !== 'not-found') { failed(sig); return; }
+      // No route: the rows' own thumbs stand.
+      if (!sig.error && JSON.parse(S.B.live_signals(sig.json)).changed) changed = true;
+      S.B.changes_accept('signals', rev, now());
+    }
   }
-  lastRefresh = Date.now();
+  if (refreshFailed && !S.B.is_offline()) { refreshFailed = false; S.B.sync_phase('synced'); if (!changed) S.render({ loadEditor: false }); }
   if (!changed) return;
   await persist({ quiet: true });
   await persistReading();
   S.render();
+}
+
+/** The hoppers and each one's memberships, as JSON for `live_hoppers`. A
+    blyg without hoppers has none. */
+async function readHoppers() {
+  const hops = await readAll('/api/hoppers');
+  if (hops.error) return hops.error.code === 'not-found' ? { hoppers: '[]', members: '{}' } : hops;
+  const members = {};
+  for (const h of JSON.parse(hops.json)) {
+    if (typeof h?.id !== 'string') continue;
+    const m = await readAll(`/api/hoppers/${encodeURIComponent(h.id)}/memberships`);
+    if (m.error && m.error.code !== 'not-found') return m;
+    members[h.id] = m.error ? [] : JSON.parse(m.json);
+  }
+  return { hoppers: hops.json, members: JSON.stringify(members) };
+}
+
+/** No check for `ms`: the blyg asked to slow down, or is failing. */
+function hold(ms) {
+  nextDelay = ms;
+  holdUntil = Date.now() + ms;
+}
+
+/** The next check, while the page is live, visible, online and signed in. */
+function schedule() {
+  clearTimeout(pollT);
+  if (!S.B?.is_live_mode() || S.B.is_offline() || document.visibilityState !== 'visible') return;
+  if (!$('#signin').hidden) return;
+  pollT = setTimeout(refresh, Math.max(nextDelay, holdUntil - Date.now(), 1000));
 }
 
 // ---------------------------------------------------------------- outbox
@@ -163,7 +251,7 @@ async function sendAll() {
       if (got !== 'true') { problem(JSON.parse(got)); break; }
     }
     if (step.toast) toast(esc(step.toast), 4200);
-    if (step.refresh) refreshAfter = true;
+    if (step.refresh || (op.op === 'delete' && !step.error && !step.fetch)) refreshAfter = true;
     if (step.error) {
       if (step.stop) { problem(step.error); failed = true; break; }
       skip.push(`${op.op}:${op.id}`);
@@ -208,6 +296,7 @@ async function backOnline() {
     if (pending) toast(`Back online · sending ${pending} change${pending === 1 ? '' : 's'}`);
   }
   hideSignIn();
+  holdUntil = 0;
   await refresh();
 }
 
@@ -251,7 +340,14 @@ async function afterCommand(id, r, note) {
   const g = await call('GET', a.fetch);
   const res = JSON.parse(S.B.live_apply_item(id, g.status, g.body, note));
   await persist({ quiet: true });
+  changedHere();
   return res.error ? { action: 'toast', message: res.error.text } : res;
+}
+
+/** A publish, restore, withdraw or delete landed on the blyg: read what
+    else it moved (the list's order, Reading) now, not at the next check. */
+export function changedHere() {
+  if (S.B?.is_live_mode() && !S.B.is_offline()) setTimeout(refresh, 0);
 }
 
 // ---------------------------------------------------------------- sign in
@@ -275,11 +371,14 @@ function hooks() {
   // The reading list is written when it changed and you leave the page
   // (not on every mark: it's thousands of posts).
   window.addEventListener('pagehide', () => { persistReading(); });
+  // Hidden, the checks stop; shown again, one at once (unless the blyg
+  // asked to wait), then every 15 s.
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') { persistReading(); return; }
+    if (document.visibilityState === 'hidden') { clearTimeout(pollT); persistReading(); return; }
     if (!S.B?.is_live_mode()) return;
     if (!$('#signin').hidden || S.B.is_offline()) backOnline();
-    else if (Date.now() - lastRefresh > 60_000) refresh();
+    else if (Date.now() >= holdUntil) refresh();
+    else schedule();
   });
   // Offline: try again now and then (navigator.onLine isn't always right).
   setInterval(() => { if (S.B?.is_live_mode() && S.B.is_offline()) backOnline(); }, 20_000);
