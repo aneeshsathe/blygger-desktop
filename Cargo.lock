@@ -983,6 +983,8 @@ dependencies = [
  "rustls-pki-types",
  "serde",
  "serde_json",
+ "tempfile",
+ "ureq",
  "url",
  "wasm-bindgen",
 ]

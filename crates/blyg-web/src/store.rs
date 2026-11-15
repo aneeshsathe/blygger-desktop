@@ -261,8 +261,10 @@ impl WebStore {
         .unwrap_or_default()
     }
 
+    /// The list's order, `blyg_core::order` (the app's and the studio's:
+    /// `updated` as an instant, newest first, then the server id).
     fn sorted(mut v: Vec<Item>) -> Vec<Item> {
-        v.sort_by(|a, b| b.updated.cmp(&a.updated));
+        blyg_core::order::sort_own(&mut v);
         v
     }
 

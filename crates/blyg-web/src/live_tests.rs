@@ -636,9 +636,10 @@ fn reading_marks_go_to_the_blyg() {
     ]);
     let hoppers = json!([{ "id": "h1", "name": "Tides", "slug": null, "public": false }]);
     let r = v(b.live_reading(&rows.to_string(), &hoppers.to_string()));
+    // Two of theirs and your published note.
     assert_eq!(
         (r["rows"].as_u64(), r["hoppers"].as_u64()),
-        (Some(2), Some(1))
+        (Some(3), Some(1))
     );
     let rv = v(b.reading_view(NOW, "", false));
     assert_eq!(rv["unread"], 1);
@@ -723,11 +724,12 @@ fn the_store_snapshot_leaves_the_reading_list_to_its_own() {
     assert_eq!(next(&b), Value::Null);
     let again = Burrow::new_live(NOW, Some(b.to_json()), Some(cache.clone()), BASE);
     let rv = v(again.reading_view(NOW, "", false));
-    assert_eq!(rv["total"], 50);
+    assert_eq!(rv["total"], 51, "50 of theirs and your published note");
     assert_eq!(rv["unread"], 24);
-    // Without its snapshot, the reading list is simply empty until read.
+    // Without its snapshot, the reading list holds only your own post
+    // (built from the store) until read.
     let bare = Burrow::new_live(NOW, Some(b.to_json()), None, BASE);
-    assert_eq!(v(bare.reading_view(NOW, "", false))["total"], 0);
+    assert_eq!(v(bare.reading_view(NOW, "", false))["total"], 1);
     // The blyg's list is the truth again once read: the local marks go.
     let mut b = again;
     b.live_reading(&reading_rows(50).to_string(), "[]");
@@ -742,7 +744,8 @@ fn a_snapshot_from_0_18_0_moves_its_reading_list_out() {
     let mut old: Value = serde_json::from_str(&b.to_json()).unwrap();
     old["live"]["reading"] = v(b.reading_json())["rows"].clone();
     let mut b = Burrow::new_live(NOW, Some(old.to_string()), None, BASE);
-    assert_eq!(v(b.reading_view(NOW, "", false))["total"], 3);
+    // Three of theirs and your published note (built again, not doubled).
+    assert_eq!(v(b.reading_view(NOW, "", false))["total"], 4);
     assert!(b.reading_dirty(), "written to its own snapshot next");
     assert!(!b.to_json().contains("High water at dawn"));
     assert!(b.reading_json().contains("High water at dawn"));
@@ -750,7 +753,8 @@ fn a_snapshot_from_0_18_0_moves_its_reading_list_out() {
 
 #[test]
 fn the_stream_is_drawn_a_page_at_a_time() {
-    let mut b = live();
+    // No posts of yours: every row here is theirs.
+    let mut b = Burrow::new_live(NOW, None, None, BASE);
     b.live_reading(&reading_rows(120).to_string(), "[]");
     let all = v(b.reading_view(NOW, "", false));
     let page = v(b.reading_page(NOW, "", false, 40));

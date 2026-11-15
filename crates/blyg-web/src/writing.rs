@@ -950,9 +950,17 @@ impl Burrow {
                 .collect();
             let items = self.store.items();
             let own = self.origin_str();
+            // Others' posts only: yours are rows of the list too.
+            let theirs: Vec<blyg_core::ReadingItem> = self
+                .rd
+                .rows
+                .iter()
+                .filter(|r| !blyg_core::own::is_own_row(r))
+                .cloned()
+                .collect();
             let src = mention::Sources {
                 subscriptions: &self.rd.subs,
-                reading: &self.rd.rows,
+                reading: &theirs,
                 profiles: &[],
                 items: &items,
                 own_origin: Some(&own),

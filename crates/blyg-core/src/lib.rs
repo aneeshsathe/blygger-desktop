@@ -17,8 +17,10 @@ pub mod loose; // --- loose ends ---
 pub mod model;
 pub mod nearby; // --- nearby ---
 pub mod opml; // --- OPML import/export ---
+pub mod order; // the one list order (reading rows, your posts)
 pub mod origin; // --- unicode --- §12.2 origin spelling (decision #103)
 pub mod outbound; // --- contacts --- sent mentions, groups, sources
+pub mod own; // your published posts as reading rows
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
