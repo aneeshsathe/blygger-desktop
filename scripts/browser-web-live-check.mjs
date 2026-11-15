@@ -13,7 +13,8 @@
 // 4. Makes changes through the API, as another client would, and times
 //    each one until it's on screen with no interaction (budget: 20 s): a
 //    new own post, a republish, a withdrawal, a new subscription post, a
-//    hopper change and a thumb.
+//    hopper change and a thumb; with studio 0.61, a post shelved elsewhere
+//    (in the Shelf lens) and one taken off the shelf here (on the blyg).
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
@@ -176,6 +177,26 @@ try {
     async () => /1 post here/.test(await srcText(`hopper:${hopper.id}`)));
   times.thumb = await timed('a thumb', () => a.call('PUT', `/api/signals/${encodeURIComponent(subId)}/${encodeURIComponent(rid('B02'))}`, { thumb: 1 }),
     async () => /\b1\b/.test(await srcText('smart:thumbed')));
+  // --- shelf sync --- (studio 0.61: getShelf/putShelf). The Shelf lens
+  // open, a post shelved elsewhere shows; taking it off here reaches the blyg.
+  const caps = await a.call('GET', '/api/capabilities');
+  if ((caps.operations ?? []).includes('putShelf')) {
+    await page.click('[data-src="smart:shelf"]');
+    await sleep(1000);
+    times.shelf = await timed('a post shelved elsewhere', async () => {
+      const cur = await a.call('GET', '/api/shelf');
+      await a.call('PUT', '/api/shelf', { entries: [...cur.entries, { sub: subId, remoteId: rid('B03') }], expectedRevision: cur.revision });
+    }, async () => (await cards()).some((c) => c.includes('B03')));
+    await page.click('#d-stream .card .ex');
+    await page.waitForSelector('#d-shelfRA', { state: 'visible', timeout: 10_000 });
+    const label = await page.$eval('#d-shelfRA', (e) => e.textContent);
+    if (!/Remove from shelf/.test(label)) { console.log(`FAIL: the open post's shelf button says "${label}"`); failed++; }
+    times.shelfHere = await timed('a post taken off the shelf here, on the blyg',
+      () => page.click('#d-shelfRA'),
+      async () => !(await a.call('GET', '/api/shelf')).entries.some((e) => e.remoteId === rid('B03')));
+  } else {
+    console.log('skip: shelf (the studio has no putShelf)');
+  }
   const got = Object.values(times).filter((t) => t != null);
   if (got.length) console.log(`change → screen: max ${(Math.max(...got) / 1000).toFixed(1)} s, mean ${(got.reduce((x, y) => x + y, 0) / got.length / 1000).toFixed(1)} s`);
 } finally {

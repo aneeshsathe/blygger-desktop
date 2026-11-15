@@ -16,6 +16,11 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **The shelf syncs with your blyg** (studio 0.61): the studio, the web app and your other computers share one shelf. A change made in two places at once is merged, not lost, and a shelf you kept before the first sync is joined to the blyg's. An older blyg keeps the shelf on this computer, as before; the ⌘B sheet says which.
+- **Others' posts on the shelf**: **+ Add to shelf** among a post's chips in Reading, on the desktop and the web app, and a **Shelf** lens in Reading's sources that lists the shelf in its order, as the studio has them.
+
 ## [0.23.0] - 2026-11-15
 
 Catch up on a conversation, oldest first, and the web app gains the studio's Mark all read, Posts filters, Updates and Access tokens, keeps Reading in order and up to date, and starts faster.

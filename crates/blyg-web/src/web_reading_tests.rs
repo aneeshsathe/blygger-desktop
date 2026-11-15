@@ -106,6 +106,7 @@ fn the_sources_pane_lists_feeds_mentions_hoppers_and_subscriptions() {
             "Thumbed",
             "Thumbed down",
             "All",
+            "Shelf", // --- shelf sync ---
             "Background",
             "Mentions",
             "Hoppers",

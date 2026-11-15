@@ -97,7 +97,8 @@ runs the bindings natively. Those tests and the included `vm.rs`,
   the demo the offline switch and the reset (`www/hub.js`).
 - The shelf: 📚 marks shelved posts, which come first, with a line under
   them. ⌥⌘B shelves or unshelves the open post, ⌘B lists the shelf. It
-  holds 50 at most.
+  holds 50 at most, others' posts too (+ Add to shelf in Reading, and the
+  Shelf lens). With studio 0.61 it syncs with your blyg (`src/shelf.rs`).
 - ⌘K links a post at the caret, ⇧⌘K quotes one (threads only).
 - The editor bar under the editor is the phone's, described below. It works
   with a mouse: drag or scroll it sideways, or use the ‹ › arrows.
@@ -208,8 +209,9 @@ cookie.
   sheet or capture's Publish), `POST …/restore` (Discard changes),
   `PUT`/`DELETE /api/reading/{sub}/{id}/read` and
   `PUT`/`DELETE /api/hoppers/{id}/items/{sub}/{id}`. Scratch notes stay
-  in the browser until ⌘D makes them drafts, as natively. The shelf stays
-  in the browser (the studio has none yet, blygger-studio#135).
+  in the browser until ⌘D makes them drafts, as natively. The shelf syncs
+  through `GET`/`PUT /api/shelf` (`getShelf`/`putShelf`), merging with the
+  blyg's on a 409, and stays in the browser on an older studio.
 - **The outbox** (`src/live.rs`). Every keystroke is in the store at once
   and persisted (IndexedDB key `live`; the demo's is `store`, so they
   never mix). The reading list is kept apart, under `live-reading`, and

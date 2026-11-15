@@ -535,6 +535,12 @@ impl Burrow {
         let lens = self.wr.lens;
         let kind_ok = |r: &ReadingItem| lens.is_none_or(|k| r.kind == k);
         match &self.wr.source {
+            // --- shelf sync --- the shelf's posts, in its order.
+            Source::Smart(Smart::Shelf) => self
+                .shelf_order(rows)
+                .into_iter()
+                .filter(|r| kind_ok(r))
+                .collect(),
             Source::Mentions => {
                 let keys = self.wr_mention_keys();
                 rows.into_iter()

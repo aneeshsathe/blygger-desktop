@@ -93,6 +93,7 @@
           <button type="button" data-ra="quote" title="A new thread quoting this post">❝ Quote</button>
           <button type="button" data-ra="reply" title="A stub replying to this post">↩ Reply</button>
           <button type="button" data-ra="hopper" title="Put it in a hopper">⊕ Hopper</button>
+          <button type="button" data-ra="shelf" id="d-shelfRA" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button>
           <button type="button" data-ra="link" title="Copy a [[link]] to it">[[ Copy link</button>
           <button type="button" data-ra="unread" title="Mark unread">● Unread</button>
           <!-- web-writing --><button type="button" id="d-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
@@ -177,7 +178,7 @@
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
       <button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
     <div class="pstrip" id="p-pacts" role="toolbar" aria-label="This post">
-      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
+      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
     </div>
     <div class="pscroll"><article class="post" id="p-postBody"></article></div>
     <div class="pmenu" id="p-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
@@ -207,7 +208,7 @@
   <div class="psheet" id="sh-pub" role="dialog" aria-label="Publish"><div class="grab"></div><h4 id="p-pubH">Publish</h4>
     <textarea class="cap short" id="p-pubNote" placeholder="A note for this version (optional)"></textarea>
     <div class="row2"><span class="flex"></span><button type="button" id="p-pubCancel">Cancel</button><button type="button" class="pri" id="p-pubGo">Publish</button></div></div>
-  <div class="psheet" id="sh-shelf" role="dialog" aria-label="Your shelf"><div class="grab"></div><h4>📚 Your shelf</h4><div class="pscroll sheetlist" id="p-shelfSheet"></div>
+  <div class="psheet" id="sh-shelf" role="dialog" aria-label="Your shelf"><div class="grab"></div><h4>📚 Your shelf</h4><p class="muted" id="p-shelfNote"></p><div class="pscroll sheetlist" id="p-shelfSheet"></div>
     <div class="row2"><span>▲▼ reorder · ✕ takes it off · 50 at most</span></div></div>
   <div class="psheet" id="sh-hop" role="dialog" aria-label="Hoppers"><div class="grab"></div><h4>⊕ Put it in a hopper</h4><div class="pscroll sheetlist" id="p-hopList"></div></div>
   <div class="ptoast" id="p-toast" role="status" aria-live="polite"></div>

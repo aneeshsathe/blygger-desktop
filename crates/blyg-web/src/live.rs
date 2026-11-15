@@ -19,7 +19,7 @@ use std::time::Duration;
 use blyg_core::api::absolute_page;
 use blyg_core::api::wire::{ChangeState, WireItem, imported_row};
 use blyg_core::sync::{
-    HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS, SyncOptions, next_full_every,
+    HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SHELF_DEPS, SIGNALS_DEPS, SyncOptions, next_full_every,
 };
 use blyg_core::{Hopper, Item, Kind, LocalId, ReadingItem, ServerId, Status};
 use serde::{Deserialize, Serialize};
@@ -1196,11 +1196,14 @@ impl Burrow {
 ///   they moved (`Burrow::live_hoppers`).
 /// - `signals`: `GET /api/signals`, the thumbs, when only they moved
 ///   (`Burrow::live_signals`).
+/// - `shelf`: `GET /api/shelf`, and a `PUT` of this side's changes
+///   (`crate::shelf`), on a blyg that keeps one.
 pub const LISTS: &[(&str, &[&str])] = &[
     ("items", ITEMS_DEPS),
     ("reading", READING_DEPS),
     ("hoppers", HOPPERS_DEPS),
     ("signals", SIGNALS_DEPS),
+    ("shelf", SHELF_DEPS),
 ];
 
 /// Whether `c` still says what a list was last read under (`seen`): the
