@@ -7,13 +7,15 @@
 //   counts) over the list; ⌃⌥F steps through them on a desk.
 // - Updates (⚙ Blyg › Updates): threads whose quotes have newer versions,
 //   each quote's state, and Refresh (one, or all that can be).
+// - Access tokens (⚙ Blyg › Access tokens): list, make (shown once) and
+//   revoke, one or all, each revoke confirmed.
 //
 // The screens are drawn in the reading panel (web-reading.js `wrExtend`).
 // Every rule is Burrow's Rust (src/parity/); this draws and fetches. Every
 // request goes through live.js `call` (same-origin /api/ only). Features
 // are gated on the operation names /api/capabilities advertises.
 
-import { $, S, esc, now, persist, persistReading, toast } from './core.js';
+import { $, S, esc, now, persist, persistReading, toast, copyText } from './core.js';
 import { call } from './live.js';
 import { wrExtend, wrScreen, wrRedraw, ensure, closePanel } from './web-reading.js';
 
@@ -150,10 +152,74 @@ async function refreshMany(sids) {
   else if (sids.length > 1) toast(ok === sids.length ? `Refreshed ${plural(ok, 'thread')}` : `Refreshed ${ok} of ${sids.length} threads · the list says what went wrong`, 4200);
 }
 
+// ---------------------------------------------------------------- access tokens
+let accLoading = null;
+async function accLoad() {
+  if (accLoading || !S.live) return;
+  accLoading = (async () => {
+    try {
+      const r = await call('GET', '/api/authorizations');
+      said(JSON.parse(S.B.acc_loaded(r.status, r.body)));
+    } finally { accLoading = null; wrRedraw(); }
+  })();
+}
+function accessScreen() {
+  if (!S.live) return '<p class="wr-muted">Access tokens let tools act as you on your blyg. The demo has no blyg.</p>';
+  const v = JSON.parse(S.B.acc_view());
+  if (v.state === 'loading') { accLoad(); return loadingP; }
+  if (v.state === 'unsupported') return '<p class="wr-muted">Your blyg doesn’t offer client access (blygger-studio 0.56 or later does).</p>';
+  if (v.state === 'error') return `<p class="bad">${esc(v.error)}</p><div class="wr-acts"><button type="button" class="wr-btn" data-acc-reload>Try again</button></div>`;
+  const s = wrScreen();
+  s.scopes ??= new Set(['owner:read']);
+  const once = s.token ? `<div class="wr-card wr-token" role="alert"><div class="wr-l"><b>Copy “${esc(s.token.name)}”’s token now</b>
+      <small>It won’t be shown again. It expires in ${plural(s.token.days, 'day')}. Keep it in your tool’s own credential store.</small></div>
+      <textarea class="wr-tok" data-token-once readonly rows="3" aria-label="The new access token" spellcheck="false">${esc(s.token.token)}</textarea>
+      <div class="wr-acts"><button type="button" class="wr-btn pri" data-token-copy>Copy</button><button type="button" class="wr-btn" data-token-done>Done</button></div></div>` : '';
+  const rows = v.rows.map((a) => `<div class="wr-card"><div class="wr-row"><span class="wr-ico" aria-hidden="true">🔑</span>
+      <div class="wr-l"><b>${esc(a.name)}</b> <small>${esc(a.kind)} · ${esc(a.resource)}</small><small>${esc(a.scopes)}</small>
+      <small class="wr-muted">made ${esc(a.created)}${a.expires ? ` · expires ${esc(a.expires)}` : ''}</small></div>
+      <button type="button" class="wr-btn danger" data-revoke="${esc(a.id)}">${s.confirm === a.id ? 'Yes, revoke' : 'Revoke'}</button></div></div>`).join('');
+  return `${once}<p class="wr-muted">Tools and MCP apps that can act as you, without your password. Revoking one stops it at once; your Studio sign-in, and this app, stay signed in.</p>
+    ${rows || '<p class="wr-muted">Nothing can act as you yet.</p>'}
+    ${v.rows.length ? `<div class="wr-acts"><button type="button" class="wr-btn danger" data-revoke="all">${s.confirm === 'all' ? 'Yes, revoke every one' : 'Revoke all client access'}</button></div>` : ''}
+    <div class="wr-h">Make a token</div>
+    <form class="wr-form" data-form="token">
+      <p class="wr-muted">For a tool that can’t sign in with OAuth. It lasts 30 days and is shown once.</p>
+      <label class="wr-field">Name <input name="tokname" maxlength="100" autocomplete="off" placeholder="The tool it’s for"></label>
+      <label class="wr-field">For <select name="tokres"><option value="api">the REST API</option><option value="mcp">MCP</option></select></label>
+      <fieldset class="wr-fs"><legend>It may</legend>${v.scopes.map((c) => `<label class="wr-row wr-radio"><input type="checkbox" data-tokscope="${esc(c.key)}" ${s.scopes.has(c.key) ? 'checked' : ''}><div class="wr-l"><b>${esc(c.key)}</b><small>${esc(c.label)}</small></div></label>`).join('')}</fieldset>
+      <div class="wr-acts"><button type="submit" class="wr-btn pri" ${s.busy ? 'disabled' : ''}>Make token</button></div>
+    </form>`;
+}
+async function makeToken(f) {
+  const s = wrScreen();
+  const o = JSON.parse(S.B.acc_create_request(f.tokname.value, JSON.stringify([...s.scopes]), f.tokres.value));
+  if (o.error) { toast(esc(o.error), 4200); return; }
+  s.busy = true; wrRedraw();
+  try {
+    const r = await call(o.req.method, o.req.path, o.req.body);
+    const t = JSON.parse(S.B.acc_created(r.status, r.body));
+    if (t.error) { said(t); return; }
+    s.token = t; // in this screen only: gone with Done, or when the panel closes
+    f.tokname.value = '';
+  } finally { s.busy = false; wrRedraw(); }
+  $('[data-token-once]', body())?.focus();
+}
+async function revoke(id) {
+  const s = wrScreen();
+  if (s.confirm !== id) { s.confirm = id; wrRedraw(); return; }
+  s.confirm = null;
+  const o = JSON.parse(S.B.acc_revoke_request(id));
+  const r = await call(o.req.method, o.req.path, o.req.body);
+  const out = JSON.parse(S.B.acc_revoked(id, r.status, r.body));
+  if (out.toast) toast(esc(out.toast)); else said(out);
+  wrRedraw();
+}
+
 // ---------------------------------------------------------------- the panel
 wrExtend({
-  titles: { markall: 'Mark all read', updates: 'Updates' },
-  screens: { markall: markAllScreen, updates: updatesScreen },
+  titles: { markall: 'Mark all read', updates: 'Updates', access: 'Access tokens' },
+  screens: { markall: markAllScreen, updates: updatesScreen, access: accessScreen },
   async click(t, d, s) {
     if ('markallGo' in d) { markAll(); return true; }
     if ('updReload' in d) { S.B.upd_forget(); wrRedraw(); return true; }
@@ -169,6 +235,23 @@ wrExtend({
       await refreshMany(v.rows.filter((r) => !r.why).map((r) => r.sid));
       return true;
     }
+    if ('accReload' in d) { S.B.acc_forget(); wrRedraw(); return true; }
+    if (d.revoke) { await revoke(d.revoke); return true; }
+    if ('tokenCopy' in d) { if (s.token) await copyText(s.token.token); toast('Copied'); return true; }
+    if ('tokenDone' in d) { s.token = null; wrRedraw(); return true; }
     return false;
   },
+  async submit(f, kind) {
+    if (kind !== 'token') return false;
+    await makeToken(f);
+    return true;
+  },
+});
+
+// The token form's permissions live on its screen, so a redraw keeps them.
+$('#wr-panel')?.addEventListener('change', (e) => {
+  const c = e.target.closest?.('[data-tokscope]');
+  const s = wrScreen();
+  if (!c || !s?.scopes) return;
+  if (c.checked) s.scopes.add(c.dataset.tokscope); else s.scopes.delete(c.dataset.tokscope);
 });

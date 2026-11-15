@@ -130,3 +130,8 @@ a[data-wr-id] { text-decoration-style: dashed; }
 .wr-radio { align-items: flex-start; gap: 8px; }
 .wr-fs { border: 1px solid var(--c-line); border-radius: 10px; margin: 10px 0; padding: 4px 10px; }
 /* --- end reader view / changelog --- */
+
+/* --- web-parity --- a new token, shown once */
+.wr-token{border-color:var(--c-accent)}
+.wr-tok{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,"SF Mono",Menlo,monospace;word-break:break-all;margin:.5rem 0;padding:.5rem;border:1px solid var(--c-line);border-radius:6px;background:transparent;color:inherit;resize:none}
+/* --- end web-parity --- */

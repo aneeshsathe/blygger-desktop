@@ -36,6 +36,7 @@ function html(V) {
       ${row('mentions', '@', 'Mentions', 'Responses to your posts, what you sent, accepting Webmentions')}
       ${row('hoppers', '⊕', 'Hoppers', 'Make, rename, describe, make public, delete')}
       ${live && !(S.B.wr_ops_known() && !S.B.wr_can('listStaleThreads')) ? row('updates', '↻', 'Updates', 'Threads whose quotes have newer versions: refresh them') : ''}
+      ${live ? row('access', '🔑', 'Access tokens', 'Tools that act as you: make a token, revoke one or all') : ''}
     </section>
     <section aria-labelledby="hub-h2"><h3 class="hub-h" id="hub-h2">Reading</h3>
       ${row('subscribe', '＋', 'Subscribe', 'Follow a blyg or a feed, after a preview')}

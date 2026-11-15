@@ -1,5 +1,5 @@
 // --- web-parity --- A live check of the studio-parity features on the web
-// (mark all read, the Posts filters, Updates), in Chromium,
+// (mark all read, the Posts filters, Updates, access tokens), in Chromium,
 // against two DISPOSABLE local studios:
 //
 //   BURROW_PW=… BURROW_B=http://127.0.0.1:<port b> \
@@ -162,6 +162,45 @@ const thread = (await a.api('GET', '/api/items?limit=100')).items.find((i) => /q
 check(thread?.version === 2, `the thread is v2 on the blyg (v${thread?.version})`);
 check(((await a.api('GET', '/api/freshness')).items ?? []).length === 0, 'the blyg has nothing stale left');
 await page.keyboard.press('Escape');
+
+// --- 4. Access tokens
+await page.keyboard.press('Control+Digit3');
+await page.click('#d-hub [data-hub="access"]');
+await page.waitForSelector('#wr-body form[data-form="token"]', { timeout: 20_000 });
+const before = ((await a.api('GET', '/api/authorizations')).items ?? []).length;
+await page.fill('#wr-body [name="tokname"]', 'Parity check tool');
+await page.click('#wr-body form[data-form="token"] button[type="submit"]');
+await page.waitForSelector('#wr-body [data-token-once]', { timeout: 20_000 });
+const shown = await page.evaluate(() => document.querySelector('#wr-body [data-token-once]').value);
+check(shown.length > 20, 'the new token is shown once');
+const after = (await a.api('GET', '/api/authorizations')).items ?? [];
+check(after.length === before + 1 && after.some((x) => x.name === 'Parity check tool'), 'the blyg lists the new grant');
+const kept = await page.evaluate(async (t) => {
+  const inStorage = Object.values(localStorage).some((v) => String(v).includes(t));
+  // The app's own database (core.js): every value in it, as text.
+  const idb = await new Promise((ok) => {
+    const r = indexedDB.open('burrow-web');
+    r.onsuccess = () => {
+      const db = r.result; const names = [...db.objectStoreNames]; if (!names.length) return ok(null);
+      const tx = db.transaction(names); let all = '';
+      for (const n of names) tx.objectStore(n).getAll().onsuccess = (e) => { all += JSON.stringify(e.target.result); };
+      tx.oncomplete = () => ok(all);
+    };
+    r.onerror = () => ok(null);
+  });
+  return { inStorage, read: idb !== null && idb.length > 100, inIdb: idb !== null && idb.includes(t) };
+}, shown);
+check(kept.read, 'the app\'s IndexedDB was read (it holds the posts)');
+check(!kept.inStorage && !kept.inIdb, 'the token is in neither localStorage nor IndexedDB');
+check(!logged.some((l) => l.includes(shown)), 'the token never reached the console');
+await page.click('#wr-body [data-token-done]');
+check(await page.evaluate(() => !document.querySelector('#wr-body [data-token-once]')), 'once dismissed, the token is gone from the page');
+const id = after.find((x) => x.name === 'Parity check tool').id;
+await page.click(`#wr-body [data-revoke="${id}"]`);
+check(/Yes, revoke/.test(await page.evaluate((i) => document.querySelector(`#wr-body [data-revoke="${i}"]`).textContent, id)), 'revoking asks first');
+await page.click(`#wr-body [data-revoke="${id}"]`);
+await wait(1500);
+check(!((await a.api('GET', '/api/authorizations')).items ?? []).some((x) => x.id === id), 'the grant is revoked on the blyg');
 
 check(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 await browser.close();

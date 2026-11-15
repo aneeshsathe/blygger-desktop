@@ -422,3 +422,98 @@ fn updates_are_gated_on_the_operations() {
     let mut b = own(&["listStaleThreads"]);
     assert_eq!(v(b.upd_loaded(401, "{}"))["code"], "unauthorized");
 }
+
+// ------------------------------------------------------------ access tokens
+
+fn grant(id: &str, name: &str, manual: bool) -> Value {
+    json!({ "id": id, "clientId": format!("client-{id}"), "name": name, "manual": manual,
+            "resource": "https://blyg.example.com/api", "scope": ["owner:read"],
+            "createdAt": 1_793_966_400_i64, "expiresAt": 1_796_558_400_i64 })
+}
+
+#[test]
+fn access_lists_the_grants() {
+    let mut b = own(&[]);
+    assert_eq!(v(b.acc_view())["state"], "loading");
+    let body =
+        json!({ "items": [grant("g1", "Sample tool", true), grant("g2", "Sample app", false)] });
+    assert_eq!(v(b.acc_loaded(200, &body.to_string()))["n"], 2);
+    let view = v(b.acc_view());
+    assert_eq!(view["state"], "ready");
+    assert_eq!(view["rows"][0]["kind"], "manual token");
+    assert_eq!(view["rows"][1]["kind"], "OAuth");
+    assert_eq!(view["rows"][0]["scopes"], "owner:read");
+    assert_eq!(view["rows"][0]["created"], "6 Nov 2026");
+    assert_eq!(view["rows"][0]["expires"], "6 Dec 2026");
+    assert_eq!(view["scopes"].as_array().unwrap().len(), 5);
+    // No client access on this blyg.
+    let mut b = own(&[]);
+    b.acc_loaded(404, "{}");
+    assert_eq!(v(b.acc_view())["state"], "unsupported");
+    let mut b = own(&[]);
+    assert_eq!(v(b.acc_loaded(401, "{}"))["code"], "unauthorized");
+}
+
+#[test]
+fn a_token_request_is_what_the_studio_takes() {
+    let b = own(&[]);
+    let r = v(b.acc_create_request(
+        "  Sample tool ",
+        r#"["reading:state","owner:read","nonsense","owner:read"]"#,
+        "mcp",
+    ));
+    assert_eq!(r["req"]["path"], "/api/authorizations");
+    assert_eq!(
+        r["req"]["body"],
+        json!({ "name": "Sample tool", "scope": ["owner:read", "reading:state"], "resource": "mcp" })
+    );
+    assert!(v(b.acc_create_request(" ", r#"["owner:read"]"#, "api"))["error"].is_string());
+    assert!(v(b.acc_create_request("x", "[]", "api"))["error"].is_string());
+    let long = "x".repeat(101);
+    assert!(v(b.acc_create_request(&long, r#"["owner:read"]"#, "api"))["error"].is_string());
+}
+
+#[test]
+fn a_new_token_is_handed_over_once_and_not_kept() {
+    let mut b = own(&[]);
+    b.acc_loaded(200, r#"{"items":[]}"#);
+    let secret = "sample-not-a-real-token-0123456789";
+    let answer = json!({ "authorization": grant("g3", "Sample tool", true), "accessToken": secret,
+                         "tokenType": "Bearer", "expiresIn": 2_592_000 });
+    let out = v(b.acc_created(200, &answer.to_string()));
+    assert_eq!(out["token"], secret);
+    assert_eq!(out["days"], 30);
+    // Burrow keeps the grant, never the token: not in any view, nor in
+    // what the page persists.
+    assert_eq!(v(b.acc_view())["rows"][0]["name"], "Sample tool");
+    assert!(!b.acc_view().contains(secret));
+    assert!(!b.to_json().contains(secret));
+    assert!(!b.reading_json().contains(secret));
+}
+
+#[test]
+fn revoking_one_or_all() {
+    let mut b = own(&[]);
+    let body =
+        json!({ "items": [grant("g1", "Sample tool", true), grant("g2", "Sample app", false)] });
+    b.acc_loaded(200, &body.to_string());
+    let r = v(b.acc_revoke_request("g1"));
+    assert_eq!(r["req"]["method"], "DELETE");
+    assert_eq!(r["req"]["path"], "/api/authorizations/g1");
+    assert_eq!(
+        v(b.acc_revoked("g1", 200, r#"{"ok":true}"#))["toast"],
+        "Revoked"
+    );
+    assert_eq!(v(b.acc_view())["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        v(b.acc_revoke_request("all"))["req"]["path"],
+        "/api/authorizations"
+    );
+    b.acc_revoked("all", 200, r#"{"ok":true}"#);
+    assert_eq!(v(b.acc_view())["rows"], json!([]));
+    // Refused: kept.
+    let mut b = own(&[]);
+    b.acc_loaded(200, &body.to_string());
+    assert!(v(b.acc_revoked("g1", 403, r#"{"message":"no"}"#))["error"].is_string());
+    assert_eq!(v(b.acc_view())["rows"].as_array().unwrap().len(), 2);
+}

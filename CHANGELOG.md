@@ -21,6 +21,7 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Web app: Mark all read**, as the studio has it. ✓ Mark all read… in the sources pane (⌃⌥A), ✓ All read on a phone: every unread post of the chosen source and lens, after a confirmation, sent to your blyg in batches of 500 and put back if the blyg refuses. Needs a studio that advertises `markReadBatch`.
 - **Web app: filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with counts, over the list on a desk and a phone (⌃⌥F steps through them), as the studio's compose page has them. A search still looks through every post.
 - **Web app: Updates** (⚙ Blyg › Updates): your threads whose quotes have newer versions, stalest first, what changed in each quote, and Refresh (one, or all that can be) with a version note, as the studio's Updates tab and the desktop's Stale Quotes… do. Needs a studio that advertises `listStaleThreads` (and `refreshItem` to refresh).
+- **Web app: Access tokens** (⚙ Blyg › Access tokens): what can act as you on your blyg, a manual token for a tool (shown once, never stored), and revoke one or all, each confirmed, as the studio's Client access page does.
 
 ## [0.21.0] - 2026-11-14
 

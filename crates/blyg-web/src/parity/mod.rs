@@ -6,6 +6,7 @@
 //! - **Status filters** over Posts (`filters.rs`).
 //! - **Updates**: threads whose quotes have newer versions, and Refresh
 //!   (`updates.rs`).
+//! - **Access tokens**: list, make (shown once) and revoke (`access.rs`).
 //!
 //! Every server feature is gated on the operation names the blyg
 //! advertises in `GET /api/capabilities` (`wr_can`), never on its
@@ -21,6 +22,7 @@ use wasm_bindgen::prelude::*;
 use crate::api::ApiError;
 use crate::{Burrow, json};
 
+pub mod access;
 pub mod filters;
 pub mod mark_all;
 pub mod updates;
@@ -36,6 +38,8 @@ pub struct Parity {
     pub probed: HashMap<String, Result<ThreadFreshness, String>>,
     /// Why a thread's last refresh failed, by server id.
     pub failed: HashMap<String, String>,
+    /// The grants that can act as you (never a token).
+    pub access: access::Access,
 }
 
 /// An error's words, as the page shows them.

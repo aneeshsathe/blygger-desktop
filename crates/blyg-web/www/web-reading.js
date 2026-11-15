@@ -231,6 +231,7 @@ export function closePanel() {
   if (!p || p.hidden) return;
   p.hidden = true;
   screen = null; stack = [];
+  const b = body(); b.innerHTML = ''; b._html = ''; // --- web-parity --- nothing shown stays (a token above all)
   document.documentElement.classList.remove('wr-open');
   if (back && document.contains(back)) back.focus?.({ preventScroll: true });
   back = null;

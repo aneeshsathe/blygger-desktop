@@ -140,6 +140,12 @@ otherwise it's hidden or says why.
   /api/items/{id}/freshness`) and Refresh, one or all
   (`POST /api/items/{id}/refresh`, then the post is read again as after a
   publish). The rules are the desktop's (`blyg_core::upkeep`).
+- **Access tokens** (`/api/authorizations`, the studio's own session
+  only, so not in `operations`: the screen asks, and a 404 means the blyg
+  has none). ⚙ Blyg › Access tokens lists what can act as you, makes a
+  manual token (shown once, with Copy; never stored or logged; cleared
+  when you press Done or close the panel) and revokes one or all, each
+  after a second press.
 
 The rules are `src/parity/` and the screens `www/parity.js`, drawn in the
 reading panel through `wrExtend` (`www/web-reading.js`). A live check runs
