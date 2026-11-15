@@ -18,6 +18,9 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
+#[cfg(test)]
+mod background_tests;
 mod change_lead; // --- background ---
 // --- reader view / changelog --- the author's own page in the reader's
 // slot, and what an opened post shows of its changelog.
@@ -434,6 +437,9 @@ pub struct State {
     /// The blyg's changelog settings and the summaries asked this session.
     pub changelogs: changelog_view::Changelogs,
     // --- end reader view / changelog ---
+    /// --- background --- whether the blyg has Background (studio 0.61), and
+    /// its rules for Settings.
+    pub background: background::Background,
 }
 
 impl State {
@@ -503,6 +509,7 @@ impl State {
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
             changelogs: Default::default(),
+            background: Default::default(),
         }
         .refiltered()
     }
@@ -705,6 +712,7 @@ impl MainView {
         // --- background --- and the withdrawn posts, at the end.
         let fresh = self.reading_with_own();
         let r = &mut self.reading;
+        r.background.served = self.backend.background_served(); // --- background ---
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
         // --- reader folders ---
@@ -777,6 +785,7 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
+                self.reading.background.served = self.backend.background_served(); // --- background ---
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
@@ -1066,6 +1075,12 @@ impl MainView {
             // --- hoppers --- `h`: Hopper › on the post in front of you.
             (View::Reading, "h") => {
                 self.open_hopper_picker(window, cx);
+                true
+            }
+            // --- background --- `b`: the post in front of you to Background,
+            // or back to Foreground (studio 0.61).
+            (View::Reading, "b") => {
+                self.background_key(cx);
                 true
             }
             // --- tray --- `q` puts the post in front of you on the quote tray.

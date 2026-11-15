@@ -7,6 +7,7 @@
 //! The store's own lock is never held across network I/O, so UI reads and
 //! saves stay instant while a push is in flight.
 
+mod background; // --- background --- the studio's Background lens and choices
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
 mod worker;
@@ -714,6 +715,7 @@ impl Engine {
         match crate::api::contract(self.api.contract_version()?.as_deref()) {
             Contract::Supported => {
                 self.note_syndication_served(); // --- syndication ---
+                self.note_background_served(); // --- background ---
                 let mut st = self.state();
                 st.compatible = true;
                 st.outdated = false;
@@ -1400,6 +1402,26 @@ impl Engine {
             }
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
+        }
+        // --- background --- the studio's Background lens, read again when
+        // what it's worked out from moved (and, like the reading list, not
+        // before `reading_gap` in a background pull).
+        if self.background_due(
+            stale("background", background::BACKGROUND_DEPS),
+            full || gap_open,
+        ) {
+            match self.fetch_background() {
+                Ok(changed) => {
+                    surprise |= changed && forced("background", background::BACKGROUND_DEPS);
+                    reading_changed |= changed;
+                    self.accept(&rev, "background", background::BACKGROUND_DEPS)?;
+                }
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                // A refused read leaves what's held; asked again next pull.
+                Err(_) => {}
+            }
         }
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
         // the blyg's database only), asked again when your items or your

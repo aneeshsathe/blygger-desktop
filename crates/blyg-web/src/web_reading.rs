@@ -148,6 +148,13 @@ pub struct WebReading {
     // `/api/settings`; the demo's are kept here).
     pub changelog: blyg_core::changelog::ChangelogSettings,
     // --- end reader view / changelog ---
+    // --- background --- the studio's Background lens as last read (with
+    // this page's Foreground choices), whether that's current, and the
+    // rules from `/api/settings` (`web_background.rs`).
+    pub bg: Option<blyg_core::background::BackgroundSet>,
+    pub bg_fresh: bool,
+    pub bg_rules: Option<blyg_core::background::BackgroundRules>,
+    // --- end background ---
     /// Demo: the next id for a made-up subscription or hopper.
     next: u32,
 }
@@ -1035,7 +1042,15 @@ impl Burrow {
             "subs" => ("/api/subscriptions", "", 100, false),
             "mentions" => ("/api/mentions", "direction=inbound", 100, false),
             "outbound" => ("/api/mentions", "direction=outbound", 100, false),
-            "lens" => ("/api/reading", "mentions=true", 100, false),
+            // `/api/reading` pages hold at most 50.
+            "lens" => ("/api/reading", "mentions=true", 50, false),
+            // --- background --- the studio's Background lens.
+            "background" => (
+                "/api/reading",
+                blyg_core::background::LENS_QUERY,
+                blyg_core::background::LENS_LIMIT,
+                false,
+            ),
             "history" => ("/api/browse", "limit=100", 100, true),
             "settings" => ("/api/settings", "", 0, true),
             "capabilities" => ("/api/capabilities", "", 0, true),
@@ -1051,6 +1066,7 @@ impl Burrow {
             "mentions" => self.wr.mentions.is_some(),
             "outbound" => self.wr.outbound.is_some(),
             "lens" => self.wr.served_mentions.is_some(),
+            "background" => self.wr.bg_fresh, // --- background ---
             "history" => self.wr.history.is_some(),
             "settings" => self.wr.accept_mentions.is_some(),
             "capabilities" => self.wr.contract.is_some(),
@@ -1129,6 +1145,8 @@ impl Burrow {
                 self.wr.served_mentions = Some(keys);
                 n
             }
+            // --- background ---
+            "background" => self.bg_loaded(&items()),
             "history" => {
                 let list: Vec<Step> = v
                     .get("items")
@@ -1151,6 +1169,8 @@ impl Burrow {
                 );
                 // --- reader view / changelog ---
                 self.wr.changelog = blyg_core::changelog::ChangelogSettings::from_json(&v);
+                // --- background ---
+                self.wr.bg_rules = blyg_core::background::BackgroundRules::from_settings(&v);
                 1
             }
             "capabilities" => {
@@ -1184,6 +1204,7 @@ impl Burrow {
     pub fn wr_forget(&mut self, which: &str) {
         match which {
             "lens" => self.wr.served_mentions = None,
+            "background" => self.wr.bg_fresh = false, // --- background ---
             "subs" => self.wr.subs_loaded = false,
             "mentions" => {
                 self.wr.mentions = None;

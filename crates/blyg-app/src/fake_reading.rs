@@ -166,6 +166,7 @@ fn post(
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 
@@ -735,6 +736,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     };
     let public = vec![PublicItem {
         item: kit_item,

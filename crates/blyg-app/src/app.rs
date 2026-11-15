@@ -1932,6 +1932,7 @@ impl MainView {
             focus,
         });
         self.changelog_settings_refresh(cx); // --- reader view / changelog ---
+        self.background_rules_refresh(cx); // --- background ---
         cx.notify();
     }
 

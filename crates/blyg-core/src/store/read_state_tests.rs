@@ -38,6 +38,7 @@ fn ri(sub: &str, rid: &str, page: Option<&str>, version: u32, observed: &str) ->
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 

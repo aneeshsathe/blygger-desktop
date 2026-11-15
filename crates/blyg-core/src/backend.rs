@@ -955,6 +955,56 @@ pub trait Backend: Send + Sync {
         Vec::new()
     }
 
+    // --- background --- studio 0.61 (contract 5.10.0): Background and
+    // Foreground (`crate::background`). Gated on the capability
+    // `setReadingPlacement`; all additive with defaults that offer nothing.
+
+    /// Whether the blyg serves Background. False: no Background actions or
+    /// rules; the Background lens holds withdrawn posts, as before.
+    fn background_served(&self) -> bool {
+        false
+    }
+
+    /// The studio's Background lens as last read (`None`: not served, or
+    /// not read yet). Put it on rows with `BackgroundSet::annotate`. Local.
+    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
+        None
+    }
+
+    /// The owner's choice on one row (`withdrawn`: a withdrawn post):
+    /// Background, Foreground, or `None` to let the rules decide. Remote;
+    /// shows at once on success (`ReadingChanged`).
+    fn set_reading_placement(
+        &self,
+        key: &crate::background::Key,
+        withdrawn: bool,
+        placement: Option<crate::background::Placement>,
+    ) -> Result<()> {
+        let _ = (key, withdrawn, placement);
+        Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
+    /// Move a whole blyg (a subscription id) to Background, or back. Remote.
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        let _ = (sub, on);
+        Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
+    /// The blyg's Background rules. `Ok(None)`: not served.
+    fn background_rules(&self) -> Result<Option<crate::background::BackgroundRules>> {
+        Ok(None)
+    }
+
+    /// Turn one rule on or off (a partial settings write); the rules back.
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<crate::background::BackgroundRules> {
+        let _ = (rule, on);
+        Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
     // --- hoppers ---
     // The blyg's hoppers (studio's createHopper … removeHopperItem). The list
     // and memberships are local reads of what the last pull stored. A

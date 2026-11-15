@@ -21,6 +21,7 @@
 //! Run with `--test-threads=1`: the offline test takes the Worker down.
 //! Never point these at a real blyg: they publish, withdraw and pin.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -4375,6 +4376,196 @@ fn withdrawn_posts_are_background() {
     };
     assert_eq!(listed(false), None, "left out of the plain list");
     assert_eq!(listed(true), Some(true), "…and listed under background");
+    me.unsubscribe(&sub.id).unwrap();
+}
+
+/// --- background --- The studio's Background set, as its own lens lists it
+/// (`GET /api/reading?background=true`, every page): `(sub, id)` keys,
+/// your own posts as `("~own", id)`.
+fn studio_background(base: &str) -> HashSet<(String, String)> {
+    let mut out = HashSet::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut path = String::from("/api/reading?background=true&limit=50");
+        if let Some(c) = &cursor {
+            path.push_str(&format!("&cursor={}", query_escape(c)));
+        }
+        let page = conforms("GET", base, &path);
+        for e in page["items"].as_array().unwrap() {
+            let (key, b) = blyg_core::background::parse_entry(e).expect("an entry with background");
+            assert!(b.on);
+            out.insert(key);
+        }
+        match page["page"]["nextCursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => return out,
+        }
+    }
+}
+
+/// --- background --- What Burrow lists under Background: every row it
+/// holds (the reading list, the withdrawn posts, your own posts and your
+/// withdrawn ones, as the app builds them), placed by what it read of the
+/// studio, filtered by `ReadingItem::is_background`, the one rule every
+/// list uses.
+fn burrow_background(me: &LiveBackend) -> HashSet<(String, String)> {
+    let mut rows = me.reading();
+    rows.extend(me.background_reading());
+    let origin = me.base_url().expect("connected");
+    let items = me.items();
+    rows.extend(blyg_core::own::rows(&items, &origin));
+    rows.extend(
+        items
+            .iter()
+            .filter_map(|i| blyg_core::own::withdrawn_row(i, &origin)),
+    );
+    let set = me.background_set().expect("the lens was read");
+    set.annotate(&mut rows);
+    rows.into_iter()
+        .filter(|r| r.is_background())
+        .map(|r| (r.subscription_id, r.remote_id))
+        .collect()
+}
+
+/// --- background --- Burrow's Background equals the studio's own for the
+/// same data (studio 0.61): a post you moved there, a whole blyg moved
+/// there with one post brought back, a withdrawn post, your own minor
+/// change, and the minor rule turned off. Each step is made through
+/// Burrow, synced, and compared with the studio's lens, for these posts
+/// and for everything held.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn burrows_background_is_the_studios() {
+    use blyg_core::background::Placement;
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    if !api.serves_background().unwrap() {
+        eprintln!("skipped: this studio doesn't advertise setReadingPlacement");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("bgset");
+    let (_, moved) = published(&source, Kind::Fragment, &format!("{t} moved by hand"), None);
+    let (_, plain) = published(&source, Kind::Fragment, &format!("{t} plain"), None);
+    let (gone_local, gone) = published(&source, Kind::Fragment, &format!("{t} soon gone"), None);
+    let sub = me.subscribe(&src_url, None).unwrap();
+    sync_until_held(&me, &[&moved, &plain, &gone]);
+    me.sync_now().unwrap();
+    assert!(me.background_served(), "the capability was noted");
+
+    // Withdrawn on `b`: always Background.
+    source.withdraw(&gone_local, Some("retracted")).unwrap();
+    trigger_scheduled(&e.url);
+    std::thread::sleep(Duration::from_millis(300));
+    Api::new(&e.url, e.cred.clone())
+        .resync_subscription(&sub.id)
+        .unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(me.reading_row(&sub.id, &gone).unwrap().state, "tombstone");
+
+    // Your own minor change: v2 published with the category the author
+    // confirmed (`changeCategory: typo`), as the studio's publish dialog
+    // sends it.
+    let (_, mine) = published(&me, Kind::Fragment, &format!("{t} mine, with a tpyo"), None);
+    let (st, v) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{mine}"),
+        Some(json!({
+            "contentMd": format!("{t} mine, with a typo"),
+            "expectedRevision": server_rev(&mine),
+        })),
+    );
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = owner(
+        "POST",
+        &e.url,
+        &format!("/api/items/{mine}/publish"),
+        Some(json!({ "changeCategory": "typo", "expectedRevision": server_rev(&mine) })),
+    );
+    assert_eq!(st, 200, "{v}");
+
+    // A post moved to Background by hand.
+    let theirs = |id: &str| (sub.id.clone(), id.to_string());
+    let own = |id: &str| (OWN_SUBSCRIPTION.to_string(), id.to_string());
+    me.set_reading_placement(&theirs(&moved), false, Some(Placement::Background))
+        .unwrap();
+    me.sync_now().unwrap();
+
+    let ours = [theirs(&moved), theirs(&plain), theirs(&gone), own(&mine)];
+    let check = |what: &str, want: &[(String, String)]| {
+        let studio = studio_background(&e.url);
+        let burrow = burrow_background(&me);
+        for k in &ours {
+            assert_eq!(
+                studio.contains(k),
+                want.contains(k),
+                "{what}: the studio on {k:?}"
+            );
+            assert_eq!(
+                burrow.contains(k),
+                studio.contains(k),
+                "{what}: Burrow on {k:?}"
+            );
+        }
+        // Everything held here that the studio lists, and nothing more.
+        let held: HashSet<(String, String)> = me
+            .reading()
+            .into_iter()
+            .chain(me.background_reading())
+            .map(|r| (r.subscription_id, r.remote_id))
+            .chain(
+                me.items()
+                    .iter()
+                    .filter_map(|i| i.server_id.as_ref().map(|s| own(&s.0))),
+            )
+            .collect();
+        let studio_held: HashSet<_> = studio.intersection(&held).cloned().collect();
+        let burrow_held: HashSet<_> = burrow.intersection(&held).cloned().collect();
+        assert_eq!(burrow_held, studio_held, "{what}: everything held");
+    };
+    check(
+        "placed, withdrawn, minor",
+        &[theirs(&moved), theirs(&gone), own(&mine)],
+    );
+
+    // The whole blyg to Background, then one post brought back.
+    me.set_blyg_background(&sub.id, true).unwrap();
+    me.sync_now().unwrap();
+    check(
+        "whole blyg",
+        &[theirs(&moved), theirs(&plain), theirs(&gone), own(&mine)],
+    );
+    me.set_reading_placement(&theirs(&plain), false, Some(Placement::Foreground))
+        .unwrap();
+    me.sync_now().unwrap();
+    check(
+        "one brought back",
+        &[theirs(&moved), theirs(&gone), own(&mine)],
+    );
+
+    // The minor rule off: your typo fix comes back; only that key is written.
+    let before = conforms("GET", &e.url, "/api/settings");
+    let rules = me.save_background_rule("minor", false).unwrap();
+    assert!(!rules.on("minor"));
+    let after = conforms("GET", &e.url, "/api/settings");
+    assert_eq!(before["siteTitle"], after["siteTitle"], "a partial write");
+    me.sync_now().unwrap();
+    check("minor off", &[theirs(&moved), theirs(&gone)]);
+    me.save_background_rule("minor", true).unwrap();
+
+    // Choices cleared and the blyg back: only the rules decide.
+    me.set_reading_placement(&theirs(&moved), false, None)
+        .unwrap();
+    me.set_reading_placement(&theirs(&plain), false, None)
+        .unwrap();
+    me.set_blyg_background(&sub.id, false).unwrap();
+    me.sync_now().unwrap();
+    check("rules only", &[theirs(&gone), own(&mine)]);
+
     me.unsubscribe(&sub.id).unwrap();
 }
 

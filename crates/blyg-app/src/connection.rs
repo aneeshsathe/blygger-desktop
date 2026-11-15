@@ -1105,6 +1105,33 @@ impl Backend for SwitchBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()
     }
+    fn background_served(&self) -> bool {
+        self.cur().background_served()
+    }
+    fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
+        self.cur().background_set()
+    }
+    fn set_reading_placement(
+        &self,
+        key: &blyg_core::background::Key,
+        withdrawn: bool,
+        placement: Option<blyg_core::background::Placement>,
+    ) -> Result<()> {
+        self.cur().set_reading_placement(key, withdrawn, placement)
+    }
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        self.cur().set_blyg_background(sub, on)
+    }
+    fn background_rules(&self) -> Result<Option<blyg_core::background::BackgroundRules>> {
+        self.cur().background_rules()
+    }
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<blyg_core::background::BackgroundRules> {
+        self.cur().save_background_rule(rule, on)
+    }
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {
         self.cur().hoppers()

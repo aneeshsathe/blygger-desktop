@@ -30,7 +30,7 @@
 //! blygger-studio's version history offers the same. Your rows here and the
 //! Posts view's chips have no Fork.
 
-use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Status, Version};
+use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Version};
 use gpui_kit::*;
 
 use super::vm::{self, Key};
@@ -74,20 +74,7 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
 /// read at its version, dated by the withdrawal. `None` for anything not
 /// withdrawn.
 pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
-    if item.status != Status::Withdrawn {
-        return None;
-    }
-    let public = Item {
-        status: Status::Public,
-        dirty: false,
-        ..item.clone()
-    };
-    let mut r = row(&public, origin)?;
-    r.state = "tombstone".into();
-    r.content_md.clear();
-    r.stub_of = None;
-    r.forked_from = None;
-    Some(r)
+    blyg_core::own::withdrawn_row(item, origin)
 }
 
 /// --- background --- The reading rows as the screen holds them: `ordered`
@@ -96,6 +83,10 @@ pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
 /// hoppered, `background`'s, and yours), newest first. Withdrawn rows are
 /// read at their version, so they never count as unread anywhere; the
 /// sources filter keeps them to the Background feed.
+///
+/// With the studio's Background known (rows annotated, studio 0.61),
+/// "withdrawn" reads as "in Background": what you or its rules put there.
+/// A withdrawn post you moved to Foreground joins the list in its place.
 pub fn with_background(
     ordered: Vec<ReadingItem>,
     background: Vec<ReadingItem>,
@@ -103,11 +94,21 @@ pub fn with_background(
     let (mut withdrawn, mut out): (Vec<_>, Vec<_>) = ordered
         .into_iter()
         .partition(super::sources_vm::is_background);
-    withdrawn.extend(
-        background
-            .into_iter()
-            .filter(super::sources_vm::is_background),
-    );
+    let (bg, fg): (Vec<_>, Vec<_>) = background
+        .into_iter()
+        .partition(super::sources_vm::is_background);
+    withdrawn.extend(bg);
+    // --- background --- placed in the foreground: listed, in order.
+    let listed: std::collections::HashSet<vm::Key> = out.iter().map(vm::key).collect();
+    let mut seen_fg = std::collections::HashSet::new();
+    let fg: Vec<ReadingItem> = fg
+        .into_iter()
+        .filter(|r| r.background.is_some())
+        .filter(|r| !listed.contains(&vm::key(r)) && seen_fg.insert(vm::key(r)))
+        .collect();
+    if !fg.is_empty() {
+        out = merge(out, fg);
+    }
     let mut seen = std::collections::HashSet::new();
     withdrawn.retain(|r| seen.insert(vm::key(r)));
     blyg_core::order::sort_reading(&mut withdrawn);
@@ -215,10 +216,16 @@ impl MainView {
     pub(super) fn reading_with_own(&self) -> Vec<ReadingItem> {
         let mut extra = self.own_rows();
         extra.extend(super::hoppers::unheld_rows(self.backend.as_ref()));
-        with_background(
-            vm::order(merge(self.backend.reading(), extra)),
-            self.background_rows(),
-        )
+        let mut rows = merge(self.backend.reading(), extra);
+        let mut background = self.background_rows();
+        // --- background --- each row's place, as the studio's Background
+        // lens says (studio 0.61); before it's known, withdrawn is background.
+        let set = self.backend.background_set();
+        if let Some(set) = &set {
+            set.annotate(&mut rows);
+            set.annotate(&mut background);
+        }
+        with_background(vm::order(rows), background)
     }
 
     /// --- background --- The withdrawn posts: the blygs' tombstones
