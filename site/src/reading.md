@@ -278,6 +278,28 @@ Both need a connected blyg, since your subscriptions live there. From a
 terminal: `blygger +import-opml <file>` (add `--dry-run` to see what would be
 added) and `blygger +export-opml <file>`.
 
+## Discover blygs
+
+**Blyg › Discover Blygs…**, or **Discover…** on the Subscriptions screen,
+lists the blygs on [blygger.com](https://blygger.com)'s public directory that
+you don't follow yet, newest listing first, five at a time.
+
+- Each row gives the blyg's name, its address, and how active it is (high,
+  medium or low, and when it last posted, or "activity not measured yet").
+- Blygs listed since you last opened Discover say **new**. The first time,
+  nothing does, since everything would be. Your blyg remembers the newest
+  listing you've seen, so the studio and Burrow agree on what's new.
+- j/k (or ↓/↑) move, ⏎ subscribes (the same as **Subscribe…**), **o** opens
+  the blyg in your browser, **m** shows five more, and esc closes.
+- Your own blyg and the blygs you already follow are left out. One you
+  subscribe to stays in the list, marked **added**, until you close it.
+- Subscribing doesn't add a blyg to your public blogroll.
+
+Burrow reads the directory only when you open Discover, without signing in
+to anything. It needs a connected blyg, since subscriptions live there.
+Discover is in the desktop app only: Burrow on the web talks to nothing but
+your own blyg.
+
 ## Acting on a post
 
 The selected post shows its actions. Each says what it makes:

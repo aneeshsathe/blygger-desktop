@@ -1575,6 +1575,21 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.put_settings(settings))
     }
 
+    // --- discover --- the directory is public and token-less: it never
+    // goes through the owner `Api`.
+    fn discover_directory(&self) -> Result<Vec<crate::discover::DirectoryBlyg>> {
+        Ok(crate::discover::fetch(&crate::discover::directory_url())?)
+    }
+
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.e().track(self.e().api.discover_seen_at())
+    }
+
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.e().track(self.e().api.put_discover_seen_at(at))
+    }
+    // --- end discover ---
+
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
         let (it, blyg) = self.remote_row(sub_id, remote_id)?;
         if !blyg {

@@ -528,6 +528,28 @@ pub trait Backend: Send + Sync {
     fn settings(&self) -> Result<Settings>;
     fn save_settings(&self, settings: &Settings) -> Result<()>;
 
+    // --- discover --- the blygs listed on blygger.com (studio 0.60;
+    // `crate::discover`). Desktop only.
+
+    /// The public directory, minus nothing (blocking; read only when the
+    /// user opens Discover). Errors carry the words to show.
+    fn discover_directory(&self) -> Result<Vec<crate::discover::DirectoryBlyg>> {
+        Err(CoreError::Other("Discover isn't offered here".into()))
+    }
+
+    /// `Settings.discoverSeenAt` (`""`: never looked). `Ok(None)`: this blyg
+    /// doesn't keep it (a studio before 0.60), so nothing is marked new.
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Move `discoverSeenAt` (a partial `PATCH`, that key only).
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        let _ = at;
+        Err(CoreError::Other("Discover isn't offered here".into()))
+    }
+    // --- end discover ---
+
     // ------- other people's versions & pins (remote, on demand, never polled)
     //
     // These read the public surface of the item's origin, unauthenticated: the

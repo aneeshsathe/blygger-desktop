@@ -1148,6 +1148,120 @@ impl Drop for RestoreSettings<'_> {
     }
 }
 
+// --- discover --- `Settings.discoverSeenAt` (studio 0.60+), written with a
+// partial PATCH only. The directory is an invented fixture served from
+// localhost: the tests never reach blygger.com.
+
+/// Serve `body` as JSON on 127.0.0.1 for one request; the URL.
+fn serve_json_once(body: &'static str) -> String {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        if let Ok((mut s, _)) = l.accept() {
+            let mut got = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                match s.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => got.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = write!(
+                s,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    format!("http://127.0.0.1:{port}/blygs.json")
+}
+
+/// Every settings key but `discoverSeenAt`.
+fn settings_but_seen(v: &Value) -> Value {
+    let mut v = v.clone();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("discoverSeenAt");
+    }
+    v
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discover_seen_at_round_trips_and_leaves_other_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let url = e2e().url;
+    let (status, before) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(status, 200);
+    let Some(original) = before["discoverSeenAt"].as_str().map(str::to_string) else {
+        eprintln!("skipped: this studio has no discoverSeenAt (before 0.60)");
+        return;
+    };
+    struct Restore(String, String);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = owner(
+                "PATCH",
+                &self.0,
+                "/api/settings",
+                Some(json!({ "discoverSeenAt": self.1 })),
+            );
+        }
+    }
+    let _restore = Restore(url.clone(), original);
+
+    // Round trip through the backend.
+    let mark = "2026-11-01T00:00:00.000Z";
+    b.set_discover_seen_at(mark).unwrap();
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(mark));
+    let (_, raw) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(raw["discoverSeenAt"], mark);
+    assert_eq!(
+        settings_but_seen(&raw),
+        settings_but_seen(&before),
+        "a partial PATCH: nothing else in the settings changed"
+    );
+
+    // A visit: the directory (the fixture, from localhost), and the mark
+    // moves to the newest listing it holds.
+    let blygs = discover::fetch(&serve_json_once(include_str!(
+        "fixtures/discover/blygs.json"
+    )))
+    .unwrap();
+    assert_eq!(blygs.len(), 5);
+    let visit = discover::open_with(&b, blygs.clone(), b.discover_seen_at().unwrap());
+    assert_eq!(
+        visit.baseline.as_deref(),
+        Some(mark),
+        "new is against the old mark"
+    );
+    assert_eq!(visit.seen_error, None);
+    let newest = "2026-11-12T00:00:00.000Z";
+    let (_, raw) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(raw["discoverSeenAt"], newest);
+    assert_eq!(settings_but_seen(&raw), settings_but_seen(&before));
+    let new: Vec<&str> = discover::by_listing(&visit.blygs)
+        .into_iter()
+        .filter(|x| discover::badge_new(x, visit.baseline.as_deref(), false))
+        .map(|x| x.title.as_str())
+        .collect();
+    assert_eq!(new, ["Quiet Blyg", "Followed Again", "Busy Blyg"]);
+
+    // Never backwards: a directory that dropped its newest listing.
+    let older: Vec<_> = blygs
+        .into_iter()
+        .filter(|x| x.listed_at.as_str() < "2026-11-01")
+        .collect();
+    let again = discover::open_with(&b, older, b.discover_seen_at().unwrap());
+    assert_eq!(again.baseline.as_deref(), Some(newest));
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(newest));
+
+    // The studio refuses a mark that isn't a date; nothing is stored.
+    assert!(b.set_discover_seen_at("not a date").is_err());
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(newest));
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn highlight_and_picker_settings_round_trip() {

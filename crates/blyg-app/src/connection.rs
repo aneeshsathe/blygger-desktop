@@ -980,6 +980,17 @@ impl Backend for SwitchBackend {
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         self.cur().save_settings(settings)
     }
+    // --- discover ---
+    fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
+        self.cur().discover_directory()
+    }
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.cur().discover_seen_at()
+    }
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.cur().set_discover_seen_at(at)
+    }
+    // --- end discover ---
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
         self.cur().remote_versions(sub_id, remote_id)
     }

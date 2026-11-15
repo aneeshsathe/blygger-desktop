@@ -50,6 +50,7 @@ pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
 #[path = "../contacts/mod.rs"]
 pub(crate) mod contacts;
 // --- end contacts ---
+pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -322,6 +323,8 @@ pub enum RSheet {
     },
     /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
     Opml(Box<opml::Sheet>),
+    /// --- discover --- Discover Blygs… (blygger.com's directory).
+    Discover(Box<discover::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
     /// brackets with `picker_typing = panel`).
     Quote {
@@ -709,6 +712,7 @@ impl MainView {
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
+        .map(|d| self.discover_actions(d, cx)) // --- discover ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
@@ -1167,6 +1171,7 @@ impl MainView {
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
             RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
+            RSheet::Discover(s) => (600., self.render_discover_sheet(s, cx)), // --- discover ---
             // --- hoppers ---
             RSheet::HopperPick { .. } => (420., self.render_hopper_pick(sheet, cx)),
             RSheet::HopperName { .. } => (440., self.render_hopper_name_sheet(sheet, cx)),

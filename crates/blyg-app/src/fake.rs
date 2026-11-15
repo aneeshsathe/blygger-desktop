@@ -30,6 +30,9 @@ pub mod contacts_seed;
 // --- upkeep --- stale quotes, signals and activity log
 #[path = "fake_upkeep.rs"]
 pub mod upkeep_seed;
+// --- discover --- the sample blygger.com directory
+#[path = "fake_discover.rs"]
+pub mod discover_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -152,6 +155,8 @@ struct State {
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
     read_ext: bool,
+    /// --- discover --- `Settings.discoverSeenAt`.
+    discover_seen: String,
     /// The "server" is older than blygger-studio 0.9 (test hook).
     outdated: bool,
     // --- follow-ups --- (scratch media)
@@ -361,6 +366,7 @@ impl FakeBackend {
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                discover_seen: discover_seed::seen_at(), // --- discover ---
                 outdated: false,
                 uploads: 0,
                 fail_uploads: false,
@@ -1866,6 +1872,26 @@ impl Backend for FakeBackend {
         self.read_guard()?;
         Ok(self.lock().rd.settings.clone())
     }
+
+    // --- discover --- the sample directory; the fake never reaches the
+    // network.
+    fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(discover_seed::directory())
+    }
+
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.remote_guard()?;
+        Ok(Some(self.lock().discover_seen.clone()))
+    }
+
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.remote_guard()?;
+        self.lock().discover_seen = at.to_string();
+        Ok(())
+    }
+    // --- end discover ---
 
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         thread::sleep(self.timing.network);

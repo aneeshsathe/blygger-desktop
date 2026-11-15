@@ -26,6 +26,7 @@ pub mod background_api; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse --- (studio 0.49)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
+pub mod discover; // --- discover --- (studio 0.60, contract 5.9.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;

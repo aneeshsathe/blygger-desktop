@@ -401,6 +401,16 @@ impl MainView {
             ("rd-pin", 2) => self.ask_pin(window, cx),
             ("rd-mentions", 0) => self.show_view(View::Mentions, window, cx),
             ("rd-subs", 0) => self.show_view(View::Subscriptions, window, cx),
+            // --- discover --- the sheet over Subscriptions, the second row
+            // picked (the fake's sample directory, no network).
+            ("rd-discover", 0) => self.show_view(View::Subscriptions, window, cx),
+            ("rd-discover", 1) => self.open_discover(window, cx),
+            ("rd-discover", 2) => {
+                if let Some(super::RSheet::Discover(s)) = self.reading.sheet.as_mut() {
+                    s.step(1);
+                }
+                cx.notify();
+            }
             // --- themes --- the subscribe sheet with a preview.
             ("rd-subscribe", 0) => self.show_view(View::Subscriptions, window, cx),
             ("rd-subscribe", 1) => {
