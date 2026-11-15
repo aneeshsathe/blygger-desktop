@@ -438,6 +438,13 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
              shows it on its page."
                 .into(),
         ),
+        // --- catch up --- shown only when the post draws on something.
+        "Catch up" => on(
+            "Catch up",
+            "Lays out the conversation that leads to this post, oldest first, \
+             each post in its own words (⇧C). Nothing is fetched or sent."
+                .into(),
+        ),
         // --- quote targets --- a post shown without a subscription.
         "Subscribe" => on(
             "Subscribe",

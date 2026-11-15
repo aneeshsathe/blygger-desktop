@@ -43,6 +43,13 @@ pub const LIN_REREAD: &str = "01k211n0reread000000000001";
 /// opening it fetches it "publicly" (`Backend::public_item`).
 pub const KIT: &str = "https://kit.blyg.example.net/";
 pub const KIT_TIDES: &str = "01k2k1t0t1des0000000000001";
+// --- catch up --- a four-deep quote chain, A <- B <- C <- D (D quotes C
+// quotes B quotes A), and Lin's side reply to B.
+pub const TALK_A: &str = "01k2rve0c0nv0a000000000001";
+pub const TALK_B: &str = "01k2ada0c0nv0b000000000001";
+pub const TALK_C: &str = "01k211n0c0nv0c000000000001";
+pub const TALK_D: &str = "01k2rve0c0nv0d000000000001";
+pub const TALK_SIDE: &str = "01k211n0c0nv0s000000000001";
 // --- reader folders ---
 pub const FOLDER_FRIENDS: &str = "fld-friends";
 pub const FOLDER_GARDENS: &str = "fld-gardens";
@@ -416,6 +423,93 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
     kept.thumb = Some(1);
     kept.pinned_version_retained = Some(2);
     reading.push(kept);
+    // --- catch up --- a conversation four posts deep, read long ago.
+    let quoting = |mut r: ReadingItem, origin: &str, id: &str| {
+        r.transclusions.push(TransclusionRef {
+            id: id.into(),
+            version: Some(1),
+            origin: Some(origin.into()),
+            cited: None,
+            selector: None,
+        });
+        r
+    };
+    reading.push(post(
+        &rue,
+        TALK_A,
+        Kind::Thread,
+        1,
+        Some(1),
+        now - d(8),
+        "Rue",
+        "Do quotes outlive links?\n\nA link points at a page that may change or vanish. A quote carries the words with it. I think a blyg should quote more and link less.",
+    ));
+    reading.push(quoting(
+        post(
+            &ada,
+            TALK_B,
+            Kind::Thread,
+            1,
+            Some(1),
+            now - d(7),
+            "Ada",
+            &format!("Quotes are heavier\n\n![[{TALK_A}]]\n\nI half agree with Rue. A quote keeps the words, but it also *freezes* them: the author can't take a sentence back once someone has quoted it."),
+        ),
+        RUE,
+        TALK_A,
+    ));
+    let mut side = quoting(
+        post(
+            &lin,
+            TALK_SIDE,
+            Kind::Thread,
+            1,
+            Some(1),
+            now - d(7) + h(5),
+            "Lin",
+            &format!(
+                "![[{TALK_B}]]\n\nA small aside on Ada's point: every quote names its version, so taking a sentence back still leaves a trail."
+            ),
+        ),
+        ADA,
+        TALK_B,
+    );
+    side.stub_of = Some(StubOf {
+        origin: Some(ADA.into()),
+        id: Some(TALK_B.into()),
+        version: Some(1),
+        url: None,
+        cited: None,
+    });
+    reading.push(side);
+    reading.push(quoting(
+        post(
+            &lin,
+            TALK_C,
+            Kind::Thread,
+            1,
+            Some(1),
+            now - d(6),
+            "Lin",
+            &format!("Freezing is the point\n\n![[{TALK_B}]]\n\nAda worries that quotes freeze words. That is what pins are for: the author chooses what may be frozen. Quote the pin, not the draft."),
+        ),
+        ADA,
+        TALK_B,
+    ));
+    reading.push(quoting(
+        post(
+            &rue,
+            TALK_D,
+            Kind::Thread,
+            1,
+            Some(1),
+            now - d(5),
+            "Rue",
+            &format!("Back to links, then\n\n![[{TALK_C}]]\n\nIf only pins may be frozen, most posts will be linked, not quoted. Maybe that's fine: my first note, [[{TALK_A}]], was about rot, and pins don't rot."),
+        ),
+        LIN,
+        TALK_C,
+    ));
 
     let key = |s: &Subscription, id: &str| (s.id.clone(), id.to_string());
     let mut changelogs = HashMap::new();

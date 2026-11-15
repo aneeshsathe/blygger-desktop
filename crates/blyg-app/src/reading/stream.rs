@@ -903,7 +903,11 @@ impl MainView {
                 "Link post",
                 "Open on web",
                 "Notes",
+                "Catch up", // --- catch up ---
             ] {
+                if id == "Catch up" && !self.has_ancestors(&r.origin, &r.remote_id) {
+                    continue;
+                }
                 if id == "Link post" && !blyg {
                     continue; // a feed post has no id to link
                 }
