@@ -182,3 +182,14 @@ html:not([data-mode="live"]) .live-only, html[data-mode="live"] .demo-only { dis
   border: 1px solid currentColor; background: transparent; color: inherit; text-decoration: none; cursor: pointer; }
 .signin .acts a.pri { background: var(--c-accent, #a4271b); border-color: transparent; color: #fff; }
 .signin .muted { color: var(--c-muted, #6b665d); font-size: 13px; }
+
+/* --- web-parity --- the Posts filters over the list */
+.lcol{display:flex;flex-direction:column;min-height:0;min-width:0}
+.lcol>.list{flex:1;min-height:0}
+.pfilter{display:flex;flex-wrap:wrap;gap:4px;padding:6px 10px;background:var(--c-side);border-bottom:1px solid var(--wline)}
+.win.side .pfilter{border-right:1px solid var(--wline)}
+.pfilter[hidden]{display:none}
+.pfilter .pf{font:500 11px Inter,system-ui,sans-serif;padding:3px 8px;border-radius:12px;border:1px solid var(--wline);background:transparent;color:var(--wmuted)}
+.pfilter .pf b{font-weight:600;margin-left:2px}
+.pfilter .pf.on{border-color:var(--wacc);color:var(--wacc)}
+/* --- end web-parity --- */

@@ -137,6 +137,11 @@ pub struct WebReading {
     pub history: Option<Vec<Step>>,
     /// The blyg's `contractVersion`, for `wholeBlyg`.
     pub contract: Option<String>,
+    // --- web-parity --- the operations `/api/capabilities` advertises (the
+    // studio may reuse a contract number without a feature, so features are
+    // gated on these, never on `contractVersion`).
+    pub ops: Option<HashSet<String>>,
+    // --- end web-parity ---
     /// This session's browsing trail.
     pub trail: String,
     // --- reader view / changelog --- the blyg's changelog settings (from
@@ -1151,6 +1156,19 @@ impl Burrow {
                     .and_then(Value::as_str)
                     .map(str::to_string)
                     .or(Some(String::new()));
+                // --- web-parity ---
+                self.wr.ops = Some(
+                    v.get("operations")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                );
+                // --- end web-parity ---
                 1
             }
             _ => 0,

@@ -10,12 +10,13 @@ import {
   swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
 // --- web-reading ---
-import { deskSources, opened, wrUse } from './web-reading.js';
+import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
 // --- end web-reading ---
 // --- web-writing ---
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const win = $('#win'), omni = $('#omni'), ed = $('#ed'), list = $('#list'), pv = $('#pv');
 
@@ -36,11 +37,18 @@ export function render({ loadEditor = false } = {}) {
   if (S.layout === 'desk') document.title = view === 'reading' ? 'Reading · Burrow' : view === 'blyg' ? 'Blyg · Burrow' : V.title;
   $('#hint').textContent = view === 'posts' && mode === 'search' ? V.hint : '';
 
+  // --- web-parity --- the filters over the list (hidden with no posts).
+  const pf = filterChips();
+  const pfh = $('#d-pfilter');
+  pfh.hidden = !pf.all;
+  draw(pfh, pf.html);
+  // --- end web-parity ---
   list.innerHTML = V.rows.length
     ? V.rows.map((r, i) => `<div class="row${r.selected ? ' sel' : ''}${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" role="option" aria-selected="${r.selected}" data-id="${esc(r.id)}">
         ${r.shelved ? '<span class="shelfmark" title="On your shelf">📚</span>' : ''}<span class="ti">${r.title_html}</span>
         <span class="meta">${r.dot ? `<span class="dot" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}${esc(r.kind)}
         <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span><span>${esc(r.when)}</span></span></div>`).join('')
+    : !V.query.trim() && pf.on !== 'all' ? `<div class="empty">${esc(pf.empty)} ⌃⌥F shows the next filter.</div>` // --- web-parity ---
     : `<div class="empty">No matches. Press ⏎ to start “${esc(V.query.trim())}”.</div>`;
   list.querySelector('.row.sel')?.scrollIntoView({ block: 'nearest' });
 
@@ -381,6 +389,14 @@ export function initDesk() {
     S.B.open(r.dataset.id); openSelected();
   });
   $('#kind').addEventListener('click', toggleKind);
+  // --- web-parity --- the Posts filters.
+  $('#d-pfilter').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pf]');
+    if (!b) return;
+    pickFilter(b.dataset.pf, mode === 'edit');
+    render({ loadEditor: mode !== 'edit' });
+  });
+  // --- end web-parity ---
   $('#sheet').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); sheetOpen?.onEnter(); }
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSheet(); }
@@ -433,6 +449,8 @@ export function initDesk() {
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;
     if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(['⌃', code.slice(-1)]); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyF' && view === 'posts') { e.preventDefault(); hud(['⌃', '⌥', 'F']); toast(esc(pickFilter('next', mode === 'edit'))); render({ loadEditor: mode !== 'edit' }); } // --- web-parity ---
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyA' && view === 'reading') { e.preventDefault(); hud(['⌃', '⌥', 'A']); wrGo('markall'); } // --- web-parity ---
     else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(['⌃', '3']); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
     else if (mod && e.key === 'Enter') { e.preventDefault(); hud(['⌘', '⏎']); askPublish(); }
     else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(['⇧', '⌘', '⌫']); askDelete(); }

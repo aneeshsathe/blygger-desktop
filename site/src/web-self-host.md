@@ -248,4 +248,10 @@ so `icons/` differs too. The path to the checkout must not contain spaces.
   `no-cache` rule for `/burrow/sw.js`. Add it, deploy, then reopen the app
   twice.
 
+**Access tokens.** ⚙ Blyg › Access tokens lists the tools that can act as
+you on your blyg, makes a manual token for a tool that can't sign in with
+OAuth (shown once: copy it into the tool's credential store), and revokes
+one or all. Revoking doesn't sign the web app out: it uses your Studio
+session, not a token.
+
 How the app works inside: [blyg-web](dev/web.md).

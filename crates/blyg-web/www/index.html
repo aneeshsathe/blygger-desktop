@@ -54,7 +54,8 @@
       <span class="hint" id="hint"></span>
     </div>
     <div class="body" id="pbody">
-      <div class="list" id="list" role="listbox" aria-label="Posts"></div>
+      <div class="lcol"><!-- web-parity --><div class="pfilter" id="d-pfilter" role="group" aria-label="Show" hidden></div><!-- end web-parity -->
+      <div class="list" id="list" role="listbox" aria-label="Posts"></div></div>
       <div class="edwrap" id="edwrap">
         <div class="pacts" id="d-pacts" role="toolbar" aria-label="This post"></div>
         <div class="stubof" id="d-stubof" hidden></div>
@@ -107,7 +108,8 @@
     <kbd>⌘</kbd><kbd>K</kbd> link · <kbd>⇧</kbd><kbd>⌘</kbd><kbd>K</kbd> quote ·
     <kbd>⌘</kbd><kbd>B</kbd> shelf · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> shelve or unshelve ·
     <kbd>⌃</kbd><kbd>⇧</kbd><kbd>Y</kbd> versions ·
-    <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading · <kbd>⌃</kbd><kbd>3</kbd> Blyg
+    <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading · <kbd>⌃</kbd><kbd>3</kbd> Blyg ·
+    <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> mark all read (Reading) · <kbd>⌃</kbd><kbd>⌥</kbd><kbd>F</kbd> next filter (Posts)
     <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
   </p>
 </main>
@@ -123,6 +125,7 @@
       <div class="plbl">📚 Shelf</div>
       <div class="shelfstrip" id="p-shelf"></div>
       <div class="plbl">Posts</div>
+      <!-- web-parity --><div class="pfilter" id="p-pfilter" role="group" aria-label="Show" hidden></div><!-- end web-parity -->
       <div id="p-list" role="list"></div>
     </div>
   </section>
@@ -145,7 +148,7 @@
     <div class="ptop"><h1 class="pt">Reading</h1><button type="button" class="ic lbl" id="p-unreadOnly" aria-pressed="false" title="Unread only">● 0</button></div>
     <label class="psearch">⌕ <input id="p-rq" type="search" placeholder="Search what you read" autocomplete="off" aria-label="Search what you read"></label>
     <!-- --- web-reading --- --><div class="pstrip" id="p-wrBar" role="toolbar" aria-label="Sources and subscriptions">
-      <button type="button" data-go="sources">☰ Sources</button><button type="button" data-go="subscribe">＋ Subscribe</button><button type="button" data-go="subs">☷ Subscriptions</button><button type="button" data-go="mentions">@ Mentions</button><button type="button" data-go="hoppers">⊕ Hoppers</button><button type="button" data-go="peek-url">⌕ Peek</button><button type="button" data-go="history">⟲ History</button><button type="button" data-go="reading">⚙ Reading</button>
+      <button type="button" data-go="sources">☰ Sources</button><button type="button" data-go="subscribe">＋ Subscribe</button><button type="button" data-go="subs">☷ Subscriptions</button><button type="button" data-go="mentions">@ Mentions</button><button type="button" data-go="hoppers">⊕ Hoppers</button><button type="button" data-go="peek-url">⌕ Peek</button><button type="button" data-go="history">⟲ History</button><button type="button" data-go="reading">⚙ Reading</button><!-- web-parity --><button type="button" data-go="markall">✓ All read</button><!-- end web-parity -->
     </div><!-- --- end web-reading --- -->
     <!-- --- web-reading --- --><div class="wr-chip" id="p-wrChip" hidden></div><!-- --- end web-reading --- -->
     <div class="pscroll" id="p-stream"></div>

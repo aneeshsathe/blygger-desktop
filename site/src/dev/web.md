@@ -125,6 +125,39 @@ is one pass over the rows it already orders. The code is
 `src/web_reading.rs` (rules, requests, answers) and `www/web-reading.js`
 (drawing), with hook lines marked `--- web-reading ---` in the shared files.
 <!-- --- end web-reading --- -->
+<!-- --- web-parity --- -->
+## Studio parity
+
+What the studio's own app does that the web app lacked (0.22.0). Each
+needs the blyg to advertise the operation in `GET /api/capabilities`;
+otherwise it's hidden or says why.
+
+- **Mark all read** (`markReadBatch`). ✓ Mark all read… in the sources
+  pane (⌃⌥A on a desk), ✓ All read on a phone: every unread post of the
+  chosen source and lens, after a confirmation with the count. Read here at
+  once, sent as `POST /api/reading/read` in batches of 500; a batch the
+  blyg refuses is put back. Offline it waits for you to come back.
+- **Filters in Posts.** All · Drafts · Changes · Public · Withdrawn, with
+  counts, over the list (⌃⌥F steps through them). Worked out from the
+  posts the app holds, so no request. A search ignores the filter, as the
+  studio's does.
+- **Updates** (`listStaleThreads`, `getItemFreshness`, `refreshItem`).
+  ⚙ Blyg › Updates lists your threads whose quotes have newer versions
+  (`GET /api/freshness`), each quote's state on demand (`GET
+  /api/items/{id}/freshness`) and Refresh, one or all
+  (`POST /api/items/{id}/refresh`, then the post is read again as after a
+  publish). The rules are the desktop's (`blyg_core::upkeep`).
+- **Access tokens** (`/api/authorizations`, the studio's own session
+  only, so not in `operations`: the screen asks, and a 404 means the blyg
+  has none). ⚙ Blyg › Access tokens lists what can act as you, makes a
+  manual token (shown once, with Copy; never stored or logged; cleared
+  when you press Done or close the panel) and revokes one or all, each
+  after a second press.
+
+The rules are `src/parity/` and the screens `www/parity.js`, drawn in the
+reading panel through `wrExtend` (`www/web-reading.js`). A live check runs
+them against two local studios: `crates/blyg-web/parity-check.mjs`.
+<!-- --- end web-parity --- -->
 
 ## Staying fast with thousands of posts
 
