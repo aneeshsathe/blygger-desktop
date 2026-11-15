@@ -173,6 +173,9 @@ struct State {
     browse: Vec<blyg_core::browse::BrowseStep>,
     // --- shelf --- in order; may name posts since deleted.
     shelf: Vec<LocalId>,
+    /// --- shelf sync --- others' posts on the shelf (the sample data's
+    /// shelf is local, so they follow yours).
+    shelf_reading: Vec<blyg_core::shelf::Entry>,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -366,7 +369,8 @@ impl FakeBackend {
                 reading_sends: Vec::new(),
                 folder_seq: 0,
                 browse: Vec::new(),
-                shelf: Vec::new(),  // --- shelf ---
+                shelf: Vec::new(), // --- shelf ---
+                shelf_reading: Vec::new(),
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
@@ -2053,6 +2057,45 @@ impl Backend for FakeBackend {
             (true, None) => st.shelf.push(id.clone()),
             (false, Some(ix)) => {
                 st.shelf.remove(ix);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // --- shelf sync --- yours (by server id), then others'.
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        let own: Vec<blyg_core::shelf::Entry> = self
+            .shelf()
+            .iter()
+            .filter_map(|id| self.item(id)?.server_id)
+            .map(|s| blyg_core::shelf::Entry::own(s.0))
+            .collect();
+        let st = self.lock();
+        own.into_iter()
+            .chain(st.shelf_reading.iter().cloned())
+            .collect()
+    }
+
+    fn set_entry_on_shelf(&self, entry: &blyg_core::shelf::Entry, on: bool) -> Result<()> {
+        if entry.is_own() {
+            let local = self
+                .lock()
+                .items
+                .iter()
+                .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == entry.remote_id))
+                .map(|i| i.local_id.clone());
+            return match local {
+                Some(id) => self.set_on_shelf(&id, on),
+                None => Err(CoreError::NotFound),
+            };
+        }
+        let mut st = self.lock();
+        let at = st.shelf_reading.iter().position(|e| e == entry);
+        match (on, at) {
+            (true, None) => st.shelf_reading.push(entry.clone()),
+            (false, Some(ix)) => {
+                st.shelf_reading.remove(ix);
             }
             _ => {}
         }

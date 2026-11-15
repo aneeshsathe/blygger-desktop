@@ -62,6 +62,7 @@ mod opml_tests;
 pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
+pub(crate) mod shelf_lens; // --- shelf sync --- the Shelf lens, + Add to shelf
 mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
 pub(crate) mod stream;
@@ -426,6 +427,8 @@ pub struct State {
     pub compose: compose::Compose,
     /// --- trails --- your trails, the current one, the bar's field.
     pub trails: crate::app::trails::Trails,
+    /// --- shelf sync --- the shelf's posts, in its order (the Shelf lens).
+    pub shelved: Vec<Key>,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -499,6 +502,7 @@ impl State {
                     .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
             ),
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
+            shelved: shelf_lens::keys(backend),                // --- shelf sync ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
@@ -553,6 +557,12 @@ impl State {
         {
             let keys = self.trails.keys(t);
             self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &keys);
+        }
+        // --- shelf sync --- the Shelf lens lists its held posts, in its order.
+        if self.mode == stream_vm::ReadMode::Reader
+            && self.source == sources_vm::Source::Smart(sources_vm::Smart::Shelf)
+        {
+            self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &self.shelved);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -721,6 +731,7 @@ impl MainView {
         }
         r.avatars = sources::avatars(self.backend.as_ref());
         r.trails.reload(self.backend.as_ref()); // --- trails ---
+        r.shelved = shelf_lens::keys(self.backend.as_ref()); // --- shelf sync ---
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
@@ -784,6 +795,7 @@ impl MainView {
                 self.reading.hoppers = self.backend.hoppers(); // --- hoppers ---
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 self.reading.hopper_order = self.backend.hopper_order();
+                self.reload_reading_shelf(); // --- shelf sync ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---

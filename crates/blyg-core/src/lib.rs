@@ -24,6 +24,7 @@ pub mod own; // your published posts as reading rows
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
+pub mod shelf; // --- shelf sync --- (studio 0.61, `GET/PUT /api/shelf`)
 pub mod site; // --- site ---
 pub mod state;
 pub mod store;

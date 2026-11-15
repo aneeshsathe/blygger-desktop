@@ -35,6 +35,7 @@ pub mod site;
 // --- upkeep --- stale quotes, signals, a version's text
 pub mod upkeep;
 // --- end upkeep ---
+pub mod shelf_api; // --- shelf sync --- (studio 0.61)
 pub mod syndication_api;
 pub mod wire; // --- syndication --- (decision #98)
 

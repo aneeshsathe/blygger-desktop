@@ -233,6 +233,7 @@ pub fn source_key(s: &Source) -> String {
                 Smart::Disliked => "disliked",
                 Smart::Threads => "threads",
                 Smart::Fragments => "fragments",
+                Smart::Shelf => "shelf", // --- shelf sync ---
             }
         ),
         Source::Folder(f) => format!("folder:{f}"),
@@ -255,6 +256,7 @@ pub fn parse_source(k: &str) -> Option<Source> {
         ("smart", "disliked") => Source::Smart(Smart::Disliked),
         ("smart", "threads") => Source::Smart(Smart::Threads),
         ("smart", "fragments") => Source::Smart(Smart::Fragments),
+        ("smart", "shelf") => Source::Smart(Smart::Shelf), // --- shelf sync ---
         ("sub", id) if !id.is_empty() => Source::Sub(id.into()),
         ("hopper", id) if !id.is_empty() => Source::Hopper(id.into()),
         ("own", _) => Source::Own,

@@ -6286,3 +6286,234 @@ fn syndication_is_written_in_place_and_read_by_a_second_client() {
     );
     assert_eq!(item["version"].as_u64(), Some(1));
 }
+
+// ------------------------------------------------------------ shelf sync
+
+/// The blyg's shelf as the owner API answers it (and what the contract
+/// says it is).
+fn server_shelf(base: &str) -> shelf::Remote {
+    let (st, v) = owner("GET", base, "/api/shelf", None);
+    assert_eq!(st, 200, "GET /api/shelf: {v}");
+    shelf::parse(&v).unwrap_or_else(|| panic!("not a Shelf: {v}"))
+}
+
+/// Replace the blyg's shelf from "another client" (as Studio would).
+fn put_server_shelf(base: &str, entries: &[shelf::Entry]) -> shelf::Remote {
+    let rev = server_shelf(base).revision;
+    let (st, v) = owner(
+        "PUT",
+        base,
+        "/api/shelf",
+        Some(shelf::put_body(entries, rev)),
+    );
+    assert_eq!(st, 200, "PUT /api/shelf: {v}");
+    shelf::parse(&v).unwrap()
+}
+
+fn shelf_counter(base: &str) -> u64 {
+    let (st, v) = owner("GET", base, "/api/changes", None);
+    assert_eq!(st, 200, "GET /api/changes: {v}");
+    v["domains"]["shelf"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("no shelf counter: {v}"))
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn the_shelf_round_trips_and_merges_with_the_blyg() {
+    let e = e2e();
+    // What the capabilities say, not the contract number.
+    let (_, caps) = owner("GET", &e.url, "/api/capabilities", None);
+    assert!(
+        shelf::serves(&caps),
+        "studio 0.61+ offers the shelf: {caps}"
+    );
+    put_server_shelf(&e.url, &[]);
+
+    // A shelf made on this computer before it ever synced: the first sync
+    // uploads it.
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = manual(d1.path());
+    let t = tag("shelf");
+    let (x, sx) = published(&a, Kind::Thread, &format!("{t} now page"), None);
+    a.set_on_shelf(&x, true).unwrap();
+    a.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, [shelf::Entry::own(&sx)]);
+    assert_eq!(a.shelf_state(), shelf::SyncState::Synced);
+
+    // A draft too: the studio shelves drafts by their id.
+    let d = a
+        .create_draft(Kind::Fragment, &format!("{t} reading log"))
+        .unwrap();
+    a.set_on_shelf(&d, true).unwrap();
+    assert_eq!(a.shelf_state(), shelf::SyncState::Waiting);
+    a.sync_now().unwrap();
+    let sd = sid_of(&a, &d);
+    let after_put = server_shelf(&e.url);
+    assert_eq!(
+        after_put.entries,
+        [shelf::Entry::own(&sx), shelf::Entry::own(&sd)]
+    );
+
+    // Another computer on the same blyg holds the same shelf, mapped to its
+    // own copies of the posts.
+    let b = manual(d2.path());
+    b.sync_now().unwrap();
+    let bx = b
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == sx))
+        .expect("b holds x")
+        .local_id;
+    let bd = b
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == sd))
+        .expect("b holds the draft")
+        .local_id;
+    assert_eq!(b.shelf(), [bx.clone(), bd.clone()]);
+    assert_eq!(b.shelf_entries(), after_put.entries);
+
+    // A stale revision is a 409 with the current list in it.
+    let (st, v) = owner(
+        "PUT",
+        &e.url,
+        "/api/shelf",
+        Some(shelf::put_body(&[], after_put.revision - 1)),
+    );
+    assert_eq!(st, 409, "{v}");
+    assert_eq!(v["code"], "revision-conflict");
+    assert_eq!(shelf::conflict_current(&v).as_ref(), Some(&after_put));
+    let api = Api::new(&e.url, e.cred.clone());
+    assert_eq!(
+        api.put_shelf(&[], after_put.revision - 1).unwrap(),
+        blyg_core::api::shelf_api::PutShelf::Conflict
+    );
+    assert_eq!(server_shelf(&e.url), after_put, "nothing was stored");
+
+    // Both sides change it at once: b moves the draft first; Studio (as
+    // another client) adds a third post at the end. Neither is lost.
+    let (_, sz) = published(&a, Kind::Fragment, &format!("{t} elsewhere"), None);
+    let before = shelf_counter(&e.url);
+    put_server_shelf(
+        &e.url,
+        &[
+            shelf::Entry::own(&sx),
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sz),
+        ],
+    );
+    // The counter moved: that's what makes a client read the shelf again.
+    assert!(shelf_counter(&e.url) > before);
+    b.move_on_shelf(&bd, 0).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sx),
+            shelf::Entry::own(&sz)
+        ]
+    );
+    // a takes it up on its next pull: only because the counter moved.
+    a.sync_now().unwrap();
+    assert_eq!(a.shelf_entries(), server_shelf(&e.url).entries);
+    assert_eq!(a.shelf()[0], d);
+
+    // Taken off here: off there.
+    a.set_on_shelf(&x, false).unwrap();
+    a.sync_now().unwrap();
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [shelf::Entry::own(&sd), shelf::Entry::own(&sz)]
+    );
+    b.sync_now().unwrap();
+    assert_eq!(b.shelf().len(), 2, "the draft and the third post");
+    assert_eq!(b.shelf()[0], bd);
+    assert_eq!(b.shelf_entries(), server_shelf(&e.url).entries);
+
+    // A computer that shelved a post before it ever synced: the first sync
+    // takes the union, the blyg's order first.
+    let d3 = tempfile::tempdir().unwrap();
+    let c = manual(d3.path());
+    let n = c
+        .create_draft(Kind::Thread, &format!("{t} shelved offline"))
+        .unwrap();
+    c.set_on_shelf(&n, true).unwrap();
+    c.sync_now().unwrap();
+    let sn = sid_of(&c, &n);
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sz),
+            shelf::Entry::own(&sn)
+        ]
+    );
+    assert_eq!(c.shelf().len(), 3);
+    put_server_shelf(&e.url, &[]);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn the_shelf_holds_others_posts_by_their_subscription() {
+    let e = e2e();
+    put_server_shelf(&e.url, &[]);
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("shelf-theirs");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} worth keeping"), None);
+    let sub = me.subscribe(&src_url, Some("Shelf source")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    me.sync_now().unwrap();
+
+    let theirs = shelf::Entry::new(&sub.id, &rid);
+    me.set_entry_on_shelf(&theirs, true).unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, std::slice::from_ref(&theirs));
+    assert_eq!(me.shelf_entries(), std::slice::from_ref(&theirs));
+    // Something the blyg can't resolve is dropped quietly by the blyg, and
+    // here too once it answers.
+    let ghost = shelf::Entry::new(&sub.id, "no-such-post");
+    me.set_entry_on_shelf(&ghost, true).unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, std::slice::from_ref(&theirs));
+    assert_eq!(me.shelf_entries(), [theirs]);
+    put_server_shelf(&e.url, &[]);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn an_older_studio_keeps_the_shelf_on_this_computer() {
+    // A studio before 0.61 (started by scripts/e2e-local.sh when
+    // BLYG_OLD_WORKER_DIR names one): no getShelf, so nothing is sent.
+    let (Ok(url), Ok(token)) = (
+        std::env::var("BLYG_E2E_URL_OLD"),
+        std::env::var("BLYG_E2E_TOKEN_OLD"),
+    ) else {
+        eprintln!("skipped: set BLYG_OLD_WORKER_DIR for scripts/e2e-local.sh");
+        return;
+    };
+    assert!(url.starts_with("http://127.0.0.1"));
+    let cred = Credential::Token(token);
+    let (_, caps) = owner_as(&cred, "GET", &url, "/api/capabilities", None);
+    assert!(!shelf::serves(&caps), "an older studio: {caps}");
+    let dir = tempfile::tempdir().unwrap();
+    let old = backend_at(dir.path(), &url, cred.clone(), false);
+    let t = tag("shelf-old");
+    let (x, _) = published(&old, Kind::Thread, &format!("{t} kept here"), None);
+    old.set_on_shelf(&x, true).unwrap();
+    old.sync_now().unwrap();
+    assert_eq!(old.shelf(), [x]);
+    assert_eq!(old.shelf_state(), shelf::SyncState::Local);
+    assert_eq!(
+        old.sync_status(),
+        SyncStatus::Synced,
+        "nothing waits to be sent"
+    );
+    let (st, _) = owner_as(&cred, "GET", &url, "/api/shelf", None);
+    assert_eq!(st, 404, "the route isn't there");
+}

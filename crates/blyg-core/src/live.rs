@@ -246,6 +246,16 @@ impl LiveBackend {
         self.engine.emit_status();
     }
 
+    /// --- shelf sync --- The shelf changed here: redraw, and send it when
+    /// the blyg offers the synced shelf.
+    fn shelf_moved(&self) -> Result<()> {
+        self.engine.shelf_changed()?;
+        self.engine.emit(CoreEvent::ItemsChanged);
+        self.engine.emit(CoreEvent::ReadingChanged);
+        self.wake();
+        Ok(())
+    }
+
     /// The engine, with any typed text written first (`Typing`): what
     /// follows reads or changes the store as the user last left it.
     fn e(&self) -> &Engine {
@@ -1752,7 +1762,8 @@ impl Backend for LiveBackend {
         self.e().store.set_subscription_folder(sub_id, folder)
     }
 
-    // --- shelf --- local only: the store, nothing queued.
+    // --- shelf --- the store first; a blyg that offers the synced shelf
+    // (studio 0.61) gets each change through the outbox (sync/shelf.rs).
 
     fn shelf(&self) -> Vec<LocalId> {
         self.e().store.shelf()
@@ -1760,14 +1771,25 @@ impl Backend for LiveBackend {
 
     fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
         self.e().store.set_on_shelf(id, on)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
     }
 
     fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
         self.e().store.move_on_shelf(id, index)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
+    }
+
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
+        self.e().store.shelf_wire()
+    }
+
+    fn set_entry_on_shelf(&self, entry: &crate::shelf::Entry, on: bool) -> Result<()> {
+        self.e().store.set_entry_on_shelf(entry, on)?;
+        self.shelf_moved()
+    }
+
+    fn shelf_state(&self) -> crate::shelf::SyncState {
+        self.engine.shelf_state()
     }
 
     // --- trails --- local only: the store, nothing queued.

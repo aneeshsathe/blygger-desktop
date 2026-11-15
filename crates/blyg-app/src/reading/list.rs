@@ -461,6 +461,7 @@ impl MainView {
                 self.item_action(item, action, window, cx)
             }
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
+            "Shelf" => self.toggle_reading_shelf(vm::key(&item), cx), // --- shelf sync ---
             "Hopper" => {
                 // --- hoppers ---
                 let title = vm::title(&item.content_md);
@@ -566,6 +567,7 @@ impl MainView {
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
+            "Shelf" => self.toggle_reading_shelf(vm::key(&item), cx), // --- shelf sync ---
             "Hopper" => {
                 // --- hoppers ---
                 let title = vm::title(&item.content_md);
@@ -634,6 +636,7 @@ impl MainView {
                 version: item.version,
                 current: item.version,
                 pins: vec![],
+                shelved: false,
             };
             return ["Subscribe", "Reply", "Open on web"]
                 .into_iter()
@@ -663,6 +666,7 @@ impl MainView {
                 .filter(|v| !v.current && v.pinned)
                 .map(|v| v.version)
                 .collect(),
+            shelved: self.on_reading_shelf(item), // --- shelf sync ---
         };
         // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).
         let mut ids = if super::own::is_own(&o.key) {

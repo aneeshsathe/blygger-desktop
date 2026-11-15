@@ -1141,6 +1141,16 @@ impl Backend for SwitchBackend {
     fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
         self.cur().move_on_shelf(id, index)
     }
+    // --- shelf sync ---
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        self.cur().shelf_entries()
+    }
+    fn set_entry_on_shelf(&self, entry: &blyg_core::shelf::Entry, on: bool) -> Result<()> {
+        self.cur().set_entry_on_shelf(entry, on)
+    }
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        self.cur().shelf_state()
+    }
     // --- trails ---
     fn trails(&self) -> Vec<blyg_core::Trail> {
         self.cur().trails()
