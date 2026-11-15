@@ -623,6 +623,7 @@ impl Burrow {
         };
         b.reading_seen = cache.seen;
         b.store = store;
+        b.place_reading_rows();
         // Marks made since the list was written, sent or not.
         for r in &mut b.rd.rows {
             let key = key_of(r);
@@ -659,6 +660,8 @@ impl Burrow {
         }
         self.store.merge_server(list);
         self.after_change(None);
+        // Your published posts are rows of the reading list too.
+        self.place_reading_rows();
         json(&json!({ "items": self.store.items().len() }))
     }
 
@@ -677,7 +680,10 @@ impl Burrow {
         }
         let hoppers: Vec<Value> = serde_json::from_str(hoppers_json).unwrap_or_default();
         self.rd.hoppers = hoppers.iter().filter_map(hopper_of).collect();
+        // In the one list order (the blyg sends them in fetch order), with
+        // your posts among them.
         self.rd.rows = out;
+        self.place_reading_rows();
         // The blyg's list has every mark it was sent; the ones it hasn't
         // been sent yet stay on top (`overlay_reading`).
         self.store.read.clear();

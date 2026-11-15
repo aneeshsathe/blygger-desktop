@@ -940,7 +940,14 @@ impl Burrow {
             ..blyg_render::RenderOpts::default()
         };
         let resolver = if md.contains("[[") {
-            StoreResolver::new(self.store.items(), self.rd.rows.clone(), &[], &opts.mount)
+            let theirs = self
+                .rd
+                .rows
+                .iter()
+                .filter(|r| !blyg_core::own::is_own_row(r))
+                .cloned()
+                .collect();
+            StoreResolver::new(self.store.items(), theirs, &[], &opts.mount)
         } else {
             StoreResolver::empty(&opts.mount)
         };
@@ -1011,3 +1018,6 @@ mod tests;
 
 #[cfg(test)]
 mod live_tests;
+
+#[cfg(test)]
+mod order_tests; // the one list order, and your posts in Reading

@@ -196,8 +196,40 @@ impl Burrow {
         self.touched();
     }
 
+    /// Live mode: the reading list in the one list order
+    /// (`blyg_core::order`), with your published posts among the rows as
+    /// native Burrow lists them (`blyg_core::own`): read, never thumbed,
+    /// nothing about them sent. Built again from the posts each time, so a
+    /// post you withdrew or edited follows; the hoppers a row of yours was
+    /// put in here stay with it. The blyg's own order is never kept.
+    pub(crate) fn place_reading_rows(&mut self) {
+        let rows = std::mem::take(&mut self.rd.rows);
+        let (old_own, mut theirs): (Vec<_>, Vec<_>) =
+            rows.into_iter().partition(blyg_core::own::is_own_row);
+        blyg_core::order::sort_reading(&mut theirs);
+        let mut own = if self.is_live() {
+            blyg_core::own::rows(&self.store.items(), &self.origin_str())
+        } else {
+            vec![]
+        };
+        let mut hoppers: std::collections::HashMap<String, Vec<String>> = old_own
+            .into_iter()
+            .map(|o| (o.remote_id, o.hoppers))
+            .collect();
+        for r in &mut own {
+            if let Some(h) = hoppers.remove(&r.remote_id) {
+                r.hoppers = h;
+            }
+        }
+        self.rd.rows = blyg_core::own::merge(theirs, own);
+    }
+
     fn set_read_state(&mut self, key: &str, read: Option<u32>) {
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key) {
+            // Yours are never unread, and no read state is sent for them.
+            if blyg_core::own::is_own_row(r) {
+                return;
+            }
             let changed = r.read_version != read;
             r.read_version = read;
             self.store.read.insert(key.to_string(), read);
@@ -522,6 +554,7 @@ impl Burrow {
             });
         let theirs = rvm::order(self.rd.rows.clone())
             .into_iter()
+            .filter(|r| !blyg_core::own::is_own_row(r))
             .map(|r| Target {
                 id: r.remote_id.clone(),
                 title: rvm::post_title(&r),

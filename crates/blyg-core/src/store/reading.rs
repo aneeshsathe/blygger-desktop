@@ -142,18 +142,15 @@ impl Cache {
         Ok(())
     }
 
-    /// The rows in the list's order: `sort_at` newest first, then
-    /// subscription and remote id (as `ORDER BY` would, bytewise).
+    /// The rows in the list's order ([`crate::order::reading_cmp_at`]:
+    /// `sort_at` newest first, then subscription and remote id descending).
     fn sorted(&mut self) -> Arc<Vec<Arc<Row>>> {
         if let Some(s) = &self.sorted {
             return s.clone();
         }
         let mut v: Vec<&Cached> = self.rows.values().collect();
         v.sort_by(|a, b| {
-            b.sort_at
-                .cmp(&a.sort_at)
-                .then_with(|| a.row.item.subscription_id.cmp(&b.row.item.subscription_id))
-                .then_with(|| a.row.item.remote_id.cmp(&b.row.item.remote_id))
+            crate::order::reading_cmp_at(&a.sort_at, &a.row.item, &b.sort_at, &b.row.item)
         });
         let s = Arc::new(v.into_iter().map(|c| c.row.clone()).collect::<Vec<_>>());
         self.sorted = Some(s.clone());
@@ -491,8 +488,7 @@ impl Store {
         Ok(changed)
     }
 
-    /// Every row, parsed, in the list's order (`ORDER BY sort_at DESC,
-    /// subscription_id, remote_id`): the cache, brought up to date with
+    /// Every row, parsed, in the list's order (`crate::order`): the cache, brought up to date with
     /// what was written since.
     fn reading_rows(&self) -> Arc<Vec<Arc<Row>>> {
         let c = self.conn();
@@ -729,7 +725,7 @@ impl Store {
              FROM reading_refs f JOIN reading r \
                ON r.subscription_id = f.subscription_id AND r.remote_id = f.remote_id \
              WHERE f.target_id = ?1 AND f.target_origin = ?2 \
-             ORDER BY r.sort_at DESC, r.subscription_id, r.remote_id",
+             ORDER BY r.sort_at DESC, r.subscription_id DESC, r.remote_id DESC",
         ) else {
             return vec![];
         };

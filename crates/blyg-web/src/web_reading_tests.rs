@@ -68,7 +68,8 @@ fn a_source_and_a_lens_filter_the_stream() {
     let mut b = live();
     assert_eq!(keys(&b).len(), 3);
     b.wr_set_source("sub:a");
-    assert_eq!(keys(&b), ["a|a1", "a|a2"]);
+    // Dated the same: the remote id breaks the tie, descending.
+    assert_eq!(keys(&b), ["a|a2", "a|a1"]);
     assert_eq!(b.wr_source_label(), "Sub a");
     b.wr_set_source("smart:all");
     b.wr_set_lens("thread");
@@ -110,8 +111,9 @@ fn the_sources_pane_lists_feeds_mentions_hoppers_and_subscriptions() {
             "Hoppers",
             "Keep",
             "Subscriptions",
-            "Sub a",
-            "Sub b"
+            // Before the blyg's list is read, in the rows' order.
+            "Sub b",
+            "Sub a"
         ]
     );
     // Before /api/subscriptions is read, the reading list names them.
