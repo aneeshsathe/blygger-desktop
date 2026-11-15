@@ -158,6 +158,23 @@ export function shake(el) {
   el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
 }
 /** Show what an `Outcome` from Rust says; returns it parsed. */
+// --- shelf sync --- where the shelf lives, for its sheet (src/shelf.rs).
+/** A line for the shelf's sheet: synced, waiting, or this browser's. */
+export function shelfNote() {
+  const s = S.B?.shelf_state?.();
+  if (!S.live) return '';
+  return s === 'synced' ? 'Synced with your blyg.'
+    : s === 'waiting' ? 'Changed here · syncing with your blyg…'
+    : 'In this browser only: your blyg doesn’t keep a shelf.';
+}
+/** "+ Add to shelf" on a reading post: its label and pressed state. */
+export function shelfButton(btn, key) {
+  if (!btn || !key) return;
+  const on = !!S.B.reading_shelved(key);
+  btn.textContent = on ? '− Remove from shelf' : '+ Add to shelf';
+  btn.setAttribute('aria-pressed', String(on));
+}
+// --- end shelf sync ---
 export function outcome(json, shakeEl) {
   const o = typeof json === 'string' ? JSON.parse(json) : json;
   if (o?.action === 'toast') toast(esc(o.message));

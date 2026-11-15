@@ -165,7 +165,7 @@ impl Burrow {
 
     pub(crate) fn shelf_rows(&self, now: chrono::DateTime<chrono::Utc>) -> Vec<ShelfRow> {
         self.store
-            .shelf
+            .own_shelf()
             .iter()
             .filter_map(|id| self.store.item(id))
             .map(|it| ShelfRow {
@@ -662,7 +662,7 @@ impl Burrow {
                 message: "Open a post to shelve it".into(),
             });
         };
-        let on = !self.store.shelf.contains(&id);
+        let on = !self.store.is_shelved(&id);
         match self.store.set_on_shelf(&id, on) {
             Ok(_) => {
                 self.keep_open(&id);

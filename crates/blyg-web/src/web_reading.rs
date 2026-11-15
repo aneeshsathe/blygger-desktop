@@ -240,6 +240,7 @@ pub fn source_key(s: &Source) -> String {
                 Smart::Disliked => "disliked",
                 Smart::Threads => "threads",
                 Smart::Fragments => "fragments",
+                Smart::Shelf => "shelf", // --- shelf sync ---
             }
         ),
         Source::Folder(f) => format!("folder:{f}"),
@@ -262,6 +263,7 @@ pub fn parse_source(k: &str) -> Option<Source> {
         ("smart", "disliked") => Source::Smart(Smart::Disliked),
         ("smart", "threads") => Source::Smart(Smart::Threads),
         ("smart", "fragments") => Source::Smart(Smart::Fragments),
+        ("smart", "shelf") => Source::Smart(Smart::Shelf), // --- shelf sync ---
         ("sub", id) if !id.is_empty() => Source::Sub(id.into()),
         ("hopper", id) if !id.is_empty() => Source::Hopper(id.into()),
         ("own", _) => Source::Own,
@@ -540,6 +542,12 @@ impl Burrow {
         let lens = self.wr.lens;
         let kind_ok = |r: &ReadingItem| lens.is_none_or(|k| r.kind == k);
         match &self.wr.source {
+            // --- shelf sync --- the shelf's posts, in its order.
+            Source::Smart(Smart::Shelf) => self
+                .shelf_order(rows)
+                .into_iter()
+                .filter(|r| kind_ok(r))
+                .collect(),
             Source::Mentions => {
                 let keys = self.wr_mention_keys();
                 rows.into_iter()

@@ -328,9 +328,8 @@ const MIGRATIONS: &[&str] = &[
     END;
     "#,
     // v17 --- shelf --- (store/shelf.rs) your own posts kept to hand at
-    // the top of the Write list, in your order. Local only for now, like the
-    // Reader's folders: never queued or sent (blygger-studio#135 proposes a
-    // synced `/shelf`). Unrelated to version pins (`versions`,
+    // the top of the Write list, in your order. v22 widens it to others'
+    // posts and syncs it (`crate::shelf`). Unrelated to version pins (`versions`,
     // `remote_pins`), which are public and permanent. A post that's deleted
     // here drops out by cascade.
     r#"
@@ -438,6 +437,26 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE items ADD COLUMN syndication TEXT;
     ALTER TABLE reading ADD COLUMN syndication TEXT;
+    "#,
+    // v22 --- shelf sync --- (store/shelf.rs, crate::shelf) the shelf now
+    // holds imported posts too, as the studio's synced `/api/shelf` does
+    // (studio 0.61). A row is one of your own posts (`local_id`; its wire
+    // name is `~own` and its server id, looked up when sent), or a post named
+    // as the wire names it (`subscription_id`, `remote_id`): someone else's,
+    // or one of yours this computer doesn't hold yet. Your posts keep their
+    // places. Deleting a post here still drops its row by cascade.
+    r#"
+    CREATE TABLE shelf_v22 (
+        local_id         TEXT UNIQUE REFERENCES items(local_id) ON DELETE CASCADE,
+        subscription_id  TEXT,
+        remote_id        TEXT,
+        position         INTEGER NOT NULL,
+        UNIQUE (subscription_id, remote_id),
+        CHECK ((local_id IS NULL) <> (subscription_id IS NULL OR remote_id IS NULL))
+    );
+    INSERT INTO shelf_v22 (local_id, position) SELECT local_id, position FROM shelf;
+    DROP TABLE shelf;
+    ALTER TABLE shelf_v22 RENAME TO shelf;
     "#,
 ];
 

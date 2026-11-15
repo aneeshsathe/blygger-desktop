@@ -22,6 +22,7 @@ mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
+pub use shelf::{SHELF_OP_KEY, ShelfRow};
 mod syndication; // --- syndication ---
 pub use syndication::ReadingSyndication;
 mod signals; // issue #71: thumbs without a reading walk
@@ -102,6 +103,10 @@ pub enum OpKind {
     /// payload a `syndication::SyndicationOp`, `local_id` =
     /// `syndication::op_key`. One waits per post: the last edit replaces it.
     Syndication,
+    /// --- shelf sync --- Send the shelf (`PUT /api/shelf`, merged with
+    /// the blyg's); `local_id` = `shelf::SHELF_OP_KEY`, payload `{}`. One
+    /// waits at a time: it sends the shelf as it is when it runs.
+    Shelf,
 }
 
 impl OpKind {
@@ -115,6 +120,7 @@ impl OpKind {
             OpKind::Unread => "unread",
             OpKind::Hopper => "hopper",
             OpKind::Syndication => "syndication", // --- syndication ---
+            OpKind::Shelf => "shelf",             // --- shelf sync ---
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -126,6 +132,7 @@ impl OpKind {
             "unread" => OpKind::Unread,
             "hopper" => OpKind::Hopper,
             "syndication" => OpKind::Syndication, // --- syndication ---
+            "shelf" => OpKind::Shelf,             // --- shelf sync ---
             _ => OpKind::Save,
         }
     }

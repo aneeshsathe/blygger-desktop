@@ -35,10 +35,13 @@ pub enum Smart {
     /// Fragments only.
     Fragments,
     // --- end upkeep ---
+    /// --- shelf sync --- what's on your shelf, yours and others', in your
+    /// order (studio 0.61's Shelf lens). Listed by `State::refilter`.
+    Shelf,
 }
 
 impl Smart {
-    pub const ALL: [Smart; 8] = [
+    pub const ALL: [Smart; 9] = [
         Smart::Unread,
         Smart::Today,
         Smart::Thumbed,
@@ -46,6 +49,7 @@ impl Smart {
         Smart::Threads,   // --- upkeep ---
         Smart::Fragments, // --- upkeep ---
         Smart::All,
+        Smart::Shelf, // --- shelf sync --- (the studio's order: Background after it)
         Smart::Background,
     ];
 
@@ -60,6 +64,7 @@ impl Smart {
             Smart::Disliked => "Thumbed down",
             Smart::Threads => "Threads",
             Smart::Fragments => "Fragments",
+            Smart::Shelf => "Shelf", // --- shelf sync ---
         }
     }
 }
@@ -173,6 +178,8 @@ pub fn in_source(
         Source::Trail(_) => false,
         // --- contacts --- needs the feed's keys: `State::mentions_shown`.
         Source::Mentions => false,
+        // --- shelf sync --- listed in the shelf's order by `State::refilter`.
+        Source::Smart(Smart::Shelf) => false,
     }
 }
 
@@ -423,6 +430,10 @@ pub fn empty_label(source: &Source) -> &'static str {
         Source::Smart(Smart::Disliked) => "Nothing thumbed down. 👎 a post to list it here.",
         Source::Smart(Smart::Threads) => "No threads to read.",
         Source::Smart(Smart::Fragments) => "No fragments to read.",
+        // --- shelf sync ---
+        Source::Smart(Smart::Shelf) => {
+            "Nothing on your shelf yet. “+ Add to shelf” on any post puts it here."
+        }
         Source::Folder(_) => "Nothing here. Drag a subscription onto the folder to file it.",
         Source::Sub(_) => "No posts from this subscription yet.",
         Source::Own => "Nothing published yet. Your published posts show here.",
@@ -501,6 +512,7 @@ mod tests {
                 "Threads",      // --- upkeep ---
                 "Fragments",    // --- upkeep ---
                 "All",
+                "Shelf", // --- shelf sync ---
                 "Background",
                 "# Folders",
                 "[Friends]",
@@ -628,9 +640,9 @@ mod tests {
         );
         let all = Source::Smart(Smart::All);
         assert_eq!(
-            step_source(&e, &all, 2),
+            step_source(&e, &all, 3),
             Some(Source::Folder(FOLDER_FRIENDS.into())),
-            "headings are skipped (Background comes first)"
+            "headings are skipped (Shelf and Background come first)"
         );
         assert_eq!(
             step_source(&e, &Source::Smart(Smart::Unread), -1),

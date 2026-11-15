@@ -19,6 +19,8 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Added
 
 - **Background and Foreground** in Reading, from blygger-studio 0.61. The Background list is now your blyg's own: posts you moved there, blygs you moved there, your own minor changes (a version the change classifier calls a typo, minor or refresh) and, as before, withdrawn posts. Every other list, Mentions and the counts leave them out. Under an open post, **↓ Background** (**b**) / **↑ Foreground**, **↺ Clear my choice** and **⇊ / ⇈ Blyg to Background / Foreground**; Settings › Reading › Background turns the minor-change rule off or on (saved on your blyg). The web app has the same under an open post and in ⚙ Reading. Needs a studio that advertises `setReadingPlacement`; on an older one, Background lists withdrawn posts as before and offers none of this.
+- **The shelf syncs with your blyg** (studio 0.61): the studio, the web app and your other computers share one shelf. A change made in two places at once is merged, not lost, and a shelf you kept before the first sync is joined to the blyg's. An older blyg keeps the shelf on this computer, as before; the ⌘B sheet says which.
+- **Others' posts on the shelf**: **+ Add to shelf** among a post's chips in Reading, on the desktop and the web app, and a **Shelf** lens in Reading's sources that lists the shelf in its order, as the studio has them.
 
 ### Changed
 
@@ -26,6 +28,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Fixed
 
+- **The tour's Catch up step** no longer hides the conversation behind the tour card: while a tour card shows, reading sheets sit to its right.
 - **Web app: the Mentions lens** asked `GET /api/reading` for 100 entries a page, more than its 50; it now asks for 50.
 
 ## [0.23.0] - 2026-11-15

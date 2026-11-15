@@ -9,9 +9,10 @@
 //! - Shelved posts that match the omnibar come first in the list, each with
 //!   📚 before its title (`vm::ListModel`).
 //!
-//! Local to this Mac for now (`Backend::shelf`, store schema v17);
-//! blygger-studio#135 adds a synced `/shelf`. Not the version pin (📌 in
-//! ⌘Y), which is public and permanent.
+//! It syncs with a blyg that keeps a shelf (studio 0.61, `blyg_core::shelf`)
+//! and is local to this Mac otherwise; the sheet's header says which. Others'
+//! posts on it show in Reading's Shelf lens (`reading::shelf_lens`). Not the
+//! version pin (📌 in ⌘Y), which is public and permanent.
 //!
 //! A child module of `app` (it reads `MainView`); `app.rs` keeps small hooks
 //! marked `// --- shelf ---`.
@@ -241,6 +242,18 @@ impl MainView {
                             1 => "1 post".to_string(),
                             n => format!("{n} posts"),
                         },
+                    )),
+            )
+            // --- shelf sync --- where the shelf lives.
+            .child(
+                div()
+                    .id("shelf-sync-state")
+                    .debug_selector(|| "shelf-sync-state".into())
+                    .mb(px(4.))
+                    .text_size(px(11.))
+                    .text_color(p.muted)
+                    .child(crate::app::reading::shelf_lens::state_note(
+                        self.backend.shelf_state(),
                     )),
             );
         if s.posts.is_empty() {

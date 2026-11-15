@@ -28,6 +28,7 @@ mod keymap;
 pub mod live;
 mod read_api;
 pub mod seed;
+pub mod shelf; // --- shelf sync --- (studio 0.61)
 pub mod store;
 pub mod theme;
 // --- web-reading ---
@@ -469,14 +470,14 @@ impl Burrow {
                 dot_tip: vm::edits_tip(it),
                 when: vm::relative_time(&it.updated, now),
                 selected: sel.as_ref() == Some(&it.local_id),
-                shelved: self.store.shelf.contains(&it.local_id),
+                shelved: self.store.is_shelved(&it.local_id),
             })
             .collect();
         let shelf_len = self
             .list
             .results()
             .iter()
-            .take_while(|i| self.store.shelf.contains(&i.local_id))
+            .take_while(|i| self.store.is_shelved(&i.local_id))
             .count();
         let current = match (&self.new_post, self.current_item()) {
             (Some(None), _) => Some(Current {
@@ -513,7 +514,7 @@ impl Burrow {
                     status: status_name(it.status),
                     new_post: (self.new_post.is_some() && it.status == Status::Scratch)
                         .then(|| NEW_NOTE.into()),
-                    shelved: self.store.shelf.contains(&it.local_id),
+                    shelved: self.store.is_shelved(&it.local_id),
                     stub_of: self.stub_label(&it),
                     conflict: self.conflict_view(&it.local_id),
                     pending: it.pending_sync,

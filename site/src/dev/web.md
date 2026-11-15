@@ -76,8 +76,9 @@ It runs in one of two modes, and says which:
 - **The service worker** caches only the app's own files under its scope
   and passes every other request, `/api/` and `/studio/` above all,
   straight to the network.
-- The shelf stays in the browser until the studio has one
-  (blygger-studio#135).
+- The shelf syncs through `GET/PUT /api/shelf` when the studio advertises
+  `getShelf` and `putShelf` (studio 0.61), and stays in the browser
+  otherwise.
 
 <!-- --- web-reading --- -->
 ## Reading: sources, subscriptions, mentions, hoppers

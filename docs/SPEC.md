@@ -61,7 +61,7 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   `new-note = draft`). The omnibar's create (`⏎` with no match) is unchanged.
   Code: `crates/blyg-app/src/new_post.rs`.
 - **Shelf** (`shelf.rs`, `store/shelf.rs`; user request 2026-11-06): your own
-  posts kept to hand, for the living posts you keep updating. **⌥⌘B** (Post ›
+  posts and others' kept to hand, for the living posts you keep updating. **⌥⌘B** (Post ›
   Put on Shelf / Take Off; Ctrl+Shift+A on Windows, since ⇧⌘B is the browser)
   shelves the open post or takes it off, with a toast ("On your shelf · ⌘B" /
   "Taken off your shelf"). Shelved posts that match the omnibar come first in
@@ -71,17 +71,35 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   (clearing a search that hides it), ↑/↓ move, ⌥↑/⌥↓ reorder, ⌫ takes the
   highlighted post off, esc closes. Any post of yours (thread, fragment, draft,
   scratch note; a scratch note keeps its place when promoted, same `LocalId`);
-  withdrawn posts are left out, deleted ones drop out by cascade. At most 50 posts
-  (studio's `PUT /shelf` limit; a 51st is refused with a toast). **Local
-  only for now**: store table `shelf(local_id, position)` (schema v17),
-  `Backend::shelf` / `set_on_shelf` / `move_on_shelf`, never queued or sent.
-  blygger-studio#137 (closes #135; contract 5.8.0, unreleased as of
-  2026-11-06) adds owner-only `GET/PUT {mount}/api/shelf` →
-  `{itemIds, revision}` (≤ 50 ids; `expectedRevision`, else 409
-  `revision-conflict` with `details.current`; unknown and withdrawn ids
-  dropped; change domain `shelf`; 404 below 5.8). Burrow moves onto it once
-  released, keeping scratch notes and unsynced drafts local. Named "shelf", never "pin": a pin is
-  a public, permanent version pin (§ Versions & pins).
+  withdrawn posts are left out, deleted ones drop out by cascade. Others' posts
+  go on it from Reading: **+ Add to shelf** / **− Remove from shelf** among
+  each post's chips (toast "Added to shelf" / "Removed from shelf"), and the
+  **Shelf** lens (sources pane, studio order All · Mentions · Smart Feed ·
+  Fragments · Threads · Shelf · Background) lists the whole shelf in its order
+  (`reading/shelf_lens.rs`). At most 50 posts (studio's `SHELF_MAX`; a 51st
+  is refused with a toast).
+  **Sync** (studio 0.61, contract 5.10; `blyg_core::shelf`, `sync/shelf.rs`,
+  `api/shelf_api.rs`): gated on the `getShelf` and `putShelf` capabilities.
+  `GET {mount}/api/shelf` → `{entries: [{sub, remoteId}], revision}`, where an
+  own post is `{sub: "~own", remoteId: <item id>}` (drafts too) and anyone
+  else's is its subscription id and remote id; `PUT {entries,
+  expectedRevision}` replaces the list (≤ 50 raw entries, else 400; unknown
+  entries dropped quietly, duplicates keep the first; a stale revision is 409
+  `revision-conflict` with `details.current`). Store: `shelf(local_id |
+  subscription_id + remote_id, position)` (schema v22; v17 held own posts
+  only), outbox op `shelf` (one at a time), meta `shelf_base` (the list last
+  agreed) and `shelf_revision`. The engine pulls when the `shelf` change
+  counter moves (`SHELF_DEPS`) and pushes each change with the last revision;
+  every push is a three-way merge of the base, this computer's list and the
+  blyg's (`shelf::merge`: removals and moves on either side win, local
+  additions land after their nearest kept neighbour), capped at 50 with a
+  toast, and a 409 merges onto `details.current` and retries once. The first
+  sync unions the two lists, the blyg's order first. Scratch notes and
+  unsent drafts, which the blyg can't name yet, keep their place locally and
+  join the list when sent. A blyg without the capabilities (studio < 0.61)
+  leaves the shelf on this computer, as before; the ⌘B sheet says which.
+  Named "shelf", never "pin": a pin is a public, permanent version pin
+  (§ Versions & pins).
 - **Lineage while writing** (`lineage_strip.rs`; proposal 2, 2026-11-06): under
   the editor on Posts, one quiet 26px line for the open post: its lineage
   glyph (the same `lineage_vm::Glyph` as the stream's, counted by the same

@@ -771,6 +771,28 @@ pub trait Backend: Send + Sync {
         Err(CoreError::Other("the shelf isn't supported here".into()))
     }
 
+    // --- shelf sync --- (studio 0.61) the shelf holds anyone's posts too,
+    // named as the blyg names them, and syncs with a blyg that offers it.
+
+    /// Everything on the shelf the blyg can name, in order: your posts it
+    /// holds (`~own`, server id) and others' (subscription, remote id).
+    /// Reading's Shelf lens lists these.
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
+        Vec::new()
+    }
+
+    /// Put a post on the shelf (at the end) or take it off, by the reading
+    /// row's key. Idempotent.
+    fn set_entry_on_shelf(&self, entry: &crate::shelf::Entry, on: bool) -> Result<()> {
+        let _ = (entry, on);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    /// Whether the shelf syncs with the blyg, and whether a change waits.
+    fn shelf_state(&self) -> crate::shelf::SyncState {
+        crate::shelf::SyncState::Local
+    }
+
     // --- end shelf ---
 
     // --- trails ---
