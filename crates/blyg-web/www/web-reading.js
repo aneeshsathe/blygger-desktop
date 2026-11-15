@@ -32,6 +32,22 @@ const loading = {};     // list → its read in flight
 /** A layout hands over what the panel needs of it (`openReading`). */
 export function wrUse(layout, fns) { use[layout] = fns; }
 
+// --- web-parity --- Other modules' screens in this panel (parity.js):
+// their screens and titles, and their clicks and form submits, asked
+// first. A handler returns true when it took the event.
+const extra = { clicks: [], submits: [] };
+export function wrExtend({ screens = {}, titles = {}, click, submit } = {}) {
+  Object.assign(SCREENS, screens);
+  Object.assign(TITLES, titles);
+  if (click) extra.clicks.push(click);
+  if (submit) extra.submits.push(submit);
+}
+/** The panel's current screen (its state object), or null. */
+export const wrScreen = () => screen;
+/** Redraw the panel (keeps what's typed). */
+export const wrRedraw = () => redraw();
+// --- end web-parity ---
+
 // ---------------------------------------------------------------- lists
 /** Read `which` (subs, mentions, outbound, lens, history, settings,
     capabilities) if it isn't here or is older than `maxAge` ms. The demo's
@@ -135,10 +151,14 @@ function sourcesHtml(d, { manage = true } = {}) {
       <button type="button" data-go="peek-url">⌕ Peek</button>
       <button type="button" data-go="history">⟲ History</button>
       <button type="button" data-go="reading">⚙ Reading</button>
+      ${markAllOffered() ? '<button type="button" data-go="markall" title="Mark every post here read (⌃⌥A)">✓ Mark all read…</button>' : ''}
     </div>` : ''}
     <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
     ${rows}`;
 }
+// --- web-parity --- hidden once the blyg is known not to take batches.
+function markAllOffered() { return !(S.live && S.B.wr_ops_known() && !S.B.wr_can('markReadBatch')); }
+// --- end web-parity ---
 function chooseSource(key) {
   S.B.wr_set_source(key);
   if (key === 'mentions') ensure('lens').then(() => S.render());
@@ -412,6 +432,7 @@ async function onClick(e) {
   const t = e.target.closest('button, [data-feed]');
   if (!t) return;
   const d = t.dataset;
+  for (const c of extra.clicks) if (await c(t, d, screen)) return; // --- web-parity ---
   if (d.go) { go(d.go); return; }
   // subscriptions
   if (d.show) { chooseSource(`sub:${d.show}`); closePanel(); return; }
@@ -467,6 +488,7 @@ async function onSubmit(e) {
   if (!f) return;
   e.preventDefault();
   const kind = f.dataset.form;
+  for (const h of extra.submits) if (await h(f, kind, screen)) return; // --- web-parity ---
   if (kind === 'subscribe') {
     const url = f.url.value.trim();
     if (!screen.preview || screen.url !== url) {

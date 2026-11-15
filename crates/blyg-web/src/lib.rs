@@ -40,7 +40,8 @@ pub mod web_changelog;
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
-pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
+pub mod parity;
+pub mod syndication; // --- syndication --- copies elsewhere (decision #98) // --- web-parity --- studio parity: mark all read, …
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]

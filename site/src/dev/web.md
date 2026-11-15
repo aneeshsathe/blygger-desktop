@@ -118,6 +118,23 @@ is one pass over the rows it already orders. The code is
 `src/web_reading.rs` (rules, requests, answers) and `www/web-reading.js`
 (drawing), with hook lines marked `--- web-reading ---` in the shared files.
 <!-- --- end web-reading --- -->
+<!-- --- web-parity --- -->
+## Studio parity
+
+What the studio's own app does that the web app lacked (0.22.0). Each
+needs the blyg to advertise the operation in `GET /api/capabilities`;
+otherwise it's hidden or says why.
+
+- **Mark all read** (`markReadBatch`). ✓ Mark all read… in the sources
+  pane (⌃⌥A on a desk), ✓ All read on a phone: every unread post of the
+  chosen source and lens, after a confirmation with the count. Read here at
+  once, sent as `POST /api/reading/read` in batches of 500; a batch the
+  blyg refuses is put back. Offline it waits for you to come back.
+
+The rules are `src/parity/` and the screens `www/parity.js`, drawn in the
+reading panel through `wrExtend` (`www/web-reading.js`). A live check runs
+them against two local studios: `crates/blyg-web/parity-check.mjs`.
+<!-- --- end web-parity --- -->
 
 ## Staying fast with thousands of posts
 

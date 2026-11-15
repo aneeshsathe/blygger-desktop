@@ -311,6 +311,11 @@ In the web app, ⚙ Reading has the same choice for that browser: opening a
 post also opens its page in a new tab, and the post stays in Burrow with a
 link back to the page and **Read … here instead** for its blyg.
 
+The web app can also **mark all read**: ✓ Mark all read… in the sources
+pane (⌃⌥A), or ✓ All read on a phone, marks every unread post of the source
+and lens you're looking at, after asking. It needs a blyg that takes read
+marks in bulk (blygger-studio's `markReadBatch`).
+
 ### The changelog
 
 Every version of a blyg post can carry its author's note. By default Burrow

@@ -10,7 +10,7 @@ import {
   swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
 } from './core.js';
 // --- web-reading ---
-import { deskSources, opened, wrUse } from './web-reading.js';
+import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
 // --- end web-reading ---
 // --- web-writing ---
 import * as Wr from './writing.js';
@@ -433,6 +433,7 @@ export function initDesk() {
     const cmd = e.metaKey || e.ctrlKey;
     const code = e.code;
     if (e.ctrlKey && !e.shiftKey && (code === 'Digit1' || code === 'Digit2')) { e.preventDefault(); hud(['⌃', code.slice(-1)]); setView(code === 'Digit1' ? 'posts' : 'reading'); omni.focus(); }
+    else if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey && code === 'KeyA' && view === 'reading') { e.preventDefault(); hud(['⌃', '⌥', 'A']); wrGo('markall'); } // --- web-parity ---
     else if (e.ctrlKey && !e.shiftKey && code === 'Digit3') { e.preventDefault(); hud(['⌃', '3']); setView('blyg'); $('#d-hub [data-hub]')?.focus(); }
     else if (mod && e.key === 'Enter') { e.preventDefault(); hud(['⌘', '⏎']); askPublish(); }
     else if (mod && e.shiftKey && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); hud(['⇧', '⌘', '⌫']); askDelete(); }

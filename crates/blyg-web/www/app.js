@@ -16,6 +16,7 @@ import { initPhone, render as renderPhone, showPhone } from './phone.js';
 // --- web-reading ---
 import { initWebReading } from './web-reading.js';
 // --- end web-reading ---
+import './parity.js'; // --- web-parity --- studio-parity screens
 
 const narrow = matchMedia('(max-width: 700px)');
 function chooseLayout() {
