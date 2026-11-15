@@ -84,13 +84,13 @@ impl MainView {
     }
 
     /// The palette's "Open <site>" rows: each granted macro site of a
-    /// running extension, once, so signing in there is one click (the
-    /// browser pane is macOS only).
+    /// running extension, once, so signing in there is one click (where
+    /// there's a browser pane: macOS and Windows).
     pub(crate) fn ext_site_rows(&self) -> Vec<Row> {
         let Some(host) = &self.ext.host else {
             return vec![];
         };
-        if cfg!(all(not(target_os = "macos"), not(test))) {
+        if !crate::app::browser::pane_available() {
             return vec![];
         }
         let mut rows: Vec<Row> = vec![];
@@ -274,9 +274,9 @@ impl MainView {
         if self.browser.automation.running() {
             return reply.answer(Err("a macro is running in the browser pane".into()));
         }
-        // The pane is macOS only for now (elsewhere a link would go to the
-        // default browser, which isn't what was asked).
-        if cfg!(all(not(target_os = "macos"), not(test))) {
+        // No pane on this platform (a link would go to the default
+        // browser, which isn't what was asked).
+        if !crate::app::browser::pane_available() {
             return reply.answer(Err("there's no browser pane on this platform yet".into()));
         }
         self.open_url_in_app(&url, crate::app::browser::OpenMode::Full, window, cx);

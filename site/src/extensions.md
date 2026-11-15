@@ -71,7 +71,8 @@ extension-setting = markdown-notes poll-ms=5000
 cross-post puts a post you've published on Substack Notes, Bluesky or
 Farcaster too: its opening paragraph and the link back to your blyg. It runs
 in Burrow's browser pane, where you're signed in to each site yourself, and it
-never posts without you clicking Post (or Cast). It needs no API key, app
+never posts without you clicking Post (or Cast). It works on macOS and on
+Windows. It needs no API key, app
 password or Farcaster signer: it fills in the same composer you would use by
 hand.
 
@@ -95,8 +96,10 @@ asks for them the first time it starts cross-post.
 
 Sign in to each site **once, by hand**, in the browser pane: press ⇧⌘P and
 pick **Open Substack Notes**, **Open Bluesky** or **Open Farcaster** (or View ›
-Open Browser… and type the address). The pane remembers it (on macOS 14 or
-later; on older macOS, sign in before each run). cross-post never signs in
+Open Browser… and type the address). The pane remembers it: on macOS 14 or
+later in its own website data store (on older macOS, sign in before each
+run), and on Windows in the pane's own WebView2 profile, apart from the
+preview's. cross-post never signs in
 for you and never sees your sign-in. It stops with "Sign in to Substack Notes
 in this pane" (or Bluesky) if you're signed out. On Farcaster, a signed-out
 run stops at its second step because the composer never opens, and nothing is
@@ -113,7 +116,12 @@ run shows **two confirmation sheets**, and no setting skips them:
    that means your home feed and "What's on your mind?". On Bluesky it is
    Bluesky's own compose link, `bsky.app/intent/compose`. On Farcaster it is
    the web client's compose link, `farcaster.xyz/~/compose`. The text always
-   goes in by pasting, never in the address.
+   goes in through the page, never in the address. On macOS it's a real
+   paste. Windows has no equivalent of that paste, so there the text goes
+   in through the editor's own insert command, or else a script paste
+   event. If a composer takes neither, nothing is posted: the text is left
+   on your clipboard and Burrow asks you to paste it (Ctrl+V) and click
+   Post yourself.
 2. **Post this to the site?** You see what the composer now holds. Post
    clicks the site's Post button (Cast, on Farcaster); you can also click it
    yourself, or cancel.
@@ -166,7 +174,9 @@ extension-setting = cross-post farcaster-max-bytes=1024
   looks for, the run stops, says which step, and **nothing is posted**.
   `blygger +list-extensions` shows each macro's `tested` value. The
   extension's `macro.log` (in Burrow's data folder, under
-  `extensions/cross-post/`) then lists the text boxes and buttons the page did
+  `extensions/cross-post/`: `~/Library/Application
+  Support/org.blygger.desktop/extensions/cross-post/macro.log` on macOS,
+  `%LOCALAPPDATA%\Blygger\extensions\cross-post\macro.log` on Windows) then lists the text boxes and buttons the page did
   have (tags, classes, labels such as "Post"; never the page's text or yours),
   so the recipe can be fixed. Start Burrow with `BLYGGER_MACRO_TRACE=1` to log
   that after every step.

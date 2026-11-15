@@ -67,7 +67,9 @@ each with Remove, and has its own **Add folder…**.
 
 A link in a post opens in a pane that slides in from the right, over the
 reading view. ⌘-click opens it over the whole area, ⌥-click opens your default
-browser instead, and esc closes it. ⇧⌘B brings back the last page.
+browser instead, and esc closes it. ⇧⌘B brings back the last page. It's on
+macOS and Windows (where the keys are Ctrl+click, Alt+click and
+Ctrl+Shift+B).
 
 The pane has back, forward and reload (⌘[ ⌘] ⌘R), an address field (⌘L), 🛡
 (content blocking on or off for this site), ↗ (open in your default
@@ -84,12 +86,14 @@ while text is selected on the page), and **✂ Clip**.
   bar shows **macro running · show pane**; click it or press ⇧⌘B to unfold.
   While a macro runs, the pane's bar has **■ Stop**.
 
-- **Content blocking.** Ads and trackers are blocked with uBlock Origin's
-  default filter lists, as WebKit content blockers, downloaded about once a
-  week (a small built-in list until then). 🛡 turns blocking off for one site.
+- **Content blocking** (macOS). Ads and trackers are blocked with uBlock
+  Origin's default filter lists, as WebKit content blockers, downloaded about
+  once a week (a small built-in list until then). 🛡 turns blocking off for
+  one site. On Windows there's no blocking yet, and 🛡 is greyed out.
 - **Privacy.** The pane has its own cookies and no access to the app: pages
-  never see your token or keys. On macOS 14 and later, sign-ins in the pane
-  survive a relaunch.
+  never see your token or keys. Sign-ins in the pane survive a relaunch: on
+  macOS 14 and later in the pane's own website data store, and on Windows in
+  its own WebView2 profile (`%LOCALAPPDATA%\Blygger\browser\webview2\`).
 - **Downloads** go to your default browser.
 
 `open-links = browser` makes links open in your default browser (⌥-click then

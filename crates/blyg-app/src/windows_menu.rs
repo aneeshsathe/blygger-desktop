@@ -19,7 +19,8 @@ struct MenuOpen(bool);
 
 impl Global for MenuOpen {}
 
-fn is_open(cx: &App) -> bool {
+/// Whether the menu is open (`platform::menu_open`).
+pub fn is_open(cx: &App) -> bool {
     cx.try_global::<MenuOpen>().is_some_and(|m| m.0)
 }
 

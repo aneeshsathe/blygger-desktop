@@ -6,9 +6,12 @@
 //! default browser. `open-links = browser` flips that. esc closes the pane
 //! and it keeps its page if reopened (⇧⌘B, or the same link).
 //!
-//! - `surface`: its own WKWebView (no bridge to the app, its own cookie jar,
-//!   http(s) only); `nav_policy` below is the URL/scheme policy.
-//! - `blocklist` + `rules`: uBlock Origin's default lists as WebKit content
+//! - `surface`: its own web view, a WKWebView on macOS and a WebView2 on
+//!   Windows (no bridge to the app, its own cookie jar, http(s) only);
+//!   `nav_policy` below is the URL/scheme policy. [`pane_available`] says
+//!   whether there's a pane at all.
+//! - `blocklist` + `rules` (macOS only, [`blocking_available`]): uBlock
+//!   Origin's default lists as WebKit content
 //!   blockers, per-site shield in `state.json`, `content-blocking` config.
 //! - `capture`: Clip Page (✂ Clip, ⇧⌘C): the page as Markdown into a
 //!   draft; the same `PageCapture` that `burrow/browser.page` answers.
@@ -22,6 +25,9 @@
 //! process) [`TEARDOWN_AFTER`] after the pane closes.
 
 pub mod automation;
+// The lists are fetched and compiled only where blocking exists (macOS,
+// `driver`); the parsing is tested everywhere.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub mod blocklist;
 pub mod capture;
 #[cfg(all(target_os = "macos", not(test)))]
@@ -41,6 +47,25 @@ pub use view::{
     Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
     ToggleBrowser,
 };
+
+/// The pane exists on this platform: macOS (WKWebView) and Windows
+/// (WebView2), and in tests (a stub surface). Elsewhere links open in the
+/// default browser, as they did before the pane existed.
+pub fn pane_available() -> bool {
+    cfg!(test) || pane_available_on(std::env::consts::OS)
+}
+
+/// [`pane_available`] for an OS name (`std::env::consts::OS`).
+pub fn pane_available_on(os: &str) -> bool {
+    matches!(os, "macos" | "windows")
+}
+
+/// Content blocking exists on this platform: macOS only, because the lists
+/// compile to WebKit content rules (`rules`, `driver`). Tests keep it, so
+/// the shield's logic stays covered.
+pub fn blocking_available() -> bool {
+    cfg!(test) || cfg!(target_os = "macos")
+}
 
 /// How long a closed pane keeps its web view (and page) alive.
 pub const TEARDOWN_AFTER: Duration = Duration::from_secs(180);

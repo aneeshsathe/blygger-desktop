@@ -1022,7 +1022,7 @@ pub fn mac_table() -> Vec<Keybind> {
         ),
         menu_only!(
             OpenBrowser,
-            "Browser pane: open it with the address field ready (macOS)",
+            "Browser pane: open it with the address field ready (macOS and Windows)",
             "View › Open Browser…"
         ),
         kb!("cmd-[", Browser, BrowserBack, "Browser pane: back", None),

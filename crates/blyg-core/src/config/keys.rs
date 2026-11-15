@@ -277,7 +277,8 @@ pub const KEYS: &[KeySpec] = &[
         key("content-blocking", ValueKind::Bool, Some("true")),
         "Block ads and trackers in the browser pane, with uBlock Origin's default filter \
          lists (downloaded about once a week; a small built-in list until then). The shield \
-         button turns it off for one site. false turns it off everywhere.",
+         button turns it off for one site. false turns it off everywhere. macOS only: the \
+         Windows pane has no content blocking yet, so this has no effect there.",
     ),
     // --- end browser ---
     // --- lang ---

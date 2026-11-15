@@ -5,6 +5,28 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.22.0
+
+The browser pane and cross-post now run on Windows. Links in posts open
+beside your reading there too, sign-ins stay in the pane's own profile, and
+the bundled cross-post posts to Substack Notes, Bluesky and Farcaster from
+it, after the same two checks as on the Mac.
+
+### Browser pane and cross-post on Windows
+
+- **Links open beside your reading.** A link in a post opens in the pane, a
+  WebView2 with its own profile, so you stay signed in to the sites you use
+  across relaunches, apart from the preview. Ctrl+click opens it over the
+  whole reading area, Alt+click goes to your default browser, and
+  Ctrl+Shift+B hides it and brings it back. The pane's other keys are the
+  Mac's with Ctrl.
+- **cross-post works there too.** Turn it on as on the Mac: each site is its
+  own permission, the palette's **Open …** rows let you sign in by hand, and
+  nothing posts until you click Post on the second sheet. If a site's
+  composer won't take the text, it's left on your clipboard for you to paste.
+- **Not on Windows yet:** ad and tracker blocking (🛡 is greyed out) and
+  "Open posts on the author's site".
+
 ## Burrow 0.21.0
 
 Read a blyg as its author styled it, list where else your posts appear,
