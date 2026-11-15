@@ -209,7 +209,17 @@ impl Burrow {
             rows.into_iter().partition(blyg_core::own::is_own_row);
         blyg_core::order::sort_reading(&mut theirs);
         let mut own = if self.is_live() {
-            blyg_core::own::rows(&self.store.items(), &self.origin_str())
+            let items = self.store.items();
+            let origin = self.origin_str();
+            let mut own = blyg_core::own::rows(&items, &origin);
+            // --- background --- your withdrawn posts, for the Background
+            // lens (hidden until the studio's lens places them).
+            own.extend(
+                items
+                    .iter()
+                    .filter_map(|i| blyg_core::own::withdrawn_row(i, &origin)),
+            );
+            own
         } else {
             vec![]
         };
@@ -223,6 +233,10 @@ impl Burrow {
             }
         }
         self.rd.rows = blyg_core::own::merge(theirs, own);
+        // --- background --- each row's place, and the lens read again
+        // (what it's worked out from was just read).
+        self.wr.bg_fresh = false;
+        self.bg_annotate();
     }
 
     /// The reading rows changed (which there are, or a row's read state,

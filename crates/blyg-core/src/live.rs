@@ -1909,6 +1909,51 @@ impl Backend for LiveBackend {
         self.e().store.background_reading()
     }
 
+    // --- background ---
+    fn background_served(&self) -> bool {
+        self.e().background_served()
+    }
+
+    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
+        self.e().store.background_set()
+    }
+
+    fn set_reading_placement(
+        &self,
+        key: &crate::background::Key,
+        withdrawn: bool,
+        placement: Option<crate::background::Placement>,
+    ) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().set_reading_placement(key, withdrawn, placement)
+    }
+
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        let rows = self.e().store.reading_rows_of(sub);
+        self.e().set_blyg_background(sub, on, &rows)
+    }
+
+    fn background_rules(&self) -> Result<Option<crate::background::BackgroundRules>> {
+        self.e().track(self.e().api.background_rules())
+    }
+
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<crate::background::BackgroundRules> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().track(self.e().api.put_background_rule(rule, on))
+    }
+    // --- end background ---
+
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {
         self.e().store.hoppers()

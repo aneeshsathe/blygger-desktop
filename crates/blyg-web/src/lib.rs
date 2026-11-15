@@ -36,6 +36,7 @@ pub mod web_reading;
 // --- reader view / changelog --- the author's site, changelog display.
 pub mod web_changelog;
 // --- end reader view / changelog ---
+pub mod web_background; // --- background --- (studio 0.61, contract 5.10.0)
 // --- web-writing ---
 pub mod composer;
 pub mod writing;

@@ -188,6 +188,7 @@ impl ItemDoc {
             lineage_known: true,
             source_url: None,
             generated: None,
+            background: None,
         }
     }
 

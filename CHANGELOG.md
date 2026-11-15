@@ -16,6 +16,18 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Background and Foreground** in Reading, from blygger-studio 0.61. The Background list is now your blyg's own: posts you moved there, blygs you moved there, your own minor changes (a version the change classifier calls a typo, minor or refresh) and, as before, withdrawn posts. Every other list, Mentions and the counts leave them out. Under an open post, **↓ Background** (**b**) / **↑ Foreground**, **↺ Clear my choice** and **⇊ / ⇈ Blyg to Background / Foreground**; Settings › Reading › Background turns the minor-change rule off or on (saved on your blyg). The web app has the same under an open post and in ⚙ Reading. Needs a studio that advertises `setReadingPlacement`; on an older one, Background lists withdrawn posts as before and offers none of this.
+
+### Changed
+
+- **Mentions leaves Background out**, as the studio's does: a mention that's withdrawn or moved to Background is listed under Background instead.
+
+### Fixed
+
+- **Web app: the Mentions lens** asked `GET /api/reading` for 100 entries a page, more than its 50; it now asks for 50.
+
 ## [0.23.0] - 2026-11-15
 
 Catch up on a conversation, oldest first, and the web app gains the studio's Mark all read, Posts filters, Updates and Access tokens, keeps Reading in order and up to date, and starts faster.

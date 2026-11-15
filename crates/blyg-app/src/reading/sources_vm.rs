@@ -21,9 +21,10 @@ pub enum Smart {
     Thumbed,
     /// Everything held.
     All,
-    /// --- background --- withdrawn posts only (studio 0.49.0's Background
-    /// lens): the blygs' tombstones and your own withdrawn posts. Nowhere
-    /// else lists them.
+    /// --- background --- the studio's Background lens (0.61): what you
+    /// moved there, blygs you moved there, and what its rules send there
+    /// (withdrawn posts always; your own minor changes). Nowhere else lists
+    /// them. On an older studio: withdrawn posts only (0.49's lens).
     Background,
     // --- upkeep --- Studio's Threads and Fragments lenses and its disliked
     // list, as smart feeds.
@@ -115,10 +116,11 @@ pub fn needs_reading(r: &ReadingItem) -> bool {
     !is_background(r) && (r.is_unread() || r.edited_since_read())
 }
 
-/// --- background --- A withdrawn post (an imported tombstone, or your own
-/// withdrawn post): listed under Background only, never unread.
+/// --- background --- In Background (`ReadingItem::is_background`: as the
+/// studio's Background lens says, else a withdrawn post): listed under
+/// Background only, never unread.
 pub fn is_background(r: &ReadingItem) -> bool {
-    r.state == "tombstone"
+    r.is_background()
 }
 
 /// --- background --- The stream's rows (indices from the search's
@@ -150,7 +152,7 @@ pub fn in_source(
     filed: &HashMap<String, String>,
     now: DateTime<Utc>,
 ) -> bool {
-    // --- background --- withdrawn posts are in Background and nowhere else.
+    // --- background --- Background posts are there and nowhere else.
     if is_background(r) != (*source == Source::Smart(Smart::Background)) {
         return false;
     }

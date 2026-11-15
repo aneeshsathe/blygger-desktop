@@ -461,6 +461,10 @@ impl MainView {
                 self.item_action(item, action, window, cx)
             }
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
+            // --- background ---
+            super::background::PLACE | super::background::CLEAR | super::background::BLYG => {
+                self.background_action(action, cx)
+            }
             "Hopper" => {
                 // --- hoppers ---
                 let title = vm::title(&item.content_md);
@@ -674,11 +678,15 @@ impl MainView {
         if !ids.is_empty() && self.has_ancestors(&item.origin, &item.remote_id) {
             ids.push("Catch up");
         }
-        ids.into_iter()
+        let mut chips: Vec<vm::ActionChip> = ids
+            .into_iter()
             // A feed post has no id to link.
             .filter(|id| *id != "Link post" || ctx.blyg)
             .map(|id| vm::action_chip(id, &ctx))
-            .collect()
+            .collect();
+        // --- background --- Background / Foreground, the blyg (studio 0.61).
+        chips.extend(self.background_chips(item));
+        chips
     }
 
     // ------------------------------------------------------------ render

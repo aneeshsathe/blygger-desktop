@@ -27,6 +27,7 @@ fn rrow(sub: &str, id: &str, updated: Option<&str>, observed: &str) -> ReadingIt
         lineage_known: true,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 

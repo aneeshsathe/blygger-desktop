@@ -52,7 +52,9 @@ pub fn screen_status(view: super::View, unread: usize) -> ScreenStatus {
 
 /// A withdrawn post stays only when the user signalled or hoppered it.
 pub fn visible(r: &ReadingItem) -> bool {
-    r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty()
+    // --- background --- a withdrawn post the studio places (Background,
+    // or Foreground by your choice) is listed where it's placed.
+    r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty() || r.background.is_some()
 }
 
 /// The list as shown: tombstones hidden unless kept, one row per post (the
@@ -1263,6 +1265,7 @@ mod tests {
             lineage_known: false,
             source_url: None,
             generated: None,
+            background: None,
         };
         for q in [
             "",
@@ -1325,6 +1328,7 @@ mod tests {
             lineage_known: false,
             source_url: None,
             generated: None,
+            background: None,
         };
         let all = blyg_core::PickQuery::default();
         let q = blyg_core::pick::search_in(

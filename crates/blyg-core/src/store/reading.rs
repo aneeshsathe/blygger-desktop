@@ -193,6 +193,7 @@ fn group_key(it: &ReadingItem) -> String {
 fn to_json(it: &ReadingItem) -> Result<String> {
     let mut clean = it.clone();
     clean.read_version = None;
+    clean.background = None; // --- background --- never stored with the row
     serde_json::to_string(&clean).map_err(|e| CoreError::Storage(e.to_string()))
 }
 
@@ -540,14 +541,31 @@ impl Store {
             .collect()
     }
 
-    /// How many of [`Self::reading`]'s posts are unread (withdrawn ones
-    /// never are), without copying any of them.
+    /// How many of [`Self::reading`]'s posts are unread (Background ones
+    /// never are: withdrawn, or, once the studio's lens is known, what it
+    /// lists), without copying any of them.
     pub fn unread_count(&self) -> usize {
         let rows = self.reading_rows();
+        // --- background ---
+        let set = self.background_set();
+        let background = |it: &ReadingItem| match &set {
+            Some(s) => s.of(&(it.subscription_id.clone(), it.remote_id.clone())).on,
+            None => it.state == "tombstone",
+        };
         listed(&rows)
             .into_iter()
-            .filter(|r| r.item.is_unread() && r.item.state != "tombstone")
+            .filter(|r| r.item.is_unread() && !background(&r.item))
             .count()
+    }
+
+    /// --- background --- Every held row of one subscription, withdrawn ones
+    /// too (a whole blyg moved to Background or back).
+    pub fn reading_rows_of(&self, sub: &str) -> Vec<ReadingItem> {
+        self.reading_rows()
+            .iter()
+            .filter(|r| r.item.subscription_id == sub)
+            .map(|r| r.item.clone())
+            .collect()
     }
 
     /// --- background --- Withdrawn posts only (studio 0.49's Background

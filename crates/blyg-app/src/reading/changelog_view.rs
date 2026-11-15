@@ -436,6 +436,15 @@ impl MainView {
                 .child("Reading your blyg's settings…")
                 .into_any_element(),
         };
+        // --- background --- the blyg's Background rules (studio 0.61).
+        let background = self.render_background_settings(cx).map(|el| {
+            div()
+                .flex()
+                .gap(px(12.))
+                .py(px(7.))
+                .child(label("BACKGROUND"))
+                .child(div().flex_1().child(el))
+        });
         div()
             .flex()
             .flex_col()
@@ -448,6 +457,7 @@ impl MainView {
                     .child(label("CHANGELOG"))
                     .child(div().flex_1().child(changelog)),
             )
+            .children(background)
             .into_any_element()
     }
 

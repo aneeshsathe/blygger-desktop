@@ -10,6 +10,7 @@
 //! is what makes coalescing trivial (50 keystrokes = one pending `save` whose
 //! `not_before` keeps moving).
 
+mod background; // --- background ---
 mod browse; // --- browse ---
 mod folders; // --- reader folders ---
 mod hoppers; // --- hoppers ---
