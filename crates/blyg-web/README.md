@@ -173,9 +173,11 @@ cookie.
   `/studio/login` in a new tab; come back and the page catches up); any
   other answer (a static server's 404) is the demo. No answer at all, with
   a live store already in this browser, opens that store offline.
-- **Only `/api/`.** Every request goes through `live.js`'s `call`, which
+- **Only `/api/`.** Every request goes through `net.js`'s `call`, which
   refuses anything but a same-origin `/api/…` path, with
-  `credentials: 'same-origin'`. The Worker refuses a cookie request whose
+  `credentials: 'same-origin'`. The reads a start always makes go out from
+  there as soon as the page arrives (see Start-up); they pass the same
+  check. The Worker refuses a cookie request whose
   `Origin` isn't its own or whose `Sec-Fetch-Site` is `cross-site` (403);
   the page's own requests pass. Nothing logs a header.
 - **Contract 5.7.0.** `src/api.rs` builds the requests and reads the
@@ -283,6 +285,48 @@ still name become `env` imports. `www/env.js` stubs them so they throw if
 they're ever called. When `node` is installed, the build fails if a new
 import appears without a stub.
 
+## Start-up
+
+Measured by `scripts/browser-web-perf-check.sh` (headless Chromium, two
+local studios under `wrangler dev`, `dev-proxy.py`, 3,000 reading posts and
+16 own posts; the studio is 0.60.0):
+
+| | before | now | the studio |
+|---|---:|---:|---:|
+| Cold: first own-posts list | 950–1,100 ms | 145–370 ms | 495–499 ms |
+| Cold: Reading shown | 1,050–1,220 ms | 240–470 ms | 742–743 ms |
+| Cold: requests | 56 | 57 (30 of them Reading pages) | 30 |
+| Cold: bytes on the wire | 4.1 MB | 1.2–1.3 MB | 0.53 MB |
+| Warm: Reading shown | 220–240 ms | 170–210 ms | 232 ms |
+| Scroll, 60 steps over the stream | 2–3 long tasks (65–87 ms) | none | none |
+
+What a start does, in order:
+
+1. `index.html` asks for every module and the wasm at once
+   (`modulepreload`, `preload`), and `net.js`, which imports nothing, runs as
+   soon as it arrives: it sends the reads every live start makes
+   (capabilities, settings, changes) and, on a first start in this browser
+   (`burrow-web.live-held` unset), the first page of the posts, the reading
+   list and the hoppers. `call` hands each answer to the first request for
+   exactly that path, once, within 10 s; the first refresh drops the rest.
+2. While the wasm compiles, IndexedDB is read (one connection for every
+   read and write). `new_live` doesn't build the demo's sample posts.
+3. The first refresh reads the lists side by side and draws each as it
+   lands, before writing anything to IndexedDB. On a first start the first
+   Reading page is drawn at once, in the list order, and the other pages
+   are read behind it (one after another: they're cursor-paged, 100 at
+   most). The page lists `/api/reading/imported` by when your blyg fetched
+   each post and Burrow by the post's own date; when those disagree (a
+   backfill whose posts were fetched out of date order), later pages can
+   add rows above the first screen. They never reorder the rows shown.
+4. The service worker registers after that, so its install (which reads
+   every file of the build again, revalidated on a blyg) doesn't compete
+   with the first lists.
+
+A redraw doesn't work out the stream's order again (`read_api` `placed`,
+kept until a row changes), and scrolling adds the next 100 cards below the
+ones drawn (`reading_range`, `drawMore`) instead of drawing them all again.
+
 ## Size
 
 `serve.sh` builds with the workspace's `wasm-release` profile
@@ -300,6 +344,27 @@ stripped). Measured on the module after `wasm-bindgen`:
 `wasm-opt` (Binaryen 116, from the pinned `wasm-opt` crate) makes the raw
 module about 10% smaller but the compressed one about 4% larger, at -Oz, -Os
 and -O2 alike. That's why it is opt-in (`WASM_OPT=1`).
+
+Measured again in November 2026 (the module has grown with the web features):
+
+| Build | raw | gzip -9 | brotli -11 |
+|---|---:|---:|---:|
+| `wasm-release` (what `serve.sh` ships) | 3,847,132 | 1,384,852 | 1,031,640 |
+| `wasm-release` + `wasm-opt -Oz` | 3,479,968 | 1,457,222 | 1,088,059 |
+| `wasm-release` with `opt-level = "s"` | 4,276,540 | 1,543,531 | 1,119,545 |
+
+So the profile stays as it is, and `wasm-opt` stays off. No feature can be
+dropped from this crate's own manifest: the size is in `blyg-render`'s and
+`blyg-core`'s dependencies (see below).
+
+**Compression is the host's job, and it matters most**: 3.8 MB raw is about
+1.0 MB as Brotli. A blyg on Cloudflare compresses the wasm, JavaScript and
+CSS as it serves them (`application/wasm` is on Cloudflare's list), so the
+release zip holds the plain files only. `dev-proxy.py` does the same
+locally: Brotli from `.br` copies beside the files (`PRECOMPRESS=1
+serve.sh` writes them; the service worker's list leaves them out), else
+gzip, with an ETag and 304s. Another host should serve the files with
+`Content-Encoding: br` or `gzip` and validators (ETag or Last-Modified).
 
 What dominates, from `twiggy` on a build that keeps names: one data segment
 of 1.25 MB (41%) and 1.8 MB of code. The data is lookup tables: HTML

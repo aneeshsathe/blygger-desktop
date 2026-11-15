@@ -2,9 +2,9 @@
 // /burrow/, the page reaches the owner API at {mount}/api on the same origin. The
 // Studio session cookie (HttpOnly, so this page never sees it) is the only
 // credential: there's no token, nothing is stored, and nothing is logged.
-// Every request goes through `call`, which refuses anything that isn't a
-// same-origin /api/ path. What to send and what an answer means is Burrow's
-// Rust (src/api.rs, src/live.rs); this only fetches.
+// Every request goes through `call` (net.js), which refuses anything that
+// isn't a same-origin /api/ path. What to send and what an answer means is
+// Burrow's Rust (src/api.rs, src/live.rs); this only fetches.
 //
 // Local first: edits land in the store at once and persist to IndexedDB;
 // the outbox (edits, deletes, read marks, hopper changes) is sent after
@@ -13,46 +13,14 @@
 // never overwrites: the blyg's copy is fetched and you choose.
 
 import { Burrow, Pager } from './pkg/blyg_web.js';
-import { $, S, esc, now, load, persist, persistReading, toast } from './core.js';
+import { $, S, esc, now, load, persist, persistReading, toast, pref } from './core.js';
+import { MOUNT, apiPath, call, dropEarly, HELD } from './net.js';
 
-const API = '/api/';
-
-/** The blyg's mount: the app is served at {mount}/burrow/, the owner API at
-    {mount}/api and the Studio at {mount}/studio. Empty for a blyg at the
-    host root. Paths here (and from the Rust) are mount-relative `/api/…`. */
-export const MOUNT = (() => {
-  const p = location.pathname;
-  const i = p.lastIndexOf('/burrow/');
-  return i > 0 ? p.slice(0, i) : '';
-})();
+export { MOUNT, apiPath, call };
 
 // The sign-in link follows the mount too.
 for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
   a.href = `${MOUNT}/studio/login?return_to=${encodeURIComponent(`${MOUNT}/burrow/`)}`;
-}
-
-/** Whether `path` is a same-origin owner-API path (and nothing else). */
-export function apiPath(path) {
-  return typeof path === 'string' && path.startsWith(API) && !/\/\.\.?(\/|$)|\\|\/\/|^[a-z]+:/i.test(path);
-}
-
-/** One owner-API request. Never throws: no answer is status 0. */
-export async function call(method, path, body) {
-  if (!apiPath(path)) throw new Error('Burrow only talks to this blyg’s own /api/');
-  const headers = { accept: 'application/json' };
-  // --- web-writing --- A FormData body (an image upload) goes as multipart.
-  const form = typeof FormData !== 'undefined' && body instanceof FormData;
-  // --- end web-writing ---
-  if (body !== undefined && body !== null && !form) headers['content-type'] = 'application/json';
-  try {
-    const res = await fetch(MOUNT + path, {
-      method, headers, credentials: 'same-origin', cache: 'no-store', redirect: 'error', mode: 'same-origin',
-      body: form ? body : body !== undefined && body !== null ? JSON.stringify(body) : undefined,
-    });
-    return { status: res.status, body: await res.text(), retryAfter: res.headers.get('retry-after') ?? undefined, www: res.headers.has('www-authenticate') };
-  } catch {
-    return { status: 0, body: '', retryAfter: undefined, www: false };
-  }
 }
 
 /** What this origin is: `{mode: live|signin|unsupported|demo|offline}`. */
@@ -63,20 +31,32 @@ export async function detect() {
 }
 
 /** A whole cursor-paged list (restarted on cursor-expired, never partial).
-    A failure carries the answer's status and Retry-After, for the backoff. */
-async function readAll(path, query = '', limit = 100) {
+    A failure carries the answer's status and Retry-After, for the backoff.
+    `first`, when given, gets the first page's items (JSON) as soon as it's
+    in, while the rest is read. */
+async function readAll(path, query = '', limit = 100, first) {
   const p = new Pager(path, query, limit);
   try {
+    let pages = 0;
     for (let next = p.next_path(); next !== undefined; next = p.next_path()) {
       const r = await call('GET', next);
       const err = JSON.parse(p.feed(r.status, r.body, r.retryAfter));
       if (err) return { error: err, status: r.status, retryAfter: r.retryAfter };
+      if (first && !pages++ && p.next_path() !== undefined) first(p.so_far());
     }
     return { json: p.items() };
   } finally { p.free(); }
 }
 
 // ---------------------------------------------------------------- start
+let saved;
+/** The live store and reading list as last written, read from IndexedDB
+    once: app.js starts this while the WebAssembly compiles. */
+export function loadSaved() {
+  saved ??= Promise.all([load('live'), load('live-reading')]);
+  return saved;
+}
+
 /** Open the live store (as last persisted, for offline) on this blyg. */
 export async function start(online) {
   let base = location.origin;
@@ -87,7 +67,9 @@ export async function start(online) {
     if (st.status === 200) S.wSettings = st.body;
     // --- end web-writing ---
   }
-  S.B = Burrow.new_live(now(), await load('live'), await load('live-reading'), online ? base : '');
+  const [store, reading] = await loadSaved();
+  saved = undefined; // read once: a later start (none today) reads again
+  S.B = Burrow.new_live(now(), store, reading, online ? base : '');
   if (!online) S.B.set_offline(true);
   hooks();
   // --- web-writing --- Settings now; contacts once the page has drawn.
@@ -124,7 +106,7 @@ export function refresh() {
   refreshing = (async () => {
     try {
       do { refreshAgain = false; await refreshOnce(); } while (refreshAgain && !S.B.is_offline());
-    } finally { refreshing = null; schedule(); }
+    } finally { refreshing = null; dropEarly(); schedule(); }
   })();
   return refreshing;
 }
@@ -135,8 +117,9 @@ export function refresh() {
     seen. */
 async function refreshOnce() {
   // The outbox is sent after typing stops anyway; here only if it holds
-  // something (an empty flush redraws the page).
-  if (JSON.parse(S.B.outbox_next('[]'))) await flush();
+  // something (an empty flush redraws the page). What was read early
+  // (net.js) predates what it sends, so it goes.
+  if (JSON.parse(S.B.outbox_next('[]'))) { dropEarly(); await flush(); }
   if (S.B.is_offline()) return;
   const ch = await call('GET', '/api/changes');
   const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, ch.retryAfter, document.visibilityState === 'visible', now()));
@@ -145,55 +128,80 @@ async function refreshOnce() {
   holdUntil = 0;
   nextDelay = plan.every;
   const rev = JSON.stringify(plan.rev);
-  // A read that failed: back off on a 429 or 5xx, say what went wrong.
-  const failed = (r) => {
-    const w = S.B.poll_failed(r.status, r.retryAfter);
-    if (w) hold(w);
-    refreshFailed = true;
-    problem(r.error);
-  };
+  // The lists are read side by side, and each is drawn as soon as it's in:
+  // your posts don't wait for thousands of reading rows.
   let changed = false;
+  let undrawn = false; // changed, and not drawn yet
+  let whole = false; // the whole reading list was read
+  let failure = null;
+  const fail = (r) => { failure ??= r; };
+  const drawn = () => { changed = true; S.render(); };
+  const jobs = [];
   if (plan.items) {
-    const items = await readAll('/api/items');
-    if (items.error) { failed(items); return; }
-    S.B.live_items(items.json);
-    S.B.changes_accept('items', rev, now(), items.json);
-    changed = true;
+    jobs.push(readAll('/api/items').then((items) => {
+      if (items.error) { fail(items); return; }
+      S.B.live_items(items.json);
+      S.B.changes_accept('items', rev, now(), items.json);
+      drawn();
+    }));
   }
   if (plan.reading) {
-    const rows = await readAll('/api/reading/imported');
-    const hops = await readAll('/api/hoppers');
-    if (!rows.error || rows.error.code === 'not-found') {
-      S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
-      // Each row carries its hoppers and thumb: those are settled too.
-      // (What was fetched paces the list's safety net, `fetched` in
-      // `changes_accept`; the lists settled with it leave theirs alone.)
-      if (!rows.error && !hops.error) {
-        S.B.changes_accept('reading', rev, now(), rows.json + hops.json);
-        for (const l of ['hoppers', 'signals']) S.B.changes_accept(l, rev, now(), undefined);
-      }
-      changed = true;
-    } else { failed(rows); return; }
+    // A first start (nothing held yet) draws the first page at once, in
+    // the list's order, and puts the rest in behind it.
+    const empty = S.B.reading_held() === 0;
+    const hopsP = readAll('/api/hoppers');
+    jobs.push(readAll('/api/reading/imported', '', 100, empty ? (page) => {
+      if (S.B.reading_held() === 0) { S.B.live_reading(page, '[]'); drawn(); }
+    } : undefined).then(async (rows) => {
+      const hops = await hopsP;
+      if (!rows.error || rows.error.code === 'not-found') {
+        S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
+        // Each row carries its hoppers and thumb: those are settled too.
+        // (What was fetched paces the list's safety net, `fetched` in
+        // `changes_accept`; the lists settled with it leave theirs alone.)
+        if (!rows.error && !hops.error) {
+          S.B.changes_accept('reading', rev, now(), rows.json + hops.json);
+          for (const l of ['hoppers', 'signals']) S.B.changes_accept(l, rev, now(), undefined);
+          whole = true;
+        }
+        drawn();
+      } else fail(rows);
+    }));
   } else {
     if (plan.hoppers) {
-      const r = await readHoppers();
-      if (r.error) { failed(r); return; }
-      if (JSON.parse(S.B.live_hoppers(r.hoppers, r.members)).changed) changed = true;
-      S.B.changes_accept('hoppers', rev, now(), r.hoppers + r.members);
+      jobs.push(readHoppers().then((r) => {
+        if (r.error) { fail(r); return; }
+        if (JSON.parse(S.B.live_hoppers(r.hoppers, r.members)).changed) changed = undrawn = true;
+        S.B.changes_accept('hoppers', rev, now(), r.hoppers + r.members);
+      }));
     }
     if (plan.signals) {
-      const sig = await readAll('/api/signals');
-      if (sig.error && sig.error.code !== 'not-found') { failed(sig); return; }
-      // No route: the rows' own thumbs stand.
-      if (!sig.error && JSON.parse(S.B.live_signals(sig.json)).changed) changed = true;
-      S.B.changes_accept('signals', rev, now(), sig.error ? '' : sig.json);
+      jobs.push(readAll('/api/signals').then((sig) => {
+        if (sig.error && sig.error.code !== 'not-found') { fail(sig); return; }
+        // No route: the rows' own thumbs stand.
+        if (!sig.error && JSON.parse(S.B.live_signals(sig.json)).changed) changed = undrawn = true;
+        S.B.changes_accept('signals', rev, now(), sig.error ? '' : sig.json);
+      }));
     }
   }
-  if (refreshFailed && !S.B.is_offline()) { refreshFailed = false; S.B.sync_phase('synced'); if (!changed) S.render({ loadEditor: false }); }
+  await Promise.all(jobs);
+  if (failure) {
+    // A read that failed: back off on a 429 or 5xx, say what went wrong.
+    const w = S.B.poll_failed(failure.status, failure.retryAfter);
+    if (w) hold(w);
+    refreshFailed = true;
+    problem(failure.error);
+  } else if (refreshFailed && !S.B.is_offline()) {
+    refreshFailed = false;
+    S.B.sync_phase('synced');
+    if (!changed) S.render({ loadEditor: false });
+  }
   if (!changed) return;
+  if (undrawn) S.render();
   await persist({ quiet: true });
-  await persistReading();
-  S.render();
+  // From now on, a start reads only what changed (net.js reads no first
+  // pages early).
+  if (await persistReading() && whole) pref.set(HELD, '1');
 }
 
 /** The hoppers and each one's memberships, as JSON for `live_hoppers`. A

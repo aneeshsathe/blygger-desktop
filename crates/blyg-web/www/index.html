@@ -20,6 +20,23 @@
 <!-- web-writing --><link rel="stylesheet" href="writing.css"><!-- end web-writing -->
 <link rel="stylesheet" href="hub.css">
 <script type="importmap">{ "imports": { "env": "./env.js" } }</script>
+<!-- Everything a start needs is asked for at once, not one module after
+     another: net.js starts the first owner-API reads (it imports nothing,
+     and runs as soon as it arrives),
+     and the modules and the WebAssembly load beside them. After the import
+     map, which must come before any module is fetched. -->
+<script type="module" async src="net.js"></script>
+<link rel="preload" href="pkg/blyg_web_bg.wasm" as="fetch" type="application/wasm" crossorigin>
+<link rel="modulepreload" href="pkg/blyg_web.js">
+<link rel="modulepreload" href="app.js">
+<link rel="modulepreload" href="core.js">
+<link rel="modulepreload" href="live.js">
+<link rel="modulepreload" href="desk.js">
+<link rel="modulepreload" href="phone.js">
+<link rel="modulepreload" href="web-reading.js">
+<link rel="modulepreload" href="writing.js">
+<link rel="modulepreload" href="hub.js">
+<link rel="modulepreload" href="env.js">
 </head>
 <body>
 

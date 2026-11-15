@@ -7,7 +7,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, outcome, publishedToast, copyText,
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme, draw, onNearEnd, settle,
+  swipeCards, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
 } from './core.js';
 // --- web-reading ---
 import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
@@ -147,11 +147,24 @@ function renderReading() {
   rmore = R.total > R.rows.length;
   const host = $('#d-stream');
   draw(host, R.rows.length
-    ? R.rows.map(cardHtml).join('') + (rmore ? `<div class="empty">${R.total - R.rows.length} more…</div>` : '')
+    ? R.rows.map(cardHtml).join('') + moreLine(R.total - R.rows.length)
     : `<div class="empty">${esc(R.empty || 'Nothing matches.')}</div>`);
   host.querySelector('.card.cur')?.classList.remove('cur');
   if (rcur) host.querySelector(`.card[data-key="${CSS.escape(rcur)}"]`)?.classList.add('cur');
   deskSources(); // --- web-reading --- the sources pane --- end web-reading ---
+}
+
+const moreLine = (n) => (n > 0 ? `<div class="empty stream-more">${n} more…</div>` : '');
+/** The next page of the stream, below the cards drawn (not all of them
+    again). Anything else that changes the stream draws it whole. */
+function moreReading() {
+  if (S.layout !== 'desk' || view !== 'reading' || !rmore) return;
+  const R = JSON.parse(S.B.reading_range(now(), rq, false, rkeys.length, RPAGE));
+  if (!R.rows.length || R.total <= rkeys.length) { rlimit = rkeys.length + RPAGE; renderReading(); return; }
+  rkeys = rkeys.concat(R.rows.map((r) => r.key));
+  rlimit = rkeys.length;
+  rmore = R.total > rkeys.length;
+  drawMore($('#d-stream'), R.rows.map(cardHtml).join('') + moreLine(R.total - rkeys.length));
 }
 
 // ---------------------------------------------------------------- preview
@@ -356,7 +369,7 @@ export function initDesk() {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const i = rkeys.indexOf(rcur) + (e.key === 'ArrowDown' ? 1 : -1);
-        if (i >= rkeys.length && rmore) { rlimit += RPAGE; renderReading(); }
+        if (i >= rkeys.length && rmore) moreReading();
         const k = rkeys[Math.max(0, Math.min(rkeys.length - 1, i))];
         if (k) openReading(k);
       } else if (e.key === 'Escape') { omni.value = ''; rq = ''; rlimit = RPAGE; render(); }
@@ -430,7 +443,6 @@ export function initDesk() {
     readAction(b.dataset.act, b.dataset.key);
   });
   // The stream scrolls itself, or (when the window is taller) the page does.
-  const moreReading = () => { if (S.layout === 'desk' && view === 'reading' && rmore) { rlimit += RPAGE; renderReading(); } };
   onNearEnd($('#d-stream'), moreReading);
   onNearEnd(window, moreReading);
   $('#d-ractions').addEventListener('click', (e) => { const b = e.target.closest('[data-ra]'); if (b) readAction(b.dataset.ra); });

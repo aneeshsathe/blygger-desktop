@@ -29,7 +29,7 @@ use wasm_bindgen::prelude::*;
 use crate::api::{self, ApiError, Request};
 use crate::read_api::key_of;
 use crate::store::{Conflict, HopOp, PendingDelete, ReadOp, Seen, WebStore};
-use crate::{Burrow, Outcome, at, json, seed};
+use crate::{Burrow, Outcome, json, seed};
 
 /// The reading list's own snapshot (IndexedDB key `live-reading`): the
 /// rows and hoppers as last read, and the revisions they were read under.
@@ -591,8 +591,9 @@ impl Burrow {
     /// Live mode on the blyg whose public base is `base`. `saved`: the
     /// live store as last persisted (a different store from the demo's);
     /// `reading`: the reading list as `reading_json` last wrote it.
+    /// (`_now_ms`: the demo dates its sample posts by it; live has none.)
     pub fn new_live(
-        now_ms: f64,
+        _now_ms: f64,
         saved: Option<String>,
         reading: Option<String>,
         base: &str,
@@ -605,7 +606,6 @@ impl Burrow {
         if !base.is_empty() {
             store.live.base = base.to_string();
         }
-        let mut b = Burrow::new(at(now_ms).timestamp_millis() as f64, None);
         let cache = reading
             .as_deref()
             .and_then(|s| serde_json::from_str::<ReadingCache>(s).ok());
@@ -613,21 +613,25 @@ impl Burrow {
         // its own snapshot on the next write.
         let legacy = std::mem::take(&mut store.live.reading);
         let legacy_hoppers = std::mem::take(&mut store.live.hoppers);
-        b.reading_dirty = cache.is_none() && !legacy.is_empty();
+        let dirty = cache.is_none() && !legacy.is_empty();
         let cache = cache.unwrap_or(ReadingCache {
             rows: legacy,
             hoppers: legacy_hoppers,
             seen: Default::default(),
         });
-        b.rd = seed::Reading {
-            rows: cache.rows,
-            subs: vec![],
-            hoppers: cache.hoppers,
-        };
+        let mut b = Burrow::from_parts(
+            store,
+            seed::Reading {
+                rows: cache.rows,
+                subs: vec![],
+                hoppers: cache.hoppers,
+            },
+        );
+        b.reading_dirty = dirty;
         b.reading_seen = cache.seen;
-        b.store = store;
         b.place_reading_rows();
         // Marks made since the list was written, sent or not.
+        b.rows_changed();
         for r in &mut b.rd.rows {
             let key = key_of(r);
             if let Some(v) = b.store.read.get(&key) {
@@ -638,8 +642,6 @@ impl Burrow {
             }
         }
         b.overlay_reading();
-        b.list = crate::vm::ListModel::default();
-        b.list.set_query("", b.store.arrange(b.store.items()).0);
         b
     }
 
@@ -695,6 +697,17 @@ impl Burrow {
         self.reading_dirty = true;
         self.overlay_reading();
         json(&json!({ "rows": self.rd.rows.len(), "hoppers": self.rd.hoppers.len() }))
+    }
+
+    /// How many rows of the blyg's reading list are held (not counting your
+    /// own posts among them), whatever the view shows. None on a first
+    /// start, until its first page is in.
+    pub fn reading_held(&self) -> usize {
+        self.rd
+            .rows
+            .iter()
+            .filter(|r| !blyg_core::own::is_own_row(r))
+            .count()
     }
 
     /// The reading list and hoppers, for their own IndexedDB snapshot
@@ -852,6 +865,7 @@ impl Burrow {
         }
         let mut changed = self.rd.hoppers != hoppers;
         self.rd.hoppers = hoppers;
+        self.rows_changed();
         for r in &mut self.rd.rows {
             let want = of.remove(&key_of(r)).unwrap_or_default();
             let (mut a, mut b) = (r.hoppers.clone(), want.clone());
@@ -887,6 +901,7 @@ impl Burrow {
             })
             .collect();
         let mut changed = false;
+        self.rows_changed();
         for r in &mut self.rd.rows {
             let t = thumbs.get(&key_of(r)).copied();
             if r.thumb != t {
@@ -1127,6 +1142,12 @@ impl Pager {
         }
     }
 
+    /// What's been read so far, as a JSON array, while the rest is read
+    /// (`www/live.js` draws a first start's first page with it).
+    pub fn so_far(&self) -> String {
+        json(&self.0.so_far())
+    }
+
     /// Everything read, as a JSON array (once `next_path` is `undefined`).
     pub fn items(&mut self) -> String {
         json(&self.0.take_items())
@@ -1136,6 +1157,7 @@ impl Pager {
 impl Burrow {
     /// Put unsent read marks and hopper changes over the blyg's rows.
     pub(crate) fn overlay_reading(&mut self) {
+        self.rows_changed();
         for r in &mut self.rd.rows {
             let key = key_of(r);
             if let Some(op) = self

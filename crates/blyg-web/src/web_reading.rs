@@ -594,6 +594,7 @@ impl Burrow {
         self.rd.subs.retain(|s| s.id != id);
         self.wr.diags.remove(id);
         let before = self.rd.rows.len();
+        self.rows_changed();
         self.rd.rows.retain(|r| r.subscription_id != id);
         if self.rd.rows.len() != before {
             self.reading_dirty = true;
@@ -605,6 +606,7 @@ impl Burrow {
 
     fn wr_drop_hopper(&mut self, id: &str) {
         self.rd.hoppers.retain(|h| h.id != id);
+        self.rows_changed();
         for r in self.rd.rows.iter_mut() {
             if r.hoppers.iter().any(|h| h == id) {
                 r.hoppers.retain(|h| h != id);
@@ -621,6 +623,7 @@ impl Burrow {
     }
 
     fn wr_set_thumb(&mut self, key: &str, thumb: Option<i8>) {
+        self.rows_changed();
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key)
             && r.thumb != thumb
         {
