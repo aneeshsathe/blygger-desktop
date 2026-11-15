@@ -678,11 +678,32 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
         "sw.js must pass /api/ and /studio/ straight to the network"
     );
     assert!(worker.contains("if (req.method !== 'GET' || !mine(req.url)) return;"));
+    // One door: net.js `call`, which refuses anything but a same-origin
+    // /api/ path. No other page module fetches anything.
+    let net = include_str!("../www/net.js");
+    assert!(net.contains("if (!apiPath(path)) throw"));
+    assert!(net.contains("credentials: 'same-origin'"));
+    assert!(net.contains("mode: 'same-origin'"));
+    // Its early reads go through the same guard, and only GETs are taken.
+    assert!(net.contains("if (apiPath(path) && !early.has(path))"));
+    assert!(net.contains("const e = method === 'GET' ? early.get(path) : undefined;"));
+    assert_eq!(
+        net.matches(" fetch(").count(),
+        1,
+        "net.js fetches in one place"
+    );
     let live = include_str!("../www/live.js");
-    assert!(live.contains("if (!apiPath(path)) throw"));
-    assert!(live.contains("credentials: 'same-origin'"));
+    for (name, src) in PAGE_MODULES {
+        if *name != "net.js" {
+            assert!(
+                !src.contains("fetch("),
+                "{name} must call net.js `call`, not fetch"
+            );
+        }
+    }
     // Nothing in the page reads a cookie or sends a token.
     for src in [
+        net,
         live,
         include_str!("../www/core.js"),
         include_str!("../www/app.js"),
@@ -693,6 +714,58 @@ fn the_page_only_calls_its_own_api_and_the_worker_never_touches_it() {
     }
     // The Blyg list only opens other screens: it fetches nothing itself.
     assert!(!include_str!("../www/hub.js").contains("fetch("));
+}
+
+/// The page's modules (not the service worker), as index.html loads them.
+const PAGE_MODULES: &[(&str, &str)] = &[
+    ("app.js", include_str!("../www/app.js")),
+    ("core.js", include_str!("../www/core.js")),
+    ("desk.js", include_str!("../www/desk.js")),
+    ("env.js", include_str!("../www/env.js")),
+    ("hub.js", include_str!("../www/hub.js")),
+    ("live.js", include_str!("../www/live.js")),
+    ("net.js", include_str!("../www/net.js")),
+    ("phone.js", include_str!("../www/phone.js")),
+    ("web-reading.js", include_str!("../www/web-reading.js")),
+    ("writing.js", include_str!("../www/writing.js")),
+];
+
+#[test]
+fn a_start_asks_for_every_module_and_the_wasm_at_once() {
+    let html = include_str!("../www/index.html");
+    // Every module is preloaded (no import-by-import waterfall), after the
+    // import map (a module fetched before it would make the browser drop
+    // the map, and `env` wouldn't resolve).
+    let map = html.find(r#"<script type="importmap">"#).unwrap();
+    for (name, src) in PAGE_MODULES {
+        let found = if *name == "net.js" {
+            html.find(r#"<script type="module" async src="net.js">"#)
+        } else {
+            html.find(&format!(r#"<link rel="modulepreload" href="{name}">"#))
+        };
+        let at = found.unwrap_or_else(|| panic!("index.html must preload {name}"));
+        assert!(at > map, "{name} is preloaded before the import map");
+        // And every module a module imports is one of them.
+        for line in src
+            .lines()
+            .filter(|l| l.starts_with("import ") || l.starts_with("} from "))
+        {
+            if let Some(dep) = line
+                .split("from './")
+                .nth(1)
+                .and_then(|d| d.split('\'').next())
+            {
+                assert!(
+                    PAGE_MODULES.iter().any(|(n, _)| *n == dep) || dep == "pkg/blyg_web.js",
+                    "{name} imports {dep}, which index.html doesn't preload"
+                );
+            }
+        }
+    }
+    assert!(html.contains(r#"<link rel="modulepreload" href="pkg/blyg_web.js">"#));
+    assert!(html.contains(
+        r#"<link rel="preload" href="pkg/blyg_web_bg.wasm" as="fetch" type="application/wasm" crossorigin>"#
+    ));
 }
 
 // ---------------------------------------------------------------- speed (0.18.1)
@@ -785,6 +858,98 @@ fn the_stream_is_drawn_a_page_at_a_time() {
         v(b.reading_page(NOW, "", false, 1))["rows"][0]["excerpt"],
         "Low water at noon."
     );
+}
+
+#[test]
+fn the_next_page_of_the_stream_follows_the_cards_drawn() {
+    let mut b = Burrow::new_live(NOW, None, None, BASE);
+    b.live_reading(&reading_rows(120).to_string(), "[]");
+    let all = v(b.reading_view(NOW, "", false));
+    let all = all["rows"].as_array().unwrap();
+    let next = v(b.reading_range(NOW, "", false, 100, 100));
+    assert_eq!(next["total"], 120);
+    assert_eq!(next["rows"].as_array().unwrap()[..], all[100..]);
+    // Past the end: nothing, with the same counts.
+    let past = v(b.reading_range(NOW, "", false, 120, 100));
+    assert_eq!(
+        (
+            past["total"].as_u64(),
+            past["rows"].as_array().unwrap().len()
+        ),
+        (Some(120), 0)
+    );
+    // Unread only pages through the unread rows.
+    let unread = v(b.reading_range(NOW, "", true, 50, 100));
+    assert_eq!(unread["rows"].as_array().unwrap().len(), 10);
+}
+
+#[test]
+fn the_streams_order_is_kept_until_a_row_changes() {
+    let mut b = Burrow::new_live(NOW, None, None, BASE);
+    let mut rows = reading_rows(3);
+    for (i, r) in rows.as_array_mut().unwrap().iter_mut().enumerate() {
+        r["updated"] = json!(format!("2026-11-0{}T09:00:00Z", i + 1));
+        r["readVersion"] = json!(1);
+    }
+    b.live_reading(&rows.to_string(), "[]");
+    let keys = |b: &Burrow| -> Vec<String> {
+        v(b.reading_view(NOW, "", false))["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["key"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(keys(&b), ["sub1|r2", "sub1|r1", "sub1|r0"]);
+    assert_eq!(keys(&b), ["sub1|r2", "sub1|r1", "sub1|r0"], "drawn again");
+    // The oldest is edited after you read it: it moves to the top, and a
+    // withdrawn post (not kept) leaves, each at the next draw.
+    rows[0]["version"] = json!(2);
+    rows[2]["withdrawn"] = json!(true);
+    b.live_reading(&rows.to_string(), "[]");
+    assert_eq!(keys(&b), ["sub1|r0", "sub1|r1"]);
+    // Read it: back in its place.
+    b.open_reading("sub1|r0", NOW);
+    assert_eq!(keys(&b), ["sub1|r1", "sub1|r0"]);
+}
+
+#[test]
+fn a_first_start_draws_the_first_page_while_the_rest_is_read() {
+    // `readAll` hands the first page over with `so_far` while it reads on.
+    let mut p = crate::live::Pager::new("/api/reading/imported", "", 2);
+    let page = |rows: Value, next: Option<&str>| {
+        json!({ "items": rows, "page": { "limit": 2, "nextCursor": next } }).to_string()
+    };
+    let rows = reading_rows(3);
+    let rows = rows.as_array().unwrap();
+    assert_eq!(
+        p.next_path().as_deref(),
+        Some("/api/reading/imported?limit=2")
+    );
+    assert_eq!(
+        p.feed(200, &page(json!(rows[..2]), Some("c1")), None),
+        "null"
+    );
+    let first = v(p.so_far());
+    assert_eq!(first.as_array().unwrap().len(), 2);
+    // Nothing of theirs is held yet (your own posts don't count), so the
+    // page draws it at once.
+    let mut b = live();
+    assert_eq!(b.reading_held(), 0);
+    b.live_reading(&first.to_string(), "[]");
+    assert_eq!(b.reading_held(), 2);
+    assert_eq!(p.feed(200, &page(json!(rows[2..]), None), None), "null");
+    assert_eq!(p.next_path(), None);
+    b.live_reading(&p.items(), "[]");
+    assert_eq!(b.reading_held(), 3);
+}
+
+#[test]
+fn live_mode_starts_without_the_demos_sample_posts() {
+    let b = Burrow::new_live(NOW, None, None, BASE);
+    assert_eq!(b.reading_held(), 0);
+    assert_eq!(v(b.reading_view(NOW, "", false))["total"], 0);
+    assert!(v(b.view(NOW))["rows"].as_array().unwrap().is_empty());
 }
 
 fn changes(epoch: &str, items: u64, reading: u64) -> String {

@@ -320,6 +320,11 @@ pub struct Burrow {
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
     excerpts: std::cell::RefCell<std::collections::HashMap<String, (u32, String)>>,
+    /// The stream's order (`read_api` `placed`), as indices into the
+    /// reading rows, worked out once per change of the rows instead of on
+    /// every redraw (one every 30 s, over thousands of posts). Whatever
+    /// changes a row calls `rows_changed`.
+    placed: std::cell::RefCell<Option<(usize, Vec<usize>)>>,
     // --- web-reading --- sources, subscriptions, mentions, peek.
     wr: web_reading::WebReading,
     // --- end web-reading ---
@@ -338,9 +343,24 @@ impl Burrow {
             .as_deref()
             .and_then(WebStore::from_json)
             .unwrap_or_else(|| WebStore::seeded(now));
+        Burrow::from_parts(store, seed::reading(now))
+    }
+
+    /// Back to the sample data.
+    pub fn reset(&mut self, now_ms: f64) {
+        *self = Burrow::new(now_ms, None);
+    }
+
+    pub fn to_json(&self) -> String {
+        self.store.to_json()
+    }
+
+    /// A Burrow over `store` and the reading list `rd`, with the marks the
+    /// store holds put over the rows. Live mode starts here too, without
+    /// building the demo's sample data first (a cold start's cost).
+    pub(crate) fn from_parts(store: WebStore, mut rd: seed::Reading) -> Burrow {
         let mut list = ListModel::default();
         list.set_query("", store.arrange(store.items()).0);
-        let mut rd = seed::reading(now);
         for r in &mut rd.rows {
             let key = read_api::key_of(r);
             if let Some(v) = store.read.get(&key) {
@@ -365,20 +385,12 @@ impl Burrow {
             pace: Default::default(),
             nets: Default::default(),
             excerpts: Default::default(),
+            placed: Default::default(),
             // --- web-reading ---
             wr: Default::default(),
             // --- end web-reading ---
             writing: Default::default(), // --- web-writing ---
         }
-    }
-
-    /// Back to the sample data.
-    pub fn reset(&mut self, now_ms: f64) {
-        *self = Burrow::new(now_ms, None);
-    }
-
-    pub fn to_json(&self) -> String {
-        self.store.to_json()
     }
 
     fn current_id(&self) -> Option<LocalId> {

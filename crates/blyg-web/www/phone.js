@@ -8,7 +8,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, draw, onNearEnd, settle,
+  swipeCards, cardHtml, draw, drawMore, onNearEnd, settle,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -137,9 +137,21 @@ function renderStream() {
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
   if (!reading) return;
   phoneChip(); // --- web-reading --- what the stream shows --- end web-reading ---
+  streamShown = R.rows.length;
   draw($('#p-stream'), R.rows.length
-    ? R.rows.map(cardHtml).join('') + (R.total > R.rows.length ? `<p class="stream-more">${R.total - R.rows.length} more…</p>` : '')
+    ? R.rows.map(cardHtml).join('') + streamMore(R.total - R.rows.length)
     : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
+}
+const streamMore = (n) => (n > 0 ? `<p class="stream-more">${n} more…</p>` : '');
+let streamShown = 0; // Read cards on screen
+/** The next page of the stream, below the cards drawn (not all of them
+    again). */
+function streamNext() {
+  const R = JSON.parse(S.B.reading_range(now(), $('#p-rq').value, unreadOnly, streamShown, PAGE));
+  if (!R.rows.length || R.total <= streamShown) { streamN += PAGE; renderStream(); return; }
+  streamShown += R.rows.length;
+  streamN = streamShown;
+  drawMore($('#p-stream'), R.rows.map(cardHtml).join('') + streamMore(R.total - streamShown));
 }
 /** Back to the top of the stream: one page again. */
 function streamFromTop() {
@@ -471,8 +483,7 @@ export function initPhone() {
   $('#p-unreadOnly').addEventListener('click', () => { unreadOnly = !unreadOnly; streamFromTop(); renderStream(); });
   onNearEnd($('#p-stream'), () => {
     if (pview !== 'read' || !$('#p-stream .stream-more')) return;
-    streamN += PAGE;
-    renderStream();
+    streamNext();
   });
   swipeCards($('#p-stream'), {
     onRight: (key, c) => { outcome(S.B.set_read(key, true)); persist(); renderStream(); settle(c); },

@@ -173,9 +173,11 @@ cookie.
   `/studio/login` in a new tab; come back and the page catches up); any
   other answer (a static server's 404) is the demo. No answer at all, with
   a live store already in this browser, opens that store offline.
-- **Only `/api/`.** Every request goes through `live.js`'s `call`, which
+- **Only `/api/`.** Every request goes through `net.js`'s `call`, which
   refuses anything but a same-origin `/api/…` path, with
-  `credentials: 'same-origin'`. The Worker refuses a cookie request whose
+  `credentials: 'same-origin'`. The reads a start always makes go out from
+  there as soon as the page arrives (see Start-up); they pass the same
+  check. The Worker refuses a cookie request whose
   `Origin` isn't its own or whose `Sec-Fetch-Site` is `cross-site` (403);
   the page's own requests pass. Nothing logs a header.
 - **Contract 5.7.0.** `src/api.rs` builds the requests and reads the

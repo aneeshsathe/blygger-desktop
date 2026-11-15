@@ -25,7 +25,7 @@ Serve it only if you trust this repository's releases as much as your Studio
 code. What a release build does on the network, and how to check it:
 
 - It calls only same-origin `/api/…` paths. Every request goes through one
-  function (`crates/blyg-web/www/live.js`, `call`), which refuses anything
+  function (`crates/blyg-web/www/net.js`, `call`), which refuses anything
   else. It loads no third-party scripts, fonts or images.
 - Its service worker is scoped to `/burrow/`, caches only the app's own
   files, and passes `/api/` and `/studio/` requests straight to the network.
