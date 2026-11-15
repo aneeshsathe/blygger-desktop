@@ -314,6 +314,8 @@ pub struct Burrow {
     side_seen: std::collections::BTreeMap<String, store::Seen>,
     /// Live: how often to check `GET /api/changes`, and the backoff.
     pace: live::Pace,
+    /// Live: each list's safety net (`live::Net`). Not persisted.
+    nets: std::collections::BTreeMap<String, live::Net>,
     /// Each reading row's stream excerpt, by key, for the version it was
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
@@ -361,6 +363,7 @@ impl Burrow {
             reading_dirty: false,
             side_seen: Default::default(),
             pace: Default::default(),
+            nets: Default::default(),
             excerpts: Default::default(),
             // --- web-reading ---
             wr: Default::default(),

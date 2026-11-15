@@ -14,11 +14,12 @@
 //! choose one.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::time::Duration;
 
 use blyg_core::api::absolute_page;
 use blyg_core::api::wire::{ChangeState, WireItem, imported_row};
 use blyg_core::sync::{
-    FULL_PULL_EVERY, HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS, SyncOptions,
+    HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS, SyncOptions, next_full_every,
 };
 use blyg_core::{Hopper, Item, Kind, LocalId, ReadingItem, ServerId, Status};
 use serde::{Deserialize, Serialize};
@@ -708,11 +709,13 @@ impl Burrow {
     }
 
     /// Before a refresh: the blyg's `GET /api/changes` answer (with its
-    /// `Retry-After`), and `now`. Returns what this refresh reads:
+    /// `Retry-After`), whether the tab is visible, and `now`. Returns what
+    /// this refresh reads:
     ///
     /// - `{items, reading, hoppers, signals, rev, every}`: which lists to
     ///   read again (those whose [`LISTS`] dependencies moved since they
-    ///   were last read whole: native sync's map and rule), the change
+    ///   were last read whole, and, only while `visible`, those whose
+    ///   safety net ([`Net`]) is due: native sync's map and rule), the change
     ///   state they're read under (`rev`, handed back to `changes_accept`
     ///   by the run that read them, so overlapping runs never share one),
     ///   and when to check again (`every`, ms). Without a usable answer
@@ -727,6 +730,7 @@ impl Burrow {
         status: u16,
         body: &str,
         retry_after: Option<String>,
+        visible: bool,
         now_ms: f64,
     ) -> String {
         if let Some(wait) = self.pace.failed(status, retry_after.as_deref()) {
@@ -746,7 +750,9 @@ impl Burrow {
         let mut out = serde_json::Map::new();
         for (list, deps) in LISTS {
             let seen = self.seen_of(list);
-            let stale = stale(rev.as_ref().map(|(c, _)| c), seen, deps, now_ms);
+            // A hidden tab never runs the safety net.
+            let net = visible.then(|| self.net_every_ms(list));
+            let stale = stale(rev.as_ref().map(|(c, _)| c), seen, deps, net, now_ms);
             out.insert(list.to_string(), json!(stale));
         }
         out.insert("every".into(), json!(Pace::every(rev.is_some())));
@@ -758,14 +764,39 @@ impl Burrow {
     /// and installed: record `rev_json`, the change state the same run's
     /// `changes_plan` returned, as what it was read under. (A whole
     /// reading list carries each row's hoppers and thumb too, so the
-    /// caller accepts those with it.) Nothing is recorded without one.
-    pub fn changes_accept(&mut self, list: &str, rev_json: &str, now_ms: f64) {
+    /// caller accepts those with it, `fetched: None`.) Nothing is recorded
+    /// without one.
+    ///
+    /// `fetched` is what the read got (the answers' JSON, as one string),
+    /// for the list's safety net: read only because the net was due (its
+    /// counters hadn't moved) and the same as last time, the net's wait
+    /// doubles, up to 2 h; anything else puts it back to 10 min.
+    pub fn changes_accept(
+        &mut self,
+        list: &str,
+        rev_json: &str,
+        now_ms: f64,
+        fetched: Option<String>,
+    ) {
         let Ok(c) = serde_json::from_str::<ChangeState>(rev_json) else {
             return;
         };
         let Some((_, deps)) = LISTS.iter().find(|(l, _)| *l == list) else {
             return;
         };
+        if let Some(fetched) = fetched {
+            let forced = unchanged(&c, self.seen_of(list), deps);
+            let fp = fingerprint(&fetched);
+            let opts = SyncOptions::default();
+            let net = self.nets.entry(list.to_string()).or_default();
+            net.every = if forced {
+                let surprise = net.fetched.is_some_and(|was| was != fp);
+                next_full_every(net.every, surprise, &opts)
+            } else {
+                opts.full_pull_every
+            };
+            net.fetched = Some(fp);
+        }
         let seen = Seen {
             epoch: c.epoch.clone(),
             revisions: deps
@@ -1144,20 +1175,60 @@ pub const LISTS: &[(&str, &[&str])] = &[
     ("signals", SIGNALS_DEPS),
 ];
 
-/// Whether a list last read under `seen` must be read again: no usable
-/// change state, a new epoch, a moved dependency, or `FULL_PULL_EVERY`
-/// since its last whole read (the safety net).
-fn stale(c: Option<&ChangeState>, seen: &Seen, deps: &[&str], now_ms: f64) -> bool {
-    let Some(c) = c else {
-        return true;
-    };
-    c.epoch != seen.epoch
-        || now_ms - seen.at_ms >= FULL_PULL_EVERY.as_millis() as f64
-        || !deps.iter().all(|d| {
+/// Whether `c` still says what a list was last read under (`seen`): the
+/// same epoch and every dependency at the same revision (native's
+/// `unchanged`).
+fn unchanged(c: &ChangeState, seen: &Seen, deps: &[&str]) -> bool {
+    c.epoch == seen.epoch
+        && deps.iter().all(|d| {
             c.domains
                 .get(*d)
                 .is_some_and(|n| seen.revisions.get(*d) == Some(n))
         })
+}
+
+/// Whether a list last read under `seen` must be read again: no usable
+/// change state, a new epoch or a moved dependency, or, with `net` set
+/// (the tab is visible), its safety net due: `net` ms since its last
+/// whole read.
+fn stale(
+    c: Option<&ChangeState>,
+    seen: &Seen,
+    deps: &[&str],
+    net: Option<f64>,
+    now_ms: f64,
+) -> bool {
+    let Some(c) = c else {
+        return true;
+    };
+    !unchanged(c, seen, deps) || net.is_some_and(|every| now_ms - seen.at_ms >= every)
+}
+
+/// One list's safety net: read it whole after `every` even when its
+/// counters say nothing moved; doubled each time that finds nothing, back
+/// to the first interval when it finds something or the counters move
+/// (`blyg_core::sync::next_full_every`, native's rule, per list here).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Net {
+    every: Duration,
+    /// A fingerprint of what the last whole read fetched (this session's).
+    fetched: Option<u64>,
+}
+
+impl Default for Net {
+    fn default() -> Self {
+        Net {
+            every: SyncOptions::default().full_pull_every,
+            fetched: None,
+        }
+    }
+}
+
+fn fingerprint(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }
 
 /// How often the page checks `GET /api/changes` while it's visible, and
@@ -1217,6 +1288,14 @@ impl Pace {
 }
 
 impl Burrow {
+    /// How long `list`'s safety net waits after its last whole read (ms).
+    fn net_every_ms(&self, list: &str) -> f64 {
+        self.nets
+            .get(list)
+            .map_or(SyncOptions::default().full_pull_every, |n| n.every)
+            .as_millis() as f64
+    }
+
     /// What `list` was last read whole under.
     fn seen_of(&self, list: &str) -> &Seen {
         static NONE: std::sync::OnceLock<Seen> = std::sync::OnceLock::new();

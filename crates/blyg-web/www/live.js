@@ -102,6 +102,8 @@ export async function start(online) {
 // which costs one small request when nothing moved; a list is read again
 // only when its counters moved. Hidden, it waits; shown again, it checks at
 // once. A 429 waits its Retry-After and a 5xx backs off (src/live.rs `Pace`).
+// Each list's safety net (read whole anyway after 10 min, doubling to 2 h
+// while that finds nothing, src/live.rs `Net`) runs only while visible.
 let refreshing = null; // the run in progress
 let refreshAgain = false; // a call came in during it: one more run after
 let pollT = 0;
@@ -137,7 +139,7 @@ async function refreshOnce() {
   if (JSON.parse(S.B.outbox_next('[]'))) await flush();
   if (S.B.is_offline()) return;
   const ch = await call('GET', '/api/changes');
-  const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, ch.retryAfter, now()));
+  const plan = JSON.parse(S.B.changes_plan(ch.status, ch.body, ch.retryAfter, document.visibilityState === 'visible', now()));
   if (plan.error) { problem(plan.error); return; }
   if (plan.wait) { hold(plan.wait); return; }
   holdUntil = 0;
@@ -155,7 +157,7 @@ async function refreshOnce() {
     const items = await readAll('/api/items');
     if (items.error) { failed(items); return; }
     S.B.live_items(items.json);
-    S.B.changes_accept('items', rev, now());
+    S.B.changes_accept('items', rev, now(), items.json);
     changed = true;
   }
   if (plan.reading) {
@@ -164,7 +166,12 @@ async function refreshOnce() {
     if (!rows.error || rows.error.code === 'not-found') {
       S.B.live_reading(rows.error ? '[]' : rows.json, hops.error ? '[]' : hops.json);
       // Each row carries its hoppers and thumb: those are settled too.
-      if (!rows.error && !hops.error) for (const l of ['reading', 'hoppers', 'signals']) S.B.changes_accept(l, rev, now());
+      // (What was fetched paces the list's safety net, `fetched` in
+      // `changes_accept`; the lists settled with it leave theirs alone.)
+      if (!rows.error && !hops.error) {
+        S.B.changes_accept('reading', rev, now(), rows.json + hops.json);
+        for (const l of ['hoppers', 'signals']) S.B.changes_accept(l, rev, now(), undefined);
+      }
       changed = true;
     } else { failed(rows); return; }
   } else {
@@ -172,14 +179,14 @@ async function refreshOnce() {
       const r = await readHoppers();
       if (r.error) { failed(r); return; }
       if (JSON.parse(S.B.live_hoppers(r.hoppers, r.members)).changed) changed = true;
-      S.B.changes_accept('hoppers', rev, now());
+      S.B.changes_accept('hoppers', rev, now(), r.hoppers + r.members);
     }
     if (plan.signals) {
       const sig = await readAll('/api/signals');
       if (sig.error && sig.error.code !== 'not-found') { failed(sig); return; }
       // No route: the rows' own thumbs stand.
       if (!sig.error && JSON.parse(S.B.live_signals(sig.json)).changed) changed = true;
-      S.B.changes_accept('signals', rev, now());
+      S.B.changes_accept('signals', rev, now(), sig.error ? '' : sig.json);
     }
   }
   if (refreshFailed && !S.B.is_offline()) { refreshFailed = false; S.B.sync_phase('synced'); if (!changed) S.render({ loadEditor: false }); }

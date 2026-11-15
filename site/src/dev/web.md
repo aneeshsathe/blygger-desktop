@@ -63,8 +63,10 @@ It runs in one of two modes, and says which:
   delete. It reads again only the lists whose revisions moved since they
   were last read (`changes_plan` in `src/live.rs`, on the native sync's
   dependency map `live::LISTS`), so a hopper or thumb changed elsewhere
-  reads only the hoppers or the thumbs. Every list is also read whole
-  every 10 minutes, as the native sync does. A hidden tab asks nothing. A
+  reads only the hoppers or the thumbs. Each list is also read whole
+  10 minutes after its last whole read, as a safety net; while that finds
+  nothing new, its wait doubles up to 2 hours, as the native sync's does,
+  and it never runs in a hidden tab. A hidden tab asks nothing. A
   429 waits its `Retry-After`, and a 5xx backs off from 30 s up to 30 min.
   Only one refresh runs at a time. Without a usable answer it reads
   everything, once a minute.
