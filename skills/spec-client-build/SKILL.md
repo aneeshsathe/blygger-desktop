@@ -1,0 +1,61 @@
+---
+name: spec-client-build
+description: Add or change a Blygger protocol feature in Burrow (desktop or web) against the Blygger spec. Use when implementing something the spec or studio defines, or when unsure what the spec requires. Tells you what to read first, in what order, and the rules every client gets wrong at least once.
+---
+
+# Building Burrow features against the spec
+
+A Blygger client is anything that reads blygs, writes to one, or both. The spec
+(`blygger/blygger-spec`) is the contract; the reference implementation is
+`blygger-studio` (a Cloudflare Worker + SPA). A client must agree with the spec
+first and the studio second; where they differ, file it upstream, don't guess.
+
+## Read, in this order
+
+1. The spec repo's `README.md` (the objects: fragment, thread, hopper, TK, stub).
+2. `docs/protocol-v0.4.md` (or the newest `protocol-v*.md`): the static file
+   contract (`blyg.json`, `feed.xml`, `items/{id}.json`, pinned `v{n}.json`,
+   `items/index.json`) and every MUST/SHOULD.
+3. `conformance/README.md`: the tools that will judge your client
+   (see the `conformance-run` skill).
+4. The studio's private owner API, if your client writes: its contract version
+   and `/api/capabilities` (see `capability-gating`).
+5. Your client's own SPEC/CLAUDE.md, if it has one, for decisions already made.
+
+## Rules clients keep getting wrong
+
+- **Quote the clause.** When code implements a MUST, cite the section in a
+  comment or test name. When the spec is silent, say so and pick the studio's
+  behaviour, then note it as a candidate spec issue.
+- **Gate on capabilities, never on version numbers.** See `capability-gating`.
+- **One order function.** Lists sorted in more than one place drift apart; the
+  backend's order is not an order. See `list-order-and-refresh`.
+- **Remote HTML is hostile.** See `client-security`.
+- **Withdrawal must reach every copy.** A withdrawn post becomes a tombstone in
+  every cache, index and export your client keeps (spec §13.4). Don't commit
+  other people's item text to git, fixtures included; use invented content.
+- **Pinned versions are forever, current versions aren't.** Quote and cite
+  pinned versions (`v{n}`); never show an unpinned old version as if it were
+  citable.
+- **`![[id]]` vs `[[id]]`.** Own-line `![[id]]` is a transclusion (a quote that
+  notifies); inline `[[id]]` is a link. Code fences protect both. Use the
+  conformance reader fixtures rather than your own regex intuition.
+- **Test against a real studio.** See `real-server-testing`.
+
+## Done means
+
+- Conformance reader/schema runs pass, or every failure is a filed, known gap.
+- Behaviour matches the studio on the same data for every normal feature
+  (list order, refresh latency, what's shown for withdrawn/edited posts).
+- Your client's docs say which spec revision and studio contract it targets.
+
+## In Burrow
+
+- Start with `docs/SPEC.md` (Burrow's decisions) and `docs/BLYGGER-SPEC-DIGEST.md`
+  (the spec, digested); the agreed UX is in `docs/prototype/`.
+- New protocol or server behaviour goes in `blyg-core` behind the `Backend`
+  trait; the UI (`blyg-app`) talks only to `Arc<dyn Backend>`, and every
+  wrapper (`SwitchBackend` in `connection.rs`) forwards each new method.
+- `blyg-web` reuses `blyg-core` logic; never give the web its own copy of a
+  rule the desktop already has.
+- Server requirements beyond stock studio go in `docs/SERVER.md`.
