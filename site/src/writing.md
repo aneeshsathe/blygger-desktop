@@ -530,3 +530,12 @@ unpublished changes), **Public** and **Withdrawn**, each with how many it
 holds. ⌃⌥F steps to the next on a desk. A search always looks through
 every post.
 
+## Updates in the web app
+
+⚙ Blyg › **Updates** in the web app is the studio's Updates tab: your
+threads whose quotes have newer versions, stalest first. **Quotes** shows
+what changed in each, and **Refresh** publishes the same words with the
+quotes brought up to date (a new version, with the note above it);
+**Refresh all** does every thread that can be. A thread with unpublished
+edits, or a quote that no longer matches its post, says why it can't.
+

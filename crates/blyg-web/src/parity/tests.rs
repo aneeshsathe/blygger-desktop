@@ -310,3 +310,115 @@ fn the_open_post_stays_open_when_the_filter_hides_it() {
     assert_ne!(v(b.view(NOW))["current"]["id"], open);
     assert_eq!(titles(&b), ["Sample draft about tides"]);
 }
+
+// ------------------------------------------------------------ updates
+
+fn report(id: &str, stale: u32, blocking: u32, dirty: bool) -> Value {
+    json!({
+        "id": id, "version": 2, "dirty": dirty, "stale": stale, "blocking": blocking,
+        "behind": stale * 2,
+        "quotes": [{ "id": "q1", "origin": "https://b.example.com", "baked": 1, "held": 3,
+                     "live": 3, "partial": false, "status": "refreshable" }],
+    })
+}
+
+#[test]
+fn updates_list_stalest_first_with_the_desktops_reasons() {
+    let mut b = own(&["listStaleThreads", "refreshItem", "getItemFreshness"]);
+    let body = json!({ "items": [
+        report("p000000000000000000000000p", 1, 0, false),
+        report("c000000000000000000000000c", 2, 0, false),
+        report("z000000000000000000000000z", 3, 0, false),
+    ]});
+    assert_eq!(v(b.upd_loaded(200, &body.to_string()))["n"], 3);
+    let view = v(b.upd_view());
+    assert_eq!(view["canRefresh"], true);
+    let rows = view["rows"].as_array().unwrap();
+    // Stalest first: z (not held here), c (changed here), p.
+    assert_eq!(rows[0]["sid"], "z000000000000000000000000z");
+    assert_eq!(rows[0]["why"], "This thread isn't in this browser yet");
+    assert_eq!(
+        rows[1]["why"],
+        "It has unpublished edits: publish or discard them first"
+    );
+    assert_eq!(rows[2]["why"], Value::Null);
+    assert_eq!(rows[2]["line"], "2 versions behind · 1 stale quote");
+    assert_eq!(rows[2]["title"], "Sample public note on harbours");
+}
+
+#[test]
+fn quotes_show_what_changed() {
+    let mut b = own(&["listStaleThreads", "getItemFreshness", "refreshItem"]);
+    let sid = "p000000000000000000000000p";
+    b.upd_loaded(
+        200,
+        &json!({ "items": [report(sid, 1, 0, false)] }).to_string(),
+    );
+    assert_eq!(b.upd_probe_path(sid), format!("/api/items/{sid}/freshness"));
+    b.upd_probed(sid, 200, &report(sid, 1, 0, false).to_string());
+    let row = &v(b.upd_view())["rows"][0];
+    assert_eq!(row["quotes"][0]["label"], "b.example.com");
+    assert_eq!(row["quotes"][0]["words"], "v1 → v3 available");
+    assert_eq!(row["quotes"][0]["stale"], true);
+    // A blocking quote found on asking: refused.
+    b.upd_probed(sid, 200, &report(sid, 1, 1, false).to_string());
+    let r = v(b.upd_refresh_request(sid, ""));
+    assert!(r["error"].as_str().unwrap().contains("edit the thread"));
+}
+
+#[test]
+fn refresh_sends_the_revision_and_note_then_leaves_the_list() {
+    let mut b = own(&["listStaleThreads", "refreshItem"]);
+    let sid = "p000000000000000000000000p";
+    b.upd_loaded(
+        200,
+        &json!({ "items": [report(sid, 1, 0, false)] }).to_string(),
+    );
+    let r = v(b.upd_refresh_request(sid, "  "));
+    assert_eq!(r["req"]["method"], "POST");
+    assert_eq!(r["req"]["path"], format!("/api/items/{sid}/refresh"));
+    assert_eq!(r["req"]["body"]["expectedRevision"], 4);
+    assert_eq!(r["req"]["body"]["note"], "refreshed quoted snapshots");
+    let r = v(b.upd_refresh_request(sid, " new quotes "));
+    assert_eq!(r["req"]["body"]["note"], "new quotes");
+    let answer =
+        json!({ "ok": true, "revision": 5, "version": 3, "refreshed": ["q1"], "resynced": 1 });
+    let out = v(b.upd_refreshed(sid, 200, &answer.to_string()));
+    assert_eq!(
+        out["toast"],
+        "v3 · 1 quote refreshed · 1 blyg fetched again"
+    );
+    assert_eq!(v(b.upd_view())["rows"], json!([]));
+}
+
+#[test]
+fn a_refused_refresh_stays_listed_with_why() {
+    let mut b = own(&["listStaleThreads", "refreshItem"]);
+    let sid = "p000000000000000000000000p";
+    b.upd_loaded(
+        200,
+        &json!({ "items": [report(sid, 1, 0, false)] }).to_string(),
+    );
+    let err = json!({ "code": "invalid-input", "message": "A quote no longer resolves" });
+    let out = v(b.upd_refreshed(sid, 400, &err.to_string()));
+    assert!(out["error"].is_string());
+    let row = &v(b.upd_view())["rows"][0];
+    assert_eq!(row["failed"], out["error"]);
+}
+
+#[test]
+fn updates_are_gated_on_the_operations() {
+    let mut b = own(&["listStaleThreads"]);
+    let sid = "p000000000000000000000000p";
+    b.upd_loaded(
+        200,
+        &json!({ "items": [report(sid, 1, 0, false)] }).to_string(),
+    );
+    assert_eq!(v(b.upd_view())["canRefresh"], false);
+    assert!(v(b.upd_refresh_request(sid, ""))["error"].is_string());
+    let b = own(&[]);
+    assert_eq!(v(b.upd_view())["can"], false);
+    // 401: the page asks to sign in.
+    let mut b = own(&["listStaleThreads"]);
+    assert_eq!(v(b.upd_loaded(401, "{}"))["code"], "unauthorized");
+}

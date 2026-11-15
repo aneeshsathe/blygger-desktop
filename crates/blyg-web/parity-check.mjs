@@ -1,5 +1,5 @@
 // --- web-parity --- A live check of the studio-parity features on the web
-// (mark all read, the Posts filters), in Chromium,
+// (mark all read, the Posts filters, Updates), in Chromium,
 // against two DISPOSABLE local studios:
 //
 //   BURROW_PW=… BURROW_B=http://127.0.0.1:<port b> \
@@ -145,6 +145,23 @@ check(searched === 1, 'a search looks through every post, whatever the filter');
 await page.keyboard.press('Escape');
 await page.keyboard.press('Control+Alt+KeyF');
 check(await page.evaluate(() => document.querySelector('#d-pfilter [data-pf="all"]').getAttribute('aria-pressed') === 'true'), '⌃⌥F steps to the next filter (back to All)');
+
+// --- 3. Updates
+await page.keyboard.press('Control+Digit3');
+await page.click('#d-hub [data-hub="updates"]');
+await page.waitForSelector('#wr-body [data-upd-refresh]', { timeout: 20_000 });
+const upd = await page.evaluate(() => document.querySelector('#wr-body').textContent);
+check(/quoting B1/.test(upd) && /stale quote/.test(upd), 'Updates lists the thread with its stale quote');
+await page.click('#wr-body [data-upd-probe]');
+await page.waitForFunction(() => /→ v2/.test(document.querySelector('#wr-body').textContent), null, { timeout: 20_000 }).catch(() => {});
+check(/v1 → v2/.test(await page.evaluate(() => document.querySelector('#wr-body').textContent)), 'Quotes shows what changed (v1 → v2)');
+await page.click('#wr-body [data-upd-refresh]');
+await wait(2500);
+check(/Refreshed/.test(await toastText()), 'Refresh says what it did');
+const thread = (await a.api('GET', '/api/items?limit=100')).items.find((i) => /quoting B1/.test(i.contentMd));
+check(thread?.version === 2, `the thread is v2 on the blyg (v${thread?.version})`);
+check(((await a.api('GET', '/api/freshness')).items ?? []).length === 0, 'the blyg has nothing stale left');
+await page.keyboard.press('Escape');
 
 check(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 await browser.close();

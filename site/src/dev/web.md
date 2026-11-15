@@ -134,6 +134,12 @@ otherwise it's hidden or says why.
   counts, over the list (⌃⌥F steps through them). Worked out from the
   posts the app holds, so no request. A search ignores the filter, as the
   studio's does.
+- **Updates** (`listStaleThreads`, `getItemFreshness`, `refreshItem`).
+  ⚙ Blyg › Updates lists your threads whose quotes have newer versions
+  (`GET /api/freshness`), each quote's state on demand (`GET
+  /api/items/{id}/freshness`) and Refresh, one or all
+  (`POST /api/items/{id}/refresh`, then the post is read again as after a
+  publish). The rules are the desktop's (`blyg_core::upkeep`).
 
 The rules are `src/parity/` and the screens `www/parity.js`, drawn in the
 reading panel through `wrExtend` (`www/web-reading.js`). A live check runs

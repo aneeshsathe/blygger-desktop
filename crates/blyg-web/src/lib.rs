@@ -40,7 +40,7 @@ pub mod web_changelog;
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
-// --- web-parity --- studio parity: mark all read, filters, …
+// --- web-parity --- studio parity: mark all read, filters, updates, …
 pub mod parity;
 pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
