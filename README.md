@@ -82,6 +82,17 @@ content, never personal data, and never test against a real blyg.
 The people who have contributed are listed on
 [Contributors](https://aneeshsathe.github.io/blygger-desktop/contributors.html).
 
+## Skills for coding agents
+
+[`skills/`](skills/) holds Burrow's development checklists as agent skills:
+release, tutorial, Windows + macOS, the pre-PR gate, agent cohorts, web
+hand-off, and spec-level ones (capability gating, real-studio testing, list
+order and refresh, client security, conformance, upstream sync). They're plain
+Markdown and work with any agent. Have it read
+[`skills/README.md`](skills/README.md) first and follow each skill whose "use
+it when" matches the task. Thanks to [@patwater](https://github.com/patwater)
+for the idea.
+
 ## License
 
 Different parts of the project are under different licenses:

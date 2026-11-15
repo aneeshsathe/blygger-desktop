@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Development skills** in `skills/`: the checks reviewers used to make in PRs, now plain-Markdown checklists that any coding agent (or person) can follow while working. They cover the release, the tutorial, Windows + macOS, the pre-PR gate, agent cohorts and the web hand-off. Spec-level skills cover capability gating, real-studio testing, list order and refresh, client security, conformance and upstream sync. `AGENTS.md` and the README say how to use them. Thanks to @patwater for the idea.
+
 ## [0.22.0] - 2026-11-15
 
 The browser pane and cross-post on Windows.

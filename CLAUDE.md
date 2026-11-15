@@ -8,6 +8,7 @@ clickable mocks under `docs/prototype/`.
 - `crates/blyg-ai`: AI providers, sign-in, TK prompts.
 - `crates/blyg-app`: the GPUI UI. It talks only to `Arc<dyn Backend>`. `BLYGGER_FAKE=1 cargo run -p blyg-app` runs it on in-memory sample data.
 - Server requirements (owner-API extensions to the reference Worker): `docs/SERVER.md`.
+- Development checklists live in `skills/`. Read `skills/README.md` and follow every skill that matches the task: `burrow-pr-gate` before a commit, `burrow-release` for a release.
 
 Rules
 - **This is a public repo.** Never commit personal data: names, emails, real blyg URLs,
