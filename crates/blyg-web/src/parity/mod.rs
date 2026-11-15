@@ -3,6 +3,7 @@
 //!
 //! - **Mark all read** for the chosen Reading source and lens
 //!   (`mark_all.rs`).
+//! - **Status filters** over Posts (`filters.rs`).
 //!
 //! Every server feature is gated on the operation names the blyg
 //! advertises in `GET /api/capabilities` (`wr_can`), never on its
@@ -13,7 +14,15 @@ use wasm_bindgen::prelude::*;
 
 use crate::Burrow;
 
+pub mod filters;
 pub mod mark_all;
+
+/// The web's state for these screens. Nothing here is persisted.
+#[derive(Default)]
+pub struct Parity {
+    /// The Posts list's filter.
+    pub filter: filters::PostFilter,
+}
 
 impl Burrow {
     pub(crate) fn can(&self, op: &str) -> bool {

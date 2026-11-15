@@ -40,8 +40,9 @@ pub mod web_changelog;
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
+// --- web-parity --- studio parity: mark all read, filters, …
 pub mod parity;
-pub mod syndication; // --- syndication --- copies elsewhere (decision #98) // --- web-parity --- studio parity: mark all read, …
+pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
 #[path = "../../blyg-app/src/vm.rs"]
@@ -321,6 +322,8 @@ pub struct Burrow {
     // --- web-writing --- settings, contacts, uploads, versions read.
     writing: writing::Writing,
     // --- end web-writing ---
+    /// --- web-parity --- the studio-parity screens' state.
+    parity: parity::Parity,
 }
 
 #[wasm_bindgen]
@@ -362,6 +365,7 @@ impl Burrow {
             wr: Default::default(),
             // --- end web-reading ---
             writing: Default::default(), // --- web-writing ---
+            parity: Default::default(),  // --- web-parity ---
         }
     }
 
@@ -404,9 +408,10 @@ impl Burrow {
         self.list.refresh(self.results(&q));
     }
 
-    /// The store's matches for `q`, shelved posts first.
+    /// The store's matches for `q`, shelved posts first (with an empty
+    /// `q`, those the Posts filter keeps; `parity/filters.rs`).
     fn results(&self, q: &str) -> Vec<Item> {
-        self.store.arrange(self.store.search(q)).0
+        self.store.arrange(self.filtered(q, self.store.search(q))).0
     }
 
     /// After a change to the open post: fresh results, and the post stays

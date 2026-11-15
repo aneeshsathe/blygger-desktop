@@ -130,6 +130,10 @@ otherwise it's hidden or says why.
   chosen source and lens, after a confirmation with the count. Read here at
   once, sent as `POST /api/reading/read` in batches of 500; a batch the
   blyg refuses is put back. Offline it waits for you to come back.
+- **Filters in Posts.** All · Drafts · Changes · Public · Withdrawn, with
+  counts, over the list (⌃⌥F steps through them). Worked out from the
+  posts the app holds, so no request. A search ignores the filter, as the
+  studio's does.
 
 The rules are `src/parity/` and the screens `www/parity.js`, drawn in the
 reading panel through `wrExtend` (`www/web-reading.js`). A live check runs

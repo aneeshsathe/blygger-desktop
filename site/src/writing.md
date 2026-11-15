@@ -521,3 +521,12 @@ pages can tint generated passages and mark them with a small robot that says
 what you disclosed. Your blyg's settings (in the Reader's site settings) set
 the default; the ⌘G palette sets it per post (default, on or off; **H** cycles
 it), and the preview shows the post as its page will.
+
+## Filters in the web app
+
+In the web app, the Posts list has the studio's filters over it: **All**,
+**Drafts** (never published, notes included), **Changes** (published, with
+unpublished changes), **Public** and **Withdrawn**, each with how many it
+holds. ⌃⌥F steps to the next on a desk. A search always looks through
+every post.
+

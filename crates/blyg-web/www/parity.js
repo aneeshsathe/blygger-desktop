@@ -1,10 +1,12 @@
-// --- web-parity --- What the studio does that the web lacked, as screens
-// in the reading panel (web-reading.js `wrExtend`):
+// --- web-parity --- What the studio does that the web lacked:
 //
 // - Mark all read (✓ in the sources, ⌃⌥A on a desk): every unread post of
 //   the chosen source and lens, after a confirmation, sent in batches of
 //   500 to POST /api/reading/read; a batch that fails is put back.
+// - The Posts filters (All · Drafts · Changes · Public · Withdrawn, with
+//   counts) over the list; ⌃⌥F steps through them on a desk.
 //
+// The screens are drawn in the reading panel (web-reading.js `wrExtend`).
 // Every rule is Burrow's Rust (src/parity/); this draws and fetches. Every
 // request goes through live.js `call` (same-origin /api/ only). Features
 // are gated on the operation names /api/capabilities advertises.
@@ -52,6 +54,20 @@ async function markAll() {
   S.render();
 }
 
+// ---------------------------------------------------------------- posts filters
+/** The filter chips over the Posts list: `{html, on, empty, all}`. */
+export function filterChips() {
+  const f = JSON.parse(S.B.post_filters());
+  const html = f.chips.map((c) => `<button type="button" class="pf${c.on ? ' on' : ''}" data-pf="${c.key}" aria-pressed="${c.on}" title="${esc(c.tip)}">${esc(c.label)} <b>${c.n}</b></button>`).join('');
+  return { html, on: f.on, empty: f.empty, all: f.chips[0]?.n ?? 0 };
+}
+/** Choose filter `key` (`next` steps on). `keep`: the open post stays open. */
+export function pickFilter(key, keep) {
+  const label = key === 'next' ? S.B.next_post_filter(keep) : S.B.set_post_filter(key, keep);
+  return label;
+}
+
+// ---------------------------------------------------------------- the panel
 wrExtend({
   titles: { markall: 'Mark all read' },
   screens: { markall: markAllScreen },

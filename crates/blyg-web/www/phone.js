@@ -18,6 +18,7 @@ import { phoneChip, opened, wrUse } from './web-reading.js';
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
@@ -115,11 +116,18 @@ function renderList() {
     ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
     : '<span class="empty">Hold a post to shelve it</span>');
   const query = V.query.trim();
+  // --- web-parity --- the filters (hidden with no posts, and while searching).
+  const pf = filterChips();
+  const pfh = $('#p-pfilter');
+  pfh.hidden = !pf.all || !!query;
+  draw(pfh, pf.html);
+  // --- end web-parity ---
   const rows = V.rows.slice(0, listN);
   draw($('#p-list'), rows.map((r, i) => `<button type="button" role="listitem" class="prow${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" data-id="${esc(r.id)}" data-shelved="${r.shelved}">
       <div class="ti">${r.shelved ? '📚 ' : ''}${r.title_html}</div>
       <div class="meta">${esc(r.kind)} <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span>${r.dot ? `<span class="dot${r.dot === 'amber' ? ' amber' : ''}" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}<span>${esc(r.when)}</span></div></button>`).join('')
     + (V.rows.length > rows.length ? `<p class="list-more">${V.rows.length - rows.length} more…</p>` : '')
+    + (!V.rows.length && !query && pf.on !== 'all' ? `<p class="list-more">${esc(pf.empty)}</p>` : '') // --- web-parity ---
     + (V.wants_create && query
       ? `<button type="button" class="prow start" data-new="1"><div class="ti">＋ Start “${esc(query)}”</div><div class="meta">${V.rows.length ? 'a new post' : 'no matches · tap to write it'}</div></button>`
       : ''));
@@ -371,6 +379,12 @@ export function initPhone() {
     if (o.action === 'create') { q.value = ''; openEditor(); touched(); toast('New draft created'); }
     else if (o.action === 'open') openEditor();
   });
+  // --- web-parity --- the Posts filters.
+  $('#p-pfilter').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pf]');
+    if (b) { pickFilter(b.dataset.pf, false); render(); }
+  });
+  // --- end web-parity ---
   let hold = null;
   const list = $('#p-list');
   list.addEventListener('pointerdown', (e) => {

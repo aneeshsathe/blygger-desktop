@@ -54,7 +54,8 @@
       <span class="hint" id="hint"></span>
     </div>
     <div class="body" id="pbody">
-      <div class="list" id="list" role="listbox" aria-label="Posts"></div>
+      <div class="lcol"><!-- web-parity --><div class="pfilter" id="d-pfilter" role="group" aria-label="Show" hidden></div><!-- end web-parity -->
+      <div class="list" id="list" role="listbox" aria-label="Posts"></div></div>
       <div class="edwrap" id="edwrap">
         <div class="pacts" id="d-pacts" role="toolbar" aria-label="This post"></div>
         <div class="stubof" id="d-stubof" hidden></div>
@@ -108,7 +109,7 @@
     <kbd>⌘</kbd><kbd>B</kbd> shelf · <kbd>⌥</kbd><kbd>⌘</kbd><kbd>B</kbd> shelve or unshelve ·
     <kbd>⌃</kbd><kbd>⇧</kbd><kbd>Y</kbd> versions ·
     <kbd>⌃</kbd><kbd>1</kbd> Posts · <kbd>⌃</kbd><kbd>2</kbd> Reading · <kbd>⌃</kbd><kbd>3</kbd> Blyg ·
-    <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> mark all read (Reading)
+    <kbd>⌃</kbd><kbd>⌥</kbd><kbd>A</kbd> mark all read (Reading) · <kbd>⌃</kbd><kbd>⌥</kbd><kbd>F</kbd> next filter (Posts)
     <br><span class="note">Browsers keep ⌘N, ⌘T and ⌘L for themselves, so press <kbd>⌃</kbd> (or <kbd>⌥</kbd>) where the app uses <kbd>⌘</kbd>. <span class="demo-only">Publishing goes to a pretend blyg at blyg.example.com.</span><span class="live-only">Publishing goes to your blyg.</span></span>
   </p>
 </main>
@@ -124,6 +125,7 @@
       <div class="plbl">📚 Shelf</div>
       <div class="shelfstrip" id="p-shelf"></div>
       <div class="plbl">Posts</div>
+      <!-- web-parity --><div class="pfilter" id="p-pfilter" role="group" aria-label="Show" hidden></div><!-- end web-parity -->
       <div id="p-list" role="list"></div>
     </div>
   </section>

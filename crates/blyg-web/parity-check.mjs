@@ -1,5 +1,5 @@
 // --- web-parity --- A live check of the studio-parity features on the web
-// (mark all read), in Chromium,
+// (mark all read, the Posts filters), in Chromium,
 // against two DISPOSABLE local studios:
 //
 //   BURROW_PW=… BURROW_B=http://127.0.0.1:<port b> \
@@ -126,6 +126,25 @@ check((await unread()) === 0, 'nothing unread on the page');
 const reading = (await a.api('GET', '/api/reading?limit=50')).items ?? [];
 const imp = reading.filter((e) => e.imported);
 check(imp.length >= 3 && imp.every((e) => e.imported.readVersion === e.imported.version), 'the blyg has every post read (GET /api/reading)');
+
+// --- 2. Posts filters
+await page.click('.views [data-view="posts"]');
+await page.waitForSelector('#d-pfilter [data-pf]');
+const chips = await page.$$eval('#d-pfilter [data-pf]', (cs) => Object.fromEntries(cs.map((c) => [c.dataset.pf, +c.querySelector('b').textContent])));
+check(chips.all === 5 && chips.drafts === 1 && chips.changes === 1 && chips.public === 3 && chips.withdrawn === 1,
+  `filter counts match the studio's summary (${JSON.stringify(chips)})`);
+const summary = await a.api('GET', '/api/items/summary');
+check(['all', 'drafts', 'changes', 'public', 'withdrawn'].every((k) => summary[k] === chips[k]), 'and GET /api/items/summary agrees');
+await page.click('#d-pfilter [data-pf="withdrawn"]');
+const rows = await page.$$eval('#list .row', (rs) => rs.map((r) => r.textContent));
+check(rows.length === 1 && /withdrawn: taken back/.test(rows[0]), 'Withdrawn shows the withdrawn post only');
+await page.click('#omni');
+await page.keyboard.type('Parity sample public');
+const searched = await page.$$eval('#list .row', (rs) => rs.length);
+check(searched === 1, 'a search looks through every post, whatever the filter');
+await page.keyboard.press('Escape');
+await page.keyboard.press('Control+Alt+KeyF');
+check(await page.evaluate(() => document.querySelector('#d-pfilter [data-pf="all"]').getAttribute('aria-pressed') === 'true'), '⌃⌥F steps to the next filter (back to All)');
 
 check(!errors.length, `no page errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
 await browser.close();

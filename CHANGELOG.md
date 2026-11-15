@@ -19,6 +19,7 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Added
 
 - **Web app: Mark all read**, as the studio has it. ✓ Mark all read… in the sources pane (⌃⌥A), ✓ All read on a phone: every unread post of the chosen source and lens, after a confirmation, sent to your blyg in batches of 500 and put back if the blyg refuses. Needs a studio that advertises `markReadBatch`.
+- **Web app: filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with counts, over the list on a desk and a phone (⌃⌥F steps through them), as the studio's compose page has them. A search still looks through every post.
 
 ## [0.21.0] - 2026-11-14
 

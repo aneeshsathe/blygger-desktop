@@ -183,3 +183,130 @@ fn the_demo_marks_all_read_here_only() {
     assert_eq!(out["batches"], json!([]));
     assert_eq!(v(b.mark_all_ask(NOW))["n"], 0);
 }
+
+// ------------------------------------------------------------ post filters
+
+fn wire(id: &str, rev: u64, md: &str, status: &str, version: u32, dirty: bool) -> Value {
+    json!({
+        "id": id, "revision": rev, "kind": "thread", "status": status,
+        "created": "2026-11-01T10:00:00Z", "updated": "2026-11-05T10:00:00Z",
+        "version": version, "contentMd": md, "dirty": dirty, "stubOf": null,
+        "forkedFrom": null, "provenance": [], "responses": "default", "highlight": "default"
+    })
+}
+
+/// Your posts: a draft, a public post, a public one with changes, a
+/// withdrawn one.
+fn own(ops: &[&str]) -> Burrow {
+    let mut b = live(ops);
+    let items = json!([
+        wire(
+            "d000000000000000000000000d",
+            1,
+            "Sample draft about tides",
+            "draft",
+            0,
+            false
+        ),
+        wire(
+            "p000000000000000000000000p",
+            4,
+            "Sample public note on harbours",
+            "public",
+            2,
+            false
+        ),
+        wire(
+            "c000000000000000000000000c",
+            6,
+            "Sample changed thread on gulls",
+            "public",
+            1,
+            true
+        ),
+        wire(
+            "w000000000000000000000000w",
+            9,
+            "Sample withdrawn note",
+            "withdrawn",
+            3,
+            false
+        ),
+    ]);
+    b.live_items(&items.to_string());
+    b
+}
+
+fn titles(b: &Burrow) -> Vec<String> {
+    v(b.view(NOW))["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["title_html"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn filters_count_as_the_studios_summary_does() {
+    let b = own(&[]);
+    let f = v(b.post_filters());
+    assert_eq!(f["on"], "all");
+    let n: Vec<(String, u64)> = f["chips"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["key"].as_str().unwrap().into(), c["n"].as_u64().unwrap()))
+        .collect();
+    assert_eq!(
+        n,
+        [
+            ("all".to_string(), 4),
+            ("drafts".into(), 1),
+            ("changes".into(), 1),
+            ("public".into(), 2),
+            ("withdrawn".into(), 1),
+        ]
+    );
+}
+
+#[test]
+fn a_filter_narrows_the_list_and_a_search_ignores_it() {
+    let mut b = own(&[]);
+    assert_eq!(b.set_post_filter("withdrawn", false), "Withdrawn");
+    assert_eq!(titles(&b), ["Sample withdrawn note"]);
+    b.set_post_filter("changes", false);
+    assert_eq!(titles(&b), ["Sample changed thread on gulls"]);
+    b.set_post_filter("drafts", false);
+    assert_eq!(titles(&b), ["Sample draft about tides"]);
+    // A search looks through every post, so ⏎ finds the public one.
+    b.set_query("harbours");
+    assert_eq!(titles(&b), ["Sample public note on <mark>harbours</mark>"]);
+    b.set_query("");
+    assert_eq!(titles(&b), ["Sample draft about tides"]);
+    // Unknown is All.
+    b.set_post_filter("nonsense", false);
+    assert_eq!(titles(&b).len(), 4);
+}
+
+#[test]
+fn the_next_filter_comes_round_again() {
+    let mut b = own(&[]);
+    let labels: Vec<String> = (0..5).map(|_| b.next_post_filter(false)).collect();
+    assert_eq!(labels, ["Drafts", "Changes", "Public", "Withdrawn", "All"]);
+}
+
+#[test]
+fn the_open_post_stays_open_when_the_filter_hides_it() {
+    let mut b = own(&[]);
+    b.set_query("gulls");
+    b.enter(NOW);
+    let open = v(b.view(NOW))["current"]["id"].clone();
+    assert!(open.is_string());
+    b.set_post_filter("withdrawn", true);
+    assert_eq!(v(b.view(NOW))["current"]["id"], open);
+    // Without keep, the selection moves into the filtered list.
+    b.set_query("");
+    b.set_post_filter("drafts", false);
+    assert_ne!(v(b.view(NOW))["current"]["id"], open);
+    assert_eq!(titles(&b), ["Sample draft about tides"]);
+}
