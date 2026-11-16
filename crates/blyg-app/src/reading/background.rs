@@ -326,13 +326,11 @@ impl MainView {
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .child(chip("bg-rule-withdrawn".into(), "Withdrawn posts", true))
-                .child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(p.muted)
-                        .child("always in Background"),
-                ),
+                .child(chip("bg-rule-withdrawn".into(), "Withdrawn posts", true).flex_none())
+                .child(crate::app::settings_page::side_note(
+                    &p,
+                    "always in Background",
+                )),
         );
         for rule in RULES {
             let on = rules.on(rule);
@@ -342,16 +340,21 @@ impl MainView {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(chip(format!("bg-rule-{rule}").into(), label, on).on_click(
-                        cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
-                    ))
-                    .child(div().text_size(px(11.)).text_color(p.muted).child(hint)),
+                    .child(
+                        chip(format!("bg-rule-{rule}").into(), label, on)
+                            .flex_none()
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.save_background_rule(rule, !on, cx)
+                            })),
+                    )
+                    .child(crate::app::settings_page::side_note(&p, hint)),
             );
         }
         Some(
-            col.child(div().text_size(px(11.)).text_color(p.muted).child(
+            col.child(crate::app::settings_page::note(
+                &p,
                 "Saved on your blyg. Background holds what you and these rules put \
-                         there; every other list leaves it out. Nothing is marked read.",
+                 there; every other list leaves it out. Nothing is marked read.",
             ))
             .when(self.reading.background.saving, |d| d.opacity(0.6))
             .into_any_element(),

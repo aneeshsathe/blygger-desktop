@@ -20,6 +20,7 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Web app: post to post.** An open post has ‹ › for the previous and next post, in the list's order as you saw it; on a phone or iPad, swipe sideways across the post (left for the next, right for the previous). ↑ ↓ on the desk follow the same order, so reading a post no longer reorders the walk.
 
 ### Changed
+- **Desktop: Settings is a full page, and nothing in it is cut off any more.** ⌘, opens it over the whole window below the title bar instead of a pop-up, and every row of options and every explanation wraps to fit, at any window width and font.
 - **Web app on a laptop or iPad: it now fills the page.** On your blyg the app is no longer drawn as a window inside a page (no frame, traffic lights or width cap). Theme and layout moved into the title bar, and **Keys** opens the keyboard list. The sample-data demo keeps its window.
 
 ### Fixed
