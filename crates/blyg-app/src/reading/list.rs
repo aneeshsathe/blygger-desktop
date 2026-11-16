@@ -939,7 +939,8 @@ impl MainView {
                     .font_family(self.chrome())
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child(if r.version > 1 {
+                    // The source gives way first in a narrow list.
+                    .child(div().min_w_0().truncate().child(if r.version > 1 {
                         format!(
                             "{} · v{}",
                             vm::source_line(r, &self.reading.subs),
@@ -947,7 +948,7 @@ impl MainView {
                         )
                     } else {
                         vm::source_line(r, &self.reading.subs)
-                    })
+                    }))
                     .when_some(badge, |d, b| {
                         // --- themes --- badges that read on the row and
                         // on the selected ground alike.
@@ -969,10 +970,14 @@ impl MainView {
                         )
                     })
                     // --- contacts --- in the Mentions feed: why it's
-                    // there ("named you", "quoted you"…), a tag or two.
-                    .children(why.into_iter().map(|t| {
+                    // there ("named you", "quoted you"…).
+                    // One tag, the strongest reason, kept whole: in a narrow
+                    // list the source line gives way, never the tag or the time.
+                    .children(why.into_iter().take(1).map(|t| {
                         let (fg, bg) = p.quiet_badge();
                         div()
+                            .flex_none()
+                            .whitespace_nowrap()
                             .px(px(6.))
                             .rounded_full()
                             .text_size(px(10.5))
@@ -983,7 +988,7 @@ impl MainView {
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
-                    .child(when),
+                    .child(div().flex_none().whitespace_nowrap().child(when)),
             )
             .child(
                 div()
