@@ -1004,52 +1004,32 @@ impl MainView {
                     .into_any_element()
             })
             .collect();
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("NOTES FOLDERS"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .children(rows)
-                    .child(
-                        div().flex().child(
-                            div()
-                                .id("ext-vault")
-                                .debug_selector(|| "ext-vault".into())
-                                .px(px(10.))
-                                .py(px(3.))
-                                .map(|d| crate::theme_ext::chip(d, &self.theme, false))
-                                .cursor_pointer()
-                                .hover(|s| s.border_color(p.accent).bg(p.hover()))
-                                .child("Add folder…")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.ext_pick_vaults(window, cx)
-                                })),
-                        ),
-                    )
-                    .child(
+        crate::app::settings_page::row(
+            &p,
+            "NOTES FOLDERS",
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .children(rows)
+                .child(
+                    div().flex().child(
                         div()
-                            .min_w_0()
-                            .text_size(px(11.5))
-                            .text_color(p.muted)
-                            .child(div().truncate().child(now)),
+                            .id("ext-vault")
+                            .debug_selector(|| "ext-vault".into())
+                            .px(px(10.))
+                            .py(px(3.))
+                            .map(|d| crate::theme_ext::chip(d, &self.theme, false))
+                            .cursor_pointer()
+                            .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                            .child("Add folder…")
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.ext_pick_vaults(window, cx)),
+                            ),
                     ),
-            )
-            .into_any_element()
+                )
+                .child(crate::app::settings_page::note(&p, now).text_size(px(11.5))),
+        )
+        .into_any_element()
     }
 }

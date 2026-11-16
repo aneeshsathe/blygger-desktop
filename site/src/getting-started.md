@@ -135,7 +135,8 @@ Every shortcut is listed in [Keyboard shortcuts](keys.md).
 
 ## Settings
 
-Settings (⌘,) covers the common options: the writing and interface fonts and
+Settings (⌘,) is a page that fills the window below the title bar (esc or ⌘,
+closes it) and covers the common options: the writing and interface fonts and
 size, theme, layout, the quick-capture hotkey, buttons, AI accounts, and the
 tutorial (Help). Everything is also in the plain-text
 [config file](config.md), which Settings writes back to without touching your

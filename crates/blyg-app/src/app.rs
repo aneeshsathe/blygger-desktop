@@ -83,6 +83,10 @@ pub(crate) mod onboarding;
 // --- buttons --- the optional toolbar (show-buttons)
 #[path = "toolbar.rs"]
 pub(crate) mod toolbar;
+
+// Settings: a full-window page over the app (rows shared by every section).
+#[path = "settings_page.rs"]
+pub(crate) mod settings_page;
 // --- profiles --- (the profile sheet; hooks marked the same way)
 #[path = "profiles/mod.rs"]
 pub(crate) mod profiles;
@@ -256,6 +260,8 @@ enum Sheet {
         hotkey: Entity<InputState>,
         hotkey_error: Option<String>,
         focus: FocusHandle,
+        /// The page's scroll position (`settings_page.rs`).
+        scroll: ScrollHandle,
     },
     /// First run (no `blyg-url`): URL + a way in (browser sign-in, API
     /// token or studio password), verified with `GET /api/items`, then →
@@ -1930,6 +1936,7 @@ impl MainView {
             hotkey,
             hotkey_error: None,
             focus,
+            scroll: ScrollHandle::new(),
         });
         self.changelog_settings_refresh(cx); // --- reader view / changelog ---
         self.background_rules_refresh(cx); // --- background ---
@@ -3739,14 +3746,22 @@ impl MainView {
                         .into_any_element(),
                 )
             }
+            // Not a sheet: a page over the whole window (`settings_page.rs`).
             Sheet::Settings {
                 hotkey,
                 hotkey_error,
                 focus,
-            } => (
-                480.,
-                self.render_settings(hotkey, hotkey_error.as_deref(), focus, &kbd, cx),
-            ),
+                scroll,
+            } => {
+                return Some(self.render_settings_page(
+                    hotkey,
+                    hotkey_error.as_deref(),
+                    focus,
+                    scroll,
+                    ui_font,
+                    cx,
+                ));
+            }
             Sheet::Disconnect { host, focus } => (
                 460.,
                 div()
@@ -4119,378 +4134,5 @@ impl MainView {
                 )
                 .into_any_element(),
         )
-    }
-
-    fn render_settings(
-        &self,
-        hotkey: &Entity<InputState>,
-        hotkey_error: Option<&str>,
-        focus: &FocusHandle,
-        kbd: &dyn Fn(&'static str) -> Div,
-        cx: &mut Context<Self>,
-    ) -> AnyElement {
-        let p = self.palette;
-        let chip =
-            |id: SharedString, label: SharedString, on: bool, family: Option<&'static str>| {
-                div()
-                    .id(id)
-                    .px(px(10.))
-                    .py(px(3.))
-                    .map(|d| crate::theme_ext::chip(d, &self.theme, on))
-                    .cursor_pointer()
-                    .when_some(family, |d, f| d.font_family(f))
-                    .hover(|s| s.border_color(p.accent).bg(p.hover()))
-                    .child(label)
-            };
-        let row = |label: &'static str, content: AnyElement| {
-            div()
-                .flex()
-                .gap(px(12.))
-                .py(px(7.))
-                .child(
-                    div()
-                        .w(px(92.))
-                        .flex_none()
-                        .pt(px(4.))
-                        .text_size(px(10.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(p.muted)
-                        .child(label),
-                )
-                .child(div().flex_1().flex().flex_wrap().gap(px(6.)).child(content))
-        };
-
-        let writing = crate::prefs::WRITING_FONTS
-            .iter()
-            .enumerate()
-            .map(|(i, f)| {
-                let label = f.label;
-                chip(
-                    format!("wf{i}").into(),
-                    label.into(),
-                    self.prefs.writing().label == label,
-                    Some(f.family),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.prefs.writing_font = label.to_string();
-                    this.prefs.writing_font_set = true;
-                    this.apply_prefs(window, cx);
-                }))
-                .into_any_element()
-            });
-        let ui = crate::prefs::UI_FONTS.iter().enumerate().map(|(i, f)| {
-            let label = f.label;
-            chip(
-                format!("uf{i}").into(),
-                label.into(),
-                self.prefs.ui().label == label,
-                Some(f.family),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.prefs.ui_font = label.to_string();
-                this.prefs.ui_font_set = true;
-                this.apply_prefs(window, cx);
-            }))
-            .into_any_element()
-        });
-        // --- themes --- every theme, grouped, each with a small swatch.
-        let theme_chip = |id: String, label: String, swatch: Option<AnyElement>| {
-            let on = self.prefs.theme == id;
-            let sel = format!("th-{id}");
-            chip(sel.clone().into(), label.into(), on, None)
-                .debug_selector(move || sel.clone())
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .children(swatch)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.prefs.theme = id.clone();
-                    this.apply_prefs(window, cx);
-                }))
-                .into_any_element()
-        };
-        let groups = crate::theme::themes(cx).grouped();
-        let themes = div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .children(groups.into_iter().map(|(family, list)| {
-                let mut chips: Vec<AnyElement> = Vec::new();
-                if family == blyg_core::config::theme::Family::Plain {
-                    chips.push(theme_chip("system".into(), "System".into(), None));
-                }
-                for t in list {
-                    let label = match t.id.as_str() {
-                        "light" => "Light".to_string(),
-                        "dark" => "Dark".to_string(),
-                        _ => t.name.clone(),
-                    };
-                    chips.push(theme_chip(
-                        t.id.clone(),
-                        label,
-                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
-                    ));
-                }
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .flex_wrap()
-                    .child(
-                        div()
-                            .w(px(52.))
-                            .flex_none()
-                            .text_size(px(10.5))
-                            .text_color(p.muted)
-                            .child(family.label()),
-                    )
-                    .children(chips)
-            }));
-        let theme_dark_note = self.prefs.theme_dark.clone().map(|d| {
-            div()
-                .text_size(px(11.))
-                .text_color(p.muted)
-                .child(crate::keymap::hint_owned(format!(
-                    "theme-dark = {d} is used while macOS is dark"
-                )))
-        });
-        let layouts = LayoutPref::ALL.iter().map(|l| {
-            let l = *l;
-            chip(
-                format!("ly{}", l.value()).into(),
-                l.label().into(),
-                self.prefs.layout == l,
-                None,
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.prefs.layout = l;
-                this.apply_prefs(window, cx);
-            }))
-            .into_any_element()
-        });
-        let config_path = blyg_core::config::paths::tilde(crate::settings::get(cx).store.primary());
-        // Only fonts that are in use get registered at launch; the chips show
-        // each face in itself, so make sure they're all available here.
-        for f in crate::prefs::WRITING_FONTS {
-            crate::fonts::ensure(f.bundled, cx);
-        }
-
-        div()
-            // The rows (fonts, buttons, AI, help…) outgrow a short window.
-            .id("settings-scroll")
-            .max_h(px(680.))
-            .overflow_y_scroll()
-            .track_focus(focus)
-            .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                if ev.keystroke.key == "escape" {
-                    cx.stop_propagation();
-                    this.close_sheet(window, cx);
-                }
-            }))
-            .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                cx.stop_propagation();
-                this.close_sheet(window, cx);
-            }))
-            .child(
-                div()
-                    .mb(px(6.))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(13.))
-                    .child("Settings"),
-            )
-            .child(row(
-                "WRITING FONT",
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(6.))
-                    .children(writing)
-                    .into_any_element(),
-            ))
-            .child(row(
-                "INTERFACE FONT",
-                div()
-                    .flex()
-                    .flex_wrap()
-                    .gap(px(6.))
-                    .children(ui)
-                    .into_any_element(),
-            ))
-            .child(row(
-                "SIZE",
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(
-                        chip("sz-".into(), "−".into(), false, None).on_click(cx.listener(
-                            |this, _, window, cx| {
-                                this.prefs.smaller();
-                                this.apply_prefs(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        div()
-                            .w(px(46.))
-                            .flex()
-                            .justify_center()
-                            .child(format!("{} px", self.prefs.font_size)),
-                    )
-                    .child(
-                        chip("sz+".into(), "+".into(), false, None).on_click(cx.listener(
-                            |this, _, window, cx| {
-                                this.prefs.bigger();
-                                this.apply_prefs(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        div()
-                            .ml(px(8.))
-                            .text_color(p.muted)
-                            .child(crate::keymap::hint("⌘+  ⌘−  ⌘0")),
-                    )
-                    .into_any_element(),
-            ))
-            .child(row(
-                "THEME",
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(themes)
-                    .children(theme_dark_note)
-                    .into_any_element(),
-            ))
-            .child(row(
-                "LAYOUT",
-                div()
-                    .flex()
-                    .gap(px(6.))
-                    .children(layouts)
-                    .into_any_element(),
-            ))
-            .child(self.render_buttons_setting(cx)) // --- buttons ---
-            .child(self.render_chat_setting(cx)) // --- chat ---
-            .child(self.render_flow_settings(cx)) // --- flow ---
-            .child(self.render_nearby_setting(cx)) // --- nearby ---
-            .child(self.render_reader_view_settings(cx)) // --- reader view / changelog ---
-            .child(row(
-                "QUICK CAPTURE",
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(
-                        crate::theme_ext::field_box(div(), &self.theme)
-                            .id("hotkey-box")
-                            .px(px(10.))
-                            .py(px(5.))
-                            .when(hotkey_error.is_some(), |d| d.border_color(p.over))
-                            .text_size(px(13.))
-                            .child(gpui_kit::base::input::Input::new(hotkey)),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.5))
-                            .text_color(if hotkey_error.is_some() {
-                                p.over_text()
-                            } else {
-                                p.muted
-                            })
-                            .child(match hotkey_error {
-                                Some(e) => e.to_string(),
-                                None => format!(
-                                    "Now {} · type e.g. ctrl+alt+b or cmd+shift+space, then ⏎",
-                                    prefs::hotkey_glyphs(&self.prefs.hotkey)
-                                ),
-                            }),
-                    )
-                    .into_any_element(),
-            ))
-            .child(self.render_ai_settings_row(cx)) // --- AI ---
-            .child(self.render_ext_settings_row(cx)) // --- extensions ---
-            .child(row(
-                "CONFIG FILE",
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .child(
-                                chip("open-config".into(), "Open config file".into(), false, None)
-                                    .on_click(
-                                        cx.listener(|this, _, _, cx| this.open_config_file_now(cx)),
-                                    ),
-                            )
-                            .child(
-                                chip(
-                                    "reload-config".into(),
-                                    crate::keymap::hint("Reload  ⌘⇧,").into(),
-                                    false,
-                                    None,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _, window, cx| {
-                                        this.reload_config(&ReloadConfig, window, cx)
-                                    },
-                                )),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .min_w_0()
-                            .text_size(px(11.5))
-                            .text_color(p.muted)
-                            .child(div().truncate().child(format!("Saved in {config_path}")))
-                            .child(
-                                div()
-                                    .truncate()
-                                    .child("Every option: blygger +show-config --default --docs"),
-                            ),
-                    )
-                    .into_any_element(),
-            ))
-            // --- help ---
-            .child(self.render_help_settings(cx))
-            // --- end help ---
-            .child(
-                div()
-                    .mt(px(10.))
-                    .flex()
-                    .gap(px(14.))
-                    .text_color(p.muted)
-                    .child(
-                        div()
-                            .id("settings-close")
-                            .flex()
-                            .items_center()
-                            .gap(px(5.))
-                            .child(kbd("esc"))
-                            .child("close")
-                            // Windows: the key is a button too.
-                            .when(cfg!(target_os = "windows"), |d| {
-                                d.cursor_pointer().on_click(
-                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
-                                )
-                            }),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .items_center()
-                            .gap(px(5.))
-                            .child(kbd(crate::keymap::hint("⌘,")))
-                            .child("toggle"),
-                    ),
-            )
-            .into_any_element()
     }
 }

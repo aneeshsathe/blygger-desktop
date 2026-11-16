@@ -907,59 +907,45 @@ impl MainView {
                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
                 .child(label)
         };
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("CHAT"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(6.))
-                            .child(chip("chat-tab-on", "Show #thicket tab", c.tab).on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.set_chat_setting("chat-tab", true, window, cx)
+        crate::app::settings_page::row(
+            &p,
+            "CHAT",
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(6.))
+                        .child(chip("chat-tab-on", "Show #thicket tab", c.tab).on_click(
+                            cx.listener(|this, _, window, cx| {
+                                this.set_chat_setting("chat-tab", true, window, cx)
+                            }),
+                        ))
+                        .child(
+                            chip("chat-tab-off", "Hide it", !c.tab).on_click(cx.listener(
+                                |this, _, window, cx| {
+                                    this.set_chat_setting("chat-tab", false, window, cx)
+                                },
+                            )),
+                        )
+                        .child(
+                            chip("chat-notify", "Notify me of mentions", c.notifications).on_click(
+                                cx.listener(move |this, _, window, cx| {
+                                    let on = !config(cx).notifications;
+                                    this.set_chat_setting("chat-notifications", on, window, cx)
                                 }),
-                            ))
-                            .child(
-                                chip("chat-tab-off", "Hide it", !c.tab).on_click(cx.listener(
-                                    |this, _, window, cx| {
-                                        this.set_chat_setting("chat-tab", false, window, cx)
-                                    },
-                                )),
-                            )
-                            .child(
-                                chip("chat-notify", "Notify me of mentions", c.notifications)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        let on = !config(cx).notifications;
-                                        this.set_chat_setting("chat-notifications", on, window, cx)
-                                    })),
                             ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(p.muted)
-                            .child(format!("#thicket on Libera.Chat. {EXPERIMENTAL}")),
-                    ),
-            )
-            .into_any_element()
+                        ),
+                )
+                .child(crate::app::settings_page::note(
+                    &p,
+                    format!("#thicket on Libera.Chat. {EXPERIMENTAL}"),
+                )),
+        )
+        .into_any_element()
     }
 
     /// Hook (render_reading_body): the chat screen.

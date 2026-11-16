@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Changed
+
+- Settings is a full page and nothing in it is cut off any more. ⌘, opens it over the whole window below the title bar instead of a pop-up, and every row of options and every explanation wraps to fit, at any window width and font.
+
 ## [0.24.0] - 2026-11-15
 
 Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.
