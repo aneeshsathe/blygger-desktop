@@ -27,8 +27,12 @@ for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
 export async function detect() {
   if (!/^https?:$/.test(location.protocol)) return { mode: 'demo' };
   const r = await call('GET', '/api/capabilities');
+  // Kept for `start`, so the shelf's and the parity screens' capability
+  // checks don't read it a second time.
+  detected = r.status === 200 ? r.body : undefined;
   return JSON.parse(Burrow.detect(r.status, r.body, r.www));
 }
+let detected;
 
 /** A whole cursor-paged list (restarted on cursor-expired, never partial).
     A failure carries the answer's status and Retry-After, for the backoff.
@@ -71,6 +75,8 @@ export async function start(online) {
   saved = undefined; // read once: a later start (none today) reads again
   S.B = Burrow.new_live(now(), store, reading, online ? base : '');
   if (!online) S.B.set_offline(true);
+  if (online && detected) S.B.wr_loaded('capabilities', detected);
+  detected = undefined;
   hooks();
   // --- web-writing --- Settings now; contacts once the page has drawn.
   if (S.wSettings) { S.B.w_set_settings(S.wSettings); S.wSettings = null; }
