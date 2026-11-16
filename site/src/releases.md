@@ -5,6 +5,38 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.25.0
+
+Mentions that say why they're there, Settings with room to breathe, and a web
+app that feels like an app: it fills the page and steps from post to post.
+
+### Mentions, and why
+
+**Reading › Mentions** lists the posts that point at you: the ones your blyg
+says name you (an @-mention), and the ones Burrow finds itself that quote,
+reply to, fork or link to your blyg. A tag on each row says which: *named
+you*, *quoted you*, *replied*, *forked you* or *linked you*. The list no
+longer shows everything for a moment and then shrinks to a few: your blyg's
+last answer is kept, so it's whole from the start. The web app lists and tags
+them the same way.
+
+### Settings is a full page
+
+⌘, opens Settings over the whole window instead of a pop-up, and every row of
+options and every explanation wraps to fit, at any window width and font.
+Esc or ⌘, closes it.
+
+### The web app
+
+- **Post to post.** An open post has **‹ ›** for the previous and next post,
+  in the list as you saw it. On a phone or an iPad, swipe sideways across the
+  post: left for the next, right for the previous. ↑ ↓ on a keyboard do the
+  same.
+- **It fills the page** on a laptop or iPad, rather than sitting in a window
+  drawn inside the page. Theme and layout are in the title bar, and **Keys**
+  lists the shortcuts.
+- **On a phone, swiping back from a post** no longer plays the slide twice.
+
 ## Burrow 0.24.0
 
 Set a post aside without unfollowing anyone, keep anyone's posts on a shelf

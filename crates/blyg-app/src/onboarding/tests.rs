@@ -783,6 +783,9 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the sample post is held");
             v.toggle_reading_shelf(key, cx)
         }),
+        "mentions-feed" => e.view.update(e.cx, |v, cx| {
+            v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
+        }),
         "shelf-lens" => e.view.update(e.cx, |v, cx| {
             v.select_source(
                 crate::app::reading::sources_vm::Source::Smart(
