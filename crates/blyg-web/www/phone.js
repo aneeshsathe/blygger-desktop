@@ -53,10 +53,22 @@ function show(v, { push = true } = {}) {
   if (!ROOT_OF[v] && ROOT_OF[was] && history.state?.burrow) { try { history.back(); } catch {} }
   render();
 }
-window.addEventListener('popstate', () => {
+// The system's own back swipe has already slid the post away: running the
+// views' slide as well played the move twice. Browsers that say so set
+// `hasUAVisualTransition`; for the rest, a touch that began at a screen edge
+// just before is the swipe.
+let edgeTouchAt = 0;
+document.addEventListener('touchstart', (e) => {
+  const x = e.touches[0]?.clientX ?? 50;
+  if (x < 30 || x > innerWidth - 30) edgeTouchAt = Date.now();
+}, { passive: true, capture: true });
+window.addEventListener('popstate', (e) => {
   if (S.layout !== 'phone') return;
+  const swiped = e.hasUAVisualTransition || Date.now() - edgeTouchAt < 1500;
+  if (swiped) app.classList.add('still');
   if (pview === 'edit') leaveEditor();
   else if (pview === 'post') show('read', { push: false });
+  if (swiped) requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('still')));
 });
 
 // ---------------------------------------------------------------- render

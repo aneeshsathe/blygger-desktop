@@ -16,6 +16,13 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Changed
+- **Web app on a laptop or iPad: it now fills the page.** On your blyg the app is no longer drawn as a window inside a page (no frame, traffic lights or width cap). Theme and layout moved into the title bar, and **Keys** opens the keyboard list. The sample-data demo keeps its window.
+
+### Fixed
+- **Web app on a phone: swiping back from a post played the slide twice.** The system's back swipe already moves the views, so after it the app no longer slides them again (`hasUAVisualTransition`, or a touch that began at the screen edge).
+
+
 ## [0.24.0] - 2026-11-15
 
 Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.

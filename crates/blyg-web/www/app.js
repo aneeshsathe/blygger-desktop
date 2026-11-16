@@ -36,6 +36,20 @@ function registerWorker() {
   navigator.serviceWorker.register('sw.js', { scope: './' }).catch((err) => console.warn('No offline copy:', err?.message || err));
 }
 
+/** Live, the app is the page: the theme and layout controls move into the
+ *  title bar, with a Keys button for the keyboard list (style.css). */
+function liveChrome() {
+  const tb = document.querySelector('#win .tb'), controls = document.querySelector('#desk .controls');
+  const keys = document.querySelector('#desk .keys');
+  if (!tb || !controls || tb.contains(controls)) return;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'ghost'; b.textContent = 'Keys';
+  b.setAttribute('aria-pressed', 'false');
+  b.onclick = () => b.setAttribute('aria-pressed', String(keys?.classList.toggle('on') ?? false));
+  controls.append(b);
+  tb.append(controls);
+}
+
 /** Which Burrow: live on this blyg, or the demo. */
 async function openStore() {
   const m = await live.detect();
@@ -43,6 +57,7 @@ async function openStore() {
   if (m.mode === 'live' || cached) {
     S.live = live;
     document.documentElement.dataset.mode = 'live';
+    liveChrome();
     await live.start(m.mode === 'live');
     return m;
   }

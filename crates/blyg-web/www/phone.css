@@ -36,6 +36,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   padding-top:env(safe-area-inset-top);transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility .28s}
 .pview:not(.off-r):not(.off-l){transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility 0s}
 .pview.off-r{transform:translateX(100%);visibility:hidden}
+/* After the system's back swipe: it already moved the views. */
+#phone.still .pview{transition:none!important}
 .pview.off-l{transform:translateX(-30%);visibility:hidden}
 #v-edit,#v-post{bottom:0}
 #phone.kb #v-edit{padding-top:0}

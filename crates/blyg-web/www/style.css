@@ -193,3 +193,18 @@ html:not([data-mode="live"]) .live-only, html[data-mode="live"] .demo-only { dis
 .pfilter .pf b{font-weight:600;margin-left:2px}
 .pfilter .pf.on{border-color:var(--wacc);color:var(--wacc)}
 /* --- end web-parity --- */
+
+/* ============ live: the app is the page ============
+   The demo shows Burrow as a window on a page; on your own blyg it is the
+   page: no frame, no traffic lights, the whole viewport. Theme and layout
+   sit in the title bar, and the keyboard list opens from it. */
+html[data-mode="live"] #desk{height:100dvh;display:flex;flex-direction:column}
+html[data-mode="live"] #desk > header.page{display:none}
+html[data-mode="live"] main{max-width:none;padding:0;min-height:0}
+html[data-mode="live"] .win{border-radius:0;box-shadow:none;min-height:0}
+html[data-mode="live"] .tb i{display:none}
+html[data-mode="live"] .tb .t{margin-right:0;text-align:left}
+html[data-mode="live"] .keys{display:none;margin:0;padding:8px 14px 10px;border-top:1px solid var(--line);flex:none}
+html[data-mode="live"] .keys.on{display:block}
+.tb .controls{flex:none;gap:6px;font-size:12px}
+.tb .controls select,.tb .controls button{padding:2px 8px;font-size:12px;border-radius:6px}
