@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-15
+
+Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.
+
 ### Added
 
 - **Background and Foreground** in Reading, from blygger-studio 0.61. The Background list is now your blyg's own: posts you moved there, blygs you moved there, your own minor changes (a version the change classifier calls a typo, minor or refresh) and, as before, withdrawn posts. Every other list, Mentions and the counts leave them out. Under an open post, **↓ Background** (**b**) / **↑ Foreground**, **↺ Clear my choice** and **⇊ / ⇈ Blyg to Background / Foreground**; Settings › Reading › Background turns the minor-change rule off or on (saved on your blyg). The web app has the same under an open post and in ⚙ Reading. Needs a studio that advertises `setReadingPlacement`; on an older one, Background lists withdrawn posts as before and offers none of this.
@@ -26,11 +30,21 @@ teaches something new in the tour, set the newest entry's `version` in
 ### Changed
 
 - **Mentions leaves Background out**, as the studio's does: a mention that's withdrawn or moved to Background is listed under Background instead.
+- **The tour teaches Background, the shelf in Reading and Discover.** The Reading feature tour has four new steps on the sample data: **b** on a post (Background), **+ Add to shelf**, the **Shelf** lens, and **Discover…** on the Subscriptions screen. What's new runs them after the update. The Writing tour's shelf step says the shelf syncs with studio 0.61, and the Reader step lists Shelf.
 
 ### Fixed
 
 - **The tour's Catch up step** no longer hides the conversation behind the tour card: while a tour card shows, reading sheets sit to its right.
 - **Web app: the Mentions lens** asked `GET /api/reading` for 100 entries a page, more than its 50; it now asks for 50.
+- **Web app: capabilities read twice at start.** The shelf's first sync asked `/api/capabilities` again after the start-up check had read it; the answer is now kept.
+- **Background read too often**: every edit to one of your drafts made elsewhere read the whole Background lens again. It's now read when `reading`, `subscriptions` or `settings` moves; the studio moves `reading` whenever one of your posts' status, version or Background reasons changes, so nothing is missed.
+
+### Not verified
+
+- **Windows**: nothing in this release was run on Windows. The new keys and chips are plain (**b**, clicks); Windows CI builds and tests it.
+- **Discover** was checked against the bundled sample directory and a local fixture, not against blygger.com's live directory.
+- **The shelf sync's merge** of a change made in two places at once was tested against a real local studio, not across two real computers.
+- **Two lists can disagree on a withdrawn post you shelved**: the studio drops a withdrawn post from its Shelf lens; Burrow's Shelf matched it in the real-studio test, but a withdrawn post kept by a pin was not tried.
 
 ## [0.23.0] - 2026-11-15
 

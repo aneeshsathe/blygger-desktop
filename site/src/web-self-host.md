@@ -239,6 +239,16 @@ not have is hidden, or says why, until the studio offers it.
   with OAuth (shown once: copy it into the tool's credential store), and
   revokes one or all, each after asking. Revoking doesn't sign the web app
   out: it uses your Studio session, not a token.
+- **Background and Foreground**: under an open post, ↓ Background /
+  ↑ Foreground, ↺ Clear my choice and the blyg-wide pair, and the rules in
+  ⚙ Reading, as on the desktop (no key). See
+  [Background and Foreground](reading.md#background-and-foreground). Needs a
+  studio with `setReadingPlacement` (0.61).
+- **The shelf syncs** with your blyg, the studio and the desktop app, and
+  holds others' posts too: **+ Add to shelf** under an open post, and the
+  **Shelf** lens in Sources. See [The shelf](writing.md#the-shelf). Needs a
+  studio with `getShelf` and `putShelf` (0.61); otherwise the shelf stays in
+  this browser.
 
 ## Updating
 

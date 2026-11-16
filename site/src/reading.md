@@ -31,7 +31,7 @@ revised leads with its latest changelog note,
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
 (All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
-Background, then **Your blyg**, your **hoppers**, your folders and the rest),
+Shelf, Background, then **Your blyg**, your **hoppers**, your folders and the rest),
 the posts from that source in the middle, and the post on the right.
 
 - **Threads** and **Fragments** list only that kind of post; **Thumbed
@@ -41,6 +41,10 @@ the posts from that source in the middle, and the post on the right.
   ones that quote or reply to your posts, or link to your blyg (or, on studio
   0.56 and later, what your blyg's own mentions lens says). A dot says there's
   something to read; there's never a count.
+- **Shelf** lists everything on your shelf, yours and others', in your
+  order, as the studio's Shelf lens does: **+ Add to shelf** among a post's
+  chips puts it there (see [The shelf](writing.md#the-shelf)). A shelved
+  post stays in Shelf even when it's in Background; a withdrawn one leaves.
 - **Background** holds what you've set aside, newest first, and nothing
   else lists it: not the other feeds, Mentions, the counts or the stream.
   Withdrawn posts are always there, the blygs' and your own; opened, one
