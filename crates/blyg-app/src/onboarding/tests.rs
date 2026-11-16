@@ -948,38 +948,196 @@ fn walk_tour(e: &mut Env, name: &str) {
     }
 }
 
-/// Every tour, picked from the chooser after the one before it, walks to
-/// its end card on its steps' own keys (so every step does, in the tour it
-/// is in), and what's new walks 0.21.0's steps. All on sample data.
-#[gpui_kit::test]
-fn every_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
+/// A fresh window on the tour chooser, the tour's sample extensions up and
+/// the real backend's calls so far forgotten.
+fn on_the_chooser(cx: &mut TestAppContext) -> Env<'_> {
     let mut e = setup_ext(cx);
     e.cx.dispatch_action(super::ShowTutorial);
     e.cx.run_until_parked();
     tour_extensions_ready(&mut e);
     e.real.take();
-    let picks = [(Pick::Quick, "enter".to_string())]
-        .into_iter()
-        .chain((0..TOURS.len()).map(|n| (Pick::Feature(n), (n + 1).to_string())));
-    for (pick, key) in picks {
-        if !chooser_up(&mut e) {
-            e.view
-                .update_in(e.cx, |v, window, cx| v.tour_chooser(window, cx));
-            e.cx.run_until_parked();
-        }
-        e.cx.simulate_keystrokes(&key);
+    e
+}
+
+/// Pick `pick` from the chooser (opened again if a tour's end card is up)
+/// and walk it to its end card on its steps' own keys; a feature tour is
+/// ticked.
+fn walk_pick(e: &mut Env, pick: Pick) {
+    let key = match pick {
+        Pick::Quick => "enter".to_string(),
+        Pick::Feature(n) => (n + 1).to_string(),
+        Pick::News => unreachable!("what's new isn't on the chooser"),
+    };
+    if !chooser_up(e) {
+        e.view
+            .update_in(e.cx, |v, window, cx| v.tour_chooser(window, cx));
         e.cx.run_until_parked();
-        assert_eq!(tour_pick(&mut e), Some(pick));
-        assert_eq!(tour_pos(&mut e).0, 0, "{pick:?} starts at its start");
-        walk_tour(&mut e, &format!("{pick:?}"));
-        if let Pick::Feature(n) = pick {
-            let done = e.view.read_with(e.cx, |v, _| {
-                v.onboarding.finished_tours.iter().any(|t| t == TOURS[n].id)
-            });
-            assert!(done, "{}: ticked", TOURS[n].id);
+    }
+    e.cx.simulate_keystrokes(&key);
+    e.cx.run_until_parked();
+    assert_eq!(tour_pick(e), Some(pick));
+    assert_eq!(tour_pos(e).0, 0, "{pick:?} starts at its start");
+    walk_tour(e, &format!("{pick:?}"));
+    if let Pick::Feature(n) = pick {
+        let done = e.view.read_with(e.cx, |v, _| {
+            v.onboarding.finished_tours.iter().any(|t| t == TOURS[n].id)
+        });
+        assert!(done, "{}: ticked", TOURS[n].id);
+    }
+}
+
+/// `TOURS` index of the tour `id`.
+fn feature(id: &str) -> usize {
+    TOURS
+        .iter()
+        .position(|t| t.id == id)
+        .unwrap_or_else(|| panic!("no tour {id}"))
+}
+
+/// Feature tour `id`, picked from the chooser, walks to its end card on its
+/// steps' own keys (so every step does, in the tour it is in), all on
+/// sample data, and is remembered as walked.
+fn walk_feature_tour(cx: &mut TestAppContext, id: &str) {
+    let mut e = on_the_chooser(cx);
+    walk_pick(&mut e, Pick::Feature(feature(id)));
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+    assert_eq!(state::AppState::load(e.dir.path()).tours_done, [id]);
+}
+
+/// Each step `which` picks out, entered in table order, rings something on
+/// screen that holds what its caption points at.
+fn steps_ring_something_on_screen(cx: &mut TestAppContext, which: impl Fn(&str) -> bool) {
+    let mut e = setup_ext(cx);
+    e.cx.dispatch_action(super::ShowTutorial);
+    e.cx.run_until_parked();
+    tour_extensions_ready(&mut e);
+    let (vw, vh) = e.cx.update(|window, _| {
+        let s = window.viewport_size();
+        (f32::from(s.width), f32::from(s.height))
+    });
+    let mut checked = 0;
+    for step in STEPS.iter().filter(|s| which(s.id)) {
+        checked += 1;
+        enter(&mut e, step.id);
+        settle(&mut e);
+        let ring = ring_now(&mut e, step.region);
+        if step.region == Region::Whole {
+            assert_eq!(ring, None, "{}: no ring", step.id);
+            continue;
+        }
+        let (x, y, w, h) =
+            ring.unwrap_or_else(|| panic!("{}: no ring on {:?}", step.id, step.region));
+        assert!(w > 20. && h > 20., "{}: {w}×{h}", step.id);
+        assert!(
+            x >= -1. && y >= -1. && x + w <= vw + 1. && y + h <= vh + 1.,
+            "{}: ({x}, {y}, {w}, {h}) is off the {vw}×{vh} window",
+            step.id
+        );
+        // What the caption points at is inside the ring.
+        let inside: &[&str] = match step.region {
+            // The toggle in the Stream; in Reader mode, the sources pane.
+            Region::Reader if !in_reader(&mut e) => &["mode-stream", "mode-reader"],
+            Region::StreamPost => &["stream-actions"],
+            // The post pane: its breadcrumb row is at the top of every post.
+            Region::ReaderPost => &["trail-bar"],
+            Region::BrowserChrome => &["browser-shield", "browser-clip", "browser-close"],
+            Region::MacroRun => &["browser-macro-stop", "browser-close"],
+            Region::ScreenHeader => &["opml-import-chip"],
+            Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
+            _ => &[],
+        };
+        // The drawer's folders come from the extension: wait for them.
+        if step.region == Region::NotesDrawer {
+            wait_drawn(&mut e, step.id, "lib-vault-1");
+        }
+        for sel in inside {
+            let b =
+                e.cx.debug_bounds(sel)
+                    .unwrap_or_else(|| panic!("{}: no {sel} on screen", step.id));
+            let (bx, by) = (f32::from(b.left()), f32::from(b.top()));
+            let (bx1, by1) = (f32::from(b.right()), f32::from(b.bottom()));
+            // The browser pane may still be sliding in from the right (the
+            // ring is where it lands): only its left and vertical edges.
+            let sliding = matches!(step.region, Region::BrowserChrome | Region::MacroRun);
+            assert!(
+                bx >= x - 1. && by >= y - 1. && (sliding || bx1 <= x + w + 1.) && by1 <= y + h + 1.,
+                "{}: {sel} ({bx}, {by})–({bx1}, {by1}) is outside the ring ({x}, {y}, {w}, {h})",
+                step.id
+            );
         }
     }
-    // What's new: only 0.21.0's steps, then the end card.
+    assert!(checked > 0, "no steps to check");
+}
+
+/// One test per feature tour (`walk::<tour>`, `rings::<tour>`): small tests
+/// run in parallel where one walk through every tour took half a minute.
+/// `every_tour_has_its_own_tests` fails when a tour is added without them.
+macro_rules! per_tour {
+    ($($tour:ident),* $(,)?) => {
+        /// The tours with their own tests, in `TOURS` order.
+        const COVERED: &[&str] = &[$(stringify!($tour)),*];
+
+        mod walk {
+            use super::*;
+            $(
+                #[gpui_kit::test]
+                fn $tour(cx: &mut TestAppContext) {
+                    walk_feature_tour(cx, stringify!($tour));
+                }
+            )*
+        }
+
+        /// Every step of the tour (the steps `tour_of` puts in it).
+        mod rings {
+            use super::*;
+            $(
+                #[gpui_kit::test]
+                fn $tour(cx: &mut TestAppContext) {
+                    let n = feature(stringify!($tour));
+                    steps_ring_something_on_screen(cx, |id| steps::tour_of(id) == Some(n));
+                }
+            )*
+        }
+    };
+}
+
+per_tour!(
+    writing, ai, publishing, reading, lineage, notes, extensions, blyg, workspace,
+);
+
+#[test]
+fn every_tour_has_its_own_tests() {
+    let ids: Vec<&str> = TOURS.iter().map(|t| t.id).collect();
+    assert_eq!(COVERED, ids, "add the new tour to per_tour!");
+}
+
+/// The quick tour walks to its end card on its steps' own keys, all on
+/// sample data; it isn't one of the feature tours remembered as walked.
+#[gpui_kit::test]
+fn the_quick_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
+    let mut e = on_the_chooser(cx);
+    walk_pick(&mut e, Pick::Quick);
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+    assert!(state::AppState::load(e.dir.path()).tours_done.is_empty());
+}
+
+/// Tours chain: each picked from the chooser after the one before it walks
+/// from its start, and both are remembered.
+#[gpui_kit::test]
+fn tours_chain_one_after_another(cx: &mut TestAppContext) {
+    let mut e = on_the_chooser(cx);
+    walk_pick(&mut e, Pick::Feature(feature("ai")));
+    walk_pick(&mut e, Pick::Feature(feature("extensions")));
+    assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
+    let mut kept = state::AppState::load(e.dir.path()).tours_done;
+    kept.sort();
+    assert_eq!(kept, ["ai", "extensions"]);
+}
+
+/// What's new walks only 0.21.0's steps, then the end card.
+#[gpui_kit::test]
+fn whats_new_walks_on_its_own_keys(cx: &mut TestAppContext) {
+    let mut e = on_the_chooser(cx);
     e.view.update_in(e.cx, |v, window, cx| {
         v.start_whats_new(vec![&RELEASE_0_21], window, cx)
     });
@@ -991,9 +1149,13 @@ fn every_tour_walks_on_its_own_keys(cx: &mut TestAppContext) {
     assert_eq!(tour_pos(&mut e).1, 3);
     walk_tour(&mut e, "news");
     assert_eq!(e.real.take(), Vec::<&str>::new(), "all on sample data");
-    // Walked tours are remembered.
-    let kept = state::AppState::load(e.dir.path()).tours_done;
-    assert_eq!(kept.len(), TOURS.len(), "{kept:?}");
+}
+
+/// The steps in no feature tour (the end cards) ring nothing or the right
+/// thing too.
+#[gpui_kit::test]
+fn steps_outside_the_feature_tours_ring_something_on_screen(cx: &mut TestAppContext) {
+    steps_ring_something_on_screen(cx, |id| steps::tour_of(id).is_none());
 }
 
 static RELEASE_0_21: super::whats_new::Release = super::whats_new::Release {
@@ -1096,67 +1258,6 @@ fn the_chooser_and_the_end_cards(cx: &mut TestAppContext) {
     e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-right"));
     e.cx.run_until_parked();
     assert_eq!(tour_step(&mut e), None, "Done ends it");
-}
-
-#[gpui_kit::test]
-fn every_step_rings_something_on_screen(cx: &mut TestAppContext) {
-    let mut e = setup_ext(cx);
-    e.cx.dispatch_action(super::ShowTutorial);
-    e.cx.run_until_parked();
-    tour_extensions_ready(&mut e);
-    let (vw, vh) = e.cx.update(|window, _| {
-        let s = window.viewport_size();
-        (f32::from(s.width), f32::from(s.height))
-    });
-    for step in STEPS {
-        enter(&mut e, step.id);
-        settle(&mut e);
-        let ring = ring_now(&mut e, step.region);
-        if step.region == Region::Whole {
-            assert_eq!(ring, None, "{}: no ring", step.id);
-            continue;
-        }
-        let (x, y, w, h) =
-            ring.unwrap_or_else(|| panic!("{}: no ring on {:?}", step.id, step.region));
-        assert!(w > 20. && h > 20., "{}: {w}×{h}", step.id);
-        assert!(
-            x >= -1. && y >= -1. && x + w <= vw + 1. && y + h <= vh + 1.,
-            "{}: ({x}, {y}, {w}, {h}) is off the {vw}×{vh} window",
-            step.id
-        );
-        // What the caption points at is inside the ring.
-        let inside: &[&str] = match step.region {
-            // The toggle in the Stream; in Reader mode, the sources pane.
-            Region::Reader if !in_reader(&mut e) => &["mode-stream", "mode-reader"],
-            Region::StreamPost => &["stream-actions"],
-            // The post pane: its breadcrumb row is at the top of every post.
-            Region::ReaderPost => &["trail-bar"],
-            Region::BrowserChrome => &["browser-shield", "browser-clip", "browser-close"],
-            Region::MacroRun => &["browser-macro-stop", "browser-close"],
-            Region::ScreenHeader => &["opml-import-chip"],
-            Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
-            _ => &[],
-        };
-        // The drawer's folders come from the extension: wait for them.
-        if step.region == Region::NotesDrawer {
-            wait_drawn(&mut e, step.id, "lib-vault-1");
-        }
-        for sel in inside {
-            let b =
-                e.cx.debug_bounds(sel)
-                    .unwrap_or_else(|| panic!("{}: no {sel} on screen", step.id));
-            let (bx, by) = (f32::from(b.left()), f32::from(b.top()));
-            let (bx1, by1) = (f32::from(b.right()), f32::from(b.bottom()));
-            // The browser pane may still be sliding in from the right (the
-            // ring is where it lands): only its left and vertical edges.
-            let sliding = matches!(step.region, Region::BrowserChrome | Region::MacroRun);
-            assert!(
-                bx >= x - 1. && by >= y - 1. && (sliding || bx1 <= x + w + 1.) && by1 <= y + h + 1.,
-                "{}: {sel} ({bx}, {by})–({bx1}, {by1}) is outside the ring ({x}, {y}, {w}, {h})",
-                step.id
-            );
-        }
-    }
 }
 
 #[gpui_kit::test]

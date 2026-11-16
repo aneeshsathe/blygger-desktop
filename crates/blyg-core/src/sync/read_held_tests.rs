@@ -1,7 +1,7 @@
 //! --- read/unread --- Read state held for the scope (`read_denied`), on
 //! real SQLite: the ops stay queued, new marks still queue, and the rest of
 //! the outbox goes on without them. (The 403 itself is tested against a
-//! real studio: `tests/e2e.rs`, `read_state_needs_its_own_scope`.)
+//! real studio: `tests/it/e2e.rs`, `read_state_needs_its_own_scope`.)
 
 use std::collections::HashMap;
 

@@ -1,18 +1,16 @@
 //! Sign in with ChatGPT (browser PKCE, device code, refresh) and the Codex
 //! Responses endpoint, against mock auth + ChatGPT servers.
 
-mod common;
-
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use crate::common::*;
 use blyg_ai::chatgpt::{self, ChatGptAccount, ChatGptOAuth, Credentials};
 use blyg_ai::*;
 use blyg_core::config::{MemoryTokenStore, TokenStore};
-use common::*;
 use serde_json::json;
 
 fn token_json(access: &str, refresh: &str) -> serde_json::Value {

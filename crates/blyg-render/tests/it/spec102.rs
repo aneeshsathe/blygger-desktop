@@ -2,13 +2,11 @@
 //! (v0.4-plan §21) and the rendering half of #103, as the preview and the
 //! publish check apply them.
 
-mod common;
-
+use crate::common::FakeStore;
 use blyg_render::{
     Found, ItemKind, Kind, RenderOpts, Resolution, Resolver, UnresolvedReason, absolutize_html,
     publish_grammar_errors, render_preview,
 };
-use common::FakeStore;
 
 const A: &str = "01j9zq3k4m5n6p7q8r9s0t1v2w"; // local fragment, v3
 const R: &str = "02abcdefghjkmnpqrstvwxyz01"; // remote fragment, v5, no page

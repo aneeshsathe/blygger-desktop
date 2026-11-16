@@ -3,16 +3,14 @@
 //! The local Claude Code / Codex bridges against fake `claude` / `codex`
 //! shell scripts on a custom PATH. No real CLI is ever run.
 
-mod common;
-
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use crate::common::*;
 use blyg_ai::claude_code::LocalClaudeCode;
 use blyg_ai::cli::CliLocator;
 use blyg_ai::codex::LocalCodex;
 use blyg_ai::*;
-use common::*;
 
 /// The temp dir first, then just enough of the system for `cat` & co.
 /// (Neither real CLI lives in /bin or /usr/bin.)
