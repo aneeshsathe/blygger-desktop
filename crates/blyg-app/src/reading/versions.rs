@@ -152,16 +152,51 @@ impl MainView {
             id: item.local_id.clone(),
             list: Load::Loading,
             sel: Some(item.version),
+            item: item.clone(),
+            network: None,
         });
         window.focus(&self.focus, cx);
         self.load_own_versions(item.local_id, cx);
         cx.notify();
     }
 
+    /// Re-read the open history's post and its responses off the UI thread
+    /// (on open and on store events): the pane draws from this cache.
+    pub(crate) fn refresh_own_post(&mut self, cx: &mut Context<Self>) {
+        let Some(id) = self.reading.own.as_ref().map(|o| o.id.clone()) else {
+            return;
+        };
+        let backend = self.backend.clone();
+        let id2 = id.clone();
+        let task = cx.background_spawn(async move {
+            let item = backend.item(&id2)?;
+            let network = item.server_id.as_ref().and_then(|sid| {
+                let origin = backend.base_url()?;
+                let list = backend.responses(&origin, &sid.0);
+                Some((origin, sid.0.clone(), list))
+            });
+            Some((item, network))
+        });
+        cx.spawn(async move |this, cx| {
+            let Some((item, network)) = task.await else {
+                return;
+            };
+            let _ = this.update(cx, |v, cx| {
+                if let Some(own) = v.reading.own.as_mut().filter(|o| o.id == id) {
+                    own.item = item;
+                    own.network = network;
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
     fn load_own_versions(&mut self, id: LocalId, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         let id2 = id.clone();
         let task = cx.background_spawn(async move { backend.versions(&id2) });
+        self.refresh_own_post(cx);
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
@@ -312,7 +347,8 @@ impl MainView {
     ) -> Option<AnyElement> {
         let own = self.reading.own.as_ref()?;
         let p = self.palette.on_page();
-        let item = self.backend.item(&own.id)?;
+        // Cached when the pane opened and on store events: no store reads here.
+        let item = &own.item;
         let host = crate::vm::url_host(self.base_url.as_deref().unwrap_or("")).unwrap_or_default();
         let kind = crate::vm::kind_label(item.kind);
         let pin_color: Hsla = p.notice;
@@ -322,7 +358,7 @@ impl MainView {
                 let rows = vm::own_rows(list, item.version, self.now);
                 let sel = own.sel;
                 let actions = list.iter().find(|v| Some(v.version) == sel).map(|v| {
-                    let dirty = crate::vm::has_unpublished_edits(&item);
+                    let dirty = crate::vm::has_unpublished_edits(item);
                     (v.version, vm::own_actions(v, item.version, dirty))
                 });
                 div()
@@ -604,10 +640,8 @@ impl MainView {
                         )
                         .child(body)
                         // --- responses --- who quoted, stubbed or forked it.
-                        .children(item.server_id.as_ref().and_then(|sid| {
-                            let origin = self.backend.base_url()?;
-                            let network = self.backend.responses(&origin, &sid.0);
-                            self.render_responses(&origin, &sid.0, &network, cx)
+                        .children(own.network.as_ref().and_then(|(origin, sid, network)| {
+                            self.render_responses(origin, sid, network, cx)
                         })),
                 )
                 .child(

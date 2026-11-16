@@ -137,6 +137,17 @@ fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
     over.time("reading_changed (a sync tick)", 60, || {
         view.update(cx, |v, cx| v.reading_changed(cx))
     });
+    // A sync burst: the queued events are one batch, and one refresh.
+    let before = view.read_with(cx, |v, _| v.reading.refreshes);
+    over.time("a burst of 20 ReadingChanged + ItemsChanged", 80, || {
+        view.update_in(cx, |v, window, cx| {
+            let mut burst = vec![blyg_core::CoreEvent::ReadingChanged; 20];
+            burst.push(blyg_core::CoreEvent::ItemsChanged);
+            v.on_core_events(burst, window, cx)
+        })
+    });
+    let after = view.read_with(cx, |v, _| v.reading.refreshes);
+    assert_eq!(after - before, 1, "one refresh for the burst");
     over.time("unread count", 10, || live.unread_count());
     over.time("sources pane entries", 10, || {
         view.read_with(cx, |v, _| v.source_entries().len())
