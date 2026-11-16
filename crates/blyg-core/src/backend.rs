@@ -204,6 +204,12 @@ pub trait Backend: Send + Sync {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         None
     }
+    /// --- contacts --- The lens's last answer (`reading_mentions`), kept
+    /// so the Mentions feed's first paint already holds it. Local. `None`:
+    /// not served, or never asked.
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        None
+    }
     /// --- contacts --- Whether the blyg keeps an address book Burrow can
     /// manage (the Contacts sheet). Contract 5.7 serves both together.
     fn keeps_contacts(&self) -> bool {

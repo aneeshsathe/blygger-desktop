@@ -26,6 +26,10 @@ pub mod own {
     // --- end web-reading ---
 }
 
+// --- contacts --- why a post is in the Mentions feed, compiled unchanged.
+#[path = "../../../blyg-app/src/reading/mentions_vm.rs"]
+pub mod mentions_vm;
+
 #[path = "../../../blyg-app/src/reading/vm.rs"]
 #[allow(dead_code)]
 pub mod vm;

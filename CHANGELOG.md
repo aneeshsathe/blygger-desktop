@@ -16,6 +16,16 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- Reading › Mentions no longer shows a full list for a moment and then
+  shrinks to a few. It now lists both what your blyg's mentions lens finds
+  and what Burrow finds itself (quotes, replies, forks and links to your
+  blyg), and each row has a small tag saying why: named you, quoted you,
+  replied, forked you or linked you. The lens's last answer is kept, so the
+  list is whole from the start. The web app lists and tags them the same
+  way.
+
 ## [0.24.0] - 2026-11-15
 
 Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.

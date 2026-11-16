@@ -859,6 +859,7 @@ impl MainView {
             p.sel
         };
         let badge = vm::badge(r);
+        let why = self.mention_tags(&key);
         let edited = r.edited_since_read() && r.state != "tombstone";
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
             "(withdrawn)".to_string()
@@ -967,6 +968,18 @@ impl MainView {
                                 .child(b),
                         )
                     })
+                    // --- contacts --- in the Mentions feed: why it's
+                    // there ("named you", "quoted you"…), a tag or two.
+                    .children(why.into_iter().map(|t| {
+                        let (fg, bg) = p.quiet_badge();
+                        div()
+                            .px(px(6.))
+                            .rounded_full()
+                            .text_size(px(10.5))
+                            .text_color(fg)
+                            .bg(bg)
+                            .child(t)
+                    }))
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())

@@ -272,6 +272,15 @@ impl MainView {
                     cx,
                 );
             }
+            // --- contacts --- the Mentions feed: the lens's posts and the
+            // ones worked out here together, each tagged with why.
+            ("rd-mentions-feed", 0) => {
+                if let Some(f) = &self.fake {
+                    f.add_mentions_sample();
+                }
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-mentions-feed", 1) => self.select_source(super::sources_vm::Source::Mentions, cx),
             // The "Today" smart feed, the first post open, keys in the post.
             ("rd-smart-today", 0) => self.show_view(View::Reading, window, cx),
             ("rd-smart-today", 1) => {
