@@ -8,6 +8,7 @@ import {
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
+  shelfNote, shelfButton,
 } from './core.js';
 // --- web-reading ---
 import { deskSources, opened, wrUse, go as wrGo } from './web-reading.js';
@@ -288,9 +289,10 @@ function askPick(quote) {
 /** ⌘B: the shelf, in order. */
 function askShelf() {
   const rows = V.shelf;
-  openSheet(`<h4>📚 Your shelf</h4>${rows.length
+  const note = shelfNote();
+  openSheet(`<h4>📚 Your shelf</h4>${note ? `<p class="muted">${esc(note)}</p>` : ''}${rows.length
     ? `<div class="picks">${rows.map((r, i) => `<button type="button" class="opt2" data-shelf="${esc(r.id)}"><span class="n">${i + 1}</span> ${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>`).join('')}</div>`
-    : '<p>Nothing on your shelf yet. ⌥⌘B shelves the open post.</p>'}
+    : '<p>None of your own posts are on the shelf. ⌥⌘B shelves the open post. Others\u2019 posts you shelve are under Reading › Shelf.</p>'}
     <div class="sk"><span><kbd>⏎</kbd> the first</span><span><kbd>esc</kbd> close</span></div>`,
   () => { const b = $('#sheet [data-shelf]'); if (b) openShelved(b.dataset.shelf); });
   $('#sheet').onclick = (e) => { const b = e.target.closest('[data-shelf]'); if (b) openShelved(b.dataset.shelf); };
@@ -320,6 +322,7 @@ function openReading(key) {
   renderPost($('#d-post'), p);
   opened(key, $('#d-post')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#d-ractions').hidden = false;
+  shelfButton($('#d-shelfRA'), key); // --- shelf sync ---
   $('#d-rpane .rscroll').scrollTop = 0;
   persist();
   render();
@@ -337,6 +340,10 @@ function readAction(a, key = rcur, passage = '') {
     copyText(S.B.link_markup(key)).then((ok) => toast(ok ? 'Link copied · paste it into a post' : 'Couldn’t reach the clipboard'));
   } else if (a === 'unread') {
     outcome(S.B.set_read(key, false)); persist(); render();
+  } else if (a === 'shelf') { // --- shelf sync ---
+    outcome(S.B.toggle_reading_shelf(key));
+    shelfButton($('#d-shelfRA'), key);
+    persist(); render();
   } else if (a === 'hopper') {
     const hs = JSON.parse(S.B.hoppers(key));
     openSheet(`<h4>⊕ Put it in a hopper</h4><div class="picks">${hs.map((h) => `<button type="button" class="opt2${h.on ? ' on' : ''}" data-hop="${esc(h.id)}">${h.on ? '✓ ' : ''}${esc(h.name)}</button>`).join('')}</div>

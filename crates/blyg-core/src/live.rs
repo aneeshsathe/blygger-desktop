@@ -246,6 +246,16 @@ impl LiveBackend {
         self.engine.emit_status();
     }
 
+    /// --- shelf sync --- The shelf changed here: redraw, and send it when
+    /// the blyg offers the synced shelf.
+    fn shelf_moved(&self) -> Result<()> {
+        self.engine.shelf_changed()?;
+        self.engine.emit(CoreEvent::ItemsChanged);
+        self.engine.emit(CoreEvent::ReadingChanged);
+        self.wake();
+        Ok(())
+    }
+
     /// The engine, with any typed text written first (`Typing`): what
     /// follows reads or changes the store as the user last left it.
     fn e(&self) -> &Engine {
@@ -1565,6 +1575,21 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.put_settings(settings))
     }
 
+    // --- discover --- the directory is public and token-less: it never
+    // goes through the owner `Api`.
+    fn discover_directory(&self) -> Result<Vec<crate::discover::DirectoryBlyg>> {
+        Ok(crate::discover::fetch(&crate::discover::directory_url())?)
+    }
+
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.e().track(self.e().api.discover_seen_at())
+    }
+
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.e().track(self.e().api.put_discover_seen_at(at))
+    }
+    // --- end discover ---
+
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
         let (it, blyg) = self.remote_row(sub_id, remote_id)?;
         if !blyg {
@@ -1752,7 +1777,8 @@ impl Backend for LiveBackend {
         self.e().store.set_subscription_folder(sub_id, folder)
     }
 
-    // --- shelf --- local only: the store, nothing queued.
+    // --- shelf --- the store first; a blyg that offers the synced shelf
+    // (studio 0.61) gets each change through the outbox (sync/shelf.rs).
 
     fn shelf(&self) -> Vec<LocalId> {
         self.e().store.shelf()
@@ -1760,14 +1786,25 @@ impl Backend for LiveBackend {
 
     fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
         self.e().store.set_on_shelf(id, on)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
     }
 
     fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
         self.e().store.move_on_shelf(id, index)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
+    }
+
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
+        self.e().store.shelf_wire()
+    }
+
+    fn set_entry_on_shelf(&self, entry: &crate::shelf::Entry, on: bool) -> Result<()> {
+        self.e().store.set_entry_on_shelf(entry, on)?;
+        self.shelf_moved()
+    }
+
+    fn shelf_state(&self) -> crate::shelf::SyncState {
+        self.engine.shelf_state()
     }
 
     // --- trails --- local only: the store, nothing queued.
@@ -1908,6 +1945,51 @@ impl Backend for LiveBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.e().store.background_reading()
     }
+
+    // --- background ---
+    fn background_served(&self) -> bool {
+        self.e().background_served()
+    }
+
+    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
+        self.e().store.background_set()
+    }
+
+    fn set_reading_placement(
+        &self,
+        key: &crate::background::Key,
+        withdrawn: bool,
+        placement: Option<crate::background::Placement>,
+    ) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().set_reading_placement(key, withdrawn, placement)
+    }
+
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        let rows = self.e().store.reading_rows_of(sub);
+        self.e().set_blyg_background(sub, on, &rows)
+    }
+
+    fn background_rules(&self) -> Result<Option<crate::background::BackgroundRules>> {
+        self.e().track(self.e().api.background_rules())
+    }
+
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<crate::background::BackgroundRules> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().track(self.e().api.put_background_rule(rule, on))
+    }
+    // --- end background ---
 
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {

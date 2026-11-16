@@ -238,6 +238,7 @@ fn continue_outline_and_reply_are_tk_scopes() {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     };
     let p = Scripted::new(&["Agreed, and…"]);
     let out = reply_draft(&p, &item, None, &CancelFlag::new(), &mut |_| {}).unwrap();

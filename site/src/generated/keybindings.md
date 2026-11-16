@@ -124,6 +124,7 @@
 | Subscribe to a blyg or feed | Blyg › Subscribe… |
 | Import subscriptions from another reader's OPML file | Blyg › Import Subscriptions from OPML… |
 | Save every subscription as an OPML file | Blyg › Export Subscriptions as OPML… |
+| Discover blygs listed on blygger.com that you don't follow yet | Blyg › Discover Blygs… |
 | The blyg's site settings (title, bio, links) | Blyg › Site Settings… |
 | Client access: the apps and tokens that can act as you on your blyg; make a token, revoke any | Blyg › Client Access… |
 | AI on your blyg: a model per function, house style, change notes, the change classifier | Blyg › AI on Your Blyg… |

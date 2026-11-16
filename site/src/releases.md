@@ -5,6 +5,50 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.24.0
+
+Set a post aside without unfollowing anyone, keep anyone's posts on a shelf
+that follows you from the desktop to the studio and the web app, and find
+new blygs to read. All three match blygger-studio 0.61.
+
+### Background and Foreground
+
+- **↓ Background** under an open post (or **b**) moves it out of every other
+  list: the stream, the feeds, Mentions and the counts. Nothing is marked
+  read. **↑ Foreground** brings it back, **↺ Clear my choice** lets the rules
+  decide again, and **⇊ Blyg to Background** moves a whole blyg.
+- The **Background** list is now your blyg's own, the same one the studio
+  shows: what you moved there, blygs you moved there, withdrawn posts and
+  your own minor changes. **Settings › Reading › Background** turns the
+  minor-change rule off or on.
+- The web app has the same chips under an open post, and the rules in
+  ⚙ Reading. See [Background and Foreground](reading.md#background-and-foreground).
+
+### The shelf syncs, and holds anyone's posts
+
+- With a blyg on studio 0.61, the shelf syncs: the studio, the web app and
+  your other computers share it, and a change made in two places at once is
+  merged rather than lost.
+- **+ Add to shelf** among a post's chips in Reading puts someone else's
+  post on it too, and the new **Shelf** lens in Reading's sources lists the
+  shelf in your order. A shelved post stays in Shelf even in Background. See
+  [The shelf](writing.md#the-shelf).
+
+### Discover blygs
+
+- **Blyg › Discover Blygs…** (or **Discover…** on the Subscriptions screen)
+  lists the blygs on blygger.com's public directory that you don't follow
+  yet, newest first, with how active each is. Ones listed since you last
+  looked say **new**, and the studio agrees. ⏎ subscribes. Desktop only.
+  See [Discover blygs](reading.md#discover-blygs).
+
+### Also
+
+- The Reading tour has steps for Background, adding to the shelf, the Shelf
+  lens and Discover, and What's new runs them after the update.
+- **Fixed:** the tour card no longer covers the Catch up sheet, and Burrow
+  reads the Background list again only when it can have changed.
+
 ## Burrow 0.23.0
 
 Catch up on a conversation without reading it backwards. The web app gains

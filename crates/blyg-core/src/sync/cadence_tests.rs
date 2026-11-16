@@ -34,6 +34,7 @@ fn row(rid: &str, thumb: Option<i8>) -> ReadingItem {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 

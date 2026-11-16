@@ -55,9 +55,16 @@ come first.
 it. Any post of yours can go on the shelf: a thread, a fragment, a draft or a
 scratch note, up to 50 of them. A withdrawn post leaves it.
 
-The shelf is kept on this Mac (on Windows, this computer; the keys are
-Ctrl+B and Ctrl+Shift+A). It's not the same as pinning a version in ⌘Y, which
-is public and permanent.
+Other people's posts go on the shelf too: **+ Add to shelf** under a post in
+Reading (or on its card), and the **Shelf** lens in Reading's sources lists
+everything on it, in your order.
+
+With a blyg on studio 0.61 or later, the shelf syncs with your blyg, so the
+studio, the web app and your other computers share it. Changes made in two
+places at once are merged rather than lost. With an older blyg, the shelf is
+kept on this Mac (on Windows, this computer); the ⌘B sheet says which. The
+keys on Windows are Ctrl+B and Ctrl+Shift+A. It's not the same as pinning a
+version in ⌘Y, which is public and permanent.
 
 ### Lineage while you write
 

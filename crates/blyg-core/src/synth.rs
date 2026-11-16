@@ -152,6 +152,7 @@ pub fn reading(n: usize, seed: u64) -> Vec<ReadingItem> {
                 lineage_known: true,
                 source_url: None,
                 generated: None,
+                background: None,
             }
         })
         .collect()

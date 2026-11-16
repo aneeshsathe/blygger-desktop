@@ -31,7 +31,7 @@ revised leads with its latest changelog note,
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
 (All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
-Background, then **Your blyg**, your **hoppers**, your folders and the rest),
+Shelf, Background, then **Your blyg**, your **hoppers**, your folders and the rest),
 the posts from that source in the middle, and the post on the right.
 
 - **Threads** and **Fragments** list only that kind of post; **Thumbed
@@ -41,10 +41,38 @@ the posts from that source in the middle, and the post on the right.
   ones that quote or reply to your posts, or link to your blyg (or, on studio
   0.56 and later, what your blyg's own mentions lens says). A dot says there's
   something to read; there's never a count.
-- **Background** lists withdrawn posts, the blygs' and your own, newest
-  first, and nothing else lists them: not the other feeds, the counts or the
-  stream. A withdrawn post is never unread. Opened, it reads as withdrawn
-  (with its retained pin, when the author kept one).
+- **Shelf** lists everything on your shelf, yours and others', in your
+  order, as the studio's Shelf lens does: **+ Add to shelf** among a post's
+  chips puts it there (see [The shelf](writing.md#the-shelf)). A shelved
+  post stays in Shelf even when it's in Background; a withdrawn one leaves.
+- **Background** holds what you've set aside, newest first, and nothing
+  else lists it: not the other feeds, Mentions, the counts or the stream.
+  Withdrawn posts are always there, the blygs' and your own; opened, one
+  reads as withdrawn (with its retained pin, when the author kept one). On
+  blygger-studio 0.61 and later it is your blyg's own Background, the same
+  list the studio shows: posts you moved there, blygs you moved there, and
+  your own minor changes (a version the change classifier calls a typo,
+  minor or refresh). A Background post is never unread, and nothing is
+  marked read or published by moving one.
+
+### Background and Foreground
+
+On blygger-studio 0.61 and later, an open post has these chips, as the
+studio's ⋯ menu does:
+
+- **↓ Background** (or **b** with the post open or selected) moves it to
+  Background, and keeps it there across later versions. In Background the
+  chip is **↑ Foreground**, which brings it back whatever the rules say.
+- **↺ Clear my choice**, once you've made one, lets the rules decide again.
+- **⇊ Blyg to Background** moves every post of that blyg there, except any
+  you moved to Foreground yourself; **⇈ Blyg to Foreground** brings them back.
+
+Your choice beats the blyg's, which beats the rules. **Settings › Reading ›
+Background** has the rules, saved on your blyg: withdrawn posts are always
+in Background, and **Your own minor changes** can be turned off. On an older
+studio there are no chips or rules, and Background lists withdrawn posts.
+
+The web app has the same, under an open post and in ⚙ Reading (no key).
 
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
@@ -253,6 +281,28 @@ the export lists them all.
 Both need a connected blyg, since your subscriptions live there. From a
 terminal: `blygger +import-opml <file>` (add `--dry-run` to see what would be
 added) and `blygger +export-opml <file>`.
+
+## Discover blygs
+
+**Blyg › Discover Blygs…**, or **Discover…** on the Subscriptions screen,
+lists the blygs on [blygger.com](https://blygger.com)'s public directory that
+you don't follow yet, newest listing first, five at a time.
+
+- Each row gives the blyg's name, its address, and how active it is (high,
+  medium or low, and when it last posted, or "activity not measured yet").
+- Blygs listed since you last opened Discover say **new**. The first time,
+  nothing does, since everything would be. Your blyg remembers the newest
+  listing you've seen, so the studio and Burrow agree on what's new.
+- j/k (or ↓/↑) move, ⏎ subscribes (the same as **Subscribe…**), **o** opens
+  the blyg in your browser, **m** shows five more, and esc closes.
+- Your own blyg and the blygs you already follow are left out. One you
+  subscribe to stays in the list, marked **added**, until you close it.
+- Subscribing doesn't add a blyg to your public blogroll.
+
+Burrow reads the directory only when you open Discover, without signing in
+to anything. It needs a connected blyg, since subscriptions live there.
+Discover is in the desktop app only: Burrow on the web talks to nothing but
+your own blyg.
 
 ## Acting on a post
 

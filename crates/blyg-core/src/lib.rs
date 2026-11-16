@@ -4,11 +4,13 @@
 pub mod access_ai; // --- access-ai ---
 pub mod api;
 pub mod backend;
+pub mod background; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse ---
 pub mod catchup; // --- catch up ---
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
 pub mod config;
 pub mod contacts; // --- contacts --- (studio 0.56)
+pub mod discover; // --- discover --- (studio 0.60, desktop only)
 pub mod floor;
 pub mod grammar;
 pub mod lineage; // --- lineage counts ---
@@ -24,6 +26,7 @@ pub mod own; // your published posts as reading rows
 pub mod pick;
 pub mod profile; // --- profiles ---
 pub mod scratch_media;
+pub mod shelf; // --- shelf sync --- (studio 0.61, `GET/PUT /api/shelf`)
 pub mod site; // --- site ---
 pub mod state;
 pub mod store;

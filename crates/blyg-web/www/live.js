@@ -27,8 +27,12 @@ for (const a of document.querySelectorAll('a[href^="/studio/login"]')) {
 export async function detect() {
   if (!/^https?:$/.test(location.protocol)) return { mode: 'demo' };
   const r = await call('GET', '/api/capabilities');
+  // Kept for `start`, so the shelf's and the parity screens' capability
+  // checks don't read it a second time.
+  detected = r.status === 200 ? r.body : undefined;
   return JSON.parse(Burrow.detect(r.status, r.body, r.www));
 }
+let detected;
 
 /** A whole cursor-paged list (restarted on cursor-expired, never partial).
     A failure carries the answer's status and Retry-After, for the backoff.
@@ -71,6 +75,8 @@ export async function start(online) {
   saved = undefined; // read once: a later start (none today) reads again
   S.B = Burrow.new_live(now(), store, reading, online ? base : '');
   if (!online) S.B.set_offline(true);
+  if (online && detected) S.B.wr_loaded('capabilities', detected);
+  detected = undefined;
   hooks();
   // --- web-writing --- Settings now; contacts once the page has drawn.
   if (S.wSettings) { S.B.w_set_settings(S.wSettings); S.wSettings = null; }
@@ -185,6 +191,13 @@ async function refreshOnce() {
     }
   }
   await Promise.all(jobs);
+  // --- shelf sync --- after your posts are in, so shelved ones map to
+  // them; also when this side's shelf waits to be sent.
+  if (!failure && (plan.shelf || S.B.shelf_state() === 'waiting')) {
+    const sh = await syncShelf(rev);
+    if (sh.fail) fail(sh.fail);
+    else if (sh.changed) changed = undrawn = true;
+  }
   if (failure) {
     // A read that failed: back off on a 429 or 5xx, say what went wrong.
     const w = S.B.poll_failed(failure.status, failure.retryAfter);
@@ -202,6 +215,42 @@ async function refreshOnce() {
   // From now on, a start reads only what changed (net.js reads no first
   // pages early).
   if (await persistReading() && whole) pref.set(HELD, '1');
+}
+
+/** --- shelf sync --- Read the blyg's shelf (`GET /api/shelf`) and send
+    this side's changes: src/shelf.rs merges them onto it and says what to
+    `PUT`; a 409 merges onto the list it carries and sends once more. On a
+    blyg without `getShelf`/`putShelf` the shelf stays in this browser.
+    Returns `{changed}`, or `{fail}` for the refresh's backoff. */
+async function syncShelf(rev) {
+  if (!S.B.wr_ops_known()) {
+    const c = await call('GET', '/api/capabilities');
+    if (c.status === 200) S.B.wr_loaded('capabilities', c.body);
+  }
+  if (!S.B.shelf_served()) {
+    if (S.B.wr_ops_known()) S.B.changes_accept('shelf', rev, now(), undefined);
+    return {};
+  }
+  const g = await call('GET', '/api/shelf');
+  let step = JSON.parse(S.B.shelf_answer(g.status, g.body));
+  let changed = !!step.changed;
+  for (let i = 0; step.put && i < 2; i++) {
+    if (step.toast) toast(esc(step.toast), 4200);
+    const r = await call(step.put.method, step.put.path, step.put.body);
+    step = JSON.parse(S.B.shelf_stored(r.status, r.body, i === 0));
+    changed ||= !!step.changed;
+    if (step.error) { step.status = r.status; step.retryAfter = r.retryAfter; }
+  }
+  if (step.error) {
+    const e = step.error;
+    if (e.code === 'offline' || e.code === 'unauthorized' || e.code === 'rate-limited') {
+      return { fail: { error: e, status: step.status ?? g.status, retryAfter: step.retryAfter ?? g.retryAfter } };
+    }
+    toast(esc(e.text), 4200);
+    return { changed };
+  }
+  S.B.changes_accept('shelf', rev, now(), g.body);
+  return { changed };
 }
 
 /** The hoppers and each one's memberships, as JSON for `live_hoppers`. A
@@ -243,6 +292,8 @@ export function flush() {
   flushing = (async () => {
     try {
       do { again = false; await sendAll(); } while (again && !S.B.is_offline());
+      // --- shelf sync --- a shelf change goes in a refresh (`syncShelf`).
+      if (S.B.shelf_state() === 'waiting') setTimeout(refresh, 0);
     } finally { flushing = null; }
   })();
   return flushing;

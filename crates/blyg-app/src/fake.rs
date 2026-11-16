@@ -30,6 +30,9 @@ pub mod contacts_seed;
 // --- upkeep --- stale quotes, signals and activity log
 #[path = "fake_upkeep.rs"]
 pub mod upkeep_seed;
+// --- discover --- the sample blygger.com directory
+#[path = "fake_discover.rs"]
+pub mod discover_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -72,6 +75,7 @@ fn sample_reading() -> ReadingItem {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 
@@ -151,6 +155,8 @@ struct State {
     rd: reading_seed::Seed,
     /// The server has the owner-API read extensions (test hook).
     read_ext: bool,
+    /// --- discover --- `Settings.discoverSeenAt`.
+    discover_seen: String,
     /// The "server" is older than blygger-studio 0.9 (test hook).
     outdated: bool,
     // --- follow-ups --- (scratch media)
@@ -173,6 +179,19 @@ struct State {
     browse: Vec<blyg_core::browse::BrowseStep>,
     // --- shelf --- in order; may name posts since deleted.
     shelf: Vec<LocalId>,
+    /// --- shelf sync --- others' posts on the shelf (the sample data's
+    /// shelf is local, so they follow yours).
+    shelf_reading: Vec<blyg_core::shelf::Entry>,
+    /// --- background --- the sample blyg serves Background (studio 0.61):
+    /// the owner's choices in order (key, withdrawn, placement), the blygs
+    /// moved there, and the minor-change rule.
+    bg_choices: Vec<(
+        blyg_core::background::Key,
+        bool,
+        Option<blyg_core::background::Placement>,
+    )>,
+    bg_blygs: Vec<String>,
+    bg_minor: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -357,6 +376,7 @@ impl FakeBackend {
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
                 read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                discover_seen: discover_seed::seen_at(), // --- discover ---
                 outdated: false,
                 uploads: 0,
                 fail_uploads: false,
@@ -366,7 +386,11 @@ impl FakeBackend {
                 reading_sends: Vec::new(),
                 folder_seq: 0,
                 browse: Vec::new(),
-                shelf: Vec::new(),  // --- shelf ---
+                shelf: Vec::new(), // --- shelf ---
+                shelf_reading: Vec::new(),
+                bg_choices: Vec::new(), // --- background ---
+                bg_blygs: Vec::new(),
+                bg_minor: true,
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
@@ -1862,6 +1886,26 @@ impl Backend for FakeBackend {
         Ok(self.lock().rd.settings.clone())
     }
 
+    // --- discover --- the sample directory; the fake never reaches the
+    // network.
+    fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
+        thread::sleep(self.timing.network);
+        self.remote_guard()?;
+        Ok(discover_seed::directory())
+    }
+
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.remote_guard()?;
+        Ok(Some(self.lock().discover_seen.clone()))
+    }
+
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.remote_guard()?;
+        self.lock().discover_seen = at.to_string();
+        Ok(())
+    }
+    // --- end discover ---
+
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         thread::sleep(self.timing.network);
         self.remote_guard()?;
@@ -2053,6 +2097,45 @@ impl Backend for FakeBackend {
             (true, None) => st.shelf.push(id.clone()),
             (false, Some(ix)) => {
                 st.shelf.remove(ix);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    // --- shelf sync --- yours (by server id), then others'.
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        let own: Vec<blyg_core::shelf::Entry> = self
+            .shelf()
+            .iter()
+            .filter_map(|id| self.item(id)?.server_id)
+            .map(|s| blyg_core::shelf::Entry::own(s.0))
+            .collect();
+        let st = self.lock();
+        own.into_iter()
+            .chain(st.shelf_reading.iter().cloned())
+            .collect()
+    }
+
+    fn set_entry_on_shelf(&self, entry: &blyg_core::shelf::Entry, on: bool) -> Result<()> {
+        if entry.is_own() {
+            let local = self
+                .lock()
+                .items
+                .iter()
+                .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == entry.remote_id))
+                .map(|i| i.local_id.clone());
+            return match local {
+                Some(id) => self.set_on_shelf(&id, on),
+                None => Err(CoreError::NotFound),
+            };
+        }
+        let mut st = self.lock();
+        let at = st.shelf_reading.iter().position(|e| e == entry);
+        match (on, at) {
+            (true, None) => st.shelf_reading.push(entry.clone()),
+            (false, Some(ix)) => {
+                st.shelf_reading.remove(ix);
             }
             _ => {}
         }
@@ -2532,6 +2615,102 @@ impl Backend for FakeBackend {
         blyg_core::order::sort_reading(&mut v);
         v
     }
+
+    // --- background --- the sample blyg's Background lens, worked out as
+    // the studio does: withdrawn posts, then the blygs moved there, then the
+    // owner's choices (local and instant; the fake has no minor changes).
+    fn background_served(&self) -> bool {
+        self.lock().read_ext
+    }
+
+    fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
+        use blyg_core::background::{BackgroundSet, EntryBackground};
+        if !self.background_served() {
+            return None;
+        }
+        let mut rows = self.background_reading();
+        rows.extend(self.reading());
+        let (blygs, choices, own_withdrawn) = {
+            let st = self.lock();
+            let own: Vec<blyg_core::background::Key> = st
+                .items
+                .iter()
+                .filter(|i| i.status == Status::Withdrawn)
+                .filter_map(|i| i.server_id.as_ref())
+                .map(|s| (blyg_core::OWN_SUBSCRIPTION.to_string(), s.0.clone()))
+                .collect();
+            (st.bg_blygs.clone(), st.bg_choices.clone(), own)
+        };
+        let mut set = BackgroundSet::default();
+        let mut seen = std::collections::HashSet::new();
+        let withdrawn = rows
+            .iter()
+            .filter(|r| r.state == "tombstone")
+            .map(|r| (r.subscription_id.clone(), r.remote_id.clone()))
+            .chain(own_withdrawn);
+        for key in withdrawn {
+            if seen.insert(key.clone()) {
+                set.entries.push((
+                    key,
+                    EntryBackground {
+                        on: true,
+                        reasons: vec!["withdrawn".into()],
+                        ..Default::default()
+                    },
+                ));
+            }
+        }
+        for sub in &blygs {
+            set.place_blyg(sub, true, &rows);
+        }
+        for (key, withdrawn, placement) in &choices {
+            set.place(key, *withdrawn, *placement);
+        }
+        Some(set.indexed())
+    }
+
+    fn set_reading_placement(
+        &self,
+        key: &blyg_core::background::Key,
+        withdrawn: bool,
+        placement: Option<blyg_core::background::Placement>,
+    ) -> Result<()> {
+        self.remote_guard()?;
+        let mut st = self.lock();
+        st.bg_choices.retain(|(k, _, _)| k != key);
+        st.bg_choices.push((key.clone(), withdrawn, placement));
+        Ok(())
+    }
+
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        self.remote_guard()?;
+        let mut st = self.lock();
+        st.bg_blygs.retain(|s| s != sub);
+        if on {
+            st.bg_blygs.push(sub.to_string());
+        }
+        Ok(())
+    }
+
+    fn background_rules(&self) -> Result<Option<blyg_core::background::BackgroundRules>> {
+        let on = self.lock().bg_minor;
+        Ok(Some(blyg_core::background::BackgroundRules {
+            rules: vec![("minor".into(), on)],
+        }))
+    }
+
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<blyg_core::background::BackgroundRules> {
+        self.remote_guard()?;
+        if rule == "minor" {
+            self.lock().bg_minor = on;
+        }
+        Ok(self.background_rules()?.unwrap_or_default())
+    }
+    // --- end background ---
 
     // --- hoppers --- the store's rules: membership is local and instant;
     // a hopper's own fields go to the "server" (refused offline).

@@ -25,15 +25,15 @@ pub struct Published {
 
 /// The most posts the shelf holds (studio's `PUT /shelf` limit; the
 /// native shelf refuses a 51st the same way).
-pub const SHELF_MAX: usize = 50;
+pub const SHELF_MAX: usize = blyg_core::shelf::SHELF_MAX;
 
 #[derive(Debug, Default)]
 pub struct WebStore {
     items: Vec<Item>,
     versions: HashMap<LocalId, Vec<Published>>,
     next_id: u64,
-    /// Your shelf, in order (local only, as the native shelf is today).
-    pub shelf: Vec<LocalId>,
+    /// Your shelf, in order: your posts and others' (`crate::shelf`).
+    pub shelf: Vec<crate::shelf::Shelved>,
     /// Reading rows you've read or marked: `"sub|remote id"` → the version
     /// read (`None`: marked unread). Rows not here keep the seed's state.
     pub read: HashMap<String, Option<u32>>,
@@ -81,6 +81,18 @@ pub struct Live {
     /// last read under, so an unchanged list isn't read again.
     #[serde(default)]
     pub seen: Seen,
+    /// --- shelf sync --- the shelf as the blyg last agreed (the base of a
+    /// merge; `None` before the first sync), and its revision.
+    #[serde(default)]
+    pub shelf_base: Option<Vec<blyg_core::shelf::Entry>>,
+    #[serde(default)]
+    pub shelf_rev: u64,
+    /// The blyg answered 404 to `GET /api/shelf` this session.
+    #[serde(default, skip_serializing)]
+    pub shelf_off: bool,
+    /// The list the blyg refused (400/403/422), not sent again as it is.
+    #[serde(default, skip_serializing)]
+    pub shelf_refused: Option<Vec<blyg_core::shelf::Entry>>,
 }
 
 /// The change revisions a list was last read whole under (`GET
@@ -157,8 +169,13 @@ struct Snapshot {
     format: u32,
     next_id: u64,
     items: Vec<Stored>,
+    /// Your shelved posts' ids, as snapshots before the synced shelf kept
+    /// them (still written, for an older page).
     #[serde(default)]
     shelf: Vec<String>,
+    /// --- shelf sync --- the whole shelf, yours and others'.
+    #[serde(default)]
+    shelf_all: Option<Vec<crate::shelf::Shelved>>,
     #[serde(default)]
     read: HashMap<String, Option<u32>>,
     #[serde(default)]
@@ -203,7 +220,12 @@ impl WebStore {
         }
         let mut store = WebStore {
             next_id: snap.next_id,
-            shelf: snap.shelf.into_iter().map(LocalId).collect(),
+            shelf: snap.shelf_all.unwrap_or_else(|| {
+                snap.shelf
+                    .into_iter()
+                    .map(crate::shelf::Shelved::Own)
+                    .collect()
+            }),
             read: snap.read,
             hopped: snap.hopped,
             live: snap.live,
@@ -253,7 +275,8 @@ impl WebStore {
             format: FORMAT,
             next_id: self.next_id,
             items,
-            shelf: self.shelf.iter().map(|i| i.0.clone()).collect(),
+            shelf: self.own_shelf().into_iter().map(|i| i.0).collect(),
+            shelf_all: Some(self.shelf.clone()),
             read: self.read.clone(),
             hopped: self.hopped.clone(),
             live: self.live.clone(),
@@ -440,7 +463,8 @@ impl WebStore {
         let before = self.items.len();
         self.items.retain(|i| &i.local_id != id);
         self.versions.remove(id);
-        self.shelf.retain(|s| s != id);
+        self.shelf
+            .retain(|s| !matches!(s, crate::shelf::Shelved::Own(l) if l == &id.0));
         self.items.len() != before
     }
 
@@ -476,56 +500,6 @@ impl WebStore {
         id
     }
 
-    /// Put a post on the shelf (at the end) or take it off. `Err` when the
-    /// shelf is full. Withdrawn posts aren't shelved, as natively.
-    pub fn set_on_shelf(&mut self, id: &LocalId, on: bool) -> Result<bool, String> {
-        let here = self.shelf.contains(id);
-        if on == here {
-            return Ok(false);
-        }
-        if !on {
-            self.shelf.retain(|s| s != id);
-            return Ok(true);
-        }
-        match self.item(id) {
-            Some(it) if it.status == Status::Withdrawn => {
-                Err("Withdrawn posts can't go on the shelf".into())
-            }
-            None => Err("No such post".into()),
-            Some(_) if self.shelf.len() >= SHELF_MAX => Err(format!(
-                "Your shelf is full ({SHELF_MAX} posts). Take one off first."
-            )),
-            Some(_) => {
-                self.shelf.push(id.clone());
-                Ok(true)
-            }
-        }
-    }
-
-    /// Move a shelved post to `index` (clamped).
-    pub fn move_on_shelf(&mut self, id: &LocalId, index: usize) {
-        if let Some(ix) = self.shelf.iter().position(|s| s == id) {
-            let it = self.shelf.remove(ix);
-            let to = index.min(self.shelf.len());
-            self.shelf.insert(to, it);
-        }
-    }
-
-    /// Shelved posts first, in shelf order; the rest in the order given.
-    /// The same rule as the native list (`vm::ListModel::set_shelf` on the
-    /// `shelf` branch), applied before the list sees the results.
-    pub fn arrange(&self, mut results: Vec<Item>) -> (Vec<Item>, usize) {
-        let mut top = Vec::new();
-        for id in &self.shelf {
-            if let Some(ix) = results.iter().position(|i| &i.local_id == id) {
-                top.push(results.remove(ix));
-            }
-        }
-        let n = top.len();
-        top.extend(results);
-        (top, n)
-    }
-
     /// Mark everything pushed (the debounced "sync" of the demo).
     pub fn mark_synced(&mut self) {
         for it in &mut self.items {
@@ -538,6 +512,7 @@ impl WebStore {
             + self.live.deletes.len()
             + self.live.reads.len()
             + self.live.hops.len()
+            + usize::from(self.live.on && self.live.shelf_base.is_some() && self.shelf_unsent())
     }
 }
 

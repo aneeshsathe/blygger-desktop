@@ -1030,7 +1030,7 @@ fn a_refresh_reads_only_what_changed() {
 #[test]
 fn each_list_follows_its_own_counters_as_native_does() {
     // The web's map is native sync's, constant for constant.
-    use blyg_core::sync::{HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SIGNALS_DEPS};
+    use blyg_core::sync::{HOPPERS_DEPS, ITEMS_DEPS, READING_DEPS, SHELF_DEPS, SIGNALS_DEPS};
     assert_eq!(
         crate::live::LISTS,
         &[
@@ -1038,6 +1038,7 @@ fn each_list_follows_its_own_counters_as_native_does() {
             ("reading", READING_DEPS),
             ("hoppers", HOPPERS_DEPS),
             ("signals", SIGNALS_DEPS),
+            ("shelf", SHELF_DEPS), // --- shelf sync ---
         ]
     );
     let mut b = live();

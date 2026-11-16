@@ -107,3 +107,126 @@ fn the_shelf_holds_at_most_fifty() {
     ));
     assert_eq!(s.shelf().len(), super::shelf::SHELF_MAX);
 }
+
+// --- shelf sync --- (schema v22) anyone's posts, the wire names, and the
+// blyg's list laid over this computer's.
+
+use crate::shelf::Entry;
+
+/// Give a post the server id `sid`, as a create's answer would.
+fn sent(s: &Store, id: &LocalId, sid: &str) {
+    s.conn()
+        .execute(
+            "UPDATE items SET server_id = ?2 WHERE local_id = ?1",
+            rusqlite::params![id.0, sid],
+        )
+        .unwrap();
+}
+
+fn theirs(id: &str) -> Entry {
+    Entry::new("sub-tide", id)
+}
+
+#[test]
+fn others_posts_share_the_shelf_and_its_cap() {
+    let s = store();
+    let a = post(&s, "now");
+    sent(&s, &a, "it-now");
+    s.set_on_shelf(&a, true).unwrap();
+    s.set_entry_on_shelf(&theirs("r1"), true).unwrap();
+    s.set_entry_on_shelf(&theirs("r1"), true).unwrap();
+    assert_eq!(s.shelf_wire(), [Entry::own("it-now"), theirs("r1")]);
+    // Your own by its wire name is the same row as by its local id.
+    s.set_entry_on_shelf(&Entry::own("it-now"), false).unwrap();
+    assert!(s.shelf().is_empty());
+    assert_eq!(s.shelf_wire(), [theirs("r1")]);
+    s.set_entry_on_shelf(&Entry::own("it-now"), true).unwrap();
+    assert_eq!(s.shelf(), std::slice::from_ref(&a));
+    // Moving your post keeps someone else's where it is.
+    let b = post(&s, "log");
+    s.set_on_shelf(&b, true).unwrap();
+    s.move_on_shelf(&b, 0).unwrap();
+    assert_eq!(s.shelf(), [b.clone(), a.clone()]);
+    assert_eq!(s.shelf_rows().len(), 3);
+    s.set_entry_on_shelf(&theirs("r1"), false).unwrap();
+    assert_eq!(s.shelf_rows().len(), 2);
+
+    for i in 0..(super::shelf::SHELF_MAX - 2) {
+        s.set_entry_on_shelf(&theirs(&format!("x{i}")), true)
+            .unwrap();
+    }
+    assert!(matches!(
+        s.set_entry_on_shelf(&theirs("one-more"), true),
+        Err(CoreError::Rejected { status: 400, .. })
+    ));
+}
+
+#[test]
+fn the_wire_list_leaves_out_what_the_blyg_cant_name() {
+    let s = store();
+    let (a, b, c) = (post(&s, "sent"), post(&s, "not yet"), post(&s, "gone"));
+    sent(&s, &a, "it-a");
+    sent(&s, &c, "it-c");
+    for id in [&a, &b, &c] {
+        s.set_on_shelf(id, true).unwrap();
+    }
+    s.set_status_version(&c, Status::Withdrawn, 1).unwrap();
+    assert_eq!(s.shelf_wire(), [Entry::own("it-a")]);
+    // Once the draft reaches the blyg, it goes too.
+    sent(&s, &b, "it-b");
+    assert_eq!(s.shelf_wire(), [Entry::own("it-a"), Entry::own("it-b")]);
+}
+
+#[test]
+fn the_blygs_list_is_laid_over_with_local_posts_kept_in_place() {
+    let s = store();
+    let (a, note, b) = (post(&s, "a"), post(&s, "scratch"), post(&s, "b"));
+    sent(&s, &a, "it-a");
+    sent(&s, &b, "it-b");
+    for id in [&a, &note, &b] {
+        s.set_on_shelf(id, true).unwrap();
+    }
+    // Elsewhere: b moved first, someone's post added, a taken off.
+    let changed = s.apply_shelf(&[Entry::own("it-b"), theirs("r1")]).unwrap();
+    assert!(changed);
+    assert_eq!(s.shelf_wire(), [Entry::own("it-b"), theirs("r1")]);
+    // The scratch note (no server id) stays, at the top where it followed
+    // nothing the blyg kept.
+    assert_eq!(s.shelf(), [note.clone(), b.clone()]);
+    // The same list again changes nothing.
+    assert!(!s.apply_shelf(&[Entry::own("it-b"), theirs("r1")]).unwrap());
+
+    // A post of yours this computer doesn't hold yet is kept by name, and
+    // counts once it arrives.
+    s.apply_shelf(&[Entry::own("it-later"), Entry::own("it-b")])
+        .unwrap();
+    assert_eq!(s.shelf_wire(), [Entry::own("it-later"), Entry::own("it-b")]);
+    assert_eq!(s.shelf(), [note.clone(), b.clone()]);
+    let later = post(&s, "later");
+    sent(&s, &later, "it-later");
+    assert_eq!(s.shelf(), [note.clone(), later.clone(), b.clone()]);
+    // Taking it off by its local id finds it by name.
+    s.set_on_shelf(&later, false).unwrap();
+    assert_eq!(s.shelf_wire(), [Entry::own("it-b")]);
+}
+
+#[test]
+fn a_shelf_from_before_v22_keeps_its_posts() {
+    let mut c = rusqlite::Connection::open_in_memory().unwrap();
+    super::schema::migrate_to(&mut c, 21).unwrap();
+    c.execute_batch(
+        "INSERT INTO items (local_id, kind, status, created, updated) \
+             VALUES ('l1', 'thread', 'draft', 't', 't'), ('l2', 'thread', 'draft', 't', 't');
+         INSERT INTO shelf (local_id, position) VALUES ('l2', 0), ('l1', 1);",
+    )
+    .unwrap();
+    super::schema::migrate(&mut c).unwrap();
+    let rows: Vec<(String, i64)> = c
+        .prepare("SELECT local_id, position FROM shelf ORDER BY position")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(rows, [("l2".to_string(), 0), ("l1".to_string(), 1)]);
+}

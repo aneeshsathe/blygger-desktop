@@ -980,6 +980,17 @@ impl Backend for SwitchBackend {
     fn save_settings(&self, settings: &Settings) -> Result<()> {
         self.cur().save_settings(settings)
     }
+    // --- discover ---
+    fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
+        self.cur().discover_directory()
+    }
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.cur().discover_seen_at()
+    }
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.cur().set_discover_seen_at(at)
+    }
+    // --- end discover ---
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
         self.cur().remote_versions(sub_id, remote_id)
     }
@@ -1105,6 +1116,33 @@ impl Backend for SwitchBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.cur().background_reading()
     }
+    fn background_served(&self) -> bool {
+        self.cur().background_served()
+    }
+    fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
+        self.cur().background_set()
+    }
+    fn set_reading_placement(
+        &self,
+        key: &blyg_core::background::Key,
+        withdrawn: bool,
+        placement: Option<blyg_core::background::Placement>,
+    ) -> Result<()> {
+        self.cur().set_reading_placement(key, withdrawn, placement)
+    }
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        self.cur().set_blyg_background(sub, on)
+    }
+    fn background_rules(&self) -> Result<Option<blyg_core::background::BackgroundRules>> {
+        self.cur().background_rules()
+    }
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<blyg_core::background::BackgroundRules> {
+        self.cur().save_background_rule(rule, on)
+    }
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {
         self.cur().hoppers()
@@ -1140,6 +1178,16 @@ impl Backend for SwitchBackend {
     }
     fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
         self.cur().move_on_shelf(id, index)
+    }
+    // --- shelf sync ---
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        self.cur().shelf_entries()
+    }
+    fn set_entry_on_shelf(&self, entry: &blyg_core::shelf::Entry, on: bool) -> Result<()> {
+        self.cur().set_entry_on_shelf(entry, on)
+    }
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        self.cur().shelf_state()
     }
     // --- trails ---
     fn trails(&self) -> Vec<blyg_core::Trail> {

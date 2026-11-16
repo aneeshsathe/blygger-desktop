@@ -63,7 +63,29 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
         lineage_known: true,
         source_url: item.permalink.clone(),
         generated: None,
+        background: None,
     })
+}
+
+/// --- background --- Your withdrawn post as a row for the Background
+/// lens: a tombstone without its text (as blygger-studio shows an endcap),
+/// read at its version, dated by the withdrawal. `None` for anything not
+/// withdrawn.
+pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
+    if item.status != Status::Withdrawn {
+        return None;
+    }
+    let public = Item {
+        status: Status::Public,
+        dirty: false,
+        ..item.clone()
+    };
+    let mut r = row(&public, origin)?;
+    r.state = "tombstone".into();
+    r.content_md.clear();
+    r.stub_of = None;
+    r.forked_from = None;
+    Some(r)
 }
 
 /// Every published post of yours as a row, in `items`' order.

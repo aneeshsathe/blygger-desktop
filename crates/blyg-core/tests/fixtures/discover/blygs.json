@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "directory": "https://directory.blyg.example.com/",
+  "generated": "2026-11-14T12:00:00.000Z",
+  "activity": { "window": "30d" },
+  "blygs": [
+    {
+      "origin": "https://busy.blyg.example.com/", "title": "Busy Blyg",
+      "home": "https://busy.blyg.example.com/", "feed": "https://busy.blyg.example.com/feed.xml",
+      "listedAt": "2026-11-10T00:00:00.000Z", "protocol": "0.4", "protocolLevel": 2, "generator": "blygger-studio/0.61.0",
+      "activity": { "level": "high", "score": 9.5, "events": 10, "lastPost": "2026-11-13T09:00:00.000Z" }
+    },
+    {
+      "origin": "https://www.Followed.blyg.example.com/", "title": "Followed Again",
+      "home": "https://followed.blyg.example.com/", "feed": "https://followed.blyg.example.com/feed.xml",
+      "listedAt": "2026-11-11T00:00:00.000Z", "protocol": "0.4", "protocolLevel": 2, "generator": "blygger-studio/0.61.0",
+      "activity": { "level": "medium", "score": 4.1, "events": 5, "lastPost": "2026-11-05T09:00:00.000Z" }
+    },
+    {
+      "origin": "https://quiet.blyg.example.com/", "title": "  Quiet Blyg  ",
+      "home": "https://quiet.blyg.example.com/", "feed": "https://quiet.blyg.example.com/feed.xml",
+      "listedAt": "2026-11-12T00:00:00.000Z", "protocol": "0.4", "protocolLevel": 2, "generator": "blygger-studio/0.61.0",
+      "activity": { "level": null, "score": 0, "events": 0, "lastPost": null }
+    },
+    {
+      "origin": "https://older.blyg.example.com/blyg/", "title": "",
+      "home": "javascript:alert(1)", "feed": null,
+      "listedAt": "2026-08-01T00:00:00.000Z", "protocol": "0.4", "protocolLevel": 1, "generator": "x/1",
+      "activity": { "level": "loud", "score": 1, "events": 2, "lastPost": "not a date" }
+    },
+    {
+      "origin": "https://self.blyg.example.com/", "title": "This Blyg",
+      "home": "https://self.blyg.example.com/", "feed": "https://self.blyg.example.com/feed.xml",
+      "listedAt": "2026-08-01T00:00:00.000Z", "protocol": "0.4", "protocolLevel": 2, "generator": "blygger-studio/0.61.0",
+      "activity": { "level": "high", "score": 8, "events": 9, "lastPost": "2026-11-14T00:00:00.000Z" }
+    },
+    { "origin": "http://plain.blyg.example.com/", "title": "Plain http", "listedAt": "2026-11-13T00:00:00.000Z" },
+    { "origin": "javascript:alert(1)", "title": "Script", "listedAt": "2026-11-13T00:00:00.000Z" },
+    { "origin": "https://", "title": "No host", "listedAt": "2026-11-13T00:00:00.000Z" },
+    { "origin": "data:text/html,hi", "title": "Data", "listedAt": "2026-11-13T00:00:00.000Z" },
+    { "origin": "https://undated.blyg.example.com/", "title": "Undated", "listedAt": "not a date" },
+    { "origin": "https://nodate.blyg.example.com/", "title": "No date" },
+    "not an object",
+    null
+  ]
+}

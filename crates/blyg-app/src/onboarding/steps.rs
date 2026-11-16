@@ -145,6 +145,15 @@ pub enum Key {
     /// The Catch up sheet is open (⇧C, the Catch up chip, Post › Catch
     /// Up…, or ⇧C in the lineage sheet).
     CatchUp,
+    // --- 0.24.0 --- (studio 0.61)
+    /// The sample post went to Background (b, or its chip).
+    Background,
+    /// The sample post went on the shelf (+ Add to shelf).
+    ShelfReading,
+    /// Reading's Shelf lens is the source.
+    ShelfLens,
+    /// The Discover sheet opened.
+    Discover,
     // --- nearby ---
     /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
     Nearby,
@@ -277,6 +286,13 @@ pub enum Setup {
     /// --- tangles --- Posts, the sample draft open and then the versioned
     /// post (so ⌥⌘⏎ has a post to put beside).
     Pair,
+    /// --- 0.24.0 --- Reader, Ada's "finished media" post open and in the
+    /// foreground (no choice of yours on it).
+    Background,
+    /// Reader, Rue's post on trust open and off the shelf.
+    ShelfAdd,
+    /// Reader on All, with Rue's post on trust on the shelf.
+    ShelfLens,
 }
 
 /// One step of the tour.
@@ -333,6 +349,10 @@ pub const STUBBED: &str = crate::fake::reading_seed::LIN_GARDENS;
 /// The sample reading post at the end of a four-post quote chain (Catch
 /// up's sample conversation).
 pub const CATCH_UP: &str = crate::fake::reading_seed::TALK_D;
+/// --- 0.24.0 --- The post the Background step moves.
+pub const BACKGROUND: &str = crate::fake::reading_seed::ADA_FINISHED;
+/// The post the shelf steps put on the shelf.
+pub const SHELVED: &str = crate::fake::reading_seed::RUE_TRUST;
 
 pub const STEPS: &[Step] = &[
     Step {
@@ -572,13 +592,14 @@ pub const STEPS: &[Step] = &[
         caption: if cfg!(target_os = "windows") {
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
              Ctrl+Shift+A puts the open post on your shelf: 📚 marks it and it stays at the top \
-             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. The shelf is \
-             kept on this computer."
+             of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. With \
+             blygger-studio 0.61 the shelf syncs with your blyg; otherwise it's kept on this \
+             computer."
         } else {
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
              ⌥⌘B puts the open post on your shelf: 📚 marks it and it stays at the top of the \
-             list. ⌘B opens the shelf, and 1–9 opens a post on it. The shelf is kept on this \
-             Mac."
+             list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
+             the shelf syncs with your blyg; otherwise it's kept on this Mac."
         },
         keys: &[Key::Shelf],
         key_label: if cfg!(target_os = "windows") {
@@ -1246,7 +1267,7 @@ pub const STEPS: &[Step] = &[
         since: "0.4.0",
         title: "Reader: sources, posts, post",
         caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
-                  All, and Background, the only place withdrawn posts are listed), Your blyg \
+                  All, Shelf, and Background, where set-aside and withdrawn posts go), Your blyg \
                   (your own posts, never unread or counted), your hoppers, your folders, which \
                   stay on this Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
                   Stream again.",
@@ -1256,6 +1277,58 @@ pub const STEPS: &[Step] = &[
         button: None,
         setup: Setup::Stream,
         pause_ms: 3000,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.24.0 --- Background, and the shelf on the reading side.
+    Step {
+        id: "background",
+        since: "0.24.0",
+        title: "Set a post aside: Background",
+        caption: "b (or ↓ Background under the post) moves it to Background: out of the \
+                  stream, the feeds, Mentions and the counts, and nothing is marked read. \
+                  ↑ Foreground brings it back, ↺ Clear my choice lets the rules decide, and \
+                  ⇊ moves a whole blyg. Your blyg keeps the list, so the studio shows the same \
+                  (blygger-studio 0.61).",
+        keys: &[Key::Background],
+        key_label: "b",
+        region: Region::ReaderPost,
+        button: None,
+        setup: Setup::Background,
+        pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "shelf-add",
+        since: "0.24.0",
+        title: "Anyone's post on your shelf",
+        caption: "+ Add to shelf, among the post's chips, keeps it to hand: someone else's \
+                  post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
+                  syncs with your blyg, so the studio, the web app and your other computers \
+                  share it.",
+        keys: &[Key::ShelfReading],
+        key_label: "click",
+        region: Region::ReaderPost,
+        button: None,
+        setup: Setup::ShelfAdd,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "shelf-lens",
+        since: "0.24.0",
+        title: "The Shelf lens",
+        caption: "Shelf, in the sources, lists everything on your shelf in your order, as the \
+                  studio's Shelf lens does. A shelved post stays here even after it goes to \
+                  Background. Click Shelf.",
+        keys: &[Key::ShelfLens],
+        key_label: "click",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::ShelfLens,
+        pause_ms: 1600,
         settle: false,
         stay: true,
     },
@@ -1352,6 +1425,24 @@ pub const STEPS: &[Step] = &[
                   files them in an Imported feeds folder in the Reader, out of your public \
                   blogroll. Export OPML… saves yours. Try the sample file.",
         keys: &[Key::OpmlImport],
+        key_label: "click",
+        region: Region::ScreenHeader,
+        button: None,
+        setup: Setup::Subscriptions,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- discover --- (desktop only)
+    Step {
+        id: "discover",
+        since: "0.24.0",
+        title: "Find new blygs to read",
+        caption: "Discover… (here, or Blyg › Discover Blygs…) lists the blygs on blygger.com's \
+                  public directory that you don't follow yet, newest first, with how active \
+                  each is. Ones listed since you last looked say new. j/k move, ⏎ \
+                  subscribes, o opens one in your browser. (The tour's list is a sample.)",
+        keys: &[Key::Discover],
         key_label: "click",
         region: Region::ScreenHeader,
         button: None,
@@ -1768,7 +1859,7 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "reading",
         title: "Reading",
-        blurb: "Stream, catch up, Reader, the author's site, OPML.",
+        blurb: "Stream, catch up, Reader, Background, the shelf, Discover.",
         steps: &[
             "stream",
             "compose",
@@ -1778,7 +1869,11 @@ pub const TOURS: &[Tour] = &[
             "catch-up",
             "author-site",
             "reader",
+            "background",
+            "shelf-add",
+            "shelf-lens",
             "opml",
+            "discover",
         ],
     },
     Tour {
@@ -1981,6 +2076,10 @@ mod tests {
             Key::Split,
             Key::Nearby,  // --- nearby ---
             Key::CatchUp, // --- catch up ---
+            Key::Background,
+            Key::ShelfReading,
+            Key::ShelfLens,
+            Key::Discover,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

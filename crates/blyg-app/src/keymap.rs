@@ -45,6 +45,7 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
+use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
 // --- catch up ---
 use crate::app::reading::catchup::CatchUp;
@@ -770,6 +771,12 @@ pub fn mac_table() -> Vec<Keybind> {
             "Save every subscription as an OPML file",
             "Blyg › Export Subscriptions as OPML…"
         ),
+        // --- discover --- (no key: an occasional look around)
+        menu_only!(
+            ShowDiscover,
+            "Discover blygs listed on blygger.com that you don't follow yet",
+            "Blyg › Discover Blygs…"
+        ),
         menu_only!(
             SiteSettings,
             "The blyg's site settings (title, bio, links)",
@@ -1485,6 +1492,7 @@ pub fn bind_keys(cx: &mut App) {
     // Menu-only actions have no keys; keep the compiler honest that they exist.
     let _ = (Disconnect, OpenConfigFile, SiteSettings, SubscribeTo);
     let _ = (ImportOpml, ExportOpml); // --- OPML ---
+    let _ = ShowDiscover; // --- discover ---
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---

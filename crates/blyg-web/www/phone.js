@@ -9,6 +9,7 @@ import {
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
   swipeCards, cardHtml, draw, drawMore, onNearEnd, settle,
+  shelfNote, shelfButton,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -272,13 +273,15 @@ function toggleShelf() {
 // ---------------------------------------------------------------- shelf
 function renderShelfSheet() {
   const rows = V.shelf;
+  $('#p-shelfNote').textContent = shelfNote(); // --- shelf sync ---
+  $('#p-shelfNote').hidden = !shelfNote();
   $('#p-shelfSheet').innerHTML = rows.length
     ? rows.map((r, i) => `<div class="shrow"><span class="n">${i + 1}</span>
         <button type="button" class="opt2" data-shelf="${esc(r.id)}">${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>
         <button type="button" class="ic" data-up="${esc(r.id)}" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button>
         <button type="button" class="ic" data-down="${esc(r.id)}" data-i="${i}" aria-label="Move down" ${i < rows.length - 1 ? '' : 'disabled'}>▼</button>
         <button type="button" class="ic" data-off="${esc(r.id)}" aria-label="Take off the shelf">✕</button></div>`).join('')
-    : '<p class="muted">Nothing on your shelf yet. Hold a post in Write, or tap 📚 in the editor.</p>';
+    : '<p class="muted">None of your own posts are on the shelf. Hold a post in Write, or tap 📚 in the editor. Others\u2019 posts you shelve are under Read › Shelf.</p>';
 }
 function openShelved(id) {
   closeSheet({ refocus: false });
@@ -293,6 +296,7 @@ function openReading(key) {
   if (!p) return;
   readKey = key;
   renderPost($('#p-postBody'), p);
+  shelfButton($('#p-shelfRA'), key); // --- shelf sync ---
   opened(key, $('#p-postBody')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#v-post .pscroll').scrollTop = 0;
   persist();
@@ -519,6 +523,7 @@ export function initPhone() {
     if (a === 'quote') quote(readKey);
     else if (a === 'reply') reply(readKey);
     else if (a === 'hopper') hopperSheet(readKey);
+    else if (a === 'shelf') { outcome(S.B.toggle_reading_shelf(readKey)); shelfButton($('#p-shelfRA'), readKey); persist(); } // --- shelf sync ---
     else if (a === 'link') copyText(S.B.link_markup(readKey)).then((ok) => toast(ok ? 'Link copied · paste it into a post' : 'Couldn’t reach the clipboard'));
     else if (a === 'unread') { outcome(S.B.set_read(readKey, false)); persist(); renderStream(); }
   });

@@ -88,6 +88,7 @@ fn row(id: &str, state: &str, version: u32, text: &str) -> ReadingItem {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 

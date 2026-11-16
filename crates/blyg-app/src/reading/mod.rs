@@ -18,6 +18,9 @@
 //! - **Lineage** (⌘J): a post's neighbours one step each way, walkable, with
 //!   the reader's actions on a ring (`lineage.rs`, model in `lineage_vm.rs`).
 
+pub(crate) mod background; // --- background --- placements and rules (studio 0.61)
+#[cfg(test)]
+mod background_tests;
 mod change_lead; // --- background ---
 // --- reader view / changelog --- the author's own page in the reader's
 // slot, and what an opened post shows of its changelog.
@@ -47,6 +50,7 @@ pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
 #[path = "../contacts/mod.rs"]
 pub(crate) mod contacts;
 // --- end contacts ---
+pub(crate) mod discover; // --- discover --- (studio 0.60, desktop only)
 pub(crate) mod neighbourhood;
 #[cfg(test)]
 mod neighbourhood_tests;
@@ -62,6 +66,7 @@ mod opml_tests;
 pub(crate) mod own;
 pub(crate) mod pick_vm; // --- read/unread ---
 mod quote_picker;
+pub(crate) mod shelf_lens; // --- shelf sync --- the Shelf lens, + Add to shelf
 mod site_settings;
 // --- stream --- (issue #1: the default reading mode)
 pub(crate) mod stream;
@@ -318,6 +323,8 @@ pub enum RSheet {
     },
     /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
     Opml(Box<opml::Sheet>),
+    /// --- discover --- Discover Blygs… (blygger.com's directory).
+    Discover(Box<discover::Sheet>),
     /// The `[[` / `![[` picker with its own search box (⌘K, or typing the
     /// brackets with `picker_typing = panel`).
     Quote {
@@ -426,6 +433,8 @@ pub struct State {
     pub compose: compose::Compose,
     /// --- trails --- your trails, the current one, the bar's field.
     pub trails: crate::app::trails::Trails,
+    /// --- shelf sync --- the shelf's posts, in its order (the Shelf lens).
+    pub shelved: Vec<Key>,
     /// --- contacts --- the Mentions smart feed's posts.
     pub mentioned: mentions_feed::Feed,
     // --- reader view / changelog ---
@@ -434,6 +443,9 @@ pub struct State {
     /// The blyg's changelog settings and the summaries asked this session.
     pub changelogs: changelog_view::Changelogs,
     // --- end reader view / changelog ---
+    /// --- background --- whether the blyg has Background (studio 0.61), and
+    /// its rules for Settings.
+    pub background: background::Background,
 }
 
 impl State {
@@ -499,10 +511,12 @@ impl State {
                     .filter(|_| crate::connection::mode(cx) != Some(crate::connection::Mode::Fake)),
             ),
             trails: crate::app::trails::Trails::load(backend), // --- trails ---
+            shelved: shelf_lens::keys(backend),                // --- shelf sync ---
             mentioned: Default::default(),                     // --- contacts ---
             // --- reader view / changelog ---
             site: site_view::SiteView::new(data_dir.clone()),
             changelogs: Default::default(),
+            background: Default::default(),
         }
         .refiltered()
     }
@@ -553,6 +567,12 @@ impl State {
         {
             let keys = self.trails.keys(t);
             self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &keys);
+        }
+        // --- shelf sync --- the Shelf lens lists its held posts, in its order.
+        if self.mode == stream_vm::ReadMode::Reader
+            && self.source == sources_vm::Source::Smart(sources_vm::Smart::Shelf)
+        {
+            self.shown = crate::app::trails::in_trail_order(&self.rows, &searched, &self.shelved);
         }
         self.stream.sync(&self.rows, &self.shown);
         // --- read/unread --- picks the list no longer shows let go.
@@ -692,6 +712,7 @@ impl MainView {
         .map(|d| self.stream_actions(d, cx))
         .map(|d| self.sources_actions(d, cx)) // --- reader folders ---
         .map(|d| self.opml_actions(d, cx)) // --- OPML ---
+        .map(|d| self.discover_actions(d, cx)) // --- discover ---
         .map(|d| self.own_post_actions(d, cx)) // --- own posts ---
         .map(|d| self.browse_actions(d, cx)) // --- browse ---
         .map(|d| self.compose_actions(d, cx)) // --- reading compose ---
@@ -705,6 +726,7 @@ impl MainView {
         // --- background --- and the withdrawn posts, at the end.
         let fresh = self.reading_with_own();
         let r = &mut self.reading;
+        r.background.served = self.backend.background_served(); // --- background ---
         r.available = self.backend.read_extensions_available();
         r.subs = self.backend.subscriptions();
         // --- reader folders ---
@@ -721,6 +743,7 @@ impl MainView {
         }
         r.avatars = sources::avatars(self.backend.as_ref());
         r.trails.reload(self.backend.as_ref()); // --- trails ---
+        r.shelved = shelf_lens::keys(self.backend.as_ref()); // --- shelf sync ---
         if r.view == View::Reading {
             // Keep the order stable under the cursor: update rows in place,
             // put new posts on top, drop what went away.
@@ -777,6 +800,7 @@ impl MainView {
             View::Reading => {
                 self.reading.available = self.backend.read_extensions_available();
                 self.reading.rows = self.reading_with_own(); // --- own posts ---
+                self.reading.background.served = self.backend.background_served(); // --- background ---
                 // --- reader folders ---
                 self.reading.subs = self.backend.subscriptions();
                 self.reading.folders = self.backend.folders();
@@ -784,6 +808,7 @@ impl MainView {
                 self.reading.hoppers = self.backend.hoppers(); // --- hoppers ---
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 self.reading.hopper_order = self.backend.hopper_order();
+                self.reload_reading_shelf(); // --- shelf sync ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
@@ -1068,6 +1093,12 @@ impl MainView {
                 self.open_hopper_picker(window, cx);
                 true
             }
+            // --- background --- `b`: the post in front of you to Background,
+            // or back to Foreground (studio 0.61).
+            (View::Reading, "b") => {
+                self.background_key(cx);
+                true
+            }
             // --- tray --- `q` puts the post in front of you on the quote tray.
             (View::Reading, "q") => {
                 self.add_to_tray(window, cx);
@@ -1140,6 +1171,7 @@ impl MainView {
             RSheet::Folder { .. } => (420., self.render_folder_sheet(sheet, cx)), // --- reader folders ---
             RSheet::SubName { .. } => (440., self.render_sub_name_sheet(sheet, cx)),
             RSheet::Opml(s) => (560., self.render_opml_sheet(s, cx)), // --- OPML ---
+            RSheet::Discover(s) => (600., self.render_discover_sheet(s, cx)), // --- discover ---
             // --- hoppers ---
             RSheet::HopperPick { .. } => (420., self.render_hopper_pick(sheet, cx)),
             RSheet::HopperName { .. } => (440., self.render_hopper_name_sheet(sheet, cx)),
@@ -1178,6 +1210,11 @@ impl MainView {
             .right_0()
             .flex()
             .justify_center()
+            // During the tour, the sheet centres in the room right of the
+            // tour card, so the card never covers it.
+            .when_some(self.tutorial_card_inset(), |d, inset| {
+                d.pl(px(inset)).pr(px(14.))
+            })
             .child(
                 div()
                     .id("reading-sheet")

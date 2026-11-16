@@ -52,6 +52,9 @@ const ICON_THREADS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox=
 const ICON_FRAGMENTS: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5 8.5h14v7H5z"/><path d="M8 12h6"/></svg>"#;
 const ICON_FOLDER: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.2h8.5A1.5 1.5 0 0 1 21 8.7v8.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>"#;
 
+/// --- shelf sync --- three books on a shelf.
+const ICON_SHELF: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20h17"/><path d="M5.5 5h3v15h-3zM9.5 7h3v13h-3z"/><path d="M14.2 7.6l2.9-.8 3.3 12.4-2.9.8z"/></svg>"#;
+
 fn smart_icon(s: Smart) -> &'static [u8] {
     match s {
         Smart::Unread => ICON_UNREAD,
@@ -63,6 +66,7 @@ fn smart_icon(s: Smart) -> &'static [u8] {
         Smart::Disliked => ICON_THUMB_DOWN,
         Smart::Threads => ICON_THREADS,
         Smart::Fragments => ICON_FRAGMENTS,
+        Smart::Shelf => ICON_SHELF, // --- shelf sync ---
     }
 }
 

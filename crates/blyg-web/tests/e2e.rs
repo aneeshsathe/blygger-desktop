@@ -339,3 +339,227 @@ fn web_reading_and_posts_follow_native_order() {
     );
     me.unsubscribe(&sub.id).unwrap();
 }
+
+// ------------------------------------------------- shelf × background
+
+/// A `GET /api/reading` entry's key, as Burrow keys rows: `(sub, id)`,
+/// your own posts as `("~own", id)`.
+fn entry_key(v: &Value) -> Option<(String, String)> {
+    if let Some(own) = v.get("own").filter(|o| o.is_object()) {
+        return Some((
+            blyg_core::OWN_SUBSCRIPTION.to_string(),
+            own.get("id")?.as_str()?.to_string(),
+        ));
+    }
+    let imp = v.get("imported").filter(|o| o.is_object())?;
+    Some((
+        imp.get("subscriptionId")?.as_str()?.to_string(),
+        imp.get("remoteId")?.as_str()?.to_string(),
+    ))
+}
+
+/// One studio lens, every page, in its order (`query`: `shelf=true`,
+/// `background=true`, or "" for the default).
+fn studio_lens(base: &str, tok: &str, query: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut path = String::from("/api/reading?limit=50");
+        if !query.is_empty() {
+            path.push_str(&format!("&{query}"));
+        }
+        if let Some(c) = &cursor {
+            let esc: String = c
+                .bytes()
+                .map(|b| match b {
+                    b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                        (b as char).to_string()
+                    }
+                    _ => format!("%{b:02X}"),
+                })
+                .collect();
+            path.push_str(&format!("&cursor={esc}"));
+        }
+        let (st, body, _) = get(base, tok, &path);
+        assert_eq!(st, 200, "{path}: {body}");
+        let page: Value = serde_json::from_str(&body).unwrap();
+        out.extend(
+            page["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(entry_key),
+        );
+        match page["page"]["nextCursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => return out,
+        }
+    }
+}
+
+/// Native Burrow's three lenses, built as the app builds them: the rows of
+/// `reading/own.rs` `reading_with_own` (the reading list, your posts, the
+/// withdrawn ones, each placed by the studio's Background lens), then
+/// `sources_vm::in_source` for All and Background, and the shelf's keys
+/// over those rows for Shelf (`State::refilter`).
+struct Lenses {
+    all: Vec<(String, String)>,
+    background: Vec<(String, String)>,
+    shelf: Vec<(String, String)>,
+}
+
+fn native_lenses(me: &LiveBackend) -> Lenses {
+    use blyg_web::reading::sources_vm::{Smart, Source, in_source};
+    let origin = me.base_url().expect("connected");
+    let items = me.items();
+    let mut rows = blyg_core::own::merge(me.reading(), blyg_core::own::rows(&items, &origin));
+    rows.extend(me.background_reading());
+    rows.extend(
+        items
+            .iter()
+            .filter_map(|i| blyg_core::own::withdrawn_row(i, &origin)),
+    );
+    if let Some(set) = me.background_set() {
+        set.annotate(&mut rows);
+    }
+    let key = |r: &blyg_core::ReadingItem| (r.subscription_id.clone(), r.remote_id.clone());
+    let now = chrono::Utc::now();
+    let filed = std::collections::HashMap::new();
+    let lens = |s: Smart| {
+        rows.iter()
+            .filter(|r| in_source(r, &Source::Smart(s), &filed, now))
+            .map(key)
+            .collect::<Vec<_>>()
+    };
+    let held: std::collections::HashSet<_> = rows.iter().map(key).collect();
+    Lenses {
+        all: lens(Smart::All),
+        background: lens(Smart::Background),
+        shelf: me
+            .shelf_entries()
+            .into_iter()
+            .map(|e| (e.sub, e.remote_id))
+            .filter(|k| held.contains(k))
+            .collect(),
+    }
+}
+
+/// --- shelf sync × background --- (studio 0.61) A post both on the shelf
+/// and in Background, one only shelved, one only in Background and one
+/// neither, theirs and yours: Burrow's Shelf, Background and All lenses
+/// list each of them as the studio's own `GET /api/reading?shelf=true`,
+/// `?background=true` and default do, and the Shelf in the studio's order.
+/// Then the shelved Background post is withdrawn.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn shelf_and_background_lenses_match_the_studio() {
+    use blyg_core::background::Placement;
+    use blyg_core::shelf::Entry;
+    let (url_a, url_b) = (local("BLYG_E2E_URL"), local("BLYG_E2E_URL_B"));
+    let tok_a = token("BLYG_E2E_TOKEN");
+    let tok_b = std::env::var("BLYG_E2E_TOKEN_B").unwrap_or_else(|_| tok_a.clone());
+    let api = Api::new(&url_a, Credential::Token(tok_a.clone()));
+    if !api.serves_background().unwrap() {
+        eprintln!("skipped: this studio doesn't serve Background");
+        return;
+    }
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = backend(d1.path(), &url_a, &tok_a);
+    let source = backend(d2.path(), &url_b, &tok_b);
+    let t = tag();
+    let (both_local, both) = publish(&source, &format!("Shelved and in Background ({t})"));
+    let (_, shelved) = publish(&source, &format!("Shelved only ({t})"));
+    let (_, backed) = publish(&source, &format!("In Background only ({t})"));
+    let (_, plain) = publish(&source, &format!("Neither ({t})"));
+    let (_, mine) = publish(&me, &format!("Mine, shelved and in Background ({t})"));
+    let sub = me.subscribe(&url_b, Some("Sample tide notes")).unwrap();
+    wait_until("the backfill", Duration::from_secs(60), || {
+        me.sync_now().unwrap();
+        let r = me.reading();
+        [&both, &shelved, &backed, &plain]
+            .iter()
+            .all(|id| r.iter().any(|x| &&x.remote_id == id))
+    });
+    me.sync_now().unwrap();
+    assert!(me.background_served(), "studio 0.61 serves Background");
+
+    let theirs = |id: &str| (sub.id.clone(), id.to_string());
+    let own = (blyg_core::OWN_SUBSCRIPTION.to_string(), mine.clone());
+    // Shelved in this order: mine, both, shelved.
+    for k in [&own, &theirs(&both), &theirs(&shelved)] {
+        me.set_entry_on_shelf(&Entry::new(k.0.clone(), k.1.clone()), true)
+            .unwrap();
+    }
+    me.sync_now().unwrap();
+    for k in [&own, &theirs(&both), &theirs(&backed)] {
+        me.set_reading_placement(k, false, Some(Placement::Background))
+            .unwrap();
+    }
+    me.sync_now().unwrap();
+
+    let ours = [
+        theirs(&both),
+        theirs(&shelved),
+        theirs(&backed),
+        theirs(&plain),
+        own.clone(),
+    ];
+    let check = |what: &str| {
+        let studio_shelf = studio_lens(&url_a, &tok_a, "shelf=true");
+        let studio_bg = studio_lens(&url_a, &tok_a, "background=true");
+        let studio_all = studio_lens(&url_a, &tok_a, "");
+        let n = native_lenses(&me);
+        let only = |v: &[(String, String)]| -> Vec<(String, String)> {
+            v.iter().filter(|k| ours.contains(k)).cloned().collect()
+        };
+        assert_eq!(
+            only(&n.shelf),
+            only(&studio_shelf),
+            "{what}: Shelf, in order"
+        );
+        let set = |v: Vec<(String, String)>| {
+            let mut v = v;
+            v.sort();
+            v
+        };
+        assert_eq!(
+            set(only(&n.background)),
+            set(only(&studio_bg)),
+            "{what}: Background"
+        );
+        assert_eq!(set(only(&n.all)), set(only(&studio_all)), "{what}: All");
+        eprintln!(
+            "{what}: shelf {:?}, background {}, all {} of ours: Burrow = studio",
+            only(&n.shelf).len(),
+            only(&n.background).len(),
+            only(&n.all).len()
+        );
+        (only(&studio_shelf), only(&studio_bg), only(&studio_all))
+    };
+    let (shelf, bg, all) = check("placed and shelved");
+    // What the studio says (so the comparison can't pass vacuously): the
+    // Shelf holds its posts whatever their placement.
+    assert_eq!(shelf, vec![own.clone(), theirs(&both), theirs(&shelved)]);
+    assert_eq!(bg.len(), 3, "{bg:?}");
+    assert!(!all.contains(&theirs(&both)) && all.contains(&theirs(&shelved)));
+
+    // The shelved Background post is withdrawn on `b`.
+    source.withdraw(&both_local, Some("retracted")).unwrap();
+    api.resync_subscription(&sub.id).unwrap();
+    wait_until("the withdrawal", Duration::from_secs(60), || {
+        me.sync_now().unwrap();
+        me.background_reading()
+            .iter()
+            .chain(me.reading().iter())
+            .any(|r| r.remote_id == both && r.state == "tombstone")
+    });
+    check("withdrawn");
+
+    // Clean up for the next test: choices cleared, shelf emptied.
+    for k in &ours {
+        let _ = me.set_reading_placement(k, false, None);
+        let _ = me.set_entry_on_shelf(&Entry::new(k.0.clone(), k.1.clone()), false);
+    }
+    me.sync_now().unwrap();
+    me.unsubscribe(&sub.id).unwrap();
+}
