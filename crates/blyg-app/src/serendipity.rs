@@ -613,24 +613,9 @@ impl MainView {
                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
                 .child(label)
         };
-        let row = |label: &'static str, content: Div| {
-            div()
-                .flex()
-                .gap(px(12.))
-                .py(px(7.))
-                .child(
-                    div()
-                        .w(px(92.))
-                        .flex_none()
-                        .pt(px(4.))
-                        .text_size(px(10.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(p.muted)
-                        .child(label),
-                )
-                .child(content.flex_1())
-        };
-        let note = |t: &'static str| div().text_size(px(11.)).text_color(p.muted).child(t);
+        let row =
+            |label: &'static str, content: Div| crate::app::settings_page::row(&p, label, content);
+        let note = |t: &'static str| crate::app::settings_page::note(&p, t);
         let m = mode(cx);
         let sounds = crate::app::delight::sounds_on(cx);
         let seren = [

@@ -69,6 +69,9 @@ impl Backend for Recording {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.inner.reading_mentions()
     }
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        self.inner.reading_mentions_cached()
+    }
     fn page_title(&self, url: &str) -> Option<String> {
         self.inner.page_title(url) // --- capture ---
     }
@@ -779,6 +782,9 @@ fn do_step(e: &mut Env, id: &str) {
                 .map(crate::app::reading::vm::key)
                 .expect("the sample post is held");
             v.toggle_reading_shelf(key, cx)
+        }),
+        "mentions-feed" => e.view.update(e.cx, |v, cx| {
+            v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
         }),
         "shelf-lens" => e.view.update(e.cx, |v, cx| {
             v.select_source(

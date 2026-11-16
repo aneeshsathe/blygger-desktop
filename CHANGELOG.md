@@ -16,6 +16,29 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-16
+
+### Added
+- **Web app: post to post.** An open post has ‹ › for the previous and next post, in the list's order as you saw it; on a phone or iPad, swipe sideways across the post (left for the next, right for the previous). ↑ ↓ on the desk follow the same order, so reading a post no longer reorders the walk.
+
+### Changed
+- **Desktop: Settings is a full page, and nothing in it is cut off any more.** ⌘, opens it over the whole window below the title bar instead of a pop-up, and every row of options and every explanation wraps to fit, at any window width and font.
+- **Web app on a laptop or iPad: it now fills the page.** On your blyg the app is no longer drawn as a window inside a page (no frame, traffic lights or width cap). Theme and layout moved into the title bar, and **Keys** opens the keyboard list. The sample-data demo keeps its window.
+
+### Fixed
+- **Reading › Mentions showed a full list for a moment, then shrank to a few.** It now lists both what your blyg's mentions lens finds
+  and what Burrow finds itself (quotes, replies, forks and links to your
+  blyg), and each row has a small tag saying why: named you, quoted you,
+  replied, forked you or linked you. The lens's last answer is kept, so the
+  list is whole from the start. The web app lists and tags them the same
+  way. (Desktop rows show the strongest reason; web cards up to two.)
+- **Web app on a phone: swiping back from a post played the slide twice.** The system's back swipe already moves the views, so after it the app no longer slides them again (`hasUAVisualTransition`, or a touch that began at the screen edge).
+
+### Not verified
+- The phone's back swipe and the sideways post-to-post swipe were tested with simulated touches in headless Chromium, not on an iPhone or iPad.
+- Settings at full page was checked on macOS only, not Windows.
+
+
 ## [0.24.0] - 2026-11-15
 
 Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.

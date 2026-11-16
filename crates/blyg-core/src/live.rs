@@ -139,6 +139,8 @@ const CONTACTS_SERVED_META: &str = "contacts.served";
 
 /// --- loose ends --- your posts a verified mention names, as last fetched.
 const MENTIONED_META: &str = "loose_ends.mentioned";
+/// --- contacts --- The Mentions lens's last answer (JSON key pairs).
+const MENTIONS_SERVED_META: &str = "mentions.served";
 
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
@@ -758,10 +760,20 @@ impl Backend for LiveBackend {
     }
 
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
-        self.e()
-            .track(self.e().api.reading_mentions())
-            .ok()
-            .flatten()
+        let got = self.e().track(self.e().api.reading_mentions()).ok()?;
+        // Kept for the next first paint; a lens no longer served is forgotten.
+        let store = &self.engine.store;
+        let _ = match &got {
+            Some(keys) => serde_json::to_string(keys)
+                .map_err(|e| CoreError::Other(e.to_string()))
+                .and_then(|j| store.set_meta(MENTIONS_SERVED_META, &j)),
+            None => store.delete_meta(MENTIONS_SERVED_META),
+        };
+        got
+    }
+
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        serde_json::from_str(&self.engine.store.meta(MENTIONS_SERVED_META)?).ok()
     }
 
     // --- contacts --- managing the book: each change, then the local copy

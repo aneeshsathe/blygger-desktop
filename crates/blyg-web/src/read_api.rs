@@ -41,6 +41,9 @@ struct ReadRow {
     glyph: String,
     hoppers: Vec<String>,
     kind: &'static str,
+    /// --- contacts --- In the Mentions feed: why the row is there
+    /// ("named you", "quoted you"…). Empty elsewhere.
+    why: Vec<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -341,8 +344,10 @@ impl Burrow {
             .take(limit)
             .map(|r| {
                 let title = rvm::post_title(r);
+                let key = key_of(r);
                 ReadRow {
-                    key: key_of(r),
+                    why: self.wr_mention_tags(&key),
+                    key,
                     who: author(r),
                     host: rvm::host(&r.origin),
                     when: rvm::when_label(r, now),

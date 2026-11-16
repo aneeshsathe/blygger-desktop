@@ -639,6 +639,10 @@ impl MainView {
                         ),
             ),
             (
+                Key::MentionsFeed,
+                reader && self.reading.source == crate::app::reading::sources_vm::Source::Mentions,
+            ),
+            (
                 Key::Discover,
                 matches!(
                     self.reading.sheet,
@@ -1268,6 +1272,13 @@ impl MainView {
                 }
                 cx.notify();
             }
+            Setup::MentionsFeed => {
+                if let Some(f) = &self.fake {
+                    f.add_mentions_sample();
+                }
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                cx.notify();
+            }
         }
     }
 
@@ -1338,6 +1349,9 @@ impl MainView {
                 ),
                 cx,
             ),
+            "mentions-feed" => {
+                self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
+            }
             "discover" => self.open_discover(window, cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),

@@ -51,7 +51,15 @@ fn contacts_are_fetched_and_kept_from_5_7() {
     // Kept on this Mac: the next launch has them before any fetch.
     let b = env.manual();
     assert_eq!(b.contacts().len(), 1);
+    assert_eq!(b.reading_mentions_cached(), None, "never asked yet");
     assert_eq!(b.reading_mentions(), Some(vec![("S1".into(), "b".into())]));
+    drop(b);
+    // The lens's answer is kept too: the next first paint holds it.
+    let b = env.manual();
+    assert_eq!(
+        b.reading_mentions_cached(),
+        Some(vec![("S1".into(), "b".into())])
+    );
 }
 
 #[test]

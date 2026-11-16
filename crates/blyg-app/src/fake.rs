@@ -739,6 +739,27 @@ impl FakeBackend {
     pub fn set_rewrites_handles(&self, on: bool) {
         self.lock().book.rewrites = on;
     }
+    /// Serve the blyg's Mentions lens (`None`: not served).
+    #[cfg(test)]
+    pub fn set_mentions_lens(&self, keys: Option<Vec<(String, String)>>) {
+        self.lock().book.lens = keys;
+    }
+
+    /// The Mentions feed's sample: three posts that point at your blyg,
+    /// and the lens served (the `rd-mentions-feed` demo, tests).
+    pub fn add_mentions_sample(&self) {
+        let (rows, lens) = reading_seed::mentions_sample(Utc::now());
+        let sink = {
+            let mut st = self.lock();
+            st.rd
+                .reading
+                .retain(|r| !rows.iter().any(|n| n.remote_id == r.remote_id));
+            st.rd.reading.extend(rows);
+            st.book.lens = Some(lens);
+            st.sink.clone()
+        };
+        Self::emit(&sink, CoreEvent::ReadingChanged);
+    }
     // --- end contacts ---
 
     /// Pretend the server lacks (or has) the owner-API read extensions.
@@ -997,6 +1018,14 @@ impl Backend for FakeBackend {
 
     fn keeps_contacts(&self) -> bool {
         true
+    }
+
+    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+        self.lock().book.lens.clone()
+    }
+
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        self.reading_mentions()
     }
 
     fn create_contact(

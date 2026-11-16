@@ -818,3 +818,69 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         own_versions,
     }
 }
+
+// --- contacts --- the Mentions feed's sample (the `rd-mentions-feed` demo and
+// tests add it; the seed itself mentions you nowhere).
+pub const MENTION_QUOTE: &str = "01k2ada0qv0te0y0u000000001";
+pub const MENTION_REPLY: &str = "01k211n0rep1y0y0u000000001";
+pub const MENTION_LINK: &str = "01k2rve01ink0y0u0000000001";
+
+/// Three held posts that point at your blyg (Ada quotes your gardens post,
+/// Lin replies to "On friction", Rue links to you), and the blyg's lens:
+/// Rue's trust note (an @-mention only the studio sees) and Ada's quote.
+pub fn mentions_sample(now: DateTime<Utc>) -> (Vec<ReadingItem>, Vec<(String, String)>) {
+    let h = Duration::hours;
+    let own = super::ORIGIN;
+    let rue = sub("sub-rue", SubscriptionKind::Blyg, RUE, "Rue", true);
+    let ada = sub("sub-ada", SubscriptionKind::Blyg, ADA, "Ada", true);
+    let lin = sub("sub-lin", SubscriptionKind::Blyg, LIN, "Lin", false);
+    let mut quote = post(
+        &ada,
+        MENTION_QUOTE,
+        Kind::Fragment,
+        1,
+        None,
+        now - h(2),
+        "Ada",
+        &format!("Small gardens, kept slowly.\n\n![[{OWN_GARDENS_SERVER}]]"),
+    );
+    quote.transclusions = vec![TransclusionRef {
+        id: OWN_GARDENS_SERVER.into(),
+        version: Some(2),
+        origin: Some(own.into()),
+        cited: None,
+        selector: None,
+    }];
+    let mut reply = post(
+        &lin,
+        MENTION_REPLY,
+        Kind::Thread,
+        1,
+        None,
+        now - h(6),
+        "Lin",
+        "On friction, again\n\nThe slow part is the point.",
+    );
+    reply.stub_of = Some(StubOf {
+        origin: Some(own.into()),
+        id: Some("01J9M2AABCDEFGHJKMNPQRS".into()),
+        version: Some(1),
+        url: None,
+        cited: None,
+    });
+    let link = post(
+        &rue,
+        MENTION_LINK,
+        Kind::Fragment,
+        1,
+        None,
+        now - h(8),
+        "Rue",
+        &format!("A garden blyg worth following: {own}/"),
+    );
+    let lens = vec![
+        (rue.id.clone(), RUE_TRUST.to_string()),
+        (ada.id.clone(), MENTION_QUOTE.to_string()),
+    ];
+    (vec![quote, reply, link], lens)
+}

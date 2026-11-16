@@ -152,6 +152,9 @@ pub enum Key {
     ShelfReading,
     /// Reading's Shelf lens is the source.
     ShelfLens,
+    // --- 0.25.0 ---
+    /// Reading's Mentions feed is the source.
+    MentionsFeed,
     /// The Discover sheet opened.
     Discover,
     // --- nearby ---
@@ -293,6 +296,8 @@ pub enum Setup {
     ShelfAdd,
     /// Reader on All, with Rue's post on trust on the shelf.
     ShelfLens,
+    /// Reader on All, with posts that quote, reply to, link to and name you.
+    MentionsFeed,
 }
 
 /// One step of the tour.
@@ -1332,6 +1337,23 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.25.0 --- the Mentions feed, tagged.
+    Step {
+        id: "mentions-feed",
+        since: "0.25.0",
+        title: "Mentions, and why",
+        caption: "Mentions, under All unread, lists the posts that point at you: the ones \
+                  your blyg says name you, and the ones Burrow finds that quote, reply to, \
+                  fork or link to your blyg. A tag on each says which. Click Mentions.",
+        keys: &[Key::MentionsFeed],
+        key_label: "click",
+        region: Region::Reader,
+        button: None,
+        setup: Setup::MentionsFeed,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     // --- hoppers ---
     Step {
         id: "hoppers",
@@ -1872,6 +1894,7 @@ pub const TOURS: &[Tour] = &[
             "background",
             "shelf-add",
             "shelf-lens",
+            "mentions-feed",
             "opml",
             "discover",
         ],
@@ -2080,6 +2103,7 @@ mod tests {
             Key::ShelfReading,
             Key::ShelfLens,
             Key::Discover,
+            Key::MentionsFeed,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }

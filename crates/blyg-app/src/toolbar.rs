@@ -662,37 +662,20 @@ impl MainView {
                 .child(label)
         };
         let on = self.prefs.show_buttons;
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("BUTTONS"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_wrap()
-                    .items_center()
-                    .gap(px(6.))
-                    .child(
-                        chip("show-buttons-on", "Show toolbar buttons", on).on_click(cx.listener(
-                            |this, _, window, cx| this.set_show_buttons(true, window, cx),
-                        )),
-                    )
-                    .child(chip("show-buttons-off", "Keyboard only", !on).on_click(
-                        cx.listener(|this, _, window, cx| this.set_show_buttons(false, window, cx)),
-                    )),
-            )
-            .into_any_element()
+        crate::app::settings_page::row(
+            &p,
+            "BUTTONS",
+            crate::app::settings_page::chips()
+                .child(
+                    chip("show-buttons-on", "Show toolbar buttons", on).on_click(
+                        cx.listener(|this, _, window, cx| this.set_show_buttons(true, window, cx)),
+                    ),
+                )
+                .child(chip("show-buttons-off", "Keyboard only", !on).on_click(
+                    cx.listener(|this, _, window, cx| this.set_show_buttons(false, window, cx)),
+                )),
+        )
+        .into_any_element()
     }
 
     /// Settings' toggle: `show-buttons`, written to the config file.

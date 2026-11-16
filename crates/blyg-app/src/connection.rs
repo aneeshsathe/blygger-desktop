@@ -744,6 +744,9 @@ impl Backend for SwitchBackend {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.cur().reading_mentions()
     }
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        self.cur().reading_mentions_cached()
+    }
     // --- contacts --- managing the book, Mentions › Sent, poll status
     fn create_contact(
         &self,

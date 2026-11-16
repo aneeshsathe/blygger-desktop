@@ -143,6 +143,7 @@ impl MainView {
             }
             ("offline", 1) => self.demo_type(" Written on a plane.", window, cx),
             ("settings", 0) => self.open_settings(&super::OpenSettings, window, cx),
+            ("settings-full", n) => self.settings_demo(n, window, cx),
             // --- themes --- chrome surfaces, for the theme audit's captures.
             // A toast with a second line (shown late, so it's up at capture).
             ("toast", 0) => self.demo_open("01J9QK3", window, cx),

@@ -36,6 +36,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   padding-top:env(safe-area-inset-top);transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility .28s}
 .pview:not(.off-r):not(.off-l){transition:transform .28s cubic-bezier(.2,.8,.2,1),visibility 0s}
 .pview.off-r{transform:translateX(100%);visibility:hidden}
+/* After the system's back swipe: it already moved the views. */
+#phone.still .pview{transition:none!important}
 .pview.off-l{transform:translateX(-30%);visibility:hidden}
 #v-edit,#v-post{bottom:0}
 #phone.kb #v-edit{padding-top:0}
@@ -110,6 +112,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .card .who b{color:var(--pink);font-weight:600}
 .card .glyph{font:.72rem var(--ui);color:var(--pacc)}
 .card .badge{font:600 .62rem var(--ui);text-transform:uppercase;letter-spacing:.05em;color:var(--pacc)}
+.card .badge.why{font:.68rem var(--ui);text-transform:none;letter-spacing:0;color:var(--pmuted);border:1px solid var(--pline);border-radius:999px;padding:0 .4rem}
 .card .ex{font:1.03rem/1.4 var(--fbody);margin-top:.25rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .card:not(.unread) .ex{color:var(--pmuted)}
 .card .hop{font:.72rem var(--ui);color:var(--pmuted);margin-top:.25rem}
@@ -186,3 +189,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 #phone .pfilter .pf.on{border-color:var(--pacc);color:var(--pacc)}
 #phone .pfilter .pf b{font-weight:600}
 /* --- end web-parity --- */
+/* Post to post: a small slide in from the side it came from. */
+@keyframes from-r{from{transform:translateX(28px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes from-l{from{transform:translateX(-28px);opacity:.3}to{transform:none;opacity:1}}
+.post.from-r{animation:from-r .2s ease-out}.post.from-l{animation:from-l .2s ease-out}
+.ic.step{min-width:2.2rem;font-size:1.25rem;color:var(--pmuted)}.ic.step:disabled{opacity:.3}

@@ -98,6 +98,8 @@
           <button type="button" data-ra="unread" title="Mark unread">● Unread</button>
           <!-- web-writing --><button type="button" id="d-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
           <span class="flex"></span>
+          <button type="button" class="step" data-ra="prev" aria-label="Previous post" title="Previous post (↑, or swipe right)">‹</button>
+          <button type="button" class="step" data-ra="next" aria-label="Next post" title="Next post (↓, or swipe left)">›</button>
           <button type="button" data-ra="smaller" aria-label="Smaller text">A−</button>
           <button type="button" data-ra="bigger" aria-label="Larger text">A+</button>
         </div>
@@ -176,7 +178,7 @@
   <!-- POST -->
   <section class="pview off-r" id="v-post" aria-label="Post">
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
-      <button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
+      <button type="button" class="ic step" id="p-prevPost" aria-label="Previous post" title="Previous post (or swipe right)">‹</button><button type="button" class="ic step" id="p-nextPost" aria-label="Next post" title="Next post (or swipe left)">›</button><button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
     <div class="pstrip" id="p-pacts" role="toolbar" aria-label="This post">
       <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
     </div>

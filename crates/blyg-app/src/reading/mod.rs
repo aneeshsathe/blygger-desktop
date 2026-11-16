@@ -44,6 +44,7 @@ mod marks; // --- read/unread ---
 pub(crate) mod catchup;
 mod mentions;
 pub(crate) mod mentions_feed; // --- contacts --- the Mentions smart feed
+pub(crate) mod mentions_vm; // --- contacts --- why a post is in it (the web compiles it too)
 // --- contacts --- the address book, the Mentions screen's Sent side, and
 // the Subscriptions screen's poll status (a child here: it uses the
 // screens' helpers).
@@ -809,6 +810,7 @@ impl MainView {
                 self.reading.hopper_only = hoppers::unheld_keys(self.backend.as_ref());
                 self.reading.hopper_order = self.backend.hopper_order();
                 self.reload_reading_shelf(); // --- shelf sync ---
+                self.load_kept_reading_mentions(); // --- contacts ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---

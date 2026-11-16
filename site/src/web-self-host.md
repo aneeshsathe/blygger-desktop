@@ -223,6 +223,13 @@ not have is hidden, or says why, until the studio offers it.
 - **It starts fast.** On a first start the first page of Reading shows as
   soon as it arrives, and the rest pages in behind it. With 3,000 posts to
   read it shows in about a third of a second.
+- **Post to post**: an open post has **‹ ›** beside A− A+ for the previous
+  and next post in the list as you saw it (↑ ↓ on a keyboard). On a phone or
+  an iPad you can also swipe sideways across the post: left for the next,
+  right for the previous. A swipe from the screen's edge is still the
+  browser's back.
+- **It fills the page** on your blyg. Theme and layout are in the title bar,
+  and **Keys** there lists the keyboard shortcuts.
 - **Mark all read**: ✓ Mark all read… in the sources pane (⌃⌥A), or ✓ All
   read on a phone, after asking. See
   [Read it on the author's site](reading.md#read-it-on-the-authors-site)
