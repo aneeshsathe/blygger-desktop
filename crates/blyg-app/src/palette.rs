@@ -721,10 +721,10 @@ impl MainView {
                                     .text_size(px(11.))
                                     .text_color(p.muted)
                                     .truncate()
-                                    .child(match &e.disabled {
+                                    .child(crate::keymap::shown(match &e.disabled {
                                         Some(why) => why.clone(),
                                         None => e.detail.clone(),
-                                    }),
+                                    })),
                             ),
                     )
                     .children(e.key.clone().map(|k| {
@@ -734,7 +734,7 @@ impl MainView {
                             .py(px(1.))
                             .text_size(px(11.))
                             .when(dim, |d| d.opacity(0.6))
-                            .child(k)
+                            .child(crate::keymap::shown(k))
                     }))
                     .when_some(tip, |d, tip| {
                         d.tooltip(move |_, cx| cx.new(|_| reading::Tip(tip.clone())).into())

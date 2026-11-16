@@ -589,7 +589,11 @@ hashes, and its JSON).
 
 **Mentions** (⇧⌘M) lists the verified responses to your own posts: who
 quoted, stubbed or forked which post, and when. You can hide one, and your own
-posts list their mentions under them in ⌘Y and in the reading pane.
+posts list their mentions under them in ⌘Y and in the reading pane. Click a
+mention's name to read the post that mentioned you in the reader, as a blyg
+link in a post opens; ↗ opens its web page where links go (the browser pane,
+or your default browser). Click **On “…”** above a group to open your own
+post, the one those mentions point at.
 
 **Sent** beside **Received** lists the Webmentions your blyg sent for your
 posts: which version of which post, the page it pointed at, and where the

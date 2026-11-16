@@ -1313,7 +1313,7 @@ impl MainView {
             .text_color(p.ink)
             .font_weight(FontWeight::MEDIUM)
             .text_size(px(11.5))
-            .child(k)
+            .child(crate::keymap::hint(k))
     }
 
     fn key_hint(&self, k: &'static str, label: &'static str) -> Div {
@@ -1371,7 +1371,7 @@ impl MainView {
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.ink)
             .hover(|s| s.border_color(p.accent))
-            .child(label.into())
+            .child(crate::keymap::shown(label))
     }
 
     /// A chip that can't be clicked now: greyed, dashed, its tooltip says why.
@@ -1393,7 +1393,7 @@ impl MainView {
             .text_size(px(11.5))
             .font_weight(FontWeight::MEDIUM)
             .text_color(p.muted)
-            .child(label.into())
+            .child(crate::keymap::shown(label))
     }
 
     /// The screen header: a title, a hint, and actions on the right.
@@ -1420,7 +1420,7 @@ impl MainView {
                     .text_size(px(12.))
                     .text_color(p.muted)
                     .truncate()
-                    .child(hint),
+                    .child(crate::keymap::shown(hint)),
             )
             .children(actions)
     }
@@ -1460,7 +1460,7 @@ impl MainView {
             .italic()
             .text_size(px(12.5))
             .text_color(self.palette.muted)
-            .child(s.into())
+            .child(crate::keymap::shown(s))
             .into_any_element()
     }
 
@@ -1576,6 +1576,6 @@ impl Render for Tip {
             .text_color(s.ink)
             .font_family(s.font)
             .text_size(px(11.))
-            .child(self.0.clone())
+            .child(crate::keymap::shown(self.0.clone()))
     }
 }

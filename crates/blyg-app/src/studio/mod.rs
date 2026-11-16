@@ -249,6 +249,13 @@ pub struct Studio {
 }
 
 impl Studio {
+    /// --- esc --- The preview and the reader's post give the keyboard back
+    /// to the app (a no-op where they don't have it).
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.slot.borrow_mut().with(|s| s.focus_parent());
+        self.reader.hand_back_keyboard();
+    }
+
     /// The window became active again: if a WebView kept the keyboard (or it
     /// fell to the window itself), give it back to GPUI so typing works.
     pub fn reclaim_keyboard(&self) {
@@ -676,6 +683,7 @@ impl MainView {
                     self.editor.update(cx, |s, cx| s.focus(window, cx));
                 }
             }
+            SurfaceEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
             SurfaceEvent::OpenUrl(url) => cx.open_url(&url),
             SurfaceEvent::OpenOrigin(origin) => self.open_profile(origin, window, cx),
             // --- quote targets --- in the studio preview, still the profile.

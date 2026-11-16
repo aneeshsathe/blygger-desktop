@@ -177,6 +177,10 @@ pub struct Browser {
     /// the page its keyboard this once, or WebKit would drop the page's
     /// selection before the click reads it.
     keep_keyboard: bool,
+    /// --- esc --- This click was one `keep_keyboard` let through, so the
+    /// window's own click handler (`reclaim_keyboard_on_click`) leaves the
+    /// page its keyboard too.
+    pub(crate) kept_click: bool,
     teardown: Option<Task<()>>,
     dark: Option<bool>,
     /// --- onboarding --- The tutorial's sample page is up: what it replaced
@@ -223,6 +227,7 @@ impl Browser {
             selected: false,
             sel_watch: None,
             keep_keyboard: false,
+            kept_click: false,
             teardown: None,
             dark: None,
             tour: None,
@@ -747,8 +752,14 @@ impl MainView {
         }
     }
 
-    fn browser_event(&mut self, ev: BrowserEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn browser_event(
+        &mut self,
+        ev: BrowserEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match ev {
+            BrowserEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
             BrowserEvent::Changed => {
                 self.browser_refresh_state(cx);
                 if self.browser.page.loading {
@@ -1206,6 +1217,7 @@ impl MainView {
                         MouseButton::Left,
                         cx.listener(|this, _, _, _| {
                             if std::mem::take(&mut this.browser.keep_keyboard) {
+                                this.browser.kept_click = true; // --- esc ---
                                 return; // --- selection ---
                             }
                             this.browser.with(|s| s.focus_parent());

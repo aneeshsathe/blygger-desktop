@@ -1308,6 +1308,26 @@ pub fn hint(text: &'static str) -> &'static str {
     text
 }
 
+/// Text about to be shown (a tooltip, a toast, a screen's hint line), with
+/// this OS's keys and words: on Windows, `hint_owned` when it has a macOS
+/// key glyph or word in it, so a string that skipped `hint` where it was
+/// written still shows Ctrl and Alt. Already-converted text is unchanged.
+/// The display helpers (`reading::Tip`, `toolbar::ButtonTip`, the toast,
+/// screen headers, notes, keycaps) call it, so callers needn't.
+pub fn shown(text: impl Into<gpui_kit::SharedString>) -> gpui_kit::SharedString {
+    let text = text.into();
+    if cfg!(target_os = "windows") && needs_windows_text(&text) {
+        return windows_hint(&text).into();
+    }
+    text
+}
+
+/// A macOS key glyph or a Mac word `windows_words` would change.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+fn needs_windows_text(text: &str) -> bool {
+    text.contains(['⌘', '⌥', '⇧', '⌃']) || WINDOWS_WORDS.iter().any(|(mac, _)| text.contains(mac))
+}
+
 /// `hint` for text built at runtime (`format!`).
 pub fn hint_owned(text: String) -> String {
     if cfg!(target_os = "windows") {
@@ -2025,6 +2045,32 @@ mod tests {
         // macOS text is untouched.
         if !cfg!(target_os = "windows") {
             assert_eq!(hint("then ⌘G"), "then ⌘G");
+        }
+    }
+
+    /// `shown` converts only text that needs it, and the preview's
+    /// "Quote in draft" pill names the key Windows binds.
+    #[test]
+    fn shown_text_is_converted_once() {
+        assert!(needs_windows_text("Close · ⌘W"));
+        assert!(needs_windows_text("saved in your Keychain"));
+        assert!(!needs_windows_text("Close · Ctrl+W"));
+        assert!(!needs_windows_text("Open the whole thread · ⏎"));
+        let once = windows_hint("On your shelf · ⌘B opens it · ⌥⌘B takes it off");
+        assert_eq!(
+            once,
+            "On your shelf · Ctrl+B opens it · Ctrl+Shift+A takes it off"
+        );
+        assert_eq!(
+            windows_hint(&once),
+            once,
+            "converting twice changes nothing"
+        );
+        assert_eq!(windows_hint("⇧⌘D"), "Ctrl+Shift+D"); // `SELECTION_UI_JS`
+        if cfg!(target_os = "windows") {
+            assert_eq!(shown("Profile · ⌘I").as_ref(), "Profile · Ctrl+I");
+        } else {
+            assert_eq!(shown("Profile · ⌘I").as_ref(), "Profile · ⌘I");
         }
     }
 

@@ -157,6 +157,8 @@ mod pane {
         /// The page has the keyboard (a field in it is focused).
         page_keyboard: bool,
         commands: Vec<String>,
+        /// `focus_parent` calls: the page handed the keyboard back.
+        parented: usize,
     }
 
     struct Stub(Rc<RefCell<Log>>);
@@ -187,7 +189,9 @@ mod pane {
             }
         }
         fn refresh_blocking(&mut self) {}
-        fn focus_parent(&mut self) {}
+        fn focus_parent(&mut self) {
+            self.0.borrow_mut().parented += 1;
+        }
         fn page_has_keyboard(&self) -> bool {
             self.0.borrow().page_keyboard
         }
@@ -299,6 +303,52 @@ mod pane {
     }
 
     /// Whether the pane's address field has the keyboard.
+    /// --- esc --- Windows: Esc pressed while the page had the keyboard
+    /// (WebView2 keeps keys from the app) reaches the app as it does on
+    /// macOS: the page hands the keyboard back and the pane closes.
+    #[gpui_kit::test]
+    fn esc_in_the_page_closes_the_pane(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        assert!(view.read_with(cx, |v, _| v.browser.open));
+        let before = log.borrow().parented;
+        view.update_in(cx, |v, window, cx| {
+            v.browser_event(super::surface::BrowserEvent::Escape, window, cx)
+        });
+        cx.run_until_parked();
+        assert!(log.borrow().parented > before, "the keyboard comes back");
+        view.read_with(cx, |v, _| {
+            assert!(!v.browser.open, "closed, as esc in the app does");
+            assert_eq!(v.browser.page.url, "https://blyg.example.com/f/abc/");
+        });
+    }
+
+    /// --- esc --- Windows: a click in the app takes the keyboard back from
+    /// the page, except the one click "→ Notes" or "→ Draft" needs the
+    /// page's selection for.
+    #[gpui_kit::test]
+    fn a_click_in_the_app_takes_the_keyboard_back(cx: &mut TestAppContext) {
+        let (view, cx, log) = setup(cx);
+        view.update_in(cx, |v, window, cx| {
+            v.open_link("https://blyg.example.com/f/abc/".into(), window, cx)
+        });
+        cx.run_until_parked();
+        let before = log.borrow().parented;
+        view.update(cx, |v, _| v.reclaim_keyboard_on_click());
+        assert_eq!(log.borrow().parented, before + 1);
+        view.update(cx, |v, _| {
+            v.browser.kept_click = true;
+            v.reclaim_keyboard_on_click();
+        });
+        assert_eq!(log.borrow().parented, before + 1, "the page keeps it");
+        view.read_with(cx, |v, _| assert!(!v.browser.kept_click, "once"));
+        view.update(cx, |v, _| v.reclaim_keyboard_on_click());
+        assert_eq!(log.borrow().parented, before + 2);
+    }
+
     fn address_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
         view.update_in(cx, |v, window, cx| {
             use gpui_kit::Focusable as _;

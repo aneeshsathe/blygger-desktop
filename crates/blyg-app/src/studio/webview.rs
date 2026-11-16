@@ -58,6 +58,13 @@ pub enum SurfaceEvent {
     /// inside one quote box, or `None` (outside any, across two, on a
     /// box's provenance line, nothing selected). See [`StubPick`].
     StubSelection(Option<StubPick>),
+    // --- esc ---
+    /// Esc while the page had the keyboard (Windows: WebView2 keeps keys
+    /// from the app while it is focused, see `webview2_host::on_escape`).
+    /// The keyboard goes back to the app and Esc is handled there, as if it
+    /// had been pressed in the app.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+    Escape,
 }
 
 /// --- stub quotes --- A selection inside one quote box of the editor
@@ -301,7 +308,12 @@ pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
 
 /// --- selection --- Turn on the pill that follows a text selection
 /// ("Quote in draft ⇧⌘D"). Off by default: the studio preview never shows it.
+/// On Windows the pill names the key as Windows does (`keymap::hint`).
+#[cfg(not(target_os = "windows"))]
 pub const SELECTION_UI_JS: &str = "window.__blyg && window.__blyg.selectionUi({});";
+#[cfg(target_os = "windows")]
+pub const SELECTION_UI_JS: &str =
+    "window.__blyg && window.__blyg.selectionUi({key: \"Ctrl+Shift+D\"});";
 
 /// ↑/↓ with the post pane focused: scroll a little.
 pub fn nudge_js(down: bool) -> String {
@@ -424,7 +436,7 @@ pub const HOST_SCRIPT: &str = r#"
     }
     // The labels are CSS content, so they never join a selection's text.
     if (!pill.firstChild) {
-      pill.appendChild(button("quote", "Quote in draft", "⇧⌘D",
+      pill.appendChild(button("quote", "Quote in draft", (ui && ui.key) || "⇧⌘D",
         "Quote this passage in your draft, with a link to the post"));
     }
     var range = s.getRangeAt(0), rects = range.getClientRects();
@@ -895,7 +907,7 @@ mod wry_surface_windows {
 
     impl WrySurface {
         fn new(parent: &impl HasWindowHandle, tx: Sender<SurfaceEvent>) -> Result<Self, String> {
-            let (ipc_tx, nav_tx, new_tx) = (tx.clone(), tx.clone(), tx);
+            let (ipc_tx, nav_tx, new_tx, esc_tx) = (tx.clone(), tx.clone(), tx.clone(), tx);
             let own_load = Rc::new(Cell::new(true));
             let nav_own = own_load.clone();
             let view = WebViewBuilder::new()
@@ -935,6 +947,12 @@ mod wry_surface_windows {
                          WebView2 Runtime, which Windows 11 includes."
                     )
                 })?;
+            // --- esc --- (the page is ours and has no use for the key)
+            if let Err(e) = crate::webview2_host::on_escape(&view.controller(), true, move || {
+                let _ = esc_tx.try_send(SurfaceEvent::Escape);
+            }) {
+                eprintln!("blygger: the preview won't pass Esc on ({e})");
+            }
             Ok(WrySurface { view, own_load })
         }
     }

@@ -228,6 +228,11 @@ impl SiteView {
         self.placed.borrow().visible
     }
 
+    /// --- esc --- The author's-site page gives the keyboard back to the app.
+    pub(crate) fn hand_back_keyboard(&self) {
+        self.with(|s| s.focus_parent());
+    }
+
     fn with<R>(&self, f: impl FnOnce(&mut dyn BrowserSurface) -> R) -> Option<R> {
         self.placed
             .borrow_mut()
@@ -463,8 +468,9 @@ impl MainView {
         self.site_watch_keys(window, cx);
     }
 
-    fn site_event(&mut self, ev: BrowserEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn site_event(&mut self, ev: BrowserEvent, window: &mut Window, cx: &mut Context<Self>) {
         match ev {
+            BrowserEvent::Escape => self.escape_from_web_view(window, cx), // --- esc ---
             BrowserEvent::Changed => {
                 let loading = self.reading.site.with(|s| s.state().loading);
                 if let Some(l) = loading

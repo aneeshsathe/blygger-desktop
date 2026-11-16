@@ -361,9 +361,9 @@ impl Render for ButtonTip {
             .font_family(self.font)
             .text_size(px(11.))
             .shadow_md()
-            .child(self.text.clone())
+            .child(crate::keymap::shown(self.text.clone()))
             .when_some(self.reason.clone(), |d, r| {
-                d.child(div().opacity(0.8).child(r))
+                d.child(div().opacity(0.8).child(crate::keymap::shown(r)))
             })
     }
 }

@@ -765,6 +765,9 @@ pub struct MentionRow {
     pub new: bool,
     pub hidden: bool,
     pub source: String,
+    /// The post that mentioned yours, as a blyg item (origin, id, version)
+    /// when the mention says which one: it opens in the reader.
+    pub post: Option<(String, String, Option<u32>)>,
 }
 
 pub fn relation_label(r: Option<&str>) -> &'static str {
@@ -799,6 +802,12 @@ pub fn mention_row(
         new: is_new_mention(m, seen, now),
         hidden: m.hidden,
         source: m.source.clone(),
+        post: m
+            .source_origin
+            .clone()
+            .zip(m.source_id.clone())
+            .filter(|(o, i)| !o.trim().is_empty() && !i.trim().is_empty())
+            .map(|(o, i)| (o, i, m.source_version)),
     }
 }
 

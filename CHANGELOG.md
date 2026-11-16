@@ -16,6 +16,26 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+
+- **Esc on Windows, everywhere.** A WebView2 that has the keyboard (the browser pane's page, the preview, the reader's post) keeps every key from the app, so after a click in a page Esc did nothing to an open sheet, palette or the pane. Each web view now passes Esc on: the keyboard comes back to the app and Esc is handled there, as on the Mac. The pane's page still sees the key too, and a page in full screen keeps it to leave full screen. The Menu button's panel now closes on Esc, before the search field can take the key. A click anywhere in the window (outside a page) now takes the keyboard back from the web views, as clicking the app does on the Mac, so typing in a palette opened that way reaches it.
+
+### Changed
+
+- **A mention opens its post in Burrow.** On the Mentions screen, clicking who mentioned you opens the post that mentioned yours in the reader, as a blyg link in a post does, rather than in the default browser. Its ↗ opens the page where links go (the browser pane by default). **On “…”** above each group opens your own post, the one those mentions point at, in Posts.
+
+### Fixed (Windows)
+
+- **Windows keys in tooltips, toasts and hints.** Some text still showed the Mac's ⌘, ⌥ and ⇧ on Windows, because it skipped the conversion where it was written: toasts such as "Press ⌘T to make it a thread", and tooltips such as "On your shelf · ⌘B opens it". The shared display helpers now convert on Windows whatever they show, as `keymap::shown`: tooltips, toolbar tooltips, toasts, screen hints, notes, chips, sheet keycaps and the command palette's details. The notes drawer's "⌘D → draft" and the preview's "Quote in draft" pill are converted too. Text already converted is unchanged, and macOS is untouched.
+
+### Documentation
+
+- **Cross-posting on Windows, step by step.** The extensions guide has a numbered path for Windows: turning cross-post on from Menu › Post › Extensions…, choosing the sites in the consent sheet, signing in to each site once in the pane, and the two sheets with their Windows keys. The install guide links to it, and notes how Esc works on Windows.
+
+### Not verified
+
+- Built and checked on Linux only, as for 0.22.0: the Windows code was type-checked and linted with the MinGW target, and the new tests (Esc from the preview closes the open sheet, Esc from the pane's page closes the pane, a click takes the keyboard back, a mention opens its post, text is converted once) ran on Linux with stub web views. The WebView2 accelerator-key hook and the Menu panel's Esc have **not** been run on Windows.
+
 ## [0.25.0] - 2026-11-16
 
 ### Added
