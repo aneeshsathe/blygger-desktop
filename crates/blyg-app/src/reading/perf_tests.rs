@@ -148,6 +148,9 @@ fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
     });
     let after = view.read_with(cx, |v, _| v.reading.refreshes);
     assert_eq!(after - before, 1, "one refresh for the burst");
+    // Let the burst's follow-up work (ItemsChanged's requery) finish, so it
+    // isn't timed as part of opening a post below.
+    settle(cx);
     over.time("unread count", 10, || live.unread_count());
     over.time("sources pane entries", 10, || {
         view.read_with(cx, |v, _| v.source_entries().len())
