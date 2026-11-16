@@ -39,6 +39,9 @@
 .wr-postbar { display: flex; gap: 8px; margin: 1.6em 0 .4em; padding-top: .8em; border-top: 1px solid var(--c-line); }
 .wr-postbar button { min-width: 44px; min-height: 36px; border: 1px solid var(--c-line); background: none; border-radius: 999px; font-size: 1.05rem; opacity: .6; filter: grayscale(1); }
 .wr-postbar button.on { opacity: 1; filter: none; border-color: var(--c-accent); background: color-mix(in srgb, var(--c-accent) 10%, transparent); }
+/* --- background --- under an open post (studio 0.61). */
+.wr-bg { flex-wrap: wrap; align-items: center; margin: .6em 0 .4em; }
+.wr-bg small { flex-basis: 100%; }
 a[data-wr-id] { text-decoration-style: dashed; }
 
 /* ---------------------------------------------------------------- the panel */
@@ -130,3 +133,8 @@ a[data-wr-id] { text-decoration-style: dashed; }
 .wr-radio { align-items: flex-start; gap: 8px; }
 .wr-fs { border: 1px solid var(--c-line); border-radius: 10px; margin: 10px 0; padding: 4px 10px; }
 /* --- end reader view / changelog --- */
+
+/* --- web-parity --- a new token, shown once */
+.wr-token{border-color:var(--c-accent)}
+.wr-tok{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,"SF Mono",Menlo,monospace;word-break:break-all;margin:.5rem 0;padding:.5rem;border:1px solid var(--c-line);border-radius:6px;background:transparent;color:inherit;resize:none}
+/* --- end web-parity --- */

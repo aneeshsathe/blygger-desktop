@@ -1175,7 +1175,7 @@ impl MainView {
 
     // ------------------------------------------------------------ Settings › AI
 
-    /// The "AI" row in the Settings sheet: a summary and the way in.
+    /// The "AI" row on the Settings page: a summary and the way in.
     pub(super) fn render_ai_settings_row(&self, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette;
         let enabled = crate::settings::get(cx).store.config().ai_enabled();
@@ -1184,40 +1184,20 @@ impl MainView {
         } else {
             format!("On: {}", enabled.join(", "))
         };
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("AI"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(
-                        chip(&self.theme, "ai-open-settings", "AI accounts…", false).on_click(
+        crate::app::settings_page::row(
+            &p,
+            "AI",
+            crate::app::settings_page::chips()
+                .child(
+                    chip(&self.theme, "ai-open-settings", "AI accounts…", false)
+                        .debug_selector(|| "ai-open-settings".into())
+                        .on_click(
                             cx.listener(|this, _, window, cx| this.ai_open_settings(window, cx)),
                         ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.5))
-                            .text_color(p.muted)
-                            .truncate()
-                            .child(summary),
-                    ),
-            )
-            .into_any_element()
+                )
+                .child(crate::app::settings_page::side_note(&p, summary).text_size(px(11.5))),
+        )
+        .into_any_element()
     }
 
     pub(super) fn ai_open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {

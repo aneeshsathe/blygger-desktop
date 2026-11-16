@@ -9,9 +9,10 @@
 //! - Shelved posts that match the omnibar come first in the list, each with
 //!   📚 before its title (`vm::ListModel`).
 //!
-//! Local to this Mac for now (`Backend::shelf`, store schema v17);
-//! blygger-studio#135 adds a synced `/shelf`. Not the version pin (📌 in
-//! ⌘Y), which is public and permanent.
+//! It syncs with a blyg that keeps a shelf (studio 0.61, `blyg_core::shelf`)
+//! and is local to this Mac otherwise; the sheet's header says which. Others'
+//! posts on it show in Reading's Shelf lens (`reading::shelf_lens`). Not the
+//! version pin (📌 in ⌘Y), which is public and permanent.
 //!
 //! A child module of `app` (it reads `MainView`); `app.rs` keeps small hooks
 //! marked `// --- shelf ---`.
@@ -242,6 +243,18 @@ impl MainView {
                             n => format!("{n} posts"),
                         },
                     )),
+            )
+            // --- shelf sync --- where the shelf lives.
+            .child(
+                div()
+                    .id("shelf-sync-state")
+                    .debug_selector(|| "shelf-sync-state".into())
+                    .mb(px(4.))
+                    .text_size(px(11.))
+                    .text_color(p.muted)
+                    .child(crate::app::reading::shelf_lens::state_note(
+                        self.backend.shelf_state(),
+                    )),
             );
         if s.posts.is_empty() {
             body = body.child(
@@ -250,8 +263,9 @@ impl MainView {
                     .text_color(p.muted)
                     .line_height(relative(1.45))
                     .child(crate::keymap::hint(
-                        "Nothing on your shelf yet. Keep the posts you keep updating here: \
-                         open one and press ⌥⌘B.",
+                        "None of your own posts are on the shelf. Keep the ones you keep \
+                         updating here: open one and press ⌥⌘B. Others' posts you shelve \
+                         are under Reading › Shelf.",
                     )),
             );
         }

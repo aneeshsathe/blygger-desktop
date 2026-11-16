@@ -31,6 +31,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::api::{self, Request, enc};
 use crate::read_api::key_of;
+use crate::reading::mentions_vm::{self, Why};
 use crate::reading::sources_vm::{self as svm, Entry, Smart, Source};
 use crate::reading::vm as rvm;
 use crate::{Burrow, at, json, vm};
@@ -128,21 +129,33 @@ pub struct WebReading {
     /// The blyg's Mentions lens (`GET /api/reading?mentions=true`), as
     /// reading keys, once read.
     pub served_mentions: Option<HashSet<String>>,
-    /// The Mentions lens worked out from the rows, for the rows it was
-    /// worked out from.
-    local_mentions: RefCell<(Option<Stamp>, HashSet<String>)>,
+    /// The Mentions lens worked out from the rows (each post and why),
+    /// for the rows it was worked out from.
+    local_mentions: RefCell<(Option<Stamp>, HashMap<String, Why>)>,
     /// Mentions seen on the Mentions screen this session (no "new" dot).
     pub seen: HashSet<String>,
     pub peek: Option<PeekView>,
     pub history: Option<Vec<Step>>,
     /// The blyg's `contractVersion`, for `wholeBlyg`.
     pub contract: Option<String>,
+    // --- web-parity --- the operations `/api/capabilities` advertises (the
+    // studio may reuse a contract number without a feature, so features are
+    // gated on these, never on `contractVersion`).
+    pub ops: Option<HashSet<String>>,
+    // --- end web-parity ---
     /// This session's browsing trail.
     pub trail: String,
     // --- reader view / changelog --- the blyg's changelog settings (from
     // `/api/settings`; the demo's are kept here).
     pub changelog: blyg_core::changelog::ChangelogSettings,
     // --- end reader view / changelog ---
+    // --- background --- the studio's Background lens as last read (with
+    // this page's Foreground choices), whether that's current, and the
+    // rules from `/api/settings` (`web_background.rs`).
+    pub bg: Option<blyg_core::background::BackgroundSet>,
+    pub bg_fresh: bool,
+    pub bg_rules: Option<blyg_core::background::BackgroundRules>,
+    // --- end background ---
     /// Demo: the next id for a made-up subscription or hopper.
     next: u32,
 }
@@ -228,6 +241,7 @@ pub fn source_key(s: &Source) -> String {
                 Smart::Disliked => "disliked",
                 Smart::Threads => "threads",
                 Smart::Fragments => "fragments",
+                Smart::Shelf => "shelf", // --- shelf sync ---
             }
         ),
         Source::Folder(f) => format!("folder:{f}"),
@@ -250,6 +264,7 @@ pub fn parse_source(k: &str) -> Option<Source> {
         ("smart", "disliked") => Source::Smart(Smart::Disliked),
         ("smart", "threads") => Source::Smart(Smart::Threads),
         ("smart", "fragments") => Source::Smart(Smart::Fragments),
+        ("smart", "shelf") => Source::Smart(Smart::Shelf), // --- shelf sync ---
         ("sub", id) if !id.is_empty() => Source::Sub(id.into()),
         ("hopper", id) if !id.is_empty() => Source::Hopper(id.into()),
         ("own", _) => Source::Own,
@@ -258,38 +273,14 @@ pub fn parse_source(k: &str) -> Option<Source> {
     })
 }
 
-/// The held posts (not yours, not withdrawn) that point at `own_origin`:
-/// a quote, stub or fork of one of your posts, or a link to your blyg. A
-/// copy of `reading/mentions_feed.rs` `local_mentions` (that module also
-/// holds the feed's GPUI state), keyed as this crate keys rows.
-pub fn local_mentions(rows: &[ReadingItem], own_origin: &str) -> HashSet<String> {
-    let Some(own) = blyg_core::profile::normalize_origin(own_origin) else {
-        return HashSet::new();
-    };
-    let host = vm::url_host(&own).unwrap_or_default();
-    if host.is_empty() {
-        return HashSet::new();
-    }
-    let needle = format!("://{host}");
-    rows.iter()
-        .filter(|r| !crate::reading::own::is_own_row(r) && !svm::is_background(r))
-        .filter(|r| {
-            r.references().iter().any(|p| p.origin == own)
-                || links_to(&r.content_md, &needle)
-                || (r.content_md.is_empty() && links_to(&r.content_html, &needle))
-        })
-        .map(key_of)
+/// The held posts (not yours, not Background) that point at `own_origin`,
+/// each with why: `reading/mentions_vm.rs` (compiled unchanged), keyed as
+/// this crate keys rows.
+pub fn local_mentions(rows: &[ReadingItem], own_origin: &str) -> HashMap<String, Why> {
+    mentions_vm::local_mentions(rows, own_origin)
+        .into_iter()
+        .map(|((sub, rid), w)| (format!("{sub}|{rid}"), w))
         .collect()
-}
-
-/// `text` holds `://host` ending where a host ends (not `://host.other`).
-fn links_to(text: &str, needle: &str) -> bool {
-    text.match_indices(needle).any(|(i, _)| {
-        text[i + needle.len()..]
-            .chars()
-            .next()
-            .is_none_or(|c| !(c.is_alphanumeric() || c == '.' || c == '-'))
-    })
 }
 
 /// A subscription and how its polling goes, from the contract's
@@ -495,12 +486,35 @@ impl Burrow {
             .collect()
     }
 
-    /// The Mentions lens's keys: the blyg's when read, else worked out
-    /// from the rows (again only when they changed).
+    /// The Mentions feed's keys: the blyg's lens (when read) and those
+    /// worked out from the rows (again only when they changed) together.
+    /// The lens only adds: the list never shrinks when it answers.
     fn wr_mention_keys(&self) -> HashSet<String> {
-        if let Some(s) = &self.wr.served_mentions {
-            return s.clone();
+        self.wr_local_mentions();
+        let local = self.wr.local_mentions.borrow();
+        let mut keys: HashSet<String> = local.1.keys().cloned().collect();
+        keys.extend(self.wr.served_mentions.iter().flatten().cloned());
+        keys
+    }
+
+    /// A row's tags in the Mentions feed: why it's there ("named you"
+    /// first; at most two). None in any other source. Reads the local half
+    /// as `wr_filter` last worked it out (no pass over the rows per row).
+    pub(crate) fn wr_mention_tags(&self, k: &str) -> Vec<&'static str> {
+        if self.wr.source != Source::Mentions {
+            return vec![];
         }
+        let local = self.wr.local_mentions.borrow().1.get(k).copied();
+        let named = self
+            .wr
+            .served_mentions
+            .as_ref()
+            .is_some_and(|s| s.contains(k));
+        mentions_vm::tags(named, local)
+    }
+
+    /// Work the local half out again when the rows changed.
+    fn wr_local_mentions(&self) {
         let origin = self.origin_str();
         let stamp = (
             self.rd.rows.len(),
@@ -514,7 +528,6 @@ impl Burrow {
             local.1 = local_mentions(&self.rd.rows, &origin);
             local.0 = Some(stamp);
         }
-        local.1.clone()
     }
 
     /// The stream's rows for the chosen source and lens. With the default
@@ -528,10 +541,21 @@ impl Burrow {
         let lens = self.wr.lens;
         let kind_ok = |r: &ReadingItem| lens.is_none_or(|k| r.kind == k);
         match &self.wr.source {
+            // --- shelf sync --- the shelf's posts, in its order.
+            Source::Smart(Smart::Shelf) => self
+                .shelf_order(rows)
+                .into_iter()
+                .filter(|r| kind_ok(r))
+                .collect(),
             Source::Mentions => {
                 let keys = self.wr_mention_keys();
                 rows.into_iter()
-                    .filter(|r| kind_ok(r) && !svm::is_background(r) && keys.contains(&key_of(r)))
+                    .filter(|r| {
+                        kind_ok(r)
+                            && !svm::is_background(r)
+                            && !crate::reading::own::is_own_row(r)
+                            && keys.contains(&key_of(r))
+                    })
                     .collect()
             }
             s => {
@@ -589,6 +613,7 @@ impl Burrow {
         self.rd.subs.retain(|s| s.id != id);
         self.wr.diags.remove(id);
         let before = self.rd.rows.len();
+        self.rows_changed();
         self.rd.rows.retain(|r| r.subscription_id != id);
         if self.rd.rows.len() != before {
             self.reading_dirty = true;
@@ -600,6 +625,7 @@ impl Burrow {
 
     fn wr_drop_hopper(&mut self, id: &str) {
         self.rd.hoppers.retain(|h| h.id != id);
+        self.rows_changed();
         for r in self.rd.rows.iter_mut() {
             if r.hoppers.iter().any(|h| h == id) {
                 r.hoppers.retain(|h| h != id);
@@ -616,6 +642,7 @@ impl Burrow {
     }
 
     fn wr_set_thumb(&mut self, key: &str, thumb: Option<i8>) {
+        self.rows_changed();
         if let Some(r) = self.rd.rows.iter_mut().find(|r| key_of(r) == key)
             && r.thumb != thumb
         {
@@ -1027,7 +1054,15 @@ impl Burrow {
             "subs" => ("/api/subscriptions", "", 100, false),
             "mentions" => ("/api/mentions", "direction=inbound", 100, false),
             "outbound" => ("/api/mentions", "direction=outbound", 100, false),
-            "lens" => ("/api/reading", "mentions=true", 100, false),
+            // `/api/reading` pages hold at most 50.
+            "lens" => ("/api/reading", "mentions=true", 50, false),
+            // --- background --- the studio's Background lens.
+            "background" => (
+                "/api/reading",
+                blyg_core::background::LENS_QUERY,
+                blyg_core::background::LENS_LIMIT,
+                false,
+            ),
             "history" => ("/api/browse", "limit=100", 100, true),
             "settings" => ("/api/settings", "", 0, true),
             "capabilities" => ("/api/capabilities", "", 0, true),
@@ -1043,6 +1078,7 @@ impl Burrow {
             "mentions" => self.wr.mentions.is_some(),
             "outbound" => self.wr.outbound.is_some(),
             "lens" => self.wr.served_mentions.is_some(),
+            "background" => self.wr.bg_fresh, // --- background ---
             "history" => self.wr.history.is_some(),
             "settings" => self.wr.accept_mentions.is_some(),
             "capabilities" => self.wr.contract.is_some(),
@@ -1121,6 +1157,8 @@ impl Burrow {
                 self.wr.served_mentions = Some(keys);
                 n
             }
+            // --- background ---
+            "background" => self.bg_loaded(&items()),
             "history" => {
                 let list: Vec<Step> = v
                     .get("items")
@@ -1143,6 +1181,8 @@ impl Burrow {
                 );
                 // --- reader view / changelog ---
                 self.wr.changelog = blyg_core::changelog::ChangelogSettings::from_json(&v);
+                // --- background ---
+                self.wr.bg_rules = blyg_core::background::BackgroundRules::from_settings(&v);
                 1
             }
             "capabilities" => {
@@ -1151,6 +1191,19 @@ impl Burrow {
                     .and_then(Value::as_str)
                     .map(str::to_string)
                     .or(Some(String::new()));
+                // --- web-parity ---
+                self.wr.ops = Some(
+                    v.get("operations")
+                        .and_then(Value::as_array)
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_string)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                );
+                // --- end web-parity ---
                 1
             }
             _ => 0,
@@ -1163,6 +1216,7 @@ impl Burrow {
     pub fn wr_forget(&mut self, which: &str) {
         match which {
             "lens" => self.wr.served_mentions = None,
+            "background" => self.wr.bg_fresh = false, // --- background ---
             "subs" => self.wr.subs_loaded = false,
             "mentions" => {
                 self.wr.mentions = None;

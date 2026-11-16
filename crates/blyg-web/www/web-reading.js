@@ -32,6 +32,22 @@ const loading = {};     // list → its read in flight
 /** A layout hands over what the panel needs of it (`openReading`). */
 export function wrUse(layout, fns) { use[layout] = fns; }
 
+// --- web-parity --- Other modules' screens in this panel (parity.js):
+// their screens and titles, and their clicks and form submits, asked
+// first. A handler returns true when it took the event.
+const extra = { clicks: [], submits: [] };
+export function wrExtend({ screens = {}, titles = {}, click, submit } = {}) {
+  Object.assign(SCREENS, screens);
+  Object.assign(TITLES, titles);
+  if (click) extra.clicks.push(click);
+  if (submit) extra.submits.push(submit);
+}
+/** The panel's current screen (its state object), or null. */
+export const wrScreen = () => screen;
+/** Redraw the panel (keeps what's typed). */
+export const wrRedraw = () => redraw();
+// --- end web-parity ---
+
 // ---------------------------------------------------------------- lists
 /** Read `which` (subs, mentions, outbound, lens, history, settings,
     capabilities) if it isn't here or is older than `maxAge` ms. The demo's
@@ -135,10 +151,14 @@ function sourcesHtml(d, { manage = true } = {}) {
       <button type="button" data-go="peek-url">⌕ Peek</button>
       <button type="button" data-go="history">⟲ History</button>
       <button type="button" data-go="reading">⚙ Reading</button>
+      ${markAllOffered() ? '<button type="button" data-go="markall" title="Mark every post here read (⌃⌥A)">✓ Mark all read…</button>' : ''}
     </div>` : ''}
     <div class="wr-lens" role="group" aria-label="Lens">${lens('all', 'All')}${lens('thread', 'Threads')}${lens('fragment', 'Fragments')}</div>
     ${rows}`;
 }
+// --- web-parity --- hidden once the blyg is known not to take batches.
+function markAllOffered() { return !(S.live && S.B.wr_ops_known() && !S.B.wr_can('markReadBatch')); }
+// --- end web-parity ---
 function chooseSource(key) {
   S.B.wr_set_source(key);
   if (key === 'mentions') ensure('lens').then(() => S.render());
@@ -173,12 +193,25 @@ export function deskSources() {
   }
   const html = sourcesHtml(JSON.parse(S.B.wr_sources(now())));
   if (host._html !== html) { host.innerHTML = html; host._html = html; }
+  bgEnsure(); // --- background ---
 }
+
+// --- background --- The studio's Background lens (0.61), read again after
+// the reading list or your posts were (Rust says when: `wr_bg_wanted`).
+// One read at a time; a throttled `ensure` draws nothing, so no loop.
+let bgBusy = false;
+function bgEnsure() {
+  if (!S.live || bgBusy || !S.B.wr_bg_wanted()) return;
+  bgBusy = true;
+  ensure('background').then(() => { bgBusy = false; if (!S.B.wr_bg_wanted()) S.render(); });
+}
+// --- end background ---
 
 /** Phone: the line under the search saying what the stream shows. */
 export function phoneChip() {
   const chip = $('#p-wrChip');
   if (!chip || !S.B) return;
+  bgEnsure(); // --- background ---
   const src = S.B.wr_source();
   const label = S.B.wr_source_label();
   const filtered = src !== 'smart:all' || label !== 'All';
@@ -211,6 +244,7 @@ export function closePanel() {
   if (!p || p.hidden) return;
   p.hidden = true;
   screen = null; stack = [];
+  const b = body(); b.innerHTML = ''; b._html = ''; // --- web-parity --- nothing shown stays (a token above all)
   document.documentElement.classList.remove('wr-open');
   if (back && document.contains(back)) back.focus?.({ preventScroll: true });
   back = null;
@@ -257,7 +291,8 @@ const SCREENS = {
         <div class="wr-l"><b>Open posts on the author's site</b><small>A post you open also opens its own page, as its author styled it, in a new tab. This browser only.</small></div></label>
       ${c.served ? `${radios('reader', 'In your reader, show of a changelog')}${radios('page', 'On your post pages, show')}
         <p class="wr-muted">Saved on your blyg. A summary is written from the notes by its change-notes model, labelled as AI, and only when you open a post.</p>`
-        : !c.known && S.live ? loadingP : '<p class="wr-muted">Your blyg needs blygger-studio 0.58 or later to show more of a changelog.</p>'}`;
+        : !c.known && S.live ? loadingP : '<p class="wr-muted">Your blyg needs blygger-studio 0.58 or later to show more of a changelog.</p>'}
+      ${bgRulesHtml()}`;
   },
 
   sources() {
@@ -412,6 +447,7 @@ async function onClick(e) {
   const t = e.target.closest('button, [data-feed]');
   if (!t) return;
   const d = t.dataset;
+  for (const c of extra.clicks) if (await c(t, d, screen)) return; // --- web-parity ---
   if (d.go) { go(d.go); return; }
   // subscriptions
   if (d.show) { chooseSource(`sub:${d.show}`); closePanel(); return; }
@@ -467,6 +503,7 @@ async function onSubmit(e) {
   if (!f) return;
   e.preventDefault();
   const kind = f.dataset.form;
+  for (const h of extra.submits) if (await h(f, kind, screen)) return; // --- web-parity ---
   if (kind === 'subscribe') {
     const url = f.url.value.trim();
     if (!screen.preview || screen.url !== url) {
@@ -595,7 +632,52 @@ export function opened(key, host) {
   if (content) classifyLinks(content);
   siteBar(key, host); // --- reader view ---
   changelogBlock(key, host); // --- changelog display ---
+  bgBar(key, host); // --- background ---
 }
+
+// ---------------------------------------------------------------- background
+// Under an open post, when the blyg serves Background (studio 0.61): move
+// it to Background or back, clear the choice, move its whole blyg. Built
+// with text nodes, never HTML.
+function bgBar(key, host) {
+  host.querySelector('.wr-bg')?.remove();
+  const x = JSON.parse(S.B.wr_bg(key));
+  if (!x.served) return;
+  const bar = document.createElement('div');
+  bar.className = 'wr-bg wr-acts';
+  const button = (label, title, action) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'wr-btn'; b.textContent = label; b.title = title;
+    b.addEventListener('click', () => bgAct(key, action, host));
+    bar.append(b);
+  };
+  if (x.why) {
+    const why = document.createElement('small');
+    why.className = 'wr-muted';
+    why.textContent = `In Background: ${x.why}`;
+    bar.append(why);
+  }
+  if (x.on) button('↑ Foreground', 'Back to the main lists, whatever the rules say. Nothing is marked read.', 'place');
+  else button('↓ Background', 'Moves this post to Background and out of every other list. Nothing is marked read.', 'place');
+  if (x.placement) button('↺ Clear my choice', 'Background and Foreground follow the rules again.', 'clear');
+  if (!x.own) {
+    if (x.blyg) button('⇈ Blyg to Foreground', 'Brings this blyg’s posts back to the main lists.', 'blyg');
+    else button('⇊ Blyg to Background', 'Moves every post of this blyg to Background, except any you moved to Foreground.', 'blyg');
+  }
+  host.append(bar);
+}
+async function bgAct(key, action, host) {
+  const o = JSON.parse(S.B.wr_bg_act(key, action));
+  if (o.error) { toast(esc(o.error), 4200); return; }
+  const r = await call(o.req.method, o.req.path, o.req.body);
+  const d = JSON.parse(S.B.wr_bg_done(key, action, r.status, r.body));
+  if (r.status === 401) S.live?.signIn();
+  if (d.error) toast(esc(d.error), 4200);
+  else if (d.toast) toast(esc(d.toast), 3200);
+  bgBar(key, host);
+  S.render();
+}
+// --- end background ---
 
 // ---------------------------------------------------------------- reader view / changelog
 // "Open posts on the author's site": this browser's choice (localStorage),
@@ -638,6 +720,18 @@ function siteBar(key, host) {
   if (ev && (ev.type === 'click' || ev.type === 'pointerup' || (ev.type === 'keydown' && ev.key === 'Enter'))) {
     window.open(x.page, '_blank', 'noopener,noreferrer');
   }
+}
+
+// --- background --- ⚙ Reading's Background card: withdrawn always, and
+// each rule the blyg has (studio 0.61); nothing on an older studio.
+function bgRulesHtml() {
+  const b = JSON.parse(S.B.wr_bg_rules());
+  if (!b.served) return '';
+  if (!b.known) return `<fieldset class="wr-fs"><legend>Background</legend>${loadingP}</fieldset>`;
+  const rows = b.rules.map((r) => `<label class="wr-row wr-radio"><input type="checkbox" data-bg-rule="${esc(r.rule)}" ${r.on ? 'checked' : ''}><div class="wr-l"><b>${esc(r.label)}</b><small>${esc(r.hint)}</small></div></label>`).join('');
+  return `<fieldset class="wr-fs"><legend>Background</legend>
+      <label class="wr-row wr-radio"><input type="checkbox" checked disabled><div class="wr-l"><b>Withdrawn posts</b><small>Always in Background.</small></div></label>
+      ${rows}<p class="wr-muted">Saved on your blyg. Background holds what you and these rules put there; every other list leaves it out. Nothing is marked read.</p></fieldset>`;
 }
 
 // Changelog display: only an opened post asks (never a card), once per
@@ -730,6 +824,15 @@ export function initWebReading() {
       clCache.clear(); redraw(); return;
     }
     // --- end reader view / changelog ---
+    // --- background --- a rule on or off (only that key is written).
+    if (t.matches('[data-bg-rule]')) {
+      const o = JSON.parse(S.B.wr_bg_rule(t.dataset.bgRule, t.checked));
+      if (o.error) { toast(esc(o.error)); return; }
+      const r = await call(o.req.method, o.req.path, o.req.body);
+      if (!S.B.wr_bg_rule_saved(r.status, r.body)) { const er = JSON.parse(S.B.constructor.api_error(r.status, r.body)); toast(esc(er?.text || 'Couldn’t save it'), 4200); }
+      else { toast('Saved on your blyg'); S.render(); }
+      redraw(); return;
+    }
     if (t.matches('[data-accept]')) act('accept_mentions', { on: t.checked });
     else if (t.matches('[data-feed]') && screen?.picked) {
       if (t.checked) screen.picked.add(t.dataset.feed); else screen.picked.delete(t.dataset.feed);

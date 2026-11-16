@@ -50,6 +50,7 @@ fn ri(sub: &str, rid: &str, updated: &str, body: &str) -> ReadingItem {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 

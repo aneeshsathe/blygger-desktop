@@ -453,7 +453,7 @@ impl MainView {
             // selected one too); "AI reply" never on a pinned view. Reply
             // quotes the whole post; a passage is chosen in the stub editor
             // (studio 0.31).
-            "Quote" | "Reply" | "Link post" | "Open on web" => {
+            "Quote" | "Reply" | "Link post" | "Open on web" | "Catch up" => {
                 self.item_action(item, action, window, cx)
             }
             // --- own posts --- no AI reply to yourself.
@@ -461,6 +461,11 @@ impl MainView {
                 self.item_action(item, action, window, cx)
             }
             "Notes" => self.notes_add_post(item, true, window, cx), // --- notes ---
+            // --- background ---
+            super::background::PLACE | super::background::CLEAR | super::background::BLYG => {
+                self.background_action(action, cx)
+            }
+            "Shelf" => self.toggle_reading_shelf(vm::key(&item), cx), // --- shelf sync ---
             "Hopper" => {
                 // --- hoppers ---
                 let title = vm::title(&item.content_md);
@@ -559,9 +564,14 @@ impl MainView {
                 Err(e) => self.show_toast(format!("Couldn't start a post: {e}"), None, cx),
             },
             "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
+            // --- catch up --- the conversation leading to it.
+            "Catch up" => {
+                self.open_catch_up(item.origin.clone(), item.remote_id.clone(), window, cx)
+            }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
             "Notes" => self.notes_add_post(item, false, window, cx), // --- notes ---
+            "Shelf" => self.toggle_reading_shelf(vm::key(&item), cx), // --- shelf sync ---
             "Hopper" => {
                 // --- hoppers ---
                 let title = vm::title(&item.content_md);
@@ -630,6 +640,7 @@ impl MainView {
                 version: item.version,
                 current: item.version,
                 pins: vec![],
+                shelved: false,
             };
             return ["Subscribe", "Reply", "Open on web"]
                 .into_iter()
@@ -659,18 +670,27 @@ impl MainView {
                 .filter(|v| !v.current && v.pinned)
                 .map(|v| v.version)
                 .collect(),
+            shelved: self.on_reading_shelf(item), // --- shelf sync ---
         };
         // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).
-        let ids = if super::own::is_own(&o.key) {
+        let mut ids = if super::own::is_own(&o.key) {
             super::own::own_action_ids(ids)
         } else {
             ids
         };
-        ids.into_iter()
+        // --- catch up --- only when it draws on something known here.
+        if !ids.is_empty() && self.has_ancestors(&item.origin, &item.remote_id) {
+            ids.push("Catch up");
+        }
+        let mut chips: Vec<vm::ActionChip> = ids
+            .into_iter()
             // A feed post has no id to link.
             .filter(|id| *id != "Link post" || ctx.blyg)
             .map(|id| vm::action_chip(id, &ctx))
-            .collect()
+            .collect();
+        // --- background --- Background / Foreground, the blyg (studio 0.61).
+        chips.extend(self.background_chips(item));
+        chips
     }
 
     // ------------------------------------------------------------ render
@@ -839,6 +859,7 @@ impl MainView {
             p.sel
         };
         let badge = vm::badge(r);
+        let why = self.mention_tags(&key);
         let edited = r.edited_since_read() && r.state != "tombstone";
         let title = if r.state == "tombstone" && r.pinned_version_retained.is_none() {
             "(withdrawn)".to_string()
@@ -918,7 +939,8 @@ impl MainView {
                     .font_family(self.chrome())
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child(if r.version > 1 {
+                    // The source gives way first in a narrow list.
+                    .child(div().min_w_0().truncate().child(if r.version > 1 {
                         format!(
                             "{} · v{}",
                             vm::source_line(r, &self.reading.subs),
@@ -926,7 +948,7 @@ impl MainView {
                         )
                     } else {
                         vm::source_line(r, &self.reading.subs)
-                    })
+                    }))
                     .when_some(badge, |d, b| {
                         // --- themes --- badges that read on the row and
                         // on the selected ground alike.
@@ -947,10 +969,26 @@ impl MainView {
                                 .child(b),
                         )
                     })
+                    // --- contacts --- in the Mentions feed: why it's
+                    // there ("named you", "quoted you"…).
+                    // One tag, the strongest reason, kept whole: in a narrow
+                    // list the source line gives way, never the tag or the time.
+                    .children(why.into_iter().take(1).map(|t| {
+                        let (fg, bg) = p.quiet_badge();
+                        div()
+                            .flex_none()
+                            .whitespace_nowrap()
+                            .px(px(6.))
+                            .rounded_full()
+                            .text_size(px(10.5))
+                            .text_color(fg)
+                            .bg(bg)
+                            .child(t)
+                    }))
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
-                    .child(when),
+                    .child(div().flex_none().whitespace_nowrap().child(when)),
             )
             .child(
                 div()

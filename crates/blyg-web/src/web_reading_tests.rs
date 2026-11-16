@@ -68,7 +68,8 @@ fn a_source_and_a_lens_filter_the_stream() {
     let mut b = live();
     assert_eq!(keys(&b).len(), 3);
     b.wr_set_source("sub:a");
-    assert_eq!(keys(&b), ["a|a1", "a|a2"]);
+    // Dated the same: the remote id breaks the tie, descending.
+    assert_eq!(keys(&b), ["a|a2", "a|a1"]);
     assert_eq!(b.wr_source_label(), "Sub a");
     b.wr_set_source("smart:all");
     b.wr_set_lens("thread");
@@ -105,13 +106,15 @@ fn the_sources_pane_lists_feeds_mentions_hoppers_and_subscriptions() {
             "Thumbed",
             "Thumbed down",
             "All",
+            "Shelf", // --- shelf sync ---
             "Background",
             "Mentions",
             "Hoppers",
             "Keep",
             "Subscriptions",
-            "Sub a",
-            "Sub b"
+            // Before the blyg's list is read, in the rows' order.
+            "Sub b",
+            "Sub a"
         ]
     );
     // Before /api/subscriptions is read, the reading list names them.
@@ -125,13 +128,33 @@ fn the_sources_pane_lists_feeds_mentions_hoppers_and_subscriptions() {
     let mut b = b;
     b.wr_set_source("mentions");
     assert_eq!(keys(&b), ["a|a2"]);
-    // The blyg's own lens wins once read.
+    let why = |b: &Burrow| -> Vec<(String, Value)> {
+        v(b.reading_view(NOW, "", false))["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["key"].as_str().unwrap().to_string(), r["why"].clone()))
+            .collect()
+    };
+    assert_eq!(why(&b), [("a|a2".to_string(), json!(["linked you"]))]);
+    // The blyg's own lens adds to it once read: the list never shrinks.
     b.wr_loaded(
         "lens",
         &json!([{ "key": "x", "imported": { "subscriptionId": "b", "remoteId": "b1" } }])
             .to_string(),
     );
-    assert_eq!(keys(&b), ["b|b1"]);
+    let mut got = why(&b);
+    got.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(
+        got,
+        [
+            ("a|a2".to_string(), json!(["linked you"])),
+            ("b|b1".to_string(), json!(["named you"])),
+        ]
+    );
+    // Elsewhere, no tags.
+    b.wr_set_source("smart:all");
+    assert!(why(&b).iter().all(|(_, w)| w == &json!([])));
 }
 
 #[test]

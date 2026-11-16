@@ -63,6 +63,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 | ← / → | Move between the Reader's panes |
 | [ / ] | Step through a post's versions (current and pinned) |
 | ⌘F, / | Search what you're reading |
+| ⇧C | Catch up: the conversation leading to the post, oldest first (also in the lineage view) |
 | esc | Close the post or the search |
 
 **Sheets**
@@ -73,3 +74,4 @@ These belong to one screen or sheet, so they aren't in the table above.
 | esc | Cancel or close |
 | 1 / 2 / 3 | In a conflict: keep mine, take the server's, keep both |
 | ⇥, F, ← | In a profile: switch tabs, follow the selected entry, go back |
+| j / k, ⏎ or o, w, s | In Catch up: move, open the post, Whole conversation, AI summary (esc stops it) |

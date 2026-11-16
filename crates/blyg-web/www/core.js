@@ -36,17 +36,20 @@ function idb() {
     req.onerror = () => reject(req.error);
   });
 }
+// One connection for every read and write (opening one costs a start
+// tens of milliseconds).
+let dbp;
 export async function load(key = 'store') {
   try {
-    const db = await idb();
+    dbp ??= idb();
+    const db = await dbp;
     return await new Promise((resolve) => {
       const r = db.transaction(OS).objectStore(OS).get(key);
       r.onsuccess = () => resolve(typeof r.result === 'string' ? r.result : undefined);
       r.onerror = () => resolve(undefined);
     });
-  } catch { return undefined; }
+  } catch { dbp = undefined; return undefined; }
 }
-let dbp;
 async function put(key, value) {
   try {
     dbp ??= idb();
@@ -57,7 +60,7 @@ async function put(key, value) {
       tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
     });
     return true;
-  } catch { return false; }
+  } catch { dbp = undefined; return false; }
 }
 let saving = null;
 /** Write the store to IndexedDB. Live, a change saved this way (a read
@@ -116,6 +119,16 @@ export function draw(el, html) {
   el._html = html;
   return true;
 }
+/** The next page of a long list, added at its end: the rows above stay as
+    they are (drawing them all again is what made scrolling a long stream
+    stutter). `html` replaces the list's "N more…" line (`.stream-more`). */
+export function drawMore(el, html) {
+  el.querySelector(':scope > .stream-more')?.remove();
+  const page = document.createElement('div');
+  draw(page, html);
+  el.append(...page.childNodes);
+  el._html = null; // no longer one `draw`'s html: the next draw redraws
+}
 /** Long lists are drawn a page at a time: `more()` runs when `scroller`
     (an element, or `window` for the page) nears its end, to draw the next
     page. */
@@ -145,6 +158,23 @@ export function shake(el) {
   el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
 }
 /** Show what an `Outcome` from Rust says; returns it parsed. */
+// --- shelf sync --- where the shelf lives, for its sheet (src/shelf.rs).
+/** A line for the shelf's sheet: synced, waiting, or this browser's. */
+export function shelfNote() {
+  const s = S.B?.shelf_state?.();
+  if (!S.live) return '';
+  return s === 'synced' ? 'Synced with your blyg.'
+    : s === 'waiting' ? 'Changed here · syncing with your blyg…'
+    : 'In this browser only: your blyg doesn’t keep a shelf.';
+}
+/** "+ Add to shelf" on a reading post: its label and pressed state. */
+export function shelfButton(btn, key) {
+  if (!btn || !key) return;
+  const on = !!S.B.reading_shelved(key);
+  btn.textContent = on ? '− Remove from shelf' : '+ Add to shelf';
+  btn.setAttribute('aria-pressed', String(on));
+}
+// --- end shelf sync ---
 export function outcome(json, shakeEl) {
   const o = typeof json === 'string' ? JSON.parse(json) : json;
   if (o?.action === 'toast') toast(esc(o.message));
@@ -558,7 +588,7 @@ export function cardHtml(r) {
     <div class="bgL" aria-hidden="true">✓ Read</div>
     <div class="acts" aria-label="Actions"><button type="button" data-act="quote" data-key="${esc(r.key)}">❝<small>Quote</small></button><button type="button" data-act="reply" data-key="${esc(r.key)}">↩<small>Reply</small></button><button type="button" data-act="hopper" data-key="${esc(r.key)}">⊕<small>Hopper</small></button></div>
     <div class="card${r.unread ? ' unread' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-label="${esc(r.who)}: ${esc(r.title)}">
-      <div class="who">${r.unread ? '<span class="dot" aria-label="unread"></span>' : ''}<b>${esc(r.who)}</b> <span>${esc(r.host)} · ${esc(r.when)}</span>${r.glyph ? `<span class="glyph">${esc(r.glyph)}</span>` : ''}${r.badge && r.badge !== 'new' ? `<span class="badge">${esc(r.badge)}</span>` : ''}</div>
+      <div class="who">${r.unread ? '<span class="dot" aria-label="unread"></span>' : ''}<b>${esc(r.who)}</b> <span>${esc(r.host)} · ${esc(r.when)}</span>${r.glyph ? `<span class="glyph">${esc(r.glyph)}</span>` : ''}${r.badge && r.badge !== 'new' ? `<span class="badge">${esc(r.badge)}</span>` : ''}${(r.why || []).map((w) => `<span class="badge why">${esc(w)}</span>`).join('')}</div>
       <div class="ex"><i>${esc(r.title)}</i>${r.excerpt ? ' ' + esc(r.excerpt) : ''}</div>
       ${r.hoppers.length ? `<div class="hop">⊕ ${r.hoppers.map(esc).join(', ')}</div>` : ''}
     </div></div>`;
@@ -580,4 +610,36 @@ export function applyTheme(id, roots) {
   const bg = t.vars.find(([k]) => k === '--c-bar')?.[1];
   if (bg) $('meta[name="theme-color"]:not([media])')?.setAttribute('content', bg);
   pref.set('theme', t.id);
+}
+
+// ---------------------------------------------------------------- post to post
+/** A sideways swipe on an open post: left for the next one, right for the
+    previous. Touch only, mostly sideways and quick, and not from a screen
+    edge (that's the system's back gesture). A hold on a sentence is slow,
+    so it never counts. */
+export function swipePosts(host, step) {
+  let t0 = null;
+  host.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    t0 = e.touches.length === 1 && t.clientX > 30 && t.clientX < innerWidth - 30
+      ? { x: t.clientX, y: t.clientY, at: Date.now() } : null;
+  }, { passive: true });
+  host.addEventListener('touchend', (e) => {
+    const t = e.changedTouches[0];
+    if (!t0 || !t) return;
+    const dx = t.clientX - t0.x, dy = t.clientY - t0.y, ms = Date.now() - t0.at;
+    t0 = null;
+    if (ms > 600 || Math.abs(dx) < 70 || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    if (String(window.getSelection?.() ?? '').trim()) return; // selecting text
+    step(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  host.addEventListener('touchcancel', () => { t0 = null; }, { passive: true });
+}
+
+/** The post that just came in slides a little from the side it came from. */
+export function arrive(el, d) {
+  if (reducedMotion()) return;
+  el.classList.remove('from-r', 'from-l');
+  void el.offsetWidth; // restart the animation
+  el.classList.add(d > 0 ? 'from-r' : 'from-l');
 }

@@ -25,7 +25,7 @@ Serve it only if you trust this repository's releases as much as your Studio
 code. What a release build does on the network, and how to check it:
 
 - It calls only same-origin `/api/…` paths. Every request goes through one
-  function (`crates/blyg-web/www/live.js`, `call`), which refuses anything
+  function (`crates/blyg-web/www/net.js`, `call`), which refuses anything
   else. It loads no third-party scripts, fonts or images.
 - Its service worker is scoped to `/burrow/`, caches only the app's own
   files, and passes `/api/` and `/studio/` requests straight to the network.
@@ -158,7 +158,10 @@ apps. Create `static/_headers`, or add to it if it exists:
 ```
 
 Static assets don't count towards the Worker's script-size limit (3 MiB on
-the free plan), so the app's 4 MB or so doesn't affect it.
+the free plan), so the app's 4 MB or so doesn't affect it. Cloudflare
+compresses the WebAssembly, JavaScript and CSS as it serves them (about
+1 MB for the wasm instead of 3.8 MB), so there's nothing to set up for that,
+and no compressed copies to add.
 
 ## 5. Deploy
 
@@ -185,6 +188,8 @@ curl -sI "$H/burrow/"       | grep -iE '^(HTTP|content-type)'   # 200, text/html
 curl -sI "$H/burrow"        | grep -iE '^(HTTP|location)'       # 307 to /burrow/
 curl -sI "$H/burrow/sw.js"  | grep -i  '^cache-control'          # no-cache
 curl -sI "$H/burrow/pkg/blyg_web_bg.wasm" | grep -i '^content-type'  # application/wasm
+curl -s -o /dev/null -w '%{size_download}\n' -H 'Accept-Encoding: br, gzip' \
+  "$H/burrow/pkg/blyg_web_bg.wasm"   # about 1 MB (compressed), not about 3.8 MB
 curl -s -o /dev/null -w '%{http_code}\n' "$H/api/capabilities" # 200 or 401, as before
 curl -s -o /dev/null -w '%{http_code}\n' "$H/studio/login"     # 200, as before
 curl -s -o /dev/null -w '%{http_code}\n' "$H/"                 # the blyg's front page, as before
@@ -197,6 +202,60 @@ back to the tab and it catches up.
 
 On a phone: open `/burrow/`, then use Share → Add to Home Screen (iOS
 Safari) or Install app (Android Chrome).
+
+## Using it
+
+The web app is Burrow's writing and reading screens in a tab, with the
+studio's own extras. A feature that needs something your blyg's studio may
+not have is hidden, or says why, until the studio offers it.
+
+- **Reading** lists everything you follow newest first, in the same order as
+  the desktop app and the studio (posts with the same date by source, then
+  id). Your own published posts are in it too, as on the desktop: never
+  unread, no 👍 / 👎, and nothing sent about them. See
+  [Your blyg](reading.md#your-blyg).
+- **It keeps itself up to date** while the tab is open: every 15 seconds it
+  asks your blyg what changed (as the studio does), and right after you
+  publish, restore or withdraw. A post, hopper or 👍 changed in another
+  studio or on another device shows within about 15 seconds. A hidden tab
+  asks nothing, and when the blyg is busy or failing it waits longer
+  between tries.
+- **It starts fast.** On a first start the first page of Reading shows as
+  soon as it arrives, and the rest pages in behind it. With 3,000 posts to
+  read it shows in about a third of a second.
+- **Post to post**: an open post has **‹ ›** beside A− A+ for the previous
+  and next post in the list as you saw it (↑ ↓ on a keyboard). On a phone or
+  an iPad you can also swipe sideways across the post: left for the next,
+  right for the previous. A swipe from the screen's edge is still the
+  browser's back.
+- **It fills the page** on your blyg. Theme and layout are in the title bar,
+  and **Keys** there lists the keyboard shortcuts.
+- **Mark all read**: ✓ Mark all read… in the sources pane (⌃⌥A), or ✓ All
+  read on a phone, after asking. See
+  [Read it on the author's site](reading.md#read-it-on-the-authors-site)
+  and the paragraph after it. Needs a studio with `markReadBatch`.
+- **Filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with
+  counts (⌃⌥F steps through them). See
+  [Filters in the web app](writing.md#filters-in-the-web-app).
+- **Updates** (⚙ Blyg › Updates): your threads whose quotes have newer
+  versions, and Refresh. See
+  [Updates in the web app](writing.md#updates-in-the-web-app). Needs a
+  studio with `listStaleThreads`.
+- **Access tokens** (⚙ Blyg › Access tokens) lists the tools that can act
+  as you on your blyg, makes a manual token for a tool that can't sign in
+  with OAuth (shown once: copy it into the tool's credential store), and
+  revokes one or all, each after asking. Revoking doesn't sign the web app
+  out: it uses your Studio session, not a token.
+- **Background and Foreground**: under an open post, ↓ Background /
+  ↑ Foreground, ↺ Clear my choice and the blyg-wide pair, and the rules in
+  ⚙ Reading, as on the desktop (no key). See
+  [Background and Foreground](reading.md#background-and-foreground). Needs a
+  studio with `setReadingPlacement` (0.61).
+- **The shelf syncs** with your blyg, the studio and the desktop app, and
+  holds others' posts too: **+ Add to shelf** under an open post, and the
+  **Shelf** lens in Sources. See [The shelf](writing.md#the-shelf). Needs a
+  studio with `getShelf` and `putShelf` (0.61); otherwise the shelf stays in
+  this browser.
 
 ## Updating
 

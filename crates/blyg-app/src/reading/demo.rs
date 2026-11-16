@@ -6,7 +6,7 @@ use gpui_kit::*;
 
 use super::View;
 use crate::app::MainView;
-use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST};
+use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
 
 impl MainView {
     pub(crate) fn reading_demo(
@@ -67,6 +67,32 @@ impl MainView {
                     for _ in 0..=ix {
                         self.stream_move(1, window, cx);
                     }
+                }
+            }
+            // --- catch up --- Rue's "Back to links, then" selected (the
+            // end of a four-deep quote chain), then its Catch up sheet;
+            // `-whole` with the side branches on.
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 1) => {
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == TALK_D);
+                if let Some(ix) = ix {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            ("rd-stream-catchup" | "rd-stream-catchup-whole", 2) => {
+                if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
+                    let (o, i) = (r.origin.clone(), r.remote_id.clone());
+                    self.open_catch_up(o, i, window, cx);
+                }
+                if scenario.ends_with("-whole") {
+                    self.catch_up_toggle_whole(cx);
                 }
             }
             // "Read more": the side pane beside the stream.
@@ -246,6 +272,15 @@ impl MainView {
                     cx,
                 );
             }
+            // --- contacts --- the Mentions feed: the lens's posts and the
+            // ones worked out here together, each tagged with why.
+            ("rd-mentions-feed", 0) => {
+                if let Some(f) = &self.fake {
+                    f.add_mentions_sample();
+                }
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-mentions-feed", 1) => self.select_source(super::sources_vm::Source::Mentions, cx),
             // The "Today" smart feed, the first post open, keys in the post.
             ("rd-smart-today", 0) => self.show_view(View::Reading, window, cx),
             ("rd-smart-today", 1) => {
@@ -375,6 +410,16 @@ impl MainView {
             ("rd-pin", 2) => self.ask_pin(window, cx),
             ("rd-mentions", 0) => self.show_view(View::Mentions, window, cx),
             ("rd-subs", 0) => self.show_view(View::Subscriptions, window, cx),
+            // --- discover --- the sheet over Subscriptions, the second row
+            // picked (the fake's sample directory, no network).
+            ("rd-discover", 0) => self.show_view(View::Subscriptions, window, cx),
+            ("rd-discover", 1) => self.open_discover(window, cx),
+            ("rd-discover", 2) => {
+                if let Some(super::RSheet::Discover(s)) = self.reading.sheet.as_mut() {
+                    s.step(1);
+                }
+                cx.notify();
+            }
             // --- themes --- the subscribe sheet with a preview.
             ("rd-subscribe", 0) => self.show_view(View::Subscriptions, window, cx),
             ("rd-subscribe", 1) => {

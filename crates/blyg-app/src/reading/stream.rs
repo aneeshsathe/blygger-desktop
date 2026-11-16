@@ -885,6 +885,7 @@ impl MainView {
             version: r.version,
             current: r.version,
             pins: vec![],
+            shelved: self.on_reading_shelf(r), // --- shelf sync ---
         };
         let k_more = key.clone();
         let mut row: Vec<AnyElement> = vec![
@@ -903,7 +904,12 @@ impl MainView {
                 "Link post",
                 "Open on web",
                 "Notes",
+                "Shelf",    // --- shelf sync ---
+                "Catch up", // --- catch up ---
             ] {
+                if id == "Catch up" && !self.has_ancestors(&r.origin, &r.remote_id) {
+                    continue;
+                }
                 if id == "Link post" && !blyg {
                     continue; // a feed post has no id to link
                 }

@@ -392,6 +392,12 @@ pub struct ReadingItem {
         skip_serializing_if = "Option::is_none"
     )]
     pub generated: Option<Vec<serde_json::Value>>,
+    /// --- background --- Where the row stands in the reader, as the
+    /// studio's Background lens says (`crate::background`). `None` until
+    /// it's known (an older studio, or not read yet): then a withdrawn post
+    /// is background and nothing else is. Never stored with the row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub background: Option<crate::background::EntryBackground>,
 }
 
 // --- profiles ---
@@ -586,6 +592,14 @@ where
 }
 
 impl ReadingItem {
+    /// --- background --- In the Background lens, and out of every other:
+    /// as the studio says once known (`background`), else withdrawn.
+    pub fn is_background(&self) -> bool {
+        self.background
+            .as_ref()
+            .map_or(self.state == "tombstone", |b| b.on)
+    }
+
     /// `stub_of`, `forked_from` and `transclusions` as this row holds them.
     pub fn lineage(&self) -> Lineage {
         Lineage {
@@ -871,6 +885,7 @@ pub fn own_responses(items: &[Item], own_origin: &str, origin: &str, id: &str) -
             lineage_known: false,
             source_url: None,
             generated: None,
+            background: None,
         };
         out.push((
             it.updated.clone(),

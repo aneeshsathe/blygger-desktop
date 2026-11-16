@@ -65,6 +65,7 @@ async function command(id, req, ok) {
   S.render({ loadEditor: true });
   if (res.error) { toast(esc(res.error.text), 4200); return false; }
   toast(esc(ok(r.body)), 3600);
+  S.live?.changedHere(); // what else it moved, now
   return true;
 }
 

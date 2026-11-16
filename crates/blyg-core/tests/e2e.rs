@@ -21,6 +21,7 @@
 //! Run with `--test-threads=1`: the offline test takes the Worker down.
 //! Never point these at a real blyg: they publish, withdraw and pin.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -1145,6 +1146,120 @@ impl Drop for RestoreSettings<'_> {
     fn drop(&mut self) {
         let _ = self.0.save_settings(&self.1);
     }
+}
+
+// --- discover --- `Settings.discoverSeenAt` (studio 0.60+), written with a
+// partial PATCH only. The directory is an invented fixture served from
+// localhost: the tests never reach blygger.com.
+
+/// Serve `body` as JSON on 127.0.0.1 for one request; the URL.
+fn serve_json_once(body: &'static str) -> String {
+    use std::io::{Read, Write};
+    let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = l.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        if let Ok((mut s, _)) = l.accept() {
+            let mut got = Vec::new();
+            let mut buf = [0u8; 4096];
+            while !got.windows(4).any(|w| w == b"\r\n\r\n") {
+                match s.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => got.extend_from_slice(&buf[..n]),
+                }
+            }
+            let _ = write!(
+                s,
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+        }
+    });
+    format!("http://127.0.0.1:{port}/blygs.json")
+}
+
+/// Every settings key but `discoverSeenAt`.
+fn settings_but_seen(v: &Value) -> Value {
+    let mut v = v.clone();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("discoverSeenAt");
+    }
+    v
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn discover_seen_at_round_trips_and_leaves_other_settings() {
+    let dir = tempfile::tempdir().unwrap();
+    let b = manual(dir.path());
+    let url = e2e().url;
+    let (status, before) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(status, 200);
+    let Some(original) = before["discoverSeenAt"].as_str().map(str::to_string) else {
+        eprintln!("skipped: this studio has no discoverSeenAt (before 0.60)");
+        return;
+    };
+    struct Restore(String, String);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let _ = owner(
+                "PATCH",
+                &self.0,
+                "/api/settings",
+                Some(json!({ "discoverSeenAt": self.1 })),
+            );
+        }
+    }
+    let _restore = Restore(url.clone(), original);
+
+    // Round trip through the backend.
+    let mark = "2026-11-01T00:00:00.000Z";
+    b.set_discover_seen_at(mark).unwrap();
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(mark));
+    let (_, raw) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(raw["discoverSeenAt"], mark);
+    assert_eq!(
+        settings_but_seen(&raw),
+        settings_but_seen(&before),
+        "a partial PATCH: nothing else in the settings changed"
+    );
+
+    // A visit: the directory (the fixture, from localhost), and the mark
+    // moves to the newest listing it holds.
+    let blygs = discover::fetch(&serve_json_once(include_str!(
+        "fixtures/discover/blygs.json"
+    )))
+    .unwrap();
+    assert_eq!(blygs.len(), 5);
+    let visit = discover::open_with(&b, blygs.clone(), b.discover_seen_at().unwrap());
+    assert_eq!(
+        visit.baseline.as_deref(),
+        Some(mark),
+        "new is against the old mark"
+    );
+    assert_eq!(visit.seen_error, None);
+    let newest = "2026-11-12T00:00:00.000Z";
+    let (_, raw) = owner("GET", &url, "/api/settings", None);
+    assert_eq!(raw["discoverSeenAt"], newest);
+    assert_eq!(settings_but_seen(&raw), settings_but_seen(&before));
+    let new: Vec<&str> = discover::by_listing(&visit.blygs)
+        .into_iter()
+        .filter(|x| discover::badge_new(x, visit.baseline.as_deref(), false))
+        .map(|x| x.title.as_str())
+        .collect();
+    assert_eq!(new, ["Quiet Blyg", "Followed Again", "Busy Blyg"]);
+
+    // Never backwards: a directory that dropped its newest listing.
+    let older: Vec<_> = blygs
+        .into_iter()
+        .filter(|x| x.listed_at.as_str() < "2026-11-01")
+        .collect();
+    let again = discover::open_with(&b, older, b.discover_seen_at().unwrap());
+    assert_eq!(again.baseline.as_deref(), Some(newest));
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(newest));
+
+    // The studio refuses a mark that isn't a date; nothing is stored.
+    assert!(b.set_discover_seen_at("not a date").is_err());
+    assert_eq!(b.discover_seen_at().unwrap().as_deref(), Some(newest));
 }
 
 #[test]
@@ -4378,6 +4493,196 @@ fn withdrawn_posts_are_background() {
     me.unsubscribe(&sub.id).unwrap();
 }
 
+/// --- background --- The studio's Background set, as its own lens lists it
+/// (`GET /api/reading?background=true`, every page): `(sub, id)` keys,
+/// your own posts as `("~own", id)`.
+fn studio_background(base: &str) -> HashSet<(String, String)> {
+    let mut out = HashSet::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut path = String::from("/api/reading?background=true&limit=50");
+        if let Some(c) = &cursor {
+            path.push_str(&format!("&cursor={}", query_escape(c)));
+        }
+        let page = conforms("GET", base, &path);
+        for e in page["items"].as_array().unwrap() {
+            let (key, b) = blyg_core::background::parse_entry(e).expect("an entry with background");
+            assert!(b.on);
+            out.insert(key);
+        }
+        match page["page"]["nextCursor"].as_str() {
+            Some(c) => cursor = Some(c.to_string()),
+            None => return out,
+        }
+    }
+}
+
+/// --- background --- What Burrow lists under Background: every row it
+/// holds (the reading list, the withdrawn posts, your own posts and your
+/// withdrawn ones, as the app builds them), placed by what it read of the
+/// studio, filtered by `ReadingItem::is_background`, the one rule every
+/// list uses.
+fn burrow_background(me: &LiveBackend) -> HashSet<(String, String)> {
+    let mut rows = me.reading();
+    rows.extend(me.background_reading());
+    let origin = me.base_url().expect("connected");
+    let items = me.items();
+    rows.extend(blyg_core::own::rows(&items, &origin));
+    rows.extend(
+        items
+            .iter()
+            .filter_map(|i| blyg_core::own::withdrawn_row(i, &origin)),
+    );
+    let set = me.background_set().expect("the lens was read");
+    set.annotate(&mut rows);
+    rows.into_iter()
+        .filter(|r| r.is_background())
+        .map(|r| (r.subscription_id, r.remote_id))
+        .collect()
+}
+
+/// --- background --- Burrow's Background equals the studio's own for the
+/// same data (studio 0.61): a post you moved there, a whole blyg moved
+/// there with one post brought back, a withdrawn post, your own minor
+/// change, and the minor rule turned off. Each step is made through
+/// Burrow, synced, and compared with the studio's lens, for these posts
+/// and for everything held.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn burrows_background_is_the_studios() {
+    use blyg_core::background::Placement;
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    if !api.serves_background().unwrap() {
+        eprintln!("skipped: this studio doesn't advertise setReadingPlacement");
+        return;
+    }
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("bgset");
+    let (_, moved) = published(&source, Kind::Fragment, &format!("{t} moved by hand"), None);
+    let (_, plain) = published(&source, Kind::Fragment, &format!("{t} plain"), None);
+    let (gone_local, gone) = published(&source, Kind::Fragment, &format!("{t} soon gone"), None);
+    let sub = me.subscribe(&src_url, None).unwrap();
+    sync_until_held(&me, &[&moved, &plain, &gone]);
+    me.sync_now().unwrap();
+    assert!(me.background_served(), "the capability was noted");
+
+    // Withdrawn on `b`: always Background.
+    source.withdraw(&gone_local, Some("retracted")).unwrap();
+    trigger_scheduled(&e.url);
+    std::thread::sleep(Duration::from_millis(300));
+    Api::new(&e.url, e.cred.clone())
+        .resync_subscription(&sub.id)
+        .unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(me.reading_row(&sub.id, &gone).unwrap().state, "tombstone");
+
+    // Your own minor change: v2 published with the category the author
+    // confirmed (`changeCategory: typo`), as the studio's publish dialog
+    // sends it.
+    let (_, mine) = published(&me, Kind::Fragment, &format!("{t} mine, with a tpyo"), None);
+    let (st, v) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{mine}"),
+        Some(json!({
+            "contentMd": format!("{t} mine, with a typo"),
+            "expectedRevision": server_rev(&mine),
+        })),
+    );
+    assert_eq!(st, 200, "{v}");
+    let (st, v) = owner(
+        "POST",
+        &e.url,
+        &format!("/api/items/{mine}/publish"),
+        Some(json!({ "changeCategory": "typo", "expectedRevision": server_rev(&mine) })),
+    );
+    assert_eq!(st, 200, "{v}");
+
+    // A post moved to Background by hand.
+    let theirs = |id: &str| (sub.id.clone(), id.to_string());
+    let own = |id: &str| (OWN_SUBSCRIPTION.to_string(), id.to_string());
+    me.set_reading_placement(&theirs(&moved), false, Some(Placement::Background))
+        .unwrap();
+    me.sync_now().unwrap();
+
+    let ours = [theirs(&moved), theirs(&plain), theirs(&gone), own(&mine)];
+    let check = |what: &str, want: &[(String, String)]| {
+        let studio = studio_background(&e.url);
+        let burrow = burrow_background(&me);
+        for k in &ours {
+            assert_eq!(
+                studio.contains(k),
+                want.contains(k),
+                "{what}: the studio on {k:?}"
+            );
+            assert_eq!(
+                burrow.contains(k),
+                studio.contains(k),
+                "{what}: Burrow on {k:?}"
+            );
+        }
+        // Everything held here that the studio lists, and nothing more.
+        let held: HashSet<(String, String)> = me
+            .reading()
+            .into_iter()
+            .chain(me.background_reading())
+            .map(|r| (r.subscription_id, r.remote_id))
+            .chain(
+                me.items()
+                    .iter()
+                    .filter_map(|i| i.server_id.as_ref().map(|s| own(&s.0))),
+            )
+            .collect();
+        let studio_held: HashSet<_> = studio.intersection(&held).cloned().collect();
+        let burrow_held: HashSet<_> = burrow.intersection(&held).cloned().collect();
+        assert_eq!(burrow_held, studio_held, "{what}: everything held");
+    };
+    check(
+        "placed, withdrawn, minor",
+        &[theirs(&moved), theirs(&gone), own(&mine)],
+    );
+
+    // The whole blyg to Background, then one post brought back.
+    me.set_blyg_background(&sub.id, true).unwrap();
+    me.sync_now().unwrap();
+    check(
+        "whole blyg",
+        &[theirs(&moved), theirs(&plain), theirs(&gone), own(&mine)],
+    );
+    me.set_reading_placement(&theirs(&plain), false, Some(Placement::Foreground))
+        .unwrap();
+    me.sync_now().unwrap();
+    check(
+        "one brought back",
+        &[theirs(&moved), theirs(&gone), own(&mine)],
+    );
+
+    // The minor rule off: your typo fix comes back; only that key is written.
+    let before = conforms("GET", &e.url, "/api/settings");
+    let rules = me.save_background_rule("minor", false).unwrap();
+    assert!(!rules.on("minor"));
+    let after = conforms("GET", &e.url, "/api/settings");
+    assert_eq!(before["siteTitle"], after["siteTitle"], "a partial write");
+    me.sync_now().unwrap();
+    check("minor off", &[theirs(&moved), theirs(&gone)]);
+    me.save_background_rule("minor", true).unwrap();
+
+    // Choices cleared and the blyg back: only the rules decide.
+    me.set_reading_placement(&theirs(&moved), false, None)
+        .unwrap();
+    me.set_reading_placement(&theirs(&plain), false, None)
+        .unwrap();
+    me.set_blyg_background(&sub.id, false).unwrap();
+    me.sync_now().unwrap();
+    check("rules only", &[theirs(&gone), own(&mine)]);
+
+    me.unsubscribe(&sub.id).unwrap();
+}
+
 #[test]
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn the_studio_speaks_contract_five() {
@@ -6285,4 +6590,235 @@ fn syndication_is_written_in_place_and_read_by_a_second_client() {
         None,
     );
     assert_eq!(item["version"].as_u64(), Some(1));
+}
+
+// ------------------------------------------------------------ shelf sync
+
+/// The blyg's shelf as the owner API answers it (and what the contract
+/// says it is).
+fn server_shelf(base: &str) -> shelf::Remote {
+    let (st, v) = owner("GET", base, "/api/shelf", None);
+    assert_eq!(st, 200, "GET /api/shelf: {v}");
+    shelf::parse(&v).unwrap_or_else(|| panic!("not a Shelf: {v}"))
+}
+
+/// Replace the blyg's shelf from "another client" (as Studio would).
+fn put_server_shelf(base: &str, entries: &[shelf::Entry]) -> shelf::Remote {
+    let rev = server_shelf(base).revision;
+    let (st, v) = owner(
+        "PUT",
+        base,
+        "/api/shelf",
+        Some(shelf::put_body(entries, rev)),
+    );
+    assert_eq!(st, 200, "PUT /api/shelf: {v}");
+    shelf::parse(&v).unwrap()
+}
+
+fn shelf_counter(base: &str) -> u64 {
+    let (st, v) = owner("GET", base, "/api/changes", None);
+    assert_eq!(st, 200, "GET /api/changes: {v}");
+    v["domains"]["shelf"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("no shelf counter: {v}"))
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn the_shelf_round_trips_and_merges_with_the_blyg() {
+    let e = e2e();
+    // What the capabilities say, not the contract number.
+    let (_, caps) = owner("GET", &e.url, "/api/capabilities", None);
+    assert!(
+        shelf::serves(&caps),
+        "studio 0.61+ offers the shelf: {caps}"
+    );
+    put_server_shelf(&e.url, &[]);
+
+    // A shelf made on this computer before it ever synced: the first sync
+    // uploads it.
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let a = manual(d1.path());
+    let t = tag("shelf");
+    let (x, sx) = published(&a, Kind::Thread, &format!("{t} now page"), None);
+    a.set_on_shelf(&x, true).unwrap();
+    a.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, [shelf::Entry::own(&sx)]);
+    assert_eq!(a.shelf_state(), shelf::SyncState::Synced);
+
+    // A draft too: the studio shelves drafts by their id.
+    let d = a
+        .create_draft(Kind::Fragment, &format!("{t} reading log"))
+        .unwrap();
+    a.set_on_shelf(&d, true).unwrap();
+    assert_eq!(a.shelf_state(), shelf::SyncState::Waiting);
+    a.sync_now().unwrap();
+    let sd = sid_of(&a, &d);
+    let after_put = server_shelf(&e.url);
+    assert_eq!(
+        after_put.entries,
+        [shelf::Entry::own(&sx), shelf::Entry::own(&sd)]
+    );
+
+    // Another computer on the same blyg holds the same shelf, mapped to its
+    // own copies of the posts.
+    let b = manual(d2.path());
+    b.sync_now().unwrap();
+    let bx = b
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == sx))
+        .expect("b holds x")
+        .local_id;
+    let bd = b
+        .items()
+        .into_iter()
+        .find(|i| i.server_id.as_ref().is_some_and(|s| s.0 == sd))
+        .expect("b holds the draft")
+        .local_id;
+    assert_eq!(b.shelf(), [bx.clone(), bd.clone()]);
+    assert_eq!(b.shelf_entries(), after_put.entries);
+
+    // A stale revision is a 409 with the current list in it.
+    let (st, v) = owner(
+        "PUT",
+        &e.url,
+        "/api/shelf",
+        Some(shelf::put_body(&[], after_put.revision - 1)),
+    );
+    assert_eq!(st, 409, "{v}");
+    assert_eq!(v["code"], "revision-conflict");
+    assert_eq!(shelf::conflict_current(&v).as_ref(), Some(&after_put));
+    let api = Api::new(&e.url, e.cred.clone());
+    assert_eq!(
+        api.put_shelf(&[], after_put.revision - 1).unwrap(),
+        blyg_core::api::shelf_api::PutShelf::Conflict
+    );
+    assert_eq!(server_shelf(&e.url), after_put, "nothing was stored");
+
+    // Both sides change it at once: b moves the draft first; Studio (as
+    // another client) adds a third post at the end. Neither is lost.
+    let (_, sz) = published(&a, Kind::Fragment, &format!("{t} elsewhere"), None);
+    let before = shelf_counter(&e.url);
+    put_server_shelf(
+        &e.url,
+        &[
+            shelf::Entry::own(&sx),
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sz),
+        ],
+    );
+    // The counter moved: that's what makes a client read the shelf again.
+    assert!(shelf_counter(&e.url) > before);
+    b.move_on_shelf(&bd, 0).unwrap();
+    b.sync_now().unwrap();
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sx),
+            shelf::Entry::own(&sz)
+        ]
+    );
+    // a takes it up on its next pull: only because the counter moved.
+    a.sync_now().unwrap();
+    assert_eq!(a.shelf_entries(), server_shelf(&e.url).entries);
+    assert_eq!(a.shelf()[0], d);
+
+    // Taken off here: off there.
+    a.set_on_shelf(&x, false).unwrap();
+    a.sync_now().unwrap();
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [shelf::Entry::own(&sd), shelf::Entry::own(&sz)]
+    );
+    b.sync_now().unwrap();
+    assert_eq!(b.shelf().len(), 2, "the draft and the third post");
+    assert_eq!(b.shelf()[0], bd);
+    assert_eq!(b.shelf_entries(), server_shelf(&e.url).entries);
+
+    // A computer that shelved a post before it ever synced: the first sync
+    // takes the union, the blyg's order first.
+    let d3 = tempfile::tempdir().unwrap();
+    let c = manual(d3.path());
+    let n = c
+        .create_draft(Kind::Thread, &format!("{t} shelved offline"))
+        .unwrap();
+    c.set_on_shelf(&n, true).unwrap();
+    c.sync_now().unwrap();
+    let sn = sid_of(&c, &n);
+    assert_eq!(
+        server_shelf(&e.url).entries,
+        [
+            shelf::Entry::own(&sd),
+            shelf::Entry::own(&sz),
+            shelf::Entry::own(&sn)
+        ]
+    );
+    assert_eq!(c.shelf().len(), 3);
+    put_server_shelf(&e.url, &[]);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn the_shelf_holds_others_posts_by_their_subscription() {
+    let e = e2e();
+    put_server_shelf(&e.url, &[]);
+    let src_url = url_b();
+    let (d1, d2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let me = manual(d1.path());
+    let source = backend_at(d2.path(), &src_url, cred_b(), false);
+    let t = tag("shelf-theirs");
+    let (_, rid) = published(&source, Kind::Fragment, &format!("{t} worth keeping"), None);
+    let sub = me.subscribe(&src_url, Some("Shelf source")).unwrap();
+    let _unsub = Unsub(&me, sub.id.clone());
+    sync_until_held(&me, &[&rid]);
+    me.sync_now().unwrap();
+
+    let theirs = shelf::Entry::new(&sub.id, &rid);
+    me.set_entry_on_shelf(&theirs, true).unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, std::slice::from_ref(&theirs));
+    assert_eq!(me.shelf_entries(), std::slice::from_ref(&theirs));
+    // Something the blyg can't resolve is dropped quietly by the blyg, and
+    // here too once it answers.
+    let ghost = shelf::Entry::new(&sub.id, "no-such-post");
+    me.set_entry_on_shelf(&ghost, true).unwrap();
+    me.sync_now().unwrap();
+    assert_eq!(server_shelf(&e.url).entries, std::slice::from_ref(&theirs));
+    assert_eq!(me.shelf_entries(), [theirs]);
+    put_server_shelf(&e.url, &[]);
+}
+
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn an_older_studio_keeps_the_shelf_on_this_computer() {
+    // A studio before 0.61 (started by scripts/e2e-local.sh when
+    // BLYG_OLD_WORKER_DIR names one): no getShelf, so nothing is sent.
+    let (Ok(url), Ok(token)) = (
+        std::env::var("BLYG_E2E_URL_OLD"),
+        std::env::var("BLYG_E2E_TOKEN_OLD"),
+    ) else {
+        eprintln!("skipped: set BLYG_OLD_WORKER_DIR for scripts/e2e-local.sh");
+        return;
+    };
+    assert!(url.starts_with("http://127.0.0.1"));
+    let cred = Credential::Token(token);
+    let (_, caps) = owner_as(&cred, "GET", &url, "/api/capabilities", None);
+    assert!(!shelf::serves(&caps), "an older studio: {caps}");
+    let dir = tempfile::tempdir().unwrap();
+    let old = backend_at(dir.path(), &url, cred.clone(), false);
+    let t = tag("shelf-old");
+    let (x, _) = published(&old, Kind::Thread, &format!("{t} kept here"), None);
+    old.set_on_shelf(&x, true).unwrap();
+    old.sync_now().unwrap();
+    assert_eq!(old.shelf(), [x]);
+    assert_eq!(old.shelf_state(), shelf::SyncState::Local);
+    assert_eq!(
+        old.sync_status(),
+        SyncStatus::Synced,
+        "nothing waits to be sent"
+    );
+    let (st, _) = owner_as(&cred, "GET", &url, "/api/shelf", None);
+    assert_eq!(st, 404, "the route isn't there");
 }

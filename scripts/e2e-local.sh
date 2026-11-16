@@ -12,8 +12,13 @@
 #   BLYG_E2E_STOCK=1         kept for older invocations; every studio Burrow
 #                            supports is stock, and gets a minted manual token
 #   BLYG_E2E_SKIP_NOTES=1    skip the markdown-notes extension's e2e
+#   BLYG_E2E_SKIP_WEB=1      skip Burrow in a browser's e2e (its Rust read
+#                            path, natively, against native Burrow's order)
 #   BLYG_E2E_SKIP_SWITCHER=1 skip the blyg switcher's e2e (the app's, with
 #                            `a` and `b` signed in at once)
+#   BLYG_OLD_WORKER_DIR=…    also start an older studio (built the same way),
+#                            for the tests that check what it lacks stays
+#                            local (BLYG_E2E_URL_OLD / BLYG_E2E_TOKEN_OLD)
 #
 # What it does:
 #   1. derives a local-only wrangler config and random dev secrets in a
@@ -24,7 +29,9 @@
 #   3. runs `cargo test -p blyg-core --test e2e -- --ignored --test-threads=1`,
 #      then the markdown-notes extension's e2e against the same blyg
 #      (`cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1`);
-#      extra test args go to the core suite only; and the blyg switcher's
+#      extra test args go to the core suite only; Burrow in a browser's
+#      read path (`cargo test -p blyg-web --test e2e -- --ignored`), whose
+#      Reading and Posts order must be native Burrow's; and the blyg switcher's
 #      e2e in the app (`cargo test -p blyg-app --bin blygger switcher::e2e
 #      -- --ignored`), `a` and `b` (as localhost) signed in side by side;
 #   4. stops only the wrangler processes it started, and deletes the scratch
@@ -91,8 +98,29 @@ BLYG_E2E_OWNER_PASSWORD="$("$CTL" password)"
 export BLYG_E2E_OWNER_PASSWORD
 export BLYG_E2E_CTL="$CTL"
 
+# An older studio beside them (BLYG_OLD_WORKER_DIR, built like
+# BLYG_WORKER_DIR): what it doesn't offer must stay local (e.g. the shelf
+# before studio 0.61). Its own scratch, stopped with the rest.
+if [ -n "${BLYG_OLD_WORKER_DIR:-}" ]; then
+  OLD_DIR="$(cd "$BLYG_OLD_WORKER_DIR" && pwd)"
+  OLD_SCRATCH="$BLYG_E2E_SCRATCH/old-studio"
+  old_ctl() { BLYG_WORKER_DIR="$OLD_DIR" BLYG_E2E_SCRATCH="$OLD_SCRATCH" "$CTL" "$@"; }
+  old_ctl setup
+  PORT_OLD="$("$CTL" free-port)"
+  printf 'e2e-local: starting the older studio on :%s…\n' "$PORT_OLD" >&2
+  old_ctl start old "$PORT_OLD"
+  BLYG_E2E_URL_OLD="http://127.0.0.1:$PORT_OLD"
+  BLYG_E2E_TOKEN_OLD="$(old_ctl mint-token "$PORT_OLD")"
+  export BLYG_E2E_URL_OLD BLYG_E2E_TOKEN_OLD
+  trap 'old_ctl stop-all || true; cleanup' EXIT INT TERM
+fi
+
 cd "$ROOT"
 cargo test -p blyg-core --test e2e -- --ignored --test-threads=1 "$@"
+if [ -z "${BLYG_E2E_SKIP_WEB:-}" ]; then
+  printf 'e2e-local: Burrow in a browser, its list order against native…\n' >&2
+  cargo test -p blyg-web --test e2e -- --ignored --test-threads=1
+fi
 if [ -z "${BLYG_E2E_SKIP_SWITCHER:-}" ]; then
   printf 'e2e-local: the blyg switcher, two blygs at once…\n' >&2
   cargo test -p blyg-app --bin blygger switcher::e2e -- --ignored --test-threads=1

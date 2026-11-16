@@ -5,6 +5,132 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.25.0
+
+Mentions that say why they're there, Settings with room to breathe, and a web
+app that feels like an app: it fills the page and steps from post to post.
+
+### Mentions, and why
+
+**Reading › Mentions** lists the posts that point at you: the ones your blyg
+says name you (an @-mention), and the ones Burrow finds itself that quote,
+reply to, fork or link to your blyg. A tag on each row says which: *named
+you*, *quoted you*, *replied*, *forked you* or *linked you*. The list no
+longer shows everything for a moment and then shrinks to a few: your blyg's
+last answer is kept, so it's whole from the start. The web app lists and tags
+them the same way.
+
+### Settings is a full page
+
+⌘, opens Settings over the whole window instead of a pop-up, and every row of
+options and every explanation wraps to fit, at any window width and font.
+Esc or ⌘, closes it.
+
+### The web app
+
+- **Post to post.** An open post has **‹ ›** for the previous and next post,
+  in the list as you saw it. On a phone or an iPad, swipe sideways across the
+  post: left for the next, right for the previous. ↑ ↓ on a keyboard do the
+  same.
+- **It fills the page** on a laptop or iPad, rather than sitting in a window
+  drawn inside the page. Theme and layout are in the title bar, and **Keys**
+  lists the shortcuts.
+- **On a phone, swiping back from a post** no longer plays the slide twice.
+
+## Burrow 0.24.0
+
+Set a post aside without unfollowing anyone, keep anyone's posts on a shelf
+that follows you from the desktop to the studio and the web app, and find
+new blygs to read. All three match blygger-studio 0.61.
+
+### Background and Foreground
+
+- **↓ Background** under an open post (or **b**) moves it out of every other
+  list: the stream, the feeds, Mentions and the counts. Nothing is marked
+  read. **↑ Foreground** brings it back, **↺ Clear my choice** lets the rules
+  decide again, and **⇊ Blyg to Background** moves a whole blyg.
+- The **Background** list is now your blyg's own, the same one the studio
+  shows: what you moved there, blygs you moved there, withdrawn posts and
+  your own minor changes. **Settings › Reading › Background** turns the
+  minor-change rule off or on.
+- The web app has the same chips under an open post, and the rules in
+  ⚙ Reading. See [Background and Foreground](reading.md#background-and-foreground).
+
+### The shelf syncs, and holds anyone's posts
+
+- With a blyg on studio 0.61, the shelf syncs: the studio, the web app and
+  your other computers share it, and a change made in two places at once is
+  merged rather than lost.
+- **+ Add to shelf** among a post's chips in Reading puts someone else's
+  post on it too, and the new **Shelf** lens in Reading's sources lists the
+  shelf in your order. A shelved post stays in Shelf even in Background. See
+  [The shelf](writing.md#the-shelf).
+
+### Discover blygs
+
+- **Blyg › Discover Blygs…** (or **Discover…** on the Subscriptions screen)
+  lists the blygs on blygger.com's public directory that you don't follow
+  yet, newest first, with how active each is. Ones listed since you last
+  looked say **new**, and the studio agrees. ⏎ subscribes. Desktop only.
+  See [Discover blygs](reading.md#discover-blygs).
+
+### Also
+
+- The Reading tour has steps for Background, adding to the shelf, the Shelf
+  lens and Discover, and What's new runs them after the update.
+- **Fixed:** the tour card no longer covers the Catch up sheet, and Burrow
+  reads the Background list again only when it can have changed.
+
+## Burrow 0.23.0
+
+Catch up on a conversation without reading it backwards. The web app gains
+the studio's Mark all read, Posts filters, Updates and Access tokens, shows
+your own posts in Reading, keeps Reading in order and up to date while it's
+open, and starts faster than the studio.
+
+### Catch up
+
+- **The conversation, oldest first.** A post that quotes a post that quotes
+  another is a conversation. Press **⇧C** on the reading screen (or click the
+  **Catch up** chip under the post, or Post › Catch Up…, or ⇧C in the lineage
+  view) and a sheet lays it out from the start: each post's author, date and
+  own words, and how the next one uses it.
+- **j/k** move, **⏎** opens a post in the reader, and **w** adds the side
+  replies you hold (Whole conversation). Posts this Mac doesn't hold show
+  what was quoted of them, and nothing is fetched until you open one.
+- **s** asks your AI provider for a short summary, in order and by author,
+  shown at the top of the sheet as **AI summary**. It's for you: it never
+  goes into a post.
+- The Reading tour has a step for it, on the sample conversation. See
+  [Catch up](reading.md#catch-up).
+
+### The web app
+
+- **Mark all read**: ✓ Mark all read… in the sources pane (⌃⌥A), or ✓ All
+  read on a phone, marks every unread post of the source you're looking at,
+  after asking.
+- **Filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with
+  counts, as the studio's compose page has them (⌃⌥F steps through them).
+- **Updates** (⚙ Blyg › Updates): your threads whose quotes have newer
+  versions, stalest first, and Refresh, one or all.
+- **Access tokens** (⚙ Blyg › Access tokens): what can act as you on your
+  blyg, a manual token for a tool (shown once), and revoke one or all.
+- **Your own posts in Reading**, as on the desktop: never unread, and nothing
+  sent about them.
+- **Fixed:** Reading came out shuffled after a big first load; it's now in
+  the same order as the desktop and the studio. Posts changed elsewhere show
+  within about 15 seconds while the tab is open. And Reading's first page
+  shows as soon as it arrives, in about a third of a second with 3,000
+  posts to read.
+- Some of these need a recent studio; until yours offers them they stay
+  hidden or say why. See [Using it](web-self-host.md#using-it).
+
+### For contributors
+
+- **Development skills** in `skills/`: plain-Markdown checklists for the
+  release, the tour, Windows and macOS, the pre-PR gate and more, for any
+  coding agent or person. Thanks to @patwater for the idea.
+
 ## Burrow 0.22.0
 
 The browser pane and cross-post now run on Windows. Links in posts open

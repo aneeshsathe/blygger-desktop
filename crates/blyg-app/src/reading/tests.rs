@@ -179,7 +179,8 @@ fn others_posts_show_only_current_and_pinned_versions(cx: &mut TestAppContext) {
             "Link post",
             "Open on web",
             "Notes",
-            "Hopper"
+            "Hopper",
+            "Shelf" // --- shelf sync ---
         ]
     );
     // Step through every version the pill allows; unpinned never render.
@@ -736,7 +737,8 @@ fn cmd_f_searches_titles_authors_and_text_held_locally(cx: &mut TestAppContext) 
     let rue = shown(&view, cx);
     assert!(rue.contains(&RUE_TRUST.to_string()), "{rue:?}");
     assert!(
-        rue.iter().all(|id| id == RUE_TRUST || id == RUE_KEPT),
+        rue.iter()
+            .all(|id| [RUE_TRUST, RUE_KEPT, TALK_A, TALK_D].contains(&id.as_str())),
         "{rue:?}"
     );
     // Held rows only: the hidden tombstone never turns up.
@@ -852,8 +854,11 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Fork",
             "Link post · new fragment",
             "Open on web",
-            "→ Notes",  // --- notes ---
-            "Hopper ›"  // --- hoppers ---
+            "→ Notes",        // --- notes ---
+            "Hopper ›",       // --- hoppers ---
+            "+ Add to shelf", // --- shelf sync ---
+            "↓ Background",   // --- background --- (the sample blyg serves it)
+            "⇊ Blyg to Background"
         ]
     );
     assert!(tip(&row, "Link post").contains("no stub_of"));

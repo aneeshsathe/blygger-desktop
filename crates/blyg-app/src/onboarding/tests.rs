@@ -69,6 +69,9 @@ impl Backend for Recording {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.inner.reading_mentions()
     }
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        self.inner.reading_mentions_cached()
+    }
     fn page_title(&self, url: &str) -> Option<String> {
         self.inner.page_title(url) // --- capture ---
     }
@@ -766,6 +769,34 @@ fn do_step(e: &mut Env, id: &str) {
         }),
         "lineage" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-j")),
         "ring" => e.cx.simulate_keystrokes("space"),
+        "catch-up" => e.cx.simulate_keystrokes("shift-c"), // --- catch up ---
+        // --- 0.24.0 --- `b`; the chip's and the source's own calls; the
+        // Discover menu item.
+        "background" => e.cx.simulate_keystrokes("b"),
+        "shelf-add" => e.view.update(e.cx, |v, cx| {
+            let key = v
+                .reading
+                .rows
+                .iter()
+                .find(|r| r.remote_id == steps::SHELVED)
+                .map(crate::app::reading::vm::key)
+                .expect("the sample post is held");
+            v.toggle_reading_shelf(key, cx)
+        }),
+        "mentions-feed" => e.view.update(e.cx, |v, cx| {
+            v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
+        }),
+        "shelf-lens" => e.view.update(e.cx, |v, cx| {
+            v.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Shelf,
+                ),
+                cx,
+            )
+        }),
+        "discover" => {
+            e.cx.dispatch_action(crate::app::reading::discover::ShowDiscover)
+        }
         "reader" | "author-site" => e.cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-2")),
         "copies-elsewhere" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-y")),
         "side-dock" => {

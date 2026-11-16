@@ -607,6 +607,48 @@ impl MainView {
             (Key::SpellMenu, assist.menu_open()),
             (Key::Lineage, self.lineage_open()),
             (Key::LineageRing, self.lineage_ring_open()),
+            // --- catch up ---
+            (
+                Key::CatchUp,
+                reading
+                    && matches!(
+                        self.reading.sheet,
+                        Some(crate::app::reading::RSheet::CatchUp(_))
+                    ),
+            ),
+            // --- 0.24.0 --- Background, the shelf, Discover.
+            (
+                Key::Background,
+                reading
+                    && self
+                        .reading
+                        .rows
+                        .iter()
+                        .any(|r| r.remote_id == steps::BACKGROUND && r.is_background()),
+            ),
+            (
+                Key::ShelfReading,
+                reading && self.reading.shelved.iter().any(|k| k.1 == steps::SHELVED),
+            ),
+            (
+                Key::ShelfLens,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Shelf,
+                        ),
+            ),
+            (
+                Key::MentionsFeed,
+                reader && self.reading.source == crate::app::reading::sources_vm::Source::Mentions,
+            ),
+            (
+                Key::Discover,
+                matches!(
+                    self.reading.sheet,
+                    Some(crate::app::reading::RSheet::Discover(_))
+                ),
+            ),
             // --- extensions ---
             (
                 Key::ExtPalette,
@@ -799,6 +841,7 @@ impl MainView {
         if self.ai.has_overlay() {
             self.ai_escape(window, cx);
         }
+        self.cancel_catch_up_summary(); // --- catch up ---
         self.reading.sheet = None;
         self.leave_reading();
         self.reading.opened = None;
@@ -826,6 +869,15 @@ impl MainView {
         if self.focus_on() {
             self.leave_focus(window, cx);
         }
+    }
+
+    /// How far a reading sheet must start from the window's left edge to
+    /// clear the tour card, while the card sits bottom left (the lineage
+    /// sheet moves the card right instead). `None` when no card shows.
+    pub(crate) fn tutorial_card_inset(&self) -> Option<f32> {
+        let t = self.onboarding.tutorial.as_ref()?;
+        (t.news.is_empty() && !t.chooser && !self.lineage_open())
+            .then_some(CARD_LEFT + CARD_W + 12.)
     }
 
     /// --- flow --- Whether the tour is on the step `id` (serendipity's step
@@ -1079,6 +1131,18 @@ impl MainView {
                     self.open_lineage(origin, steps::QUOTING.into(), window, cx);
                 }
             }
+            // --- catch up ---
+            Setup::StreamCatchUp => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let ix = self
+                    .reading
+                    .shown_rows()
+                    .position(|r| r.remote_id == steps::CATCH_UP);
+                match ix {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
             Setup::Reader => {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 if let Some(key) = self.tutorial_reading_key(steps::QUOTED) {
@@ -1184,6 +1248,37 @@ impl MainView {
                 self.tutorial_tidy(window, cx);
                 self.show_view(View::Subscriptions, window, cx);
             }
+            // --- 0.24.0 --- each starts from the sample's own state, so Back
+            // and a second walk find the key working again.
+            Setup::Background => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::BACKGROUND) {
+                    let _ = self.backend.set_reading_placement(&key, false, None);
+                    self.reading_changed(cx);
+                    self.open_reading(key, window, cx);
+                }
+            }
+            Setup::ShelfAdd | Setup::ShelfLens => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::SHELVED) {
+                    let entry = blyg_core::shelf::Entry::new(key.0.clone(), key.1.clone());
+                    let on = setup == Setup::ShelfLens;
+                    let _ = self.backend.set_entry_on_shelf(&entry, on);
+                    self.reload_reading_shelf();
+                    self.reading.refilter();
+                    if !on {
+                        self.open_reading(key, window, cx);
+                    }
+                }
+                cx.notify();
+            }
+            Setup::MentionsFeed => {
+                if let Some(f) = &self.fake {
+                    f.add_mentions_sample();
+                }
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                cx.notify();
+            }
         }
     }
 
@@ -1240,6 +1335,24 @@ impl MainView {
             "own-post" => self.post_action("Reply", window, cx),
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
+            "catch-up" => self.catch_up_key(window, cx), // --- catch up ---
+            // --- 0.24.0 ---
+            "background" => self.background_key(cx),
+            "shelf-add" => {
+                if let Some(key) = self.tutorial_reading_key(steps::SHELVED) {
+                    self.toggle_reading_shelf(key, cx);
+                }
+            }
+            "shelf-lens" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Shelf,
+                ),
+                cx,
+            ),
+            "mentions-feed" => {
+                self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
+            }
+            "discover" => self.open_discover(window, cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),

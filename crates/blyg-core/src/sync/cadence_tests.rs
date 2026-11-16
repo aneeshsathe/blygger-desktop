@@ -34,6 +34,7 @@ fn row(rid: &str, thumb: Option<i8>) -> ReadingItem {
         lineage_known: false,
         source_url: None,
         generated: None,
+        background: None,
     }
 }
 
@@ -183,4 +184,23 @@ fn thumbs_are_laid_over_held_rows() {
     );
     // The same list again changes nothing.
     assert!(!e.store.replace_thumbs(&list).unwrap());
+}
+
+#[test]
+fn the_safety_net_doubles_while_it_finds_nothing_and_resets_when_it_does() {
+    for opts in [
+        SyncOptions::default(),
+        SyncOptions::for_cadence(SyncCadence::Low),
+    ] {
+        let mut every = opts.full_pull_every;
+        let mut seen = vec![];
+        for _ in 0..8 {
+            every = next_full_every(every, false, &opts);
+            seen.push(every);
+        }
+        assert_eq!(seen[0], opts.full_pull_every * 2);
+        assert_eq!(*seen.last().unwrap(), opts.full_pull_max);
+        assert!(seen.windows(2).all(|w| w[1] >= w[0]));
+        assert_eq!(next_full_every(every, true, &opts), opts.full_pull_every);
+    }
 }

@@ -139,6 +139,8 @@ const CONTACTS_SERVED_META: &str = "contacts.served";
 
 /// --- loose ends --- your posts a verified mention names, as last fetched.
 const MENTIONED_META: &str = "loose_ends.mentioned";
+/// --- contacts --- The Mentions lens's last answer (JSON key pairs).
+const MENTIONS_SERVED_META: &str = "mentions.served";
 
 impl LiveBackend {
     /// Open (or create) `<data_dir>/blygger.db` and start syncing with the
@@ -244,6 +246,16 @@ impl LiveBackend {
     fn wake(&self) {
         self.send(Msg::Wake);
         self.engine.emit_status();
+    }
+
+    /// --- shelf sync --- The shelf changed here: redraw, and send it when
+    /// the blyg offers the synced shelf.
+    fn shelf_moved(&self) -> Result<()> {
+        self.engine.shelf_changed()?;
+        self.engine.emit(CoreEvent::ItemsChanged);
+        self.engine.emit(CoreEvent::ReadingChanged);
+        self.wake();
+        Ok(())
     }
 
     /// The engine, with any typed text written first (`Typing`): what
@@ -748,10 +760,20 @@ impl Backend for LiveBackend {
     }
 
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
-        self.e()
-            .track(self.e().api.reading_mentions())
-            .ok()
-            .flatten()
+        let got = self.e().track(self.e().api.reading_mentions()).ok()?;
+        // Kept for the next first paint; a lens no longer served is forgotten.
+        let store = &self.engine.store;
+        let _ = match &got {
+            Some(keys) => serde_json::to_string(keys)
+                .map_err(|e| CoreError::Other(e.to_string()))
+                .and_then(|j| store.set_meta(MENTIONS_SERVED_META, &j)),
+            None => store.delete_meta(MENTIONS_SERVED_META),
+        };
+        got
+    }
+
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        serde_json::from_str(&self.engine.store.meta(MENTIONS_SERVED_META)?).ok()
     }
 
     // --- contacts --- managing the book: each change, then the local copy
@@ -1565,6 +1587,21 @@ impl Backend for LiveBackend {
         self.e().track(self.e().api.put_settings(settings))
     }
 
+    // --- discover --- the directory is public and token-less: it never
+    // goes through the owner `Api`.
+    fn discover_directory(&self) -> Result<Vec<crate::discover::DirectoryBlyg>> {
+        Ok(crate::discover::fetch(&crate::discover::directory_url())?)
+    }
+
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        self.e().track(self.e().api.discover_seen_at())
+    }
+
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        self.e().track(self.e().api.put_discover_seen_at(at))
+    }
+    // --- end discover ---
+
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
         let (it, blyg) = self.remote_row(sub_id, remote_id)?;
         if !blyg {
@@ -1752,7 +1789,8 @@ impl Backend for LiveBackend {
         self.e().store.set_subscription_folder(sub_id, folder)
     }
 
-    // --- shelf --- local only: the store, nothing queued.
+    // --- shelf --- the store first; a blyg that offers the synced shelf
+    // (studio 0.61) gets each change through the outbox (sync/shelf.rs).
 
     fn shelf(&self) -> Vec<LocalId> {
         self.e().store.shelf()
@@ -1760,14 +1798,25 @@ impl Backend for LiveBackend {
 
     fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
         self.e().store.set_on_shelf(id, on)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
     }
 
     fn move_on_shelf(&self, id: &LocalId, index: usize) -> Result<()> {
         self.e().store.move_on_shelf(id, index)?;
-        self.e().emit(CoreEvent::ItemsChanged);
-        Ok(())
+        self.shelf_moved()
+    }
+
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
+        self.e().store.shelf_wire()
+    }
+
+    fn set_entry_on_shelf(&self, entry: &crate::shelf::Entry, on: bool) -> Result<()> {
+        self.e().store.set_entry_on_shelf(entry, on)?;
+        self.shelf_moved()
+    }
+
+    fn shelf_state(&self) -> crate::shelf::SyncState {
+        self.engine.shelf_state()
     }
 
     // --- trails --- local only: the store, nothing queued.
@@ -1908,6 +1957,51 @@ impl Backend for LiveBackend {
     fn background_reading(&self) -> Vec<ReadingItem> {
         self.e().store.background_reading()
     }
+
+    // --- background ---
+    fn background_served(&self) -> bool {
+        self.e().background_served()
+    }
+
+    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
+        self.e().store.background_set()
+    }
+
+    fn set_reading_placement(
+        &self,
+        key: &crate::background::Key,
+        withdrawn: bool,
+        placement: Option<crate::background::Placement>,
+    ) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().set_reading_placement(key, withdrawn, placement)
+    }
+
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        let rows = self.e().store.reading_rows_of(sub);
+        self.e().set_blyg_background(sub, on, &rows)
+    }
+
+    fn background_rules(&self) -> Result<Option<crate::background::BackgroundRules>> {
+        self.e().track(self.e().api.background_rules())
+    }
+
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<crate::background::BackgroundRules> {
+        if !self.e().background_served() {
+            return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
+        }
+        self.e().track(self.e().api.put_background_rule(rule, on))
+    }
+    // --- end background ---
 
     // --- hoppers ---
     fn hoppers(&self) -> Vec<Hopper> {

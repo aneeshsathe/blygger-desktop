@@ -907,41 +907,28 @@ impl MainView {
                 .hover(|s| s.border_color(p.accent))
                 .child(label)
         };
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("HELP"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(6.))
-                            .child(chip("help-replay", "Take a tour…").on_click(
-                                cx.listener(|this, _, window, cx| this.help_replay(window, cx)),
-                            ))
-                            .child(chip("help-onboarding", "Show onboarding again").on_click(
-                                cx.listener(|this, _, window, cx| this.help_onboarding(window, cx)),
-                            )),
-                    )
-                    .child(self.render_tutorial_checkbox("help-on-launch", cx)),
-            )
-            .into_any_element()
+        crate::app::settings_page::row(
+            &p,
+            "HELP",
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(6.))
+                        .child(chip("help-replay", "Take a tour…").on_click(
+                            cx.listener(|this, _, window, cx| this.help_replay(window, cx)),
+                        ))
+                        .child(chip("help-onboarding", "Show onboarding again").on_click(
+                            cx.listener(|this, _, window, cx| this.help_onboarding(window, cx)),
+                        )),
+                )
+                .child(self.render_tutorial_checkbox("help-on-launch", cx)),
+        )
+        .into_any_element()
     }
 
     /// Settings › Help › Take a tour…: the chooser (the quick tour and the
@@ -988,7 +975,11 @@ impl MainView {
                     .text_size(px(10.))
                     .child(if on { "✓" } else { "" }),
             )
-            .child("Show this tutorial every time I open Burrow")
+            .child(
+                div()
+                    .min_w_0()
+                    .child("Show this tutorial every time I open Burrow"),
+            )
             .on_click(cx.listener(move |this, _, _, cx| this.set_tutorial_on_launch(!on, cx)))
             .into_any_element()
     }

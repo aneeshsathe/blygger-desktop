@@ -361,7 +361,7 @@ pub(crate) fn settled_bounds(
     last.unwrap()
 }
 
-/// Scroll the Settings sheet until `selector` is inside the window, so a
+/// Scroll the Settings page until `selector` is inside the window, so a
 /// click lands on it whatever the runner's window height and font metrics.
 pub(crate) fn scroll_into_view(cx: &mut VisualTestContext, selector: &'static str) {
     for _ in 0..40 {
@@ -543,4 +543,118 @@ fn settings_toggle_writes_show_buttons_and_reload_reads_it(cx: &mut TestAppConte
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.prefs.show_buttons));
     assert!(cx.debug_bounds("toolbar").is_some());
+}
+
+// ------------------------------------------------------------ the Settings page
+
+/// Every row of Settings, top to bottom.
+const SETTINGS_ROWS: &[&str] = &[
+    "WRITING FONT",
+    "INTERFACE FONT",
+    "SIZE",
+    "THEME",
+    "LAYOUT",
+    "BUTTONS",
+    "CHAT",
+    "SERENDIPITY",
+    "SOUNDS",
+    "NEARBY",
+    "READING",
+    "CHANGELOG",
+    "BACKGROUND",
+    "QUICK CAPTURE",
+    "AI",
+    "NOTES FOLDERS",
+    "CONFIG FILE",
+    "HELP",
+];
+
+/// Chips with long labels, or in long rows, that once ran off the edge.
+const SETTINGS_CHIPS: &[&str] = &[
+    "th-aizome",
+    "show-buttons-off",
+    "chat-notify",
+    "sounds-quiet",
+    "nearby-local",
+    "nearby-rerank",
+    "author-site-on",
+    "changelog-reader-summary",
+    "changelog-page-summary",
+    "bg-rule-minor",
+    "ai-open-settings",
+    "ext-vault",
+];
+
+fn leak(s: String) -> &'static str {
+    Box::leak(s.into_boxed_str())
+}
+
+/// Settings fills the window below the title bar, and in a narrow window
+/// with the biggest text size and a wide interface font, every row and
+/// every chip stays inside the content column: chips and prose wrap.
+#[gpui_kit::test]
+fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
+    let config = format!(
+        "{CONNECTED}font-size = {}\nfont-family-ui = menlo\n",
+        crate::prefs::MAX_SIZE
+    );
+    let (view, _fake, cx) = setup(cx, &config);
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Settings { .. }))));
+    // The blyg's changelog choices, as a studio 0.58 or later has them.
+    view.update(cx, |v, cx| {
+        v.reading.changelogs.settings = crate::app::reading::Load::Ready(Default::default());
+        cx.notify();
+    });
+    cx.run_until_parked();
+
+    let win = cx.update(|window, _| window.viewport_size());
+    let page = settled_bounds(cx, "settings-page");
+    assert_eq!(page.left(), gpui_kit::px(0.));
+    assert_eq!(page.right(), win.width);
+    assert_eq!(page.top(), gpui_kit::px(TITLEBAR_H));
+    assert_eq!(page.bottom(), win.height);
+    let content = settled_bounds(cx, "settings-content");
+    assert!(content.left() >= page.left() && content.right() <= page.right());
+
+    let inside = |cx: &mut VisualTestContext, sel: &'static str| {
+        let b = cx
+            .debug_bounds(sel)
+            .unwrap_or_else(|| panic!("{sel} isn't in Settings"));
+        let pad = gpui_kit::px(crate::app::settings_page::CONTENT_PAD);
+        assert!(
+            b.left() >= content.left() + pad
+                && b.right() <= content.right() - pad + gpui_kit::px(0.5),
+            "{sel} {b:?} runs past the content column {content:?}"
+        );
+    };
+    for label in SETTINGS_ROWS {
+        inside(cx, leak(format!("settings-row-{label}")));
+        inside(cx, leak(format!("settings-cell-{label}")));
+    }
+    for chip in SETTINGS_CHIPS {
+        inside(cx, chip);
+    }
+
+    // A wide window: the column stops at a readable width, centred.
+    cx.simulate_resize(gpui_kit::size(gpui_kit::px(1600.), gpui_kit::px(900.)));
+    let content = settled_bounds(cx, "settings-content");
+    assert!(content.size.width <= gpui_kit::px(crate::app::settings_page::CONTENT_MAX_W));
+    let page = settled_bounds(cx, "settings-page");
+    let (l, r) = (content.left() - page.left(), page.right() - content.right());
+    assert!((l - r).abs() <= gpui_kit::px(1.), "centred: {l:?} / {r:?}");
+
+    // esc closes it; ⌘, opens and closes it.
+    cx.simulate_keystrokes("escape");
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(cx.debug_bounds("settings-page").is_none());
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("settings-page").is_some());
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
 }

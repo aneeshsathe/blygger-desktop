@@ -45,7 +45,10 @@ use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
 use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
 // --- OPML ---
+use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
+// --- catch up ---
+use crate::app::reading::catchup::CatchUp;
 // --- browse ---
 use crate::app::reading::browse::{ReaderBack, ToggleBrowseHistory};
 // --- reading compose ---
@@ -601,6 +604,13 @@ pub fn mac_table() -> Vec<Keybind> {
             "Lineage: what this post draws on and what draws on it",
             Some("Post › Lineage…")
         ),
+        // --- catch up --- (⇧C on the reading screen is its own key, as
+        // `t` is: a single key can't be bound while you type)
+        menu_only!(
+            CatchUp,
+            "Catch up: the conversation leading to this post, oldest first (⇧C in Reading)",
+            "Post › Catch Up…"
+        ),
         kb!(
             "cmd-k",
             Main,
@@ -760,6 +770,12 @@ pub fn mac_table() -> Vec<Keybind> {
             ExportOpml,
             "Save every subscription as an OPML file",
             "Blyg › Export Subscriptions as OPML…"
+        ),
+        // --- discover --- (no key: an occasional look around)
+        menu_only!(
+            ShowDiscover,
+            "Discover blygs listed on blygger.com that you don't follow yet",
+            "Blyg › Discover Blygs…"
         ),
         menu_only!(
             SiteSettings,
@@ -1496,6 +1512,7 @@ pub fn bind_keys(cx: &mut App) {
     // Menu-only actions have no keys; keep the compiler honest that they exist.
     let _ = (Disconnect, OpenConfigFile, SiteSettings, SubscribeTo);
     let _ = (ImportOpml, ExportOpml); // --- OPML ---
+    let _ = ShowDiscover; // --- discover ---
     let _ = ShowTutorial; // --- onboarding ---
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---

@@ -424,6 +424,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::separator(),
                 MenuItem::action("Versions…", app::reading::ShowVersions),
                 MenuItem::action("Lineage…", app::reading::ShowLineage),
+                MenuItem::action("Catch Up…", app::reading::catchup::CatchUp), // --- catch up ---
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 // --- own posts ---
                 MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
@@ -508,6 +509,8 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                     "Export Subscriptions as OPML…",
                     app::reading::opml::ExportOpml,
                 ),
+                // --- discover ---
+                MenuItem::action("Discover Blygs…", app::reading::discover::ShowDiscover),
                 MenuItem::action("Site Settings…", app::reading::SiteSettings),
                 // --- access-ai ---
                 MenuItem::action("Client Access…", app::access::ShowClientAccess),

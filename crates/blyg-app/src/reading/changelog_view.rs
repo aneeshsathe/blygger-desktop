@@ -328,33 +328,17 @@ impl MainView {
                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
                 .child(label)
         };
-        let label = |t: &'static str| {
-            div()
-                .w(px(92.))
-                .flex_none()
-                .pt(px(4.))
-                .text_size(px(10.5))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_color(p.muted)
-                .child(t)
-        };
+        use crate::app::settings_page::{chips, note, row};
         let on = self.prefs.author_site;
-        let site_row = div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(label("READING"))
-            .child(
+        let site_row = row(
+            &p,
+            "READING",
                 div()
-                    .flex_1()
                     .flex()
                     .flex_col()
                     .gap(px(4.))
                     .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(6.))
+                        chips()
                             .child(chip("author-site-off".into(), "Burrow's reader", !on).on_click(
                                 cx.listener(|this, _, window, cx| {
                                     this.set_author_site(false, window, cx)
@@ -367,26 +351,20 @@ impl MainView {
                                     })),
                             ),
                     )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(p.muted)
-                            .child(if super::site_view::embeddable() {
-                                "Shows a post's own page, as its author styled it, where the reader would. The toggle above a post switches that one view."
-                            } else {
-                                "Opens a post's own page in your default browser."
-                            }),
-                    ),
-            );
+                    .child(note(
+                        &p,
+                        if super::site_view::embeddable() {
+                            "Shows a post's own page, as its author styled it, where the reader would. The toggle above a post switches that one view."
+                        } else {
+                            "Opens a post's own page in your default browser."
+                        },
+                    )),
+        );
         let changelog: AnyElement = match &self.reading.changelogs.settings {
             Load::Ready(s) => {
                 let line = |reader: bool, title: &'static str| {
                     let cur = if reader { s.reader } else { s.page }.unwrap_or_default();
-                    div()
-                        .flex()
-                        .flex_wrap()
-                        .items_center()
-                        .gap(px(6.))
+                    chips()
                         .child(div().text_size(px(11.)).text_color(p.muted).child(title))
                         .children(ChangelogDisplay::ALL.into_iter().map(|d| {
                             let id = format!(
@@ -409,12 +387,10 @@ impl MainView {
                     .gap(px(6.))
                     .child(line(true, "In your reader, show"))
                     .child(line(false, "On your post pages, show"))
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(p.muted)
-                            .child("Saved on your blyg. A summary is written from the notes by its change-notes model, labelled as AI, and only when you open a post."),
-                    )
+                    .child(note(
+                        &p,
+                        "Saved on your blyg. A summary is written from the notes by its change-notes model, labelled as AI, and only when you open a post.",
+                    ))
                     .into_any_element()
             }
             Load::Unavailable => div()
@@ -436,18 +412,16 @@ impl MainView {
                 .child("Reading your blyg's settings…")
                 .into_any_element(),
         };
+        // --- background --- the blyg's Background rules (studio 0.61).
+        let background = self
+            .render_background_settings(cx)
+            .map(|el| row(&p, "BACKGROUND", el));
         div()
             .flex()
             .flex_col()
             .child(site_row)
-            .child(
-                div()
-                    .flex()
-                    .gap(px(12.))
-                    .py(px(7.))
-                    .child(label("CHANGELOG"))
-                    .child(div().flex_1().child(changelog)),
-            )
+            .child(row(&p, "CHANGELOG", changelog))
+            .children(background)
             .into_any_element()
     }
 

@@ -30,7 +30,7 @@
 //! blygger-studio's version history offers the same. Your rows here and the
 //! Posts view's chips have no Fork.
 
-use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Status, StubOf, Version};
+use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Version};
 use gpui_kit::*;
 
 use super::vm::{self, Key};
@@ -41,7 +41,7 @@ gpui_kit::actions!(blygger, [ReplyToPost, QuotePost, LinkToPost]);
 
 /// The subscription id of your own rows: studio 0.45's marker for own items
 /// in `hopper_items`. Never a real subscription id (those are server ids).
-pub const OWN: &str = "~own";
+pub const OWN: &str = blyg_core::OWN_SUBSCRIPTION;
 
 /// What the sources pane and the rows call your blyg.
 pub const OWN_LABEL: &str = "Your blyg";
@@ -52,16 +52,13 @@ pub fn is_own(key: &Key) -> bool {
 }
 
 pub fn is_own_row(r: &ReadingItem) -> bool {
-    r.subscription_id == OWN
+    blyg_core::own::is_own_row(r)
 }
 
 /// An origin as a citation spells it: absolute, with a trailing slash
 /// (blygger-studio's `normalizeOrigin`, which a reference is compared in).
 pub fn citation_origin(origin: &str) -> String {
-    // The one spelling of §12.2 (blyg_core::origin); a string that isn't a
-    // URL keeps the old shape.
-    blyg_core::origin::canonical(origin)
-        .unwrap_or_else(|| format!("{}/", origin.trim_end_matches('/')))
+    blyg_core::own::citation_origin(origin)
 }
 
 /// Your published post as a reading row; `None` for a draft, a scratch
@@ -69,42 +66,7 @@ pub fn citation_origin(origin: &str) -> String {
 /// its version (so never unread), dated by when it was written (`updated`
 /// only while the working copy is the published text).
 pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
-    if item.status != Status::Public || item.version == 0 {
-        return None;
-    }
-    let sid = item.server_id.as_ref()?.0.clone();
-    Some(ReadingItem {
-        subscription_id: OWN.into(),
-        remote_id: sid,
-        subscription_title: "You".into(),
-        origin: citation_origin(origin),
-        kind: item.kind,
-        state: "current".into(),
-        version: item.version,
-        created: Some(item.created.clone()),
-        updated: (!item.dirty).then(|| item.updated.clone()),
-        observed_at: item.created.clone(),
-        content_md: item.content_md.clone(),
-        content_html: String::new(),
-        author: None,
-        page: item.permalink.clone(),
-        thumb: None,
-        hoppers: vec![],
-        pinned_version_retained: None,
-        read_version: Some(item.version),
-        stub_of: item.stub_of.as_ref().map(|s| StubOf {
-            origin: Some(s.origin.clone()),
-            id: Some(s.id.clone()),
-            version: Some(s.version),
-            url: None,
-            cited: s.cited.clone(),
-        }),
-        forked_from: item.forked_from.clone(),
-        transclusions: vec![],
-        lineage_known: true,
-        source_url: item.permalink.clone(),
-        generated: None,
-    })
+    blyg_core::own::row(item, origin)
 }
 
 /// --- background --- Your withdrawn post as a row for the Background
@@ -112,20 +74,7 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
 /// read at its version, dated by the withdrawal. `None` for anything not
 /// withdrawn.
 pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
-    if item.status != Status::Withdrawn {
-        return None;
-    }
-    let public = Item {
-        status: Status::Public,
-        dirty: false,
-        ..item.clone()
-    };
-    let mut r = row(&public, origin)?;
-    r.state = "tombstone".into();
-    r.content_md.clear();
-    r.stub_of = None;
-    r.forked_from = None;
-    Some(r)
+    blyg_core::own::withdrawn_row(item, origin)
 }
 
 /// --- background --- The reading rows as the screen holds them: `ordered`
@@ -134,6 +83,10 @@ pub fn withdrawn_row(item: &Item, origin: &str) -> Option<ReadingItem> {
 /// hoppered, `background`'s, and yours), newest first. Withdrawn rows are
 /// read at their version, so they never count as unread anywhere; the
 /// sources filter keeps them to the Background feed.
+///
+/// With the studio's Background known (rows annotated, studio 0.61),
+/// "withdrawn" reads as "in Background": what you or its rules put there.
+/// A withdrawn post you moved to Foreground joins the list in its place.
 pub fn with_background(
     ordered: Vec<ReadingItem>,
     background: Vec<ReadingItem>,
@@ -141,14 +94,24 @@ pub fn with_background(
     let (mut withdrawn, mut out): (Vec<_>, Vec<_>) = ordered
         .into_iter()
         .partition(super::sources_vm::is_background);
-    withdrawn.extend(
-        background
-            .into_iter()
-            .filter(super::sources_vm::is_background),
-    );
+    let (bg, fg): (Vec<_>, Vec<_>) = background
+        .into_iter()
+        .partition(super::sources_vm::is_background);
+    withdrawn.extend(bg);
+    // --- background --- placed in the foreground: listed, in order.
+    let listed: std::collections::HashSet<vm::Key> = out.iter().map(vm::key).collect();
+    let mut seen_fg = std::collections::HashSet::new();
+    let fg: Vec<ReadingItem> = fg
+        .into_iter()
+        .filter(|r| r.background.is_some())
+        .filter(|r| !listed.contains(&vm::key(r)) && seen_fg.insert(vm::key(r)))
+        .collect();
+    if !fg.is_empty() {
+        out = merge(out, fg);
+    }
     let mut seen = std::collections::HashSet::new();
     withdrawn.retain(|r| seen.insert(vm::key(r)));
-    withdrawn.sort_by_key(|r| std::cmp::Reverse(r.sort_at()));
+    blyg_core::order::sort_reading(&mut withdrawn);
     for r in &mut withdrawn {
         r.read_version = Some(r.version);
     }
@@ -158,30 +121,14 @@ pub fn with_background(
 
 /// Every published post of yours as a row, in `items`' order.
 pub fn rows(items: &[Item], origin: &str) -> Vec<ReadingItem> {
-    items.iter().filter_map(|i| row(i, origin)).collect()
+    blyg_core::own::rows(items, origin)
 }
 
-/// The reading rows with yours among them by date, newest first. The other
-/// rows keep the order they came in; each of yours goes before the first
-/// one older than it.
-pub fn merge(theirs: Vec<ReadingItem>, mut own: Vec<ReadingItem>) -> Vec<ReadingItem> {
-    if own.is_empty() {
-        return theirs;
-    }
-    // `sort_at` is one normalized ISO spelling, so it compares as text.
-    let at = |r: &ReadingItem| r.sort_at();
-    own.sort_by_key(|r| std::cmp::Reverse(at(r)));
-    let mut out = Vec::with_capacity(theirs.len() + own.len());
-    let mut own = own.into_iter().peekable();
-    for r in theirs {
-        let t = at(&r);
-        while own.peek().is_some_and(|o| at(o) > t) {
-            out.extend(own.next());
-        }
-        out.push(r);
-    }
-    out.extend(own);
-    out
+/// The reading rows with yours among them in the one list order
+/// (`blyg_core::order`). The other rows keep the order they came in; each
+/// of yours goes before the first one it sorts ahead of.
+pub fn merge(theirs: Vec<ReadingItem>, own: Vec<ReadingItem>) -> Vec<ReadingItem> {
+    blyg_core::own::merge(theirs, own)
 }
 
 /// The rows that aren't yours (the lineage index counts your posts from
@@ -269,10 +216,16 @@ impl MainView {
     pub(super) fn reading_with_own(&self) -> Vec<ReadingItem> {
         let mut extra = self.own_rows();
         extra.extend(super::hoppers::unheld_rows(self.backend.as_ref()));
-        with_background(
-            vm::order(merge(self.backend.reading(), extra)),
-            self.background_rows(),
-        )
+        let mut rows = merge(self.backend.reading(), extra);
+        let mut background = self.background_rows();
+        // --- background --- each row's place, as the studio's Background
+        // lens says (studio 0.61); before it's known, withdrawn is background.
+        let set = self.backend.background_set();
+        if let Some(set) = &set {
+            set.annotate(&mut rows);
+            set.annotate(&mut background);
+        }
+        with_background(vm::order(rows), background)
     }
 
     /// --- background --- The withdrawn posts: the blygs' tombstones

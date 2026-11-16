@@ -8,7 +8,8 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, draw, onNearEnd, settle,
+  swipeCards, swipePosts, arrive, cardHtml, draw, drawMore, onNearEnd, settle,
+  shelfNote, shelfButton,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
 // --- web-reading ---
@@ -18,6 +19,7 @@ import { phoneChip, opened, wrUse } from './web-reading.js';
 import * as Wr from './writing.js';
 // --- end web-writing ---
 import { drawHub, hubUse } from './hub.js';
+import { filterChips, pickFilter } from './parity.js'; // --- web-parity ---
 
 const app = $('#phone'), ta = $('#p-ta'), q = $('#p-q'), pv = $('#p-pv');
 let V;
@@ -51,10 +53,22 @@ function show(v, { push = true } = {}) {
   if (!ROOT_OF[v] && ROOT_OF[was] && history.state?.burrow) { try { history.back(); } catch {} }
   render();
 }
-window.addEventListener('popstate', () => {
+// The system's own back swipe has already slid the post away: running the
+// views' slide as well played the move twice. Browsers that say so set
+// `hasUAVisualTransition`; for the rest, a touch that began at a screen edge
+// just before is the swipe.
+let edgeTouchAt = 0;
+document.addEventListener('touchstart', (e) => {
+  const x = e.touches[0]?.clientX ?? 50;
+  if (x < 30 || x > innerWidth - 30) edgeTouchAt = Date.now();
+}, { passive: true, capture: true });
+window.addEventListener('popstate', (e) => {
   if (S.layout !== 'phone') return;
+  const swiped = e.hasUAVisualTransition || Date.now() - edgeTouchAt < 1500;
+  if (swiped) app.classList.add('still');
   if (pview === 'edit') leaveEditor();
   else if (pview === 'post') show('read', { push: false });
+  if (swiped) requestAnimationFrame(() => requestAnimationFrame(() => app.classList.remove('still')));
 });
 
 // ---------------------------------------------------------------- render
@@ -115,11 +129,18 @@ function renderList() {
     ? V.shelf.map((r) => `<button type="button" class="chip" data-shelf="${esc(r.id)}">📚 ${esc(r.title)}</button>`).join('')
     : '<span class="empty">Hold a post to shelve it</span>');
   const query = V.query.trim();
+  // --- web-parity --- the filters (hidden with no posts, and while searching).
+  const pf = filterChips();
+  const pfh = $('#p-pfilter');
+  pfh.hidden = !pf.all || !!query;
+  draw(pfh, pf.html);
+  // --- end web-parity ---
   const rows = V.rows.slice(0, listN);
   draw($('#p-list'), rows.map((r, i) => `<button type="button" role="listitem" class="prow${i === V.shelf_len - 1 && V.rows.length > V.shelf_len ? ' shelved-last' : ''}" data-id="${esc(r.id)}" data-shelved="${r.shelved}">
       <div class="ti">${r.shelved ? '📚 ' : ''}${r.title_html}</div>
       <div class="meta">${esc(r.kind)} <span class="pill${r.pill_pub ? ' pub' : ''}">${esc(r.pill)}</span>${r.dot ? `<span class="dot${r.dot === 'amber' ? ' amber' : ''}" title="${esc(r.dot_tip || 'unpublished edits')}"></span>` : ''}<span>${esc(r.when)}</span></div></button>`).join('')
     + (V.rows.length > rows.length ? `<p class="list-more">${V.rows.length - rows.length} more…</p>` : '')
+    + (!V.rows.length && !query && pf.on !== 'all' ? `<p class="list-more">${esc(pf.empty)}</p>` : '') // --- web-parity ---
     + (V.wants_create && query
       ? `<button type="button" class="prow start" data-new="1"><div class="ti">＋ Start “${esc(query)}”</div><div class="meta">${V.rows.length ? 'a new post' : 'no matches · tap to write it'}</div></button>`
       : ''));
@@ -137,9 +158,21 @@ function renderStream() {
   $('#p-tabn').textContent = R.unread ? String(R.unread) : '';
   if (!reading) return;
   phoneChip(); // --- web-reading --- what the stream shows --- end web-reading ---
+  streamShown = R.rows.length;
   draw($('#p-stream'), R.rows.length
-    ? R.rows.map(cardHtml).join('') + (R.total > R.rows.length ? `<p class="stream-more">${R.total - R.rows.length} more…</p>` : '')
+    ? R.rows.map(cardHtml).join('') + streamMore(R.total - R.rows.length)
     : `<p class="stream-empty">${esc(R.empty || (unreadOnly ? 'All read.' : 'Nothing matches.'))}</p>`);
+}
+const streamMore = (n) => (n > 0 ? `<p class="stream-more">${n} more…</p>` : '');
+let streamShown = 0; // Read cards on screen
+/** The next page of the stream, below the cards drawn (not all of them
+    again). */
+function streamNext() {
+  const R = JSON.parse(S.B.reading_range(now(), $('#p-rq').value, unreadOnly, streamShown, PAGE));
+  if (!R.rows.length || R.total <= streamShown) { streamN += PAGE; renderStream(); return; }
+  streamShown += R.rows.length;
+  streamN = streamShown;
+  drawMore($('#p-stream'), R.rows.map(cardHtml).join('') + streamMore(R.total - streamShown));
 }
 /** Back to the top of the stream: one page again. */
 function streamFromTop() {
@@ -252,13 +285,15 @@ function toggleShelf() {
 // ---------------------------------------------------------------- shelf
 function renderShelfSheet() {
   const rows = V.shelf;
+  $('#p-shelfNote').textContent = shelfNote(); // --- shelf sync ---
+  $('#p-shelfNote').hidden = !shelfNote();
   $('#p-shelfSheet').innerHTML = rows.length
     ? rows.map((r, i) => `<div class="shrow"><span class="n">${i + 1}</span>
         <button type="button" class="opt2" data-shelf="${esc(r.id)}">${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>
         <button type="button" class="ic" data-up="${esc(r.id)}" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button>
         <button type="button" class="ic" data-down="${esc(r.id)}" data-i="${i}" aria-label="Move down" ${i < rows.length - 1 ? '' : 'disabled'}>▼</button>
         <button type="button" class="ic" data-off="${esc(r.id)}" aria-label="Take off the shelf">✕</button></div>`).join('')
-    : '<p class="muted">Nothing on your shelf yet. Hold a post in Write, or tap 📚 in the editor.</p>';
+    : '<p class="muted">None of your own posts are on the shelf. Hold a post in Write, or tap 📚 in the editor. Others\u2019 posts you shelve are under Read › Shelf.</p>';
 }
 function openShelved(id) {
   closeSheet({ refocus: false });
@@ -268,11 +303,37 @@ function openShelved(id) {
 }
 
 // ---------------------------------------------------------------- read
-function openReading(key) {
+/** The stream's order when a post was opened from it, so ‹ › and a swipe
+    walk the same list even as reading one drops it from "unread only". */
+let readOrder = [];
+function streamKeys() { return [...document.querySelectorAll('#p-stream .card')].map((c) => c.dataset.key); }
+/** The next (1) or previous (-1) post: more of the stream is read when that
+    runs past what's drawn. */
+function stepPost(d) {
+  if (!readOrder.includes(readKey)) readOrder = streamKeys();
+  const i = readOrder.indexOf(readKey) + d;
+  if (i >= readOrder.length) {
+    const R = JSON.parse(S.B.reading_page(now(), $('#p-rq').value, unreadOnly, readOrder.length + PAGE));
+    for (const r of R.rows) if (!readOrder.includes(r.key)) readOrder.push(r.key);
+  }
+  const k = readOrder[i];
+  if (i < 0 || !k) { toast(d > 0 ? 'That’s the last one' : 'That’s the first one'); return; }
+  openReading(k, { keepOrder: true });
+  arrive($('#p-postBody'), d);
+}
+function stepButtons() {
+  const i = readOrder.indexOf(readKey);
+  $('#p-prevPost').disabled = i <= 0;
+  $('#p-nextPost').disabled = i < 0;
+}
+function openReading(key, { keepOrder = false } = {}) {
   const p = JSON.parse(S.B.open_reading(key, now()));
   if (!p) return;
+  if (!keepOrder) readOrder = streamKeys();
   readKey = key;
+  stepButtons();
   renderPost($('#p-postBody'), p);
+  shelfButton($('#p-shelfRA'), key); // --- shelf sync ---
   opened(key, $('#p-postBody')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
   $('#v-post .pscroll').scrollTop = 0;
   persist();
@@ -371,6 +432,12 @@ export function initPhone() {
     if (o.action === 'create') { q.value = ''; openEditor(); touched(); toast('New draft created'); }
     else if (o.action === 'open') openEditor();
   });
+  // --- web-parity --- the Posts filters.
+  $('#p-pfilter').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-pf]');
+    if (b) { pickFilter(b.dataset.pf, false); render(); }
+  });
+  // --- end web-parity ---
   let hold = null;
   const list = $('#p-list');
   list.addEventListener('pointerdown', (e) => {
@@ -471,8 +538,7 @@ export function initPhone() {
   $('#p-unreadOnly').addEventListener('click', () => { unreadOnly = !unreadOnly; streamFromTop(); renderStream(); });
   onNearEnd($('#p-stream'), () => {
     if (pview !== 'read' || !$('#p-stream .stream-more')) return;
-    streamN += PAGE;
-    renderStream();
+    streamNext();
   });
   swipeCards($('#p-stream'), {
     onRight: (key, c) => { outcome(S.B.set_read(key, true)); persist(); renderStream(); settle(c); },
@@ -486,6 +552,9 @@ export function initPhone() {
     else hopperSheet(key);
   });
   $('#p-back2').addEventListener('click', () => show('read'));
+  $('#p-prevPost').addEventListener('click', () => stepPost(-1));
+  $('#p-nextPost').addEventListener('click', () => stepPost(1));
+  swipePosts($('#v-post .pscroll'), stepPost);
   // The post's action row, by name: what swiping a card and holding a
   // sentence also offer.
   $('#p-pacts').addEventListener('click', (e) => {
@@ -494,6 +563,7 @@ export function initPhone() {
     if (a === 'quote') quote(readKey);
     else if (a === 'reply') reply(readKey);
     else if (a === 'hopper') hopperSheet(readKey);
+    else if (a === 'shelf') { outcome(S.B.toggle_reading_shelf(readKey)); shelfButton($('#p-shelfRA'), readKey); persist(); } // --- shelf sync ---
     else if (a === 'link') copyText(S.B.link_markup(readKey)).then((ok) => toast(ok ? 'Link copied · paste it into a post' : 'Couldn’t reach the clipboard'));
     else if (a === 'unread') { outcome(S.B.set_read(readKey, false)); persist(); renderStream(); }
   });

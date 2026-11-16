@@ -10,6 +10,7 @@
 //! is what makes coalescing trivial (50 keystrokes = one pending `save` whose
 //! `not_before` keeps moving).
 
+mod background; // --- background ---
 mod browse; // --- browse ---
 mod folders; // --- reader folders ---
 mod hoppers; // --- hoppers ---
@@ -21,6 +22,7 @@ mod loose; // --- loose ends ---
 mod pick;
 mod provenance;
 mod shelf; // --- shelf ---
+pub use shelf::{SHELF_OP_KEY, ShelfRow};
 mod syndication; // --- syndication ---
 pub use syndication::ReadingSyndication;
 mod signals; // issue #71: thumbs without a reading walk
@@ -101,6 +103,10 @@ pub enum OpKind {
     /// payload a `syndication::SyndicationOp`, `local_id` =
     /// `syndication::op_key`. One waits per post: the last edit replaces it.
     Syndication,
+    /// --- shelf sync --- Send the shelf (`PUT /api/shelf`, merged with
+    /// the blyg's); `local_id` = `shelf::SHELF_OP_KEY`, payload `{}`. One
+    /// waits at a time: it sends the shelf as it is when it runs.
+    Shelf,
 }
 
 impl OpKind {
@@ -114,6 +120,7 @@ impl OpKind {
             OpKind::Unread => "unread",
             OpKind::Hopper => "hopper",
             OpKind::Syndication => "syndication", // --- syndication ---
+            OpKind::Shelf => "shelf",             // --- shelf sync ---
         }
     }
     fn parse(s: &str) -> OpKind {
@@ -125,6 +132,7 @@ impl OpKind {
             "unread" => OpKind::Unread,
             "hopper" => OpKind::Hopper,
             "syndication" => OpKind::Syndication, // --- syndication ---
+            "shelf" => OpKind::Shelf,             // --- shelf sync ---
             _ => OpKind::Save,
         }
     }
@@ -382,15 +390,19 @@ impl Store {
         let mut st = c.prepare_cached(&format!(
             "SELECT {ITEM_COLS} FROM items ORDER BY updated DESC, rid DESC"
         ))?;
-        let v = Arc::new(
-            st.query_map([], row_to_item)?
-                .collect::<rusqlite::Result<Vec<_>>>()?,
-        );
+        let mut v = st
+            .query_map([], row_to_item)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        // The list's order is `crate::order`'s (dates as instants, then the
+        // server id); `rid DESC` only settles posts it can't tell apart.
+        crate::order::sort_own(&mut v);
+        let v = Arc::new(v);
         *cache = Some((stamp, v.clone()));
         Ok(v)
     }
 
-    /// Case-insensitive substring match over content, newest-updated first.
+    /// Case-insensitive substring match over content, in the list's order
+    /// (`crate::order`).
     /// Three or more chars uses the FTS5 trigram index; shorter queries (which trigrams
     /// can't index) scan in Rust, as do rows whose text changed since they
     /// were indexed (`flush_fts`).
@@ -420,7 +432,7 @@ impl Store {
              (SELECT rowid FROM items_fts WHERE items_fts MATCH ?1) \
              OR rid IN (SELECT rid FROM items_fts_stale) ORDER BY updated DESC, rid DESC"
         ))?;
-        let v = st
+        let mut v = st
             .query_map([phrase], |r| Ok((row_to_item(r)?, r.get::<_, bool>(21)?)))?
             .filter(|r| match r {
                 // Indexed under its old text: what it says now decides.
@@ -429,6 +441,7 @@ impl Store {
             })
             .map(|r| r.map(|(item, _)| item))
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        crate::order::sort_own(&mut v);
         Ok(v)
     }
 

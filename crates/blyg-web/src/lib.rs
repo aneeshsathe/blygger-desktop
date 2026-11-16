@@ -28,6 +28,7 @@ mod keymap;
 pub mod live;
 mod read_api;
 pub mod seed;
+pub mod shelf; // --- shelf sync --- (studio 0.61)
 pub mod store;
 pub mod theme;
 // --- web-reading ---
@@ -36,10 +37,13 @@ pub mod web_reading;
 // --- reader view / changelog --- the author's site, changelog display.
 pub mod web_changelog;
 // --- end reader view / changelog ---
+pub mod web_background; // --- background --- (studio 0.61, contract 5.10.0)
 // --- web-writing ---
 pub mod composer;
 pub mod writing;
 // --- end web-writing ---
+// --- web-parity --- studio parity: mark all read, filters, updates, tokens
+pub mod parity;
 pub mod syndication; // --- syndication --- copies elsewhere (decision #98)
 
 /// The native app's view-model, compiled unchanged.
@@ -308,18 +312,31 @@ pub struct Burrow {
     reading_seen: store::Seen,
     /// The reading list changed since `reading_json` last wrote it.
     reading_dirty: bool,
-    /// `GET /api/changes`, captured before a refresh reads anything.
-    changes: Option<blyg_core::api::wire::ChangeState>,
+    /// Live: what the hoppers and the thumbs were last read whole under,
+    /// when they're read on their own (`live::LISTS`). Not persisted: the
+    /// first refresh after a load reads them once.
+    side_seen: std::collections::BTreeMap<String, store::Seen>,
+    /// Live: how often to check `GET /api/changes`, and the backoff.
+    pace: live::Pace,
+    /// Live: each list's safety net (`live::Net`). Not persisted.
+    nets: std::collections::BTreeMap<String, live::Net>,
     /// Each reading row's stream excerpt, by key, for the version it was
     /// made from: rendering thousands of posts' Markdown on every redraw
     /// was most of a phone's redraw.
     excerpts: std::cell::RefCell<std::collections::HashMap<String, (u32, String)>>,
+    /// The stream's order (`read_api` `placed`), as indices into the
+    /// reading rows, worked out once per change of the rows instead of on
+    /// every redraw (one every 30 s, over thousands of posts). Whatever
+    /// changes a row calls `rows_changed`.
+    placed: std::cell::RefCell<Option<(usize, Vec<usize>)>>,
     // --- web-reading --- sources, subscriptions, mentions, peek.
     wr: web_reading::WebReading,
     // --- end web-reading ---
     // --- web-writing --- settings, contacts, uploads, versions read.
     writing: writing::Writing,
     // --- end web-writing ---
+    /// --- web-parity --- the studio-parity screens' state.
+    parity: parity::Parity,
 }
 
 #[wasm_bindgen]
@@ -332,9 +349,24 @@ impl Burrow {
             .as_deref()
             .and_then(WebStore::from_json)
             .unwrap_or_else(|| WebStore::seeded(now));
+        Burrow::from_parts(store, seed::reading(now))
+    }
+
+    /// Back to the sample data.
+    pub fn reset(&mut self, now_ms: f64) {
+        *self = Burrow::new(now_ms, None);
+    }
+
+    pub fn to_json(&self) -> String {
+        self.store.to_json()
+    }
+
+    /// A Burrow over `store` and the reading list `rd`, with the marks the
+    /// store holds put over the rows. Live mode starts here too, without
+    /// building the demo's sample data first (a cold start's cost).
+    pub(crate) fn from_parts(store: WebStore, mut rd: seed::Reading) -> Burrow {
         let mut list = ListModel::default();
         list.set_query("", store.arrange(store.items()).0);
-        let mut rd = seed::reading(now);
         for r in &mut rd.rows {
             let key = read_api::key_of(r);
             if let Some(v) = store.read.get(&key) {
@@ -355,22 +387,17 @@ impl Burrow {
             offline: false,
             reading_seen: store::Seen::default(),
             reading_dirty: false,
-            changes: None,
+            side_seen: Default::default(),
+            pace: Default::default(),
+            nets: Default::default(),
             excerpts: Default::default(),
+            placed: Default::default(),
             // --- web-reading ---
             wr: Default::default(),
             // --- end web-reading ---
             writing: Default::default(), // --- web-writing ---
+            parity: Default::default(),  // --- web-parity ---
         }
-    }
-
-    /// Back to the sample data.
-    pub fn reset(&mut self, now_ms: f64) {
-        *self = Burrow::new(now_ms, None);
-    }
-
-    pub fn to_json(&self) -> String {
-        self.store.to_json()
     }
 
     fn current_id(&self) -> Option<LocalId> {
@@ -403,9 +430,10 @@ impl Burrow {
         self.list.refresh(self.results(&q));
     }
 
-    /// The store's matches for `q`, shelved posts first.
+    /// The store's matches for `q`, shelved posts first (with an empty
+    /// `q`, those the Posts filter keeps; `parity/filters.rs`).
     fn results(&self, q: &str) -> Vec<Item> {
-        self.store.arrange(self.store.search(q)).0
+        self.store.arrange(self.filtered(q, self.store.search(q))).0
     }
 
     /// After a change to the open post: fresh results, and the post stays
@@ -442,14 +470,14 @@ impl Burrow {
                 dot_tip: vm::edits_tip(it),
                 when: vm::relative_time(&it.updated, now),
                 selected: sel.as_ref() == Some(&it.local_id),
-                shelved: self.store.shelf.contains(&it.local_id),
+                shelved: self.store.is_shelved(&it.local_id),
             })
             .collect();
         let shelf_len = self
             .list
             .results()
             .iter()
-            .take_while(|i| self.store.shelf.contains(&i.local_id))
+            .take_while(|i| self.store.is_shelved(&i.local_id))
             .count();
         let current = match (&self.new_post, self.current_item()) {
             (Some(None), _) => Some(Current {
@@ -486,7 +514,7 @@ impl Burrow {
                     status: status_name(it.status),
                     new_post: (self.new_post.is_some() && it.status == Status::Scratch)
                         .then(|| NEW_NOTE.into()),
-                    shelved: self.store.shelf.contains(&it.local_id),
+                    shelved: self.store.is_shelved(&it.local_id),
                     stub_of: self.stub_label(&it),
                     conflict: self.conflict_view(&it.local_id),
                     pending: it.pending_sync,
@@ -940,7 +968,14 @@ impl Burrow {
             ..blyg_render::RenderOpts::default()
         };
         let resolver = if md.contains("[[") {
-            StoreResolver::new(self.store.items(), self.rd.rows.clone(), &[], &opts.mount)
+            let theirs = self
+                .rd
+                .rows
+                .iter()
+                .filter(|r| !blyg_core::own::is_own_row(r))
+                .cloned()
+                .collect();
+            StoreResolver::new(self.store.items(), theirs, &[], &opts.mount)
         } else {
             StoreResolver::empty(&opts.mount)
         };
@@ -1011,3 +1046,6 @@ mod tests;
 
 #[cfg(test)]
 mod live_tests;
+
+#[cfg(test)]
+mod order_tests; // the one list order, and your posts in Reading

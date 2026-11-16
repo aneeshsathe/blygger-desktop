@@ -52,7 +52,9 @@ pub fn screen_status(view: super::View, unread: usize) -> ScreenStatus {
 
 /// A withdrawn post stays only when the user signalled or hoppered it.
 pub fn visible(r: &ReadingItem) -> bool {
-    r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty()
+    // --- background --- a withdrawn post the studio places (Background,
+    // or Foreground by your choice) is listed where it's placed.
+    r.state != "tombstone" || r.thumb.is_some() || !r.hoppers.is_empty() || r.background.is_some()
 }
 
 /// The list as shown: tombstones hidden unless kept, one row per post (the
@@ -326,7 +328,7 @@ pub struct Pill {
 
 /// Action ids under the current version. `Fork` is always shown there but
 /// disabled: it says where forking lives (a pin), rather than hiding it.
-pub const CURRENT_ACTIONS: [&str; 8] = [
+pub const CURRENT_ACTIONS: [&str; 9] = [
     "Quote",
     "Reply",
     "AI reply",
@@ -335,6 +337,7 @@ pub const CURRENT_ACTIONS: [&str; 8] = [
     "Open on web",
     "Notes",  // --- notes ---
     "Hopper", // --- hoppers ---
+    "Shelf",  // --- shelf sync ---
 ];
 pub const PINNED_ACTIONS: [&str; 4] = [
     "Quote this version",
@@ -354,6 +357,8 @@ pub struct ActionCtx {
     pub current: u32,
     /// Pinned versions the pill can step to, oldest first.
     pub pins: Vec<u32>,
+    /// --- shelf sync --- the post is on your shelf.
+    pub shelved: bool,
 }
 
 /// One chip in the action row: what it says, what it makes (one plain
@@ -436,6 +441,26 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
             "Hopper ›",
             "Puts this post in one of your hoppers, or takes it out (h). A public hopper \
              shows it on its page."
+                .into(),
+        ),
+        // --- shelf sync --- the studio's words ("+ add to shelf").
+        "Shelf" if cx.shelved => on(
+            "− Remove from shelf",
+            "Takes this post off your shelf (Reading › Shelf). The shelf syncs with \
+             your blyg when it keeps one."
+                .into(),
+        ),
+        "Shelf" => on(
+            "+ Add to shelf",
+            "Keeps this post to hand on your shelf (Reading › Shelf), in your order. \
+             The shelf syncs with your blyg when it keeps one."
+                .into(),
+        ),
+        // --- catch up --- shown only when the post draws on something.
+        "Catch up" => on(
+            "Catch up",
+            "Lays out the conversation that leads to this post, oldest first, \
+             each post in its own words (⇧C). Nothing is fetched or sent."
                 .into(),
         ),
         // --- quote targets --- a post shown without a subscription.
@@ -1265,6 +1290,7 @@ mod tests {
             lineage_known: false,
             source_url: None,
             generated: None,
+            background: None,
         };
         for q in [
             "",
@@ -1327,6 +1353,7 @@ mod tests {
             lineage_known: false,
             source_url: None,
             generated: None,
+            background: None,
         };
         let all = blyg_core::PickQuery::default();
         let q = blyg_core::pick::search_in(

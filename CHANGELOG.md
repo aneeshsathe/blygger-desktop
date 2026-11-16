@@ -36,6 +36,91 @@ teaches something new in the tour, set the newest entry's `version` in
 
 - Built and checked on Linux only, as for 0.22.0: the Windows code was type-checked and linted with the MinGW target, and the new tests (Esc from the preview closes the open sheet, Esc from the pane's page closes the pane, a click takes the keyboard back, a mention opens its post, text is converted once) ran on Linux with stub web views. The WebView2 accelerator-key hook and the Menu panel's Esc have **not** been run on Windows.
 
+## [0.25.0] - 2026-11-16
+
+### Added
+- **Web app: post to post.** An open post has ‹ › for the previous and next post, in the list's order as you saw it; on a phone or iPad, swipe sideways across the post (left for the next, right for the previous). ↑ ↓ on the desk follow the same order, so reading a post no longer reorders the walk.
+
+### Changed
+- **Desktop: Settings is a full page, and nothing in it is cut off any more.** ⌘, opens it over the whole window below the title bar instead of a pop-up, and every row of options and every explanation wraps to fit, at any window width and font.
+- **Web app on a laptop or iPad: it now fills the page.** On your blyg the app is no longer drawn as a window inside a page (no frame, traffic lights or width cap). Theme and layout moved into the title bar, and **Keys** opens the keyboard list. The sample-data demo keeps its window.
+
+### Fixed
+- **Reading › Mentions showed a full list for a moment, then shrank to a few.** It now lists both what your blyg's mentions lens finds
+  and what Burrow finds itself (quotes, replies, forks and links to your
+  blyg), and each row has a small tag saying why: named you, quoted you,
+  replied, forked you or linked you. The lens's last answer is kept, so the
+  list is whole from the start. The web app lists and tags them the same
+  way. (Desktop rows show the strongest reason; web cards up to two.)
+- **Web app on a phone: swiping back from a post played the slide twice.** The system's back swipe already moves the views, so after it the app no longer slides them again (`hasUAVisualTransition`, or a touch that began at the screen edge).
+
+### Not verified
+- The phone's back swipe and the sideways post-to-post swipe were tested with simulated touches in headless Chromium, not on an iPhone or iPad.
+- Settings at full page was checked on macOS only, not Windows.
+
+
+## [0.24.0] - 2026-11-15
+
+Background and Foreground, a shelf that syncs with your blyg and holds anyone's posts, and Discover on the desktop, all as blygger-studio 0.61 has them.
+
+### Added
+
+- **Background and Foreground** in Reading, from blygger-studio 0.61. The Background list is now your blyg's own: posts you moved there, blygs you moved there, your own minor changes (a version the change classifier calls a typo, minor or refresh) and, as before, withdrawn posts. Every other list, Mentions and the counts leave them out. Under an open post, **↓ Background** (**b**) / **↑ Foreground**, **↺ Clear my choice** and **⇊ / ⇈ Blyg to Background / Foreground**; Settings › Reading › Background turns the minor-change rule off or on (saved on your blyg). The web app has the same under an open post and in ⚙ Reading. Needs a studio that advertises `setReadingPlacement`; on an older one, Background lists withdrawn posts as before and offers none of this.
+- **The shelf syncs with your blyg** (studio 0.61): the studio, the web app and your other computers share one shelf. A change made in two places at once is merged, not lost, and a shelf you kept before the first sync is joined to the blyg's. An older blyg keeps the shelf on this computer, as before; the ⌘B sheet says which.
+- **Others' posts on the shelf**: **+ Add to shelf** among a post's chips in Reading, on the desktop and the web app, and a **Shelf** lens in Reading's sources that lists the shelf in its order, as the studio has them.
+- **Discover blygs** (desktop), as the studio has it. **Blyg › Discover Blygs…** (or **Discover…** on the Subscriptions screen) lists the blygs on blygger.com's public directory that you don't follow yet, newest listing first, five at a time (**m** shows more), each with its address and how active it is. Blygs listed since you last looked say **new**; your blyg keeps that mark (`discoverSeenAt`, written on its own), so the studio and Burrow agree. j/k move, ⏎ subscribes, **o** opens the blyg in your browser, esc closes. Burrow reads the directory only when you open Discover, signed in to nothing, and shows its text as plain text. Not in the web app, which talks only to your own blyg. Needs blygger-studio 0.60 or later for the **new** marks.
+
+### Changed
+
+- **Mentions leaves Background out**, as the studio's does: a mention that's withdrawn or moved to Background is listed under Background instead.
+- **The tour teaches Background, the shelf in Reading and Discover.** The Reading feature tour has four new steps on the sample data: **b** on a post (Background), **+ Add to shelf**, the **Shelf** lens, and **Discover…** on the Subscriptions screen. What's new runs them after the update. The Writing tour's shelf step says the shelf syncs with studio 0.61, and the Reader step lists Shelf.
+
+### Fixed
+
+- **The tour's Catch up step** no longer hides the conversation behind the tour card: while a tour card shows, reading sheets sit to its right.
+- **Web app: the Mentions lens** asked `GET /api/reading` for 100 entries a page, more than its 50; it now asks for 50.
+- **Web app: capabilities read twice at start.** The shelf's first sync asked `/api/capabilities` again after the start-up check had read it; the answer is now kept.
+- **Background read too often**: every edit to one of your drafts made elsewhere read the whole Background lens again. It's now read when `reading`, `subscriptions` or `settings` moves; the studio moves `reading` whenever one of your posts' status, version or Background reasons changes, so nothing is missed.
+
+- **The shelf sheet (⌘B, and the web app's) said "Nothing on your shelf yet"** when the shelf held only others' posts; it lists your own posts, so it now says so and points to Reading › Shelf for the rest.
+- **After the blyg's change counters reset**, the Background list is read again with the rest.
+
+### Not verified
+
+- **Windows**: nothing in this release was run on Windows. The new keys and chips are plain (**b**, clicks); Windows CI builds and tests it.
+- **Discover** was checked against the bundled sample directory and a local fixture, not against blygger.com's live directory.
+- **The shelf sync's merge** of a change made in two places at once was tested against a real local studio, not across two real computers.
+- **Two lists can disagree on a withdrawn post you shelved**: the studio drops a withdrawn post from its Shelf lens; Burrow's Shelf matched it in the real-studio test, but a withdrawn post kept by a pin was not tried.
+
+## [0.23.0] - 2026-11-15
+
+Catch up on a conversation, oldest first, and the web app gains the studio's Mark all read, Posts filters, Updates and Access tokens, keeps Reading in order and up to date, and starts faster.
+
+### Added
+
+- **Catch up** on a conversation. ⇧C on the reading screen (or the **Catch up** chip under a post that quotes, replies to or forks another, Post › Catch Up…, or ⇧C in the lineage view) lays out the conversation that leads to the post, oldest first: each post's author, date, how the next one uses it, and its own words, with its quotes shown as "↪ quotes Ada" since the quoted post is the card above. j/k move, ⏎ opens a post in the reader, **w** adds side replies (Whole conversation), and **s** asks your AI provider for a short in-order summary, shown at the top as "AI summary" and never put into a post (esc cancels). Posts this Mac doesn't hold show what was cited of them, and nothing is fetched until you open one. It goes back at most 8 steps and 60 posts.
+- **Web app: Mark all read**, as the studio has it. ✓ Mark all read… in the sources pane (⌃⌥A), ✓ All read on a phone: every unread post of the chosen source and lens, after a confirmation, sent to your blyg in batches of 500 and put back if the blyg refuses. Needs a studio that advertises `markReadBatch`.
+- **Web app: filters in Posts**: All · Drafts · Changes · Public · Withdrawn, with counts, over the list on a desk and a phone (⌃⌥F steps through them), as the studio's compose page has them. A search still looks through every post.
+- **Web app: Updates** (⚙ Blyg › Updates): your threads whose quotes have newer versions, stalest first, what changed in each quote, and Refresh (one, or all that can be) with a version note, as the studio's Updates tab and the desktop's Stale Quotes… do. Needs a studio that advertises `listStaleThreads` (and `refreshItem` to refresh).
+- **Web app: your own posts in Reading**, as the desktop and the studio show them (never unread, no thumbs, nothing sent).
+- **Web app: Access tokens** (⚙ Blyg › Access tokens): what can act as you on your blyg, a manual token for a tool (shown once, never stored), and revoke one or all, each confirmed, as the studio's Client access page does.
+- **Development skills** in `skills/`: the checks reviewers used to make in PRs, now plain-Markdown checklists that any coding agent (or person) can follow while working. They cover the release, the tutorial, Windows + macOS, the pre-PR gate, agent cohorts and the web hand-off. Spec-level skills cover capability gating, real-studio testing, list order and refresh, client security, conformance and upstream sync. `AGENTS.md` and the README say how to use them. Thanks to @patwater for the idea.
+
+### Fixed
+
+- **Web app: Reading was in the wrong order.** The web kept the order the server sent, which is by fetch time and the same for a whole backfill, so posts came out shuffled. Every client now sorts with one function in blyg-core (newest first, ties by source then id, descending). Your posts list compares real times, not text, then the server id. A test against a real local studio checks the web, the desktop and the studio agree. On the desktop, reading posts with the same date may swap places once (ties now break descending).
+- **Web app: posts didn't update while the tab was open.** It now asks `/api/changes` every 15 s while visible (the studio's pace), checks right after you publish, restore or withdraw, stops while hidden, backs off on 429 and 5xx, and runs one refresh at a time. Hopper and thumb changes made elsewhere now show too. The occasional full re-read backs off like the desktop's (10 min, doubling to 2 h while nothing changes). Checked by `scripts/browser-web-live-check.sh`: every change shows within about 15 s.
+- **Web app: starts faster than the studio.** On a first start, the first page of Reading is drawn as soon as it arrives, with the rest paging in behind. Posts, Reading and hoppers load in parallel, and scrolling adds cards instead of redrawing the list. With 3,000 reading posts on localhost, Reading shows in about 0.25–0.35 s (it was about 1.1 s; the studio takes 0.74 s), and scrolling has no long tasks. Checked by `scripts/browser-web-perf-check.sh`.
+
+### Changed
+
+- **The tour teaches Catch up.** The Reading feature tour has a Catch up step on the sample four-post conversation (⇧C), and What's new runs it after an update. The lineage step says ⇧C catches up from the lineage view.
+
+### Not verified
+
+- Catch up's AI summary (**s**) was tested only at the prompt level (the request it builds and how its answer is shown), not against a live AI provider.
+- The web app's phone layout was not walked screen by screen for the new parity features (Mark all read, Posts filters, Updates, Access tokens).
+
 ## [0.22.0] - 2026-11-15
 
 The browser pane and cross-post on Windows.

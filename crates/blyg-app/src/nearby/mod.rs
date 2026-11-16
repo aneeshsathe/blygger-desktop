@@ -1213,76 +1213,62 @@ impl MainView {
                   posts that say the same thing in other words."
                 .to_string(),
         };
-        div()
-            .flex()
-            .gap(px(12.))
-            .py(px(7.))
-            .child(
-                div()
-                    .w(px(92.))
-                    .flex_none()
-                    .pt(px(4.))
-                    .text_size(px(10.5))
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(p.muted)
-                    .child("NEARBY"),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(6.))
-                            .child(
-                                chip("nearby-on", "Whole posts".into(), m == "on")
-                                    .on_click(set("nearby", "on")),
-                            )
-                            .child(
-                                chip("nearby-titles", "Titles only".into(), m == "titles")
-                                    .on_click(set("nearby", "titles")),
-                            )
-                            .child(
-                                chip("nearby-off", "Off".into(), m == "off")
-                                    .on_click(set("nearby", "off")),
+        crate::app::settings_page::row(
+            &p,
+            "NEARBY",
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(6.))
+                        .child(
+                            chip("nearby-on", "Whole posts".into(), m == "on")
+                                .on_click(set("nearby", "on")),
+                        )
+                        .child(
+                            chip("nearby-titles", "Titles only".into(), m == "titles")
+                                .on_click(set("nearby", "titles")),
+                        )
+                        .child(
+                            chip("nearby-off", "Off".into(), m == "off")
+                                .on_click(set("nearby", "off")),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .gap(px(6.))
+                        .child(
+                            chip("nearby-phrases", "Shared phrases".into(), emb == "none")
+                                .on_click(set("nearby-embedder", "none")),
+                        )
+                        .child(
+                            chip("nearby-local", local_label, emb == "local")
+                                .on_click(set("nearby-embedder", "local")),
+                        )
+                        .when(emb == "endpoint", |d| {
+                            d.child(chip("nearby-endpoint", "Endpoint".into(), true))
+                        })
+                        .child(
+                            chip("nearby-rerank", "Re-rank with AI".into(), rerank).on_click(
+                                cx.listener(move |this, _, _, cx| {
+                                    this.set_nearby_setting(
+                                        "nearby-rerank",
+                                        if rerank { "off" } else { "on" },
+                                        cx,
+                                    )
+                                }),
                             ),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_wrap()
-                            .gap(px(6.))
-                            .child(
-                                chip("nearby-phrases", "Shared phrases".into(), emb == "none")
-                                    .on_click(set("nearby-embedder", "none")),
-                            )
-                            .child(
-                                chip("nearby-local", local_label, emb == "local")
-                                    .on_click(set("nearby-embedder", "local")),
-                            )
-                            .when(emb == "endpoint", |d| {
-                                d.child(chip("nearby-endpoint", "Endpoint".into(), true))
-                            })
-                            .child(
-                                chip("nearby-rerank", "Re-rank with AI".into(), rerank).on_click(
-                                    cx.listener(move |this, _, _, cx| {
-                                        this.set_nearby_setting(
-                                            "nearby-rerank",
-                                            if rerank { "off" } else { "on" },
-                                            cx,
-                                        )
-                                    }),
-                                ),
-                            ),
-                    )
-                    .child(div().text_size(px(11.)).text_color(p.muted).child(note)),
-            )
-            .into_any_element()
+                        ),
+                )
+                .child(crate::app::settings_page::note(&p, note)),
+        )
+        .into_any_element()
     }
 
     // ------------------------------------------------------------ render

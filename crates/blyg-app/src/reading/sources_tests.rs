@@ -339,13 +339,19 @@ fn folders_are_made_renamed_reordered_and_deleted(cx: &mut TestAppContext) {
 fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     assert_eq!(pane(&view, cx), Pane::List);
-    // ← to the sources; ↓ picks the next source (Background, Your blyg,
+    // ← to the sources; ↓ picks the next source (Shelf, Background, Your blyg,
     // then the hoppers, then the first folder).
     cx.simulate_keystrokes("left");
     settle(cx);
     assert_eq!(pane(&view, cx), Pane::Sources);
     cx.simulate_keystrokes("left");
     assert_eq!(pane(&view, cx), Pane::Sources, "stops at the edge");
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.source.clone()),
+        Source::Smart(Smart::Shelf) // --- shelf sync ---
+    );
     cx.simulate_keystrokes("down");
     settle(cx);
     assert_eq!(
@@ -384,7 +390,7 @@ fn arrows_move_focus_between_the_panes(cx: &mut TestAppContext) {
     let first = shown(&view, cx)[0].clone();
     assert_eq!(opened(&view, cx).as_deref(), Some(first.as_str()));
     assert_eq!(pane(&view, cx), Pane::Sources, "the keys stay put");
-    for _ in 0..5 {
+    for _ in 0..6 {
         cx.simulate_keystrokes("up");
     }
     settle(cx);
@@ -672,4 +678,73 @@ fn a_revised_post_leads_with_its_changelog_entry(cx: &mut TestAppContext) {
         cx.debug_bounds(format!("change-lead-{LIN_GARDENS}").leak())
             .is_some()
     );
+}
+
+// --- contacts --- the Mentions feed: the lens's posts and the local ones
+// together, each tagged with why; the lens's answer never takes a row away.
+#[gpui_kit::test]
+fn mentions_shows_the_lens_and_the_local_feed_tagged(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    fake.add_mentions_sample();
+    // Not served yet: only what this Mac works out.
+    fake.set_mentions_lens(None);
+    fake.with_reading(|rows| {
+        let link = rows
+            .iter()
+            .find(|r| r.remote_id == MENTION_LINK)
+            .unwrap()
+            .clone();
+        // Withdrawn (Background) and your own: never in Mentions.
+        let mut gone = link.clone();
+        gone.remote_id = "01k2rve0g0ne1ink000000001".into();
+        gone.state = "tombstone".into();
+        let mut own = link;
+        own.subscription_id = blyg_core::OWN_SUBSCRIPTION.into();
+        own.remote_id = "01J9OWN0L1NK0000000000001".into();
+        rows.push(gone);
+        rows.push(own);
+    });
+    settle(cx);
+    select(&view, Source::Mentions, cx);
+    let tags = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let mut t: Vec<(String, Vec<&'static str>)> = v
+                .shown_keys()
+                .into_iter()
+                .map(|k| (k.1.clone(), v.mention_tags(&k)))
+                .collect();
+            t.sort();
+            t
+        })
+    };
+    let s = |x: &str| x.to_string();
+    let before = tags(&view, cx);
+    let mut want = vec![
+        (s(MENTION_QUOTE), vec!["quoted you"]),
+        (s(MENTION_REPLY), vec!["replied"]),
+        (s(MENTION_LINK), vec!["linked you"]),
+    ];
+    want.sort();
+    assert_eq!(before, want);
+    // The lens answers: Rue's trust note joins (an @-mention only the
+    // studio sees), Ada's quote gains "named you", nothing leaves.
+    fake.set_mentions_lens(Some(vec![
+        (s("sub-rue"), s(RUE_TRUST)),
+        (s("sub-ada"), s(MENTION_QUOTE)),
+    ]));
+    select(&view, Source::Smart(Smart::All), cx);
+    select(&view, Source::Mentions, cx);
+    let after = tags(&view, cx);
+    for (k, _) in &before {
+        assert!(after.iter().any(|(a, _)| a == k), "{k} left the feed");
+    }
+    let of = |id: &str| after.iter().find(|(k, _)| k == id).map(|(_, t)| t.clone());
+    assert_eq!(of(RUE_TRUST), Some(vec!["named you"]));
+    assert_eq!(of(MENTION_QUOTE), Some(vec!["named you", "quoted you"]));
+    assert_eq!(after.len(), 4);
+    // Tags only in the Mentions feed.
+    select(&view, Source::Smart(Smart::All), cx);
+    view.read_with(cx, |v, _| {
+        assert!(v.shown_keys().iter().all(|k| v.mention_tags(k).is_empty()));
+    });
 }

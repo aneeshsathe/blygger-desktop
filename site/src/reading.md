@@ -31,20 +31,54 @@ revised leads with its latest changelog note,
 
 **The Reader** (⌥⌘2) has three panes, like NetNewsWire: sources on the left
 (All unread, Today, Thumbed, Thumbed down, All, Threads, Fragments,
-Background, then **Your blyg**, your **hoppers**, your folders and the rest),
+Shelf, Background, then **Your blyg**, your **hoppers**, your folders and the rest),
 the posts from that source in the middle, and the post on the right.
 
 - **Threads** and **Fragments** list only that kind of post; **Thumbed
   down** lists the posts you gave a 👎.
 
 - **Mentions**, under All unread, lists the posts you hold that mention you:
-  ones that quote or reply to your posts, or link to your blyg (or, on studio
-  0.56 and later, what your blyg's own mentions lens says). A dot says there's
-  something to read; there's never a count.
-- **Background** lists withdrawn posts, the blygs' and your own, newest
-  first, and nothing else lists them: not the other feeds, the counts or the
-  stream. A withdrawn post is never unread. Opened, it reads as withdrawn
-  (with its retained pin, when the author kept one).
+  on studio 0.56 and later, the ones your blyg's own mentions lens finds
+  (the post names you), together with the ones Burrow finds itself: posts
+  that quote, reply to or fork your posts, or link to your blyg. Each row
+  says why with a small tag: **named you**, **quoted you**, **replied**,
+  **forked you** or **linked you** (at most two, "named you" first).
+  Burrow keeps the lens's last answer, so the list is whole from the start
+  and doesn't shrink when the blyg answers. Your own posts and Background
+  aren't listed. A dot says there's something to read; there's never a
+  count.
+- **Shelf** lists everything on your shelf, yours and others', in your
+  order, as the studio's Shelf lens does: **+ Add to shelf** among a post's
+  chips puts it there (see [The shelf](writing.md#the-shelf)). A shelved
+  post stays in Shelf even when it's in Background; a withdrawn one leaves.
+- **Background** holds what you've set aside, newest first, and nothing
+  else lists it: not the other feeds, Mentions, the counts or the stream.
+  Withdrawn posts are always there, the blygs' and your own; opened, one
+  reads as withdrawn (with its retained pin, when the author kept one). On
+  blygger-studio 0.61 and later it is your blyg's own Background, the same
+  list the studio shows: posts you moved there, blygs you moved there, and
+  your own minor changes (a version the change classifier calls a typo,
+  minor or refresh). A Background post is never unread, and nothing is
+  marked read or published by moving one.
+
+### Background and Foreground
+
+On blygger-studio 0.61 and later, an open post has these chips, as the
+studio's ⋯ menu does:
+
+- **↓ Background** (or **b** with the post open or selected) moves it to
+  Background, and keeps it there across later versions. In Background the
+  chip is **↑ Foreground**, which brings it back whatever the rules say.
+- **↺ Clear my choice**, once you've made one, lets the rules decide again.
+- **⇊ Blyg to Background** moves every post of that blyg there, except any
+  you moved to Foreground yourself; **⇈ Blyg to Foreground** brings them back.
+
+Your choice beats the blyg's, which beats the rules. **Settings › Reading ›
+Background** has the rules, saved on your blyg: withdrawn posts are always
+in Background, and **Your own minor changes** can be turned off. On an older
+studio there are no chips or rules, and Background lists withdrawn posts.
+
+The web app has the same, under an open post and in ⚙ Reading (no key).
 
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
@@ -70,6 +104,9 @@ Your posts are **never unread**: they get no dot, never count in All unread
 or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
+
+The [web app](web-self-host.md#using-it) shows your posts in Reading the
+same way.
 
 ### Hoppers
 
@@ -251,6 +288,28 @@ Both need a connected blyg, since your subscriptions live there. From a
 terminal: `blygger +import-opml <file>` (add `--dry-run` to see what would be
 added) and `blygger +export-opml <file>`.
 
+## Discover blygs
+
+**Blyg › Discover Blygs…**, or **Discover…** on the Subscriptions screen,
+lists the blygs on [blygger.com](https://blygger.com)'s public directory that
+you don't follow yet, newest listing first, five at a time.
+
+- Each row gives the blyg's name, its address, and how active it is (high,
+  medium or low, and when it last posted, or "activity not measured yet").
+- Blygs listed since you last opened Discover say **new**. The first time,
+  nothing does, since everything would be. Your blyg remembers the newest
+  listing you've seen, so the studio and Burrow agree on what's new.
+- j/k (or ↓/↑) move, ⏎ subscribes (the same as **Subscribe…**), **o** opens
+  the blyg in your browser, **m** shows five more, and esc closes.
+- Your own blyg and the blygs you already follow are left out. One you
+  subscribe to stays in the list, marked **added**, until you close it.
+- Subscribing doesn't add a blyg to your public blogroll.
+
+Burrow reads the directory only when you open Discover, without signing in
+to anything. It needs a connected blyg, since subscriptions live there.
+Discover is in the desktop app only: Burrow on the web talks to nothing but
+your own blyg.
+
 ## Acting on a post
 
 The selected post shows its actions. Each says what it makes:
@@ -310,6 +369,11 @@ below, and the post counts as read when you open it.
 In the web app, ⚙ Reading has the same choice for that browser: opening a
 post also opens its page in a new tab, and the post stays in Burrow with a
 link back to the page and **Read … here instead** for its blyg.
+
+The web app can also **mark all read**: ✓ Mark all read… in the sources
+pane (⌃⌥A), or ✓ All read on a phone, marks every unread post of the source
+and lens you're looking at, after asking. It needs a blyg that takes read
+marks in bulk (blygger-studio's `markReadBatch`).
 
 ### The changelog
 
@@ -489,6 +553,29 @@ does it; esc backs out. An action that can't be done (a fork of a post with
 no pinned version, say) says why.
 
 ![The action ring, previewing Reply](screenshots/lineage-ring.png)
+
+## Catch up
+
+A post that quotes a post that quotes another is a conversation, and reading
+it means starting at the bottom. **Catch up** lays it out for you: press
+**⇧C** on the reading screen (or click the **Catch up** chip under a post, or
+Post › Catch Up…, or **⇧C** in the lineage view) and a sheet lists every post
+the conversation leads through, oldest first, the one you were reading last.
+Each post shows its author, its date, how the next one uses it ("quoted by
+Ada"), and its own words: where it quoted the post before, it says
+"↪ quotes Rue" instead, since that post is the card above. The chip shows only
+when the post draws on something.
+
+**j**/**k** move, **⏎** (or **o**) opens a post in the reader, and **esc**
+closes. **w** turns on **Whole conversation**, which adds the posts you hold
+that reply to or quote any of them (side branches). A post this Mac doesn't
+hold shows what the quoting post cited of it, and opening it fetches it then,
+never before. It goes back at most eight steps and 60 posts.
+
+**s** asks your AI provider for a short summary, in order and by author,
+shown at the top of the sheet as **AI summary**. It's for you to read: it
+never goes into a post. esc stops it. With no provider set up, the panel says
+so and links to Settings › AI.
 
 ## Reading time and inspect
 

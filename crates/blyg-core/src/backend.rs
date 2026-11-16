@@ -204,6 +204,12 @@ pub trait Backend: Send + Sync {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         None
     }
+    /// --- contacts --- The lens's last answer (`reading_mentions`), kept
+    /// so the Mentions feed's first paint already holds it. Local. `None`:
+    /// not served, or never asked.
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        None
+    }
     /// --- contacts --- Whether the blyg keeps an address book Burrow can
     /// manage (the Contacts sheet). Contract 5.7 serves both together.
     fn keeps_contacts(&self) -> bool {
@@ -528,6 +534,28 @@ pub trait Backend: Send + Sync {
     fn settings(&self) -> Result<Settings>;
     fn save_settings(&self, settings: &Settings) -> Result<()>;
 
+    // --- discover --- the blygs listed on blygger.com (studio 0.60;
+    // `crate::discover`). Desktop only.
+
+    /// The public directory, minus nothing (blocking; read only when the
+    /// user opens Discover). Errors carry the words to show.
+    fn discover_directory(&self) -> Result<Vec<crate::discover::DirectoryBlyg>> {
+        Err(CoreError::Other("Discover isn't offered here".into()))
+    }
+
+    /// `Settings.discoverSeenAt` (`""`: never looked). `Ok(None)`: this blyg
+    /// doesn't keep it (a studio before 0.60), so nothing is marked new.
+    fn discover_seen_at(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Move `discoverSeenAt` (a partial `PATCH`, that key only).
+    fn set_discover_seen_at(&self, at: &str) -> Result<()> {
+        let _ = at;
+        Err(CoreError::Other("Discover isn't offered here".into()))
+    }
+    // --- end discover ---
+
     // ------- other people's versions & pins (remote, on demand, never polled)
     //
     // These read the public surface of the item's origin, unauthenticated: the
@@ -771,6 +799,28 @@ pub trait Backend: Send + Sync {
         Err(CoreError::Other("the shelf isn't supported here".into()))
     }
 
+    // --- shelf sync --- (studio 0.61) the shelf holds anyone's posts too,
+    // named as the blyg names them, and syncs with a blyg that offers it.
+
+    /// Everything on the shelf the blyg can name, in order: your posts it
+    /// holds (`~own`, server id) and others' (subscription, remote id).
+    /// Reading's Shelf lens lists these.
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
+        Vec::new()
+    }
+
+    /// Put a post on the shelf (at the end) or take it off, by the reading
+    /// row's key. Idempotent.
+    fn set_entry_on_shelf(&self, entry: &crate::shelf::Entry, on: bool) -> Result<()> {
+        let _ = (entry, on);
+        Err(CoreError::Other("the shelf isn't supported here".into()))
+    }
+
+    /// Whether the shelf syncs with the blyg, and whether a change waits.
+    fn shelf_state(&self) -> crate::shelf::SyncState {
+        crate::shelf::SyncState::Local
+    }
+
     // --- end shelf ---
 
     // --- trails ---
@@ -953,6 +1003,56 @@ pub trait Backend: Send + Sync {
     /// withdrawn posts come from `items()`. Local, instant. Additive.
     fn background_reading(&self) -> Vec<ReadingItem> {
         Vec::new()
+    }
+
+    // --- background --- studio 0.61 (contract 5.10.0): Background and
+    // Foreground (`crate::background`). Gated on the capability
+    // `setReadingPlacement`; all additive with defaults that offer nothing.
+
+    /// Whether the blyg serves Background. False: no Background actions or
+    /// rules; the Background lens holds withdrawn posts, as before.
+    fn background_served(&self) -> bool {
+        false
+    }
+
+    /// The studio's Background lens as last read (`None`: not served, or
+    /// not read yet). Put it on rows with `BackgroundSet::annotate`. Local.
+    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
+        None
+    }
+
+    /// The owner's choice on one row (`withdrawn`: a withdrawn post):
+    /// Background, Foreground, or `None` to let the rules decide. Remote;
+    /// shows at once on success (`ReadingChanged`).
+    fn set_reading_placement(
+        &self,
+        key: &crate::background::Key,
+        withdrawn: bool,
+        placement: Option<crate::background::Placement>,
+    ) -> Result<()> {
+        let _ = (key, withdrawn, placement);
+        Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
+    /// Move a whole blyg (a subscription id) to Background, or back. Remote.
+    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+        let _ = (sub, on);
+        Err(CoreError::Other("Background isn't supported here".into()))
+    }
+
+    /// The blyg's Background rules. `Ok(None)`: not served.
+    fn background_rules(&self) -> Result<Option<crate::background::BackgroundRules>> {
+        Ok(None)
+    }
+
+    /// Turn one rule on or off (a partial settings write); the rules back.
+    fn save_background_rule(
+        &self,
+        rule: &str,
+        on: bool,
+    ) -> Result<crate::background::BackgroundRules> {
+        let _ = (rule, on);
+        Err(CoreError::Other("Background isn't supported here".into()))
     }
 
     // --- hoppers ---

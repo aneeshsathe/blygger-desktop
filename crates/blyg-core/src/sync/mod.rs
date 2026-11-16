@@ -7,6 +7,8 @@
 //! The store's own lock is never held across network I/O, so UI reads and
 //! saves stay instant while a push is in flight.
 
+mod background; // --- background --- the studio's Background lens and choices
+mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
 mod worker;
@@ -51,6 +53,8 @@ pub const READING_DEPS: &[&str] = &["reading", "subscriptions"];
 pub const SIGNALS_DEPS: &[&str] = &["signals"];
 /// --- hoppers --- the hoppers, their memberships and the unheld posts.
 pub const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
+/// --- shelf sync --- the shelf (`GET /api/shelf`, studio 0.61).
+pub const SHELF_DEPS: &[&str] = &["shelf"];
 
 /// With `/api/changes`, everything is still read whole this often, as a
 /// safety net (a trigger the server's dependency matrix misses, lineage
@@ -60,6 +64,19 @@ pub const HOPPERS_DEPS: &[&str] = &["hoppers", "subscriptions"];
 pub const FULL_PULL_EVERY: Duration = Duration::from_secs(10 * 60);
 /// The longest the safety net backs off to (`SyncOptions::full_pull_max`).
 pub const FULL_PULL_MAX: Duration = Duration::from_secs(2 * 60 * 60);
+
+/// The safety net's next interval after a pass that read everything whole
+/// because it was due: back to `opts.full_pull_every` when it found what
+/// the counters missed (`surprise`), else twice `last`, up to
+/// `opts.full_pull_max` (issue #71: fewer D1 reads). Native sync and the
+/// web (`blyg-web`, per list) both pace their safety net with it.
+pub fn next_full_every(last: Duration, surprise: bool, opts: &SyncOptions) -> Duration {
+    if surprise {
+        opts.full_pull_every
+    } else {
+        (last * 2).min(opts.full_pull_max.max(opts.full_pull_every))
+    }
+}
 
 /// One item's autosave pushes are at least this far apart (`force` ignores
 /// it): about 20 writes a minute at most from continuous typing, well under
@@ -701,6 +718,8 @@ impl Engine {
         match crate::api::contract(self.api.contract_version()?.as_deref()) {
             Contract::Supported => {
                 self.note_syndication_served(); // --- syndication ---
+                self.note_background_served(); // --- background ---
+                self.note_shelf_served(); // --- shelf sync ---
                 let mut st = self.state();
                 st.compatible = true;
                 st.outdated = false;
@@ -781,6 +800,9 @@ impl Engine {
         }
         if op.kind == OpKind::Syndication {
             return self.run_syndication(op); // --- syndication ---
+        }
+        if op.kind == OpKind::Shelf {
+            return self.run_shelf(op); // --- shelf sync ---
         }
         if op.kind == OpKind::DeleteRemote {
             // A draft an older Burrow retired: no row holds its revision, so
@@ -944,7 +966,8 @@ impl Engine {
             | OpKind::Read
             | OpKind::Unread
             | OpKind::Hopper
-            | OpKind::Syndication => {
+            | OpKind::Syndication
+            | OpKind::Shelf => {
                 unreachable!()
             }
         }
@@ -1388,6 +1411,44 @@ impl Engine {
         } else {
             reading_changed |= self.store.sync_reading_hoppers()?;
         }
+        // --- background --- the studio's Background lens, read again when
+        // what it's worked out from moved (and, like the reading list, not
+        // before `reading_gap` in a background pull).
+        if self.background_due(
+            stale("background", background::BACKGROUND_DEPS),
+            full || gap_open,
+        ) {
+            match self.fetch_background() {
+                Ok(changed) => {
+                    surprise |= changed && forced("background", background::BACKGROUND_DEPS);
+                    reading_changed |= changed;
+                    self.accept(&rev, "background", background::BACKGROUND_DEPS)?;
+                }
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                // A refused read leaves what's held; asked again next pull.
+                Err(_) => {}
+            }
+        }
+        // --- shelf sync --- read when its counter moved, sent when it
+        // changed here (sync/shelf.rs). A blyg without it: nothing.
+        if self.shelf_served() && (stale("shelf", SHELF_DEPS) || self.shelf_unsent()) {
+            match self.sync_shelf() {
+                Ok(changed) => {
+                    surprise |= changed && forced("shelf", SHELF_DEPS);
+                    if changed {
+                        self.emit(CoreEvent::ItemsChanged);
+                        reading_changed = true;
+                    }
+                    self.accept(&rev, "shelf", SHELF_DEPS)?;
+                }
+                Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => {
+                    return Err(e);
+                }
+                Err(_) => {}
+            }
+        }
         // --- upkeep --- your threads with stale quotes (`GET /freshness`,
         // the blyg's database only), asked again when your items or your
         // reading moved. A refused or failed read leaves what's held.
@@ -1416,11 +1477,7 @@ impl Engine {
             st.full_at = Some(Instant::now());
             // Found what the counters missed: back to the first interval.
             // Found nothing: wait twice as long next time, up to the cap.
-            st.full_every = if surprise {
-                self.opts.full_pull_every
-            } else {
-                (st.full_every * 2).min(self.opts.full_pull_max.max(self.opts.full_pull_every))
-            };
+            st.full_every = next_full_every(st.full_every, surprise, &self.opts);
         }
         reading_err.map_or(Ok(()), Err)
     }
@@ -1450,6 +1507,8 @@ impl Engine {
                 "signals",
                 "hoppers",
                 "freshness",
+                "shelf",      // --- shelf sync ---
+                "background", // --- background ---
             ] {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
