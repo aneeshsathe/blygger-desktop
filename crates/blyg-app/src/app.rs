@@ -488,8 +488,14 @@ impl MainView {
         let mut tasks = Vec::new();
         tasks.push(cx.spawn_in(window, async move |this, cx| {
             while let Ok(ev) = rx.recv().await {
+                // A sync burst queues many events at once: take what's
+                // queued and handle it as one batch, so it refreshes once.
+                let mut batch = vec![ev];
+                while let Ok(ev) = rx.try_recv() {
+                    batch.push(ev);
+                }
                 if this
-                    .update_in(cx, |v, window, cx| v.on_core_event(ev, window, cx))
+                    .update_in(cx, |v, window, cx| v.on_core_events(batch, window, cx))
                     .is_err()
                 {
                     break;
@@ -1555,10 +1561,46 @@ impl MainView {
         }
     }
 
-    fn on_core_event(&mut self, ev: CoreEvent, window: &mut Window, cx: &mut Context<Self>) {
+    /// A batch of queued core events (`coalesce_core_events`): one refresh
+    /// for a burst of "something changed" events.
+    pub(crate) fn on_core_events(
+        &mut self,
+        batch: Vec<CoreEvent>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let batch = coalesce_core_events(batch);
+        // ReadingChanged refreshes the reading rows itself: ItemsChanged in
+        // the same batch needn't (both re-read the store as it is now).
+        let reading_follows = batch.iter().any(|e| matches!(e, CoreEvent::ReadingChanged));
+        for ev in batch {
+            self.handle_core_event(ev, reading_follows, window, cx);
+        }
+    }
+
+    pub(crate) fn on_core_event(
+        &mut self,
+        ev: CoreEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.handle_core_event(ev, false, window, cx);
+    }
+
+    fn handle_core_event(
+        &mut self,
+        ev: CoreEvent,
+        reading_follows: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if matches!(ev, CoreEvent::ItemsChanged | CoreEvent::ReadingChanged) {
             self.lineage_strip.stale(); // --- lineage ---
             self.nearby_store_changed(&ev, cx); // --- nearby ---
+            // --- own posts --- the ⌘Y history's cached post and responses.
+            if !(reading_follows && matches!(ev, CoreEvent::ItemsChanged)) {
+                self.refresh_own_post(cx);
+            }
         }
         match ev {
             CoreEvent::ItemsChanged => {
@@ -1567,7 +1609,7 @@ impl MainView {
                     self.scratch_sync_editor(&id, window, cx);
                 }
                 // --- own posts --- your published posts are reading rows too.
-                if self.reading.view == reading::View::Reading {
+                if self.reading.view == reading::View::Reading && !reading_follows {
                     self.reading_changed(cx);
                 }
                 self.requery_later(window, cx)
@@ -2370,6 +2412,33 @@ pub(crate) const TITLEBAR_H: f32 = 34.;
 const OMNI_H: f32 = 46.;
 const STATUS_H: f32 = 30.;
 
+/// A burst of queued core events, as one batch to handle: the "something
+/// changed" events (`ItemsChanged`, `ReadingChanged`) and the sync status
+/// are kept once, at their last place, since their handlers only re-read
+/// (or keep the latest); every other event is kept, in order.
+pub(crate) fn coalesce_core_events(batch: Vec<CoreEvent>) -> Vec<CoreEvent> {
+    fn idempotent(e: &CoreEvent) -> Option<u8> {
+        match e {
+            CoreEvent::ItemsChanged => Some(0),
+            CoreEvent::ReadingChanged => Some(1),
+            CoreEvent::SyncStatus(_) => Some(2),
+            _ => None,
+        }
+    }
+    let mut last = [None::<usize>; 3];
+    for (i, e) in batch.iter().enumerate() {
+        if let Some(k) = idempotent(e) {
+            last[k as usize] = Some(i);
+        }
+    }
+    batch
+        .into_iter()
+        .enumerate()
+        .filter(|(i, e)| idempotent(e).is_none_or(|k| last[k as usize] == Some(*i)))
+        .map(|(_, e)| e)
+        .collect()
+}
+
 pub(crate) fn shake_offset(t: f32) -> f32 {
     // keyframes: 25% -6, 50% +6, 75% -3, 100% 0
     let k = [
@@ -2942,6 +3011,9 @@ impl MainView {
             })
             .collect();
         let (pill_text, pill_pub) = vm::pill(item);
+        // Once per row: the label scan reads the whole post.
+        let held = self.labels_held(&item.content_md);
+        let pub_tip: Option<SharedString> = pill_pub.then(|| vm::published_tip(item).into());
         let id = item.local_id.clone();
         let row = div().id(("row", ix)).py(px(6.)).text_color(p.ink);
         // --- shelf --- a hairline under the last shelved row (absolute, so
@@ -3042,16 +3114,15 @@ impl MainView {
                             .border_1()
                             .line_height(px(15.))
                             .border_color(if pill_pub { p.accent } else { p.line })
-                            .when(pill_pub && !self.labels_held(&item.content_md), |d| {
-                                let tip = vm::published_tip(item);
+                            .when_some(pub_tip.clone().filter(|_| !held), |d, tip| {
                                 d.text_color(p.accent).tooltip(move |_, cx| {
-                                    cx.new(|_| reading::Tip(tip.clone())).into()
+                                    cx.new(|_| reading::Tip(tip.to_string())).into()
                                 })
                             })
                             .when(pill_pub, |d| d.text_color(p.accent))
                             .child(pill_text)
                             // Below studio 0.47: this post waits for its labels.
-                            .when(self.labels_held(&item.content_md), |d| {
+                            .when(held, |d| {
                                 let (bg, ink) = self.palette.tip();
                                 d.tooltip(move |_, cx| {
                                     cx.new(|_| toolbar::ButtonTip {
@@ -3065,8 +3136,7 @@ impl MainView {
                                 })
                             }),
                     )
-                    .when(pill_pub, |d| {
-                        let tip = vm::published_tip(item);
+                    .when_some(pub_tip, |d, tip| {
                         d.children(
                             crate::ornament::marker(
                                 &self.theme,
@@ -3078,7 +3148,7 @@ impl MainView {
                                 div()
                                     .id(("row-published", ix))
                                     .tooltip(move |_, cx| {
-                                        cx.new(|_| reading::Tip(tip.clone())).into()
+                                        cx.new(|_| reading::Tip(tip.to_string())).into()
                                     })
                                     .child(m)
                             }),
@@ -4134,5 +4204,42 @@ impl MainView {
                 )
                 .into_any_element(),
         )
+    }
+}
+
+#[cfg(test)]
+mod coalesce_tests {
+    use super::{CoreEvent, coalesce_core_events};
+
+    fn names(b: &[CoreEvent]) -> Vec<String> {
+        b.iter()
+            .map(|e| match e {
+                CoreEvent::Error(m) => format!("Error({m})"),
+                CoreEvent::SyncStatus(_) => "SyncStatus".into(),
+                e => format!("{e:?}"),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_burst_of_reading_changed_is_one() {
+        let out = coalesce_core_events(vec![CoreEvent::ReadingChanged; 50]);
+        assert_eq!(names(&out), ["ReadingChanged"]);
+    }
+
+    #[test]
+    fn events_with_data_keep_their_order() {
+        let out = coalesce_core_events(vec![
+            CoreEvent::ReadingChanged,
+            CoreEvent::Error("a".into()),
+            CoreEvent::ItemsChanged,
+            CoreEvent::ReadingChanged,
+            CoreEvent::Error("b".into()),
+            CoreEvent::ItemsChanged,
+        ]);
+        assert_eq!(
+            names(&out),
+            ["Error(a)", "ReadingChanged", "Error(b)", "ItemsChanged"]
+        );
     }
 }
