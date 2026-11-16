@@ -807,7 +807,9 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "Open on web",
             "→ Notes",        // --- notes ---
             "Hopper ›",       // --- hoppers ---
-            "+ Add to shelf"  // --- shelf sync ---
+            "+ Add to shelf", // --- shelf sync ---
+            "↓ Background",   // --- background --- (the sample blyg serves it)
+            "⇊ Blyg to Background"
         ]
     );
     assert!(tip(&row, "Link post").contains("no stub_of"));

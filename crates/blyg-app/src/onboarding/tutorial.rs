@@ -616,6 +616,35 @@ impl MainView {
                         Some(crate::app::reading::RSheet::CatchUp(_))
                     ),
             ),
+            // --- 0.24.0 --- Background, the shelf, Discover.
+            (
+                Key::Background,
+                reading
+                    && self
+                        .reading
+                        .rows
+                        .iter()
+                        .any(|r| r.remote_id == steps::BACKGROUND && r.is_background()),
+            ),
+            (
+                Key::ShelfReading,
+                reading && self.reading.shelved.iter().any(|k| k.1 == steps::SHELVED),
+            ),
+            (
+                Key::ShelfLens,
+                reader
+                    && self.reading.source
+                        == crate::app::reading::sources_vm::Source::Smart(
+                            crate::app::reading::sources_vm::Smart::Shelf,
+                        ),
+            ),
+            (
+                Key::Discover,
+                matches!(
+                    self.reading.sheet,
+                    Some(crate::app::reading::RSheet::Discover(_))
+                ),
+            ),
             // --- extensions ---
             (
                 Key::ExtPalette,
@@ -1215,6 +1244,30 @@ impl MainView {
                 self.tutorial_tidy(window, cx);
                 self.show_view(View::Subscriptions, window, cx);
             }
+            // --- 0.24.0 --- each starts from the sample's own state, so Back
+            // and a second walk find the key working again.
+            Setup::Background => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::BACKGROUND) {
+                    let _ = self.backend.set_reading_placement(&key, false, None);
+                    self.reading_changed(cx);
+                    self.open_reading(key, window, cx);
+                }
+            }
+            Setup::ShelfAdd | Setup::ShelfLens => {
+                self.tutorial_reading(ReadMode::Reader, window, cx);
+                if let Some(key) = self.tutorial_reading_key(steps::SHELVED) {
+                    let entry = blyg_core::shelf::Entry::new(key.0.clone(), key.1.clone());
+                    let on = setup == Setup::ShelfLens;
+                    let _ = self.backend.set_entry_on_shelf(&entry, on);
+                    self.reload_reading_shelf();
+                    self.reading.refilter();
+                    if !on {
+                        self.open_reading(key, window, cx);
+                    }
+                }
+                cx.notify();
+            }
         }
     }
 
@@ -1272,6 +1325,20 @@ impl MainView {
             "lineage" => self.toggle_lineage(window, cx),
             "ring" => self.lineage_open_ring(cx),
             "catch-up" => self.catch_up_key(window, cx), // --- catch up ---
+            // --- 0.24.0 ---
+            "background" => self.background_key(cx),
+            "shelf-add" => {
+                if let Some(key) = self.tutorial_reading_key(steps::SHELVED) {
+                    self.toggle_reading_shelf(key, cx);
+                }
+            }
+            "shelf-lens" => self.select_source(
+                crate::app::reading::sources_vm::Source::Smart(
+                    crate::app::reading::sources_vm::Smart::Shelf,
+                ),
+                cx,
+            ),
+            "discover" => self.open_discover(window, cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
