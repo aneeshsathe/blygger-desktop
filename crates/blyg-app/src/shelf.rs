@@ -263,8 +263,9 @@ impl MainView {
                     .text_color(p.muted)
                     .line_height(relative(1.45))
                     .child(crate::keymap::hint(
-                        "Nothing on your shelf yet. Keep the posts you keep updating here: \
-                         open one and press ⌥⌘B.",
+                        "None of your own posts are on the shelf. Keep the ones you keep \
+                         updating here: open one and press ⌥⌘B. Others' posts you shelve \
+                         are under Reading › Shelf.",
                     )),
             );
         }

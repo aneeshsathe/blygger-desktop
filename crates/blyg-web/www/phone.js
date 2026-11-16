@@ -281,7 +281,7 @@ function renderShelfSheet() {
         <button type="button" class="ic" data-up="${esc(r.id)}" data-i="${i}" aria-label="Move up" ${i ? '' : 'disabled'}>▲</button>
         <button type="button" class="ic" data-down="${esc(r.id)}" data-i="${i}" aria-label="Move down" ${i < rows.length - 1 ? '' : 'disabled'}>▼</button>
         <button type="button" class="ic" data-off="${esc(r.id)}" aria-label="Take off the shelf">✕</button></div>`).join('')
-    : '<p class="muted">Nothing on your shelf yet. Hold a post in Write, or tap 📚 in the editor.</p>';
+    : '<p class="muted">None of your own posts are on the shelf. Hold a post in Write, or tap 📚 in the editor. Others\u2019 posts you shelve are under Read › Shelf.</p>';
 }
 function openShelved(id) {
   closeSheet({ refocus: false });

@@ -292,7 +292,7 @@ function askShelf() {
   const note = shelfNote();
   openSheet(`<h4>📚 Your shelf</h4>${note ? `<p class="muted">${esc(note)}</p>` : ''}${rows.length
     ? `<div class="picks">${rows.map((r, i) => `<button type="button" class="opt2" data-shelf="${esc(r.id)}"><span class="n">${i + 1}</span> ${esc(r.title)}<small>${esc(r.kind)} · ${esc(r.pill)} · ${esc(r.when)}</small></button>`).join('')}</div>`
-    : '<p>Nothing on your shelf yet. ⌥⌘B shelves the open post.</p>'}
+    : '<p>None of your own posts are on the shelf. ⌥⌘B shelves the open post. Others\u2019 posts you shelve are under Reading › Shelf.</p>'}
     <div class="sk"><span><kbd>⏎</kbd> the first</span><span><kbd>esc</kbd> close</span></div>`,
   () => { const b = $('#sheet [data-shelf]'); if (b) openShelved(b.dataset.shelf); });
   $('#sheet').onclick = (e) => { const b = e.target.closest('[data-shelf]'); if (b) openShelved(b.dataset.shelf); };

@@ -1507,7 +1507,8 @@ impl Engine {
                 "signals",
                 "hoppers",
                 "freshness",
-                "shelf", // --- shelf sync ---
+                "shelf",      // --- shelf sync ---
+                "background", // --- background ---
             ] {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;

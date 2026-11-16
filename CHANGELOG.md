@@ -39,6 +39,9 @@ Background and Foreground, a shelf that syncs with your blyg and holds anyone's 
 - **Web app: capabilities read twice at start.** The shelf's first sync asked `/api/capabilities` again after the start-up check had read it; the answer is now kept.
 - **Background read too often**: every edit to one of your drafts made elsewhere read the whole Background lens again. It's now read when `reading`, `subscriptions` or `settings` moves; the studio moves `reading` whenever one of your posts' status, version or Background reasons changes, so nothing is missed.
 
+- **The shelf sheet (⌘B, and the web app's) said "Nothing on your shelf yet"** when the shelf held only others' posts; it lists your own posts, so it now says so and points to Reading › Shelf for the rest.
+- **After the blyg's change counters reset**, the Background list is read again with the rest.
+
 ### Not verified
 
 - **Windows**: nothing in this release was run on Windows. The new keys and chips are plain (**b**, clicks); Windows CI builds and tests it.
