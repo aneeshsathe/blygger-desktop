@@ -7,7 +7,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, outcome, publishedToast, copyText,
   finishPublish, finishDiscard, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
+  swipeCards, swipePosts, arrive, cardHtml, applyTheme, draw, drawMore, onNearEnd, settle,
   shelfNote, shelfButton,
 } from './core.js';
 // --- web-reading ---
@@ -146,6 +146,7 @@ function renderReading() {
   if (view !== 'reading') return;
   rkeys = R.rows.map((r) => r.key);
   rmore = R.total > R.rows.length;
+  stepButtons();
   const host = $('#d-stream');
   draw(host, R.rows.length
     ? R.rows.map(cardHtml).join('') + moreLine(R.total - R.rows.length)
@@ -315,7 +316,33 @@ function setView(v) {
   omni.value = v === 'posts' ? V?.query ?? '' : v === 'reading' ? rq : '';
   render();
 }
-function openReading(key) {
+/** The list's order when a post was opened from it: reading a post can move
+    it (its "edited" mark clears), so ‹ › and ↑ ↓ walk the order you saw. */
+let rorder = [];
+/** The next (1) or previous (-1) post, more of the list drawn when that
+    runs past the end. */
+function stepPost(d, { slide = true } = {}) {
+  if (!rorder.includes(rcur)) rorder = rkeys.slice();
+  let i = rorder.indexOf(rcur) + d;
+  if (i >= rorder.length && rmore) {
+    moreReading();
+    for (const k of rkeys) if (!rorder.includes(k)) rorder.push(k);
+  }
+  i = Math.max(0, Math.min(rorder.length - 1, i));
+  const k = rorder[i];
+  if (!k || k === rcur) return;
+  openReading(k, { keepOrder: true });
+  if (slide) arrive($('#d-post'), d);
+}
+/** ‹ and › say when there's nowhere further to go. */
+function stepButtons() {
+  const i = rorder.indexOf(rcur);
+  const prev = $('#d-ractions [data-ra="prev"]'), next = $('#d-ractions [data-ra="next"]');
+  if (prev) prev.disabled = i <= 0;
+  if (next) next.disabled = i < 0 || (i >= rorder.length - 1 && !rmore);
+}
+function openReading(key, { keepOrder = false } = {}) {
+  if (!keepOrder || !rorder.includes(key)) rorder = rkeys.slice();
   const p = JSON.parse(S.B.open_reading(key, now()));
   if (!p) return;
   rcur = key;
@@ -326,6 +353,7 @@ function openReading(key) {
   $('#d-rpane .rscroll').scrollTop = 0;
   persist();
   render();
+  stepButtons();
 }
 function readAction(a, key = rcur, passage = '') {
   if (!key) return;
@@ -352,6 +380,8 @@ function readAction(a, key = rcur, passage = '') {
       const b = e.target.closest('[data-hop]'); if (!b) return;
       outcome(S.B.toggle_hopper(key, b.dataset.hop)); closeSheet(); persist(); render();
     };
+  } else if (a === 'prev' || a === 'next') {
+    stepPost(a === 'next' ? 1 : -1);
   } else if (a === 'smaller' || a === 'bigger') {
     const post = $('#d-post');
     const cur = parseFloat(getComputedStyle(post).getPropertyValue('--rsize')) || 19;
@@ -375,10 +405,7 @@ export function initDesk() {
     if (view === 'reading') {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        const i = rkeys.indexOf(rcur) + (e.key === 'ArrowDown' ? 1 : -1);
-        if (i >= rkeys.length && rmore) moreReading();
-        const k = rkeys[Math.max(0, Math.min(rkeys.length - 1, i))];
-        if (k) openReading(k);
+        stepPost(e.key === 'ArrowDown' ? 1 : -1, { slide: false });
       } else if (e.key === 'Escape') { omni.value = ''; rq = ''; rlimit = RPAGE; render(); }
       return;
     }
@@ -453,6 +480,7 @@ export function initDesk() {
   onNearEnd($('#d-stream'), moreReading);
   onNearEnd(window, moreReading);
   $('#d-ractions').addEventListener('click', (e) => { const b = e.target.closest('[data-ra]'); if (b) readAction(b.dataset.ra); });
+  swipePosts($('#d-post'), (d) => stepPost(d));
   $('#d-post').addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) openReading(g.dataset.goto); });
   holdSentences($('#d-post'), $('#d-pmenu'), (a, text) => readAction(a === 'link' ? 'link' : a, rcur, a === 'link' ? '' : text));
   const rs = parseFloat(pref.get('desk-rsize'));

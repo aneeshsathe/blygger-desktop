@@ -8,7 +8,7 @@ import {
   $, $$, S, now, esc, persist, pref, touched, toast, shake, outcome, publishedToast, copyText,
   finishPublish, conflictBanner,
   showPreview, editorBar, runTool, renderPicks, insertPick, renderPost, holdSentences,
-  swipeCards, cardHtml, draw, drawMore, onNearEnd, settle,
+  swipeCards, swipePosts, arrive, cardHtml, draw, drawMore, onNearEnd, settle,
   shelfNote, shelfButton,
 } from './core.js';
 import { setOffline, resetData } from './desk.js';
@@ -303,10 +303,35 @@ function openShelved(id) {
 }
 
 // ---------------------------------------------------------------- read
-function openReading(key) {
+/** The stream's order when a post was opened from it, so ‹ › and a swipe
+    walk the same list even as reading one drops it from "unread only". */
+let readOrder = [];
+function streamKeys() { return [...document.querySelectorAll('#p-stream .card')].map((c) => c.dataset.key); }
+/** The next (1) or previous (-1) post: more of the stream is read when that
+    runs past what's drawn. */
+function stepPost(d) {
+  if (!readOrder.includes(readKey)) readOrder = streamKeys();
+  const i = readOrder.indexOf(readKey) + d;
+  if (i >= readOrder.length) {
+    const R = JSON.parse(S.B.reading_page(now(), $('#p-rq').value, unreadOnly, readOrder.length + PAGE));
+    for (const r of R.rows) if (!readOrder.includes(r.key)) readOrder.push(r.key);
+  }
+  const k = readOrder[i];
+  if (i < 0 || !k) { toast(d > 0 ? 'That’s the last one' : 'That’s the first one'); return; }
+  openReading(k, { keepOrder: true });
+  arrive($('#p-postBody'), d);
+}
+function stepButtons() {
+  const i = readOrder.indexOf(readKey);
+  $('#p-prevPost').disabled = i <= 0;
+  $('#p-nextPost').disabled = i < 0;
+}
+function openReading(key, { keepOrder = false } = {}) {
   const p = JSON.parse(S.B.open_reading(key, now()));
   if (!p) return;
+  if (!keepOrder) readOrder = streamKeys();
   readKey = key;
+  stepButtons();
   renderPost($('#p-postBody'), p);
   shelfButton($('#p-shelfRA'), key); // --- shelf sync ---
   opened(key, $('#p-postBody')); // --- web-reading --- thumbs, links to Peek --- end web-reading ---
@@ -527,6 +552,9 @@ export function initPhone() {
     else hopperSheet(key);
   });
   $('#p-back2').addEventListener('click', () => show('read'));
+  $('#p-prevPost').addEventListener('click', () => stepPost(-1));
+  $('#p-nextPost').addEventListener('click', () => stepPost(1));
+  swipePosts($('#v-post .pscroll'), stepPost);
   // The post's action row, by name: what swiping a card and holding a
   // sentence also offer.
   $('#p-pacts').addEventListener('click', (e) => {

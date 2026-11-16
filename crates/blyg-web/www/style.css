@@ -208,3 +208,9 @@ html[data-mode="live"] .keys{display:none;margin:0;padding:8px 14px 10px;border-
 html[data-mode="live"] .keys.on{display:block}
 .tb .controls{flex:none;gap:6px;font-size:12px}
 .tb .controls select,.tb .controls button{padding:2px 8px;font-size:12px;border-radius:6px}
+
+/* Post to post in the reader (desk and iPad). */
+@keyframes from-r{from{transform:translateX(28px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes from-l{from{transform:translateX(-28px);opacity:.3}to{transform:none;opacity:1}}
+#d-post.from-r{animation:from-r .2s ease-out}#d-post.from-l{animation:from-l .2s ease-out}
+#d-ractions button.step{min-width:28px;color:var(--wmuted)}#d-ractions button.step:disabled{opacity:.3}

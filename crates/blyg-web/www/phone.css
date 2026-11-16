@@ -188,3 +188,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 #phone .pfilter .pf.on{border-color:var(--pacc);color:var(--pacc)}
 #phone .pfilter .pf b{font-weight:600}
 /* --- end web-parity --- */
+/* Post to post: a small slide in from the side it came from. */
+@keyframes from-r{from{transform:translateX(28px);opacity:.3}to{transform:none;opacity:1}}
+@keyframes from-l{from{transform:translateX(-28px);opacity:.3}to{transform:none;opacity:1}}
+.post.from-r{animation:from-r .2s ease-out}.post.from-l{animation:from-l .2s ease-out}
+.ic.step{min-width:2.2rem;font-size:1.25rem;color:var(--pmuted)}.ic.step:disabled{opacity:.3}
