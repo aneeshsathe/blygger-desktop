@@ -552,6 +552,12 @@ impl MainView {
             ),
             s => s,
         };
+        // --- auto cross-post --- the next chosen site, or why the rest stopped.
+        let sub = match (self.auto_crosspost_after_run(&out, window, cx), sub) {
+            (Some(rest), Some(s)) => Some(format!("{s} · {rest}")),
+            (Some(rest), None) => Some(rest),
+            (None, s) => s,
+        };
         self.show_toast(text, sub.map(Into::into), cx);
         if let Some(r) = ran {
             self.macro_restore_pane(&r, &out, window, cx);

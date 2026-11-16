@@ -110,6 +110,10 @@ pub struct AppState {
     /// `onboarding::steps::TOURS`): the chooser ticks them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tours_done: Vec<String>,
+    /// --- auto cross-post --- Per post, the cross-post macros to start when
+    /// it's published (`<extension>/<macro>`), by `"<blyg host> <local id>"`.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub auto_cross_post: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// --- tray --- A post waiting in the quote tray: what the picker writes

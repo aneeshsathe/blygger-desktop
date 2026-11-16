@@ -439,6 +439,7 @@ impl MainView {
                 ExtAction::OpenSite { ext, site } => format!("ext:{ext}:site:{site}"),
                 ExtAction::Library { ext, id, .. } => format!("ext:{ext}:lib:{id}"),
                 ExtAction::Manage => "ext:manage".into(),
+                ExtAction::AutoCrossPost { ext, id } => format!("ext:{ext}:auto:{id}"),
             };
             out.push(Entry {
                 id,

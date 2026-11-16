@@ -949,6 +949,63 @@ mod macros {
         view.read_with(cx, |v, _| assert!(!v.macro_cross_post_hint()));
     }
 
+    /// --- auto cross-post --- A post can be set to cross-post when it's
+    /// published (the palette's on/off row, or the Publish sheet's chips):
+    /// publishing it starts the run, which still opens on the Preview sheet.
+    /// Another post isn't affected.
+    #[gpui_kit::test]
+    fn a_post_set_to_cross_post_starts_the_run_when_published(cx: &mut TestAppContext) {
+        const AUTO: &str = "Cross-post automatically to Substack Notes";
+        let v = vault();
+        let (view, fake, cx) = setup(cx, &v, &config(true));
+        stub_pane(cx);
+        started(&view, cx);
+        let post = fake.create_draft(Kind::Fragment, POST).unwrap();
+        let other = fake.create_draft(Kind::Fragment, "Low water.").unwrap();
+        view.update_in(cx, |v, window, cx| v.open(&post, window, cx));
+        cx.run_until_parked();
+        // A draft: the row is there, off.
+        let rows = labels(&view, cx);
+        assert!(rows.contains(&format!("{AUTO}: off")), "{rows:?}");
+        view.update_in(cx, |v, window, cx| v.ext_toggle_palette(window, cx));
+        let i = view.read_with(cx, |v, _| {
+            let Some(Overlay::Palette { rows, .. }) = &v.ext.overlay else {
+                panic!("no palette")
+            };
+            rows.iter()
+                .position(|r| r.label == format!("{AUTO}: off"))
+                .expect("the row")
+        });
+        view.update_in(cx, |v, window, cx| v.ext_run_row(i, window, cx));
+        cx.run_until_parked();
+        assert!(labels(&view, cx).contains(&format!("{AUTO}: on")));
+        // The other post: off, and publishing it starts nothing.
+        view.update_in(cx, |v, window, cx| {
+            v.open(&other, window, cx);
+            v.start_publish(other.clone(), None, window, cx);
+        });
+        cx.run_until_parked();
+        view.read_with(cx, |v, _| {
+            assert!(!v.browser.automation.running(), "not set for this post");
+        });
+        // Publishing the post starts its run: the Preview sheet.
+        view.update_in(cx, |v, window, cx| {
+            v.open(&post, window, cx);
+            v.start_publish(post.clone(), None, window, cx);
+        });
+        wait(&view, cx, "the Preview sheet", |cx| {
+            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_))))
+        });
+        assert_eq!(fake.item(&post).unwrap().status, Status::Public);
+        // Off again from the row.
+        view.update_in(cx, |v, _, cx| {
+            v.toggle_auto_crosspost(&post, XP, "cross-post-note", cx)
+        });
+        view.update_in(cx, |v, _, cx| {
+            assert!(v.auto_crosspost_chosen(&post, cx).is_empty())
+        });
+    }
+
     #[gpui_kit::test]
     fn choosing_it_prepares_the_text_and_opens_the_preview_sheet(cx: &mut TestAppContext) {
         let v = vault();

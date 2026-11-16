@@ -74,6 +74,13 @@ the top left of the window.
    Press **Esc** or click **cancel** to stop with nothing posted. If the
    site's composer didn't take the text, Burrow says so, leaves the text on
    your clipboard, and you paste it with **Ctrl+V** and click Post yourself.
+7. **Optional: start it by itself next time.** In the **Publish** sheet
+   (Ctrl+Enter), tick the sites under **Then cross-post to**. Burrow
+   remembers them for that post, and each time you publish it, the
+   cross-post starts on its own, one site after another. You still check
+   each one and press Enter to post it. To change it later, untick the site
+   there, or press **Ctrl+Shift+P** and pick **Cross-post automatically to
+   … : on** to turn it off.
 
 A few things to know on Windows:
 
@@ -209,6 +216,26 @@ extension-setting = cross-post bluesky-max-chars=300
 # the longest cast, in bytes (default 320; 1024 if your account can send long casts)
 extension-setting = cross-post farcaster-max-bytes=1024
 ```
+
+### Cross-posting automatically, per post
+
+A post can start its cross-posts by itself when you publish it. In the
+**Publish** sheet (⌘⏎), tick the sites under **Then cross-post to**, or press
+⇧⌘P with the post open and pick **Cross-post automatically to Bluesky: off**
+(and the same for the other sites) to turn it on. The palette row then reads
+**on**, and choosing it again turns it off. The choice belongs to that post
+alone and is remembered: other posts are unaffected, and it lasts across
+publishes until you untick it.
+
+When the post is published, Burrow starts a cross-post for each ticked site,
+one after another, and the toast says "cross-posting to Bluesky, Farcaster".
+"Automatically" only starts the run. Each one still shows both sheets, and
+nothing is posted until you press Post. Cancelling one (esc) skips that
+site, and the next one starts. A run that leaves the page to you stops the
+rest, and its toast says which sites weren't started, so you can run them
+from ⇧⌘P. That happens when a step fails, the box doesn't take the text, or
+you stop after Post was clicked. The choices are kept in Burrow's
+`state.json`, by blyg and post. They never reach your blyg.
 
 ### Before you rely on it
 

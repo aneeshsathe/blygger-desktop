@@ -16,6 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+
+- **Cross-post automatically, per post.** The Publish sheet has **Then cross-post to** with a chip per granted cross-post site (Substack Notes, Bluesky, Farcaster). Tick one, and every time that post is published Burrow starts that cross-post by itself, one site after another. ⇧⌘P with the post open has **Cross-post automatically to <site>: on/off** rows to turn each one on or off. The choice is remembered per post (in `state.json`, never on your blyg), and other posts are unaffected. It only starts the run: each one still shows the text and posts only when you click Post. Cancelling one skips to the next. A run that leaves the page to you stops the rest, and its toast names the sites still to do.
+
 ### Fixed
 
 - **Esc on Windows, everywhere.** A WebView2 that has the keyboard (the browser pane's page, the preview, the reader's post) keeps every key from the app, so after a click in a page Esc did nothing to an open sheet, palette or the pane. Each web view now passes Esc on: the keyboard comes back to the app and Esc is handled there, as on the Mac. The pane's page still sees the key too, and a page in full screen keeps it to leave full screen. The Menu button's panel now closes on Esc, before the search field can take the key. A click anywhere in the window (outside a page) now takes the keyboard back from the web views, as clicking the app does on the Mac, so typing in a palette opened that way reaches it.
@@ -34,7 +38,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Not verified
 
-- Built and checked on Linux only, as for 0.22.0: the Windows code was type-checked and linted with the MinGW target, and the new tests (Esc from the preview closes the open sheet, Esc from the pane's page closes the pane, a click takes the keyboard back, a mention opens its post, text is converted once) ran on Linux with stub web views. The WebView2 accelerator-key hook and the Menu panel's Esc have **not** been run on Windows.
+- Built and checked on Linux only, as for 0.22.0: the Windows code was type-checked and linted with the MinGW target, and the new tests (Esc from the preview closes the open sheet, Esc from the pane's page closes the pane, a click takes the keyboard back, a mention opens its post, text is converted once, a post set to cross-post starts its run when published) ran on Linux with stub web views. The WebView2 accelerator-key hook and the Menu panel's Esc have **not** been run on Windows. Automatic cross-posting was tested with the bundled cross-post extension running for real and a stub browser pane, up to its Preview sheet; no run went past it, and none reached a live site. On Linux, the app's tests fail the same 12 keystroke and clipboard tests as before, and `the_browser_pane_makes_room_for_the_drawer`, which fails the same way on unmodified 0.25.0.
 
 ## [0.25.0] - 2026-11-16
 

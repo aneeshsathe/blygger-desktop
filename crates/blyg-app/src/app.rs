@@ -1862,11 +1862,16 @@ impl MainView {
                             Some(n) => format!("Published v{} · “{n}”", out.version),
                             None => format!("Published v{}", out.version),
                         };
+                        // --- auto cross-post --- the sites chosen for it start
+                        // now, one after another, each with its two sheets.
+                        let auto = v.auto_crosspost_after_publish(&id, window, cx);
                         // --- browser macros --- a granted macro can cross-post it.
-                        let cross = if v.macro_cross_post_hint() {
-                            " · ⇧⌘P to cross-post"
+                        let cross = if !auto.is_empty() {
+                            format!(" · cross-posting to {}", auto.join(", "))
+                        } else if v.macro_cross_post_hint() {
+                            " · ⇧⌘P to cross-post".to_string()
                         } else {
-                            ""
+                            String::new()
                         };
                         let sub = crate::keymap::hint_owned(format!(
                             "{} · ⌘O opens it{cross}",
@@ -3623,6 +3628,7 @@ impl MainView {
             Sheet::AltText(s) => self.render_alt_sheet(s, cx),
             Sheet::Copies(s) => self.render_copies_sheet(s, cx), // --- syndication ---
             Sheet::Publish {
+                id,
                 title,
                 next_version,
                 note,
@@ -3647,6 +3653,7 @@ impl MainView {
                         gpui_kit::base::input::Input::new(note).into_any_element(),
                     ))
                     .children(self.render_note_ai(cx)) // --- access-ai ---
+                    .children(self.render_auto_crosspost(id, cx)) // --- auto cross-post ---
                     .child(keys_row(vec![
                         key_hint("⏎", "publish"),
                         key_hint("esc", "cancel"),

@@ -29,6 +29,8 @@ pub(crate) enum RowAction {
     },
     /// The Manage extensions sheet.
     Manage,
+    /// --- auto cross-post --- turn a macro on or off for the open post.
+    AutoCrossPost { ext: String, id: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,6 +90,11 @@ impl MainView {
                 });
             }
             rows.extend(self.ext_macro_rows(screen));
+            // --- auto cross-post --- the open post's on/off rows.
+            if screen == blyg_ext::protocol::Screen::Posts {
+                let post = self.current.as_ref().map(|c| &c.local_id);
+                rows.extend(self.auto_crosspost_rows(post, cx));
+            }
             rows.extend(self.ext_site_rows());
             for l in host.libraries() {
                 rows.push(Row {
@@ -210,6 +217,11 @@ impl MainView {
             RowAction::Command { ext, id } => self.ext_run_command(ext, id, screen, window, cx),
             RowAction::Macro { ext, id } => self.ext_run_macro(ext, id, window, cx),
             RowAction::OpenSite { ext, site } => self.ext_open_site(&ext, &site, window, cx),
+            RowAction::AutoCrossPost { ext, id } => {
+                if let Some(post) = self.current.as_ref().map(|c| c.local_id.clone()) {
+                    self.toggle_auto_crosspost(&post, &ext, &id, cx);
+                }
+            }
         }
         cx.notify();
     }
