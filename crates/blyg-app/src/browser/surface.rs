@@ -44,6 +44,7 @@ pub enum BrowserEvent {
     /// --- esc --- Esc while the page had the keyboard, outside full screen
     /// (Windows: WebView2 keeps keys from the app while it is focused, see
     /// `webview2_host::on_escape`). The page sees the key too.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Escape,
 }
 

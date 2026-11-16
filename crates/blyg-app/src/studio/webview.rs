@@ -63,6 +63,7 @@ pub enum SurfaceEvent {
     /// from the app while it is focused, see `webview2_host::on_escape`).
     /// The keyboard goes back to the app and Esc is handled there, as if it
     /// had been pressed in the app.
+    #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Escape,
 }
 
