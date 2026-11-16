@@ -308,7 +308,12 @@ pub const PAGE_DOWN_JS: &str = "window.__blyg && window.__blyg.page(1);";
 
 /// --- selection --- Turn on the pill that follows a text selection
 /// ("Quote in draft ⇧⌘D"). Off by default: the studio preview never shows it.
+/// On Windows the pill names the key as Windows does (`keymap::hint`).
+#[cfg(not(target_os = "windows"))]
 pub const SELECTION_UI_JS: &str = "window.__blyg && window.__blyg.selectionUi({});";
+#[cfg(target_os = "windows")]
+pub const SELECTION_UI_JS: &str =
+    "window.__blyg && window.__blyg.selectionUi({key: \"Ctrl+Shift+D\"});";
 
 /// ↑/↓ with the post pane focused: scroll a little.
 pub fn nudge_js(down: bool) -> String {
@@ -431,7 +436,7 @@ pub const HOST_SCRIPT: &str = r#"
     }
     // The labels are CSS content, so they never join a selection's text.
     if (!pill.firstChild) {
-      pill.appendChild(button("quote", "Quote in draft", "⇧⌘D",
+      pill.appendChild(button("quote", "Quote in draft", (ui && ui.key) || "⇧⌘D",
         "Quote this passage in your draft, with a link to the post"));
     }
     var range = s.getRangeAt(0), rects = range.getClientRects();

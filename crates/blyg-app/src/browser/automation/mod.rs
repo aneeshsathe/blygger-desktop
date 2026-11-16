@@ -1072,7 +1072,7 @@ fn sheet_key(theme: &crate::theme::Theme, k: &'static str, label: &'static str) 
                 .justify_center()
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
-                .child(k),
+                .child(crate::keymap::hint(k)),
         )
         .child(label)
 }

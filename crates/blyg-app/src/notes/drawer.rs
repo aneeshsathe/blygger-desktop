@@ -819,7 +819,7 @@ impl MainView {
                 .cursor_pointer()
                 .hover(|s| s.bg(p.hover()))
                 .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
-                .child(label)
+                .child(crate::keymap::hint(label))
         };
         let header = div()
             .id("notes-header")
@@ -961,7 +961,7 @@ impl MainView {
                         .cursor_pointer()
                         .text_color(p.accent_text())
                         .hover(|s| s.underline())
-                        .child(QUOTE_HINT)
+                        .child(crate::keymap::hint(QUOTE_HINT))
                         .on_click(cx.listener(|this, _, window, cx| {
                             if let Some((sel, source)) = this.notes_selected_passage(cx) {
                                 this.quote_into_draft(sel, source, window, cx);

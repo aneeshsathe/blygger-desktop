@@ -3531,9 +3531,9 @@ impl MainView {
             .font_family(self.theme.chrome_font(&self.prefs))
             .text_size(px(12.5))
             .shadow_md()
-            .child(t.text.clone())
+            .child(crate::keymap::shown(t.text.clone()))
             .when_some(t.sub.clone(), |d, sub| {
-                d.child(div().opacity(0.7).child(sub))
+                d.child(div().opacity(0.7).child(crate::keymap::shown(sub)))
             });
         Some(
             el.with_animation(
@@ -3566,7 +3566,7 @@ impl MainView {
                 .justify_center()
                 .font_weight(FontWeight::MEDIUM)
                 .text_size(px(11.5))
-                .child(k)
+                .child(crate::keymap::hint(k))
         };
         let key_hint = |k: &'static str, label: &'static str| {
             div()
