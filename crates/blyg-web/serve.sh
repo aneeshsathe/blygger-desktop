@@ -4,6 +4,9 @@
 #   ./crates/blyg-web/serve.sh               build, then serve
 #   ./crates/blyg-web/serve.sh --build-only  build into crates/blyg-web/dist/
 #   PORT=9000 ./crates/blyg-web/serve.sh     another port
+#   DEV=1 ./crates/blyg-web/serve.sh         fast build for local iteration
+#                                            (profile wasm-dev: no LTO, larger
+#                                            wasm; never ship it)
 #   WASM_OPT=1 ./crates/blyg-web/serve.sh    also run wasm-opt -Oz (smaller raw,
 #                                            but a little larger gzipped; see README)
 #   PRECOMPRESS=1 ./crates/blyg-web/serve.sh also write a Brotli copy (`.br`) beside
@@ -32,6 +35,8 @@ BINDGEN="$TOOLS/bin/wasm-bindgen"
 WASM_OPT_VERSION="0.116.1"
 WASM_OPT_BIN="$TOOLS/bin/wasm-opt"
 BUILD_ONLY=0
+PROFILE=wasm-release
+[[ "${DEV:-0}" == 1 ]] && PROFILE=wasm-dev
 [[ "${1:-}" == "--build-only" ]] && BUILD_ONLY=1
 
 rustup target list --installed 2>/dev/null | grep -qx wasm32-unknown-unknown \
@@ -60,7 +65,7 @@ if [[ -z "${CC_wasm32_unknown_unknown:-}" ]] \
   fi
 fi
 
-echo "Building blyg-web (wasm32, profile wasm-release)"
+echo "Building blyg-web (wasm32, profile $PROFILE)"
 # blyg-core links SQLite and ring (for its store and HTTP client), whose C
 # parts don't build for wasm32 with every toolchain. This crate never calls
 # them, so the linker may leave their symbols undefined. The few that a C-ABI
@@ -71,12 +76,12 @@ CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
 RUSTUP_HOME_DIR="${RUSTUP_HOME:-$HOME/.rustup}"
 (cd "$ROOT" && CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="-C link-arg=--allow-undefined \
 --remap-path-prefix=$ROOT=/burrow --remap-path-prefix=$CARGO_HOME_DIR=/cargo --remap-path-prefix=$RUSTUP_HOME_DIR=/rustup" \
-  cargo build -p blyg-web --lib --profile wasm-release --target wasm32-unknown-unknown)
+  cargo build -p blyg-web --lib --profile "$PROFILE" --target wasm32-unknown-unknown)
 
 rm -rf "$DIST"
 mkdir -p "$DIST/pkg" "$DIST/fonts"
 "$BINDGEN" --target web --no-typescript --out-dir "$DIST/pkg" \
-  "$TARGET/wasm32-unknown-unknown/wasm-release/blyg_web.wasm"
+  "$TARGET/wasm32-unknown-unknown/$PROFILE/blyg_web.wasm"
 # Every `env` import must have a stub in www/env.js, or the page won't start.
 if command -v node >/dev/null 2>&1; then
   node -e '

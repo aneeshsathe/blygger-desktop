@@ -35,5 +35,19 @@ codegen-units = 1
 panic = "abort"
 strip = true
 
+# Local web iteration only (`DEV=1 ./crates/blyg-web/serve.sh`): no LTO,
+# parallel and incremental codegen. A larger, slower wasm; never shipped.
+# CI and releases build wasm-release.
+[profile.wasm-dev]
+inherits = "wasm-release"
+opt-level = 1
+lto = false
+codegen-units = 256
+incremental = true
+strip = false
+
 [profile.dev.package."*"]
 opt-level = 2   # GPUI + sqlite are painfully slow unoptimised; our own code stays debuggable
+# Line numbers in backtraces are enough for dependencies; full debug info for
+# ~1000 crates at opt-level 2 costs link time and gigabytes of target/.
+debug = "line-tables-only"
