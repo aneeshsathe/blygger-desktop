@@ -38,9 +38,15 @@ the posts from that source in the middle, and the post on the right.
   down** lists the posts you gave a 👎.
 
 - **Mentions**, under All unread, lists the posts you hold that mention you:
-  ones that quote or reply to your posts, or link to your blyg (or, on studio
-  0.56 and later, what your blyg's own mentions lens says). A dot says there's
-  something to read; there's never a count.
+  on studio 0.56 and later, the ones your blyg's own mentions lens finds
+  (the post names you), together with the ones Burrow finds itself: posts
+  that quote, reply to or fork your posts, or link to your blyg. Each row
+  says why with a small tag: **named you**, **quoted you**, **replied**,
+  **forked you** or **linked you** (at most two, "named you" first).
+  Burrow keeps the lens's last answer, so the list is whole from the start
+  and doesn't shrink when the blyg answers. Your own posts and Background
+  aren't listed. A dot says there's something to read; there's never a
+  count.
 - **Shelf** lists everything on your shelf, yours and others', in your
   order, as the studio's Shelf lens does: **+ Add to shelf** among a post's
   chips puts it there (see [The shelf](writing.md#the-shelf)). A shelved

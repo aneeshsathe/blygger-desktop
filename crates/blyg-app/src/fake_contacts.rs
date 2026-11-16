@@ -23,6 +23,9 @@ pub struct Book {
     /// Whether publish rewrites `@handle` (off: the tour and the composer
     /// tests pick a contact as a plain link; tests turn it on).
     pub rewrites: bool,
+    /// The blyg's Mentions lens (`None`: not served; the demo and tests
+    /// serve one).
+    pub lens: Option<Vec<(String, String)>>,
 }
 
 impl Default for Book {
@@ -42,6 +45,7 @@ impl Default for Book {
         };
         Book {
             rewrites: false,
+            lens: None,
             contacts: vec![Contact {
                 handle: "lin".into(),
                 name: Some("Lin".into()),

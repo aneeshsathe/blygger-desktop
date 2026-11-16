@@ -588,7 +588,7 @@ export function cardHtml(r) {
     <div class="bgL" aria-hidden="true">✓ Read</div>
     <div class="acts" aria-label="Actions"><button type="button" data-act="quote" data-key="${esc(r.key)}">❝<small>Quote</small></button><button type="button" data-act="reply" data-key="${esc(r.key)}">↩<small>Reply</small></button><button type="button" data-act="hopper" data-key="${esc(r.key)}">⊕<small>Hopper</small></button></div>
     <div class="card${r.unread ? ' unread' : ''}" data-key="${esc(r.key)}" tabindex="0" role="button" aria-label="${esc(r.who)}: ${esc(r.title)}">
-      <div class="who">${r.unread ? '<span class="dot" aria-label="unread"></span>' : ''}<b>${esc(r.who)}</b> <span>${esc(r.host)} · ${esc(r.when)}</span>${r.glyph ? `<span class="glyph">${esc(r.glyph)}</span>` : ''}${r.badge && r.badge !== 'new' ? `<span class="badge">${esc(r.badge)}</span>` : ''}</div>
+      <div class="who">${r.unread ? '<span class="dot" aria-label="unread"></span>' : ''}<b>${esc(r.who)}</b> <span>${esc(r.host)} · ${esc(r.when)}</span>${r.glyph ? `<span class="glyph">${esc(r.glyph)}</span>` : ''}${r.badge && r.badge !== 'new' ? `<span class="badge">${esc(r.badge)}</span>` : ''}${(r.why || []).map((w) => `<span class="badge why">${esc(w)}</span>`).join('')}</div>
       <div class="ex"><i>${esc(r.title)}</i>${r.excerpt ? ' ' + esc(r.excerpt) : ''}</div>
       ${r.hoppers.length ? `<div class="hop">⊕ ${r.hoppers.map(esc).join(', ')}</div>` : ''}
     </div></div>`;

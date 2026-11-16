@@ -23,6 +23,12 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Web app on a laptop or iPad: it now fills the page.** On your blyg the app is no longer drawn as a window inside a page (no frame, traffic lights or width cap). Theme and layout moved into the title bar, and **Keys** opens the keyboard list. The sample-data demo keeps its window.
 
 ### Fixed
+- **Reading › Mentions showed a full list for a moment, then shrank to a few.** It now lists both what your blyg's mentions lens finds
+  and what Burrow finds itself (quotes, replies, forks and links to your
+  blyg), and each row has a small tag saying why: named you, quoted you,
+  replied, forked you or linked you. The lens's last answer is kept, so the
+  list is whole from the start. The web app lists and tags them the same
+  way.
 - **Web app on a phone: swiping back from a post played the slide twice.** The system's back swipe already moves the views, so after it the app no longer slides them again (`hasUAVisualTransition`, or a touch that began at the screen edge).
 
 

@@ -112,6 +112,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .card .who b{color:var(--pink);font-weight:600}
 .card .glyph{font:.72rem var(--ui);color:var(--pacc)}
 .card .badge{font:600 .62rem var(--ui);text-transform:uppercase;letter-spacing:.05em;color:var(--pacc)}
+.card .badge.why{font:.68rem var(--ui);text-transform:none;letter-spacing:0;color:var(--pmuted);border:1px solid var(--pline);border-radius:999px;padding:0 .4rem}
 .card .ex{font:1.03rem/1.4 var(--fbody);margin-top:.25rem;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .card:not(.unread) .ex{color:var(--pmuted)}
 .card .hop{font:.72rem var(--ui);color:var(--pmuted);margin-top:.25rem}

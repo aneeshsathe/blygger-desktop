@@ -69,6 +69,9 @@ impl Backend for Recording {
     fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
         self.inner.reading_mentions()
     }
+    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+        self.inner.reading_mentions_cached()
+    }
     fn page_title(&self, url: &str) -> Option<String> {
         self.inner.page_title(url) // --- capture ---
     }
