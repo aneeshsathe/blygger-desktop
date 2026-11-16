@@ -1,16 +1,14 @@
 //! Accounts: config-file persistence, status per provider, sign in/out, picking
 //! a provider. Uses MemoryTokenStore, mock servers and fake CLIs only.
 
-mod common;
-
 use std::sync::Arc;
 
+use crate::common::*;
 use blyg_ai::accounts::ANTHROPIC_KEY_ACCOUNT;
 use blyg_ai::chatgpt::Credentials;
 use blyg_ai::cli::CliLocator;
 use blyg_ai::*;
 use blyg_core::config::{ConfigFiles, ConfigStore, MemoryTokenStore, TokenStore};
-use common::*;
 use serde_json::json;
 
 struct Env {

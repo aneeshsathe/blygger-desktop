@@ -1,14 +1,12 @@
 //! Anthropic, OpenAI, Cloudflare Workers AI and blyg-server providers against
 //! in-process mock servers.
 
-mod common;
-
+use crate::common::*;
 use blyg_ai::anthropic::AnthropicApi;
 use blyg_ai::blyg_server::BlygServer;
 use blyg_ai::cloudflare::CloudflareWorkersAi;
 use blyg_ai::openai::OpenAiApi;
 use blyg_ai::*;
-use common::*;
 use serde_json::json;
 
 fn req() -> GenRequest {

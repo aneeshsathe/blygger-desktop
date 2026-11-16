@@ -2,10 +2,8 @@
 //! `GET /api/contacts` (cached locally), `unresolvedHandles` on publish,
 //! and `GET /api/reading?mentions=true`, all gated on contract 5.7.
 
-mod common;
-
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 use serde_json::json;
 
 fn row(sub: &str, rid: &str) -> serde_json::Value {

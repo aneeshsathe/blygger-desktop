@@ -1,12 +1,10 @@
 //! Scratch notes (docs/SPEC.md § Scratch notes): local-only items that never
 //! reach the network until they're promoted, against the in-process mock.
 
-mod common;
-
 use std::time::Duration;
 
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 
 const T: Duration = Duration::from_secs(5);
 

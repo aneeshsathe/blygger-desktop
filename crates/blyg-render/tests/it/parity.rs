@@ -2,10 +2,8 @@
 //! was produced by the Worker's own TypeScript renderer (`gen_parity.mjs`).
 //! HTML is compared after collapsing whitespace between tags.
 
-mod common;
-
+use crate::common::{FakeStore, fixtures_dir, normalize};
 use blyg_render::{Attachment, Kind, RenderOpts, media_html, preview_media, render_preview};
-use common::{FakeStore, fixtures_dir, normalize};
 use serde_json::Value;
 
 /// Fixtures whose output is known to differ, with the reason. Keep this
@@ -15,7 +13,7 @@ const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
     // quote at publish. The studio's preview (and its publish, for a scope
     // with recorded provenance) renders the block on its own and shows the
     // directive as text; this preview bakes it, as the decision says publish
-    // does. `tests/preview.rs` pins the output.
+    // does. `tests/it/preview.rs` pins the output.
     (
         "tr_block_tk_directive_output",
         "decision #60: directive in block TK output is a quote",

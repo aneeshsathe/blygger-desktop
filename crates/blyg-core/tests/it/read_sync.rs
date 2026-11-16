@@ -1,12 +1,10 @@
 //! Read-state sync through the user's blyg (contract 5.0.0 read state):
 //! merge on pull, and queued/coalesced `read` ops.
 
-mod common;
-
 use std::time::Duration;
 
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 use serde_json::{Value, json};
 
 fn item(sub: &str, rid: &str, page: Option<&str>, version: u32, obs: &str) -> Value {

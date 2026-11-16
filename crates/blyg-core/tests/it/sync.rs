@@ -1,11 +1,9 @@
 //! blyg-core against an in-process mock of the owner API.
 
-mod common;
-
 use std::time::Duration;
 
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 use serde_json::json;
 
 const T: Duration = Duration::from_secs(5);

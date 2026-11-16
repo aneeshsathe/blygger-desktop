@@ -423,7 +423,7 @@ attributes, a sanitized TK block) and TK or links in code, plus a media
 case for placed and `inline` attachments.
 
 **Protocol 0.4 r15 rewrites** (2026-11-13). Where decisions #81 and #102
-change what the 0.49.1 fixtures show, `tests/parity.rs` rewrites the
+change what the 0.49.1 fixtures show, `tests/it/parity.rs` rewrites the
 expected HTML before comparing, so the rest of each case is still checked:
 `SPEC_LABELS` adds `data-blyg-label` to the labelled quotes, the no-`page`
 rule rewrites anchors to an imported item without a `page` (the fake
@@ -443,7 +443,7 @@ Results. Tests compare after collapsing whitespace between tags, but every
 matching case is also byte-identical. The four known divergences are the
 block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
-`tr_block_tk_directive_attached`); `tests/preview.rs` pins this crate's
+`tr_block_tk_directive_attached`); `tests/it/preview.rs` pins this crate's
 output for them. The split shape (generated | quote | generated, and how
 `generated[]` pairs with the pieces) is not ruled yet, so these four are
 provisional: revisit them when upstream fixes its preview and publish.
@@ -589,7 +589,7 @@ as they would be absent on the page.
 
 Every fixture also checks the unresolved directives and reasons, in order,
 and the TK error count against the Worker; thread fixtures also check the
-resolved quote ids. `tests/preview.rs` adds checks that need no Worker:
+resolved quote ids. `tests/it/preview.rs` adds checks that need no Worker:
 
 - Turning `data-line` on changes nothing but the attributes, for every
   fixture and for 1,500 fuzzed documents built from the grammar's sharp

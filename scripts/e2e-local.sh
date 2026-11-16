@@ -26,7 +26,7 @@
 #   2. starts two `wrangler dev --local` instances on free ports, each with
 #      its own scratch D1/R2 state (--persist-to): `a` is the blyg under test,
 #      `b` a second blyg to subscribe to;
-#   3. runs `cargo test -p blyg-core --test e2e -- --ignored --test-threads=1`,
+#   3. runs `cargo test -p blyg-core --test it -- --ignored --test-threads=1 e2e::`,
 #      then the markdown-notes extension's e2e against the same blyg
 #      (`cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1`);
 #      extra test args go to the core suite only; Burrow in a browser's
@@ -116,7 +116,14 @@ if [ -n "${BLYG_OLD_WORKER_DIR:-}" ]; then
 fi
 
 cd "$ROOT"
-cargo test -p blyg-core --test e2e -- --ignored --test-threads=1 "$@"
+# The core suite is the `e2e` module of blyg-core's one test binary (`it`);
+# a filter among the extra args replaces the default `e2e::`.
+core_args=("$@")
+case " $* " in
+  *" "[!\ -]*) ;;
+  *) core_args+=("e2e::") ;;
+esac
+cargo test -p blyg-core --test it -- --ignored --test-threads=1 "${core_args[@]}"
 if [ -z "${BLYG_E2E_SKIP_WEB:-}" ]; then
   printf 'e2e-local: Burrow in a browser, its list order against native…\n' >&2
   cargo test -p blyg-web --test e2e -- --ignored --test-threads=1

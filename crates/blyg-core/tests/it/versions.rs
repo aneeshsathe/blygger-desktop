@@ -2,10 +2,8 @@
 //! other people's changelogs and pins from their public surface, fetched
 //! unauthenticated; withdrawal retention; own-item version semantics.
 
-mod common;
-
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 use serde_json::{Value, json};
 
 const ID: &str = "p1";

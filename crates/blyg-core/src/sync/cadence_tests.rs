@@ -1,6 +1,6 @@
 //! Issue #71: the low-usage cadence, the hard backoff after a 5xx, and
 //! thumbs laid over held rows without a reading walk, on real SQLite. (The
-//! request counts are measured against a real studio: `tests/e2e.rs`,
+//! request counts are measured against a real studio: `tests/it/e2e.rs`,
 //! `reading_is_walked_only_when_reading_moves`.)
 
 use std::collections::HashMap;

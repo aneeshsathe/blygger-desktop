@@ -18,6 +18,7 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Fixed
 - **Desktop: › and ‹ no longer show as “ffl” and “ffi” in the ET Book theme** (in “Hopper ›”, menus and elsewhere). The bundled ET Book fonts had the ligatures in those characters’ places; they now carry real single guillemets.
+- **Desktop: the Writing tour's shelf step could ring nothing.** Moving on from “Back to writing” with Next instead of ⌘1 left the full editor up, so the list the step points at wasn't on screen. The step now brings back the list and editor itself.
 
 ## [0.25.0] - 2026-11-16
 
