@@ -62,12 +62,16 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup show active-toolchain || rustup toolchain install
 
+      # wasm-bindgen-cli is built from source once and kept in the cache
+      # (it was ~1.5 min of every run).
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          cache-directories: ~/blyg-web-tools
 
       - name: Build the web app
         run: |
           brew list llvm >/dev/null 2>&1 || brew install llvm
-          ./crates/blyg-web/serve.sh --build-only
+          BLYG_WEB_TOOLS="$HOME/blyg-web-tools" ./crates/blyg-web/serve.sh --build-only
 
   # Windows is a supported platform: the same checks (and, in the
   # windows-package job, a release build). Tests that need macOS are

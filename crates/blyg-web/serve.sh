@@ -28,7 +28,8 @@ DIST="$HERE/dist"
 PORT="${PORT:-8787}"
 # Must equal the `wasm-bindgen` pin in crates/blyg-web/Cargo.toml.
 BINDGEN_VERSION="0.2.128"
-TOOLS="$TARGET/blyg-web-tools"
+# BLYG_WEB_TOOLS moves them out of the target dir (CI caches them there).
+TOOLS="${BLYG_WEB_TOOLS:-$TARGET/blyg-web-tools}"
 BINDGEN="$TOOLS/bin/wasm-bindgen"
 # Binaryen's optimiser, from the `wasm-opt` crate on crates.io (it builds
 # Binaryen from source; no prebuilt binaries). Pinned so builds repeat.

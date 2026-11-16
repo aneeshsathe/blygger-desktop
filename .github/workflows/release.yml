@@ -138,6 +138,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: release-universal
+          cache-directories: ~/blyg-web-tools
 
       - name: Check the tag, Cargo version, repo name and changelog agree
         id: meta
@@ -226,7 +227,7 @@ jobs:
         # Homebrew's LLVM, installed here.
         run: |
           brew list llvm >/dev/null 2>&1 || brew install llvm
-          ./crates/blyg-web/serve.sh --build-only
+          BLYG_WEB_TOOLS="$HOME/blyg-web-tools" ./crates/blyg-web/serve.sh --build-only
           WEB="$RUNNER_TEMP/web"
           rm -rf "$WEB" && mkdir -p "$WEB"
           cp -R crates/blyg-web/dist "$WEB/burrow"
