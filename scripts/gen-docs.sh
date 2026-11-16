@@ -6,6 +6,6 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export BLYGGER_UPDATE_DOCS=1
-cargo test -q -p blyg-core --test config_docs
+cargo test -q -p blyg-core --test it config_docs::
 cargo test -q -p blyg-app keymap_docs
 git status --short site/src/generated

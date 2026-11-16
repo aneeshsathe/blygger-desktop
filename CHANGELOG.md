@@ -16,6 +16,19 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-11-16
+
+### Changed
+- **Desktop: less work on the UI thread while reading.** A burst of sync updates now refreshes the reading list once instead of once per update. The ⌘Y history pane no longer reads the database on every frame; it keeps the post and its responses and refreshes them in the background when they change. Each post-list row scans a post's labels and builds its tooltip once per frame instead of twice.
+- **Development: faster builds and checks.** CI runs the web build and the Windows release build beside the tests instead of after them, skips debug info in test builds, and keeps wasm-bindgen-cli in its cache instead of compiling it every run. Local builds keep only line tables for dependencies (smaller `target/`, faster links). The onboarding tests run one tour per test, and each crate's integration tests build into one binary instead of up to 14. `DEV=1 ./crates/blyg-web/serve.sh` builds the web app without LTO for quick local iteration; releases still build `wasm-release`.
+
+### Fixed
+- **Desktop: › and ‹ no longer show as “ffl” and “ffi” in the ET Book theme** (in “Hopper ›”, menus and elsewhere). The bundled ET Book fonts had the ligatures in those characters’ places; they now carry real single guillemets.
+- **Desktop: the Writing tour's shelf step could ring nothing.** Moving on from “Back to writing” with Next instead of ⌘1 left the full editor up, so the list the step points at wasn't on screen. The step now brings back the list and editor itself.
+
+### Not verified
+- The reading changes are covered by tests on a real SQLite store, not tried by hand in the running app; release-mode timings were taken on a heavily loaded machine.
+
 ## [0.25.0] - 2026-11-16
 
 ### Added

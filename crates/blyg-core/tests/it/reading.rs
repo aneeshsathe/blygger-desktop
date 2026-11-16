@@ -1,9 +1,7 @@
 //! Reading list, subscriptions, signals, mentions, settings.
 
-mod common;
-
+use crate::common::*;
 use blyg_core::*;
-use common::*;
 use serde_json::{Value, json};
 
 fn reading_item(

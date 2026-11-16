@@ -234,6 +234,11 @@ pub struct OwnVersions {
     pub id: LocalId,
     pub list: Load<Vec<Version>>,
     pub sel: Option<u32>,
+    /// The post as last read off the UI thread: the pane draws every frame
+    /// and must not read the store (`refresh_own_post`).
+    pub item: blyg_core::Item,
+    /// Responses to it in your network: (origin, server id, the list).
+    pub network: Option<(String, String, Vec<blyg_core::Response>)>,
 }
 
 #[allow(clippy::large_enum_variant)] // one sheet at a time
@@ -417,6 +422,8 @@ pub struct State {
     /// Posts opened since the source was picked: they stay listed even when
     /// they no longer match (read in "All unread", unthumbed in "Thumbed").
     pub sticky: HashSet<Key>,
+    /// How many times `reading_changed` ran (a sync burst should be one).
+    pub refreshes: u64,
     /// The sources pane's (or a subscription's) context menu.
     pub src_menu: Option<sources::SourceMenu>,
     /// (origin, avatar URL) of every cached profile, for the source rows.
@@ -497,6 +504,7 @@ impl State {
             sources_w: sources::load_width(data_dir.as_deref()),
             collapsed: HashSet::new(),
             sticky: HashSet::new(),
+            refreshes: 0,
             src_menu: None,
             avatars: sources::avatars(backend),
             stub: None,
@@ -723,6 +731,7 @@ impl MainView {
 
     /// Hook: the reading/backend event (`CoreEvent::ReadingChanged`).
     pub(super) fn reading_changed(&mut self, cx: &mut Context<Self>) {
+        self.reading.refreshes += 1;
         // --- own posts --- your published posts among the rows.
         // --- background --- and the withdrawn posts, at the end.
         let fresh = self.reading_with_own();

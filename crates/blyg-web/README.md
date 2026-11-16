@@ -15,6 +15,7 @@ which.
 ```sh
 ./crates/blyg-web/serve.sh            # build, then serve on http://127.0.0.1:8787/
 ./crates/blyg-web/serve.sh --build-only   # just build crates/blyg-web/dist/
+DEV=1 ./crates/blyg-web/serve.sh          # fast local build (no LTO; never ship it)
 WASM_OPT=1 ./crates/blyg-web/serve.sh     # also run wasm-opt -Oz (see Size)
 ```
 

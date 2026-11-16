@@ -1,12 +1,10 @@
 //! Signing in: the owner token, or the studio password (a session cookie
 //! from `{blyg-url}/studio/login`), against the mock owner API.
 
-mod common;
-
+use crate::common::*;
 use blyg_core::api::auth::Credential;
 use blyg_core::api::{Api, ConnectError, verify_connection};
 use blyg_core::*;
-use common::*;
 
 fn password() -> Credential {
     Credential::Password(PASSWORD.into())

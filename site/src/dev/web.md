@@ -36,6 +36,7 @@ It runs in one of two modes, and says which:
 ```sh
 ./crates/blyg-web/serve.sh               # build, then serve the demo on http://127.0.0.1:8787/
 ./crates/blyg-web/serve.sh --build-only  # just build crates/blyg-web/dist/
+DEV=1 ./crates/blyg-web/serve.sh         # fast local build (no LTO; never ship it)
 ```
 
 ## How live mode works

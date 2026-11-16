@@ -26,9 +26,7 @@ use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-#[allow(dead_code)]
-#[path = "common/contract.rs"]
-mod contract;
+use crate::common::contract;
 
 use blyg_core::api::auth::{self, Credential};
 use blyg_core::api::{Api, ConnectError, verify_connection};
@@ -1226,7 +1224,7 @@ fn discover_seen_at_round_trips_and_leaves_other_settings() {
     // A visit: the directory (the fixture, from localhost), and the mark
     // moves to the newest listing it holds.
     let blygs = discover::fetch(&serve_json_once(include_str!(
-        "fixtures/discover/blygs.json"
+        "../fixtures/discover/blygs.json"
     )))
     .unwrap();
     assert_eq!(blygs.len(), 5);

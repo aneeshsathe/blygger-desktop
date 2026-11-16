@@ -145,7 +145,7 @@ an extension. The host is in the `blyg-ext` crate.
 
 ## End-to-end tests
 
-`crates/blyg-core/tests/e2e.rs` runs against a real Worker under
+`crates/blyg-core/tests/it/e2e.rs` runs against a real Worker under
 `wrangler dev --local` (all `#[ignore]`d, so CI doesn't need one):
 
 ```sh
@@ -186,7 +186,7 @@ fetched window after a partial one.
 
 - `api/public.rs::PublicClient` is a **separate** `ureq::Agent` with no token.
   It is the only path to foreign origins, so the owner token can't leak there
-  (`tests/versions.rs::the_owner_token_never_reaches_a_foreign_origin`).
+  (`tests/it/versions.rs::the_owner_token_never_reaches_a_foreign_origin`).
 - URLs: `model::{item_doc_url, pin_doc_url}` join `items/{id}.json` /
   `items/{id}/v{n}.json` onto the origin (a missing trailing slash is added,
   the id is percent-encoded as one segment, and only http(s) is accepted).

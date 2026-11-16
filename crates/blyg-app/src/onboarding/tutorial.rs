@@ -943,6 +943,9 @@ impl MainView {
             }
             Setup::EnsureOpen => {
                 self.tutorial_tidy(window, cx);
+                // Back from the full editor (Next on "Back to writing"
+                // without ⌘1): the list and editor are what these ring.
+                self.studio_set_view(ViewMode::Write, cx);
                 match self.current.as_ref().map(|c| c.local_id.clone()) {
                     Some(id) if self.mode == EditMode::Edit => self.open(&id, window, cx),
                     _ => self.tutorial_open(steps::DRAFT, window, cx),

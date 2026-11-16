@@ -1,12 +1,10 @@
 //! Behaviour beyond byte parity: `data-line` source mapping, stats, safety,
 //! and the page shell.
 
-mod common;
-
+use crate::common::{FakeStore, fixtures_dir};
 use blyg_render::{
     Kind, NoResolver, RenderOpts, UnresolvedReason, article_html, page_shell, render_preview,
 };
-use common::{FakeStore, fixtures_dir};
 
 const A: &str = "01j9zq3k4m5n6p7q8r9s0t1v2w"; // local fragment, v3
 const R: &str = "02abcdefghjkmnpqrstvwxyz01"; // remote fragment, v5

@@ -4,9 +4,7 @@
 //! - the 652 CommonMark 0.31.2 spec examples;
 //! - linkify-it's and markdown-it's own linkify test vectors.
 
-mod common;
-
-use common::{fixtures_dir, normalize};
+use crate::common::{fixtures_dir, normalize};
 use serde_json::Value;
 
 /// Cases known to differ, by suite and index, with the reason.

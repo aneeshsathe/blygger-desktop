@@ -1,0 +1,11 @@
+//! The crate's integration tests in one binary (one link instead of one
+//! per file): one module per suite.
+
+#[path = "../common/mod.rs"]
+mod common;
+
+mod accounts;
+mod chatgpt;
+mod cli_bridges;
+mod http_providers;
+mod prompts;

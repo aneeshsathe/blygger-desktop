@@ -2,11 +2,9 @@
 //! archive index, fetched from their public surface without a token, only
 //! when a profile is opened, cached for offline use.
 
-mod common;
-
+use crate::common::*;
 use blyg_core::profile::Relation;
 use blyg_core::*;
-use common::*;
 use serde_json::{Value, json};
 
 const SUB: &str = "S";

@@ -5,6 +5,26 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.25.1
+
+A quieter, quicker release: Burrow does less on the UI thread while you read,
+and a few display bugs are fixed.
+
+### Snappier reading
+
+When your blyg syncs many things at once, the reading list refreshes once for
+the whole burst instead of once per change. The ⌘Y history pane no longer
+reads the database while it draws; it refreshes in the background when the
+post or its responses change.
+
+### Fixes
+
+- In the ET Book theme, › and ‹ showed as "ffl" and "ffi" (in "Hopper ›",
+  menus and elsewhere). The bundled ET Book fonts had the ligatures in those
+  characters' places; they now draw the right marks.
+- The Writing tour's shelf step could ring nothing if you moved on from
+  "Back to writing" with Next. The step now brings the list back itself.
+
 ## Burrow 0.25.0
 
 Mentions that say why they're there, Settings with room to breathe, and a web

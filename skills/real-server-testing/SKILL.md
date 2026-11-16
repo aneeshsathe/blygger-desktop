@@ -47,7 +47,7 @@ BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh
 ```
 
 - It derives the config, starts blygs `a` and `b`, mints tokens and runs
-  `crates/blyg-core/tests/e2e.rs`, the markdown-notes e2e, the web read-path
+  `crates/blyg-core/tests/it/e2e.rs`, the markdown-notes e2e, the web read-path
   e2e (`crates/blyg-web/tests/e2e.rs`) and the switcher e2e
   (`BLYG_E2E_SKIP_*` skips each).
 - Browser checks: `scripts/browser-*-check.sh` (e.g.

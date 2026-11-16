@@ -144,7 +144,7 @@ each. Two pages are generated from the code:
 
 | Page | Generated from | By |
 |---|---|---|
-| `site/src/generated/config-keys.md` | `crates/blyg-core/src/config/keys.rs` | `crates/blyg-core/tests/config_docs.rs` |
+| `site/src/generated/config-keys.md` | `crates/blyg-core/src/config/keys.rs` | `crates/blyg-core/tests/it/config_docs.rs` |
 | `site/src/generated/keybindings.md` | `crates/blyg-app/src/keymap.rs` | `crates/blyg-app/src/keymap_docs.rs` |
 
 `cargo test` fails while either is out of date. After changing a config key
