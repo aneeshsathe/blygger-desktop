@@ -416,7 +416,7 @@ impl MainView {
                             "≈",
                             "Nearby",
                             nearby_tip,
-                            self.nearby.open,
+                            self.nearby_open_now(cx),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.nearby_toggle(cx))),
                     )

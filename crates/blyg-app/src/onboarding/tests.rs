@@ -783,6 +783,10 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the sample post is held");
             v.toggle_reading_shelf(key, cx)
         }),
+        // --- 0.26.0 --- a click on On (the chip's own call).
+        "quiet-writing" => e.view.update(e.cx, |v, cx| {
+            v.set_quiet_writing(true, cx);
+        }),
         "mentions-feed" => e.view.update(e.cx, |v, cx| {
             v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
         }),
@@ -1044,6 +1048,7 @@ fn steps_ring_something_on_screen(cx: &mut TestAppContext, which: impl Fn(&str) 
             Region::MacroRun => &["browser-macro-stop", "browser-close"],
             Region::ScreenHeader => &["opml-import-chip"],
             Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
+            Region::QuietSetting => &["quiet-writing-off", "quiet-writing-on"], // --- 0.26.0 ---
             _ => &[],
         };
         // The drawer's folders come from the extension: wait for them.

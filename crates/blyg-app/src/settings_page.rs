@@ -401,6 +401,7 @@ impl MainView {
                     .children(theme_dark_note),
             ))
             .child(row(&p, "LAYOUT", chips().children(layouts)))
+            .child(self.render_quiet_setting(cx)) // --- quiet ---
             .child(self.render_buttons_setting(cx)) // --- buttons ---
             .child(self.render_chat_setting(cx)) // --- chat ---
             .child(self.render_flow_settings(cx)) // --- flow ---

@@ -535,6 +535,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Full Editor", app::studio::ViewStudio),
                 MenuItem::action("Preview", app::TogglePreview),
                 MenuItem::action("Focus", app::focus::ToggleFocus), // --- focus ---
+                MenuItem::action("Quiet Writing", app::quiet::ToggleQuietWriting), // --- quiet ---
                 MenuItem::separator(),
                 // --- palette ---
                 MenuItem::action("Command Palette…", app::command_palette::ShowPalette),

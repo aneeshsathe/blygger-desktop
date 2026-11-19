@@ -193,6 +193,14 @@ mod side_tests;
 #[path = "loose_ends.rs"]
 pub(crate) mod loose_ends;
 
+// --- quiet --- Quiet writing: one setting that hides the lineage line,
+// loose ends and Nearby thoughts (hooks marked the same way).
+#[path = "quiet.rs"]
+pub(crate) mod quiet;
+#[cfg(test)]
+#[path = "quiet_tests.rs"]
+mod quiet_tests;
+
 // --- capture --- a web address pasted into the omnibar.
 #[path = "capture_link.rs"]
 pub(crate) mod capture_link;
@@ -438,6 +446,7 @@ pub struct MainView {
     site: site::State,                  // --- site ---
     contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
     upkeep: upkeep::Upkeep,             // --- upkeep ---
+    quiet: quiet::Quiet,                // --- quiet ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -614,6 +623,7 @@ impl MainView {
             site: Default::default(),                          // --- site ---
             contacts: Default::default(),                      // --- contacts ---
             upkeep: Default::default(),                        // --- upkeep ---
+            quiet: quiet::Quiet::new(cx),                      // --- quiet ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -824,6 +834,7 @@ impl MainView {
         self.chat_reload(window, cx); // --- chat ---
         self.terminal_reload(window, cx); // --- terminal ---
         self.nearby_reload(cx); // --- nearby ---
+        self.quiet_reload(cx); // --- quiet ---
         self.show_toast(msg, None, cx);
     }
 
@@ -2621,6 +2632,7 @@ impl Render for MainView {
             .map(|d| self.palette_actions(d, cx)) // --- palette ---
             .map(|d| self.focus_actions(d, cx)) // --- focus ---
             .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
+            .map(|d| self.quiet_actions(d, cx)) // --- quiet ---
             .map(|d| self.site_actions(d, cx)) // --- site ---
             .size_full()
             .relative()

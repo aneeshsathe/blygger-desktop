@@ -5,7 +5,8 @@
 //! Worked out on a background thread after the list changes.
 //!
 //! The operators themselves live in `blyg_core::loose`; `Backend::search`
-//! reads them.
+//! reads them. --- quiet --- Quiet writing hides the line and skips the
+//! work; the operators still filter.
 
 use blyg_core::loose::{Facts, Summary};
 use gpui_kit::*;
@@ -21,6 +22,14 @@ pub(crate) struct LooseEnds {
 impl MainView {
     /// Work the summary out again, off this thread.
     pub(crate) fn loose_ends_refresh(&mut self, cx: &mut Context<Self>) {
+        if crate::app::quiet::on(cx) {
+            self.loose_ends.task = None;
+            if !self.loose_ends.summary.parts().is_empty() {
+                self.loose_ends.summary = Summary::default();
+                cx.notify();
+            }
+            return;
+        }
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move {
             let items = backend.items();
@@ -42,6 +51,9 @@ impl MainView {
     /// The summary line over the list, when the omnibar is empty and
     /// something is loose.
     pub(crate) fn render_loose_ends(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if crate::app::quiet::on(cx) {
+            return None;
+        }
         let parts = self.loose_ends.summary.parts();
         if parts.is_empty() || !self.list.trimmed_query().is_empty() {
             return None;

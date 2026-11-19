@@ -124,6 +124,31 @@ link without a label offers **label it**, which writes the post's title in as
 the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
 post says so. The card only shows what this Mac already holds.
 
+### Quiet writing
+
+Three things sit around the editor on their own: the lineage line under it,
+the loose-ends line over the list, and Nearby thoughts. **Quiet writing**
+hides all three at once, for a plainer page: turn it on in **Settings ›
+Quiet writing**, with **View › Quiet Writing** (also in the command
+palette), or with `quiet-writing = true` in the config file. It's off by
+default.
+
+While it's on, each is still a key away:
+
+- **⌘J** opens the lineage lists on a draft (and the line with them; a click
+  folds them away again), and the full lineage view on a published post.
+- The omnibar still reads `is:orphan`, `has:tk`, `is:stale` and the other
+  operators; only the summary line over the list is gone.
+- **⌥⌘U** (View › Nearby Thoughts) opens Nearby **for this sitting**: its tab
+  comes back while it's open, and it's gone again after you close it, quit,
+  or change the setting. Whether Nearby was open is still remembered for
+  when quiet writing is off.
+
+Nothing hidden does any work: the lineage line isn't built, loose ends aren't
+counted and Nearby matches nothing. Hover cards, the quote tray and focus
+mode don't change, since they only appear when you ask. On Windows the keys
+are Ctrl+J and Ctrl+Alt+U.
+
 ### Serendipity
 
 Off unless you turn it on: Settings › Serendipity, or `serendipity = own` in
