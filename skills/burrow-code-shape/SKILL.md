@@ -22,7 +22,12 @@ happened at least once and could happen again.
    points at `crate::test_wait`). If the bad pattern is common, block new
    uses first, then migrate the old ones in the same wave.
 3. **A behaviour test** of what a user would see (`tests/cli.rs` runs the
-   real `blygger --version` and fails if it starts the app).
+   real `blygger --version` and fails if it starts the app). For state
+   that lives across many steps (sync, paging, retries), a property test
+   over a model: make the decisions a pure step machine and drive it with
+   random histories (`sync/walk.rs`'s `Read`, driven by
+   `walk_model_tests.rs` with proptest). Examples miss the bug that needs
+   ten pulls and a 409 in the right place; a shrunk history doesn't.
 4. **Prose**, only for a judgement call nothing can check, with the failure
    that taught it.
 
