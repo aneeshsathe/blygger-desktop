@@ -383,6 +383,17 @@ impl Studio {
             .map(|(_, b)| *b)
     }
 
+    /// The newest render was made from the text on screen (`len` bytes of
+    /// it). Until a render catches up with an edit, its line map is stale:
+    /// a new line shifts every block after the caret down one, so the map
+    /// would name the next block and the preview would scroll there, then
+    /// back once the render landed (pressing ⏎ twice to start a paragraph
+    /// bounced it down and up). Any edit changes the length, bar a
+    /// same-length replacement, which leaves line breaks where they were.
+    fn renders(&self, len: usize) -> bool {
+        self.latest_src.as_ref().is_some_and(|s| s.len() == len)
+    }
+
     fn sync_scroll(&mut self) {
         if !self.ready {
             return;
@@ -629,10 +640,15 @@ impl MainView {
         }
         self._subs
             .push(cx.observe(&self.editor, |this, editor, cx| {
-                let line = editor.read(cx).cursor_position().line as usize;
+                let ed = editor.read(cx);
+                let line = ed.cursor_position().line as usize;
                 if line != this.studio.caret_line {
                     this.studio.caret_line = line;
-                    this.studio.sync_scroll();
+                    // Only with a line map for the text on screen: the render
+                    // scrolls the preview itself when it lands.
+                    if this.studio.renders(ed.text().len()) {
+                        this.studio.sync_scroll();
+                    }
                 }
             }));
         if self.studio.view.preview_visible() {

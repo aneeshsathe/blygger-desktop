@@ -18,9 +18,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Fixed
 - **Desktop: a post whose current version is pinned can be forked.** The version pill shows such a version once, as the current one, so Fork stayed greyed out and its tooltip pointed to a pin there was no way to reach (or said the post had none). Fork is now live there as **Fork this pin**, and the pill reads `📌 vN · current`.
+- **Desktop: the live preview no longer jumps when you start a new line.** Pressing ⏎ moved the caret before the preview had re-rendered, so the preview scrolled by the old line numbers, often to the next paragraph, and then back once the render landed. It now waits for the render. The wait is longest on Windows, where the preview renders more slowly.
 
 ### Not verified
-- The fork fix is covered by a headless test on Linux. It has not been tried by hand in the running app on Windows or macOS.
+- Both fixes are covered by headless tests on Linux. Neither has been tried by hand in the running app on Windows or macOS.
 
 ## [0.25.1] - 2026-11-16
 
