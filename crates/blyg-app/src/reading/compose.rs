@@ -12,6 +12,15 @@
 //! either to read the same, and a full-width bar keeps its width in a
 //! narrow window.
 //!
+//! **A moment to take it back:** ⌘⏎ in the editor opens the publish
+//! sheet, but here it posts. So **Post** (⌘⏎) first holds the text for
+//! [`HOLD_SECS`] seconds ("Posting in 3 s · esc cancels · ⌘⏎ posts now"):
+//! esc, the **Cancel** button or any edit to the text cancels, and nothing
+//! has left this Mac. Only when the hold runs out is it published, in one
+//! step, so a post is never half-sent and never needs withdrawing (a
+//! withdrawn post still leaves a tombstone, and feeds may have fetched it,
+//! so an "Undo" after the fact couldn't truly undo it).
+//!
 //! **What it makes:** the quick-post kind, a fragment (a thread when it
 //! holds a `![[…]]` quote, or is longer than a fragment can be), through
 //! quick capture's own path: **Post** (⌘⏎) keeps the text as a scratch note
@@ -66,6 +75,26 @@ pub const PLACEHOLDER: &str = "What's on your mind?  (c or ⇧⌘K)";
 /// The box grows to this many lines, then scrolls.
 pub const MAX_ROWS: usize = 8;
 
+/// How long Post holds the text before it publishes (esc cancels).
+pub const HOLD_SECS: u32 = 3;
+
+/// A post waiting out its hold.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Hold {
+    /// Which hold this is (a cancelled one's timer finds a newer one).
+    seq: u64,
+    /// The text it posts; any edit cancels.
+    pub(crate) text: String,
+    /// Seconds left.
+    pub(crate) left: u32,
+}
+
+/// The footer's line while a post waits: "Posting in 3 s · esc cancels ·
+/// ⌘⏎ posts now".
+pub fn hold_line(left: u32) -> String {
+    format!("Posting in {left} s · esc cancels · ⌘⏎ posts now")
+}
+
 /// The compose box's state (a field of `reading::State`). The editor is
 /// made on the first frame of the reading screen (it needs a window).
 pub struct Compose {
@@ -75,6 +104,9 @@ pub struct Compose {
     pub(crate) data_dir: Option<PathBuf>,
     /// A post is on its way.
     pub(crate) busy: bool,
+    /// A post waiting out its hold ([`HOLD_SECS`]); nothing sent yet.
+    pub(crate) holding: Option<Hold>,
+    hold_seq: u64,
     /// The last post or save that failed, shown under the box.
     pub(crate) error: Option<String>,
     /// The draft a failed post left behind: the next try reuses it.
@@ -97,6 +129,8 @@ impl Compose {
             assist: None,
             data_dir,
             busy: false,
+            holding: None,
+            hold_seq: 0,
             error: None,
             pending: None,
             focused: false,
@@ -279,6 +313,16 @@ impl MainView {
             let s = editor.read(cx);
             (s.value().to_string(), s.cursor())
         };
+        // An edit while a post waits: it isn't what was asked to go out.
+        if self
+            .reading
+            .compose
+            .holding
+            .as_ref()
+            .is_some_and(|h| h.text != new.trim_end())
+        {
+            self.compose_cancel_hold("Not posted: you changed it", cx);
+        }
         let old = std::mem::replace(&mut self.reading.compose.last, new.clone());
         let typed = super::quote_picker::transclusion_trigger(&old, &new, cursor)
             .map(|r| (PickKind::Quote, r.end - PickKind::Quote.open().len()))
@@ -383,13 +427,76 @@ impl MainView {
         Some(text)
     }
 
-    /// Post (⌘⏎): publish now, through quick capture's path (a scratch note,
-    /// promoted with `Promote::Publish`). Cleared once it's published; on a
-    /// failure the text stays with the error.
+    /// Post (⌘⏎): hold the text for [`HOLD_SECS`] seconds (esc cancels),
+    /// then publish it. ⌘⏎ again while it waits posts at once.
     pub(crate) fn compose_post(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(h) = self.reading.compose.holding.take() {
+            return self.compose_send(h.text, window, cx);
+        }
         let Some(text) = self.compose_text_or_say("post", cx) else {
             return;
         };
+        let c = &mut self.reading.compose;
+        c.hold_seq += 1;
+        let seq = c.hold_seq;
+        c.holding = Some(Hold {
+            seq,
+            text,
+            left: HOLD_SECS,
+        });
+        c.error = None;
+        cx.notify();
+        let until =
+            cx.background_executor().now() + std::time::Duration::from_secs(u64::from(HOLD_SECS));
+        cx.spawn_in(window, async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(1))
+                    .await;
+                let now = cx.background_executor().now();
+                let go = this.update_in(cx, |v, window, cx| {
+                    let Some(h) = v.reading.compose.holding.as_mut().filter(|h| h.seq == seq)
+                    else {
+                        return false; // cancelled, or posted at once
+                    };
+                    // From the clock, not the ticks: a late tick can't stretch it.
+                    let left = until.saturating_duration_since(now).as_secs_f32().ceil() as u32;
+                    if left > 0 {
+                        h.left = left;
+                        cx.notify();
+                        return true;
+                    }
+                    if let Some(h) = v.reading.compose.holding.take() {
+                        v.compose_send(h.text, window, cx);
+                    }
+                    false
+                });
+                if !matches!(go, Ok(true)) {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    /// Cancel a waiting post (esc, Cancel, an edit): nothing was sent and
+    /// the text stays in the box.
+    pub(crate) fn compose_cancel_hold(&mut self, why: &str, cx: &mut Context<Self>) -> bool {
+        if self.reading.compose.holding.take().is_none() {
+            return false;
+        }
+        self.show_toast(why.to_string(), Some("It's still in the box".into()), cx);
+        cx.notify();
+        true
+    }
+
+    /// Publish `text` now, through quick capture's path (a scratch note,
+    /// promoted with `Promote::Publish`). Cleared once it's published; on a
+    /// failure the text stays with the error.
+    fn compose_send(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.reading.compose.busy {
+            return;
+        }
         let id = match self.compose_item(&text, false) {
             Ok(id) => id,
             Err(e) => {
@@ -448,6 +555,7 @@ impl MainView {
 
     /// Save as draft (⌘D): a draft on the blyg (synced, unpublished).
     pub(crate) fn compose_save_draft(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reading.compose.holding = None; // a draft instead of the post
         let Some(text) = self.compose_text_or_say("save", cx) else {
             return;
         };
@@ -469,6 +577,7 @@ impl MainView {
 
     /// ⤢: the text into the full editor as a draft, for longer writing.
     pub(crate) fn compose_expand(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.reading.compose.holding = None; // the editor instead of the post
         let Some(text) = self.compose_text_or_say("open in the editor", cx) else {
             return;
         };
@@ -552,7 +661,8 @@ impl MainView {
         let text = editor.read(cx).value().to_string();
         let empty = text.trim().is_empty();
         let quote = quote_for(self);
-        let show_footer = c.focused || !empty || c.error.is_some() || c.busy;
+        let show_footer = c.focused || !empty || c.error.is_some() || c.busy || c.holding.is_some();
+        let holding = c.holding.as_ref().map(|h| h.left);
         let chrome = self.chrome();
         let button = |id: &'static str, label: &'static str, tip: String, on: bool, off: bool| {
             div()
@@ -573,8 +683,14 @@ impl MainView {
                 .tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                 .child(label)
         };
-        let off = empty || c.busy;
-        let post_label = if c.busy { "Posting…" } else { "Post" };
+        let off = (empty || c.busy) && holding.is_none();
+        let post_label = if c.busy {
+            "Posting…"
+        } else if holding.is_some() {
+            "Cancel"
+        } else {
+            "Post"
+        };
         let buttons = div()
             .flex_none()
             .flex()
@@ -612,12 +728,20 @@ impl MainView {
                 button(
                     "compose-post",
                     post_label,
-                    crate::keymap::hint_owned("Publish now  ⌘⏎".into()),
-                    true,
+                    crate::keymap::hint_owned(if holding.is_some() {
+                        "Don't post it: it stays in the box  esc".into()
+                    } else {
+                        format!("Publish, after {HOLD_SECS} s to change your mind  ⌘⏎")
+                    }),
+                    holding.is_none(),
                     off,
                 )
                 .when(!off, |d| {
-                    d.on_click(cx.listener(|this, _, window, cx| this.compose_post(window, cx)))
+                    d.on_click(cx.listener(|this, _, window, cx| {
+                        if !this.compose_cancel_hold("Not posted", cx) {
+                            this.compose_post(window, cx)
+                        }
+                    }))
                 }),
             );
         let field = div()
@@ -635,6 +759,13 @@ impl MainView {
         let footer = show_footer.then(|| {
             let (count, level) = counter(&text);
             let left = match &c.error {
+                // --- the hold --- what's about to happen, and how to stop it.
+                None if let Some(s) = holding => div()
+                    .id("compose-hold")
+                    .debug_selector(|| "compose-hold".into())
+                    .text_color(p.accent)
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(crate::keymap::hint_owned(hold_line(s))),
                 Some(e) => div()
                     .id("compose-error")
                     .debug_selector(|| "compose-error".into())
@@ -733,7 +864,10 @@ impl MainView {
                         return;
                     }
                     cx.stop_propagation();
-                    this.compose_leave(window, cx);
+                    // esc first cancels a waiting post (the caret stays).
+                    if !this.compose_cancel_hold("Not posted", cx) {
+                        this.compose_leave(window, cx);
+                    }
                 }))
                 // ⌘⏎ and ⌘D post and save the box, not the Posts selection.
                 .on_action(
@@ -759,8 +893,13 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{counter, kind_for, load_draft, save_draft};
+    use super::{counter, hold_line, kind_for, load_draft, save_draft};
     use blyg_core::Kind;
+
+    #[test]
+    fn the_hold_says_how_to_stop_it() {
+        assert_eq!(hold_line(3), "Posting in 3 s · esc cancels · ⌘⏎ posts now");
+    }
 
     #[test]
     fn a_quote_or_a_long_text_posts_as_a_thread() {

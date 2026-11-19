@@ -43,7 +43,7 @@ use crate::app::reading::{
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
-use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
+use crate::app::reading::sources::{CheckFeeds, MarkAllRead, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
@@ -891,6 +891,13 @@ pub fn mac_table() -> Vec<Keybind> {
             CheckFeeds,
             "Check all feeds now (your blyg polls every subscription)",
             Some("Blyg › Check All Feeds Now")
+        ),
+        // ⇧R on the reading screen is its own key (reading_key_down): a
+        // single key can't be bound while you type.
+        menu_only!(
+            MarkAllRead,
+            "Mark all read in this source… (⇧R on the reading screen; asks first)",
+            "Blyg › Mark All Read…"
         ),
         // --- end reader folders ---
         // --- browse --- (studio 0.49) the walk from post to post inside the

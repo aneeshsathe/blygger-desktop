@@ -39,7 +39,7 @@ pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
-mod marks; // --- read/unread ---
+pub(crate) mod marks; // --- read/unread --- (and Mark All Read…)
 // --- catch up --- the conversation leading to a post, oldest first (⇧C).
 pub(crate) mod catchup;
 mod mentions;
@@ -62,6 +62,8 @@ pub(crate) mod opml; // --- OPML import/export ---
 pub(crate) mod hoppers; // --- hoppers ---
 #[cfg(test)]
 mod hoppers_tests;
+#[cfg(test)]
+mod mark_all_tests; // --- unread counts / mark all read ---
 #[cfg(test)]
 mod opml_tests;
 pub(crate) mod own;
@@ -322,6 +324,8 @@ pub enum RSheet {
         busy: bool,
         focus: FocusHandle,
     },
+    /// --- mark all read --- "Mark 37 posts in Rue read?", asked first.
+    MarkAll(Box<marks::MarkAll>),
     /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
     Opml(Box<opml::Sheet>),
     /// --- discover --- Discover Blygs… (blygger.com's directory).
@@ -1055,6 +1059,12 @@ impl MainView {
                 cx.notify();
                 true
             }
+            // --- mark all read --- ⇧R: everything the list or stream holds
+            // for the current source, after a question with the count.
+            (View::Reading, "r") if k.modifiers.shift => {
+                self.ask_mark_all_read(None, window, cx);
+                true
+            }
             (View::Reading, "r") => {
                 self.mark_picked(true, cx);
                 true
@@ -1174,6 +1184,7 @@ impl MainView {
             RSheet::HopperPick { .. } => (420., self.render_hopper_pick(sheet, cx)),
             RSheet::HopperName { .. } => (440., self.render_hopper_name_sheet(sheet, cx)),
             RSheet::HopperConfirm { .. } => (460., self.render_hopper_confirm(sheet, cx)),
+            RSheet::MarkAll(m) => (440., self.render_mark_all(m, cx)), // --- mark all read ---
         };
         Some(self.sheet_frame(width, content, cx))
     }

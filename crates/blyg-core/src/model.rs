@@ -622,6 +622,15 @@ impl ReadingItem {
         self.read_version.is_none()
     }
 
+    /// What "unread" means everywhere a count or a dot says it (the
+    /// reading header, the status bar, All unread, the folder counts, the
+    /// stream's dot): never read, or edited since you read it (SPEC: "All
+    /// unread: never read or edited since you read it"). Background posts
+    /// are left out by the callers, which know the studio's Background.
+    pub fn to_read(&self) -> bool {
+        self.is_unread() || self.edited_since_read()
+    }
+
     /// The post's own date for the reading list (issue #6): when the author
     /// last wrote it (`updated`, else `created`), falling back to when your
     /// blyg first imported it (`observed_at`) only when neither exists or

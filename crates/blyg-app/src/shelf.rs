@@ -2,7 +2,7 @@
 //! updating (a /now page, a reading log), at the top of the Write list in
 //! your order, and one key away.
 //!
-//! - ⌥⌘B (Post › Put on Shelf / Take off Shelf) shelves the open post or
+//! - ⌥⌘B (Post › Add to Shelf / Remove from Shelf) shelves the open post or
 //!   takes it off. Any post of yours: thread, fragment, draft or scratch note.
 //! - ⌘B (Post › Shelf…) opens the shelf: 1–9 or ⏎ opens a post, ↑/↓ move,
 //!   ⌥↑/⌥↓ reorder, ⌫ takes the highlighted post off, esc closes.

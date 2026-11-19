@@ -693,12 +693,18 @@ impl MainView {
             let rest = stream_vm::without_title(&blocks, &title);
             let (shown, _more) = stream_vm::preview(&rest);
             let k2 = key.clone();
+            // --- stream search --- the matches marked, as in the Reader.
+            let marks = overlay_highlights(
+                vec![],
+                &crate::vm::highlight_ranges(&title, &self.reading.query),
+                self.search_mark(),
+            );
             let mut v = vec![
                 div()
                     .text_size(px(text_px + 3.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .line_height(relative(1.3))
-                    .child(title)
+                    .child(StyledText::new(title).with_highlights(marks))
                     .into_any_element(),
             ];
             v.extend(self.render_blocks(&shown, r, &mut n, cx));
@@ -953,29 +959,38 @@ impl MainView {
                 }))
                 .into_any_element()
         };
-        row.push(div().flex_1().into_any_element());
-        // --- notes --- the thumbs wrap together (the row grew a chip).
+        // The chips wrap among themselves; the thumbs keep the right end of
+        // the row (a narrow column, with the side pane open, used to push
+        // them onto a line of their own).
         // --- own posts --- no thumbs on yours (no signals about them).
-        if !super::own::is_own(&key) {
-            row.push(
-                div()
-                    .flex_none()
-                    .flex()
-                    .gap(px(6.))
-                    .child(t("stream-thumb-up", "👍", 1))
-                    .child(t("stream-thumb-down", "👎", -1))
-                    .into_any_element(),
-            );
-        }
+        let thumbs = (!super::own::is_own(&key)).then(|| {
+            div()
+                .id("stream-thumbs")
+                .debug_selector(|| "stream-thumbs".into())
+                .flex_none()
+                .flex()
+                .gap(px(6.))
+                .child(t("stream-thumb-up", "👍", 1))
+                .child(t("stream-thumb-down", "👎", -1))
+        });
         div()
             .id("stream-actions")
             .debug_selector(|| "stream-actions".into())
             .mt(px(4.))
             .flex()
-            .flex_wrap()
-            .items_center()
+            .items_start()
             .gap(px(6.))
-            .children(row)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .flex()
+                    .flex_wrap()
+                    .items_center()
+                    .gap(px(6.))
+                    .children(row),
+            )
+            .children(thumbs)
             .into_any_element()
     }
 
@@ -1186,6 +1201,15 @@ impl MainView {
         }
     }
 
+    /// --- stream search --- how a match is marked: the accent, washed.
+    fn search_mark(&self) -> HighlightStyle {
+        let p = self.palette.on_page();
+        HighlightStyle {
+            background_color: Some(p.accent.opacity(0.2)),
+            ..Default::default()
+        }
+    }
+
     /// A run of styled text; links are clickable (resolved against the
     /// post's origin, opened in the browser).
     fn render_spans(
@@ -1270,6 +1294,11 @@ impl MainView {
             }
         }
         *n += 1;
+        // --- stream search --- the search's matches marked over the styles.
+        if !self.reading.query.trim().is_empty() {
+            let matches = crate::vm::highlight_ranges(&text, &self.reading.query);
+            hl = overlay_highlights(hl, &matches, self.search_mark());
+        }
         let styled = StyledText::new(text).with_highlights(hl);
         let el = if links.is_empty() {
             div().child(styled).into_any_element()
@@ -1421,6 +1450,44 @@ thread_local! {
     static QUOTE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
+/// --- stream search --- `base` (sorted, not overlapping, as `StyledText`
+/// wants them) with the search's `matches` laid over it: a match keeps the
+/// style its text had (a link stays a link) and takes `mark` on top.
+pub(crate) fn overlay_highlights(
+    base: Vec<(std::ops::Range<usize>, HighlightStyle)>,
+    matches: &[std::ops::Range<usize>],
+    mark: HighlightStyle,
+) -> Vec<(std::ops::Range<usize>, HighlightStyle)> {
+    if matches.is_empty() {
+        return base;
+    }
+    let mut cuts: Vec<usize> = base
+        .iter()
+        .map(|(r, _)| r)
+        .chain(matches)
+        .flat_map(|r| [r.start, r.end])
+        .collect();
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut out: Vec<(std::ops::Range<usize>, HighlightStyle)> = Vec::new();
+    for w in cuts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        let under = base
+            .iter()
+            .find(|(r, _)| r.start <= a && b <= r.end)
+            .map(|(_, s)| *s);
+        let hit = matches.iter().any(|r| r.start <= a && b <= r.end);
+        let style = match (under, hit) {
+            (Some(s), true) => s.highlight(mark),
+            (Some(s), false) => s,
+            (None, true) => mark,
+            (None, false) => continue,
+        };
+        out.push((a..b, style));
+    }
+    out
+}
+
 fn badge(p: crate::theme::Palette, s: String) -> Div {
     let (fg, bg) = p.quiet_badge();
     div()
@@ -1453,6 +1520,33 @@ fn placeholder(p: crate::theme::Palette, label: String) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use super::{html_paragraphs, link_target};
+
+    #[test]
+    fn search_marks_lay_over_the_text_styles() {
+        use gpui_kit::{FontWeight, HighlightStyle};
+        let bold = HighlightStyle {
+            font_weight: Some(FontWeight::BOLD),
+            ..Default::default()
+        };
+        let mark = HighlightStyle {
+            background_color: Some(gpui_kit::black()),
+            ..Default::default()
+        };
+        // No matches: the styles as they were.
+        assert_eq!(
+            super::overlay_highlights(vec![(0..4, bold)], &[], mark).len(),
+            1
+        );
+        // "tide tables at": bold 0..4, matches over 2..8 and 12..14.
+        let out = super::overlay_highlights(vec![(0..4, bold)], &[2..8, 12..14], mark);
+        let ranges: Vec<_> = out.iter().map(|(r, _)| r.clone()).collect();
+        assert_eq!(ranges, vec![0..2, 2..4, 4..8, 12..14]);
+        assert_eq!(out[0].1, bold);
+        assert_eq!(out[1].1, bold.highlight(mark), "bold and marked");
+        assert_eq!(out[2].1, mark);
+        // Sorted and never overlapping, as StyledText needs.
+        assert!(out.windows(2).all(|w| w[0].0.end <= w[1].0.start));
+    }
 
     #[test]
     fn html_only_items_become_paragraphs() {

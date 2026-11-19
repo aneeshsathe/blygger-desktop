@@ -541,9 +541,11 @@ impl Store {
             .collect()
     }
 
-    /// How many of [`Self::reading`]'s posts are unread (Background ones
-    /// never are: withdrawn, or, once the studio's lens is known, what it
-    /// lists), without copying any of them.
+    /// How many of [`Self::reading`]'s posts are to read
+    /// ([`ReadingItem::to_read`]: never read, or edited since you read
+    /// them; Background ones never are: withdrawn, or, once the studio's
+    /// lens is known, what it lists), without copying any of them. The
+    /// same number the reading header and All unread show.
     pub fn unread_count(&self) -> usize {
         let rows = self.reading_rows();
         // --- background ---
@@ -554,7 +556,7 @@ impl Store {
         };
         listed(&rows)
             .into_iter()
-            .filter(|r| r.item.is_unread() && !background(&r.item))
+            .filter(|r| r.item.to_read() && !background(&r.item))
             .count()
     }
 

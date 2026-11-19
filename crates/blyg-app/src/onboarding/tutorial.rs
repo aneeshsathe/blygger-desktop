@@ -738,6 +738,13 @@ impl MainView {
             (Key::Focus, self.focus_on()),
             (Key::Serendipity, self.serendipity_shown(cx)),
             (Key::QuietWriting, crate::app::quiet::on(cx)), // --- 0.26.0 ---
+            (
+                Key::MoreMenu,
+                reading
+                    && self.reading.src_menu.as_ref().is_some_and(|m| {
+                        m.target == crate::app::reading::sources::MenuTarget::PostMore
+                    }),
+            ),
             // --- tangles ---
             (Key::Trail, self.reading.trails.field.is_some()),
             (Key::Tray, !self.tray.items.is_empty()),
@@ -1364,6 +1371,7 @@ impl MainView {
             "quiet-writing" => {
                 self.set_quiet_writing(true, cx);
             } // --- 0.26.0 ---
+            "more-menu" => self.tutorial_open_more(cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
@@ -1486,6 +1494,24 @@ impl MainView {
             | Region::ReaderPost
             | Region::Compose => return self.tutorial_reading_region(region, w, h),
             Region::BrowserChrome => return self.browser_rects(full, h).map(|[_, c]| c),
+            // --- 0.26.0 --- where the reading pane drew ⋯ More, a little
+            // larger than the chip.
+            Region::MoreChip => {
+                if self.reading.view != View::Reading || self.reading.opened.is_none() {
+                    return None;
+                }
+                let b = self.onboarding.more_chip.get()?;
+                let r = (
+                    f32::from(b.left()) - 6.,
+                    f32::from(b.top()) - 6.,
+                    f32::from(b.size.width) + 12.,
+                    f32::from(b.size.height) + 12.,
+                );
+                if r.2 < 20. || r.3 < 20. {
+                    return None;
+                }
+                r
+            }
             // --- 0.26.0 --- where Settings drew the row.
             Region::QuietSetting => {
                 if !matches!(self.sheet, Some(Sheet::Settings { .. })) {
@@ -1504,6 +1530,39 @@ impl MainView {
                 r
             }
         })
+    }
+
+    /// --- 0.26.0 --- The open post's ⋯ More chip, with a marker that
+    /// records where it's drawn (the tour's ring). The reading pane wraps
+    /// its chip in this.
+    pub(crate) fn tour_marked_more(&self, chip: AnyElement) -> AnyElement {
+        let at = self.onboarding.more_chip.clone();
+        div()
+            .relative()
+            .child(chip)
+            .child(
+                canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            )
+            .into_any_element()
+    }
+
+    /// `BLYGGER_DEMO=tut-more-menu+`: ⋯ More's menu, as a click on the
+    /// chip opens it (below the chip, or at the pane's corner before it's
+    /// drawn).
+    fn tutorial_open_more(&mut self, cx: &mut Context<Self>) {
+        let at = self
+            .onboarding
+            .more_chip
+            .get()
+            .map_or(point(px(400.), px(400.)), |b| b.bottom_left());
+        self.open_source_menu(
+            crate::app::reading::sources::MenuTarget::PostMore,
+            at,
+            false,
+            cx,
+        );
     }
 
     /// --- side --- The width the screens get in a window `full` wide: left

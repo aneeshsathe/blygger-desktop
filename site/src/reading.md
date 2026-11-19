@@ -14,8 +14,12 @@ Fragments show in full; threads show a few lines and **Read more** (⏎ or
 Space) opens the whole post in a side pane. j/k (or ↑/↓) move; esc closes
 the pane and the stream keeps its place.
 
-A post counts as read after a second on screen, and unread posts get a dot,
-never a count. Posts are dated by when their author published or last edited
+A post counts as read after a second on screen. A post you haven't read, or
+that changed since you read it, gets a dot; the reading header and the status
+bar say how many posts are to read, and All unread lists them, all by that
+one rule. That count is private to you, about your own reading list: Burrow
+still shows no social counts (followers, responses, mentions). Posts are
+dated by when their author published or last edited
 them, and an edit updates the post in place rather than adding a new one.
 Quotes show as grey boxes with the quoted text (a quote inside a quote
 nests, three layers deep), and `[[id]]` links read as the post they point
@@ -164,6 +168,15 @@ every post in the list, and esc lets go. **r** marks the picks (or the open
 post) read, **u** unread; the right-click menu says how many (*Mark 3
 Unread*).
 
+**Mark all read.** ⇧R on the reading screen, in the Stream or the Reader,
+marks everything to read in what you're looking at: the source the list
+shows, or the whole stream. A search narrows it to the matches. It asks
+first, with the count (*Mark 37 posts in Rue read?*): ⏎ marks them, esc
+cancels. It's also **Mark All Read…** in a subscription's, folder's or
+hopper's right-click menu, **Mark All Read in …** in the sources pane's own
+menu, **Blyg › Mark All Read…**, and in the command palette (⇧⌘P). **u**
+marks a post unread again.
+
 ![Picking posts in the Reader](screenshots/reader-picks.png)
 
 **Read state syncs** between your Macs through your blyg when your sign-in
@@ -195,6 +208,11 @@ It grows as you write, up to eight lines.
 - **⌘⏎** (or **Post**) publishes it as a fragment, the way quick capture
   does. A post that quotes another, or runs past 1,000 characters, goes as a
   thread; the footer says which.
+- **A moment to change your mind:** Post waits three seconds first, and the
+  footer counts down (*Posting in 3 s · esc cancels · ⌘⏎ posts now*). esc,
+  **Cancel** or any edit stops it, and nothing has left your Mac; ⌘⏎ again
+  posts at once. (⌘⏎ in the editor opens the publish sheet instead; here
+  the wait is the safety net.)
 - **⌘D** (or **Draft**) keeps it as a draft on your blyg.
 - **⤢** moves the text into the full editor as a draft, for longer writing.
 - **❝ Quote**, with a blyg post open, puts that post's `![[id]]` in the box.

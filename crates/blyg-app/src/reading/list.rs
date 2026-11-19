@@ -24,6 +24,29 @@ pub enum EditedBlock {
     Notes { heading: String, notes: Vec<String> },
 }
 
+/// The reading header's line: the picks, else a search's matches, else
+/// how many posts are to read (reader-local, private state: allowed, never
+/// social) and the keys. `found` is the shown count while a search is typed.
+pub fn reading_hint(stream: bool, picked: usize, unread: usize, found: Option<usize>) -> String {
+    let keys = if stream {
+        "j/k move · ⏎ read more · ⇧R all read · / search · esc back"
+    } else {
+        // --- reader folders ---
+        "←→ panes · j/k posts · space next unread · r/u read/unread · ⌘A picks all · \
+         ⇧R all read · / search"
+    };
+    if picked > 0 {
+        // --- read/unread ---
+        format!("{picked} picked · r marks read · u unread · esc lets go")
+    } else if let Some(n) = found {
+        format!("{n} found · esc clears")
+    } else if unread > 0 {
+        format!("{unread} to read · {keys}")
+    } else {
+        keys.into()
+    }
+}
+
 impl MainView {
     /// Every reading row, in display order (a search doesn't change these).
     #[cfg(test)]
@@ -616,7 +639,7 @@ impl MainView {
                     vm::host(&item.origin)
                 };
                 self.show_toast(
-                    format!("Reply to {whom} · a stub thread"),
+                    format!("Replying to {whom}"),
                     Some("Quoting the whole post · choose a passage above the editor".into()),
                     cx,
                 );
@@ -744,25 +767,17 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette.on_page();
-        let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        // --- unread counts --- the one rule (`sources_vm::counts_as_unread`):
+        // the same number as All unread and the status bar.
+        let unread = super::sources_vm::unread_total(&self.reading.rows, &self.reading.hopper_only);
         let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
-        let keys = if stream {
-            "j/k move · ⏎ read more · / search · esc back"
-        } else {
-            // --- reader folders ---
-            "←→ panes · j/k posts · space next unread · r/u read/unread · / search"
-        };
         let picked = self.reading.picked.set.len();
+        // --- stream search --- "N found · esc clears" while searching.
+        let found = (!self.reading.query.trim().is_empty()).then_some(self.reading.shown.len());
         let hint = if !self.reading.available {
             String::new()
-        } else if picked > 0 {
-            // --- read/unread ---
-            format!("{picked} picked · r marks read · u unread · esc lets go")
-        } else if unread > 0 {
-            // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · {keys}")
         } else {
-            keys.into()
+            crate::keymap::hint_owned(reading_hint(stream, picked, unread, found))
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
         let mut actions = vec![self.render_mode_toggle(cx)];
@@ -1340,7 +1355,7 @@ impl MainView {
                 })
                 .into_any_element()
             }))
-            .children(more_chip)
+            .children(more_chip.map(|c| self.tour_marked_more(c))) // --- 0.26.0 --- the tour's ring
             .children(self.slots_more_chip(item, cx)) // --- reading slots ---
             .into_any_element()
     }

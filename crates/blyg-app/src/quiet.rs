@@ -184,10 +184,8 @@ impl MainView {
                 .child(note(
                     &p,
                     crate::keymap::hint(
-                        "Hides the lineage line under the editor, the loose-ends line over the \
-                         list and Nearby thoughts, for a plainer page. ⌘J, the omnibar's is: \
-                         operators and ⌥⌘U (for this sitting) still reach them; hover cards, the \
-                         quote tray and focus mode are unchanged. View › Quiet Writing toggles it.",
+                        "Hides the lineage line, the loose-ends line and Nearby thoughts. ⌘J \
+                         still opens lineage, ⌥⌘U Nearby, and the is: operators still search.",
                     ),
                 )),
         )

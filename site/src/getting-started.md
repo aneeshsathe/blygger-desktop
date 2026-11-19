@@ -2,12 +2,18 @@
 
 ## First launch
 
-The first launch opens a short setup: a welcome, **Connect your blyg** (or
+The first launch opens a short setup: a welcome (which says what a blyg is,
+with a link to [blygger.org](https://blygger.org)), **Connect your blyg** (or
 *Skip, just try it with sample data*), **AI** (off until you switch a provider
 on; installed `claude` / `codex` CLIs are detected), and **Buttons or
 keyboard?** (`show-buttons`). esc skips it at any step. If you skip
 connecting, **Burrow › Connect…** (or "Connect" in the command palette) opens
 the Connect sheet whenever you're ready.
+
+Skipped it without connecting? The empty list says **⏎ Connect your blyg… ·
+try sample data**: ⏎ (or a click) opens Connect, and the other half runs the
+session on sample data. **not connected** in the status bar opens Connect
+too.
 
 Then comes an optional **interactive tour** of the real window: each step
 highlights a part of it and waits for you to press the key (⌘N, ⌘T, ⌘⏎, ⌘3,

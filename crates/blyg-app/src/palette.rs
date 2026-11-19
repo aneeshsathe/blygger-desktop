@@ -47,6 +47,9 @@ pub(crate) enum Cmd {
     Post(LocalId),
     /// An extension's command, library or Manage extensions.
     Ext(ExtAction),
+    /// --- mark all read --- Mark All Read… for the current reading source
+    /// (`reading/marks.rs`; asks first, with the count).
+    MarkAllRead,
 }
 
 /// One row.
@@ -134,6 +137,8 @@ fn skipped(action: &str, fake: bool) -> bool {
     matches!(
         action,
         "ShowPalette"
+            // marks.rs adds its own, richer row (the source by name).
+            | "MarkAllRead"
             | "TutorialNext"
             | "TutorialBack"
             | "SwitchBlyg1"
@@ -430,6 +435,8 @@ impl MainView {
                 disabled: None,
             });
         }
+        // --- mark all read --- (no keymap row: ⇧R is the reading screen's own key)
+        out.push(self.mark_all_palette_entry());
         // Extensions.
         for r in self.ext_palette_rows(window, cx) {
             let id = match &r.action {
@@ -624,6 +631,7 @@ impl MainView {
                 self.open(&id, window, cx);
             }
             Cmd::Ext(action) => self.ext_run(action, window, cx),
+            Cmd::MarkAllRead => self.ask_mark_all_read(None, window, cx), // --- mark all read ---
         }
         // Kept open: the rows' states (a theme now in use) follow.
         if keep && self.cmd_palette.open.is_some() {

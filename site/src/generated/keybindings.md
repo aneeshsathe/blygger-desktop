@@ -133,6 +133,7 @@
 | Copies elsewhere: where this published post is also posted (no new version) | Post › Copies Elsewhere… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
+| Mark all read in this source… (⇧R on the reading screen; asks first) | Blyg › Mark All Read… |
 | Reading pane: back along the quotes, replies and links you followed (⌘[ on the reading screen) | Blyg › Back |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |
 | Your own profile, as visitors see it | Blyg › My Profile |

@@ -1,6 +1,8 @@
 //! --- loose ends --- The muted summary above the Posts list, in words
-//! (proposal 10): "2 orphans · 1 ungenerated TK · 1 draft older than a
-//! month". Each part is a one-click `is:orphan` / `has:tk` / `is:stale`.
+//! (proposal 10): "2 posts not linked yet · 1 ungenerated TK · 1 draft
+//! older than a month". Each part is a one-click `is:orphan` / `has:tk` /
+//! `is:stale`, with a tooltip saying what it counts (`Summary::tip`). A
+//! post made in the last week isn't counted as not linked yet.
 //! It describes your own text, never anyone's attention: no social count.
 //! Worked out on a background thread after the list changes.
 //!
@@ -83,6 +85,10 @@ impl MainView {
                     .debug_selector(move || format!("loose-{query}"))
                     .cursor_pointer()
                     .hover(|s| s.text_color(p.ink))
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| crate::app::reading::Tip(Summary::tip(query).into()))
+                            .into()
+                    })
                     .child(words)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.set_query_text(query, window, cx);

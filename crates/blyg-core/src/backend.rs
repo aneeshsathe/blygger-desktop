@@ -358,13 +358,22 @@ pub trait Backend: Send + Sync {
             .filter(|r| r.remote_id == remote_id)
             .collect()
     }
-    /// How many of `reading()`'s posts are unread; withdrawn posts are
-    /// background, never unread (studio 0.49). The live backend counts
-    /// without copying the list.
+    /// How many of `reading()`'s posts are to read
+    /// ([`ReadingItem::to_read`]: never read, or edited since you read
+    /// them); Background posts never are (withdrawn ones, or what the
+    /// studio's Background lens lists). The live backend counts without
+    /// copying the list.
     fn unread_count(&self) -> usize {
+        let set = self.background_set();
         self.reading()
             .iter()
-            .filter(|r| r.is_unread() && r.state != "tombstone")
+            .filter(|r| {
+                let background = match &set {
+                    Some(s) => s.of(&(r.subscription_id.clone(), r.remote_id.clone())).on,
+                    None => r.state == "tombstone",
+                };
+                r.to_read() && !background
+            })
             .count()
     }
     fn subscriptions(&self) -> Vec<Subscription>;

@@ -482,6 +482,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
                 MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
+                MenuItem::action("Mark All Read…", app::reading::sources::MarkAllRead),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
                 MenuItem::action(

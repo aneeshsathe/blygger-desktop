@@ -783,6 +783,21 @@ fn do_step(e: &mut Env, id: &str) {
         "quiet-writing" => e.view.update(e.cx, |v, cx| {
             v.set_quiet_writing(true, cx);
         }),
+        // A click on ⋯ More (the chip's own call, at the chip).
+        "more-menu" => e.view.update(e.cx, |v, cx| {
+            let at = v
+                .onboarding
+                .more_chip
+                .get()
+                .expect("the chip is drawn")
+                .bottom_left();
+            v.open_source_menu(
+                crate::app::reading::sources::MenuTarget::PostMore,
+                at,
+                false,
+                cx,
+            )
+        }),
         "mentions-feed" => e.view.update(e.cx, |v, cx| {
             v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
         }),
@@ -1045,6 +1060,7 @@ fn steps_ring_something_on_screen(cx: &mut TestAppContext, which: impl Fn(&str) 
             Region::ScreenHeader => &["opml-import-chip"],
             Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
             Region::QuietSetting => &["quiet-writing-off", "quiet-writing-on"], // --- 0.26.0 ---
+            Region::MoreChip => &["act-more"],
             _ => &[],
         };
         // The drawer's folders come from the extension: wait for them.

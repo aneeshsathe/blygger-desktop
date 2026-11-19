@@ -63,8 +63,19 @@ use wire::*;
 /// read as the end of the list and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
 
+/// The oldest blygger-studio Burrow syncs with, as a literal, so UI text
+/// can `concat!` it into `&'static str` consts (`blyg_core::min_studio!()`).
+/// Every message that states Burrow's server floor is built from this, never
+/// a typed-out version.
+#[macro_export]
+macro_rules! min_studio {
+    () => {
+        "0.49.12"
+    };
+}
+
 /// The oldest blygger-studio Burrow syncs with, for messages.
-pub const MIN_STUDIO: &str = "0.49.12";
+pub const MIN_STUDIO: &str = crate::min_studio!();
 
 /// Whether a studio's `contractVersion` takes `wholeBlyg` on `POST
 /// /api/subscriptions` (5.1.0, studio 0.50.0). Its body is strict, so a

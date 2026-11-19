@@ -206,6 +206,34 @@ pub(crate) mod site;
 
 pub const CONTEXT: &str = "Blygger";
 
+/// The empty list while no blyg is connected (setup skipped): Enter or a
+/// click connects; the other half starts the sample data, as setup's "S"
+/// does.
+pub const EMPTY_CONNECT: &str = "⏎ Connect your blyg…";
+pub const EMPTY_SAMPLE: &str = "try sample data";
+
+/// The first publish sheet's muted line (v1 only): it goes public, and a
+/// published post can be withdrawn (visibly) but never deleted.
+pub fn first_publish_note(host: Option<&str>) -> String {
+    match host {
+        Some(h) => {
+            format!("This goes public at {h}. Published posts can be withdrawn, not deleted.")
+        }
+        None => {
+            "This goes public on your blyg. Published posts can be withdrawn, not deleted.".into()
+        }
+    }
+}
+
+/// The Connect sheet's opening line, with Burrow's server floor taken from
+/// `blyg_core::api::MIN_STUDIO` (never typed out: it went stale once).
+pub const CONNECT_INTRO: &str = concat!(
+    "Burrow writes to your own blyg, which needs blygger-studio ",
+    blyg_core::min_studio!(),
+    " or later. Enter its address and choose how to sign in. The address \
+     goes in your config file."
+);
+
 /// Every binding lives in `keymap::table()`.
 pub fn bind_keys(cx: &mut App) {
     crate::keymap::bind_keys(cx);
@@ -838,6 +866,14 @@ impl MainView {
         }
     }
 
+    /// No blyg connected, no posts and nothing typed: the empty list offers
+    /// Connect (and sample data), and Enter connects.
+    pub(crate) fn offers_connect(&self, cx: &App) -> bool {
+        crate::connection::mode(cx) == Some(crate::connection::Mode::Disconnected)
+            && self.list.results().is_empty()
+            && self.list.trimmed_query().is_empty()
+    }
+
     fn open_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let url = cx.new(|cx| InputState::new(window, cx).placeholder("https://blyg.example.com"));
         let token = cx.new(|cx| {
@@ -1057,9 +1093,10 @@ impl MainView {
                     let _ = this.update_in(cx, |v, window, cx| {
                         let msg = match other {
                             Ok(_) => {
-                                // A studio older than 0.28: the password works.
+                                // No OAuth routes: the password works.
                                 v.set_connect_way(ConnectWay::Password, window, cx);
-                                "This blyg has no browser sign-in (its studio is older than 0.28). Use its studio password.".to_string()
+                                "This blyg has no browser sign-in. Use its studio password."
+                                    .to_string()
                             }
                             Err(CoreError::Offline) => {
                                 "Couldn't reach that address. Check the URL and your connection."
@@ -1077,8 +1114,7 @@ impl MainView {
             let task = cx.background_spawn({
                 let (url, cancel) = (url.clone(), cancel.clone());
                 async move {
-                    let grant =
-                        sign_in.finish(&cancel, blyg_core::api::oauth::SIGN_IN_TIMEOUT)?;
+                    let grant = sign_in.finish(&cancel, blyg_core::api::oauth::SIGN_IN_TIMEOUT)?;
                     let cred = Credential::OAuth(blyg_core::api::oauth::OAuthSession::new(grant));
                     verify(&url, &cred)
                         .map(|_| cred)
@@ -1094,7 +1130,10 @@ impl MainView {
                 match verdict {
                     Ok(cred) => v.finish_connect(&url, &cred, window, cx),
                     Err(CoreError::Offline) => v.set_connect_state(
-                        Some("Couldn't reach that address. Check the URL and your connection.".into()),
+                        Some(
+                            "Couldn't reach that address. Check the URL and your connection."
+                                .into(),
+                        ),
                         false,
                         cx,
                     ),
@@ -1518,6 +1557,9 @@ impl MainView {
                 EnterAction::Open(id) => self.open(&id, window, cx),
                 EnterAction::Create(seed) => self.create_from(&seed, window, cx),
                 EnterAction::LinkFragment(url) => self.capture_link(url, window, cx), // --- capture ---
+                // Not connected, nothing here, nothing typed: Enter connects
+                // (the empty list says so).
+                EnterAction::Nothing if self.offers_connect(cx) => self.open_connect(window, cx),
                 EnterAction::Nothing => {}
             },
             InputEvent::Blur => {}
@@ -2926,6 +2968,51 @@ impl MainView {
             ListLength::Width(w) => base.w(w).h_full().border_r_1(),
             ListLength::Height(h) => base.h(h).w_full().border_b_1(),
         };
+        if count == 0 && self.offers_connect(cx) {
+            // Setup was skipped: say how to connect, or try sample data.
+            return base.child(
+                div()
+                    .relative()
+                    .p(px(14.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(10.))
+                    .children(crate::ornament::empty_art(&self.theme))
+                    .child(
+                        div()
+                            .flex()
+                            .flex_wrap()
+                            .items_center()
+                            .gap(px(6.))
+                            .text_size(px(lsize))
+                            .text_color(p.muted)
+                            .child(
+                                div()
+                                    .id("empty-connect")
+                                    .debug_selector(|| "empty-connect".into())
+                                    .cursor_pointer()
+                                    .text_color(p.ink)
+                                    .hover(|s| s.underline())
+                                    .child(crate::keymap::hint(EMPTY_CONNECT))
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.open_connect(window, cx)
+                                    })),
+                            )
+                            .child("·")
+                            .child(
+                                div()
+                                    .id("empty-sample")
+                                    .debug_selector(|| "empty-sample".into())
+                                    .cursor_pointer()
+                                    .hover(|s| s.underline())
+                                    .child(EMPTY_SAMPLE)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.onboarding_sample_data(window, cx)
+                                    })),
+                            ),
+                    ),
+            );
+        }
         if count == 0 {
             let q = self.list.trimmed_query().to_string();
             // --- loose ends --- / --- capture --- operators and addresses.
@@ -3463,7 +3550,22 @@ impl MainView {
                     .items_center()
                     .gap(px(6.))
                     .child(dot_el)
-                    .child(sync_text),
+                    .child(sync_text)
+                    // Not connected: a click opens Connect.
+                    .id("sync-status")
+                    .when(disconnected, |d| {
+                        d.debug_selector(|| "sync-status-connect".into())
+                            .cursor_pointer()
+                            .hover(|s| s.text_color(p.ink).underline())
+                            .tooltip(|_, cx| {
+                                cx.new(|_| reading::Tip("Connect your blyg…".into())).into()
+                            })
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                if this.sheet.is_none() {
+                                    this.open_connect(window, cx)
+                                }
+                            }))
+                    }),
             )
             // --- conflicts --- an item still in conflict says so, and a
             // click shows the resolve sheet again (issue #52).
@@ -3663,6 +3765,21 @@ impl MainView {
                         this.close_sheet(window, cx);
                     }))
                     .child(heading(format!("Publish “{title}” as v{next_version}")))
+                    // A first publish: say it goes public, and for good.
+                    .when(*next_version == 1, |d| {
+                        let host = crate::settings::blyg_url(cx)
+                            .map(|u| crate::vm::url_host(&u).unwrap_or(u));
+                        d.child(
+                            div()
+                                .id("publish-first-note")
+                                .debug_selector(|| "publish-first-note".into())
+                                .mb(px(8.))
+                                .text_size(px(12.))
+                                .text_color(p.muted)
+                                .line_height(relative(1.45))
+                                .child(first_publish_note(host.as_deref())),
+                        )
+                    })
                     // --- full editor ---
                     .children(self.studio_publish_warning(cx).map(|w| {
                         div()
@@ -3921,7 +4038,7 @@ impl MainView {
                     ConnectWay::Browser => {
                         "Burrow opens your blyg's studio in your browser. Sign in there and \
                          allow Burrow; it gets renewable access with every permission, \
-                         kept in your macOS Keychain. Needs blygger-studio 0.28 or later."
+                         kept in your macOS Keychain."
                     }
                     ConnectWay::Token => {
                         "Make a token in your blyg's Studio → More → Client access: choose REST \
@@ -3930,9 +4047,8 @@ impl MainView {
                          30 days. It is kept in your macOS Keychain."
                     }
                     ConnectWay::Password => {
-                        "The password you sign in to the studio with. It works with any \
-                         studio, including ones older than 0.28, and is kept in your macOS \
-                         Keychain."
+                        "The password you sign in to the studio with. It is kept in your \
+                         macOS Keychain."
                     }
                 };
                 (
@@ -3943,10 +4059,12 @@ impl MainView {
                             this.close_sheet(window, cx);
                         }))
                         .child(heading("Connect your blyg".into()))
-                        .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                            "Burrow writes to your own blyg. Enter its address and choose how to \
-                             sign in. The address goes in your config file.",
-                        ))
+                        .child(
+                            div()
+                                .text_color(p.muted)
+                                .line_height(relative(1.45))
+                                .child(CONNECT_INTRO),
+                        )
                         .child(label("BLYG ADDRESS"))
                         .child(input_box(
                             gpui_kit::base::input::Input::new(url).into_any_element(),

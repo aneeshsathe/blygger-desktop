@@ -371,7 +371,8 @@ fn a_hoppers_menu_renames_describes_publishes_and_deletes(cx: &mut TestAppContex
             "Description…",
             "Make Public…",
             "Delete Hopper…",
-            "New Hopper…"
+            "New Hopper…",
+            "Mark All Read…" // --- mark all read ---
         ]
     );
 

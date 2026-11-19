@@ -155,6 +155,9 @@ impl MainView {
             // The list's empty state for a query with no match.
             ("empty", 0) => self.set_query_text("zqxj", window, cx),
             ("connect", 0) => self.open_connect(window, cx),
+            // No blyg and setup skipped: the Connect sheet that opens at
+            // launch closed, so the empty list and status bar show.
+            ("skipped-setup", 0) => self.close_sheet(window, cx),
             ("disconnect", 0) => self.on_disconnect(&super::Disconnect, window, cx),
             // --- blyg switcher --- (a config with two blygs): the switcher
             // open; then switched to the second blyg; then Manage….
