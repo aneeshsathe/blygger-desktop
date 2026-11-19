@@ -499,6 +499,31 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
     }
 }
 
+/// Whether a chip stays in the row under an open post. The rest (AI reply,
+/// Fork, Link post, Open on web, → Notes, Hopper ›, + Add to shelf, the
+/// other Background choices) sit behind one "⋯ More" chip, so the row fits on one line. Their
+/// keys (h, t, b, q, …) work as before. A pinned view's chips all stay.
+pub fn primary_chip(id: &str) -> bool {
+    matches!(
+        id,
+        "Quote"
+            | "Reply"
+            | "Catch up"
+            | "Subscribe"
+            // The Background chip itself (`background::PLACE`).
+            | "Background"
+            | "Quote this version"
+            | "Fork this pin"
+            | "Diff vs now"
+            | "Back to current"
+    )
+}
+
+/// The chips in the row, and those behind "⋯ More", in their order.
+pub fn split_chips(chips: Vec<ActionChip>) -> (Vec<ActionChip>, Vec<ActionChip>) {
+    chips.into_iter().partition(|c| primary_chip(c.id))
+}
+
 /// Why Fork is greyed out on the current version, and where to go instead.
 pub fn fork_needs_pin(cx: &ActionCtx) -> String {
     match cx.pins.last() {

@@ -479,7 +479,21 @@ export function initDesk() {
   // The stream scrolls itself, or (when the window is taller) the page does.
   onNearEnd($('#d-stream'), moreReading);
   onNearEnd(window, moreReading);
-  $('#d-ractions').addEventListener('click', (e) => { const b = e.target.closest('[data-ra]'); if (b) readAction(b.dataset.ra); });
+  // "⋯ More" opens the small menu of less common keepers (hopper, shelf,
+  // link); choosing one, a click elsewhere or esc closes it.
+  const moreMenu = (open) => {
+    $('#d-moreMenu').hidden = !open;
+    $('#d-moreRA').setAttribute('aria-expanded', String(open));
+  };
+  $('#d-ractions').addEventListener('click', (e) => {
+    if (e.target.closest('#d-moreRA')) { moreMenu($('#d-moreMenu').hidden); return; }
+    const b = e.target.closest('[data-ra]');
+    if (!b) return;
+    moreMenu(false);
+    readAction(b.dataset.ra);
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('#d-ractions .ra-more')) moreMenu(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#d-moreMenu').hidden) { moreMenu(false); $('#d-moreRA').focus(); } });
   swipePosts($('#d-post'), (d) => stepPost(d));
   $('#d-post').addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) openReading(g.dataset.goto); });
   holdSentences($('#d-post'), $('#d-pmenu'), (a, text) => readAction(a === 'link' ? 'link' : a, rcur, a === 'link' ? '' : text));

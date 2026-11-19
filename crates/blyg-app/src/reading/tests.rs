@@ -812,6 +812,31 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "⇊ Blyg to Background"
         ]
     );
+    // One row of the common ones; the rest behind ⋯ More (keys unchanged).
+    let (shown, more) = view.read_with(cx, |v, _| {
+        let (row, _) = v.reading_chip_rows();
+        let shown: Vec<String> = row.into_iter().map(|c| c.label).collect();
+        let more: Vec<String> = v.post_more_items().into_iter().map(|i| i.0).collect();
+        (shown, more)
+    });
+    assert_eq!(
+        shown,
+        ["Quote into a thread", "Reply · new stub", "↓ Background"]
+    );
+    assert_eq!(
+        more,
+        [
+            "AI reply · new stub",
+            "Fork · needs a pinned version",
+            "Link post · new fragment",
+            "Open on web",
+            "→ Notes",
+            "Hopper ›",
+            "+ Add to shelf",
+            "⇊ Blyg to Background",
+            "⤳ Add to trail"
+        ]
+    );
     assert!(tip(&row, "Link post").contains("no stub_of"));
     for c in &row {
         assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);

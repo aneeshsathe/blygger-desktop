@@ -557,7 +557,14 @@ export function initPhone() {
   swipePosts($('#v-post .pscroll'), stepPost);
   // The post's action row, by name: what swiping a card and holding a
   // sentence also offer.
-  $('#p-pacts').addEventListener('click', (e) => {
+  // "⋯ More" shows a second row: the less common keepers (hopper, shelf,
+  // link), as the desktop app keeps them in a menu.
+  $('#p-moreBtn').addEventListener('click', () => {
+    const more = $('#p-pmore');
+    more.hidden = !more.hidden;
+    $('#p-moreBtn').setAttribute('aria-expanded', String(!more.hidden));
+  });
+  const postAction = (e) => {
     const b = e.target.closest('[data-pa]'); if (!b || !readKey) return;
     const a = b.dataset.pa;
     if (a === 'quote') quote(readKey);
@@ -566,7 +573,9 @@ export function initPhone() {
     else if (a === 'shelf') { outcome(S.B.toggle_reading_shelf(readKey)); shelfButton($('#p-shelfRA'), readKey); persist(); } // --- shelf sync ---
     else if (a === 'link') copyText(S.B.link_markup(readKey)).then((ok) => toast(ok ? 'Link copied · paste it into a post' : 'Couldn’t reach the clipboard'));
     else if (a === 'unread') { outcome(S.B.set_read(readKey, false)); persist(); renderStream(); }
-  });
+  };
+  $('#p-pacts').addEventListener('click', postAction);
+  $('#p-pmore').addEventListener('click', postAction);
   $('#p-smaller').addEventListener('click', () => textSize(-0.1));
   $('#p-bigger').addEventListener('click', () => textSize(0.1));
   $('#p-postBody').addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) openReading(g.dataset.goto); });

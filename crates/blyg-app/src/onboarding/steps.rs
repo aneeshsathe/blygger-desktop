@@ -1292,8 +1292,8 @@ pub const STEPS: &[Step] = &[
         title: "Set a post aside: Background",
         caption: "b (or ↓ Background under the post) moves it to Background: out of the \
                   stream, the feeds, Mentions and the counts, and nothing is marked read. \
-                  ↑ Foreground brings it back, ↺ Clear my choice lets the rules decide, and \
-                  ⇊ moves a whole blyg. Your blyg keeps the list, so the studio shows the same \
+                  ↑ Foreground brings it back; ⋯ More under the post has ↺ Clear my choice \
+                  (the rules decide again) and ⇊, which moves a whole blyg. Your blyg keeps the list, so the studio shows the same \
                   (blygger-studio 0.61).",
         keys: &[Key::Background],
         key_label: "b",
@@ -1308,7 +1308,7 @@ pub const STEPS: &[Step] = &[
         id: "shelf-add",
         since: "0.24.0",
         title: "Anyone's post on your shelf",
-        caption: "+ Add to shelf, among the post's chips, keeps it to hand: someone else's \
+        caption: "+ Add to shelf, in ⋯ More under the post, keeps it to hand: someone else's \
                   post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
                   syncs with your blyg, so the studio, the web app and your other computers \
                   share it.",
@@ -1360,7 +1360,7 @@ pub const STEPS: &[Step] = &[
         since: "0.15.0",
         title: "Hoppers: posts you keep together",
         caption: "Under Hoppers on the left are your blyg's hoppers, collections of posts, yours \
-                  and others'. Pick one to list its posts. h (or Hopper › on a post) puts the \
+                  and others'. Pick one to list its posts. h (or Hopper › in ⋯ More under a post) puts the \
                   open post in a hopper or takes it out; a public one, marked with a globe, has its own page.",
         keys: &[Key::HopperPicker],
         key_label: "h",
@@ -1480,7 +1480,7 @@ pub const STEPS: &[Step] = &[
         caption: "⇧⌘N, or the Notes tab at the right edge, opens the notes beside what you're \
                   reading or writing; they stay open until you close them, and esc takes you \
                   back to your draft. Reading notes are running notes, kept on this Mac as a \
-                  scratch note; → Notes, at the bottom of a post, adds the post to them. Select \
+                  scratch note; → Notes, in ⋯ More at the bottom of a post, adds the post to them. Select \
                   a passage in a post: ⇧⌘D, or the pill beside it, quotes it in your draft. The \
                   pane's Notes tab is next.",
         keys: &[Key::Notes],
