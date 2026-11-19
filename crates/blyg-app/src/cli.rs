@@ -158,6 +158,9 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
                 }
             }
         }
+        // Development (not in +help): every `BLYGGER_DEMO` scene, one per
+        // line, from the registry (`scenes.rs`). `burrow-verify.sh` reads it.
+        "+scenes" => o.stdout = crate::scenes::Scene::all().join("\n") + "\n",
         "+list-keybinds" => o.stdout = crate::keymap::list(),
         // `run` serves a bundled extension before it gets here; what's left
         // is a missing or unknown name.

@@ -46,10 +46,11 @@ die() {
   exit 2
 }
 
-# The demo scenes the app knows: the names its demo_step matches on.
+# The demo scenes the app knows: its registry (crates/blyg-app/src/scenes.rs),
+# printed by the binary itself, so this list and the app can't disagree.
 scenes() {
-  grep -rhoE '\("[a-z][a-z0-9-]*", ([0-9_]|n)\)' "$ROOT/crates/blyg-app/src" \
-    | sed -E 's/^\("([^"]+)".*/\1/' | sort -u
+  check_bin
+  env -u BLYGGER_DEMO "$BIN" +scenes
 }
 
 # Refuse anything but a debug build of this repo's app.
@@ -112,8 +113,8 @@ launch() {
   [[ -n "$scene" ]] || die "usage: launch <scene> [VAR=value ...]"
   shift
   [[ "$(uname)" == Darwin ]] || die "macOS only (window capture uses screencapture)"
-  scenes | grep -qx -- "$scene" || die "unknown scene '$scene' (see: $0 scenes)"
   check_bin
+  scenes | grep -qx -- "$scene" || die "unknown scene '$scene' (see: $0 scenes)"
   local a
   for a in "$@"; do check_assignment "$a"; done
   local run

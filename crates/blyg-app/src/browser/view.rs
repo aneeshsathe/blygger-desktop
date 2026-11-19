@@ -35,6 +35,7 @@ gpui_kit::actions!(
         ClipPage
     ]
 );
+use crate::scenes::Scene;
 
 /// The key context inside the pane (keymap `Scope::Browser`).
 pub const CONTEXT: &str = "Browser";
@@ -1541,20 +1542,20 @@ impl MainView {
     /// switched off and the page probed again (debug output on stdout).
     pub(crate) fn browser_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         // --- browser macros --- the built-in test macro against a fixture.
-        if scenario == "br-macro" {
+        if scenario == Scene::BrMacro {
             if n == 0 {
                 self.macro_demo(window, cx);
             }
             return;
         }
         // An installed extension's macro, through the ⇧⌘P palette.
-        if scenario == "br-macro-ext" {
+        if scenario == Scene::BrMacroExt {
             if n == 0 {
                 self.macro_ext_demo(window, cx);
             }
@@ -1562,9 +1563,9 @@ impl MainView {
         }
         // A post open in the reader, then a link from it: the reader's web
         // view is cut off at the pane's edge.
-        if scenario == "br-reader" {
+        if scenario == Scene::BrReader {
             match n {
-                0 | 1 => self.reading_demo("rd-reading", n, window, cx),
+                0 | 1 => self.reading_demo(Scene::RdReading, n, window, cx),
                 _ => {
                     let url = crate::dev_flags::get()
                         .demo
@@ -1585,7 +1586,7 @@ impl MainView {
             .url
             .clone()
             .unwrap_or_else(|| "https://blyg.example.com/".into());
-        let mode = if scenario == "br-full" {
+        let mode = if scenario == Scene::BrFull {
             OpenMode::Full
         } else {
             OpenMode::Slide
@@ -1599,7 +1600,7 @@ impl MainView {
         {
             println!("browser-webcontent-pid={pid}");
         }
-        if scenario == "br-teardown" {
+        if scenario == Scene::BrTeardown {
             // Load, close, wait for the teardown, then quit (smoke test of
             // the freed WebContent process; see BLYGGER_BROWSER_TEARDOWN_MS).
             cx.spawn_in(window, async move |this, cx| {
@@ -1633,7 +1634,7 @@ impl MainView {
             .detach();
             return;
         }
-        if scenario != "br-block" {
+        if scenario != Scene::BrBlock {
             crate::app::reading::demo::snapshot_later(window, cx);
             return;
         }

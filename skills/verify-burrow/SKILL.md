@@ -28,8 +28,10 @@ It prints the **run dir**. Ready means usable: the app printed
 `blygger: demo <scene> ready` (every scene step has run, `demo.rs`) and owns an
 on-screen window; it then holds `BURROW_VERIFY_HOLD` (1.5 s) for the scene's
 last animation. It gives up after `BURROW_VERIFY_WAIT` (120 s) and stops the
-app. `scripts/verify/burrow-verify.sh scenes` lists the scenes (grepped from
-the source's `demo_step` matches). Teardown is `stop` (below).
+app. `scripts/verify/burrow-verify.sh scenes` lists the scenes (the build's
+`blygger +scenes`, from the registry in `crates/blyg-app/src/scenes.rs`); an
+unknown `BLYGGER_DEMO` stops the app and names near matches. Teardown is
+`stop` (below).
 
 ## Doctor
 
@@ -45,10 +47,13 @@ owns a window, and that its data dir is the run's throwaway one. Exit 1 on any
 ## Drive
 
 A scene is the driver: `BLYGGER_DEMO=<scene>` calls the same methods the keys
-call, from inside the app (`crates/blyg-app/src/demo.rs`, `reading/demo.rs`,
-`notes/drawer.rs`, `settings_page.rs`, upkeep). To check a new behaviour, add
-a scene for it next to the others (steps 0, 1, 2 run at about 0.4, 1.3 and
-2.5 s) rather than poking state from outside. Extra `BLYGGER_*` variables tune
+call, from inside the app. Every scene is a row in
+`crates/blyg-app/src/scenes.rs` (its name and area); `demo.rs` sends each step
+to its area's handler (`demo.rs`, `reading/demo.rs`, `notes/drawer.rs`,
+`settings_page.rs`, upkeep, …), which matches on the `Scene` variant. To
+check a new behaviour, add a scene for it (a registry row, then an arm in its
+handler; steps 0, 1, 2 run at about 0.4, 1.3 and 2.5 s) rather than poking
+state from outside. Extra `BLYGGER_*` variables tune
 a scene (`BLYGGER_DEMO_SCROLL=bottom`, `BLYGGER_THEME=<name>`). A starting
 config goes in `BURROW_VERIFY_CONFIG=<file>` (only `*.example.com` and
 localhost URLs). The feature map below names the scenes per feature.
@@ -88,4 +93,5 @@ under the feature's Gotchas; never weaken the journey to make it pass.
 
 - `crates/blyg-app/tests/verify_script.rs` runs `burrow-verify.sh selftest`
   (the scene list and the refusals) in `cargo test` on macOS.
-- Renaming a scene: update the feature files in the same change.
+- `scenes.rs`'s tests fail on a feature file naming a scene that doesn't
+  exist, so renaming a scene means updating the feature files with it.

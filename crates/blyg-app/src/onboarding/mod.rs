@@ -14,7 +14,7 @@
 //! the window's state; `app.rs` carries only small `// --- onboarding ---`
 //! hooks.
 
-mod steps;
+pub(crate) mod steps;
 mod tutorial;
 pub(crate) mod whats_new;
 
@@ -33,6 +33,7 @@ use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
 
+use crate::scenes::Scene;
 pub(crate) use steps::Key;
 use steps::Pick;
 pub use tutorial::Tutorial;
@@ -1028,39 +1029,34 @@ impl MainView {
     /// or a key makes.
     pub(super) fn onboarding_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("ob-welcome", 0) => self.open_onboarding(FlowStep::Welcome, window, cx),
-            ("ob-connect", 0) => self.open_onboarding(FlowStep::Connect, window, cx),
-            ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
-            ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
-            ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
+            (Scene::ObWelcome, 0) => self.open_onboarding(FlowStep::Welcome, window, cx),
+            (Scene::ObConnect, 0) => self.open_onboarding(FlowStep::Connect, window, cx),
+            (Scene::ObAi, 0) => self.open_onboarding(FlowStep::Ai, window, cx),
+            (Scene::ObButtons, 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
+            (Scene::ObTour, 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
             // The first launch after an update: every release, or with
             // `BLYGGER_DEMO_FROM=<version>` what a launch updated from it
             // shows (up to `whats_new::running_version`).
             // `ob-news-go`: then "Show me what's new".
-            ("ob-news" | "ob-news-go", 0) => {
+            (Scene::ObNews | Scene::ObNewsGo, 0) => {
                 let news = match &crate::dev_flags::get().demo.from {
                     Some(from) => whats_new::since(Some(from), &whats_new::running_version()),
                     None => whats_new::RELEASES.iter().collect(),
                 };
                 self.start_whats_new(news, window, cx)
             }
-            ("ob-news-go", 1) => self.tutorial_next(window, cx),
+            (Scene::ObNewsGo, 1) => self.tutorial_next(window, cx),
             // --- tours --- `tut-tours`: the chooser; `tut-tour-<id>`: tour
             // `<id>` (`quick`, or a feature tour) from its start;
             // `tut-tour-<id>-end`: at its end card.
-            ("tut-tours", 0) => self.start_tutorial(window, cx),
-            (s, 0) if s.starts_with("tut-tour-") => {
-                let name = s.trim_start_matches("tut-tour-");
-                let (id, end) = match name.strip_suffix("-end") {
-                    Some(id) => (id, true),
-                    None => (name, false),
-                };
+            (Scene::TutTours, 0) => self.start_tutorial(window, cx),
+            (Scene::TutTour { id, end }, 0) => {
                 let pick = if id == steps::QUICK.id {
                     Some(Pick::Quick)
                 } else {
@@ -1087,17 +1083,19 @@ impl MainView {
                 }
             }
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
-            (s, 0) if s.starts_with("tut-") => {
+            (Scene::TutStep { id, .. }, 0) => {
                 self.start_tutorial(window, cx);
-                let id = s.trim_start_matches("tut-").trim_end_matches('+');
                 if let Some(i) = steps::STEPS.iter().position(|st| st.id == id) {
                     self.tutorial_enter(i, window, cx);
                 }
             }
-            (s, 1) if s.starts_with("tut-") && s.ends_with('+') => {
-                let id = s.trim_start_matches("tut-").trim_end_matches('+');
-                self.tutorial_demo_act(id, window, cx);
-            }
+            (
+                Scene::TutStep {
+                    id,
+                    after_key: true,
+                },
+                1,
+            ) => self.tutorial_demo_act(id, window, cx),
             _ => {}
         }
         if n == 2 {

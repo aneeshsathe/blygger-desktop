@@ -173,11 +173,10 @@ pub fn append_log(data_dir: &Path, ext: &str, line: &str) {
 /// (the smoke test). Never in a release build.
 pub(crate) fn demo_auto() -> bool {
     cfg!(debug_assertions)
-        && crate::dev_flags::get()
-            .demo
-            .scene
-            .as_deref()
-            .is_some_and(|d| d == "br-macro" || d == "br-macro-ext")
+        && matches!(
+            crate::dev_flags::get().demo.scene,
+            Some(crate::scenes::Scene::BrMacro | crate::scenes::Scene::BrMacroExt)
+        )
 }
 
 /// The pane, the sheets and the clipboard, as the runner's [`Page`].

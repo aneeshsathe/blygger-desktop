@@ -13,6 +13,8 @@
 use std::ffi::OsString;
 use std::sync::OnceLock;
 
+use crate::scenes::Scene;
+
 /// What the environment asks of this run.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct DevFlags {
@@ -103,8 +105,8 @@ pub struct Snapshot {
 /// `BLYGGER_DEMO=<scene>` and the variables that tune a scene.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Demo {
-    /// `BLYGGER_DEMO`: the scene to play.
-    pub scene: Option<String>,
+    /// `BLYGGER_DEMO`: the scene to play (an unknown name is an error).
+    pub scene: Option<Scene>,
     /// `BLYGGER_DEMO_URL`: the page or blyg a scene opens.
     pub url: Option<String>,
     /// `BLYGGER_DEMO_URL2`: a second host (the browser shield scene).
@@ -200,7 +202,10 @@ impl DevFlags {
                 height: number(get, "BLYGGER_SNAPSHOT_HEIGHT"),
             },
             demo: Demo {
-                scene: text(get, "BLYGGER_DEMO"),
+                scene: text(get, "BLYGGER_DEMO")
+                    .map(|s| Scene::parse(&s))
+                    .transpose()
+                    .map_err(|e| e.to_string())?,
                 url: text(get, "BLYGGER_DEMO_URL"),
                 url2: text(get, "BLYGGER_DEMO_URL2"),
                 site_url: text(get, "BLYGGER_DEMO_SITE_URL"),

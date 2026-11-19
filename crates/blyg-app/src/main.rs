@@ -36,6 +36,7 @@ mod keymap_docs;
 mod ornament; // --- themes ---
 mod platform;
 mod prefs;
+mod scenes;
 mod settings;
 #[cfg(test)]
 mod test_wait;
@@ -265,7 +266,7 @@ fn open_main(
             if no_activate() {
                 let _ = handle.update(cx, |_, window, _| order_front_regardless(window));
             }
-            if let Some(scenario) = &dev_flags::get().demo.scene {
+            if let Some(scenario) = dev_flags::get().demo.scene {
                 let _ = handle.update(cx, |view, window, cx| view.run_demo(scenario, window, cx));
             } else {
                 // --- reading compose --- launch on the reading screen.

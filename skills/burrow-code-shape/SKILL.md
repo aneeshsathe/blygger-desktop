@@ -58,7 +58,10 @@ what can change it in under 30 seconds.
 - **Put the domain in one structure.** One `enum` beats several booleans:
   `Sheet` means only one sheet can be open; `ReadMode` is Stream or Reader.
   If a feature needs one more `else if` on the same flags in several files,
-  make the states an enum (or a table) instead.
+  make the states an enum (or a table) instead. Demo scenes were ~170 string
+  names routed by `starts_with` prefixes across 18 files; now each is a row
+  in `scenes.rs` (a `Scene` variant and its area), and a typo is a compile
+  error or, in `BLYGGER_DEMO`, a startup error naming near matches.
 - **Let types carry knowledge.** Parse config, env vars, CLI args and wire
   JSON into typed values where they enter (`cli::route`, `Prefs::from_config`,
   `model.rs`), then trust them. Environment variables are parsed once into
