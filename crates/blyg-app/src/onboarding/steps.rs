@@ -1101,8 +1101,8 @@ pub const STEPS: &[Step] = &[
         since: "0.14.0",
         title: "Post while you read",
         caption: "The box at the foot of Reading writes a post without leaving the one you're \
-                  reading. c puts the caret in it (⇧⌘K from anywhere), ⌘⏎ posts a fragment, \
-                  ⌘D keeps a draft, and esc goes back to the stream with your text kept. With \
+                  reading. c puts the caret in it (⇧⌘K from anywhere), ⌘⏎ posts a fragment \
+                  after 3 seconds (esc cancels, ⌘⏎ again posts now), ⌘D keeps a draft, and esc goes back to the stream with your text kept. With \
                   a post open, ❝ Quote quotes it.",
         keys: &[Key::Compose],
         key_label: "c",
