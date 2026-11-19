@@ -24,9 +24,7 @@ changes run `scripts/browser-*-check.sh`.
 2. **Naming:** display name is Burrow; never renamed: bundle ID, Keychain
    service/accounts, data dir and db names, config path, `BLYGGER_*` env vars,
    the `blygger` binary, key contexts, action namespaces, crates.
-3. **Contract:** the UI talks only to `Arc<dyn Backend>`. (`SwitchBackend`
-   forwarding every `Backend` method is checked by
-   `crates/blyg-app/tests/backend_forwarding.rs`.)
+3. **Contract:** the UI talks only to `Arc<dyn Backend>`.
 4. **Typing budget:** nothing new on the UI thread per keystroke; SQLite and
    network stay off it.
 5. **Studio parity:** does the studio have this feature? Match its behaviour;
