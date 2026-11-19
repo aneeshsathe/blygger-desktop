@@ -14,8 +14,9 @@
 //!
 //! On Windows it also embeds the exe's icon (`windows_icon`).
 //!
-//! It also writes `SwitchBackend`'s forwarding methods from the `Backend`
-//! trait (`build_forwarding.rs`).
+//! It also writes the `Backend` impls of `SwitchBackend` (forwarding) and
+//! `Disconnected` (not-connected answers) from the trait
+//! (`build_forwarding.rs`).
 
 // A build script reads Cargo's variables; the app's own go through `dev_flags`.
 #![allow(clippy::disallowed_methods)]

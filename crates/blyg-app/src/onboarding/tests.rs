@@ -240,6 +240,67 @@ impl Backend for Recording {
         self.rec("tracked_tk_provenance");
         self.inner.tracked_tk_provenance(id)
     }
+    fn refresh_subscriptions(&self) -> Result<()> {
+        self.rec("refresh_subscriptions");
+        self.inner.refresh_subscriptions()
+    }
+    fn mark_read(&self, sub: &str, id: &str) -> Result<()> {
+        self.rec("mark_read");
+        self.inner.mark_read(sub, id)
+    }
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        self.rec("set_read");
+        self.inner.set_read(rows, read)
+    }
+    fn server_outdated(&self) -> bool {
+        self.rec("server_outdated");
+        self.inner.server_outdated()
+    }
+    fn read_state_sync(&self) -> bool {
+        self.rec("read_state_sync");
+        self.inner.read_state_sync()
+    }
+    fn shelf(&self) -> Vec<LocalId> {
+        self.rec("shelf");
+        self.inner.shelf()
+    }
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        self.rec("shelf_entries");
+        self.inner.shelf_entries()
+    }
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        self.rec("shelf_state");
+        self.inner.shelf_state()
+    }
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        self.rec("clear_browse");
+        self.inner.clear_browse(trail)
+    }
+    fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
+        self.rec("background_set");
+        self.inner.background_set()
+    }
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        self.rec("conflict_texts");
+        self.inner.conflict_texts(id)
+    }
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        self.rec("put_nearby_vectors");
+        self.inner.put_nearby_vectors(model, docs, rows)
+    }
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.rec("retain_nearby_vectors");
+        self.inner.retain_nearby_vectors(model, keep)
+    }
 }
 
 struct Env<'a> {

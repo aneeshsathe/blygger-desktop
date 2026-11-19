@@ -15,7 +15,8 @@ happened at least once and could happen again.
    thing, the old way deleted. Example: `SwitchBackend` used to forward
    ~170 `Backend` methods by hand, and missing forwards shipped twice (the
    shelf methods; `save_typing`). `crates/blyg-app/build.rs` now writes the
-   whole impl from the trait, so there's nothing to forget.
+   whole impl from the trait, so there's nothing to forget; it writes the
+   `Disconnected` stub the same way.
 2. **Make the build fail**, with a message that names the replacement:
    types, `pub(crate)`, `#[must_use]`, clippy `disallowed-methods` with a
    `reason` (`crates/blyg-app/clippy.toml` bans `std::thread::sleep` and
