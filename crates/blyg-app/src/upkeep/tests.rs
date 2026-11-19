@@ -112,6 +112,11 @@ fn the_stale_sheet_says_what_changed_and_refreshes(cx: &mut TestAppContext) {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, Some(id(STALE)));
         assert_eq!(rows[0].report.line(), "2 versions behind · 1 stale quote");
+        // The stale quote is of Lin's post, held in the reading list: it
+        // shows by its title, not an id prefix.
+        let lin = crate::fake::reading_seed::LIN_BENCH;
+        let title = rows[0].quote_titles.get(lin).expect("Lin's post by title");
+        assert!(!title.contains("01k2"), "{title}");
         // The highlighted thread's quotes, as their blygs answered.
         let probed = s.probed.get(&rows[0].report.id).and_then(|p| p.ready());
         let words: Vec<String> = probed.unwrap().quotes.iter().map(|q| q.words()).collect();

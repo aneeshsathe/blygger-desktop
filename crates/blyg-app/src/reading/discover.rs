@@ -318,7 +318,7 @@ impl MainView {
                         let can_subscribe =
                             !followed && state.is_none_or(|r| matches!(r, RowState::Failed(_)));
                         let (o1, o2, home) = (b.origin.clone(), b.origin.clone(), b.home.clone());
-                        let level = b.activity.level.map(|l| l.as_str());
+                        let level = b.activity.level.map(|l| l.label());
                         list = list.child(
                             div()
                                 .id(("discover-row", i))

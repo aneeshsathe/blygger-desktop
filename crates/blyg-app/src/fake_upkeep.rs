@@ -41,8 +41,9 @@ fn sid(item: &Item) -> String {
 fn report(item: &Item) -> ThreadFreshness {
     let quotes = vec![
         QuoteFreshness {
-            id: "01k211n0bench0000000000001".into(),
-            origin: Some("https://lin.example.org/".into()),
+            // Lin's post in the sample reading list, so the sheet can name it.
+            id: crate::fake::reading_seed::LIN_BENCH.into(),
+            origin: Some(crate::fake::reading_seed::LIN.into()),
             baked: 1,
             held: Some(2),
             live: Some(3),
