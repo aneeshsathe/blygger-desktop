@@ -156,6 +156,11 @@ Inter, Source Serif 4, iA Writer Quattro and ET Book are bundled, and system
 fonts such as New York, Charter, SF Pro and Menlo work too
 (`blygger +list-fonts` lists them). ⌘+ and ⌘− change the text size.
 
+You can try a font, size or theme before keeping it: rest the pointer on it,
+or move with ⇥ and the arrow keys, and the whole window and the Preview at
+the top of Settings take it on. A click or ⏎ keeps it; esc puts yours back
+(see [Themes](themes.md#choosing-a-theme)).
+
 ![Settings](screenshots/settings.png)
 
 ## Offline, and conflicts

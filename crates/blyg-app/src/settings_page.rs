@@ -7,6 +7,7 @@ use gpui_kit::base::input::{Escape, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
+use super::pref_preview::{Pick, Row};
 use super::{MainView, OMNI_H, ReloadConfig, TITLEBAR_H};
 use crate::prefs::{self, LayoutPref};
 use crate::theme::{Palette, Rule};
@@ -105,6 +106,49 @@ impl MainView {
         }
     }
 
+    /// `BLYGGER_DEMO=settings-preview` (fake mode, screenshots): Settings
+    /// open with the keyboard on the THEME row, trying
+    /// `BLYGGER_DEMO_PREVIEW` (default `kumiko`; `font:<label>` tries a
+    /// writing font). `BLYGGER_DEMO_SLOT=dark` tries it for dark mode.
+    pub(super) fn settings_preview_demo(
+        &mut self,
+        n: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match n {
+            0 => self.settings_demo(0, window, cx),
+            1 => {
+                let want =
+                    std::env::var("BLYGGER_DEMO_PREVIEW").unwrap_or_else(|_| "kumiko".into());
+                let dark = std::env::var("BLYGGER_DEMO_SLOT").as_deref() == Ok("dark");
+                if dark {
+                    self.set_theme_slot(true, window, cx);
+                }
+                let (row, pick) = match want.strip_prefix("font:") {
+                    Some(f) => (
+                        Row::WritingFont,
+                        Pick::WritingFont(
+                            crate::prefs::find(crate::prefs::WRITING_FONTS, f)
+                                .unwrap_or(crate::prefs::WRITING_FONTS[0])
+                                .label,
+                        ),
+                    ),
+                    None => (
+                        Row::Theme,
+                        Pick::Theme {
+                            dark,
+                            id: Some(want),
+                        },
+                    ),
+                };
+                self.preview.cursor = Some((row, pick.clone()));
+                self.preview_pick(pick, super::pref_preview::Origin::Settings, window, cx);
+            }
+            _ => {}
+        }
+    }
+
     /// Hook (`render_sheet`): Settings, over the window below the title bar.
     pub(super) fn render_settings_page(
         &self,
@@ -187,7 +231,23 @@ impl MainView {
             .text_size(px(13.))
             .track_focus(focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                if ev.keystroke.key == "escape" {
+                // --- preview --- the page's own keys (not a field's): move
+                // through the fonts, size and themes, trying each.
+                let k = &ev.keystroke;
+                let page_has_keys = matches!(
+                    &this.sheet,
+                    Some(super::Sheet::Settings { focus, .. }) if focus.is_focused(window)
+                );
+                if page_has_keys
+                    && !k.modifiers.platform
+                    && !k.modifiers.control
+                    && !k.modifiers.alt
+                    && this.settings_preview_key(&k.key, k.modifiers.shift, window, cx)
+                {
+                    cx.stop_propagation();
+                    return;
+                }
+                if k.key == "escape" {
                     cx.stop_propagation();
                     this.close_sheet(window, cx);
                 }
@@ -242,94 +302,8 @@ impl MainView {
                     .child(label)
             };
 
-        let writing = crate::prefs::WRITING_FONTS
-            .iter()
-            .enumerate()
-            .map(|(i, f)| {
-                let label = f.label;
-                chip(
-                    format!("wf{i}").into(),
-                    label.into(),
-                    self.prefs.writing().label == label,
-                    Some(f.family),
-                )
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.prefs.writing_font = label.to_string();
-                    this.prefs.writing_font_set = true;
-                    this.apply_prefs(window, cx);
-                }))
-                .into_any_element()
-            });
-        let ui = crate::prefs::UI_FONTS.iter().enumerate().map(|(i, f)| {
-            let label = f.label;
-            chip(
-                format!("uf{i}").into(),
-                label.into(),
-                self.prefs.ui().label == label,
-                Some(f.family),
-            )
-            .on_click(cx.listener(move |this, _, window, cx| {
-                this.prefs.ui_font = label.to_string();
-                this.prefs.ui_font_set = true;
-                this.apply_prefs(window, cx);
-            }))
-            .into_any_element()
-        });
-        // --- themes --- every theme, grouped, each with a small swatch.
-        let theme_chip = |id: String, label: String, swatch: Option<AnyElement>| {
-            let on = self.prefs.theme == id;
-            let sel = format!("th-{id}");
-            chip(sel.clone().into(), label.into(), on, None)
-                .debug_selector(move || sel.clone())
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .children(swatch)
-                .on_click(cx.listener(move |this, _, window, cx| {
-                    this.prefs.theme = id.clone();
-                    this.apply_prefs(window, cx);
-                }))
-                .into_any_element()
-        };
-        let groups = crate::theme::themes(cx).grouped();
-        let themes = div()
-            .flex()
-            .flex_col()
-            .gap(px(6.))
-            .children(groups.into_iter().map(|(family, list)| {
-                let mut chips: Vec<AnyElement> = Vec::new();
-                if family == blyg_core::config::theme::Family::Plain {
-                    chips.push(theme_chip("system".into(), "System".into(), None));
-                }
-                for t in list {
-                    let label = match t.id.as_str() {
-                        "light" => "Light".to_string(),
-                        "dark" => "Dark".to_string(),
-                        _ => t.name.clone(),
-                    };
-                    chips.push(theme_chip(
-                        t.id.clone(),
-                        label,
-                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
-                    ));
-                }
-                self::chips()
-                    .child(
-                        div()
-                            .w(px(52.))
-                            .flex_none()
-                            .text_size(px(10.5))
-                            .text_color(p.muted)
-                            .child(family.label()),
-                    )
-                    .children(chips)
-            }));
-        let theme_dark_note = self.prefs.theme_dark.clone().map(|d| {
-            note(
-                &p,
-                crate::keymap::hint_owned(format!("theme-dark = {d} is used while macOS is dark")),
-            )
-        });
+        // --- preview --- built first: it needs `cx` mutably.
+        let appearance = self.render_appearance(cx);
         let layouts = LayoutPref::ALL.iter().map(|l| {
             let l = *l;
             chip(
@@ -345,61 +319,11 @@ impl MainView {
             .into_any_element()
         });
         let config_path = blyg_core::config::paths::tilde(crate::settings::get(cx).store.primary());
-        // Only fonts that are in use get registered at launch; the chips show
-        // each face in itself, so make sure they're all available here.
-        for f in crate::prefs::WRITING_FONTS {
-            crate::fonts::ensure(f.bundled, cx);
-        }
-
         div()
             .flex()
             .flex_col()
-            .child(row(&p, "WRITING FONT", chips().children(writing)))
-            .child(row(&p, "INTERFACE FONT", chips().children(ui)))
-            .child(row(
-                &p,
-                "SIZE",
-                chips()
-                    .child(
-                        chip("sz-".into(), "−".into(), false, None).on_click(cx.listener(
-                            |this, _, window, cx| {
-                                this.prefs.smaller();
-                                this.apply_prefs(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        div()
-                            .w(px(46.))
-                            .flex()
-                            .justify_center()
-                            .child(format!("{} px", self.prefs.font_size)),
-                    )
-                    .child(
-                        chip("sz+".into(), "+".into(), false, None).on_click(cx.listener(
-                            |this, _, window, cx| {
-                                this.prefs.bigger();
-                                this.apply_prefs(window, cx);
-                            },
-                        )),
-                    )
-                    .child(
-                        div()
-                            .ml(px(8.))
-                            .text_color(p.muted)
-                            .child(crate::keymap::hint("⌘+  ⌘−  ⌘0")),
-                    ),
-            ))
-            .child(row(
-                &p,
-                "THEME",
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(4.))
-                    .child(themes)
-                    .children(theme_dark_note),
-            ))
+            // --- preview --- the fonts, size and theme, with the specimen.
+            .child(appearance)
             .child(row(&p, "LAYOUT", chips().children(layouts)))
             .child(self.render_quiet_setting(cx)) // --- quiet ---
             .child(self.render_buttons_setting(cx)) // --- buttons ---
@@ -477,5 +401,584 @@ impl MainView {
             ))
             // --- help ---
             .child(self.render_help_settings(cx))
+    }
+}
+
+/// Under the specimen: how to try an option, as this platform names keys.
+pub(crate) const TRY_HINT: &str = if cfg!(target_os = "windows") {
+    "Rest the pointer on an option, or use Tab and the arrow keys, to try it on the whole \
+     window. A click or Enter keeps it; Esc, or moving away, puts yours back."
+} else {
+    "Rest the pointer on an option, or use ⇥ and the arrow keys, to try it on the whole \
+     window. A click or ⏎ keeps it; esc, or moving away, puts yours back."
+};
+
+/// The specimen's caption while an option is being tried.
+const KEEP_HINT: &str = if cfg!(target_os = "windows") {
+    "Enter keeps · Esc goes back"
+} else {
+    "⏎ keeps · esc goes back"
+};
+
+/// The keyboard cursor's mark on a chip or the size: a ring in the accent
+/// just outside its edge, apart from the kept option's accent edge.
+fn focus_ring(p: &Palette) -> Vec<BoxShadow> {
+    vec![
+        BoxShadow {
+            color: p.bg,
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(1.),
+            inset: false,
+        },
+        BoxShadow {
+            color: p.accent,
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(0.),
+            spread_radius: px(3.),
+            inset: false,
+        },
+    ]
+}
+
+// --- preview --- the fonts, size and theme rows, and the specimen.
+impl MainView {
+    /// WRITING FONT, INTERFACE FONT, SIZE and THEME, with the specimen
+    /// beside them (under them when the window is narrow). Resting on a
+    /// chip, or the arrow keys, tries it (`pref_preview.rs`); a click or ⏎
+    /// keeps it. Chips show the kept option in the accent, and the keyboard
+    /// cursor with a ring.
+    fn render_appearance(&self, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette;
+        let kept = self.committed_prefs().clone();
+        let cursor = self.preview.cursor.clone();
+        let specimen = self.render_specimen(cx);
+        // Only fonts that are in use get registered at launch; the chips
+        // show each face in itself, so make sure they're all available here.
+        for f in crate::prefs::WRITING_FONTS {
+            crate::fonts::ensure(f.bundled, cx);
+        }
+        let pick_chip = |row: Row,
+                         pick: Pick,
+                         id: String,
+                         label: SharedString,
+                         on: bool,
+                         family: Option<&'static str>,
+                         swatch: Option<AnyElement>| {
+            let focused = cursor
+                .as_ref()
+                .is_some_and(|(r, c)| *r == row && *c == pick);
+            let sel = id.clone();
+            let hover_pick = pick.clone();
+            div()
+                .id(SharedString::from(id))
+                .debug_selector(move || sel.clone())
+                .px(px(10.))
+                .py(px(3.))
+                .map(|d| crate::theme_ext::chip(d, &self.theme, on))
+                .when(focused, |d| d.bg(p.bg).shadow(focus_ring(&p)))
+                .cursor_pointer()
+                .when_some(family, |d, f| d.font_family(f))
+                .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .children(swatch)
+                .child(label)
+                .on_hover(cx.listener(move |this, h: &bool, window, cx| {
+                    this.settings_hover(hover_pick.clone(), *h, window, cx)
+                }))
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.settings_choose(row, pick.clone(), window, cx)
+                }))
+                .into_any_element()
+        };
+
+        // --- fonts ---
+        let writing = crate::prefs::WRITING_FONTS
+            .iter()
+            .enumerate()
+            .map(|(i, f)| {
+                pick_chip(
+                    Row::WritingFont,
+                    Pick::WritingFont(f.label),
+                    format!("wf{i}"),
+                    f.label.into(),
+                    kept.writing().label == f.label,
+                    Some(f.family),
+                    None,
+                )
+            });
+        let ui = crate::prefs::UI_FONTS.iter().enumerate().map(|(i, f)| {
+            pick_chip(
+                Row::UiFont,
+                Pick::UiFont(f.label),
+                format!("uf{i}"),
+                f.label.into(),
+                kept.ui().label == f.label,
+                Some(f.family),
+                None,
+            )
+        });
+
+        // --- size --- ± keep a step from what's shown; ←/→ try one.
+        let shown = self.prefs.font_size;
+        let size_focused = matches!(cursor, Some((Row::Size, _)));
+        let step_chip = |id: &'static str, label: &'static str, to: f32| {
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .px(px(10.))
+                .py(px(3.))
+                .map(|d| crate::theme_ext::chip(d, &self.theme, false))
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .child(label)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.settings_choose(Row::Size, Pick::Size(to), window, cx)
+                }))
+        };
+        let size = chips()
+            .child(step_chip("sz-", "−", shown - 1.))
+            .child(
+                div()
+                    .debug_selector(|| "sz-value".into())
+                    .w(px(46.))
+                    .py(px(2.))
+                    .rounded(px(4.))
+                    .flex()
+                    .justify_center()
+                    .when(size_focused, |d| d.bg(p.bg).shadow(focus_ring(&p)))
+                    .when(shown != kept.font_size, |d| d.text_color(p.accent_text()))
+                    .child(format!("{} px", shown)),
+            )
+            .child(step_chip("sz+", "+", shown + 1.))
+            .child(
+                div()
+                    .ml(px(8.))
+                    .text_color(p.muted)
+                    .child(crate::keymap::hint("⌘+  ⌘−  ⌘0")),
+            );
+
+        // --- themes --- one slot at a time: `theme` (light) or `theme-dark`.
+        let dark = self.preview.dark_slot;
+        let os_dark = self.preview.os_dark;
+        let dark_in_effect = super::pref_preview::dark_slot_in_effect(os_dark, &kept, cx);
+        let slot_chip = |slot_dark: bool| {
+            let id = if slot_dark {
+                "theme-slot-dark"
+            } else {
+                "theme-slot-light"
+            };
+            let now = slot_dark == dark_in_effect;
+            let label = match (slot_dark, now) {
+                (false, true) => "☀ Light · in use",
+                (false, false) => "☀ Light",
+                (true, true) => "☾ Dark · in use",
+                (true, false) => "☾ Dark",
+            };
+            div()
+                .id(id)
+                .debug_selector(move || id.into())
+                .px(px(10.))
+                .py(px(3.))
+                .map(|d| crate::theme_ext::chip(d, &self.theme, dark == slot_dark))
+                .cursor_pointer()
+                .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .child(label)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    this.set_theme_slot(slot_dark, window, cx)
+                }))
+        };
+        let slot_note = if dark {
+            format!(
+                "Writes theme-dark: the theme while macOS is dark{}",
+                if os_dark {
+                    ", as it is now."
+                } else {
+                    ". macOS is light now, so a theme you try here shows dark anyway."
+                }
+            )
+        } else {
+            match kept.theme_dark.as_deref() {
+                Some(d) => format!(
+                    "Writes theme: the theme while macOS is light. {} is your dark-mode theme.",
+                    super::pref_preview::theme_label(Some(d), cx)
+                ),
+                None => "Writes theme. With no dark-mode theme it stays in dark mode too \
+                         (System switches to Ink)."
+                    .to_string(),
+            }
+        };
+        let slot_note = if cfg!(target_os = "windows") {
+            slot_note.replace("macOS", "Windows")
+        } else {
+            slot_note
+        };
+        let kept_theme: Option<String> = if dark {
+            kept.theme_dark.clone()
+        } else {
+            Some(kept.theme.clone())
+        };
+        let theme_chip = |id: Option<String>, label: String, swatch: Option<AnyElement>| {
+            let on = kept_theme == id;
+            let sel = match (&id, dark) {
+                (None, _) => "thd-same".to_string(),
+                (Some(i), false) => format!("th-{i}"),
+                (Some(i), true) => format!("thd-{i}"),
+            };
+            pick_chip(
+                Row::Theme,
+                Pick::Theme { dark, id },
+                sel,
+                label.into(),
+                on,
+                None,
+                swatch,
+            )
+        };
+        let groups = crate::theme::themes(cx).grouped();
+        let themes = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .children(groups.into_iter().map(|(family, list)| {
+                let mut row_chips: Vec<AnyElement> = Vec::new();
+                if family == blyg_core::config::theme::Family::Plain {
+                    row_chips.push(if dark {
+                        theme_chip(None, "Same as light".into(), None)
+                    } else {
+                        theme_chip(Some("system".into()), "System".into(), None)
+                    });
+                }
+                for t in list {
+                    let label = match t.id.as_str() {
+                        "light" => "Light".to_string(),
+                        "dark" => "Dark".to_string(),
+                        _ => t.name.clone(),
+                    };
+                    row_chips.push(theme_chip(
+                        Some(t.id.clone()),
+                        label,
+                        Some(crate::ornament::swatch_on(&t, self.palette.bg)),
+                    ));
+                }
+                chips()
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .text_color(p.muted)
+                            .child(family.label()),
+                    )
+                    .children(row_chips)
+            }));
+        let theme = div()
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(
+                chips()
+                    .child(
+                        div()
+                            .w(px(52.))
+                            .flex_none()
+                            .text_size(px(10.5))
+                            .text_color(p.muted)
+                            .child("For"),
+                    )
+                    .child(slot_chip(false))
+                    .child(slot_chip(true)),
+            )
+            .child(note(&p, slot_note))
+            .child(themes);
+
+        let keys = note(&p, TRY_HINT).debug_selector(|| "settings-try-hint".into());
+
+        // The specimen leads, at the content column's width, so the chip
+        // rows under it keep theirs (a column beside them squeezed every
+        // row to two chips a line).
+        div()
+            .debug_selector(|| "settings-appearance".into())
+            .w_full()
+            .flex()
+            .flex_col()
+            .child(row(
+                &p,
+                "PREVIEW",
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .child(specimen)
+                    .child(keys),
+            ))
+            .child(row(&p, "WRITING FONT", chips().children(writing)))
+            .child(row(&p, "INTERFACE FONT", chips().children(ui)))
+            .child(row(&p, "SIZE", size))
+            .child(row(&p, "THEME", theme))
+            .into_any_element()
+    }
+
+    /// A small, real sample of the window in the theme, fonts and size
+    /// shown now (the one being tried, else yours): the title bar, a posts
+    /// list with the selected row and an unread mark, a post's title, a
+    /// paragraph with a link and a code span, a quote box, a row of chips
+    /// and the status bar. Drawn with the app's own pieces (the row and
+    /// quote ornaments, chips, the unread marker, the status palette), so
+    /// a theme's shapes show as well as its colours.
+    fn render_specimen(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = &*self.theme;
+        let p = self.palette;
+        let chrome = t.chrome_font(&self.prefs);
+        let writing = self.prefs.writing().family;
+        let ui = self.prefs.ui().family;
+        // The editor's size, at three quarters: a model of the window.
+        let body = (self.prefs.font_size * 0.75).round().max(9.);
+        let list = (self.prefs.list_size() * 0.8).round().max(9.);
+        let side = p.on_side();
+        let sel = p.on_sel();
+        let status = p.on_status();
+        let bar = p.on_bar();
+
+        let titlebar = div()
+            .h(px(22.))
+            .flex_none()
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .gap(px(5.))
+            .bg(p.bar)
+            .border_b_1()
+            .border_color(p.bar_line)
+            .font_family(chrome)
+            .text_size(px(10.))
+            .text_color(p.bar_ink)
+            .children((0..3).map(|_| div().size(px(6.)).rounded_full().bg(bar.muted.opacity(0.5))))
+            .child(
+                div()
+                    .flex_1()
+                    .flex()
+                    .justify_center()
+                    .child("Burrow — blyg.example.com"),
+            );
+
+        let list_row = |id: &'static str,
+                        title: &'static str,
+                        meta: &'static str,
+                        selected: bool,
+                        unread: bool| {
+            let rp = if selected { sel } else { side };
+            let cell = crate::ornament::row(
+                t,
+                div().id(id).py(px(4.)).flex().flex_col().text_color(rp.ink),
+                selected,
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(5.))
+                    .font_family(ui)
+                    .text_size(px(list))
+                    .child(div().truncate().child(title))
+                    .when(unread, |d| d.child(self.unread_marker(rp.accent))),
+            )
+            .child(
+                div()
+                    .font_family(chrome)
+                    .text_size(px(9.5))
+                    .text_color(rp.muted)
+                    .child(meta),
+            );
+            crate::ornament::row_wrap(t, cell)
+        };
+        let sidebar = div()
+            .w(relative(0.3))
+            .flex_none()
+            .flex()
+            .flex_col()
+            .py(px(4.))
+            .bg(p.side)
+            .rule_r(&p)
+            .child(list_row(
+                "spec-row-1",
+                "Field notes",
+                "thread · v3",
+                true,
+                false,
+            ))
+            .child(list_row(
+                "spec-row-2",
+                "Two doors",
+                "fragment · new",
+                false,
+                true,
+            ))
+            .child(list_row("spec-row-3", "Harbour log", "draft", false, false));
+
+        let para = "The tide came in early. Ada's harbour log says the same, and her post \
+                    ![[01J9K7T]] quotes it.";
+        let link = para.find("Ada's harbour log").unwrap_or(0);
+        let code = para.find("![[01J9K7T]]").unwrap_or(0);
+        let hl = vec![
+            (
+                link..link + "Ada's harbour log".len(),
+                HighlightStyle {
+                    color: Some(p.accent),
+                    underline: Some(UnderlineStyle {
+                        thickness: px(1.),
+                        color: Some(p.accent.opacity(0.5)),
+                        wavy: false,
+                    }),
+                    ..Default::default()
+                },
+            ),
+            (
+                code..code + "![[01J9K7T]]".len(),
+                HighlightStyle {
+                    background_color: Some(crate::theme::mix(p.editor, p.ink, 0.08)),
+                    ..Default::default()
+                },
+            ),
+        ];
+        let quote = crate::ornament::quote_frame(
+            t,
+            div()
+                .id("spec-quote")
+                .text_size(px((body * 0.9).round()))
+                .child("Every burrow has two doors.")
+                .child(
+                    div()
+                        .pt(px(2.))
+                        .font_family(chrome)
+                        .text_size(px(9.5))
+                        .text_color(p.muted)
+                        .child("— rue.example.org"),
+                ),
+        );
+        let editor = div()
+            .flex_1()
+            .min_w_0()
+            .px(px(12.))
+            .py(px(10.))
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .bg(p.editor)
+            .text_color(p.ink)
+            .font_family(writing)
+            .text_size(px(body))
+            .line_height(relative(1.35))
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_size(px((body * 1.2).round()))
+                    .child("Field notes"),
+            )
+            .child(div().child(StyledText::new(para).with_highlights(hl)))
+            .child(quote);
+
+        let chip = |label: &'static str, on: bool| {
+            div()
+                .px(px(8.))
+                .py(px(1.))
+                .map(|d| crate::theme_ext::chip(d, t, on))
+                .child(label)
+        };
+        let chip_row = div()
+            .px(px(10.))
+            .py(px(6.))
+            .flex()
+            .flex_wrap()
+            .gap(px(5.))
+            .bg(p.bg)
+            .border_t_1()
+            .border_color(p.divider)
+            .font_family(chrome)
+            .text_size(px(10.))
+            .text_color(p.ink)
+            .child(chip("Reply", true))
+            .child(chip("Quote into a thread", false))
+            .child(chip("Link post", false));
+
+        let status_bar = div()
+            .h(px(20.))
+            .flex_none()
+            .px(px(10.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .bg(p.status)
+            .border_t_1()
+            .border_color(p.status_line)
+            .font_family(chrome)
+            .text_size(px(9.5))
+            .text_color(status.muted)
+            .child("Thread")
+            .child("1,204")
+            .child(div().flex_1())
+            .child(
+                div()
+                    .size(px(6.))
+                    .rounded_full()
+                    .bg(crate::theme_ext::readable(
+                        p.green,
+                        p.status,
+                        crate::theme_ext::MARK,
+                    )),
+            )
+            .child(div().text_color(status.ink).child("synced"));
+
+        let trying = self.preview.trying().map(|pick| match pick {
+            Pick::Theme { dark, id } => format!(
+                "Trying {}{}",
+                super::pref_preview::theme_label(id.as_deref(), cx),
+                if *dark { " for dark mode" } else { "" }
+            ),
+            Pick::WritingFont(l) => format!("Trying {l} for writing"),
+            Pick::UiFont(l) => format!("Trying {l} for the interface"),
+            Pick::Size(s) => format!("Trying {s} px"),
+        });
+        let caption = div()
+            .debug_selector(|| "settings-specimen-caption".into())
+            .flex()
+            .flex_wrap()
+            .items_center()
+            .gap_x(px(6.))
+            .text_size(px(10.5))
+            .child(match trying {
+                Some(s) => div()
+                    .text_color(p.accent_text())
+                    .child(format!("{s} · {KEEP_HINT}"))
+                    .into_any_element(),
+                None => div()
+                    .text_color(p.muted)
+                    .child(format!("{} · yours", t.name))
+                    .into_any_element(),
+            });
+
+        div()
+            .debug_selector(|| "settings-specimen".into())
+            .flex()
+            .flex_col()
+            .gap(px(6.))
+            .child(caption)
+            .child(
+                div()
+                    .w_full()
+                    .flex()
+                    .flex_col()
+                    .overflow_hidden()
+                    .rounded(px(t.corner(8.)))
+                    .border_1()
+                    .border_color(p.edge())
+                    .child(titlebar)
+                    .child(div().flex().child(sidebar).child(editor))
+                    .child(chip_row)
+                    .child(status_bar),
+            )
+            .into_any_element()
     }
 }
