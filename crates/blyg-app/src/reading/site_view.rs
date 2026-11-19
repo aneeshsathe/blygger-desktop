@@ -87,7 +87,7 @@ pub enum Shows {
 }
 
 /// The post's own page: its declared `page`, made absolute against its
-/// origin; http(s) only (`vm::page_url`, which the web app shares).
+/// origin; http(s) only (`vm::page_url`).
 pub fn page_url(r: &ReadingItem) -> Option<String> {
     super::vm::page_url(r)
 }

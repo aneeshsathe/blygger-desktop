@@ -19,8 +19,8 @@
 //! - Offered when `GET /api/capabilities` lists both `getShelf` and
 //!   `putShelf` ([`serves`]); never judged by the contract version.
 //!
-//! This module is the shapes and the merge, with no I/O: native sync
-//! (`sync::Engine::sync_shelf`) and the web (`blyg-web`) share it.
+//! This module is the shapes and the merge, with no I/O; native sync
+//! (`sync::Engine::sync_shelf`) does the reading and writing.
 
 use std::collections::HashSet;
 

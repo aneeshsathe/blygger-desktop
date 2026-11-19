@@ -12,8 +12,6 @@
 #   BLYG_E2E_STOCK=1         kept for older invocations; every studio Burrow
 #                            supports is stock, and gets a minted manual token
 #   BLYG_E2E_SKIP_NOTES=1    skip the markdown-notes extension's e2e
-#   BLYG_E2E_SKIP_WEB=1      skip Burrow in a browser's e2e (its Rust read
-#                            path, natively, against native Burrow's order)
 #   BLYG_E2E_SKIP_SWITCHER=1 skip the blyg switcher's e2e (the app's, with
 #                            `a` and `b` signed in at once)
 #   BLYG_OLD_WORKER_DIR=…    also start an older studio (built the same way),
@@ -29,9 +27,7 @@
 #   3. runs `cargo test -p blyg-core --test it -- --ignored --test-threads=1 e2e::`,
 #      then the markdown-notes extension's e2e against the same blyg
 #      (`cargo test -p blyg-ext-notes --test e2e -- --ignored --test-threads=1`);
-#      extra test args go to the core suite only; Burrow in a browser's
-#      read path (`cargo test -p blyg-web --test e2e -- --ignored`), whose
-#      Reading and Posts order must be native Burrow's; and the blyg switcher's
+#      extra test args go to the core suite only; and the blyg switcher's
 #      e2e in the app (`cargo test -p blyg-app --bin blygger switcher::e2e
 #      -- --ignored`), `a` and `b` (as localhost) signed in side by side;
 #   4. stops only the wrangler processes it started, and deletes the scratch
@@ -124,10 +120,6 @@ case " $* " in
   *) core_args+=("e2e::") ;;
 esac
 cargo test -p blyg-core --test it -- --ignored --test-threads=1 "${core_args[@]}"
-if [ -z "${BLYG_E2E_SKIP_WEB:-}" ]; then
-  printf 'e2e-local: Burrow in a browser, its list order against native…\n' >&2
-  cargo test -p blyg-web --test e2e -- --ignored --test-threads=1
-fi
 if [ -z "${BLYG_E2E_SKIP_SWITCHER:-}" ]; then
   printf 'e2e-local: the blyg switcher, two blygs at once…\n' >&2
   cargo test -p blyg-app --bin blygger switcher::e2e -- --ignored --test-threads=1

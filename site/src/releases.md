@@ -7,8 +7,8 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 
 ## Burrow 0.26.0
 
-A lighter Burrow: two experiments are gone, the writing screen can go quiet,
-and reading keeps fewer buttons in view.
+A lighter Burrow: two experiments and the web app are gone, the writing
+screen can go quiet, and reading keeps fewer buttons in view.
 
 ### Quiet writing
 
@@ -23,8 +23,8 @@ It's off unless you turn it on. See [Quiet writing](writing.md#quiet-writing).
 The chips under an open post fit on one line again. Quote, Reply, Catch up
 and Background stay in view; Hopper, Add to shelf, Add to trail, Fork, Link
 post, AI reply, Open on web and → Notes are under **⋯ More**. Every key
-works as before (h, t, b, q, ⇧C, ⌥⌘B). The Stream and the web app group
-them the same way. Not sure which of shelf, hopper, trail, tray or
+works as before (h, t, b, q, ⇧C, ⌥⌘B). The Stream groups them the same
+way. Not sure which of shelf, hopper, trail, tray or
 Background to use? See [Which one do I use?](reading.md#which-one-do-i-use).
 
 ### The author's site fills the reading pane
@@ -39,6 +39,9 @@ down. It works on Windows now too, instead of opening your default browser.
 
 - **#thicket chat** is gone: not enough people used it.
 - **The terminal pane** is gone until it's ready.
+- **The web app** ("Burrow in a browser") is gone: it wasn't working well.
+  The desktop app on Mac and Windows is Burrow. Releases no longer include
+  `Burrow-web.zip`, and the page on serving it from your blyg is gone.
 - If your [config file](config.md) still sets `chat-tab`, `terminal` or
   their other keys, Burrow ignores those lines quietly.
 
@@ -180,7 +183,7 @@ open, and starts faster than the studio.
   shows as soon as it arrives, in about a third of a second with 3,000
   posts to read.
 - Some of these need a recent studio; until yours offers them they stay
-  hidden or say why. See [Using it](web-self-host.md#using-it).
+  hidden or say why. See Using it.
 
 ### For contributors
 
@@ -293,7 +296,7 @@ starts at the side tabs.
   row over the editor names what you can do with the post.
 - **Serve it from your own blyg.** Each release now includes the web app as
   `Burrow-web-<version>.zip`, covered by the signed checksums.
-  [Burrow on your own blyg](web-self-host.md) walks you, or your AI agent,
+  Burrow on your own blyg walks you, or your AI agent,
   through putting it at `/burrow/` on your blyg.
 
 ## Burrow 0.19.0
@@ -339,7 +342,7 @@ on your Mac or PC and in a browser. The tour's new steps start at Blyg › Site�
 
 The web app does most of what Studio does, and stays fast on a phone. It runs
 from your own blyg at `/burrow/`; Studio doesn't serve it yet, so
-[Burrow on your own blyg](web-self-host.md) shows how to add it:
+Burrow on your own blyg shows how to add it:
 
 - **Reading**: sources (smart feeds, Mentions, hoppers, subscriptions) with a
   Threads / Fragments lens; subscriptions (subscribe with a preview, pause,

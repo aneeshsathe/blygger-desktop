@@ -1,6 +1,6 @@
 ---
 name: burrow-cross-platform
-description: Check a Burrow change for Windows + macOS (and web) compatibility. Use when a change touches keys, menus, file paths, web views, the browser pane, native APIs, or adds a cfg!(target_os) gate.
+description: Check a Burrow change for Windows + macOS compatibility. Use when a change touches keys, menus, file paths, web views, the browser pane, native APIs, or adds a cfg!(target_os) gate.
 ---
 
 # Windows + macOS compatibility pass
@@ -31,9 +31,8 @@ took four CI rounds to go green there. Check these before pushing.
 
 ## Tests and evidence
 
-- Tests that only run on one platform say so; shared view-model tests (also
-  used by blyg-web) must pass on both.
+- Tests that only run on one platform say so; shared view-model tests must
+  pass on both.
 - If you couldn't run it on a real machine, say so in the CHANGELOG's "Not
   verified" note and the PR. Cross-compiling (e.g. the MinGW target) proves it
   builds, not that it works.
-- The web build (`blyg-web`) must still compile: CI builds it.

@@ -46,11 +46,9 @@ interaction, and that an idle client stays at a few requests a minute.
 
 ## In Burrow
 
-- The one order is `blyg-core/src/order.rs`; the store, `blyg-app` and
-  `blyg-web` all call it. Change the rule there, with its tests, and nowhere
+- The one order is `blyg-core/src/order.rs`; the store and `blyg-app`
+  both call it. Change the rule there, with its tests, and nowhere
   else.
 - Native sync's dependency map (`ITEMS_DEPS`, `READING_DEPS`, `HOPPERS_DEPS`,
   `SIGNALS_DEPS`) and the safety-net backoff (`next_full_every`) live in
-  `blyg-core/src/sync/mod.rs`; `blyg-web/src/live.rs` uses the same ones.
-- `scripts/browser-web-live-check.sh` and the web e2e
-  (`crates/blyg-web/tests/e2e.rs`) are the regression tests for both bugs.
+  `blyg-core/src/sync/mod.rs`.

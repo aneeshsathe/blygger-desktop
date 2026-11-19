@@ -81,8 +81,6 @@ Background** has the rules, saved on your blyg: withdrawn posts are always
 in Background, and **Your own minor changes** can be turned off. On an older
 studio there are no chips or rules, and Background lists withdrawn posts.
 
-The web app has the same, under an open post and in ⚙ Reading (no key).
-
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
 - **Folders** stay on your Mac. Drag a subscription onto one to file it, or
@@ -107,9 +105,6 @@ Your posts are **never unread**: they get no dot, never count in All unread
 or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
-
-The [web app](web-self-host.md#using-it) shows your posts in Reading the
-same way.
 
 ### Hoppers
 
@@ -327,8 +322,6 @@ you don't follow yet, newest listing first, five at a time.
 
 Burrow reads the directory only when you open Discover, without signing in
 to anything. It needs a connected blyg, since subscriptions live there.
-Discover is in the desktop app only: Burrow on the web talks to nothing but
-your own blyg.
 
 ## Acting on a post
 
@@ -396,15 +389,6 @@ you open it.
   pane). Where there's no browser pane, opening a post opens its page in
   your default browser (not while you move with the keys), and Burrow's
   reader shows it here.
-
-In the web app, ⚙ Reading has the same choice for that browser: opening a
-post also opens its page in a new tab, and the post stays in Burrow with a
-link back to the page and **Read … here instead** for its blyg.
-
-The web app can also **mark all read**: ✓ Mark all read… in the sources
-pane (⌃⌥A), or ✓ All read on a phone, marks every unread post of the source
-and lens you're looking at, after asking. It needs a blyg that takes read
-marks in bulk (blygger-studio's `markReadBatch`).
 
 ### The changelog
 

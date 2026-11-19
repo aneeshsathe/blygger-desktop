@@ -60,7 +60,7 @@ Reading (or on its card), and the **Shelf** lens in Reading's sources lists
 everything on it, in your order.
 
 With a blyg on studio 0.61 or later, the shelf syncs with your blyg, so the
-studio, the web app and your other computers share it. Changes made in two
+studio and your other computers share it. Changes made in two
 places at once are merged rather than lost. With an older blyg, the shelf is
 kept on this Mac (on Windows, this computer); the ⌘B sheet says which. The
 keys on Windows are Ctrl+B and Ctrl+Shift+A. It's not the same as pinning a
@@ -297,8 +297,7 @@ composer closes (Bluesky's and Farcaster's "posted" notices). When it
 doesn't (Substack Notes shows none), the browser pane's bar shows **＋ Record
 copy**: open the copy in the pane (for a Substack note, its own page,
 `…/note/…`) and click it. Either way the copy is listed at the version you
-cross-posted. In the web app, the
-post's **⋯ › Copies elsewhere…** does the same, and asks before removing one.
+cross-posted.
 
 ### Delete and withdraw
 
@@ -553,21 +552,3 @@ pages can tint generated passages and mark them with a small robot that says
 what you disclosed. Your blyg's settings (in the Reader's site settings) set
 the default; the ⌘G palette sets it per post (default, on or off; **H** cycles
 it), and the preview shows the post as its page will.
-
-## Filters in the web app
-
-In the web app, the Posts list has the studio's filters over it: **All**,
-**Drafts** (never published, notes included), **Changes** (published, with
-unpublished changes), **Public** and **Withdrawn**, each with how many it
-holds. ⌃⌥F steps to the next on a desk. A search always looks through
-every post.
-
-## Updates in the web app
-
-⚙ Blyg › **Updates** in the web app is the studio's Updates tab: your
-threads whose quotes have newer versions, stalest first. **Quotes** shows
-what changed in each, and **Refresh** publishes the same words with the
-quotes brought up to date (a new version, with the note above it);
-**Refresh all** does every thread that can be. A thread with unpublished
-edits, or a quote that no longer matches its post, says why it can't.
-

@@ -1,5 +1,5 @@
-//! --- contacts --- Why a post is in the Mentions smart feed. Pure, so the
-//! web app compiles it unchanged (`crates/blyg-web/src/reading/mod.rs`).
+//! --- contacts --- Why a post is in the Mentions smart feed. Pure: no UI,
+//! no store, no network.
 //!
 //! The feed is both sources at once: the blyg's lens (`GET
 //! /api/reading?mentions=true`: the post's own h-cards name you) and what

@@ -1272,8 +1272,7 @@ pub const STEPS: &[Step] = &[
         title: "Anyone's post on your shelf",
         caption: "+ Add to shelf, in ⋯ More under the post, keeps it to hand: someone else's \
                   post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
-                  syncs with your blyg, so the studio, the web app and your other computers \
-                  share it.",
+                  syncs with your blyg, so the studio and your other computers share it.",
         keys: &[Key::ShelfReading],
         key_label: "click",
         region: Region::ReaderPost,

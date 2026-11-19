@@ -31,12 +31,11 @@ what earlier ones learned.
 | `burrow-tutorial-update` | a release changes something a user sees |
 | `burrow-cross-platform` | touching keys, menus, paths, web views or native APIs |
 | `burrow-agent-cohort` | running several agents at once |
-| `burrow-web-handoff` | a web build is going to whoever deploys it |
 | `spec-client-build` | implementing something the spec or studio defines |
 | `capability-gating` | calling a server feature not every studio has |
 | `real-server-testing` | writing tests that talk to a blyg |
 | `list-order-and-refresh` | showing lists, sorting, polling, caching or paging |
-| `client-security` | remote content, network calls, tokens, `innerHTML`, the service worker |
+| `client-security` | remote content, network calls, tokens, `innerHTML` |
 | `conformance-run` | rendering, parsing, order or wire-format changes |
 | `upstream-sync` | a new studio release or spec revision |
 

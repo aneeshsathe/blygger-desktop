@@ -1,5 +1,5 @@
 //! Your own published posts as reading rows, for every client's Reading
-//! list (the app's `reading/own.rs`, and Burrow in a browser). A row is
+//! list (the app's `reading/own.rs`). A row is
 //! keyed `("~own", server id)` ([`OWN_SUBSCRIPTION`], blygger-studio 0.45's
 //! own-items marker). It is never a subscription: read at its version (so
 //! never unread), never thumbed, and nothing about it is sent as read state

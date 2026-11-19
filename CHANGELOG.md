@@ -21,15 +21,16 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Config: retired keys load quietly.** A removed key (`chat-*`, `terminal*`) in the config file is skipped with no warning and no typo hint.
 
 ### Changed
-- **Reading: one row of chips under an open post.** Quote, Reply, Catch up and Background/Foreground stay in the row. Hopper, Add to shelf, Add to trail (new as a menu item), Fork, Link post, AI reply, Open on web, → Notes, Clear my choice and the whole-blyg moves are under **⋯ More**. Keys are unchanged. The Stream and the web app use the same grouping; on a phone, ⋯ More opens a second row of buttons. reading.md gains "Which one do I use?".
+- **Reading: one row of chips under an open post.** Quote, Reply, Catch up and Background/Foreground stay in the row. Hopper, Add to shelf, Add to trail (new as a menu item), Fork, Link post, AI reply, Open on web, → Notes, Clear my choice and the whole-blyg moves are under **⋯ More**. Keys are unchanged. The Stream uses the same grouping. reading.md gains "Which one do I use?".
 - **Reading: the author's site takes the whole reading pane**, under the browser pane's own toolbar (back, forward, reload, address, shields, open in browser), instead of sitting between Burrow's header and the chips. It's still a separate web view of the browser's kind, so links set to open in the app still use the slide-over. Windows now docks it too (WebView2), where it used to open the default browser.
 
 ### Removed
 - **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.
 - **The terminal pane** (experimental, crate `blyg-term`, ⌃` and ⇧⌘T): it needs more work before it ships again.
+- **The web app ("Burrow in a browser")**: crate `blyg-web`, the `Burrow-web-<version>.zip` / `Burrow-web.zip` release assets (and their lines in the signed `SHA256SUMS`), the "Burrow on your own blyg" self-host page and the web developer page, CI's wasm build, the web browser checks (`scripts/browser-web-*-check.*`), the web e2e in `scripts/e2e-local.sh` and the `burrow-web-handoff` skill. It wasn't working well; the desktop app on Mac and Windows is Burrow. Older releases' signed sums, which list the web zip, still verify.
 
 ### Not verified
-- The docked author's site and the reading chips on a real Windows machine; the web app's ⋯ More in a browser or on a phone.
+- The docked author's site and the reading chips on a real Windows machine.
 
 ## [0.25.1] - 2026-11-16
 

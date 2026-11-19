@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-ext-reading-time", "crates/blyg-ext-inspect", "crates/blyg-embed", "crates/blyg-app", "crates/blyg-web"]
+members = ["crates/blyg-core", "crates/blyg-ai", "crates/blyg-render", "crates/blyg-ext", "crates/blyg-ext-notes", "crates/blyg-ext-crosspost", "crates/blyg-ext-reading-time", "crates/blyg-ext-inspect", "crates/blyg-embed", "crates/blyg-app"]
 
 [workspace.package]
 edition = "2024"
@@ -24,27 +24,6 @@ idna = "1"
 lto = "thin"
 codegen-units = 1
 strip = true
-
-# blyg-web's WebAssembly build (crates/blyg-web/serve.sh): smallest code,
-# whole-program LTO. Panics already abort on wasm32-unknown-unknown.
-[profile.wasm-release]
-inherits = "release"
-opt-level = "z"
-lto = true
-codegen-units = 1
-panic = "abort"
-strip = true
-
-# Local web iteration only (`DEV=1 ./crates/blyg-web/serve.sh`): no LTO,
-# parallel and incremental codegen. A larger, slower wasm; never shipped.
-# CI and releases build wasm-release.
-[profile.wasm-dev]
-inherits = "wasm-release"
-opt-level = 1
-lto = false
-codegen-units = 256
-incremental = true
-strip = false
 
 [profile.dev.package."*"]
 opt-level = 2   # GPUI + sqlite are painfully slow unoptimised; our own code stays debuggable

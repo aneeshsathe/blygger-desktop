@@ -1,6 +1,6 @@
 ---
 name: spec-client-build
-description: Add or change a Blygger protocol feature in Burrow (desktop or web) against the Blygger spec. Use when implementing something the spec or studio defines, or when unsure what the spec requires. Tells you what to read first, in what order, and the rules every client gets wrong at least once.
+description: Add or change a Blygger protocol feature in Burrow against the Blygger spec. Use when implementing something the spec or studio defines, or when unsure what the spec requires. Tells you what to read first, in what order, and the rules every client gets wrong at least once.
 ---
 
 # Building Burrow features against the spec
@@ -56,6 +56,4 @@ first and the studio second; where they differ, file it upstream, don't guess.
 - New protocol or server behaviour goes in `blyg-core` behind the `Backend`
   trait; the UI (`blyg-app`) talks only to `Arc<dyn Backend>`, and every
   wrapper (`SwitchBackend` in `connection.rs`) forwards each new method.
-- `blyg-web` reuses `blyg-core` logic; never give the web its own copy of a
-  rule the desktop already has.
 - Server requirements beyond stock studio go in `docs/SERVER.md`.

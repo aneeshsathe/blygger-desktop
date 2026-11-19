@@ -68,8 +68,8 @@ pub const FULL_PULL_MAX: Duration = Duration::from_secs(2 * 60 * 60);
 /// The safety net's next interval after a pass that read everything whole
 /// because it was due: back to `opts.full_pull_every` when it found what
 /// the counters missed (`surprise`), else twice `last`, up to
-/// `opts.full_pull_max` (issue #71: fewer D1 reads). Native sync and the
-/// web (`blyg-web`, per list) both pace their safety net with it.
+/// `opts.full_pull_max` (issue #71: fewer D1 reads). Native sync paces its
+/// safety net with it.
 pub fn next_full_every(last: Duration, surprise: bool, opts: &SyncOptions) -> Duration {
     if surprise {
         opts.full_pull_every

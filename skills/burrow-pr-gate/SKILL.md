@@ -14,8 +14,8 @@ cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test
 ```
 
 Server-facing changes also run the real-studio e2e
-(`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); web changes
-run `scripts/browser-*-check.sh`.
+(`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
+changes run `scripts/browser-*-check.sh`.
 
 ## Judgement (answer each in the PR body)
 
@@ -35,7 +35,7 @@ run `scripts/browser-*-check.sh`.
    fake-backend tests.
 7. **Cross-platform:** `burrow-cross-platform`.
 8. **Security:** `client-security` for remote content,
-   network or web changes.
+   network or web view changes.
 9. **Docs:** SPEC paragraph, site docs, CHANGELOG `[Unreleased]` entry; tour
    at release time (`burrow-tutorial-update`).
 10. **Merging conflicting union edits:** after a "keep both sides" merge, run

@@ -63,14 +63,6 @@ pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
     ordered(items)
 }
 
-/// [`order`] without copying the rows: references into `items`, in the
-/// order shown. Burrow in a browser orders thousands of rows on every
-/// redraw, so it borrows them.
-#[allow(dead_code)]
-pub fn order_refs(items: &[ReadingItem]) -> Vec<&ReadingItem> {
-    ordered(items)
-}
-
 fn ordered<T: std::borrow::Borrow<ReadingItem>>(items: impl IntoIterator<Item = T>) -> Vec<T> {
     let mut seen = std::collections::HashSet::new();
     let (mut edited, mut rest): (Vec<T>, Vec<T>) = items
