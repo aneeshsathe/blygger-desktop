@@ -2266,6 +2266,343 @@ fn reading_is_walked_only_when_reading_moves() {
     me.signal(&sub.id, &rid, None).unwrap();
 }
 
+// ------------------------------------- a reading list past the page budget
+
+/// A plain RSS feed of `n` invented posts, plus `fresh` newer ones on top.
+fn many_rss(title: &str, link: &str, n: usize, fresh: usize) -> String {
+    let mut items = String::new();
+    let mut item = |guid: String, text: &str| {
+        items.push_str(&format!(
+            "<item><title>{text}</title><link>{guid}</link><guid>{guid}</guid>\
+             <pubDate>Mon, 02 Nov 2026 10:00:00 GMT</pubDate>\
+             <description>An invented post, {text}.</description></item>"
+        ));
+    };
+    for i in (0..fresh).rev() {
+        item(format!("{link}fresh-{i}"), &format!("Fresh {i}"));
+    }
+    for i in 0..n {
+        item(format!("{link}p-{i}"), &format!("Post {i}"));
+    }
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>{title}</title><link>{link}</link><description>Invented sample feed</description>{items}</channel></rss>"#
+    )
+}
+
+/// The whole imported reading list as served now: walked again from the
+/// first page while it changes under the walk.
+fn served_reading(api: &Api) -> Vec<(String, String)> {
+    'walk: for _ in 0..20 {
+        let mut out = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = match api.reading(100, cursor.as_deref()) {
+                Ok(p) => p.expect("the server has /api/reading/imported"),
+                Err(CoreError::CursorExpired) => continue 'walk,
+                Err(e) => panic!("GET /api/reading/imported: {e}"),
+            };
+            out.extend(
+                page.items
+                    .iter()
+                    .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
+            );
+            match page.next {
+                Some(n) => cursor = Some(n),
+                None => return out,
+            }
+        }
+    }
+    panic!("the reading list never held still");
+}
+
+/// A value from a data folder's store, read beside the app (read-only).
+fn stored(dir: &Path, sql: &str, arg: &str) -> Option<String> {
+    let c = rusqlite::Connection::open_with_flags(
+        dir.join("blygger.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    c.query_row(sql, [arg], |r| r.get::<_, rusqlite::types::Value>(0))
+        .ok()
+        .map(|v| match v {
+            rusqlite::types::Value::Integer(n) => n.to_string(),
+            rusqlite::types::Value::Text(s) => s,
+            other => format!("{other:?}"),
+        })
+}
+
+/// Reading rows held for one subscription.
+fn held_rows(dir: &Path, sub: &str) -> usize {
+    stored(
+        dir,
+        "SELECT COUNT(*) FROM reading WHERE subscription_id = ?1",
+        sub,
+    )
+    .and_then(|n| n.parse().ok())
+    .unwrap_or(0)
+}
+
+/// The `reading` revision the reading list was last accepted under.
+fn accepted_reading(dir: &Path) -> Option<u64> {
+    let seen = stored(
+        dir,
+        "SELECT value FROM meta WHERE key = ?1",
+        "changes_seen:reading",
+    )?;
+    serde_json::from_str::<Value>(&seen).ok()?["reading"].as_u64()
+}
+
+fn counter(api: &Api, domain: &str) -> u64 {
+    api.changes().unwrap().expect("GET /api/changes").domains[domain]
+}
+
+/// "Resync all feeds" (the studio polls every subscription, in the
+/// background), then wait until the polls are done: the `subscriptions`
+/// counter has moved and then held still for two seconds.
+fn poll_all_feeds(api: &Api) {
+    let before = counter(api, "subscriptions");
+    let (st, v) = owner("POST", &e2e().url, "/api/subscriptions/poll", None);
+    assert_eq!(st, 200, "{v}");
+    let mut last = before;
+    let mut still = Instant::now();
+    let t0 = Instant::now();
+    loop {
+        std::thread::sleep(Duration::from_millis(250));
+        let now = counter(api, "subscriptions");
+        if now != last {
+            (last, still) = (now, Instant::now());
+        } else if last != before && still.elapsed() >= Duration::from_secs(2) {
+            return;
+        }
+        assert!(
+            t0.elapsed() < Duration::from_secs(120),
+            "the polls never settled"
+        );
+    }
+}
+
+/// A reading list longer than one pull's page budget (20 pages of 100):
+/// the first sync walks it whole across two pulls, merging each page as it
+/// comes and accepting the revision at the end; after that a new post costs
+/// a head read of a page or two, an idle blyg none, feed-poll noise on the
+/// `subscriptions` counter none, and a removed subscription a whole walk
+/// that prunes only once it reaches the end. (Burrow 0.25.1 walked the same
+/// 20 pages on every pull, never accepted the revision and never pruned.)
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
+    if !has_changes() {
+        return;
+    }
+    const BIG: usize = 2_150;
+    let e = e2e();
+    let t = tag("longlist");
+    let api = Api::new(&e.url, e.cred.clone());
+    let (small_link, big_link) = (
+        "https://small.blyg.example.com/",
+        "https://big.blyg.example.com/",
+    );
+    let feeds: LiveFeeds = std::sync::Arc::new(std::sync::Mutex::new(vec![
+        ("/small.xml", many_rss("Walk small", small_link, 3, 0)),
+        ("/big.xml", many_rss("Walk big", big_link, BIG, 0)),
+    ]));
+    let host = serve_live_feeds(feeds.clone());
+    let d1 = tempfile::tempdir().unwrap();
+    let me = manual(d1.path());
+    let count = |sub: &str| {
+        served_reading(&api)
+            .iter()
+            .filter(|(s, _)| s == sub)
+            .count()
+    };
+    // The small feed first: its rows sort below the big one's, past the
+    // first pull's 20 pages.
+    let small = me
+        .subscribe(&format!("{host}/small.xml?run={t}"), Some("Walk small"))
+        .expect("subscribe to a local feed");
+    let _small = Unsub(&me, small.id.clone());
+    wait_until("the small feed's import", Duration::from_secs(60), || {
+        count(&small.id) >= 3 || {
+            std::thread::sleep(Duration::from_millis(500));
+            false
+        }
+    });
+    // The studio stamps a poll's rows to the second: the big feed's later.
+    std::thread::sleep(Duration::from_millis(1_100));
+    let seeding = Instant::now();
+    let big = me
+        .subscribe(&format!("{host}/big.xml?run={t}"), Some("Walk big"))
+        .expect("subscribe to a local feed");
+    let _big = Unsub(&me, big.id.clone());
+    wait_until("the big feed's import", Duration::from_secs(600), || {
+        count(&big.id) >= BIG || {
+            std::thread::sleep(Duration::from_secs(1));
+            false
+        }
+    });
+    let total = served_reading(&api).len();
+    eprintln!(
+        "long list: {BIG} posts imported in {:.1} s; {total} rows on the blyg",
+        seeding.elapsed().as_secs_f64()
+    );
+    assert!(total > 2_000, "more than one pull's 20 pages: {total}");
+    let page_bytes = {
+        let (st, v) = owner("GET", &e.url, "/api/reading/imported?limit=100", None);
+        assert_eq!(st, 200);
+        v.to_string().len()
+    };
+
+    let proxy = Proxy::start(&e.url);
+    let d3 = tempfile::tempdir().unwrap();
+    let other = LiveBackend::open_with(
+        d3.path(),
+        &proxy.url,
+        e.cred.clone(),
+        SyncOptions {
+            reading_pages: 20,
+            ..opts(false)
+        },
+    )
+    .expect("open LiveBackend");
+    let pages = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported"))
+            .count()
+    };
+    let firsts = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported") && !r.contains("cursor="))
+            .count()
+    };
+
+    // The first sync: a whole walk, 20 pages in the first pull, each
+    // merged as it came; nothing accepted until the end.
+    let started = Instant::now();
+    other.sync_now().unwrap();
+    let first = proxy.take_full();
+    let first_pull = started.elapsed();
+    assert_eq!(pages(&first), 20, "{first:?}");
+    assert!(
+        held_rows(d3.path(), &big.id) >= 1_900,
+        "the pages read so far are held: {}",
+        held_rows(d3.path(), &big.id)
+    );
+    assert_eq!(held_rows(d3.path(), &small.id), 0, "past the first pull");
+    assert_eq!(
+        accepted_reading(d3.path()),
+        None,
+        "accepted only at the end"
+    );
+    // The second pull carries on from its cursor (no new first page) to
+    // the end, and accepts the revision.
+    other.pull_now().unwrap();
+    let rest = proxy.take_full();
+    assert_eq!(firsts(&rest), 0, "carried on, not restarted: {rest:?}");
+    assert_eq!(pages(&rest), total.div_ceil(100) - 20, "{rest:?}");
+    assert_eq!(held_rows(d3.path(), &big.id), BIG);
+    assert_eq!(held_rows(d3.path(), &small.id), 3);
+    assert_eq!(
+        accepted_reading(d3.path()),
+        Some(counter(&api, "reading")),
+        "the reading revision is accepted"
+    );
+    eprintln!(
+        "long list: first sync {} pages over 2 pulls ({:.1} s for the first 20)",
+        pages(&first) + pages(&rest),
+        first_pull.as_secs_f64()
+    );
+
+    // Idle: nothing moved, nothing read (0.25.1 walked 20 pages a pull).
+    for _ in 0..3 {
+        other.pull_now().unwrap();
+    }
+    let idle = proxy.take_full();
+    assert_eq!(pages(&idle), 0, "{idle:?}");
+
+    // One new post: a head read of a page or two shows it.
+    feeds.lock().unwrap()[1].1 = many_rss("Walk big", big_link, BIG, 1);
+    poll_all_feeds(&api);
+    assert_eq!(count(&big.id), BIG + 1, "the new post was imported");
+    let before = accepted_reading(d3.path()).unwrap();
+    let started = Instant::now();
+    other.pull_now().unwrap();
+    let head = proxy.take_full();
+    let head_pull = started.elapsed();
+    assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "the new post shows");
+    assert_eq!(firsts(&head), 1, "{head:?}");
+    assert!(pages(&head) <= 2, "a head read: {head:?}");
+    let now = counter(&api, "reading");
+    assert!(now > before);
+    assert_eq!(accepted_reading(d3.path()), Some(now), "and accepted");
+    assert_eq!(
+        held_rows(d3.path(), &small.id),
+        3,
+        "a head read prunes nothing"
+    );
+    eprintln!(
+        "long list: steady-state pull with one new post: {} reading page(s), ~{} KB, \
+         {:.2} s, {} requests (0.25.1: 20 pages, ~{} KB, every pull)",
+        pages(&head),
+        pages(&head) * page_bytes / 1024,
+        head_pull.as_secs_f64(),
+        head.len(),
+        20 * page_bytes / 1024
+    );
+    other.pull_now().unwrap();
+    let after = proxy.take_full();
+    assert_eq!(pages(&after), 0, "nothing new: nothing read: {after:?}");
+
+    // Feed polls move `subscriptions` (when each feed was polled), not
+    // `reading`: no reading walk, one read of the subscription list.
+    let mut noise_seen = false;
+    for _ in 0..3 {
+        let reading0 = counter(&api, "reading");
+        poll_all_feeds(&api);
+        if counter(&api, "reading") != reading0 {
+            // Another test's subscription brought something: read it, and
+            // try again.
+            other.pull_now().unwrap();
+            proxy.take_full();
+            continue;
+        }
+        other.pull_now().unwrap();
+        let noise = proxy.take_full();
+        assert_eq!(
+            pages(&noise),
+            0,
+            "subscription noise walks nothing: {noise:?}"
+        );
+        assert!(
+            noise
+                .iter()
+                .any(|r| r.starts_with("GET /api/subscriptions")),
+            "{noise:?}"
+        );
+        noise_seen = true;
+        break;
+    }
+    if !noise_seen {
+        eprintln!("long list: no poll moved only `subscriptions` here; noise case skipped");
+    }
+
+    // A subscription removed elsewhere: a whole walk, which removes its
+    // rows only once it has read the whole list.
+    me.unsubscribe(&small.id).unwrap();
+    other.pull_now().unwrap();
+    let part = proxy.take_full();
+    assert_eq!(pages(&part), 20, "a whole walk: {part:?}");
+    assert_eq!(
+        held_rows(d3.path(), &small.id),
+        3,
+        "nothing removed before the walk's end"
+    );
+    other.pull_now().unwrap();
+    let end = proxy.take_full();
+    assert_eq!(firsts(&end), 0, "{end:?}");
+    assert_eq!(held_rows(d3.path(), &small.id), 0, "pruned at the end");
+    assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "and nothing else");
+}
+
 // ------------------------------------------------------ TK generate (0.27)
 
 #[test]
@@ -3511,10 +3848,16 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
 /// A tiny static feed server on 127.0.0.1 (never the internet): `path →
 /// body`, 404 for anything else. Lives as long as the test process.
 fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
+    serve_live_feeds(std::sync::Arc::new(std::sync::Mutex::new(files)))
+}
+
+/// [`serve_feeds`] with bodies the test may change while it runs.
+type LiveFeeds = std::sync::Arc<std::sync::Mutex<Vec<(&'static str, String)>>>;
+
+fn serve_live_feeds(files: LiveFeeds) -> String {
     use std::io::{BufRead, BufReader, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let files = std::sync::Arc::new(files);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let files = files.clone();
@@ -3532,7 +3875,13 @@ fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
                 // The path without the query.
                 let target = line.split_whitespace().nth(1).unwrap_or("/");
                 let path = target.split('?').next().unwrap_or("/");
-                let (status, ctype, body) = match files.iter().find(|(p, _)| *p == path) {
+                let found = files
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .cloned();
+                let (status, ctype, body) = match found {
                     Some((p, b)) => (
                         "200 OK",
                         if p.ends_with(".atom") {

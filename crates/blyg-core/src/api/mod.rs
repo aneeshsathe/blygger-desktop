@@ -1028,7 +1028,8 @@ impl Api {
     /// subscriptionId, remoteId), at most [`IMPORTED_READING_MAX`] a page.
     /// `content_html` is kept as served: the UI sanitizes it before display.
     /// A whole list is one walk from the first page to `nextCursor: null`
-    /// (`Engine::fetch_reading`); on `CursorExpired` the walk starts over.
+    /// (`Engine::read_reading`, which may also read just the head); on
+    /// `CursorExpired` the walk starts over.
     pub fn reading(&self, limit: u32, cursor: Option<&str>) -> Result<Option<ReadingPage>> {
         let limit = limit.clamp(1, IMPORTED_READING_MAX);
         let page: Option<CursorPage<Value>> =

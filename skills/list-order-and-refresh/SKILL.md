@@ -52,3 +52,10 @@ interaction, and that an idle client stays at a few requests a minute.
 - Native sync's dependency map (`ITEMS_DEPS`, `READING_DEPS`, `HOPPERS_DEPS`,
   `SIGNALS_DEPS`) and the safety-net backoff (`next_full_every`) live in
   `blyg-core/src/sync/mod.rs`.
+- **A list longer than one pull's page budget.** Burrow 0.25.1 re-walked the
+  newest 2,000 reading rows every ~40 s, forever, on a blyg with 5,000: a walk
+  that never reached its end was never accepted, and never pruned. A moved
+  counter reads the head (`sync/walk.rs`), whole walks go on from their cursor
+  across pulls, and a counter that moves for bookkeeping (`subscriptions` on
+  every feed poll) never walks a list on its own. Test with more rows than the
+  budget (`a_reading_list_past_the_page_budget_is_read_by_its_head`).

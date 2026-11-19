@@ -11,6 +11,7 @@ mod background; // --- background --- the studio's Background lens and choices
 mod shelf; // --- shelf sync --- the studio's synced shelf
 mod syndication; // --- syndication --- copies elsewhere, written in place
 pub(crate) mod upkeep; // --- upkeep --- stale quotes, kept in meta
+pub mod walk; // head reads and whole walks of the reading list
 mod worker;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -22,7 +23,7 @@ use crate::api::{Api, Contract, is_transient};
 use crate::backend::{CoreError, Result};
 use crate::model::*;
 use crate::store::{Op, OpKind, Store};
-use crate::util::now_ms;
+use crate::util::{now_ms, parse_ts_ms};
 
 pub(crate) use worker::{Msg, spawn};
 
@@ -47,8 +48,12 @@ pub const SUBSCRIPTIONS_DEPS: &[&str] = &["subscriptions"];
 /// The rows also carry each post's thumb (`signals`) and hoppers (`hoppers`),
 /// but those have their own, much smaller reads (`SIGNALS_DEPS`,
 /// `HOPPERS_DEPS`): a moved thumb or membership never walks the whole list
-/// again (issue #71).
-pub const READING_DEPS: &[&str] = &["reading", "subscriptions"];
+/// again (issue #71). Nor does `subscriptions`: the studio moves it on
+/// every feed poll (when it polled, the feed's etag), which changes no
+/// row. What a subscription change means for the rows (one gone, renamed)
+/// moves `reading` too, and a real change to the subscription list starts
+/// a whole walk of its own (`walk::subscriptions_differ`).
+pub const READING_DEPS: &[&str] = &["reading"];
 /// The owner's thumbs on the held reading rows (`GET /api/signals`).
 pub const SIGNALS_DEPS: &[&str] = &["signals"];
 /// --- hoppers --- the hoppers, their memberships and the unheld posts.
@@ -132,8 +137,9 @@ pub struct SyncOptions {
     /// Run the background worker thread. Tests can turn it off and drive sync
     /// with `sync_now` for determinism.
     pub start_worker: bool,
-    /// Reading list pages to read per pull (100 rows each). A list longer
-    /// than this is merged without pruning, and read again next pull.
+    /// Reading list pages to read per pull (100 rows each). A whole walk of
+    /// a longer list goes on from its cursor in the next pull (soon after:
+    /// `walk::WALK_PAUSE`), and prunes only once it reaches the end.
     pub reading_pages: u32,
     /// Public item documents fetched per pull to fill in lineage (0 = none).
     pub lineage_fetches: usize,
@@ -143,9 +149,10 @@ pub struct SyncOptions {
     /// The longest the safety net backs off to while it finds nothing
     /// ([`FULL_PULL_MAX`]).
     pub full_pull_max: Duration,
-    /// Background pulls read the reading list again at most this often when
-    /// only its own counter (`reading`: imports, read marks) moved. A
-    /// manual sync, a moved subscription and the safety net don't wait.
+    /// Background pulls read the head of the reading list again at most
+    /// this often when its counter (`reading`: imports, read marks) moved.
+    /// A manual sync, a real subscription change and the safety net don't
+    /// wait.
     pub reading_gap: Duration,
     /// The first wait after a 5xx (the blyg's Worker or database failed,
     /// e.g. a `D1_ERROR` once the free tier's daily reads are spent).
@@ -229,8 +236,19 @@ struct NetState {
     /// The safety net's current interval (`full_pull_every`, doubling while
     /// it finds nothing, up to `full_pull_max`).
     full_every: Duration,
-    /// When the reading list was last walked whole.
+    /// When a read of the reading list (head or whole) was last accepted.
     reading_at: Option<Instant>,
+    /// When a whole walk of the reading list last reached its end.
+    whole_at: Option<Instant>,
+    /// A whole walk part-way through, carried on by the next pull.
+    walk: Option<walk::Walk>,
+    /// A head read found nothing to explain a moved `reading` counter (a
+    /// change deep in the list, a read mark from another device): walk the
+    /// whole list once the last whole walk is `full_pull_every` old.
+    deep_pending: bool,
+    /// Read marks went from here since the last head read: they move
+    /// `reading` too, so a head read that finds nothing is explained.
+    reads_sent: bool,
     /// The wait before the next try after a 5xx.
     server_backoff: Duration,
     /// A 429 is being waited out (its notice was sent).
@@ -364,6 +382,10 @@ impl Engine {
                 full_at: None,
                 full_every: opts.full_pull_every,
                 reading_at: None,
+                whole_at: None,
+                walk: None,
+                deep_pending: false,
+                reads_sent: false,
                 server_backoff: opts.server_backoff_initial,
                 rate_limited: false,
                 scope_blocked: false,
@@ -1313,9 +1335,14 @@ impl Engine {
         }
 
         let mut reading_changed = false;
+        // The subscription list changed in a way its rows show (one gone,
+        // renamed…), not just its poll bookkeeping: walk the reading list
+        // whole, so rows of a removed subscription leave.
+        let mut subs_changed = false;
         if stale("subscriptions", SUBSCRIPTIONS_DEPS) {
             match self.api.list_subscriptions() {
                 Ok(subs) => {
+                    subs_changed = walk::subscriptions_differ(&self.store.subscriptions(), &subs);
                     let changed = self.store.replace_subscriptions(&subs)?;
                     surprise |= changed && forced("subscriptions", SUBSCRIPTIONS_DEPS);
                     reading_changed |= changed;
@@ -1328,57 +1355,43 @@ impl Engine {
                 Err(e) => return Err(e),
             }
         }
-        let mut reading_err = None;
-        // Thumbs and hoppers ride on a whole walk (the cursor's generation
-        // covers them); without one they have reads of their own, below.
-        let mut walked_whole = false;
         // Read state advances the `reading` revision, so it needs no
-        // exception here. A background pull where only `reading` moved
-        // (imports, read marks, often this Mac's own) waits out
-        // `reading_gap` since the last walk; a moved subscription doesn't.
+        // exception here. A background pull where `reading` moved (imports,
+        // read marks, often this Mac's own) reads the head at most once a
+        // `reading_gap`; the safety net, a real subscription change and a
+        // whole walk under way don't wait (`walk::start`).
         let gap_open = !background
-            || !self.unchanged(&rev, "reading", &["subscriptions"])
             || self
                 .state()
                 .reading_at
                 .is_none_or(|t| t.elapsed() >= self.opts.reading_gap);
-        if stale("reading", READING_DEPS) && (full || gap_open) {
-            let forced_reading = forced("reading", READING_DEPS);
-            let fetched = self.fetch_reading()?;
-            // A list that kept changing while it was read: as held, and
-            // read again next pull.
-            let mut whole = !matches!(fetched, Reading::Changing);
-            if let Reading::Read(items, complete, synd) = fetched {
-                let kinds = self
-                    .store
-                    .subscriptions()
-                    .into_iter()
-                    .map(|s| (s.id, s.kind))
-                    .collect();
-                let mut changed = self.store.merge_reading(&items, complete, &kinds)?;
-                changed |= self.store.set_reading_syndication(&synd)?; // --- syndication ---
-                changed |= self.fill_lineage(&items, complete, &kinds)?;
-                surprise |= changed && forced_reading;
-                reading_changed |= changed;
-                if self.read_sync_on() {
-                    match self.reconcile_reads(&items) {
-                        Ok(cleared) => reading_changed |= cleared,
-                        Err(e) => reading_err = Some(e),
-                    }
-                }
-                // A walk that stopped at its page budget isn't done.
-                whole = complete;
-                walked_whole = complete;
-            }
-            if whole {
-                self.accept(&rev, "reading", READING_DEPS)?;
-                self.state().reading_at = Some(Instant::now());
-            }
-        }
+        let moved = !self.unchanged(&rev, "reading", READING_DEPS);
+        let has_mark = self.store.meta(walk::HEAD_MARK).is_some();
+        let start = {
+            let st = self.state();
+            walk::start(walk::Due {
+                in_progress: st.walk.is_some(),
+                full,
+                subs_changed,
+                deep_due: st.deep_pending
+                    && st
+                        .whole_at
+                        .is_none_or(|t| t.elapsed() >= self.opts.full_pull_every),
+                moved,
+                gap_open,
+                has_mark,
+            })
+        };
+        let read = self.read_reading(&rev, start, forced("reading", READING_DEPS))?;
+        surprise |= read.surprise;
+        reading_changed |= read.changed;
+        let reading_err = read.read_err;
+        // Thumbs and hoppers ride on a whole walk (the cursor's generation
+        // covers them); without one they have reads of their own, below.
         // The owner's thumbs, when only they moved: the signals list, not
         // the whole reading list again (issue #71).
-        if walked_whole {
-            self.accept(&rev, "signals", SIGNALS_DEPS)?;
+        if let Some(walked) = &read.walked_whole {
+            self.accept(walked, "signals", SIGNALS_DEPS)?;
         } else if stale("signals", SIGNALS_DEPS) {
             match self.fetch_signals() {
                 Ok(changed) => {
@@ -1478,6 +1491,10 @@ impl Engine {
             // Found what the counters missed: back to the first interval.
             // Found nothing: wait twice as long next time, up to the cap.
             st.full_every = next_full_every(st.full_every, surprise, &self.opts);
+        } else if read.surprise {
+            // A safety-net walk carried on past its first pull found what
+            // the counters missed.
+            self.state().full_every = self.opts.full_pull_every;
         }
         reading_err.map_or(Ok(()), Err)
     }
@@ -1513,10 +1530,14 @@ impl Engine {
                 self.store
                     .delete_meta(&format!("{CHANGES_SEEN}{consumer}"))?;
             }
+            // The reading list's stamps may have gone back with it: no head
+            // read until a whole walk has set a new mark.
+            self.store.delete_meta(walk::HEAD_MARK)?;
             self.store.set_meta(CHANGES_EPOCH, &c.epoch)?;
             let mut st = self.state();
             st.full_at = None;
             st.full_every = self.opts.full_pull_every;
+            st.walk = None;
         }
         Ok(Some(c))
     }
@@ -1795,6 +1816,8 @@ impl Engine {
         for o in &batch {
             self.store.set_in_flight(o.seq, true)?;
         }
+        // It moves `reading` on the blyg (`walk::Due`).
+        self.state().reads_sent = true;
         let done = |this: &Self| -> Result<()> {
             for o in &batch {
                 this.store.drop_op(o.seq)?;
@@ -1904,62 +1927,226 @@ impl Engine {
         }
     }
 
-    /// One acquisition of `GET /api/reading/imported`: cursor pages from the
-    /// first to `nextCursor: null`, at most `reading_pages` of them. The
-    /// read-state flags come from `GET /api/reading` (once a session).
+    /// Read the reading list (`GET /api/reading/imported`) as `start`
+    /// says (sync/walk.rs): a head read, a whole walk, or the rest of one.
+    /// Each page is merged as it arrives (and the UI told), removing
+    /// nothing; at most `reading_pages` pages a pull. The read-state flags
+    /// come from `GET /api/reading` (once a session).
     ///
-    /// When the list changes under the walk (409 `cursor-expired`), every
-    /// page read so far is dropped and the walk starts again from the first
-    /// page: a restarted first page is never appended to an old prefix. A
-    /// walk that reached the end is `complete`, and only then may rows the
-    /// answer left out be pruned. One stopped by the page budget is merged
-    /// without pruning.
-    fn fetch_reading(&self) -> Result<Reading> {
-        let flags = self.read_flags()?;
+    /// - A head read stops once a page reaches back past what the last read
+    ///   covered, and is accepted without pruning. One that runs out of
+    ///   pages first carries on as a whole walk.
+    /// - A whole walk goes on next pull from its cursor, and only one that
+    ///   reached `nextCursor: null` prunes: the rows that one coherent walk
+    ///   didn't read.
+    /// - When the list changes under a read (409 `cursor-expired`), it
+    ///   starts again from the first page, and nothing read before counts
+    ///   towards the prune: a restarted first page is never appended to an
+    ///   old prefix. After `CURSOR_RESTARTS` the list is left as held for
+    ///   this pull.
+    fn read_reading(
+        &self,
+        rev: &Option<ChangeState>,
+        start: walk::Start,
+        forced: bool,
+    ) -> Result<ReadOut> {
+        use walk::{Next, Start, Walk};
+        let mut out = ReadOut::default();
+        let mut w = match start {
+            Start::Nothing => return Ok(out),
+            Start::Continue => self
+                .state()
+                .walk
+                .take()
+                .unwrap_or_else(|| Walk::new(true, rev.clone(), false)),
+            Start::Whole => Walk::new(true, rev.clone(), forced),
+            Start::Head => Walk::new(false, rev.clone(), false),
+        };
+        let flags = match self.read_flags() {
+            Ok(f) => f,
+            Err(e) => {
+                self.keep_walk(w);
+                return Err(e);
+            }
+        };
         self.set_read_sync(flags.read_sync())?;
         self.set_read_clear(flags.read_clear())?;
-        let pages = self.opts.reading_pages.max(1);
-        'walk: for _ in 0..=crate::api::CURSOR_RESTARTS {
-            let mut all: Vec<ReadingItem> = Vec::new();
-            let mut synd: Vec<crate::store::ReadingSyndication> = Vec::new(); // --- syndication ---
-            let mut cursor: Option<String> = None;
-            for _ in 0..pages {
-                let page = match self
-                    .api
-                    .reading(crate::api::wire::IMPORTED_READING_MAX, cursor.as_deref())
-                {
-                    Ok(Some(p)) => p,
-                    Ok(None) => {
-                        self.state().reading_unavailable = true;
-                        self.set_read_sync(false)?;
-                        return Ok(Reading::Unavailable);
-                    }
-                    Err(CoreError::CursorExpired) => continue 'walk,
-                    Err(e) => return Err(e),
-                };
-                {
-                    let mut st = self.state();
-                    st.reading_unavailable = false;
-                    st.reading_served = true;
+        // Read marks sent from here since the last head read explain a
+        // moved counter that the head shows nothing for.
+        let reads_sent = std::mem::take(&mut self.state().reads_sent);
+        let mark = self
+            .store
+            .meta(walk::HEAD_MARK)
+            .and_then(|m| m.parse::<i64>().ok());
+        let boundary = walk::boundary(mark);
+        let kinds: HashMap<String, SubscriptionKind> = self
+            .store
+            .subscriptions()
+            .into_iter()
+            .map(|s| (s.id, s.kind))
+            .collect();
+        let budget = self.opts.reading_pages.max(1);
+        let mut lineage = LineageBudget {
+            left: self.opts.lineage_fetches,
+            start: Instant::now(),
+            failed: HashSet::new(),
+        };
+        let (mut pages, mut restarts) = (0u32, 0usize);
+        loop {
+            let page = match self
+                .api
+                .reading(crate::api::wire::IMPORTED_READING_MAX, w.cursor.as_deref())
+            {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    // No imported reading list on this blyg: nothing to read.
+                    self.state().reading_unavailable = true;
+                    self.set_read_sync(false)?;
+                    self.accept(rev, "reading", READING_DEPS)?;
+                    self.state().reading_at = Some(Instant::now());
+                    return Ok(out);
                 }
-                synd.extend(page.syndication); // --- syndication ---
-                // Only a server that advertises read state means it.
-                let keep = self.read_sync_on();
-                all.extend(page.items.into_iter().map(|mut it| {
+                Err(CoreError::CursorExpired) => {
+                    pages += 1;
+                    restarts += 1;
+                    w.restart(rev.clone());
+                    if restarts > crate::api::CURSOR_RESTARTS || pages >= budget {
+                        // As held; read again next pull.
+                        self.keep_walk(w);
+                        return Ok(out);
+                    }
+                    continue;
+                }
+                Err(e) => {
+                    // A whole walk goes on from here next pull (its cursor
+                    // may still hold); a head read starts over.
+                    self.keep_walk(w);
+                    return Err(e);
+                }
+            };
+            pages += 1;
+            {
+                let mut st = self.state();
+                st.reading_unavailable = false;
+                st.reading_served = true;
+            }
+            // Only a server that advertises read state means it.
+            let keep = self.read_sync_on();
+            let items: Vec<ReadingItem> = page
+                .items
+                .into_iter()
+                .map(|mut it| {
                     if !keep {
                         it.read_version = None;
                     }
                     it
-                }));
-                match page.next {
-                    // Opaque cursor: passed back verbatim.
-                    Some(n) => cursor = Some(n),
-                    None => return Ok(Reading::Read(all, true, synd)),
+                })
+                .collect();
+            w.keys.extend(
+                items
+                    .iter()
+                    .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
+            );
+            let stamps = || items.iter().filter_map(|i| parse_ts_ms(&i.observed_at));
+            let oldest = stamps().min();
+            w.newest_ms = w.newest_ms.max(stamps().max());
+            let (mut changed, written) = self.store.merge_reading_page(&items, &w.keys, &kinds)?;
+            if !w.whole
+                && walk::late(
+                    written
+                        .iter()
+                        .filter_map(|&i| parse_ts_ms(&items[i].observed_at)),
+                    mark,
+                )
+            {
+                self.state().deep_pending = true;
+            }
+            changed |= self.store.set_reading_syndication(&page.syndication)?; // --- syndication ---
+            changed |= self.fill_lineage(&items, &w.keys, &kinds, &mut lineage)?;
+            if self.read_sync_on() {
+                match self.reconcile_reads(&items) {
+                    Ok(cleared) => changed |= cleared,
+                    Err(e) => out.read_err = Some(e),
                 }
             }
-            return Ok(Reading::Read(all, false, synd));
+            if changed {
+                w.changed = true;
+                out.changed = true;
+                out.surprise |= w.forced;
+                // The UI shows this page's posts now, not after the walk
+                // (events coalesce in the app).
+                self.emit(CoreEvent::ReadingChanged);
+            }
+            let has_next = page.next.is_some();
+            // Opaque cursor: passed back verbatim.
+            w.cursor = page.next;
+            match walk::after_page(w.whole, has_next, !changed, oldest, boundary, pages, budget) {
+                Next::Page => {}
+                Next::Yield => {
+                    w.whole = true;
+                    self.keep_walk(w);
+                    return Ok(out);
+                }
+                Next::HeadDone => {
+                    self.finish_read(&w, false)?;
+                    if !w.changed && !reads_sent {
+                        self.state().deep_pending = true;
+                    }
+                    return Ok(out);
+                }
+                Next::Complete => {
+                    if self.store.prune_reading_except(&w.keys)? {
+                        out.changed = true;
+                        out.surprise |= w.forced;
+                        self.emit(CoreEvent::ReadingChanged);
+                    }
+                    self.finish_read(&w, true)?;
+                    out.walked_whole = Some(w.rev);
+                    return Ok(out);
+                }
+            }
         }
-        Ok(Reading::Changing)
+    }
+
+    /// Keep a whole walk for the next pull (a head read is dropped: the
+    /// next pull reads the head again).
+    fn keep_walk(&self, w: walk::Walk) {
+        if w.whole {
+            self.state().walk = Some(w);
+        }
+    }
+
+    /// A read of the reading list is done: accept the revisions captured
+    /// before its first page, and remember how far back it covered.
+    fn finish_read(&self, w: &walk::Walk, whole: bool) -> Result<()> {
+        self.accept(&w.rev, "reading", READING_DEPS)?;
+        // A whole walk saw the list's newest row; a head read keeps the
+        // newer of its own and the last.
+        let held = (!whole)
+            .then(|| self.store.meta(walk::HEAD_MARK))
+            .flatten()
+            .and_then(|m| m.parse::<i64>().ok());
+        if let Some(mark) = w.newest_ms.max(held) {
+            self.store.set_meta(walk::HEAD_MARK, &mark.to_string())?;
+        }
+        let mut st = self.state();
+        st.reading_at = Some(Instant::now());
+        if whole {
+            st.whole_at = st.reading_at;
+            st.deep_pending = false;
+        }
+        Ok(())
+    }
+
+    /// A whole walk of the reading list is part-way through: the worker
+    /// pulls again soon (`walk::WALK_PAUSE`) to carry it on. One the list
+    /// kept changing under (back at its first page) waits for the usual
+    /// pull instead.
+    pub fn reading_walk_pending(&self) -> bool {
+        self.state()
+            .walk
+            .as_ref()
+            .is_some_and(|w| w.cursor.is_some())
     }
 
     /// The read-state flags (`GET /api/reading`), read once a session. A
@@ -1982,15 +2169,18 @@ impl Engine {
     fn fill_lineage(
         &self,
         items: &[ReadingItem],
-        complete: bool,
+        listed: &HashSet<(String, String)>,
         kinds: &std::collections::HashMap<String, SubscriptionKind>,
+        budget: &mut LineageBudget,
     ) -> Result<bool> {
-        let start = Instant::now();
-        let mut failed: HashSet<String> = HashSet::new();
         let mut filled = false;
-        let mut fetched = 0;
+        let LineageBudget {
+            left,
+            start,
+            failed,
+        } = budget;
         for it in items {
-            if fetched >= self.opts.lineage_fetches || start.elapsed() >= LINEAGE_BUDGET {
+            if *left == 0 || start.elapsed() >= LINEAGE_BUDGET {
                 break;
             }
             let blyg = kinds.get(&it.subscription_id) == Some(&SubscriptionKind::Blyg);
@@ -2007,7 +2197,7 @@ impl Engine {
             {
                 continue;
             }
-            fetched += 1;
+            *left -= 1;
             match self.public.item_doc(&it.origin, &it.remote_id) {
                 Ok(doc) => {
                     let log = doc.versions_at(&it.origin);
@@ -2022,10 +2212,9 @@ impl Engine {
         if !filled {
             return Ok(false);
         }
-        // Merge the whole pull again, as pulled: the merge fills lineage from
-        // the cache it was just given. (A subset would read as "the server
-        // dropped the rest" and prune them.)
-        self.store.merge_reading(items, complete, kinds)
+        // Merge the page again, as pulled: the merge fills lineage from the
+        // cache it was just given. (It removes nothing.)
+        self.store.merge_reading_rows(items, listed, kinds)
     }
 
     /// Whether the server serves the imported reading list, as of the last
@@ -2054,19 +2243,26 @@ impl Engine {
     }
 }
 
-/// What one reading pull read.
-enum Reading {
-    /// The rows, whether the walk reached the list's end, and (---
-    /// syndication ---) each row's served copies elsewhere.
-    Read(
-        Vec<ReadingItem>,
-        bool,
-        Vec<crate::store::ReadingSyndication>,
-    ),
-    /// The server has no imported reading list.
-    Unavailable,
-    /// The list changed under every walk (`cursor-expired`): nothing taken.
-    Changing,
+/// What one pull's read of the reading list did.
+#[derive(Default)]
+struct ReadOut {
+    /// A row here changed (merged, pruned, read state taken).
+    changed: bool,
+    /// A safety-net walk found what the counters missed.
+    surprise: bool,
+    /// A whole walk reached the list's end in this pull, under these
+    /// revisions (captured before its first page).
+    walked_whole: Option<Option<ChangeState>>,
+    /// Settling read state failed (the pull reports it once it's done).
+    read_err: Option<CoreError>,
+}
+
+/// The lineage fetches one pull may still make (`Engine::fill_lineage`),
+/// shared by all the pages it reads.
+struct LineageBudget {
+    left: usize,
+    start: Instant,
+    failed: HashSet<String>,
 }
 
 #[cfg(test)]
