@@ -23,6 +23,19 @@ make Burrow read the list again.
 Responses from your blyg now arrive compressed (about a fifth of the size),
 and the search index is compacted in the background while you're idle.
 
+### Try a theme or font before you keep it
+
+In **Settings** (⌘,), rest the pointer on a theme, font or size, or move
+along a row with the arrow keys, and the whole window shows it at once. A
+**Preview** at the top of the page shows a post list, a paragraph with a
+link and code, a quote and the status bar in what you're trying. ⏎ or a
+click keeps it; esc, or leaving the row, puts back what you had. Nothing is
+saved until you keep it. The command palette (⇧⌘P) does the same as you
+move through its themes and fonts.
+
+The theme row has **For: ☀ Light | ☾ Dark**, so you can choose a dark-mode
+theme (`theme-dark`) as easily as the main one; the slot in use is marked.
+
 ### Quiet writing
 
 **Settings › Quiet writing** (or View › Quiet Writing, or the palette) hides

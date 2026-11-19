@@ -16,7 +16,10 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-19
+
 ### Added
+- **Desktop: try themes, fonts and sizes before keeping them.** In Settings, hovering an option (90 ms) or moving along a row with the arrows applies it to the window without writing config; ⏎/click keeps, esc or leaving reverts. A Preview specimen at the top of Settings is drawn with the real list row, editor paper, quote frame, chips and status bar. The palette previews theme and font rows as the selection moves. The theme row gains a Light/Dark slot switch for `theme` / `theme-dark` (and fixes choosing a theme in dark mode writing `theme` with no visible change). `crates/blyg-app/src/pref_preview.rs`.
 - **Desktop: Quiet writing** (`quiet-writing = true`, Settings, View › Quiet Writing, the palette). It hides the lineage line, the loose-ends line and Nearby thoughts together, and stops their background work. ⌘J still opens lineage, the omnibar's `is:`/`has:` operators still filter, and ⌥⌘U opens Nearby for the sitting without changing the saved layout. It's off by default. There's a new Writing-tour step (`quiet-writing`). ⌘J on a draft no longer misses its first press while the line is being built.
 - **Reading: Mark All Read…** for a source (⇧R on the reading screen, Blyg › Mark All Read…, a subscription's, folder's or hopper's menu, the sources menu, the palette). It confirms with the count, skips your own posts, sends one `set_read` batch (synced via `reading:state`), and with a search covers what's shown.
 - **Reading: a 3-second hold before the Reading compose box posts** ("Posting in 3 s · esc cancels · ⌘⏎ posts now"); esc, Cancel or an edit stops it before anything is sent.

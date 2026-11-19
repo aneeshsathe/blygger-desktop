@@ -787,7 +787,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ai"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "base64 0.22.1",
  "blyg-core",
@@ -803,7 +803,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-app"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "adblock",
  "ammonia",
@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-core"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "base64 0.22.1",
  "blyg-render",
@@ -870,7 +870,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-embed"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "serde_json",
  "sha2 0.10.9",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ext"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "blyg-core",
  "serde",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ext-crosspost"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "blyg-ext",
  "serde_json",
@@ -901,7 +901,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ext-inspect"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "blyg-core",
  "blyg-ext",
@@ -910,7 +910,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ext-notes"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "blyg-core",
  "blyg-ext",
@@ -921,7 +921,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-ext-reading-time"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "blyg-ext",
  "blyg-render",
@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "blyg-render"
-version = "0.25.1"
+version = "0.26.0"
 dependencies = [
  "fancy-regex",
  "html-escape",
