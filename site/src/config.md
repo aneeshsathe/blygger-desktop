@@ -59,8 +59,8 @@ standard install, it's `/Applications/Burrow.app/Contents/MacOS/blygger`.
 | `+list-keybinds` | every keyboard shortcut, and the ones reserved |
 | `+import-opml <file> [--dry-run]` | subscribes to every feed in an OPML file you don't follow yet ([Import and export subscriptions](reading.md#import-and-export-subscriptions-opml)); `--dry-run` only lists them |
 | `+export-opml <file>` | saves every subscription as an OPML file |
-| `+version` | the version |
-| `+help` | this list |
+| `+version` (or `--version`, `-V`) | the version |
+| `+help` (or `--help`, `-h`) | this list |
 
 ## Every option
 
