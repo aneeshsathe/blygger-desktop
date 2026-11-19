@@ -27,6 +27,7 @@ what earlier ones learned.
 | Skill | Use it when |
 |---|---|
 | `burrow-pr-gate` | before committing a feature, or opening, merging or reviewing a PR |
+| `verify-burrow` | proving a UI change works in the running app, with a screenshot |
 | `burrow-release` | cutting a release, or merging anything that bumps the version |
 | `burrow-tutorial-update` | a release changes something a user sees |
 | `burrow-cross-platform` | touching keys, menus, paths, web views or native APIs |

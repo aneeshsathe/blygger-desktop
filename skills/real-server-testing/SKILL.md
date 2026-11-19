@@ -53,7 +53,6 @@ BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh
 - Browser pane checks: `scripts/browser-*-check.sh` (content blocking,
   macros) run the app against local fixture pages, no network.
 - Store logic is tested on real SQLite. The UI is checked by running the app
-  (`BLYGGER_FAKE=1 cargo run -p blyg-app`, `BLYGGER_DEMO=<scenario>`) and
-  screenshotting only its own window.
+  on sample data with `verify-burrow` (`scripts/verify/burrow-verify.sh`).
 - Don't add tests to the mock server (`crates/blyg-core/tests/common`) or the
   fake backend; existing ones stay green but aren't extended.
