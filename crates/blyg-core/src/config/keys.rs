@@ -192,6 +192,19 @@ pub const KEYS: &[KeySpec] = &[
          prose and TK scopes. on: typing [[ anywhere outside code also opens it, for a link. \
          off: typed brackets never open it. ⌘K always opens the picker.",
     ),
+    // --- quiet writing ---
+    docs(
+        key("quiet-writing", ValueKind::Bool, Some("false")),
+        "Quiet writing: true hides the layers that sit around the editor on their own, for a \
+         plainer page: the lineage line under the editor, the loose-ends line over the list, \
+         and Nearby thoughts (its drawer and its side tab; nothing is matched in the \
+         background). Each stays one key away: ⌘J still opens the lineage lists or sheet, the \
+         omnibar still reads is:orphan and the other operators, and ⌥⌘U opens Nearby for this \
+         sitting only. Hover cards, the quote tray and focus mode are unchanged. false (the \
+         default) shows them as before; nearby = off still turns Nearby off on its own. \
+         View › Quiet Writing and Settings (⌘,) toggle it.",
+    ),
+    // --- end quiet writing ---
     // --- nearby ---
     docs(
         key(

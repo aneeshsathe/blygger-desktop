@@ -554,6 +554,7 @@ const SETTINGS_ROWS: &[&str] = &[
     "SIZE",
     "THEME",
     "LAYOUT",
+    "QUIET WRITING", // --- quiet ---
     "BUTTONS",
     "SERENDIPITY",
     "SOUNDS",

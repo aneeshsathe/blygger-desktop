@@ -842,3 +842,60 @@ fn the_drawer_is_closed_until_its_tab_opens_it(cx: &mut TestAppContext) {
     assert!(cx.debug_bounds("nearby-rail").is_none());
     assert!(!view.read_with(cx, |v, _| v.nearby.open));
 }
+
+// ------------------------------------------------------------ quiet writing
+
+/// --- quiet --- Quiet writing hides the drawer and its tab and matches
+/// nothing, whatever `nearby_open` says; ⌥⌘U opens it for this sitting (its
+/// tab comes back while it's open) without touching what's remembered, and
+/// turning quiet writing off brings back the drawer as it was.
+#[gpui_kit::test]
+fn quiet_writing_hides_the_drawer_and_alt_cmd_u_opens_it_for_the_sitting(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, (thread, _), cx) = setup(dir.path(), None, cx);
+    view.update(cx, |v, cx| {
+        assert!(v.set_quiet_writing(true, cx));
+    });
+    write(
+        &view,
+        cx,
+        &thread,
+        "# A\n\nThe tide pools at dusk once more",
+    );
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(view.read_with(cx, |v, _| v.nearby.open), "still remembered");
+    assert!(cx.debug_bounds("nearby-rail").is_none(), "hidden");
+    assert!(cx.debug_bounds("side-tab-nearby").is_none(), "no tab");
+    assert!(rail(&view, cx).is_empty(), "nothing matched while hidden");
+
+    // ⌥⌘U: open for this sitting, and the tab shows while it's open.
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-u"));
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("nearby-rail").is_some(),
+        "open for the sitting"
+    );
+    assert!(cx.debug_bounds("side-tab-nearby").is_some());
+    assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+    // Closing it doesn't change what's remembered.
+    cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-u"));
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-rail").is_none());
+    assert!(view.read_with(cx, |v, _| v.nearby.open && !v.nearby.sitting));
+
+    // Off: the drawer is back as it was left, and matching again.
+    view.update(cx, |v, cx| {
+        assert!(v.set_quiet_writing(false, cx));
+    });
+    settle(cx);
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+    assert!(cx.debug_bounds("nearby-rail").is_some(), "back");
+    assert_eq!(rail(&view, cx), vec![POOLS.to_string()]);
+}

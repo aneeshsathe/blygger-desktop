@@ -119,6 +119,7 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "ShowBlygSwitcher" => &["switch", "account", "blogs"],
         "FocusSearch" => &["find", "search", "omnibar"],
         "ToggleFocus" => &["zen", "typewriter", "distraction free"],
+        "ToggleQuietWriting" => &["minimal", "calm", "hide lineage", "hide nearby"], // --- quiet ---
         "FontBigger" => &["zoom in", "larger"],
         "FontSmaller" => &["zoom out"],
         "Quit" => &["exit", "close"],

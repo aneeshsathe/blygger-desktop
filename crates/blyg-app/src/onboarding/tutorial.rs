@@ -737,6 +737,7 @@ impl MainView {
             (Key::Palette, self.cmd_palette.open.is_some()),
             (Key::Focus, self.focus_on()),
             (Key::Serendipity, self.serendipity_shown(cx)),
+            (Key::QuietWriting, crate::app::quiet::on(cx)), // --- 0.26.0 ---
             // --- tangles ---
             (Key::Trail, self.reading.trails.field.is_some()),
             (Key::Tray, !self.tray.items.is_empty()),
@@ -1278,6 +1279,14 @@ impl MainView {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 cx.notify();
             }
+            // --- 0.26.0 --- Settings over the published post, at the row.
+            Setup::QuietWriting => {
+                self.tutorial_setup(Setup::Versioned, window, cx);
+                self.quiet.row.set(None);
+                if !matches!(self.sheet, Some(Sheet::Settings { .. })) {
+                    self.open_settings(&crate::app::OpenSettings, window, cx);
+                }
+            }
         }
     }
 
@@ -1352,6 +1361,9 @@ impl MainView {
                 self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
             }
             "discover" => self.open_discover(window, cx),
+            "quiet-writing" => {
+                self.set_quiet_writing(true, cx);
+            } // --- 0.26.0 ---
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
@@ -1474,6 +1486,23 @@ impl MainView {
             | Region::ReaderPost
             | Region::Compose => return self.tutorial_reading_region(region, w, h),
             Region::BrowserChrome => return self.browser_rects(full, h).map(|[_, c]| c),
+            // --- 0.26.0 --- where Settings drew the row.
+            Region::QuietSetting => {
+                if !matches!(self.sheet, Some(Sheet::Settings { .. })) {
+                    return None;
+                }
+                let b = self.quiet.row.get()?;
+                let r = (
+                    f32::from(b.left()),
+                    f32::from(b.top()),
+                    f32::from(b.size.width),
+                    f32::from(b.size.height),
+                );
+                if r.2 < 8. || r.3 < 8. {
+                    return None;
+                }
+                r
+            }
         })
     }
 
@@ -1651,7 +1680,8 @@ impl MainView {
             // The editor's @-mention popup and spelling menu.
             || assist.mention_open()
             || assist.menu_open();
-        if covered && region != Region::Sheet {
+        // --- 0.26.0 --- the Quiet writing row is on the Settings page.
+        if covered && region != Region::Sheet && region != Region::QuietSetting {
             return None;
         }
         let rect = self.tutorial_region(region, window)?;
@@ -1793,7 +1823,8 @@ impl MainView {
             .absolute()
             // Clear of the lineage sheet's responses row.
             .map(|d| {
-                if self.lineage_open() {
+                // --- 0.26.0 --- and of Settings' chips, at the left.
+                if self.lineage_open() || step.region == Region::QuietSetting {
                     d.right(px(CARD_LEFT))
                 } else {
                     d.left(px(CARD_LEFT))

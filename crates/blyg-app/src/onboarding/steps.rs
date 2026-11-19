@@ -154,6 +154,9 @@ pub enum Key {
     // --- nearby ---
     /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
     Nearby,
+    // --- 0.26.0 ---
+    /// Quiet writing is on (Settings › Quiet writing, View › Quiet Writing).
+    QuietWriting,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -193,6 +196,8 @@ pub enum Region {
     Compose,
     /// The whole window (no ring).
     Whole,
+    /// --- 0.26.0 --- Settings' Quiet writing row (Settings open).
+    QuietSetting,
 }
 
 /// What a step prepares on the sample data when it's entered.
@@ -292,6 +297,9 @@ pub enum Setup {
     ShelfLens,
     /// Reader on All, with posts that quote, reply to, link to and name you.
     MentionsFeed,
+    /// --- 0.26.0 --- The published sample post open (its lineage line
+    /// under it), with Settings open over it at Quiet writing.
+    QuietWriting,
 }
 
 /// One step of the tour.
@@ -884,6 +892,25 @@ pub const STEPS: &[Step] = &[
         region: Region::Omnibar,
         button: None,
         setup: Setup::Query("is:draft"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.26.0 --- quiet writing: the setting itself.
+    Step {
+        id: "quiet-writing",
+        since: "0.26.0",
+        title: "Quiet writing",
+        caption: "The lineage line, the loose-ends line and Nearby thoughts each sit around the \
+                  editor on their own. Quiet writing hides all three, for a plainer page; ⌘J, \
+                  is:orphan and ⌥⌘U (for this sitting) still reach them. Click On, then esc to \
+                  look; Off brings them back. It's a real setting, kept as you leave it, and \
+                  View › Quiet Writing toggles it too.",
+        keys: &[Key::QuietWriting],
+        key_label: "click",
+        region: Region::QuietSetting,
+        button: None,
+        setup: Setup::QuietWriting,
         pause_ms: 1600,
         settle: false,
         stay: true,
@@ -1789,6 +1816,7 @@ pub const TOURS: &[Tour] = &[
             "shelf",
             "hover-cards",
             "loose-ends",
+            "quiet-writing",
             "quotes",
             "mentions",
         ],

@@ -108,6 +108,7 @@ use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
 // --- flow ---
 use crate::app::command_palette::ShowPalette;
 use crate::app::focus::ToggleFocus;
+use crate::app::quiet::ToggleQuietWriting; // --- quiet ---
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -1135,6 +1136,12 @@ pub fn mac_table() -> Vec<Keybind> {
             ToggleFocus,
             "Focus mode: the line you're on stays put, the rest steps back (esc leaves)",
             Some("View › Focus")
+        ),
+        // --- quiet --- (no key: Settings and the menu)
+        menu_only!(
+            ToggleQuietWriting,
+            "Quiet writing: hide the lineage line, loose ends and Nearby thoughts (or show them)",
+            "View › Quiet Writing"
         ),
     ]
 }

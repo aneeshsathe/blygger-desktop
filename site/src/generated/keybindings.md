@@ -142,3 +142,4 @@
 | Extensions: run an extension's command, browse its notes, manage them | Post › Extensions… |
 | Contacts: your address book of @handles (add, edit, check, remove) | Blyg › Contacts… |
 | Add the author of the post you're reading to your contacts | Post › Add Author to Contacts… |
+| Quiet writing: hide the lineage line, loose ends and Nearby thoughts (or show them) | View › Quiet Writing |
