@@ -283,7 +283,7 @@ its own line, after the line you dropped it on; in a fragment as a link where
 you dropped it. Dropped on the omnibar, it starts a new thread quoting it;
 dropped on the post box under Reading, it's quoted there.
 
-On Windows the key is Ctrl+Alt+K.
+On Windows the key is Ctrl+Shift+T.
 
 ## Import and export subscriptions (OPML)
 

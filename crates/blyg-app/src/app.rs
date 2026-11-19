@@ -1927,7 +1927,7 @@ impl MainView {
                         };
                         // --- browser macros --- a granted macro can cross-post it.
                         let cross = if v.macro_cross_post_hint() {
-                            " · ⇧⌘P to cross-post"
+                            crate::keymap::hint(" · ⇧⌘P to cross-post")
                         } else {
                             ""
                         };

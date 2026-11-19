@@ -1289,10 +1289,10 @@ impl MainView {
             })
             .tooltip(move |_, cx| {
                 cx.new(|_| {
-                    super::Tip(format!(
+                    super::Tip(crate::keymap::hint_owned(format!(
                         "{} the sources pane · ⌥⌘S",
                         if on { "Hide" } else { "Show" }
-                    ))
+                    )))
                 })
                 .into()
             })

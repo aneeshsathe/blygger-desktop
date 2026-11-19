@@ -40,7 +40,7 @@ pub struct ShelfSheet {
 /// The toast after ⌥⌘B.
 pub fn toggled_toast(on: bool) -> &'static str {
     if on {
-        "On your shelf · ⌘B"
+        crate::keymap::hint("On your shelf · ⌘B")
     } else {
         "Taken off your shelf"
     }
@@ -318,9 +318,11 @@ impl MainView {
             );
         }
         let hints = if s.posts.is_empty() {
-            "⌥⌘B shelves the open post · esc closes"
+            crate::keymap::hint("⌥⌘B shelves the open post · esc closes")
         } else {
-            "1–9 or ⏎ opens · ⌥↑/⌥↓ reorder · ⌫ takes off · ⌥⌘B shelves the open post · esc"
+            crate::keymap::hint(
+                "1–9 or ⏎ opens · ⌥↑/⌥↓ reorder · ⌫ takes off · ⌥⌘B shelves the open post · esc",
+            )
         };
         body = body.child(div().my(px(6.)).h(px(1.)).bg(p.line)).child(
             div()

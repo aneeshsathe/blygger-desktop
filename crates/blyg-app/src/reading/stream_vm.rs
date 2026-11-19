@@ -34,8 +34,8 @@ impl ReadMode {
 
     pub fn key(self) -> &'static str {
         match self {
-            ReadMode::Stream => "⌥⌘1",
-            ReadMode::Reader => "⌥⌘2",
+            ReadMode::Stream => crate::keymap::hint("⌥⌘1"),
+            ReadMode::Reader => crate::keymap::hint("⌥⌘2"),
         }
     }
 

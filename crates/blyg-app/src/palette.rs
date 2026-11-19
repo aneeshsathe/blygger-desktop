@@ -188,7 +188,7 @@ pub(crate) fn action_entries(
                 let leaf = m.rsplit(" › ").next().unwrap_or(m);
                 (menu_group(group), leaf.to_string())
             }
-            None => ("Commands", row.label.to_string()),
+            None => ("Commands", crate::keymap::hint(row.label).to_string()),
         };
         let key = table
             .iter()
@@ -199,7 +199,7 @@ pub(crate) fn action_entries(
             cmd: Cmd::Action(k.action),
             group,
             label,
-            detail: row.label.to_string(),
+            detail: crate::keymap::hint(row.label).to_string(),
             aliases: aliases(k.action),
             key,
             disabled: disabled(k.action),

@@ -4,9 +4,14 @@ Burrow is keyboard-first. Every toolbar button's tooltip shows its key, and
 `blygger +list-keybinds` prints this list from the app itself.
 
 **On Windows**, read every ⌘ as **Ctrl** (⌘⏎ is Ctrl+Enter, ⇧⌘, is
-Ctrl+Shift+,), with two exceptions: Versions is Ctrl+Shift+Y, because Ctrl+Y
-is Redo there, and Discard changes has no key (Ctrl+Alt+Z is AltGr+Z, which types
-a letter on some layouts): use Menu › Post › Discard Changes… or the toolbar.
+Ctrl+Shift+,), with some exceptions. Versions is Ctrl+Shift+Y, because Ctrl+Y
+is Redo there. Ctrl+Alt is AltGr on Windows, which types a character on many
+layouts, so the ⌥⌘ keys that would type one move: focus mode Ctrl+Shift+F,
+shelving Ctrl+Shift+A, a change note Ctrl+Shift+E, Quote into a thread
+Ctrl+Shift+Q, Link post Ctrl+Shift+I, the quote tray Ctrl+Shift+T, Nearby
+Ctrl+Shift+U, Stream and Reader Alt+1 and Alt+2, the sources pane Alt+S; the
+blyg switcher is Ctrl+Shift+L and the blygs Ctrl+Shift+1…9. Discard changes
+has no key: use Menu › Post › Discard Changes… or the toolbar.
 The app's tooltips, menu and `+list-keybinds` show the Windows
 keys.
 

@@ -156,10 +156,10 @@ impl View {
 
     pub fn key(self) -> &'static str {
         match self {
-            View::Posts => "⌘L",
-            View::Reading => "⌘R",
-            View::Mentions => "⇧⌘M",
-            View::Subscriptions => "⇧⌘S",
+            View::Posts => crate::keymap::hint("⌘L"),
+            View::Reading => crate::keymap::hint("⌘R"),
+            View::Mentions => crate::keymap::hint("⇧⌘M"),
+            View::Subscriptions => crate::keymap::hint("⇧⌘S"),
         }
     }
 }

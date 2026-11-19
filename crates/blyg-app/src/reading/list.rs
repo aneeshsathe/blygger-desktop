@@ -28,13 +28,13 @@ pub enum EditedBlock {
 /// how many posts are to read (reader-local, private state: allowed, never
 /// social) and the keys. `found` is the shown count while a search is typed.
 pub fn reading_hint(stream: bool, picked: usize, unread: usize, found: Option<usize>) -> String {
-    let keys = if stream {
+    let keys = crate::keymap::hint(if stream {
         "j/k move · ⏎ read more · ⇧R all read · / search · esc back"
     } else {
         // --- reader folders ---
         "←→ panes · j/k posts · space next unread · r/u read/unread · ⌘A picks all · \
          ⇧R all read · / search"
-    };
+    });
     if picked > 0 {
         // --- read/unread ---
         format!("{picked} picked · r marks read · u unread · esc lets go")

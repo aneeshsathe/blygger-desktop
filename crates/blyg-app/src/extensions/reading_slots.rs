@@ -708,7 +708,9 @@ impl MainView {
                                 .on_click(cx.listener(|this, _, _, cx| this.slots_copy(cx))),
                         )
                     })
-                    .when(copyable, |d| d.child(self.slot_key_hint(COPY_KEY, "copy")))
+                    .when(copyable, |d| {
+                        d.child(self.slot_key_hint(COPY_KEY.get(), "copy"))
+                    })
                     .child(self.slot_key_hint("esc", "close")),
             )
             .into_any_element()
@@ -717,11 +719,7 @@ impl MainView {
 
 const DIGITS: [&str; 9] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
-const COPY_KEY: &str = if cfg!(target_os = "windows") {
-    "Ctrl+C"
-} else {
-    "⌘C"
-};
+const COPY_KEY: crate::platform_text::Text = crate::platform_text::ui_text("⌘C");
 
 // The extension sheets' small parts, as `sheets.rs` draws them.
 impl MainView {

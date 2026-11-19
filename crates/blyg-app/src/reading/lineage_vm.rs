@@ -171,7 +171,7 @@ impl Glyph {
                 d.join(", ")
             ));
         }
-        lines.push("⌘J or a click: see who".into());
+        lines.push(crate::keymap::hint("⌘J or a click: see who").into());
         lines.join("\n")
     }
 }
@@ -703,10 +703,10 @@ impl Act {
         match self {
             Act::Fork => "Start your own copy of this post.",
             Act::Reply => "Respond to this post.",
-            Act::Quote => "Quote it in a thread you're writing (⌘K).",
+            Act::Quote => crate::keymap::hint("Quote it in a thread you're writing (⌘K)."),
             Act::Link => "Write something of your own that links to this.",
             Act::Versions => "See how this post has changed.",
-            Act::Open => "Read it on the author's own site (⌘O).",
+            Act::Open => crate::keymap::hint("Read it on the author's own site (⌘O)."),
         }
     }
 

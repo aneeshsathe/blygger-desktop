@@ -123,7 +123,7 @@ impl MainView {
             .filter(|k| !super::own::is_own(k))
             .collect();
         if keys.is_empty() {
-            return self.show_toast("Nothing to mark", Some(PICK_HOW.into()), cx);
+            return self.show_toast("Nothing to mark", Some(PICK_HOW.get().into()), cx);
         }
         let n = keys.len();
         match self.backend.set_read(&keys, read) {
@@ -262,7 +262,7 @@ impl MainView {
     ) {
         self.reading.src_menu = None;
         if self.reading.view != View::Reading {
-            return self.show_toast("Open Reading first (⌘R)", None, cx);
+            return self.show_toast(crate::keymap::hint("Open Reading first (⌘R)"), None, cx);
         }
         let keys = self.mark_all_keys(source.as_ref());
         let what = self.mark_all_name(source.as_ref());
@@ -304,16 +304,19 @@ impl MainView {
             group: "Blyg",
             label: "Mark All Read…".into(),
             detail: if reading {
-                format!(
+                crate::keymap::hint_owned(format!(
                     "Everything to read in {}, after a question · ⇧R",
                     self.mark_all_name(None)
-                )
+                ))
             } else {
-                "Everything to read in the current source · ⇧R on the reading screen".into()
+                crate::keymap::hint(
+                    "Everything to read in the current source · ⇧R on the reading screen",
+                )
+                .into()
             },
             aliases: &["mark all", "all read", "clear unread", "read all"],
             key: None,
-            disabled: (!reading).then(|| "Open Reading first (⌘R)".into()),
+            disabled: (!reading).then(|| crate::keymap::hint("Open Reading first (⌘R)").into()),
         }
     }
 
@@ -347,7 +350,8 @@ impl MainView {
     }
 }
 
-pub(crate) const PICK_HOW: &str = "Open a post, or pick some: ⌘-click, ⇧-click, ⌘A";
+pub(crate) const PICK_HOW: crate::platform_text::Text =
+    crate::platform_text::ui_text("Open a post, or pick some: ⌘-click, ⇧-click, ⌘A");
 
 #[cfg(test)]
 mod tests {

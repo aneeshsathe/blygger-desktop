@@ -36,7 +36,8 @@ const TICK: Duration = Duration::from_millis(250);
 
 /// A drag over a post in the stream: the toast once it's open in the pane.
 pub const SELECT_HERE: &str = "Select the passage in the post here";
-pub const SELECT_HOW: &str = "Then ⇧⌘D, or the pill by the selection, quotes it";
+pub const SELECT_HOW: crate::platform_text::Text =
+    crate::platform_text::ui_text("Then ⇧⌘D, or the pill by the selection, quotes it");
 
 /// A post's click as a `stream_vm::PostClick` (keyboard clicks select).
 fn post_click_of(ev: &ClickEvent) -> stream_vm::PostClick {
@@ -446,7 +447,7 @@ impl MainView {
             stream_vm::PostClick::Open => self.stream_read_more(key, window, cx),
             stream_vm::PostClick::OpenToSelect => {
                 self.stream_read_more(key, window, cx);
-                self.show_toast(SELECT_HERE, Some(SELECT_HOW.into()), cx);
+                self.show_toast(SELECT_HERE, Some(SELECT_HOW.get().into()), cx);
             }
         }
     }
@@ -546,9 +547,9 @@ impl MainView {
             .flex_col()
             .when(held > 0, |d| d.child(self.render_reading_search(cx)))
             .when(held == 0, |d| {
-                d.child(
-                    self.empty_note("Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S)."),
-                )
+                d.child(self.empty_note(crate::keymap::hint(
+                    "Nothing to read yet. Subscribe to a blyg or a feed (⇧⌘S).",
+                )))
             })
             .when(held > 0 && count == 0, |d| {
                 d.child(

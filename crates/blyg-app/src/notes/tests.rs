@@ -1124,7 +1124,7 @@ mod ui {
         assert!(
             log.borrow()
                 .reader_evals
-                .contains(&webview::SELECTION_UI_JS.to_string()),
+                .contains(&webview::selection_ui_js()),
             "{:?}",
             log.borrow().reader_evals
         );
@@ -1139,10 +1139,7 @@ mod ui {
         open_in_reader(&view, &feed, cx);
         log.borrow_mut().reader_evals.clear();
         reader_event(&view, webview::SurfaceEvent::Ready, cx);
-        assert_eq!(
-            log.borrow().reader_evals,
-            vec![webview::SELECTION_UI_JS.to_string()]
-        );
+        assert_eq!(log.borrow().reader_evals, vec![webview::selection_ui_js()]);
         // Not on your own post (Posts shows it here too).
         view.update_in(cx, |v, window, cx| v.show_view(View::Posts, window, cx));
         settle(cx);

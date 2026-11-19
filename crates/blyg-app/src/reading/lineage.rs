@@ -554,7 +554,9 @@ impl MainView {
         // stub_of names your origin); your own pins fork from ⌘Y.
         let blyg = blyg || c.own;
         match act {
-            Act::Fork if c.own => Some("Yours forks from ⌘Y: Fork this pin, on a pinned version."),
+            Act::Fork if c.own => Some(crate::keymap::hint(
+                "Yours forks from ⌘Y: Fork this pin, on a pinned version.",
+            )),
             Act::Fork if !blyg => Some("Feed posts can't be forked."),
             Act::Fork => match s.pin {
                 Pin::Unknown | Pin::Looking => Some("Looking for a pinned version…"),

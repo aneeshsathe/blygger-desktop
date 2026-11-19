@@ -329,7 +329,7 @@ impl MainView {
         if let Some(s) = vm::followed(&url, &subs) {
             self.show_toast(
                 format!("Already following {}", s.title),
-                Some("Unfollow in Subscriptions (⇧⌘S)".into()),
+                Some(crate::keymap::hint("Unfollow in Subscriptions (⇧⌘S)").into()),
                 cx,
             );
             return;
@@ -446,7 +446,7 @@ impl MainView {
             vm::Button::AddToBlogroll => self.add_to_blogroll(follow, cx),
             vm::Button::InBlogroll => self.show_toast(
                 "Already in your blogroll",
-                Some("Change it in Subscriptions (⇧⌘S)".into()),
+                Some(crate::keymap::hint("Change it in Subscriptions (⇧⌘S)").into()),
                 cx,
             ),
             vm::Button::EditSite => {
