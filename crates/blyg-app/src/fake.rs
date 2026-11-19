@@ -1023,6 +1023,30 @@ impl Backend for FakeBackend {
         self.lock().book.contacts.clone()
     }
 
+    /// The book is in memory: nothing to fetch again.
+    fn refresh_contacts(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Subscriptions are in memory: nothing to read again.
+    fn refresh_subscriptions(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Keeps no Nearby vectors: the app embeds again each run.
+    fn put_nearby_vectors(
+        &self,
+        _: &str,
+        _: &[String],
+        _: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn retain_nearby_vectors(&self, _: &str, _: &std::collections::HashSet<String>) -> Result<()> {
+        Ok(())
+    }
+
     fn rewrites_handles(&self) -> bool {
         self.lock().book.rewrites
     }
@@ -2141,6 +2165,11 @@ impl Backend for FakeBackend {
             _ => {}
         }
         Ok(())
+    }
+
+    /// The fake shelf lives on this computer only.
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        blyg_core::shelf::SyncState::Local
     }
 
     // --- shelf sync --- yours (by server id), then others'.

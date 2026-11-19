@@ -583,112 +583,82 @@ fn not_connected<T>() -> Result<T> {
     Err(CoreError::Other("Connect your blyg first".into()))
 }
 
-impl Backend for Disconnected {
-    fn items(&self) -> Vec<Item> {
-        vec![]
-    }
-    fn search(&self, _: &str) -> Vec<Item> {
-        vec![]
-    }
-    fn item(&self, _: &LocalId) -> Option<Item> {
-        None
-    }
-    fn create_draft(&self, _: Kind, _: &str) -> Result<LocalId> {
-        not_connected()
-    }
-    fn save(&self, _: &LocalId, _: &str) -> Result<()> {
-        not_connected()
-    }
-    fn save_if_base(&self, _: &LocalId, _: &str, _: &str) -> Result<()> {
-        not_connected()
-    }
-    fn set_kind(&self, _: &LocalId, _: Kind) -> Result<()> {
-        not_connected()
-    }
+// `impl Backend for Disconnected`: build.rs writes it from the `Backend`
+// trait (`build_forwarding.rs`). A required method answers from its return
+// type (`Err` "Connect your blyg first", `None`, `false`, empty); a
+// defaulted one keeps the trait's default. The methods below are the
+// answers that differ, and the impl calls them instead.
+include!(concat!(env!("OUT_DIR"), "/disconnected.rs"));
+
+impl Disconnected {
+    /// Nothing to send: not "offline", not "conflict".
     fn sync_status(&self) -> SyncStatus {
         SyncStatus::Synced
     }
-    fn set_event_sink(&self, _: Box<dyn Fn(CoreEvent) + Send + Sync>) {}
-    fn resolve_conflict(&self, _: &LocalId, _: Resolution) -> Result<()> {
-        not_connected()
-    }
-    fn reading(&self) -> Vec<ReadingItem> {
-        vec![]
-    }
-    fn subscriptions(&self) -> Vec<Subscription> {
-        vec![]
-    }
-    fn publish(&self, _: &LocalId, _: Option<&str>) -> Result<PublishOutcome> {
-        not_connected()
-    }
-    fn withdraw(&self, _: &LocalId, _: Option<&str>) -> Result<u32> {
-        not_connected()
-    }
-    fn pin(&self, _: &LocalId, _: u32) -> Result<()> {
-        not_connected()
-    }
-    fn versions(&self, _: &LocalId) -> Result<Vec<Version>> {
-        Ok(vec![])
-    }
-    fn restore(&self, _: &LocalId, _: u32) -> Result<()> {
-        not_connected()
-    }
-    fn delete_draft(&self, _: &LocalId) -> Result<()> {
-        not_connected()
-    }
-    fn upload_media(
-        &self,
-        _: Vec<u8>,
-        _: &str,
-        _: Option<&LocalId>,
-        _: Option<&str>,
-    ) -> Result<MediaRef> {
-        not_connected()
-    }
-    fn fork(&self, _: &RemoteRef) -> Result<LocalId> {
-        not_connected()
-    }
-    fn set_responses(&self, _: &LocalId, _: ResponsesMode) -> Result<bool> {
-        not_connected()
-    }
-    fn set_highlight(&self, _: &LocalId, _: HighlightMode) -> Result<bool> {
-        not_connected()
-    }
-    fn fetch_own_media(&self, _: &str) -> Result<(Vec<u8>, Option<String>)> {
-        not_connected()
-    }
+    /// Nothing to pull: a sync succeeds at doing nothing.
     fn sync_now(&self) -> Result<()> {
         Ok(())
     }
-    fn preview_subscription(&self, _: &str) -> Result<SubscribePreview> {
-        not_connected()
-    }
-    fn subscribe(&self, _: &str, _: Option<&str>) -> Result<Subscription> {
-        not_connected()
-    }
-    fn unsubscribe(&self, _: &str) -> Result<()> {
-        not_connected()
-    }
-    fn set_subscription(&self, _: &str, _: Option<bool>, _: Option<&str>) -> Result<()> {
-        not_connected()
-    }
-    fn pause_subscription(&self, _: &str, _: bool) -> Result<()> {
-        not_connected()
-    }
-    fn signal(&self, _: &str, _: &str, _: Option<i8>) -> Result<()> {
-        not_connected()
+    /// No versions, no mentions: empty lists, not an error.
+    fn versions(&self, _: &LocalId) -> Result<Vec<Version>> {
+        Ok(vec![])
     }
     fn mentions(&self) -> Result<Vec<Mention>> {
         Ok(vec![])
     }
-    fn set_mention_hidden(&self, _: &str, _: bool) -> Result<()> {
+    /// Refused outright (the default would look the item up, then save).
+    fn save_if_base(&self, _: &LocalId, _: &str, _: &str) -> Result<()> {
         not_connected()
     }
-    fn settings(&self) -> Result<Settings> {
+    /// Never fetched (the default fetches anonymously over the network).
+    fn fetch_own_media(&self, _: &str) -> Result<(Vec<u8>, Option<String>)> {
         not_connected()
     }
-    fn save_settings(&self, _: &Settings) -> Result<()> {
-        not_connected()
+    /// Refreshing, clearing or marking nothing succeeds (there's nothing
+    /// held to change).
+    fn refresh_contacts(&self) -> Result<()> {
+        Ok(())
+    }
+    fn refresh_subscriptions(&self) -> Result<()> {
+        Ok(())
+    }
+    fn clear_browse(&self, _: Option<&str>) -> Result<()> {
+        Ok(())
+    }
+    fn mark_read(&self, _: &str, _: &str) -> Result<()> {
+        Ok(())
+    }
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+        if read {
+            Ok(rows.len())
+        } else {
+            Err(CoreError::Other(
+                "marking unread isn't supported here".into(),
+            ))
+        }
+    }
+    /// Keeps no Nearby vectors: the app embeds again each run.
+    fn put_nearby_vectors(
+        &self,
+        _: &str,
+        _: &[String],
+        _: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        Ok(())
+    }
+    fn retain_nearby_vectors(&self, _: &str, _: &std::collections::HashSet<String>) -> Result<()> {
+        Ok(())
+    }
+    /// Not known to be missing: the reading screens stay empty rather
+    /// than saying "not available on this server".
+    fn read_extensions_available(&self) -> bool {
+        true
+    }
+    fn provenance_available(&self) -> bool {
+        true
+    }
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        blyg_core::shelf::SyncState::Local
     }
 }
 

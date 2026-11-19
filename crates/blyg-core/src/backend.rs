@@ -190,9 +190,7 @@ pub trait Backend: Send + Sync {
         Vec::new()
     }
     /// --- contacts --- Fetch the address book again (blocking).
-    fn refresh_contacts(&self) -> Result<()> {
-        Ok(())
-    }
+    fn refresh_contacts(&self) -> Result<()>;
     /// --- contacts --- Whether publish rewrites `@handle` to a link here
     /// (contract 5.7, as last seen).
     fn rewrites_handles(&self) -> bool {
@@ -273,9 +271,7 @@ pub trait Backend: Send + Sync {
         Ok(None)
     }
     /// Read the subscriptions again now (their poll status), blocking.
-    fn refresh_subscriptions(&self) -> Result<()> {
-        Ok(())
-    }
+    fn refresh_subscriptions(&self) -> Result<()>;
     // --- end contacts ---
     /// --- capture --- A web page's `<title>`, fetched once with the
     /// token-less public client (blocking). `None`: not served, not HTML,
@@ -332,10 +328,7 @@ pub trait Backend: Send + Sync {
     fn sync_status(&self) -> SyncStatus;
     /// The blyg's origin (`https://blyg.example.com`, no trailing slash), for
     /// resolving relative `media/…` links. `None` when not connected.
-    /// Additive; the default says "unknown" so other implementors compile.
-    fn base_url(&self) -> Option<String> {
-        None
-    }
+    fn base_url(&self) -> Option<String>;
     /// Register the single event sink (called from a background thread).
     fn set_event_sink(&self, sink: Box<dyn Fn(CoreEvent) + Send + Sync>);
     fn resolve_conflict(&self, id: &LocalId, how: Resolution) -> Result<()>;
@@ -378,31 +371,16 @@ pub trait Backend: Send + Sync {
     }
     fn subscriptions(&self) -> Vec<Subscription>;
     /// Record that the user has seen the current version of a reading item
-    /// (and of any duplicates of the same post). Local only. Additive; the
-    /// default does nothing so other implementors keep compiling.
-    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
-        let _ = (sub_id, remote_id);
-        Ok(())
-    }
+    /// (and of any duplicates of the same post). Local only.
+    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()>;
 
     /// Mark many reading items (`(sub_id, remote_id)`, each with its
     /// duplicates) read at their current versions, or unread: a selection
     /// in the reading list, or all of it. Local and instant; on a server
     /// that syncs read state the change is queued for it (unread only when
     /// the server can clear read state; otherwise unread stays on this Mac).
-    /// Returns how many rows changed. Additive; the default marks read one
-    /// by one and refuses unread, so other implementors compile.
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
-        if !read {
-            return Err(CoreError::Other(
-                "marking unread isn't supported here".into(),
-            ));
-        }
-        for (s, r) in rows {
-            self.mark_read(s, r)?;
-        }
-        Ok(rows.len())
-    }
+    /// Returns how many rows changed.
+    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize>;
 
     // --- scratch notes ---
     // docs/SPEC.md § Scratch notes. Scratch items have `Status::Scratch`:
@@ -616,31 +594,22 @@ pub trait Backend: Send + Sync {
     /// The TK provenance tracked locally for an item, as `(keyed_to,
     /// scopes)`: one entry per scope of the text `keyed_to` (carry it to the
     /// current text with `tk::remap`). `None` = nothing tracked here.
-    fn tracked_tk_provenance(
-        &self,
-        id: &LocalId,
-    ) -> Option<(String, Vec<Option<ScopeProvenance>>)> {
-        let _ = id;
-        None
-    }
+    fn tracked_tk_provenance(&self, id: &LocalId)
+    -> Option<(String, Vec<Option<ScopeProvenance>>)>;
 
     /// False when the server can't record the AI provenance of text
     /// generated in the app (it would then publish without disclosure).
-    /// Every studio Burrow supports takes it with the text.
-    /// The default (and a backend that hasn't found out yet) says true.
-    fn provenance_available(&self) -> bool {
-        true
-    }
+    /// Every studio Burrow supports takes it with the text; a backend that
+    /// hasn't found out yet says true.
+    fn provenance_available(&self) -> bool;
 
     // --- reading ---
 
     /// False once the server has shown it lacks the owner reads (`GET
     /// /api/reading/imported` answered 404): the reading, mentions and
     /// site-settings screens then say "not available on this server" instead
-    /// of showing an empty list. Additive; the default says "available".
-    fn read_extensions_available(&self) -> bool {
-        true
-    }
+    /// of showing an empty list. True until then.
+    fn read_extensions_available(&self) -> bool;
 
     /// "Reply to a reading item": a local draft thread whose `stub_of` is
     /// `of` (spec: stubs are the reply shape), pushed like any draft. Local.
@@ -709,16 +678,12 @@ pub trait Backend: Send + Sync {
     /// The connected server is older than blygger-studio 0.49.12 (its
     /// private API contract isn't 5.x): nothing syncs until it's updated
     /// (`CoreEvent::ServerOutdated` says when first seen).
-    fn server_outdated(&self) -> bool {
-        false
-    }
+    fn server_outdated(&self) -> bool;
 
     /// Whether read state syncs with the server (`GET /api/reading`
     /// advertised `readState: true`; meta key `read_sync`).
-    /// For the About window. Additive; the default says no.
-    fn read_state_sync(&self) -> bool {
-        false
-    }
+    /// For the About window.
+    fn read_state_sync(&self) -> bool;
 
     /// Every profile fetched so far, one per origin, whatever its age.
     /// Local, no network (the composer's @-mentions read it). Additive.
@@ -788,13 +753,12 @@ pub trait Backend: Send + Sync {
     // --- shelf ---
     // Your own posts kept to hand at the top of the Write list, in your
     // order. Local only (this store), never sent to the blyg, and unrelated
-    // to pinning a version (public and permanent). Additive; the defaults
-    // shelve nothing and refuse changes, so implementors compile.
+    // to pinning a version (public and permanent). The reads are required
+    // (a wrapper that forgot them showed an empty shelf, 081edf3); the
+    // changes' defaults refuse them.
 
     /// The shelf in order (withdrawn posts left out).
-    fn shelf(&self) -> Vec<LocalId> {
-        Vec::new()
-    }
+    fn shelf(&self) -> Vec<LocalId>;
 
     /// Put a post on the shelf (at the end), or take it off. Idempotent.
     fn set_on_shelf(&self, id: &LocalId, on: bool) -> Result<()> {
@@ -814,9 +778,7 @@ pub trait Backend: Send + Sync {
     /// Everything on the shelf the blyg can name, in order: your posts it
     /// holds (`~own`, server id) and others' (subscription, remote id).
     /// Reading's Shelf lens lists these.
-    fn shelf_entries(&self) -> Vec<crate::shelf::Entry> {
-        Vec::new()
-    }
+    fn shelf_entries(&self) -> Vec<crate::shelf::Entry>;
 
     /// Put a post on the shelf (at the end) or take it off, by the reading
     /// row's key. Idempotent.
@@ -826,9 +788,7 @@ pub trait Backend: Send + Sync {
     }
 
     /// Whether the shelf syncs with the blyg, and whether a change waits.
-    fn shelf_state(&self) -> crate::shelf::SyncState {
-        crate::shelf::SyncState::Local
-    }
+    fn shelf_state(&self) -> crate::shelf::SyncState;
 
     // --- end shelf ---
 
@@ -1001,10 +961,7 @@ pub trait Backend: Send + Sync {
     }
 
     /// Clear one trail, or the whole log.
-    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
-        let _ = trail;
-        Ok(())
-    }
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()>;
 
     /// --- background --- The Background lens (studio 0.49.0): withdrawn
     /// posts only, the blygs you read (tombstones, signalled or not) newest
@@ -1026,9 +983,7 @@ pub trait Backend: Send + Sync {
 
     /// The studio's Background lens as last read (`None`: not served, or
     /// not read yet). Put it on rows with `BackgroundSet::annotate`. Local.
-    fn background_set(&self) -> Option<crate::background::BackgroundSet> {
-        None
-    }
+    fn background_set(&self) -> Option<crate::background::BackgroundSet>;
 
     /// The owner's choice on one row (`withdrawn`: a withdrawn post):
     /// Background, Foreground, or `None` to let the rules decide. Remote;
@@ -1126,11 +1081,8 @@ pub trait Backend: Send + Sync {
     /// --- conflicts --- An item already in conflict: (mine, theirs), the
     /// local text and the server's as last pulled, so the resolve sheet can
     /// be shown again after it was dismissed (issue #52). `None` when the
-    /// item isn't in conflict. Local, instant. Additive.
-    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
-        let _ = id;
-        None
-    }
+    /// item isn't in conflict. Local, instant.
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)>;
 
     // --- site --- The public site's settings Studio sets up (theme, font,
     // front page, links menus, avatar, collection feeds, update alerts,
@@ -1170,8 +1122,10 @@ pub trait Backend: Send + Sync {
     // --- end site ---
 
     // --- nearby --- Nearby thoughts' index and phrase search, local only
-    // (nothing here touches the network). Additive: the defaults keep no
-    // vectors (the app embeds again each run) and search in memory.
+    // (nothing here touches the network). The read's default finds no
+    // vectors (the app embeds again each run) and the search's runs in
+    // memory; the writes are required (a backend that keeps no vectors
+    // answers `Ok`).
 
     /// Every stored vector made by `model`.
     fn nearby_vectors(&self, model: &str) -> Vec<crate::nearby::NearbyVector> {
@@ -1185,20 +1139,14 @@ pub trait Backend: Send + Sync {
         model: &str,
         docs: &[String],
         rows: &[crate::nearby::NearbyVector],
-    ) -> Result<()> {
-        let _ = (model, docs, rows);
-        Ok(())
-    }
+    ) -> Result<()>;
 
     /// Keep only `model`'s vectors of the posts in `keep`.
     fn retain_nearby_vectors(
         &self,
         model: &str,
         keep: &std::collections::HashSet<String>,
-    ) -> Result<()> {
-        let _ = (model, keep);
-        Ok(())
-    }
+    ) -> Result<()>;
 
     /// The posts the rail may offer whose text contains each phrase, as
     /// `(doc key, phrase index)` (`crate::nearby`'s keys). The live
