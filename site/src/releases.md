@@ -5,6 +5,26 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.26.0
+
+A lighter Burrow: two experiments are gone, the writing screen can go quiet,
+and reading keeps fewer buttons in view.
+
+### Quiet writing
+
+**Settings › Quiet writing** (or View › Quiet Writing, or the palette) hides
+the lineage line under the editor, the loose-ends line over the list and
+Nearby thoughts, all at once. ⌘J still opens a post's lineage, the search's
+`is:` and `has:` filters still work, and ⌥⌘U opens Nearby for this sitting.
+It's off unless you turn it on. See [Quiet writing](writing.md#quiet-writing).
+
+### Removed
+
+- **#thicket chat** is gone: not enough people used it.
+- **The terminal pane** is gone until it's ready.
+- If your [config file](config.md) still sets `chat-tab`, `terminal` or
+  their other keys, Burrow ignores those lines quietly.
+
 ## Burrow 0.25.1
 
 A quieter, quicker release: Burrow does less on the UI thread while you read,
