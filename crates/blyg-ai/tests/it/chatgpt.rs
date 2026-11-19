@@ -91,6 +91,8 @@ fn streams_with_codex_headers_and_body() {
     assert_eq!(r.header("openai-beta"), Some("responses=experimental"));
     assert_eq!(r.header("originator"), Some(chatgpt::ORIGINATOR));
     assert_eq!(r.header("accept"), Some("text/event-stream"));
+    // A stream asks for no compression (`http::SSE_ENCODING`).
+    assert_eq!(r.header("accept-encoding"), Some("identity"));
     let b = r.json();
     assert_eq!(b["store"], false);
     assert_eq!(b["stream"], true);

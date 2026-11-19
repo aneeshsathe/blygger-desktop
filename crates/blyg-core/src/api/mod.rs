@@ -1758,3 +1758,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod compress_tests;

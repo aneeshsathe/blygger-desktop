@@ -36,7 +36,7 @@ The full text of both licenses is in `crates/blyg-app/assets/icons/LICENSE`.
 
 ## Rust crates
 
-The binary statically links about 602 crates (counting the aarch64 and x86_64
+The binary statically links about 605 crates (counting the aarch64 and x86_64
 builds together). `packaging/rust-dependencies.tsv` lists each one with its
 version, license and repository. To regenerate it:
 
@@ -54,7 +54,7 @@ The licenses in use (crate counts):
 | Apache-2.0 OR MIT OR Zlib | 29 |
 | Apache-2.0 (including GPUI) | 25 |
 | Unicode-3.0 | 18 |
-| BSD-3-Clause (including `lol_html`) | 12 |
+| BSD-3-Clause (including `lol_html`) | 14 |
 | MIT OR Unlicense | 8 |
 | Zlib | 7 |
 | BSD-2-Clause | 4 |

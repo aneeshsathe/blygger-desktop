@@ -90,6 +90,7 @@ impl Provider for CloudflareWorkersAi {
             .set("authorization", &format!("Bearer {}", self.api_token))
             .set("content-type", "application/json")
             .set("accept", "text/event-stream")
+            .set("accept-encoding", crate::http::SSE_ENCODING)
             .send_json(self.body(&req))
             .map_err(|e| http::map_err("Cloudflare Workers AI", e))?;
 

@@ -614,6 +614,7 @@ impl ChatGptAccount {
             )
             .set("openai-beta", "responses=experimental")
             .set("accept", "text/event-stream")
+            .set("accept-encoding", crate::http::SSE_ENCODING)
             .set("content-type", "application/json")
             .send_json(body.clone())
     }
