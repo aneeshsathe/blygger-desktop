@@ -53,6 +53,8 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Demo scene registry** (`scenes.rs`): 171 scenes plus the tour families named once; handlers match enum variants; an unknown `BLYGGER_DEMO` exits with near matches; `blygger +scenes` feeds the verify script.
 - **The reading walk is a pure step machine** (`walk::Read`) with a proptest model of the studio's reading list (`walk_model_tests.rs`); it found that a 1-page budget could starve a walk behind a 409, now fixed (every pull gets at least 2 page requests). docs/SERVER.md has its statechart.
 - **The sleep ban covers blyg-core, blyg-ai and `blyg-ext*`**, through one reviewed `blyg_core::wait` module.
+- **Sheets are one module** (`sheet/`): each of the 20 sheets owns its state, keys and render behind one dispatch; the enum is private, so matching a sheet kind elsewhere doesn't compile (236 scattered matches removed).
+- **The disconnected backend is generated** from the `Backend` trait, like `SwitchBackend`; 18 defaults that could hide a missing implementation (writes, read marks, sync flags, shelf reads) are now required.
 - **Crate boundaries are a test** (`crate_graph.rs`): GPUI and blyg-app only in blyg-app; each crate depends only on what its runtime allows.
 - **Platform wording is checked:** UI text is built through `keymap::hint` / `platform_text::Text`; a scan fails on bare ⌘ ⌥ ⇧ ⌃ (it found about 70 that Windows showed as Mac glyphs, now fixed). Windows key tables are tested for AltGr characters and clashes, and tour captions for real keys, menu items and labels.
 
