@@ -35,6 +35,48 @@ reading pane, under the browser's own bar (back, forward, reload, address,
 header and the chips. j/k still move through posts and Space still pages
 down. It works on Windows now too, instead of opening your default browser.
 
+### Mark all read, and one unread number
+
+- **Mark All Read…** for the source you're looking at: ⇧R on the reading
+  screen, Blyg › Mark All Read…, a source's menu, or the palette. It asks
+  first ("Mark 37 posts in Rue read?"), never touches your own posts, and
+  syncs like any read mark. With a search, it covers what the search shows.
+- The list's header, **All unread** and the status bar now count the same
+  thing: posts you haven't read, or that changed since you read them, outside
+  Background.
+- **Posting from the box in Reading waits 3 seconds**: "Posting in 3 s · esc
+  cancels · ⌘⏎ posts now". Esc, Cancel or an edit stops it before anything
+  is sent.
+- Searching the Stream marks the matches and says how many it found.
+
+### Plainer words
+
+- **Reply** is just Reply: no more "new stub". Responses say "replied to
+  this", and a reply's line says "↳ reply to".
+- The **Mentions** tab is now **Responses**: who quoted, replied to or forked
+  your posts. Mentions is still a source in Reading, for posts that name you.
+- One control per post for its responses: **On the post's page: Show · Hide
+  · Site default**.
+- The loose-ends line says "posts not linked yet" and "threads with outdated
+  quotes", explains each on hover, and leaves posts younger than a week alone
+  (so does `is:orphan`).
+- **⋯ More** shows each item's key. The shelf is "Add to Shelf / Remove from
+  Shelf" everywhere. Discover says "high activity"; Stale Quotes names the
+  quoted post instead of an id.
+
+### Getting started
+
+- The Welcome card says what a blyg is and where to get one, and that you
+  can try Burrow on sample data first.
+- If you skip setup, the empty list offers **⏎ Connect your blyg… · try
+  sample data**, "not connected" in the status bar opens Connect, and
+  **Burrow › Connect…** is always in the menu.
+- Connect states the blygger-studio version Burrow really needs (0.49.12 or
+  later).
+- Your first publish says the post goes public at your blyg's address, and
+  that published posts can be withdrawn, not deleted.
+- The Reading tour has a step for **⋯ More**.
+
 ### Removed
 
 - **#thicket chat** is gone: not enough people used it.

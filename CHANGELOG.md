@@ -18,11 +18,21 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ### Added
 - **Desktop: Quiet writing** (`quiet-writing = true`, Settings, View › Quiet Writing, the palette). It hides the lineage line, the loose-ends line and Nearby thoughts together, and stops their background work. ⌘J still opens lineage, the omnibar's `is:`/`has:` operators still filter, and ⌥⌘U opens Nearby for the sitting without changing the saved layout. It's off by default. There's a new Writing-tour step (`quiet-writing`). ⌘J on a draft no longer misses its first press while the line is being built.
+- **Reading: Mark All Read…** for a source (⇧R on the reading screen, Blyg › Mark All Read…, a subscription's, folder's or hopper's menu, the sources menu, the palette). It confirms with the count, skips your own posts, sends one `set_read` batch (synced via `reading:state`), and with a search covers what's shown.
+- **Reading: a 3-second hold before the Reading compose box posts** ("Posting in 3 s · esc cancels · ⌘⏎ posts now"); esc, Cancel or an edit stops it before anything is sent.
+- **Burrow › Connect…** in the menu and palette; after skipping setup, the empty list offers Connect and sample data, and the status bar's "not connected" opens Connect.
+- **Tour: `more-menu`**, a 0.26.0 Reading step on ⋯ More; the author's-site and compose captions are updated.
 - **Config: retired keys load quietly.** A removed key (`chat-*`, `terminal*`) in the config file is skipped with no warning and no typo hint.
 
 ### Changed
 - **Reading: one row of chips under an open post.** Quote, Reply, Catch up and Background/Foreground stay in the row. Hopper, Add to shelf, Add to trail (new as a menu item), Fork, Link post, AI reply, Open on web, → Notes, Clear my choice and the whole-blyg moves are under **⋯ More**. Keys are unchanged. The Stream uses the same grouping. reading.md gains "Which one do I use?".
 - **Reading: the author's site takes the whole reading pane**, under the browser pane's own toolbar (back, forward, reload, address, shields, open in browser), instead of sitting between Burrow's header and the chips. It's still a separate web view of the browser's kind, so links set to open in the app still use the slide-over. Windows now docks it too (WebView2), where it used to open the default browser.
+
+- **Reading: one unread number.** The list header, All unread and the status bar all count posts never read or edited since read, outside Background and not held only by a hopper (`ReadingItem::to_read`, `Store::unread_count`).
+- **Plain labels** (from a usability review): Reply / AI reply instead of "· new stub"; "replied to this", "↳ reply to"; the Mentions tab is now **Responses** (Reading's Mentions source keeps its name); one "On the post's page: Show · Hide · Site default" control; Add to Shelf / Remove from Shelf everywhere; ⋯ More shows each item's key; Discover's "high activity"; Stale Quotes names the quoted post; the Reply hint says "Write your reply below the quote"; Settings' Quiet writing text is plainer.
+- **Loose ends** say "posts not linked yet" and "threads with outdated quotes", with a tooltip each; posts younger than 7 days don't count, for the line and for `is:orphan`.
+- **Stream search** marks matches and shows "N found · esc clears"; in the Stream's side pane 👍👎 stay at the right of the chips and the post title is a heading.
+- **Getting started:** the Welcome card explains what a blyg is (blygger.org) and offers sample data; Connect, setup, About and server notices take the studio floor from `MIN_STUDIO` (0.49.12), with a test against stale floors in the UI and docs; the first publish says the post goes public and can be withdrawn, not deleted.
 
 ### Removed
 - **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.
