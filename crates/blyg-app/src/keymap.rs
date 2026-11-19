@@ -1185,7 +1185,8 @@ pub const WINDOWS_KEYLESS: &[&str] = &["DiscardChanges"];
 /// `action` has no key on this platform although the table gives it one
 /// (`WINDOWS_KEYLESS`).
 pub fn keyless_here(action: &str) -> bool {
-    cfg!(target_os = "windows") && WINDOWS_KEYLESS.contains(&action)
+    crate::platform_text::Platform::HERE == crate::platform_text::Platform::Windows
+        && WINDOWS_KEYLESS.contains(&action)
 }
 
 /// The `WINDOWS_KEYLESS` rows without their key: menu (and button) only.
@@ -1299,7 +1300,7 @@ pub fn hint(text: &'static str) -> &'static str {
 
 /// `hint` for text built at runtime (`format!`).
 pub fn hint_owned(text: String) -> String {
-    if cfg!(target_os = "windows") {
+    if crate::platform_text::Platform::HERE == crate::platform_text::Platform::Windows {
         windows_hint(&text)
     } else {
         text
@@ -1778,7 +1779,7 @@ pub fn list() -> String {
             glyphs(k.key),
             k.action,
             place,
-            k.label
+            hint(k.label)
         );
         if let Some(m) = k.menu {
             line.push_str(&format!("  [{m}]"));

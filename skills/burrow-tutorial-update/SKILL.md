@@ -13,8 +13,7 @@ tour is a release checklist item, not an afterthought.
 1. **Docs:** a section in the relevant `site/src/*.md` page and a paragraph in
    `docs/SPEC.md` in its dense style (file names, keys, rules).
 2. **Tour:** a step in `crates/blyg-app/src/onboarding/steps.rs` that lands on
-   the feature (the quick tour, or the matching feature tour), with
-   platform-correct key captions (`keymap::hint`).
+   the feature (the quick tour, or the matching feature tour).
 3. **Existing steps:** audit every step whose UI, keys or behaviour changed
    and edit it; don't only add new ones.
 4. **What's new:** if the tour teaches something new, set the newest entry's

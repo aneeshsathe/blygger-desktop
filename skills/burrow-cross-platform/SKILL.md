@@ -10,8 +10,10 @@ took four CI rounds to go green there. Check these before pushing.
 
 ## Keys and menus
 
-- Captions go through `keymap::hint` (⌘ on macOS, Ctrl on Windows); no
-  hard-coded ⌘ in user-facing text, tooltips, tour steps or docs.
+- App text is written in macOS terms and respelled for Windows by
+  `keymap::hint` / `platform_text::Text` (a test fails on any other literal
+  glyph). Text Windows says differently, not just with other keys, is
+  `ui_text_per_platform(mac, windows)`, never a `cfg!(target_os)` branch.
 - **AltGr is Ctrl+Alt on Windows**, so Ctrl+Alt+letter shortcuts eat
   characters on many keyboard layouts. Use `WINDOWS_OVERRIDES` for a different
   binding.

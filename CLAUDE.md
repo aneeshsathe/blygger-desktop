@@ -39,3 +39,4 @@ Rules with an enforcer (a new row needs a check shown failing on a real past ins
 | `site/src/generated/*` match the keymap and config keys | `keymap_docs.rs`, `blyg-core/tests/it/config_docs.rs` |
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
+| UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |

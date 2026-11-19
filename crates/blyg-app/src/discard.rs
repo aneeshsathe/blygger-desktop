@@ -55,7 +55,7 @@ impl MainView {
             return None;
         }
         if self.reading.view != reading::View::Posts {
-            self.show_toast(crate::keymap::hint(toolbar::NEED_POSTS), None, cx);
+            self.show_toast(toolbar::NEED_POSTS.get(), None, cx);
             return None;
         }
         if self.current.is_none() {
@@ -407,7 +407,9 @@ impl MainView {
 /// The toast's second line when the blyg keeps a discarded post marked
 /// unpublished, as upstream does when v`version` disclosed generated text.
 pub(crate) fn still_unpublished(version: u32, next: u32) -> String {
-    format!("Still marked unpublished: v{version} has generated text. ⌘⏎ publishes it as v{next}")
+    crate::keymap::hint_owned(format!(
+        "Still marked unpublished: v{version} has generated text. ⌘⏎ publishes it as v{next}"
+    ))
 }
 
 #[cfg(test)]

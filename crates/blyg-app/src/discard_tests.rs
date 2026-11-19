@@ -396,7 +396,7 @@ fn discard_changes_says_why_not(cx: &mut TestAppContext) {
     cx.dispatch_action(super::DiscardChanges);
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
-    let not_published = crate::keymap::hint(crate::vm::DISCARD_NOT_PUBLISHED);
+    let not_published = crate::vm::DISCARD_NOT_PUBLISHED.get();
     assert_eq!(toast(&view, cx), not_published);
     assert_eq!(button(&view, cx).reason.as_deref(), Some(not_published));
     // The published post, clean.

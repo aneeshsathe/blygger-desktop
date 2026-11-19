@@ -1779,7 +1779,7 @@ impl MainView {
         let title = match (end_card, pick) {
             (true, Pick::Feature(n)) => format!("That's {}", TOURS[n].title),
             (true, Pick::News) => "That's what's new".to_string(),
-            _ => crate::keymap::hint(step.title).to_string(),
+            _ => step.title.get().to_string(),
         };
         let tour_name = match pick {
             Pick::News => "WHAT'S NEW".to_string(),
@@ -1789,7 +1789,7 @@ impl MainView {
         };
         let buttons = super::show_buttons(cx);
         let hotkey = crate::prefs::hotkey_glyphs(&self.prefs.hotkey);
-        let caption = crate::keymap::hint(step.caption).replace("{hotkey}", &hotkey);
+        let caption = step.caption.get().replace("{hotkey}", &hotkey);
 
         let ring = |(x, y, w, h): (f32, f32, f32, f32), id: &'static str, strong: bool| {
             div()
@@ -1866,12 +1866,12 @@ impl MainView {
                 .gap(px(7.))
                 .text_color(p.muted)
                 // "Press ⌘T", but "Your turn: click" for what isn't a key.
-                .child(if matches!(step.key_label, "type" | "click") {
+                .child(if matches!(step.key_label.get(), "type" | "click") {
                     "Your turn:"
                 } else {
                     "Press"
                 })
-                .child(kbd(crate::keymap::hint(step.key_label).to_string()))
+                .child(kbd(step.key_label.get().to_string()))
                 .into_any_element()
         };
 

@@ -111,10 +111,12 @@ pub struct Facts<'a> {
     pub restoring: bool,
 }
 
-pub const NEED_POSTS: &str = "Back to Posts first (⌘L)";
+pub const NEED_POSTS: crate::platform_text::Text =
+    crate::platform_text::ui_text("Back to Posts first (⌘L)");
 pub const NEED_POST: &str = "Select a post first";
 pub const CLOSE_SHEET: &str = "Close the sheet first (esc)";
-pub const TOO_LONG: &str = "Too long for a fragment. ⌘T makes it a thread";
+pub const TOO_LONG: crate::platform_text::Text =
+    crate::platform_text::ui_text("Too long for a fragment. ⌘T makes it a thread");
 pub const NEED_AI: &str = "Enable AI in Settings › AI accounts";
 pub const NOT_SCRATCH: &str = "Make draft is for scratch notes";
 pub const ALREADY_WITHDRAWN: &str = "Already withdrawn";
@@ -140,7 +142,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
         if f.sheet_open {
             Some(CLOSE_SHEET.into())
         } else if !posts {
-            Some(crate::keymap::hint(NEED_POSTS).into())
+            Some(NEED_POSTS.get().into())
         } else {
             r
         }
@@ -166,7 +168,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
                     return Some("Publishing…".into());
                 }
                 match vm::publish_decision(i) {
-                    PublishDecision::Shake => Some(crate::keymap::hint(TOO_LONG).into()),
+                    PublishDecision::Shake => Some(TOO_LONG.get().into()),
                     PublishDecision::Empty => Some("Nothing to publish yet".into()),
                     PublishDecision::AlreadyPublished(v) => {
                         Some(format!("Already published as v{v}, with no edits since"))

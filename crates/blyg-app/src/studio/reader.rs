@@ -708,8 +708,8 @@ impl MainView {
                 // --- selection --- the pill by a selection, for someone
                 // else's post (not your own, shown here from Posts).
                 if self.reader_selection_ui() {
-                    let js = webview::SELECTION_UI_JS;
-                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(js));
+                    let js = webview::selection_ui_js();
+                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(&js));
                 }
                 if std::env::var_os("BLYGGER_TIMING").is_some() {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());

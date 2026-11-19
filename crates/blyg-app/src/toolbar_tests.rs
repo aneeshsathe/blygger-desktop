@@ -53,7 +53,7 @@ fn publish_on_an_over_limit_fragment_says_thread() {
     assert!(long.over_limit());
     assert_eq!(
         reason("Publish", &facts(Some(&long))).as_deref(),
-        Some(crate::keymap::hint(TOO_LONG))
+        Some(TOO_LONG.get())
     );
     // The same text as a thread publishes.
     long.kind = Kind::Thread;
@@ -195,7 +195,7 @@ fn screens_sheets_views_and_capture() {
     for a in ["NewDraft", "Publish", "ViewWrite", "AiGenerate"] {
         assert_eq!(
             reason(a, &reading).as_deref(),
-            Some(crate::keymap::hint(NEED_POSTS)),
+            Some(NEED_POSTS.get()),
             "{a}"
         );
     }
@@ -441,7 +441,7 @@ fn disabled_reasons_in_the_window(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(
         button(&view, "Publish", cx).reason.as_deref(),
-        Some(crate::keymap::hint(TOO_LONG))
+        Some(TOO_LONG.get())
     );
     assert!(
         button(&view, "MakeDraft", cx)

@@ -811,8 +811,13 @@ impl MainView {
                     .when(!back, |d| d.opacity(0.45))
                     .child("‹ back")
                     .tooltip(|_, cx| {
-                        cx.new(|_| super::Tip("Back along the links you followed · ⌘[".into()))
-                            .into()
+                        cx.new(|_| {
+                            super::Tip(
+                                crate::keymap::hint("Back along the links you followed · ⌘[")
+                                    .into(),
+                            )
+                        })
+                        .into()
                     }),
             )
             .children(crumbs.into_iter().enumerate().map(|(i, c)| {
@@ -847,7 +852,7 @@ impl MainView {
                     .when(self.reading.browse.history_open, |d| d.text_color(p.accent))
                     .child("history")
                     .tooltip(|_, cx| {
-                        cx.new(|_| super::Tip("Browsing history · ⇧⌘H".into()))
+                        cx.new(|_| super::Tip(crate::keymap::hint("Browsing history · ⇧⌘H").into()))
                             .into()
                     })
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_browse_history(cx))),

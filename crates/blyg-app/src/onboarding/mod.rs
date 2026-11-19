@@ -724,10 +724,12 @@ impl MainView {
                         .flex_col()
                         .gap(px(10.))
                         .child(para(
-                            "Burrow is keyboard-first. A quiet toolbar can show the main actions \
-                             as buttons too, and every button's tooltip teaches its key. You can \
-                             change this in Settings (⌘,)."
-                                .into(),
+                            crate::keymap::hint(
+                                "Burrow is keyboard-first. A quiet toolbar can show the main \
+                                 actions as buttons too, and every button's tooltip teaches its \
+                                 key. You can change this in Settings (⌘,).",
+                            )
+                            .into(),
                         ))
                         .children(
                             f.message

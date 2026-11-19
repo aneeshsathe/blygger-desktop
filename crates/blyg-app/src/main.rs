@@ -32,6 +32,7 @@ mod keymap;
 mod keymap_docs;
 mod ornament; // --- themes ---
 mod platform;
+mod platform_text;
 mod prefs;
 mod settings;
 #[cfg(test)]

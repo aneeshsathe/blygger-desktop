@@ -416,15 +416,19 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         // --- notes ---
         "Notes" if cx.blyg => on(
             "→ Notes",
-            "Adds this post to your notes drawer (![[…]]), or quotes the passage \
-             you selected in it. ⇧⌘N opens the notes."
-                .into(),
+            crate::keymap::hint(
+                "Adds this post to your notes drawer (![[…]]), or quotes the passage \
+                 you selected in it. ⇧⌘N opens the notes.",
+            )
+            .into(),
         ),
         "Notes" => on(
             "→ Notes",
-            "Adds a link to this post to your notes drawer, or quotes the passage \
-             you selected in it. ⇧⌘N opens the notes."
-                .into(),
+            crate::keymap::hint(
+                "Adds a link to this post to your notes drawer, or quotes the passage \
+                 you selected in it. ⇧⌘N opens the notes.",
+            )
+            .into(),
         ),
         // --- hoppers ---
         "Hopper" => on(
@@ -449,9 +453,11 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         // --- catch up --- shown only when the post draws on something.
         "Catch up" => on(
             "Catch up",
-            "Lays out the conversation that leads to this post, oldest first, \
-             each post in its own words (⇧C). Nothing is fetched or sent."
-                .into(),
+            crate::keymap::hint(
+                "Lays out the conversation that leads to this post, oldest first, \
+                 each post in its own words (⇧C). Nothing is fetched or sent.",
+            )
+            .into(),
         ),
         // --- quote targets --- a post shown without a subscription.
         "Subscribe" => on(
@@ -698,7 +704,8 @@ pub enum OwnAction {
 }
 
 /// The tooltip on a greyed "Fork this pin" of your own.
-pub const OWN_FORK_NEEDS_PIN: &str = "Pin one in ⌘Y to fork it";
+pub const OWN_FORK_NEEDS_PIN: crate::platform_text::Text =
+    crate::platform_text::ui_text("Pin one in ⌘Y to fork it");
 
 impl OwnAction {
     pub fn label(self, v: u32) -> String {
@@ -718,7 +725,7 @@ impl OwnAction {
                 "Makes a new draft of yours from 📌 v{v}'s text, recorded as forked from it \
                  (forked_from, naming your own blyg)."
             ),
-            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.into(),
+            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.get().into(),
             _ => String::new(),
         }
     }
@@ -1222,7 +1229,10 @@ mod tests {
                 }
                 (false, false) => {
                     assert!(list.contains(&OwnAction::ForkNeedsPin));
-                    assert_eq!(OwnAction::ForkNeedsPin.tip(version), OWN_FORK_NEEDS_PIN);
+                    assert_eq!(
+                        OwnAction::ForkNeedsPin.tip(version),
+                        OWN_FORK_NEEDS_PIN.get()
+                    );
                 }
                 (false, true) => assert!(list.is_empty(), "{list:?}"),
             }

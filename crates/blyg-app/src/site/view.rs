@@ -193,7 +193,7 @@ impl MainView {
                                 cx.listener(|this, _, window, cx| this.save_site(window, cx)),
                             ),
                     )
-                    .child(self.site_key("⌘⏎", "save"))
+                    .child(self.site_key(crate::keymap::hint("⌘⏎"), "save"))
                     .child(self.site_key("esc", "close"))
                     .child(div().flex_1())
                     .child(if s.saved && !dirty {

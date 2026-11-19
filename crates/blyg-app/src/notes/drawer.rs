@@ -59,7 +59,8 @@ pub(crate) enum Fallback {
 }
 
 /// The footer while a passage is selected in the notes (a click quotes it).
-pub const QUOTE_HINT: &str = "⇧⌘D quotes the selection in your draft";
+pub const QUOTE_HINT: crate::platform_text::Text =
+    crate::platform_text::ui_text("⇧⌘D quotes the selection in your draft");
 
 /// The script that reads the selection (the result comes back as JSON).
 pub const SELECTION_JS: &str =
@@ -875,7 +876,7 @@ impl MainView {
                     .child(
                         chip(
                             "notes-draft",
-                            "⌘D → draft",
+                            crate::keymap::hint("⌘D → draft"),
                             "Make these notes a draft on your blyg (the drawer starts a new page)",
                         )
                         .on_click(
@@ -961,7 +962,7 @@ impl MainView {
                         .cursor_pointer()
                         .text_color(p.accent_text())
                         .hover(|s| s.underline())
-                        .child(QUOTE_HINT)
+                        .child(QUOTE_HINT.get())
                         .on_click(cx.listener(|this, _, window, cx| {
                             if let Some((sel, source)) = this.notes_selected_passage(cx) {
                                 this.quote_into_draft(sel, source, window, cx);

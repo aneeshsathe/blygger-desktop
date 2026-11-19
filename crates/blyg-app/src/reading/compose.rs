@@ -70,7 +70,8 @@ gpui_kit::actions!(
 );
 
 /// The empty box's prompt.
-pub const PLACEHOLDER: &str = "What's on your mind?  (c or ⇧⌘K)";
+pub const PLACEHOLDER: crate::platform_text::Text =
+    crate::platform_text::ui_text("What's on your mind?  (c or ⇧⌘K)");
 
 /// The box grows to this many lines, then scrolls.
 pub const MAX_ROWS: usize = 8;
@@ -92,7 +93,7 @@ pub(crate) struct Hold {
 /// The footer's line while a post waits: "Posting in 3 s · esc cancels ·
 /// ⌘⏎ posts now".
 pub fn hold_line(left: u32) -> String {
-    format!("Posting in {left} s · esc cancels · ⌘⏎ posts now")
+    crate::keymap::hint_owned(format!("Posting in {left} s · esc cancels · ⌘⏎ posts now"))
 }
 
 /// The compose box's state (a field of `reading::State`). The editor is
@@ -274,7 +275,7 @@ impl MainView {
             TextareaState::new(window, cx)
                 .auto_grow(1, MAX_ROWS)
                 .soft_wrap(true)
-                .placeholder(crate::keymap::hint(PLACEHOLDER))
+                .placeholder(PLACEHOLDER.get())
         });
         let kept = load_draft(self.reading.compose.data_dir.as_deref());
         if !kept.is_empty() {
