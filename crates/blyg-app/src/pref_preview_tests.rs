@@ -14,9 +14,9 @@ use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 use super::MainView;
 use super::pref_preview::{Pick, Row};
 use crate::app::toolbar::tests::scroll_into_view;
-use crate::test_wait::still as settled_bounds;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
+use crate::test_wait::still as settled_bounds;
 
 const CONNECTED: &str = "# test config\nblyg-url = https://blyg.example.com\n";
 
