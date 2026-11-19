@@ -304,15 +304,17 @@ fn the_row_menu_and_the_chip_offer_hopper(cx: &mut TestAppContext) {
     );
     assert!(members_of(&fake, "sub-rue", RUE_TRUST).is_empty());
 
-    // The reading pane's chip.
+    // The reading pane's "⋯ More" menu (no longer a chip in the row).
     open(&view, ("sub-rue", RUE_TRUST), cx);
-    let chips: Vec<String> = view.read_with(cx, |v, _| {
-        v.reading_action_chips()
-            .into_iter()
-            .map(|c| c.label)
-            .collect()
+    let (row, more): (Vec<String>, Vec<String>) = view.read_with(cx, |v, _| {
+        let (row, _) = v.reading_chip_rows();
+        (
+            row.into_iter().map(|c| c.label).collect(),
+            v.post_more_items().into_iter().map(|(l, _, _)| l).collect(),
+        )
     });
-    assert!(chips.contains(&"Hopper ›".to_string()), "{chips:?}");
+    assert!(!row.contains(&"Hopper ›".to_string()), "{row:?}");
+    assert!(more.contains(&"Hopper ›".to_string()), "{more:?}");
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Hopper", window, cx)
     });

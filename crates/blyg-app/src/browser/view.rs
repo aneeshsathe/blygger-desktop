@@ -258,12 +258,18 @@ impl Browser {
 
     /// Blocking applies to the current page.
     pub fn blocking_here(&self) -> bool {
+        self.blocking_at(&self.page.url)
+    }
+
+    /// Blocking applies to `url` (--- reader view --- the author's-site
+    /// view's 🛡 shows the same shields).
+    pub fn blocking_at(&self, url: &str) -> bool {
         super::blocking_available()
             && super::blocking_applies_in_run(
                 self.global.get(),
                 &self.unblocked.borrow(),
                 &self.automation.run_unblocked.borrow(),
-                &self.page.url,
+                url,
             )
     }
 
@@ -306,6 +312,103 @@ impl Browser {
     pub fn selection(&self, reply: async_channel::Sender<String>) -> bool {
         self.open && self.with(|s| s.selection(reply)).is_some()
     }
+}
+
+// ---------------------------------------------------------------- the chrome
+
+/// One of the chrome's buttons (←, →, ↻, 🛡, ↗, …), shared by the pane and
+/// the author's-site view docked in the reading pane.
+pub(crate) fn chrome_button(
+    p: &Palette,
+    id: &'static str,
+    label: &'static str,
+    enabled: bool,
+    tip: impl Into<SharedString>,
+) -> Stateful<Div> {
+    let tip: SharedString = tip.into();
+    div()
+        .id(id)
+        .debug_selector(move || id.into()) // --- notes --- (tests)
+        .flex_none()
+        .px(px(7.))
+        .h(px(24.))
+        .flex()
+        .items_center()
+        .rounded(px(5.))
+        .text_size(px(13.))
+        .text_color(if enabled { p.ink } else { p.muted.opacity(0.5) })
+        .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover())))
+        .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.to_string())).into())
+        .child(label)
+}
+
+/// The address: the page's title (else its address) and its host.
+pub(crate) fn chrome_address(p: &Palette, id: &'static str, pg: &PageState) -> Stateful<Div> {
+    let host = super::host_of(&pg.url).unwrap_or_default();
+    let label = super::display_label(&pg.title, &pg.url);
+    div()
+        .id(id)
+        .debug_selector(move || id.into())
+        .flex_1()
+        .min_w_0()
+        .h(px(26.))
+        .px(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .rounded(px(6.))
+        .bg(p.panel())
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .overflow_hidden()
+                .whitespace_nowrap()
+                .text_ellipsis()
+                .text_size(px(12.5))
+                .text_color(p.ink)
+                .child(label),
+        )
+        .when(!host.is_empty() && !pg.title.trim().is_empty(), |d| {
+            d.child(
+                div()
+                    .flex_none()
+                    .text_size(px(11.5))
+                    .text_color(p.muted)
+                    .child(host),
+            )
+        })
+}
+
+/// The chrome's bar, with the load's progress along its foot.
+pub(crate) fn chrome_bar(p: &Palette, id: &'static str, pg: &PageState) -> Stateful<Div> {
+    let progress = if pg.loading {
+        pg.progress.clamp(0.05, 1.0)
+    } else {
+        0.0
+    };
+    div()
+        .id(id)
+        .relative()
+        .flex_none()
+        .h(px(CHROME_H))
+        .px(px(8.))
+        .flex()
+        .items_center()
+        .gap(px(2.))
+        .bg(p.bg)
+        .rule_b(p)
+        .when(progress > 0.0, |d| {
+            d.child(
+                div()
+                    .absolute()
+                    .left_0()
+                    .bottom_0()
+                    .h(px(2.))
+                    .w(relative(progress as f32))
+                    .bg(p.accent),
+            )
+        })
 }
 
 impl MainView {
@@ -834,8 +937,22 @@ impl MainView {
     /// 🛡: blocking off (or back on) for this page's host, remembered in
     /// `state.json`; the page reloads under the new setting.
     pub(crate) fn browser_toggle_shield(&mut self, cx: &mut Context<Self>) {
-        let Some(host) = super::host_of(&self.browser.page.url) else {
+        let url = self.browser.page.url.clone();
+        if !self.browser_toggle_shield_for(&url, cx) {
             return;
+        }
+        self.browser.page.loading = true;
+        self.browser_poll(cx);
+        cx.notify();
+    }
+
+    /// --- reader view --- 🛡 for `url`'s host, shared by the pane and the
+    /// author's-site view (one set of shields): the set and `state.json`
+    /// change, and the pane's page reloads under it. False when nothing
+    /// changed (no host, or blocking off in the config, which is said).
+    pub(crate) fn browser_toggle_shield_for(&mut self, url: &str, cx: &mut Context<Self>) -> bool {
+        let Some(host) = super::host_of(url) else {
+            return false;
         };
         if !self.browser.global.get() {
             self.show_toast(
@@ -843,7 +960,7 @@ impl MainView {
                 Some("content-blocking = true turns it on".into()),
                 cx,
             );
-            return;
+            return false;
         }
         let hosts: Vec<String> = {
             let mut set = self.browser.unblocked.borrow_mut();
@@ -859,9 +976,7 @@ impl MainView {
             s.refresh_blocking();
             s.reload();
         });
-        self.browser.page.loading = true;
-        self.browser_poll(cx);
-        cx.notify();
+        true
     }
 
     /// "→ Notes": `[title](url)` for the page into the notes drawer (or
@@ -1256,20 +1371,7 @@ impl MainView {
         };
         let pg = &b.page;
         let button = |id: &'static str, label: &'static str, enabled: bool, tip: &'static str| {
-            div()
-                .id(id)
-                .debug_selector(move || id.into()) // --- notes --- (tests)
-                .flex_none()
-                .px(px(7.))
-                .h(px(24.))
-                .flex()
-                .items_center()
-                .rounded(px(5.))
-                .text_size(px(13.))
-                .text_color(if enabled { p.ink } else { p.muted.opacity(0.5) })
-                .when(enabled, |d| d.cursor_pointer().hover(|s| s.bg(p.hover())))
-                .tooltip(move |_, cx| cx.new(|_| crate::app::reading::Tip(tip.into())).into())
-                .child(label)
+            chrome_button(p, id, label, enabled, tip)
         };
         let loading = pg.loading;
         let shield_on = b.blocking_here();
@@ -1293,63 +1395,14 @@ impl MainView {
                 }))
                 .child(Input::new(input))
                 .into_any_element(),
-            _ => {
-                let host = super::host_of(&pg.url).unwrap_or_default();
-                let label = super::display_label(&pg.title, &pg.url);
-                div()
-                    .id("browser-address")
-                    .flex_1()
-                    .min_w_0()
-                    .h(px(26.))
-                    .px(px(8.))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .rounded(px(6.))
-                    .bg(p.panel())
-                    .cursor_text()
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.browser_edit_address(window, cx);
-                    }))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_ellipsis()
-                            .text_size(px(12.5))
-                            .text_color(p.ink)
-                            .child(label),
-                    )
-                    .when(!host.is_empty() && !pg.title.trim().is_empty(), |d| {
-                        d.child(
-                            div()
-                                .flex_none()
-                                .text_size(px(11.5))
-                                .text_color(p.muted)
-                                .child(host),
-                        )
-                    })
-                    .into_any_element()
-            }
+            _ => chrome_address(p, "browser-address", pg)
+                .cursor_text()
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.browser_edit_address(window, cx);
+                }))
+                .into_any_element(),
         };
-        let progress = if loading {
-            pg.progress.clamp(0.05, 1.0)
-        } else {
-            0.0
-        };
-        div()
-            .id("browser-chrome")
-            .relative()
-            .flex_none()
-            .h(px(CHROME_H))
-            .px(px(8.))
-            .flex()
-            .items_center()
-            .gap(px(2.))
-            .bg(p.bg)
-            .rule_b(p)
+        chrome_bar(p, "browser-chrome", pg)
             .child(
                 button(
                     "browser-back",
@@ -1481,17 +1534,6 @@ impl MainView {
                 button("browser-close", "×", true, "Close  esc")
                     .on_click(cx.listener(|this, _, window, cx| this.close_browser(window, cx))),
             )
-            .when(progress > 0.0, |d| {
-                d.child(
-                    div()
-                        .absolute()
-                        .left_0()
-                        .bottom_0()
-                        .h(px(2.))
-                        .w(relative(progress as f32))
-                        .bg(p.accent),
-                )
-            })
     }
 
     /// `BLYGGER_DEMO=br-…`: the pane on `BLYGGER_DEMO_URL` (a local test

@@ -92,11 +92,14 @@
         <div class="ractions" id="d-ractions" hidden>
           <button type="button" data-ra="quote" title="A new thread quoting this post">❝ Quote</button>
           <button type="button" data-ra="reply" title="A stub replying to this post">↩ Reply</button>
-          <button type="button" data-ra="hopper" title="Put it in a hopper">⊕ Hopper</button>
-          <button type="button" data-ra="shelf" id="d-shelfRA" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button>
-          <button type="button" data-ra="link" title="Copy a [[link]] to it">[[ Copy link</button>
           <button type="button" data-ra="unread" title="Mark unread">● Unread</button>
           <!-- web-writing --><button type="button" id="d-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
+          <!-- The less common keepers, behind one button (as the desktop app). -->
+          <span class="ra-more"><button type="button" id="d-moreRA" aria-haspopup="menu" aria-expanded="false" aria-controls="d-moreMenu" title="Hopper, shelf, link">⋯ More</button><span class="ra-menu" id="d-moreMenu" role="menu" hidden>
+            <button type="button" role="menuitem" data-ra="hopper" title="Put it in a hopper">⊕ Hopper</button>
+            <button type="button" role="menuitem" data-ra="shelf" id="d-shelfRA" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button>
+            <button type="button" role="menuitem" data-ra="link" title="Copy a [[link]] to it">[[ Copy link</button>
+          </span></span>
           <span class="flex"></span>
           <button type="button" class="step" data-ra="prev" aria-label="Previous post" title="Previous post (↑, or swipe right)">‹</button>
           <button type="button" class="step" data-ra="next" aria-label="Next post" title="Next post (↓, or swipe left)">›</button>
@@ -180,8 +183,10 @@
     <div class="ptop"><button type="button" class="ic back" id="p-back2">‹ Reading</button><span class="flex"></span>
       <button type="button" class="ic step" id="p-prevPost" aria-label="Previous post" title="Previous post (or swipe right)">‹</button><button type="button" class="ic step" id="p-nextPost" aria-label="Next post" title="Next post (or swipe left)">›</button><button type="button" class="ic" id="p-smaller" aria-label="Smaller text">A−</button><button type="button" class="ic" id="p-bigger" aria-label="Larger text">A+</button></div>
     <div class="pstrip" id="p-pacts" role="toolbar" aria-label="This post">
-      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing -->
+      <button type="button" data-pa="quote" title="A new thread quoting this post">❝ Quote</button><button type="button" id="p-replyBtn" data-pa="reply" title="A stub replying to this post">↩ Reply</button><button type="button" data-pa="unread" title="Mark it unread">● Unread</button><!-- web-writing --><button type="button" id="p-wfork" title="Fork a pinned version into a new draft of yours">⑂ Fork</button><!-- end web-writing --><button type="button" id="p-moreBtn" aria-expanded="false" aria-controls="p-pmore" title="Hopper, shelf, link">⋯ More</button>
     </div>
+    <!-- The less common keepers: a second row under "⋯ More" (as the desktop app's menu). -->
+    <div class="pstrip pmore" id="p-pmore" role="group" aria-label="More for this post" hidden><button type="button" id="p-hopBtn" data-pa="hopper" title="Put it in a hopper">⊕ Hopper</button><button type="button" id="p-shelfRA" data-pa="shelf" aria-pressed="false" title="Keep it on your shelf">+ Add to shelf</button><button type="button" data-pa="link" title="Copy a [[link]] to it">[[ Copy link</button></div>
     <div class="pscroll"><article class="post" id="p-postBody"></article></div>
     <div class="pmenu" id="p-pmenu" role="menu"><button type="button" data-pm="quote">❝ Quote</button><button type="button" data-pm="reply">↩ Reply to this</button><button type="button" data-pm="link">[[ Link</button></div>
   </section>

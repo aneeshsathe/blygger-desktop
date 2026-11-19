@@ -47,6 +47,9 @@ pub use view::{
     Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
     ToggleBrowser,
 };
+// --- reader view --- the chrome, docked in the reading pane for a post's
+// own page (`reading::site_view`).
+pub(crate) use view::{chrome_address, chrome_bar, chrome_button};
 
 /// The pane exists on this platform: macOS (WKWebView) and Windows
 /// (WebView2), and in tests (a stub surface). Elsewhere links open in the

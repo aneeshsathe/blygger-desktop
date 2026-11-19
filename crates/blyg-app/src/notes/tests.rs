@@ -656,12 +656,17 @@ mod ui {
         cx.simulate_input("why this matters");
         settle(cx);
         assert_eq!(notes_text(&view, cx), format!("{text}why this matters"));
-        // The chip is in the stream's action row.
+        // It's in the stream's action row, under ⋯ More.
         view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
         slide_out(cx);
         view.update_in(cx, |v, window, cx| v.stream_move(1, window, cx));
         settle(cx);
-        assert!(cx.debug_bounds("stream-act-Notes").is_some());
+        assert!(cx.debug_bounds("stream-act-more").is_some());
+        let more = view.read_with(cx, |v, _| {
+            let key = v.reading.sel.clone().expect("selected");
+            v.stream_more_items(&key)
+        });
+        assert!(more.iter().any(|(l, _, _)| l == "→ Notes"), "{more:?}");
     }
 
     #[gpui_kit::test]
@@ -858,8 +863,20 @@ mod ui {
         view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
         settle(cx);
         let shown = view.read_with(cx, |v, _| v.notes.shown);
-        let chip = cx.debug_bounds("stream-act-Notes").expect("chip");
-        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        // ⋯ More, then → Notes in its menu.
+        let more = cx.debug_bounds("stream-act-more").expect("⋯ More");
+        cx.simulate_click(more.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        let ix = view.read_with(cx, |v, _| {
+            v.menu_items()
+                .iter()
+                .position(|(l, _, _)| l == "→ Notes")
+                .expect("→ Notes in ⋯ More")
+        });
+        let item = cx
+            .debug_bounds(format!("src-menu-{ix}").leak())
+            .expect("menu item");
+        cx.simulate_click(item.center(), gpui_kit::Modifiers::none());
         settle(cx);
         view.read_with(cx, |v, cx| {
             assert!(v.notes.open && !v.notes.closing, "stayed out");

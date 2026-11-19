@@ -67,6 +67,8 @@
   color: var(--c-ink); font: .88rem var(--ui, system-ui); cursor: pointer; white-space: nowrap; }
 .pstrip button:active { background: var(--c-sel); }
 #v-post .pstrip { border-bottom: 1px solid var(--c-line); }
+.pstrip[hidden] { display: none; }
+#p-moreBtn[aria-expanded="true"] { background: var(--c-sel); }
 /* Four tabs: a little tighter. */
 #phone .tab { font-size: .7rem; }
 /* The hub is for settling things, not capturing them: no ＋ over its list. */

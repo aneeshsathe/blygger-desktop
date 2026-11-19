@@ -129,6 +129,11 @@ kbd{font:500 .74rem Inter,system-ui,sans-serif;display:inline-block;min-width:1.
 .ractions button{border:1px solid transparent;background:none;color:var(--wink);font:12.5px Inter,system-ui,sans-serif;padding:4px 8px;border-radius:6px}
 .ractions button:hover{border-color:var(--wline);color:var(--wacc)}
 .ractions .flex{flex:1}
+/* "⋯ More": the less common keepers in a small menu under the button. */
+.ractions .ra-more{position:relative;display:inline-flex}
+.ractions .ra-menu{position:absolute;top:100%;left:0;z-index:20;margin-top:2px;display:flex;flex-direction:column;align-items:stretch;min-width:150px;padding:4px;border:1px solid var(--wline);border-radius:8px;background:var(--wbg);box-shadow:0 8px 24px -6px var(--c-shadow)}
+.ractions .ra-menu[hidden]{display:none}
+.ractions .ra-menu button{text-align:left}
 .rscroll{flex:1;min-height:0;overflow:auto}
 .win .post{max-width:40em;margin:0 auto;padding:14px 30px 40px;--rsize:19px}
 .win .muted{color:var(--wmuted);font-style:italic}

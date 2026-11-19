@@ -63,15 +63,18 @@ the posts from that source in the middle, and the post on the right.
 
 ### Background and Foreground
 
-On blygger-studio 0.61 and later, an open post has these chips, as the
+On blygger-studio 0.61 and later, an open post has these actions, as the
 studio's ⋯ menu does:
 
-- **↓ Background** (or **b** with the post open or selected) moves it to
-  Background, and keeps it there across later versions. In Background the
-  chip is **↑ Foreground**, which brings it back whatever the rules say.
-- **↺ Clear my choice**, once you've made one, lets the rules decide again.
-- **⇊ Blyg to Background** moves every post of that blyg there, except any
-  you moved to Foreground yourself; **⇈ Blyg to Foreground** brings them back.
+- **↓ Background** (or **b** with the post open or selected), a chip under
+  the post, moves it to Background, and keeps it there across later
+  versions. In Background the chip is **↑ Foreground**, which brings it back
+  whatever the rules say.
+- **↺ Clear my choice**, in **⋯ More** once you've made one, lets the rules
+  decide again.
+- **⇊ Blyg to Background**, in **⋯ More**, moves every post of that blyg
+  there, except any you moved to Foreground yourself; **⇈ Blyg to
+  Foreground** brings them back.
 
 Your choice beats the blyg's, which beats the rules. **Settings › Reading ›
 Background** has the rules, saved on your blyg: withdrawn posts are always
@@ -118,8 +121,8 @@ hopper's own order: the post put in it most recently comes first, as on your
 blyg. Withdrawn posts aren't listed there; they stay under Background.
 
 **Put a post in a hopper.** With a post open or selected, press **h** (or
-⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from its action chips or
-its right-click menu. Each hopper is listed with a check by the ones the post
+⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from **⋯ More** under
+the post or from its right-click menu. Each hopper is listed with a check by the ones the post
 is in. Choosing a hopper (click, ⏎, Space, or its number) puts the post in or
 takes it out, and **New Hopper…** (n) makes one and puts the post in it. Your
 own posts go in hoppers too. A change shows at once and is sent to your blyg
@@ -211,12 +214,29 @@ The Posts screen is unchanged.
 Burrow now opens on Reading. It stays on Posts during the first-run setup
 and the tour, and when there's no blyg to read from.
 
+## Which one do I use?
+
+Burrow has several ways to keep a post. In plain words:
+
+- **Shelf**: posts you mean to come back to soon. A short list, in your
+  order, synced with your blyg. (**+ Add to shelf** in ⋯ More, or ⌥⌘B;
+  Ctrl+Shift+A on Windows.)
+- **Hopper**: a named collection on your blyg, yours and others' posts
+  together; make it public and it gets its own page. (**h**.)
+- **Trail**: a path through posts in an order you choose, each with a note
+  on why, which you can publish as one thread. On this Mac only. (**t**.)
+- **Quote tray**: posts you'll quote in what you write next; quoting one
+  takes it off. (**q**.)
+- **Background**: posts you want out of the way without marking them read.
+  (**b**.)
+
 ## Trails
 
 A trail is a path through posts you chose to keep, with a word on why each
 one is there: yours and other people's, in your order.
 
-- **t** adds the post you're reading to the current trail and asks why
+- **t** (or **⤳ Add to trail** in ⋯ More under the post) adds the post
+  you're reading to the current trail and asks why
   (⏎ keeps it, esc skips). With no trail yet, it asks for a name first.
 - **⇧T** starts another trail, with this post as its first stop.
 - The **trail bar** above the post box shows the trail's name (click it for
@@ -312,7 +332,13 @@ your own blyg.
 
 ## Acting on a post
 
-The selected post shows its actions. Each says what it makes:
+The selected post shows its actions. The common ones are chips under the
+post: **Quote into a thread**, **Reply · new stub**, **Catch up** (when the
+post draws on others) and **↓ Background**. The rest are in **⋯ More**, at
+the end of the row: AI reply, Fork, Link post, Open on web, → Notes,
+Hopper ›, + Add to shelf, ⤳ Add to trail and the other Background choices.
+Their keys (**h**, **t**, **b**, **q**) work as before. Each says what it
+makes:
 
 - **Quote into a thread**: `![[id | label]]` in a thread of yours, labelled
   with the post's heading or title (see
@@ -343,28 +369,33 @@ The selected post shows its actions. Each says what it makes:
 
 Some blygs are worth seeing as their author styled them. Settings (⌘,) ›
 Reading › **Open posts on the author's site** (`open-posts-on-site = true`)
-shows an opened post's own page, the one its author published, where
-Burrow's reader would show it. Nothing else moves: the list or stream stays
-beside it, the header, the version pill and the actions stay above and
-below, and the post counts as read when you open it.
+shows an opened post's own page, the one its author published, in place of
+Burrow's reader: the page takes the whole reading pane, with the browser
+pane's toolbar along its top. The list or stream stays beside it, the pane
+keeps its size and moves with the layout, and the post counts as read when
+you open it.
 
+- The toolbar has **Burrow reader | Author's site** (switches this one
+  view), ← and → (the page's own history), ↻, the page's title and address,
+  🛡 (the browser's shield for that site) and ↗ (opens it in your default
+  browser). The action row stays under the page.
 - **j / k** and ↑ / ↓ still move through posts. Space pages down the page,
   and at its end opens the next post to read. A click in the page hands the
   keys back to the list unless you clicked into a text field.
-- **Burrow reader | Author's site**, above the post, switches that one view.
-  The next post you open follows the setting again.
-- A subscription's menu (right-click it in the sources pane) can **Open
-  Posts on the Author's Site** always, **in Burrow's Reader** always, or **as
-  Settings Says**: some blygs look great, some don't.
+- The next post you open follows the setting again. A subscription's menu
+  (right-click it in the sources pane) can **Open Posts on the Author's
+  Site** always, **in Burrow's Reader** always, or **as Settings Says**:
+  some blygs look great, some don't.
 - A post without a page of its own opens in Burrow's reader, and a quiet line
   says so. A pinned version, a diff and a withdrawn post are always Burrow's.
-- The page is shown by a web view of the [browser pane](notes-and-browser.md#the-browser-pane)'s
-  kind: its own cookies, no access to the app, content blocking and the
-  browser's per-site shields. Links you click in it stay in it. **Open in
-  browser ↗** above the page, or **Open on web**, opens it in your default
-  browser.
-- Elsewhere than macOS, opening a post opens its page in your default browser
-  (not while you move with the keys), and Burrow's reader shows it here.
+- The page has the [browser pane](notes-and-browser.md#the-browser-pane)'s
+  cookies, content blocking and per-site shields, and no access to the app.
+  Links you click in it stay in it. Links you click in Burrow's reader still
+  open in the browser pane, which slides over as before.
+- On Windows it's the same (without content blocking, as in the browser
+  pane). Where there's no browser pane, opening a post opens its page in
+  your default browser (not while you move with the keys), and Burrow's
+  reader shows it here.
 
 In the web app, ⚙ Reading has the same choice for that browser: opening a
 post also opens its page in a new tab, and the post stays in Burrow with a

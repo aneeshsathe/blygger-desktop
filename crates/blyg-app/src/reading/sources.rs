@@ -84,6 +84,10 @@ pub enum MenuTarget {
     Posts(super::vm::Key),
     /// --- hoppers --- a hopper in the pane.
     Hopper(String),
+    /// "⋯ More" under the open post: its less common actions.
+    PostMore,
+    /// "⋯ More" under a post in the stream.
+    StreamMore(super::vm::Key),
 }
 
 /// A context menu, at a window position.
@@ -141,6 +145,14 @@ pub enum MenuCmd {
     /// --- reader view --- A subscription's posts open on the author's
     /// site always (`Some(true)`), never, or as Settings says (`None`).
     SiteFor(String, Option<bool>),
+    /// "⋯ More": one of the open post's actions (`reading_action`'s id).
+    PostAction(&'static str),
+    /// "⋯ More": the open post onto the current trail (`t`).
+    AddToTrail,
+    /// A stream post's "⋯ More": one of its actions (`stream_action`).
+    StreamAction(super::vm::Key, &'static str),
+    /// A stream post's "⋯ More": select it, then onto the trail (`t`).
+    StreamTrail(super::vm::Key),
 }
 
 /// A subscription being dragged onto a folder.
@@ -424,6 +436,23 @@ impl MainView {
             MenuCmd::CheckAll => self.check_feeds(None, window, cx),
             MenuCmd::SiteFor(sub, on) => self.set_site_for_sub(sub, on, cx), // --- reader view ---
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
+            // Fork is greyed in the row's sense: it says where forking lives.
+            MenuCmd::PostAction("Fork") => {
+                let tip = self
+                    .reading_action_chips()
+                    .into_iter()
+                    .find(|c| c.id == "Fork")
+                    .map(|c| c.tip)
+                    .unwrap_or_default();
+                self.show_toast(tip, None, cx)
+            }
+            MenuCmd::PostAction(id) => self.reading_action(id, window, cx),
+            MenuCmd::AddToTrail => self.add_to_trail(window, cx), // --- trails ---
+            MenuCmd::StreamAction(key, id) => self.stream_action(key, id, window, cx),
+            MenuCmd::StreamTrail(key) => {
+                self.reading.sel = Some(key);
+                self.add_to_trail(window, cx)
+            }
             // --- hoppers ---
             MenuCmd::HopperMenu => {}
             MenuCmd::NewHopper => self.open_hopper_name_sheet(
@@ -470,6 +499,8 @@ impl MainView {
             // --- hoppers --- a post's "Hopper ›" list.
             MenuTarget::Posts(key) if m.folders => self.hopper_menu_items(key),
             MenuTarget::Hopper(id) => self.hopper_items_for(id),
+            MenuTarget::PostMore => self.post_more_items(),
+            MenuTarget::StreamMore(key) => self.stream_more_items(key),
             MenuTarget::Posts(key) => {
                 let mut v: Vec<_> = self
                     .post_menu_items(key)

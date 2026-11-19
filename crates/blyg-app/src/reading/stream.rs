@@ -874,20 +874,8 @@ impl MainView {
     fn render_stream_actions(&self, r: &ReadingItem, cx: &mut Context<Self>) -> AnyElement {
         let p = self.palette.on_page();
         let key = vm::key(r);
-        let blyg = self
-            .reading
-            .subs
-            .iter()
-            .find(|s| s.id == r.subscription_id)
-            .is_none_or(|s| s.kind == blyg_core::SubscriptionKind::Blyg);
-        let ctx = vm::ActionCtx {
-            blyg,
-            version: r.version,
-            current: r.version,
-            pins: vec![],
-            shelved: self.on_reading_shelf(r), // --- shelf sync ---
-        };
         let k_more = key.clone();
+        let (shown, _) = vm::split_chips(self.stream_chips(r));
         let mut row: Vec<AnyElement> = vec![
             self.chip("stream-act-open", "Read more ⏎")
                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -897,27 +885,9 @@ impl MainView {
                 .into_any_element(),
         ];
         if r.state != "tombstone" {
-            for id in [
-                "Quote",
-                "Reply",
-                "AI reply",
-                "Link post",
-                "Open on web",
-                "Notes",
-                "Shelf",    // --- shelf sync ---
-                "Catch up", // --- catch up ---
-            ] {
-                if id == "Catch up" && !self.has_ancestors(&r.origin, &r.remote_id) {
-                    continue;
-                }
-                if id == "Link post" && !blyg {
-                    continue; // a feed post has no id to link
-                }
-                // --- own posts --- no AI reply to yourself.
-                if id == "AI reply" && super::own::is_own(&key) {
-                    continue;
-                }
-                let chip = vm::action_chip(id, &ctx);
+            // The common ones; the rest behind ⋯ More (as under an open post).
+            for chip in shown {
+                let id = chip.id;
                 let tip = chip.tip.clone();
                 let k = key.clone();
                 row.push(
@@ -931,6 +901,35 @@ impl MainView {
                         .into_any_element(),
                 );
             }
+            let k_menu = key.clone();
+            row.push(
+                self.chip("stream-act-more", "⋯ More")
+                    .debug_selector(|| "stream-act-more".into())
+                    .tooltip(|_, cx| {
+                        cx.new(|_| {
+                            super::Tip(
+                                "More for this post: AI reply, Link post, Open on web, → Notes, \
+                                 + Add to shelf, ⤳ Add to trail…"
+                                    .into(),
+                            )
+                        })
+                        .into()
+                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, e: &MouseDownEvent, _, cx| {
+                            cx.stop_propagation();
+                            this.open_source_menu(
+                                super::sources::MenuTarget::StreamMore(k_menu.clone()),
+                                e.position,
+                                false,
+                                cx,
+                            )
+                        }),
+                    )
+                    .on_click(|_, _, cx| cx.stop_propagation())
+                    .into_any_element(),
+            );
         }
         row.extend(self.slots_more_chip(r, cx)); // --- reading slots ---
         let thumb = r.thumb;
@@ -991,7 +990,81 @@ impl MainView {
         self.stream_action(key, action, window, cx)
     }
 
-    fn stream_action(
+    /// The stream post's actions, as chips (the row shows the common ones,
+    /// ⋯ More the rest: `vm::split_chips`).
+    fn stream_chips(&self, r: &ReadingItem) -> Vec<vm::ActionChip> {
+        let key = vm::key(r);
+        let blyg = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == r.subscription_id)
+            .is_none_or(|s| s.kind == blyg_core::SubscriptionKind::Blyg);
+        let ctx = vm::ActionCtx {
+            blyg,
+            version: r.version,
+            current: r.version,
+            pins: vec![],
+            shelved: self.on_reading_shelf(r), // --- shelf sync ---
+        };
+        [
+            "Quote",
+            "Reply",
+            "AI reply",
+            "Link post",
+            "Open on web",
+            "Notes",
+            "Shelf",    // --- shelf sync ---
+            "Catch up", // --- catch up ---
+        ]
+        .into_iter()
+        .filter(|id| *id != "Catch up" || self.has_ancestors(&r.origin, &r.remote_id))
+        // A feed post has no id to link.
+        .filter(|id| *id != "Link post" || blyg)
+        // --- own posts --- no AI reply to yourself.
+        .filter(|id| *id != "AI reply" || !super::own::is_own(&key))
+        .map(|id| vm::action_chip(id, &ctx))
+        .collect()
+    }
+
+    /// The stream post's ⋯ More menu: the less common actions, then
+    /// ⤳ Add to trail for a blyg post (`t`, on the selected post).
+    pub(crate) fn stream_more_items(
+        &self,
+        key: &Key,
+    ) -> Vec<(String, Option<super::sources::MenuCmd>, bool)> {
+        use super::sources::MenuCmd;
+        let Some(r) = self.reading.rows.iter().find(|r| vm::key(r) == *key) else {
+            return vec![];
+        };
+        let (_, more) = vm::split_chips(self.stream_chips(r));
+        let mut v: Vec<_> = more
+            .into_iter()
+            .map(|c| {
+                (
+                    c.label,
+                    Some(MenuCmd::StreamAction(key.clone(), c.id)),
+                    false,
+                )
+            })
+            .collect();
+        let blyg = self
+            .reading
+            .subs
+            .iter()
+            .find(|s| s.id == r.subscription_id)
+            .is_none_or(|s| s.kind == blyg_core::SubscriptionKind::Blyg);
+        if blyg {
+            v.push((
+                format!("{} Add to trail", crate::app::trails::GLYPH),
+                Some(MenuCmd::StreamTrail(key.clone())),
+                false,
+            ));
+        }
+        v
+    }
+
+    pub(crate) fn stream_action(
         &mut self,
         key: Key,
         action: &'static str,
