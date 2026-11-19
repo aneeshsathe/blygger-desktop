@@ -224,6 +224,18 @@ impl MainView {
                 let k = self.shown_keys()[1].clone();
                 self.open_post_menu(k, point(px(420.), px(200.)), cx);
             }
+            // The open post's ⋯ More menu, with its key column.
+            ("rd-more-menu", 0) => self.show_view(View::Reading, window, cx),
+            ("rd-more-menu", 1) => {
+                let keys = self.shown_keys();
+                open(self, &keys[0].1, window, cx);
+            }
+            ("rd-more-menu", 2) => self.open_source_menu(
+                super::sources::MenuTarget::PostMore,
+                point(px(700.), px(330.)),
+                false,
+                cx,
+            ),
             // --- subscription names --- a renamed subscription's menu.
             ("rd-sub-menu", 0) => self.show_view(View::Reading, window, cx),
             ("rd-sub-menu", 1) => {

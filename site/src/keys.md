@@ -16,7 +16,7 @@ name. Each row shows its key, so it's also a way to learn them. ⏎ runs a row,
 ⌘⏎ runs it and keeps the palette open. Focus mode (⌥⌘F) is Ctrl+Shift+F on
 Windows, because Ctrl+Alt is AltGr there.
 
-⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply · new stub, Quote into a thread, Link post) act on
+⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply, Quote into a thread, Link post) act on
 the post in front of you: in Reading the open post, else the selected one; in
 Posts your own published post.
 
@@ -60,6 +60,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 | ⏎, Space | Open the post (stream); Space pages through it, then the next unread one (Reader) |
 | ⌘-click, ⇧-click, ⌘A | Pick posts in the Reader's list (esc lets go) |
 | r / u | Mark the picked posts, or the open one, read / unread |
+| ⇧R | Mark all read in this source… (asks first, with the count; also Blyg › Mark All Read…) |
 | ← / → | Move between the Reader's panes |
 | [ / ] | Step through a post's versions (current and pinned) |
 | ⌘F, / | Search what you're reading |

@@ -43,7 +43,7 @@ use crate::app::reading::{
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
-use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
+use crate::app::reading::sources::{CheckFeeds, MarkAllRead, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
@@ -95,8 +95,8 @@ use crate::app::split::{FocusLeftPost, FocusRightPost, OpenBeside};
 use crate::app::nearby::{NearbyDown, NearbyLink, NearbyQuote, NearbyUp, ToggleNearby};
 // --- blyg switcher ---
 use crate::app::switcher::{
-    AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
-    SwitchBlyg5, SwitchBlyg6, SwitchBlyg7, SwitchBlyg8, SwitchBlyg9,
+    AddBlyg, ConnectBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3,
+    SwitchBlyg4, SwitchBlyg5, SwitchBlyg6, SwitchBlyg7, SwitchBlyg8, SwitchBlyg9,
 };
 // --- browser ---
 use crate::app::browser::{
@@ -487,6 +487,11 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         menu_only!(
+            ConnectBlyg,
+            "Connect your blyg: the Connect sheet (address, then sign in or a token)",
+            "Burrow › Connect…"
+        ),
+        menu_only!(
             AddBlyg,
             "Sign in to another blyg (the others stay signed in)",
             "Blyg › Add a Blyg…"
@@ -573,8 +578,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-m",
             Main,
             ShowMentions,
-            "Mentions & responses",
-            Some("Blyg › Mentions")
+            "Responses: who quoted, replied to or forked your posts",
+            Some("Blyg › Responses")
         ),
         kb!(
             "cmd-shift-s",
@@ -621,8 +626,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-r",
             Main,
             ReplyToPost,
-            "Reply · new stub: a thread of yours that's a stub of this post (yours too)",
-            Some("Post › Reply · New Stub")
+            "Reply: a new thread of yours that replies to this post (yours too)",
+            Some("Post › Reply")
         ),
         kb!(
             "alt-cmd-q",
@@ -635,7 +640,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-l",
             Main,
             LinkToPost,
-            "Link post · new fragment: [[…]] to this post, no stub_of",
+            "Link post · new fragment: [[…]] to this post, not a reply",
             Some("Post › Link Post · New Fragment")
         ),
         // --- hoppers --- (⌥⌘H is the system's Hide Others; `h` on the
@@ -661,8 +666,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-b",
             Main,
             ToggleShelf,
-            "Put the open post on your shelf, or take it off",
-            Some("Post › Put on Shelf / Take Off")
+            "Add the open post to your shelf, or remove it",
+            Some("Post › Add to Shelf / Remove from Shelf")
         ),
         // --- end own posts ---
         // --- trails --- (`t` / ⇧T on the reading screen are its own keys,
@@ -887,6 +892,13 @@ pub fn mac_table() -> Vec<Keybind> {
             "Check all feeds now (your blyg polls every subscription)",
             Some("Blyg › Check All Feeds Now")
         ),
+        // ⇧R on the reading screen is its own key (reading_key_down): a
+        // single key can't be bound while you type.
+        menu_only!(
+            MarkAllRead,
+            "Mark all read in this source… (⇧R on the reading screen; asks first)",
+            "Blyg › Mark All Read…"
+        ),
         // --- end reader folders ---
         // --- browse --- (studio 0.49) the walk from post to post inside the
         // reader. Its key, ⌘[, is the reading screen's own (handled in
@@ -894,7 +906,7 @@ pub fn mac_table() -> Vec<Keybind> {
         // and the browser pane's ⌘[ is the pane's.
         menu_only!(
             ReaderBack,
-            "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
+            "Reading pane: back along the quotes, replies and links you followed (⌘[ on the reading screen)",
             "Blyg › Back"
         ),
         kb!(
@@ -1095,7 +1107,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-d",
             Main,
             QuoteToDraft,
-            "Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft",
+            "Quote the highlighted passage (a page, a post, your notes, or a reply's preview quote) in the draft",
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
@@ -1474,7 +1486,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
-    let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
+    let _ = (AddBlyg, ConnectBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
     let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
     let _ = ShowSite; // --- site ---

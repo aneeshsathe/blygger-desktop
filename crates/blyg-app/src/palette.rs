@@ -137,6 +137,8 @@ fn skipped(action: &str, fake: bool) -> bool {
     matches!(
         action,
         "ShowPalette"
+            // marks.rs adds its own, richer row (the source by name).
+            | "MarkAllRead"
             | "TutorialNext"
             | "TutorialBack"
             | "SwitchBlyg1"

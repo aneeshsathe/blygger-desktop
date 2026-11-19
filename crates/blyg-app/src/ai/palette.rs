@@ -81,7 +81,7 @@ pub fn entries(kind: Kind, empty: bool, reading_open: bool) -> Vec<Entry> {
         Entry {
             action: Action::Reply,
             label: "Reply to a reading item",
-            detail: "Drafts a stub reply to a post you're reading",
+            detail: "Drafts a reply to a post you're reading",
             key: None,
             disabled: (!reading_open).then_some(REPLY_NEEDS_READING),
         },

@@ -369,7 +369,7 @@ impl MainView {
                                 .flex_col()
                                 .child("Accept mentions")
                                 .child(div().text_color(p.muted).child(
-                                    "Other blygs can tell yours when they quote, stub or fork your posts.",
+                                    "Other blygs can tell yours when they quote, reply to or fork your posts.",
                                 )),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.toggle_accept_mentions(cx))),

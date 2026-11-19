@@ -320,9 +320,7 @@ impl MainView {
             )
             .tooltip(|_, cx| {
                 cx.new(|_| {
-                    super::super::Tip(
-                        "Reply · new stub of their post (when your blyg holds it)".into(),
-                    )
+                    super::super::Tip("Reply to their post (when your blyg holds it)".into())
                 })
                 .into()
             })

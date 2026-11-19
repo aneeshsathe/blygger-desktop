@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 
-use blyg_core::upkeep::{Refreshed, ThreadFreshness};
+use blyg_core::upkeep::{QuoteFreshness, Refreshed, ThreadFreshness};
 
 use super::*;
 
@@ -29,6 +29,9 @@ pub struct Row {
     /// Edits here not yet published.
     pub edited_here: bool,
     pub report: ThreadFreshness,
+    /// The quoted posts' titles, by quoted post id, for the ones this Mac
+    /// holds (your posts and your reading); the others show their blyg only.
+    pub quote_titles: HashMap<String, String>,
 }
 
 /// The sheet.
@@ -45,12 +48,23 @@ pub(crate) struct StaleSheet {
     pub busy: bool,
 }
 
-/// The rows for `list`: `own(sid)` finds your post by its server id.
-pub fn rows(list: Vec<ThreadFreshness>, own: impl Fn(&str) -> Option<Item>) -> Vec<Row> {
+/// The rows for `list`: `own(sid)` finds your post by its server id, and
+/// `title_of(quote)` names a quoted post when it's held here.
+pub fn rows(
+    list: Vec<ThreadFreshness>,
+    own: impl Fn(&str) -> Option<Item>,
+    title_of: impl Fn(&QuoteFreshness) -> Option<String>,
+) -> Vec<Row> {
     list.into_iter()
         .map(|report| {
             let item = own(&report.id);
+            let quote_titles = report
+                .quotes
+                .iter()
+                .filter_map(|q| Some((q.id.clone(), title_of(q)?)))
+                .collect();
             Row {
+                quote_titles,
                 id: item.as_ref().map(|i| i.local_id.clone()),
                 title: item.as_ref().map(vm::item_title).unwrap_or_else(|| {
                     format!("Thread {}", report.id.chars().take(8).collect::<String>())
@@ -120,7 +134,26 @@ impl MainView {
     }
 
     fn stale_rows(&self, list: Vec<ThreadFreshness>) -> Vec<Row> {
-        rows(list, |sid| self.backend.own_item(sid))
+        rows(
+            list,
+            |sid| self.backend.own_item(sid),
+            |q| self.quoted_title(q),
+        )
+    }
+
+    /// A quoted post's title: yours by its server id, someone else's from
+    /// the reading list (matching its blyg when the quote names one).
+    fn quoted_title(&self, q: &QuoteFreshness) -> Option<String> {
+        match q.origin.as_deref() {
+            None => self.backend.own_item(&q.id).map(|i| vm::item_title(&i)),
+            Some(origin) => self
+                .backend
+                .reading_with_id(&q.id)
+                .into_iter()
+                .find(|r| blyg_core::profile::same_origin(&r.origin, origin))
+                .and_then(|r| blyg_core::plain_title(&r.content_md)),
+        }
+        .filter(|t| !t.trim().is_empty())
     }
 
     fn stale_sheet(&mut self) -> Option<&mut StaleSheet> {
@@ -505,7 +538,17 @@ impl MainView {
                 .as_deref()
                 .map(blyg_core::upkeep::host)
                 .unwrap_or_else(|| "your blyg".into());
-            let id8: String = q.id.chars().take(8).collect();
+            // The quoted post by its title when this Mac holds it; never a
+            // bare id prefix.
+            let what = match row.quote_titles.get(&q.id) {
+                // Short, so what changed still fits on the line.
+                Some(t) if t.chars().count() > 40 => {
+                    let short: String = t.chars().take(39).collect();
+                    format!("“{}…” · {source}", short.trim_end())
+                }
+                Some(t) => format!("“{t}” · {source}"),
+                None => source,
+            };
             detail = detail.child(
                 div()
                     .flex()
@@ -524,7 +567,7 @@ impl MainView {
                         "·"
                     }))
                     .child(div().flex_1().min_w_0().truncate().child(format!(
-                        "{source} · {id8}{} · {}",
+                        "{what}{} · {}",
                         if q.partial { " · excerpt" } else { "" },
                         q.words()
                     ))),

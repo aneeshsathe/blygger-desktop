@@ -28,7 +28,7 @@ use super::{RSheet, View};
 use crate::app::MainView;
 use crate::theme::Rule; // --- themes --- dividers
 
-gpui_kit::actions!(blygger, [ToggleSources, NewFolder, CheckFeeds]);
+gpui_kit::actions!(blygger, [ToggleSources, NewFolder, CheckFeeds, MarkAllRead]);
 
 pub const SOURCES_W: f32 = 210.;
 const MIN_W: f32 = 150.;
@@ -251,6 +251,12 @@ impl MainView {
         }))
         .on_action(
             cx.listener(|this, _: &CheckFeeds, window, cx| this.check_feeds(None, window, cx)),
+        )
+        // Blyg › Mark All Read… (⇧R on the reading screen).
+        .on_action(
+            cx.listener(|this, _: &MarkAllRead, window, cx| {
+                this.ask_mark_all_read(None, window, cx)
+            }),
         )
     }
 
@@ -1741,6 +1747,7 @@ impl MainView {
                 let Some(cmd) = cmd else {
                     return div().my(px(4.)).h(px(1.)).bg(p.line).into_any_element();
                 };
+                let key = menu_key(&cmd);
                 div()
                     .id(("src-menu-item", i))
                     .debug_selector(move || format!("src-menu-{i}"))
@@ -1758,7 +1765,20 @@ impl MainView {
                             .flex_none()
                             .child(if checked { "✓" } else { "" }),
                     )
-                    .child(label)
+                    .child(div().flex_1().child(label))
+                    // The key that does the same, right-aligned, as a menu
+                    // bar shows it: dimmed, in the row's own colour, so it
+                    // follows the hover highlight.
+                    .when_some(key, |d, key| {
+                        d.child(
+                            div()
+                                .flex_none()
+                                .pl(px(16.))
+                                .text_size(px(11.5))
+                                .opacity(0.6)
+                                .child(key),
+                        )
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.run_menu_cmd(cmd.clone(), window, cx)
                     }))
@@ -1798,6 +1818,28 @@ impl MainView {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+}
+
+/// The key that does what a "⋯ More" item does, for the menu's key column:
+/// the reading screen's own single keys (h, b, t, ⇧C) and the Post menu's
+/// bound keys, spelled for this platform. `None` for an item with no key.
+pub(crate) fn menu_key(cmd: &MenuCmd) -> Option<String> {
+    let id = match cmd {
+        MenuCmd::PostAction(id) | MenuCmd::StreamAction(_, id) => *id,
+        MenuCmd::AddToTrail | MenuCmd::StreamTrail(_) => return Some("t".into()),
+        _ => return None,
+    };
+    let bound = |action: &str| crate::keymap::action_glyphs(action);
+    match id {
+        "Reply" => bound("ReplyToPost"),
+        "Quote" => bound("QuotePost"),
+        "Link post" => bound("LinkToPost"),
+        "Shelf" => bound("ToggleShelf"),
+        "Hopper" => Some("h".into()),
+        "Catch up" => Some(crate::keymap::glyphs("shift-c")),
+        super::background::PLACE => Some("b".into()),
+        _ => None,
     }
 }
 

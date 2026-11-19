@@ -48,8 +48,8 @@ starts with.
 
 Some posts you keep coming back to: a /now page, a reading log, a running
 list of links. Put them on your **shelf** so you never have to search for
-them. **⌥⌘B** (Post › Put on Shelf / Take Off) shelves the open post, or
-takes it off. Shelved posts are marked 📚 and stay at the top of the list, in
+them. **⌥⌘B** (Post › Add to Shelf / Remove from Shelf) adds the open post to
+your shelf, or removes it. Shelved posts are marked 📚 and stay at the top of the list, in
 your order, above a thin rule. When you search, the shelved posts that match
 come first.
 
@@ -446,7 +446,7 @@ isn't in the quoted post, and publishing refuses it. In the stream, a partial
 quote shows only its passage.
 
 The easy way to write one is to select the passage while reading and press
-⇧⌘D, or to reply and select it inside the stub's quote in the preview; see
+⇧⌘D, or to reply and select it inside the reply's quote in the preview; see
 [Reading, quoting and responses](reading.md#universal-quoting).
 
 ### `[[id]]` links
@@ -519,10 +519,10 @@ respond.
 ### Replying to, quoting and linking your own posts
 
 A published post of yours has a row of chips above its text in Posts: "Your
-post · v3 ·" then **Reply · new stub** (⌥⌘R), **Quote into a thread** (⌥⌘Q)
+post · v3 ·" then **Reply** (⌥⌘R), **Quote into a thread** (⌥⌘Q)
 and **Link post · new fragment** (⌥⌘L). They're in the Post menu too, and do
-what the same actions do on a post you're reading: Reply starts a stub thread
-of your own post, Quote puts `![[id | label]]` in a thread, and Link post
+what the same actions do on a post you're reading: Reply starts a thread replying
+to your own post, Quote puts `![[id | label]]` in a thread, and Link post
 makes a fragment holding `[[id]]`. Drafts and scratch notes have no row.
 
 There's no Fork there: your own post forks only from a pin. Open ⌘Y, pick a

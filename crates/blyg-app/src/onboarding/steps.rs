@@ -603,13 +603,13 @@ pub const STEPS: &[Step] = &[
         title: "Keep it on your shelf",
         caption: if cfg!(target_os = "windows") {
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             Ctrl+Shift+A puts the open post on your shelf: 📚 marks it and it stays at the top \
+             Ctrl+Shift+A adds the open post to your shelf: 📚 marks it and it stays at the top \
              of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. With \
              blygger-studio 0.61 the shelf syncs with your blyg; otherwise it's kept on this \
              computer."
         } else {
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             ⌥⌘B puts the open post on your shelf: 📚 marks it and it stays at the top of the \
+             ⌥⌘B adds the open post to your shelf: 📚 marks it and it stays at the top of the \
              list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
              the shelf syncs with your blyg; otherwise it's kept on this Mac."
         },
@@ -986,8 +986,8 @@ pub const STEPS: &[Step] = &[
         id: "own-post",
         since: "0.13.0",
         title: "Reply to yourself",
-        caption: "Your published post has the Reading view's actions above its text: Reply · \
-                  new stub (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment \
+        caption: "Your published post has the Reading view's actions above its text: Reply \
+                  (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment \
                   (⌥⌘L). Forking your own post is in ⌘Y: Fork this pin, on a pinned version. \
                   Try Reply.",
         keys: &[Key::OwnPostAction],
@@ -1151,8 +1151,8 @@ pub const STEPS: &[Step] = &[
         since: "0.4.0",
         title: "Quotes lead to the original",
         caption: "The grey box quotes another post: click its text to open the original beside \
-                  it, or the name for the author's profile. Its pane lists who quoted, stubbed \
-                  or forked it.",
+                  it, or the name for the author's profile. Its pane lists who quoted, replied \
+                  to or forked it.",
         keys: &[Key::OpenOriginal, Key::OpenProfile],
         key_label: "click",
         region: Region::StreamPost,
@@ -1377,7 +1377,7 @@ pub const STEPS: &[Step] = &[
         since: "0.14.0",
         title: "Follow the thicket",
         caption: "Ada's reply quotes Lin's note. Click the quote to open it here; quotes inside \
-                  quotes, a stub's “responds to” line and links to blyg posts open the same \
+                  quotes, the “↳ reply to” line and links to blyg posts open the same \
                   way. The breadcrumb above the post shows the path, and ⌘[ or ‹ back steps \
                   back.",
         keys: &[Key::FollowThicket],
@@ -1409,7 +1409,7 @@ pub const STEPS: &[Step] = &[
         id: "stub-passage",
         since: "0.14.0",
         title: "Reply to a passage",
-        caption: "Reply made this stub, quoting the whole of Lin's post. To answer one passage, \
+        caption: "Reply made this draft, quoting the whole of Lin's post. To answer one passage, \
                   select it inside the quote in the preview on the right, then press ❝ quote \
                   only this (or ⇧⌘D): it goes under that quote. Quote another passage adds one \
                   more to select from.",

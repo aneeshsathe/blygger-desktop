@@ -752,7 +752,7 @@ impl Act {
             ],
             Act::Reply => [
                 ("yes", true),
-                ("yes, as a reply (stub)", true),
+                ("yes, as a reply", true),
                 (
                     if passage {
                         "just the passage you selected"

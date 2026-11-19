@@ -639,7 +639,7 @@ impl MainView {
                     vm::host(&item.origin)
                 };
                 self.show_toast(
-                    format!("Reply to {whom} · a stub thread"),
+                    format!("Replying to {whom}"),
                     Some("Quoting the whole post · choose a passage above the editor".into()),
                     cx,
                 );

@@ -637,11 +637,7 @@ mod tests {
             .collect();
         assert_eq!(
             labels,
-            [
-                "Reply · new stub",
-                "Quote into a thread",
-                "Link post · new fragment"
-            ]
+            ["Reply", "Quote into a thread", "Link post · new fragment"]
         );
         for (id, _) in POST_ACTIONS {
             let c = post_chip(id);

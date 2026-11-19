@@ -354,7 +354,7 @@ fn a_post_can_hand_its_responses_back_to_the_site_setting(cx: &mut TestAppContex
     assert_eq!(r.mode, Some(blyg_core::ResponsesMode::Default));
     let strings = view.read_with(cx, |v, _| v.mentions_screen_strings());
     assert!(
-        strings.contains(&"responses hidden from the page · site setting".to_string()),
+        strings.contains(&"On the post's page: Site default (hidden)".to_string()),
         "{strings:?}"
     );
 }
@@ -484,6 +484,16 @@ fn reply_makes_a_stub_and_fork_needs_a_pin(cx: &mut TestAppContext) {
     assert_eq!(stub.stub_of.as_ref().unwrap().id, RUE_TRUST);
     assert!(stub.content_md.starts_with(&format!("![[{RUE_TRUST}]]")));
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Posts);
+    // The caret waits below the quote, where the hint says the reply goes.
+    let (text, caret) = view.read_with(cx, |v, cx| {
+        let e = v.editor.read(cx);
+        (e.value().to_string(), e.cursor())
+    });
+    let quote_end = text.find("]]").expect("the quote") + 2;
+    assert!(
+        caret > quote_end && caret == text.len(),
+        "{caret} in {text:?}"
+    );
 
     // Fork is offered on pins only.
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
@@ -800,8 +810,8 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
         labels,
         [
             "Quote into a thread",
-            "Reply · new stub",
-            "AI reply · new stub",
+            "Reply",
+            "AI reply",
             "Fork",
             "Link post · new fragment",
             "Open on web",
@@ -819,14 +829,11 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
         let more: Vec<String> = v.post_more_items().into_iter().map(|i| i.0).collect();
         (shown, more)
     });
-    assert_eq!(
-        shown,
-        ["Quote into a thread", "Reply · new stub", "↓ Background"]
-    );
+    assert_eq!(shown, ["Quote into a thread", "Reply", "↓ Background"]);
     assert_eq!(
         more,
         [
-            "AI reply · new stub",
+            "AI reply",
             "Fork · needs a pinned version",
             "Link post · new fragment",
             "Open on web",
@@ -837,12 +844,31 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
             "⤳ Add to trail"
         ]
     );
-    assert!(tip(&row, "Link post").contains("no stub_of"));
+    // ⋯ More shows each item's key, as a menu bar would.
+    {
+        use super::sources::{MenuCmd, menu_key};
+        let key = |id| menu_key(&MenuCmd::PostAction(id));
+        assert_eq!(key("Hopper").as_deref(), Some("h"));
+        assert_eq!(menu_key(&MenuCmd::AddToTrail).as_deref(), Some("t"));
+        assert_eq!(
+            key("Shelf"),
+            crate::keymap::action_glyphs("ToggleShelf"),
+            "the shelf's key"
+        );
+        assert!(key("Shelf").is_some() && key("Link post").is_some());
+        assert_eq!(key("Open on web"), None);
+    }
+    assert!(tip(&row, "Link post").contains("not a reply"));
+    // Plain words: no protocol field names or "stub" jargon in a label or tip.
+    for c in &row {
+        let text = format!("{} {}", c.label, c.tip);
+        assert!(!text.contains("stub"), "{text}");
+    }
     for c in &row {
         assert!(!c.tip.is_empty(), "{} has a tooltip", c.label);
         assert_eq!(c.enabled, c.id != "Fork", "{}", c.label);
     }
-    assert!(tip(&row, "Reply").contains("stub_of"));
+    assert!(tip(&row, "Reply").contains("replies to this post"));
     assert!(tip(&row, "Quote").contains("![[…]]"));
     let fork = tip(&row, "Fork");
     assert!(

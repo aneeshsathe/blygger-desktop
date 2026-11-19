@@ -200,7 +200,7 @@ fn history_groups_walks_newest_first_as_trees() {
         [(2, 0), (3, 1), (4, 2), (5, 2)]
     );
     assert_eq!(browse::via_word(BrowseVia::Quote), "quoted layer");
-    assert_eq!(browse::via_word(BrowseVia::Stub), "stubbed source");
+    assert_eq!(browse::via_word(BrowseVia::Stub), "replied-to post");
     assert_eq!(browse::label("", "01k2abcdefgh"), "01k2abcd");
     assert!(browse::walks(&[]).is_empty());
 }

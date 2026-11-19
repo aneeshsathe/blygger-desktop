@@ -374,6 +374,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Reload Config", app::ReloadConfig),
                 MenuItem::action("Quick Capture", app::ShowCapture),
                 MenuItem::separator(),
+                MenuItem::action("Connect…", app::switcher::ConnectBlyg),
                 MenuItem::action("Disconnect…", app::Disconnect),
                 MenuItem::separator(),
                 MenuItem::action("Quit Burrow", app::Quit),
@@ -426,7 +427,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Catch Up…", app::reading::catchup::CatchUp), // --- catch up ---
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 // --- own posts ---
-                MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
+                MenuItem::action("Reply", app::reading::own::ReplyToPost),
                 MenuItem::action("Quote into a Thread", app::reading::own::QuotePost),
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
@@ -438,7 +439,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 // --- shelf ---
                 MenuItem::action("Shelf…", app::shelf::ShowShelf),
-                MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
+                MenuItem::action("Add to Shelf / Remove from Shelf", app::shelf::ToggleShelf),
                 // --- tangles --- the quote tray, split view
                 MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
                 MenuItem::action("Open Beside", app::split::OpenBeside),
@@ -481,13 +482,14 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
                 MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
+                MenuItem::action("Mark All Read…", app::reading::sources::MarkAllRead),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
                 MenuItem::action(
                     "Browsing History",
                     app::reading::browse::ToggleBrowseHistory,
                 ),
-                MenuItem::action("Mentions", app::reading::ShowMentions),
+                MenuItem::action("Responses", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::action("Contacts…", app::reading::contacts::ShowContacts), // --- contacts ---
                 MenuItem::separator(),
