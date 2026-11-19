@@ -92,6 +92,14 @@ fn click(cx: &mut VisualTestContext, selector: &'static str) {
     settle(cx);
 }
 
+/// Let a post's hold run out (`compose::HOLD_SECS`), then settle.
+fn pass_hold(cx: &mut VisualTestContext) {
+    cx.executor().advance_clock(Duration::from_secs(
+        u64::from(super::compose::HOLD_SECS) + 1,
+    ));
+    settle(cx);
+}
+
 /// The newest item, when the box made one since `before` items.
 fn made(fake: &FakeBackend, before: usize) -> Option<blyg_core::Item> {
     let items = fake.items();
@@ -185,6 +193,10 @@ fn cmd_enter_posts_a_fragment_and_clears_the_box(cx: &mut TestAppContext) {
     settle(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     settle(cx);
+    // It waits first, saying how to stop it; nothing has gone out.
+    assert_eq!(fake.items().len(), before, "held, not sent");
+    assert!(cx.debug_bounds("compose-hold").is_some(), "the hold shows");
+    pass_hold(cx);
     let it = made(&fake, before).expect("a post");
     assert_eq!(it.content_md, "posted while reading");
     assert_eq!(
@@ -200,6 +212,55 @@ fn cmd_enter_posts_a_fragment_and_clears_the_box(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn esc_or_an_edit_during_the_hold_sends_nothing(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    to_reading(cx);
+    let before = fake.items().len();
+    cx.simulate_keystrokes("c");
+    cx.simulate_input("second thoughts");
+    settle(cx);
+    // esc cancels the waiting post; the text and the caret stay.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_some()));
+    cx.simulate_keystrokes("escape");
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_none()));
+    assert!(box_has_keys(&view, cx), "the caret stays in the box");
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "nothing posted, nothing made");
+    assert_eq!(box_text(&view, cx), "second thoughts");
+    // An edit during the hold cancels it too.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    cx.simulate_input("!");
+    settle(cx);
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "an edit cancels");
+    assert_eq!(box_text(&view, cx), "second thoughts!");
+    // The Cancel button (the Post button while it waits) cancels.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    click(cx, "compose-post");
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "Cancel cancels");
+    // ⌘⏎ again while it waits posts at once.
+    view.update_in(cx, |v, window, cx| v.focus_compose(window, cx));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_some()));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    let it = made(&fake, before).expect("posted at once");
+    assert_eq!(
+        (it.status, it.content_md.as_str()),
+        (Status::Public, "second thoughts!")
+    );
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before + 1, "and only once");
+}
+
+#[gpui_kit::test]
 fn the_post_button_posts_too(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     to_reading(cx);
@@ -210,6 +271,7 @@ fn the_post_button_posts_too(cx: &mut TestAppContext) {
     cx.simulate_input("by a click");
     settle(cx);
     click(cx, "compose-post");
+    pass_hold(cx);
     assert_eq!(made(&fake, before).expect("a post").status, Status::Public);
     assert_eq!(box_text(&view, cx), "");
 }
@@ -248,7 +310,7 @@ fn a_failed_post_keeps_the_text_and_the_retry_reuses_its_draft(cx: &mut TestAppC
     cx.simulate_input("on a train");
     settle(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-    settle(cx);
+    pass_hold(cx);
     assert_eq!(box_text(&view, cx), "on a train", "kept");
     let err = view.read_with(cx, |v, _| v.reading.compose.error.clone());
     assert!(err.is_some_and(|e| e.starts_with("Couldn't post")));
@@ -257,7 +319,7 @@ fn a_failed_post_keeps_the_text_and_the_retry_reuses_its_draft(cx: &mut TestAppC
     // Back online, the same draft goes out: no second item.
     fake.set_offline(false);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-    settle(cx);
+    pass_hold(cx);
     let it = made(&fake, before).expect("one item");
     assert_eq!((it.status, it.version), (Status::Public, 1));
     assert_eq!(box_text(&view, cx), "");

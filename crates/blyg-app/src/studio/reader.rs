@@ -291,6 +291,10 @@ ins {{ background: var(--ins, rgba(58, 166, 85, 0.18)); text-decoration: none; }
 del {{ background: var(--del, rgba(210, 60, 42, 0.16)); text-decoration-color: var(--over, #d23c2a); }}
 hr {{ border-top-color: var(--rule); }}
 article {{ max-width: 38em; margin: 0; }}
+/* A thread's first line is its title: a heading here, as the stream shows it. */
+article.thread > .item-content > p:first-child {{
+  font-size: 1.3em; font-weight: 600; line-height: 1.3; margin-top: 0.2em;
+}}
 .blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; cursor: help; }}
 .blyg-gen-note {{
   margin-top: 1.6em; color: var(--muted, #888);

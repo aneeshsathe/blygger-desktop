@@ -153,6 +153,18 @@ pub enum MenuCmd {
     StreamAction(super::vm::Key, &'static str),
     /// A stream post's "⋯ More": select it, then onto the trail (`t`).
     StreamTrail(super::vm::Key),
+    /// --- mark all read --- Mark All Read… for this source (`None`: the
+    /// one on screen), asked first with the count (`reading/marks.rs`).
+    MarkAllRead(Option<Source>),
+}
+
+/// --- mark all read --- a source menu's "Mark All Read…" row.
+fn mark_all_item(source: Source) -> (String, Option<MenuCmd>, bool) {
+    (
+        "Mark All Read…".into(),
+        Some(MenuCmd::MarkAllRead(Some(source))),
+        false,
+    )
 }
 
 /// A subscription being dragged onto a folder.
@@ -265,13 +277,14 @@ impl MainView {
 
     /// Everything the pane lists now.
     pub(crate) fn source_entries(&self) -> Vec<Entry> {
-        let mut e = sources_vm::entries(
+        let mut e = sources_vm::entries_skipping(
             &self.reading.hoppers,
             &self.reading.folders,
             &self.reading.filed,
             &self.reading.subs,
             &self.reading.rows,
             &self.reading.collapsed,
+            &self.reading.hopper_only, // --- unread counts --- one rule
             self.now,
         );
         // --- contacts --- Mentions, right under All unread.
@@ -436,6 +449,7 @@ impl MainView {
             MenuCmd::CheckAll => self.check_feeds(None, window, cx),
             MenuCmd::SiteFor(sub, on) => self.set_site_for_sub(sub, on, cx), // --- reader view ---
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
+            MenuCmd::MarkAllRead(source) => return self.ask_mark_all_read(source, window, cx),
             // Fork is greyed in the row's sense: it says where forking lives.
             MenuCmd::PostAction("Fork") => {
                 let tip = self
@@ -495,10 +509,21 @@ impl MainView {
                 ("New Hopper…".into(), Some(MenuCmd::NewHopper), false),
                 sep(),
                 ("Check All Feeds Now".into(), Some(MenuCmd::CheckAll), false),
+                // --- mark all read --- the source on screen.
+                (
+                    format!("Mark All Read in {}…", self.mark_all_name(None)),
+                    Some(MenuCmd::MarkAllRead(None)),
+                    false,
+                ),
             ],
             // --- hoppers --- a post's "Hopper ›" list.
             MenuTarget::Posts(key) if m.folders => self.hopper_menu_items(key),
-            MenuTarget::Hopper(id) => self.hopper_items_for(id),
+            MenuTarget::Hopper(id) => {
+                let mut v = self.hopper_items_for(id);
+                v.push(sep()); // --- mark all read ---
+                v.push(mark_all_item(Source::Hopper(id.clone())));
+                v
+            }
             MenuTarget::PostMore => self.post_more_items(),
             MenuTarget::StreamMore(key) => self.stream_more_items(key),
             MenuTarget::Posts(key) => {
@@ -533,6 +558,7 @@ impl MainView {
                     false,
                 ));
                 v.push(sep());
+                v.push(mark_all_item(Source::Folder(id.clone()))); // --- mark all read ---
                 v.push(("New Folder…".into(), Some(MenuCmd::NewFolder), false));
                 v
             }
@@ -593,6 +619,7 @@ impl MainView {
                     Some(MenuCmd::CheckNow(sub.clone())),
                     false,
                 ));
+                v.push(mark_all_item(Source::Sub(sub.clone()))); // --- mark all read ---
                 // --- reader view --- where this subscription's posts open.
                 let site = self.reading.site.subs.get(sub).copied();
                 v.push(sep());
