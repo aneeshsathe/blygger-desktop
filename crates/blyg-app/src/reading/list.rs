@@ -1340,7 +1340,7 @@ impl MainView {
                 })
                 .into_any_element()
             }))
-            .children(more_chip)
+            .children(more_chip.map(|c| self.tour_marked_more(c))) // --- 0.26.0 --- the tour's ring
             .children(self.slots_more_chip(item, cx)) // --- reading slots ---
             .into_any_element()
     }

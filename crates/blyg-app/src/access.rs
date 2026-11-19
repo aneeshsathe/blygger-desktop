@@ -227,10 +227,7 @@ impl MainView {
                 s.error = Some("Offline. Try again when you're back online.".into())
             }
             CoreError::NotFound => {
-                s.error = Some(
-                    "This blyg has no client access to manage (its studio is older than 0.28)."
-                        .into(),
-                )
+                s.error = Some("This blyg has no client access to manage.".into())
             }
             e => s.error = Some(format!("{e}")),
         }

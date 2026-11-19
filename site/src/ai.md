@@ -100,8 +100,8 @@ What leaves your computer depends on the settings:
 
 Generated text is always disclosed as generated when you publish. Burrow
 records which model wrote each gap and sends it to your blyg with the text
-(blygger-studio 0.28 or later; see [Server requirements](server.md)). If
-your blyg's studio is older, Burrow warns you before publishing generated
+(every studio Burrow works with takes it; see [Server requirements](server.md)).
+If a blyg ever refuses it, Burrow warns you before publishing generated
 text, and Cancel is the default. Proofreading isn't generated prose and isn't
 disclosed.
 

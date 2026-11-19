@@ -362,7 +362,7 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
         assert!(
             t.sub
                 .as_ref()
-                .is_some_and(|s| s.contains("0.49.12 or later"))
+                .is_some_and(|s| s.contains(&format!("{} or later", blyg_core::api::MIN_STUDIO)))
         );
         assert!(
             v.render_server_notice().is_some(),

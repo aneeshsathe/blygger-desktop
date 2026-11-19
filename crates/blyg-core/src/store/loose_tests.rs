@@ -18,7 +18,18 @@ fn published(s: &Store, sid: &str, text: &str) -> LocalId {
         .unwrap();
     s.after_publish(&id, 1, &format!("{OWN}/t/{sid}"), text)
         .unwrap();
+    // Older than a week, so it can be an orphan.
+    made_on(s, &id, "2026-01-01T00:00:00.000Z");
     id
+}
+
+fn made_on(s: &Store, id: &LocalId, when: &str) {
+    s.conn()
+        .execute(
+            "UPDATE items SET created = ?2 WHERE local_id = ?1",
+            [&id.0, when],
+        )
+        .unwrap();
 }
 
 fn held(rid: &str, origin: &str, quotes: Option<(&str, &str)>) -> ReadingItem {
@@ -116,6 +127,26 @@ fn orphans_are_published_posts_nothing_points_at() {
 }
 
 #[test]
+fn a_post_from_this_week_is_not_an_orphan_yet() {
+    let s = sample();
+    let fresh = published(&s, "01j9qk3eeeeeeeeeeeeeeeeeee", "Fresh thought");
+    made_on(&s, &fresh, &crate::util::now_iso());
+    // Neither the operator nor the line counts it.
+    assert_eq!(run(&s, "is:orphan"), ["Rock pool economics", "Shore notes"]);
+    let sum = Summary::of(&s.items(), &s.loose_facts(Some(OWN)));
+    assert_eq!(sum.orphans, 2);
+    // Eight days on, it is one.
+    let old = days_ago(8);
+    made_on(&s, &fresh, &old);
+    assert_eq!(run(&s, "is:orphan").len(), 3);
+}
+
+/// An ISO timestamp `days` ago, from the store's own clock helpers.
+fn days_ago(days: i64) -> String {
+    crate::util::iso_from_ms(crate::util::now_ms() - days * 24 * 3600 * 1000)
+}
+
+#[test]
 fn drafts_tk_stale_kind_and_version() {
     let s = sample();
     assert_eq!(run(&s, "is:draft"), ["A half thought", "An old draft"]);
@@ -154,8 +185,12 @@ fn the_summary_is_in_words() {
     let sum = Summary::of(&s.items(), &s.loose_facts(Some(OWN)));
     assert_eq!(
         sum.words(),
-        "2 orphans · 1 ungenerated TK · 1 draft older than a month"
+        "2 posts not linked yet · 1 ungenerated TK · 1 draft older than a month"
     );
     assert_eq!(sum.parts()[0].1, "is:orphan");
+    // Every part has a plain tooltip naming its operator.
+    for (_, q) in sum.parts() {
+        assert!(Summary::tip(q).contains(q), "{q}");
+    }
     assert_eq!(Summary::default().words(), "");
 }

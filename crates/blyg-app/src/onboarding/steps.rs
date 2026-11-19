@@ -157,6 +157,8 @@ pub enum Key {
     // --- 0.26.0 ---
     /// Quiet writing is on (Settings › Quiet writing, View › Quiet Writing).
     QuietWriting,
+    /// The open post's ⋯ More menu is showing.
+    MoreMenu,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -198,6 +200,9 @@ pub enum Region {
     Whole,
     /// --- 0.26.0 --- Settings' Quiet writing row (Settings open).
     QuietSetting,
+    /// --- 0.26.0 --- The ⋯ More chip under the open post (where the
+    /// reading pane drew it).
+    MoreChip,
 }
 
 /// What a step prepares on the sample data when it's entered.
@@ -883,7 +888,7 @@ pub const STEPS: &[Step] = &[
         since: "0.18.0",
         title: "Loose ends",
         caption: "The search reads operators: is:draft lists your drafts, is:orphan the \
-                  published posts nothing points at, has:tk the ungenerated TKs, is:stale \
+                  published posts (a week old or more) nothing points at, has:tk the ungenerated TKs, is:stale \
                   drafts untouched for a month; links: and quotes: take an id or a host, and \
                   kind:thread, v:2 work too. Other words search as ever. With the search \
                   empty, a quiet line over the list says what's loose, in words.",
@@ -1216,10 +1221,10 @@ pub const STEPS: &[Step] = &[
         since: "0.21.0",
         title: "Read it as its author made it",
         caption: "In Reader mode, Settings › Reading › Open posts on the author's site shows \
-                  an opened post's own page, styled by its author, in the post pane. j/k still \
-                  move and Space pages down; Burrow reader | Author's site above the post \
-                  switches one view back, and a subscription's menu can always or never do \
-                  it. Press ⌥⌘2.",
+                  an opened post's own page, styled by its author. It fills the reading pane \
+                  under the browser bar: Burrow reader | Author's site, back and forward, the \
+                  address, 🛡 and ↗. j/k still move and Space pages down, and a subscription's \
+                  menu can always or never do it. Press ⌥⌘2.",
         keys: &[Key::ReaderMode],
         key_label: "⌥⌘2",
         region: Region::Reader,
@@ -1228,6 +1233,24 @@ pub const STEPS: &[Step] = &[
         pause_ms: 1600,
         settle: false,
         stay: false,
+    },
+    // --- 0.26.0 --- the open post's less common actions, behind ⋯ More.
+    Step {
+        id: "more-menu",
+        since: "0.26.0",
+        title: "⋯ More for this post",
+        caption: "Under an open post, one row keeps the actions you use most: quote, reply, \
+                  catch up and Background. The rest wait behind ⋯ More: a hopper, the shelf, \
+                  a trail, fork, link post, an AI reply, → Notes and open on web. Their keys \
+                  haven't changed. Click ⋯ More.",
+        keys: &[Key::MoreMenu],
+        key_label: "click",
+        region: Region::MoreChip,
+        button: None,
+        setup: Setup::Reader,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
     },
     Step {
         id: "reader",
@@ -1852,6 +1875,7 @@ pub const TOURS: &[Tour] = &[
             "original",
             "catch-up",
             "author-site",
+            "more-menu",
             "reader",
             "background",
             "shelf-add",
@@ -2062,6 +2086,7 @@ mod tests {
             Key::ShelfLens,
             Key::Discover,
             Key::MentionsFeed,
+            Key::MoreMenu, // --- 0.26.0 ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
@@ -2112,6 +2137,10 @@ mod tests {
             ["author-site", "copies-elsewhere", END]
         );
         assert_eq!(ids(news_run(&["0.23.0"])), ["catch-up", END]);
+        assert_eq!(
+            ids(news_run(&["0.26.0"])),
+            ["quiet-writing", "more-menu", END]
+        );
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);
         assert_eq!(tour_of("author-site"), Some(3));

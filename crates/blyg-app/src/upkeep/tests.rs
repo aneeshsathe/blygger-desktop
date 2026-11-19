@@ -82,7 +82,7 @@ fn a_thread_with_a_stale_quote_is_marked_and_found(cx: &mut TestAppContext) {
     assert!(
         parts
             .iter()
-            .any(|(w, q)| *q == "is:stale-quote" && w == "1 thread with stale quotes"),
+            .any(|(w, q)| *q == "is:stale-quote" && w == "1 thread with outdated quotes"),
         "{parts:?}"
     );
     cx.simulate_input("is:stale-quote");
