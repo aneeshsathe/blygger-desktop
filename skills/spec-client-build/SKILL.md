@@ -54,6 +54,7 @@ first and the studio second; where they differ, file it upstream, don't guess.
 - Start with `docs/SPEC.md` (Burrow's decisions) and `docs/BLYGGER-SPEC-DIGEST.md`
   (the spec, digested); the agreed UX is in `docs/prototype/`.
 - New protocol or server behaviour goes in `blyg-core` behind the `Backend`
-  trait; the UI (`blyg-app`) talks only to `Arc<dyn Backend>`, and every
-  wrapper (`SwitchBackend` in `connection.rs`) forwards each new method.
+  trait; the UI (`blyg-app`) talks only to `Arc<dyn Backend>`. A test
+  (`crates/blyg-app/tests/backend_forwarding.rs`) fails until `SwitchBackend`
+  forwards a new method.
 - Server requirements beyond stock studio go in `docs/SERVER.md`.

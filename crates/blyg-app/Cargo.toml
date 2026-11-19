@@ -110,6 +110,9 @@ windows-core = "0.62"
 embed-resource = "3.0"
 
 [dev-dependencies]
+# tests/backend_forwarding.rs reads the Backend trait and SwitchBackend.
+syn = { version = "2", features = ["full"] }
+quote = "1"
 # --- full editor ---
 tempfile = "3"
 gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }
