@@ -1074,6 +1074,21 @@ impl MainView {
                 })
                 .into_any_element();
         };
+        // --- reader view --- the author's own page takes the reading pane:
+        // the browser pane's chrome (with Burrow reader | Author's site), the
+        // page to the foot of the pane, and the action row.
+        if self.site_view_shown() {
+            return div()
+                .id("reading-detail")
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(self.render_site_pane(o, cx))
+                .child(self.render_post_actions(o, cx))
+                .into_any_element();
+        }
         let item = &o.item;
         let kind = crate::vm::kind_label(item.kind);
         let tombstone = item.state == "tombstone";
@@ -1228,10 +1243,7 @@ impl MainView {
             });
 
         // The body: the post as its blyg published it, in the WebView.
-        let body = if self.site_view_shown() {
-            // --- reader view --- the author's own page instead.
-            self.render_site_pane(cx)
-        } else if self.studio.reader.active() {
+        let body = if self.studio.reader.active() {
             self.reader_pane(&p)
         } else {
             div()

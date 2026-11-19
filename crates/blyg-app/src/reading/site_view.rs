@@ -2,33 +2,46 @@
 //! (`open-posts-on-site`, off by default).
 //!
 //! With it on, an opened post shows its own public page (its `page`), as
-//! its author styled it, where Burrow's reader would show it: the same
-//! place in the reading layout (the list or stream beside it), with the
-//! post's header, version pill, notes and action row around it as before.
+//! its author styled it, in the browser pane's chrome docked in the reading
+//! pane: the pane's place in the layout (the list or stream beside it), its
+//! size, moving and resizing with the splits. Along its top is the browser
+//! pane's chrome (`browser::chrome_bar` / `chrome_button` /
+//! `chrome_address`: "Burrow reader | Author's site", ←, →, ↻ / ✕, the
+//! address, 🛡 and ↗), then the page down to the post's action row. The
+//! post's header, notes and responses are Burrow reader's; the page has its
+//! own.
 //!
-//! Why its own web view and not the browser pane: the reader pane's web view
+//! Before 0.26.0 the page sat in the reader's slot between the post's header
+//! (and any "edited since you read" diff) and the action row, under a small
+//! caption: a box of someone else's page floating in Burrow's pane, which
+//! read as a hovering pane rather than the page taking the pane's place.
+//!
+//! Why its own web view and not the slide-over's: the reader pane's web view
 //! has a bridge into the app (quotes, links, selection) and shows only
-//! sanitized HTML, so a live page can't go there; the browser pane is a
-//! slide-over with its own chrome, keyboard and history, made for wandering
-//! off. A post's page is a step of reading, so it gets a web view of the
-//! browser's own kind (`browser::surface`: no bridge, http(s) only, the
-//! browser's cookie jar, block lists and shields) placed in the reader's
-//! slot. Links clicked in it stay in it; ⇧⌘B and the browser pane are
-//! untouched.
+//! sanitized HTML, so a live page can't go there; the browser slide-over is
+//! for wandering off (links, ⇧⌘B), with its own page and history, and stays
+//! free for that. A post's page is a step of reading, so it gets a web view of
+//! the browser's own kind (`browser::surface`: no bridge, http(s) only, the
+//! browser's cookie jar, block lists and per-site shields, one set shared
+//! with the slide-over) in the reading pane. Links clicked in it stay in it,
+//! and ← / → walk its history; ⇧⌘B and the slide-over are untouched.
 //!
 //! - j/k and ↑/↓ keep moving through posts: the view never takes the keyboard
 //!   on load, and when a click gives it the keyboard outside a text field it
-//!   is handed back to the list (as a click in Burrow's reader does).
-//!   Space pages down and, at the end, opens the next unread post.
-//! - The toggle above the post switches this one view between "Burrow
-//!   reader" and "Author's site". A subscription's menu can always or never
-//!   open its posts this way (`state.json`, `author_site_subs`).
+//!   is handed back to the list (as a click in Burrow's reader does); a click
+//!   on the chrome takes it back too. Space pages down and, at the end, opens
+//!   the next unread post.
+//! - The toggle at the chrome's left (in the header, in Burrow's reader)
+//!   switches this one view between "Burrow reader" and "Author's site". A
+//!   subscription's menu can always or never open its posts this way
+//!   (`state.json`, `author_site_subs`).
 //! - A post with no page of its own opens in Burrow's reader, and a quiet
 //!   line says so. A pinned version, a diff or a withdrawn post is Burrow's.
 //! - It counts as read exactly as before (opening marks it read).
-//! - Elsewhere than macOS there is no web view to embed: the page opens in
-//!   the default browser when a post is opened (not while moving with the
-//!   keys), and Burrow's reader shows the post here.
+//! - On Windows it is the same, in a WebView2 (no content blocking there yet:
+//!   🛡 is greyed out, as in the slide-over). Where there's no browser pane
+//!   at all, the page opens in the default browser when a post is opened
+//!   (not while moving with the keys), and Burrow's reader shows the post.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -44,12 +57,20 @@ use gpui_kit::*;
 use super::View;
 use super::vm::Key;
 use crate::app::MainView;
-use crate::app::browser::surface::{self, BrowserEvent, BrowserSurface};
+use crate::app::browser::surface::{self, BrowserEvent, BrowserSurface, PageState};
 
 /// How long a site view no longer shown keeps its web view (and page).
 pub const TEARDOWN_AFTER: Duration = Duration::from_secs(120);
 /// How often the keyboard is checked while the view is up.
 const KEYS_EVERY: Duration = Duration::from_millis(400);
+
+/// The docked chrome's navigation buttons.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Nav {
+    Back,
+    Forward,
+    Reload,
+}
 
 /// The quiet line when a post would open on its site but has no page.
 pub const NO_PAGE: &str = "No page of its own · shown in Burrow's reader";
@@ -87,17 +108,11 @@ pub fn shows(r: &ReadingItem, want: bool) -> Shows {
     }
 }
 
-/// Whether this build can show a page in the reading layout.
+/// Whether this build can show a page in the reading layout: wherever the
+/// browser pane exists (WKWebView on macOS, WebView2 on Windows), since the
+/// page is shown in the pane's own kind of web view.
 pub fn embeddable() -> bool {
-    cfg!(any(target_os = "macos", test))
-}
-
-/// The page's address for the strip above it: host and path.
-pub fn strip_label(url: &str) -> String {
-    let t = url
-        .trim_start_matches("https://")
-        .trim_start_matches("http://");
-    t.trim_end_matches('/').to_string()
+    crate::app::browser::pane_available()
 }
 
 /// The script that pages down (`true`: it was at the end already).
@@ -170,9 +185,12 @@ pub struct SiteView {
     events_rx: Option<Receiver<BrowserEvent>>,
     /// Why there's no web view (Burrow's reader is shown instead).
     pub failed: Option<String>,
-    /// The URL loaded in the view.
+    /// The post's page as loaded in the view (links clicked in it move on
+    /// from there).
     loaded: Option<String>,
-    pub loading: bool,
+    /// What the page is doing (the chrome's address, ← →, progress).
+    pub page: PageState,
+    poll: Option<Task<()>>,
     /// This one view's choice (the toggle above the post), for its post.
     pub item: Option<(Key, bool)>,
     /// Per subscription: always (`true`) or never (`false`).
@@ -203,7 +221,8 @@ impl SiteView {
             events_rx: Some(rx),
             failed: None,
             loaded: None,
-            loading: false,
+            page: PageState::default(),
+            poll: None,
             item: None,
             subs,
             data_dir,
@@ -364,7 +383,12 @@ impl MainView {
             self.reading.site.loads.push(url.clone());
             self.reading.site.with(|s| s.load_url(url));
             self.reading.site.loaded = Some(url.clone());
-            self.reading.site.loading = true;
+            self.reading.site.page = PageState {
+                url: url.clone(),
+                loading: true,
+                ..PageState::default()
+            };
+            self.site_poll(cx);
         }
         let dark = self.palette.dark;
         if self.reading.site.dark != Some(dark) && self.reading.site.alive() {
@@ -382,7 +406,9 @@ impl MainView {
             || self.onboarding.flow.is_some()
             || self.tutorial_hides_reader(window)
             || self.profile_sheet_open()
-            || self.reading.src_menu.is_some();
+            || self.reading.src_menu.is_some()
+            // --- browser on Windows --- the Menu button's panel.
+            || crate::platform::menu_open(cx);
         let showing = want.is_some() && !covered;
         // The browser pane and the notes drawer cut it off at their edge.
         let vw = window.viewport_size().width;
@@ -418,6 +444,7 @@ impl MainView {
                         v.reading.site.placed.borrow_mut().frame = None;
                         v.reading.site.loaded = None;
                         v.reading.site.keys = None;
+                        v.reading.site.poll = None;
                         v.reading.site.teardown = None;
                     }
                 });
@@ -466,12 +493,9 @@ impl MainView {
     fn site_event(&mut self, ev: BrowserEvent, _window: &mut Window, cx: &mut Context<Self>) {
         match ev {
             BrowserEvent::Changed => {
-                let loading = self.reading.site.with(|s| s.state().loading);
-                if let Some(l) = loading
-                    && l != self.reading.site.loading
-                {
-                    self.reading.site.loading = l;
-                    cx.notify();
+                self.site_refresh_state(cx);
+                if self.reading.site.page.loading {
+                    self.site_poll(cx);
                 }
             }
             BrowserEvent::OpenExternally(url) => cx.open_url(&url),
@@ -561,52 +585,188 @@ impl MainView {
         true
     }
 
-    /// The body when the post shows its page: a strip naming it (and
-    /// opening it in the default browser), then the web view.
-    pub(crate) fn render_site_pane(&self, cx: &mut Context<Self>) -> AnyElement {
+    /// Read the page's state (the address, ← →, the progress bar).
+    fn site_refresh_state(&mut self, cx: &mut Context<Self>) {
+        let Some(st) = self.reading.site.with(|s| s.state()) else {
+            return;
+        };
+        // about:blank before the first page: keep the URL asked for.
+        let blank = st.url.is_empty() || st.url == "about:blank";
+        let url = if blank {
+            self.reading.site.page.url.clone()
+        } else {
+            st.url.clone()
+        };
+        let next = PageState { url, ..st };
+        if next != self.reading.site.page {
+            self.reading.site.page = next;
+            cx.notify();
+        }
+    }
+
+    /// While the page loads, read its state now and then (as the browser
+    /// pane does).
+    fn site_poll(&mut self, cx: &mut Context<Self>) {
+        if self.reading.site.poll.is_some() {
+            return;
+        }
+        self.reading.site.poll = Some(cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(120))
+                    .await;
+                let more = this
+                    .update(cx, |v, cx| {
+                        v.site_refresh_state(cx);
+                        let loading = v.reading.site.page.loading && v.reading.site.alive();
+                        if !loading {
+                            v.reading.site.poll = None;
+                        }
+                        loading
+                    })
+                    .unwrap_or(false);
+                if !more {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// The docked chrome's ←, → and ↻ / ✕.
+    fn site_nav(&mut self, to: Nav, cx: &mut Context<Self>) {
+        let pg = &self.reading.site.page;
+        match to {
+            Nav::Back if !pg.can_back => return,
+            Nav::Forward if !pg.can_forward => return,
+            Nav::Back => self.reading.site.with(|s| s.back()),
+            Nav::Forward => self.reading.site.with(|s| s.forward()),
+            Nav::Reload if self.reading.site.page.loading => self.reading.site.with(|s| s.stop()),
+            Nav::Reload => {
+                self.reading.site.page.loading = true;
+                self.reading.site.with(|s| s.reload())
+            }
+        };
+        self.site_poll(cx);
+        cx.notify();
+    }
+
+    /// 🛡 in the docked chrome: the browser's shield for this host (one set
+    /// of shields for the pane and this view); the page reloads under it.
+    fn site_toggle_shield(&mut self, cx: &mut Context<Self>) {
+        let url = self.reading.site.page.url.clone();
+        if !self.browser_toggle_shield_for(&url, cx) {
+            return;
+        }
+        self.reading.site.with(|s| {
+            s.refresh_blocking();
+            s.reload();
+        });
+        self.reading.site.page.loading = true;
+        self.site_poll(cx);
+        cx.notify();
+    }
+
+    /// The reading pane when the post shows its page: the browser pane's
+    /// chrome (Burrow reader | Author's site, ←, →, ↻, the address, 🛡, ↗)
+    /// along its top, then the web view to the action row, sized to the
+    /// pane and moving with the layout's splits.
+    pub(crate) fn render_site_pane(&self, o: &super::Opened, cx: &mut Context<Self>) -> AnyElement {
+        use crate::app::browser::{chrome_address, chrome_bar, chrome_button};
         let p = self.palette.on_page();
-        let url = self.site_target().unwrap_or_default();
-        let open = url.clone();
+        let pg = &self.reading.site.page;
+        let has_page = crate::app::browser::is_web_url(&pg.url);
+        let blocking = crate::app::browser::blocking_available();
+        let shield_on = self.browser.blocking_at(&pg.url);
         let placed = self.reading.site.placed.clone();
-        let strip = div()
-            .flex_none()
-            .px(px(32.))
-            .py(px(4.))
-            .flex()
-            .items_center()
-            .gap(px(8.))
-            .font_family(self.chrome())
-            .text_size(px(11.))
-            .text_color(p.muted)
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .child(format!("{} · as its author styled it", strip_label(&url))),
+        // The stream's side pane has its ✕ esc in the top right corner.
+        let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
+        let chrome = chrome_bar(&p, "site-chrome", pg)
+            .when(stream, |d| d.pr(px(64.)))
+            // Clicks on the chrome take the keyboard back from the page.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|this, _, _, _| {
+                    this.reading.site.with(|s| s.focus_parent());
+                }),
             )
-            .when(self.reading.site.loading, |d| d.child("loading…"))
+            .children(
+                self.render_site_toggle(o, cx)
+                    .map(|t| div().flex_none().mr(px(6.)).child(t)),
+            )
             .child(
-                div()
-                    .id("site-open-browser")
-                    .debug_selector(|| "site-open-browser".into())
-                    .cursor_pointer()
-                    .hover(|s| s.text_color(p.accent))
-                    .child("Open in browser ↗")
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.open_url(&open);
+                chrome_button(&p, "site-back", "←", pg.can_back, "Back")
+                    .on_click(cx.listener(|this, _, _, cx| this.site_nav(Nav::Back, cx))),
+            )
+            .child(
+                chrome_button(&p, "site-forward", "→", pg.can_forward, "Forward")
+                    .on_click(cx.listener(|this, _, _, cx| this.site_nav(Nav::Forward, cx))),
+            )
+            .child(
+                chrome_button(
+                    &p,
+                    "site-reload",
+                    if pg.loading { "✕" } else { "↻" },
+                    has_page,
+                    if pg.loading { "Stop" } else { "Reload" },
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.site_nav(Nav::Reload, cx))),
+            )
+            .child(div().w(px(4.)))
+            .child(chrome_address(&p, "site-address", pg).tooltip(|_, cx| {
+                cx.new(|_| {
+                    super::Tip(
+                        "The post's own page, as its author styled it. Links you click stay here."
+                            .into(),
+                    )
+                })
+                .into()
+            }))
+            .child(div().w(px(4.)))
+            .child(
+                chrome_button(
+                    &p,
+                    "site-shield",
+                    if shield_on { "🛡 On" } else { "🛡 Off" },
+                    has_page && blocking,
+                    if blocking {
+                        "Content blocking for this site (the browser pane's shields)"
+                    } else {
+                        "Content blocking isn't on Windows yet"
+                    },
+                )
+                .when(!shield_on, |d| d.text_color(p.muted))
+                .on_click(cx.listener(|this, _, _, cx| {
+                    if crate::app::browser::blocking_available() {
+                        this.site_toggle_shield(cx);
+                    }
+                })),
+            )
+            .child(
+                chrome_button(
+                    &p,
+                    "site-open-browser",
+                    "↗",
+                    has_page,
+                    "Open in default browser",
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    let url = this.reading.site.page.url.clone();
+                    if crate::app::browser::is_web_url(&url) {
+                        cx.open_url(&url);
                         this.show_toast("Opening in your browser…", None, cx);
-                    })),
+                    }
+                })),
             );
         div()
             .id("site-body")
+            .debug_selector(|| "site-body".into())
             .flex_1()
             .min_h_0()
             .min_w_0()
             .w_full()
             .flex()
             .flex_col()
-            .child(strip)
+            .child(chrome)
             .child(
                 div().flex_1().min_h_0().bg(p.bg).child(
                     canvas(
@@ -687,7 +847,7 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{Shows, page_url, shows, strip_label, wants_site};
+    use super::{Shows, page_url, shows, wants_site};
     use blyg_core::ReadingItem;
 
     fn item(origin: &str, page: Option<&str>) -> ReadingItem {
@@ -779,9 +939,5 @@ mod tests {
         let mut gone = r.clone();
         gone.state = "tombstone".into();
         assert_eq!(shows(&gone, true), Shows::Reader);
-        assert_eq!(
-            strip_label("https://ada.blyg.example.com/f/01abc/"),
-            "ada.blyg.example.com/f/01abc"
-        );
     }
 }

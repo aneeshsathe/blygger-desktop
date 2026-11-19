@@ -316,7 +316,7 @@ impl MainView {
             // site (`BLYGGER_DEMO_SITE_URL`: the page to show, since the
             // sample blygs don't exist), and in the reader with the full
             // history (`rd-changelog`) or a summary (`rd-summary`).
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 0) => {
+            ("rd-author-site" | "rd-stream-author-site" | "rd-changelog" | "rd-summary", 0) => {
                 use blyg_core::changelog::{ChangelogDisplay, ChangelogSettings};
                 let mode = match scenario {
                     "rd-changelog" => ChangelogDisplay::History,
@@ -328,10 +328,10 @@ impl MainView {
                     page: Some(ChangelogDisplay::Latest),
                     summary_prompt: None,
                 });
-                self.prefs.author_site = scenario == "rd-author-site";
+                self.prefs.author_site = scenario.ends_with("author-site");
                 self.show_view(View::Reading, window, cx)
             }
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 1) => {
+            ("rd-author-site" | "rd-stream-author-site" | "rd-changelog" | "rd-summary", 1) => {
                 open(self, RUE_TRUST, window, cx);
                 if let Some(o) = self.reading.opened.as_mut()
                     && scenario == "rd-summary"
@@ -354,7 +354,7 @@ impl MainView {
             // A window a screenshot run never activates may not redraw by
             // itself (nor load the page into its web view): draw it a few
             // times so a capture of the window shows the last step.
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 2) => {
+            ("rd-author-site" | "rd-stream-author-site" | "rd-changelog" | "rd-summary", 2) => {
                 // Set once the post has loaded (opening it reloads the item).
                 if let (Some(o), Ok(u)) = (
                     self.reading.opened.as_mut(),

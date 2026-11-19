@@ -369,28 +369,33 @@ makes:
 
 Some blygs are worth seeing as their author styled them. Settings (⌘,) ›
 Reading › **Open posts on the author's site** (`open-posts-on-site = true`)
-shows an opened post's own page, the one its author published, where
-Burrow's reader would show it. Nothing else moves: the list or stream stays
-beside it, the header, the version pill and the actions stay above and
-below, and the post counts as read when you open it.
+shows an opened post's own page, the one its author published, in place of
+Burrow's reader: the page takes the whole reading pane, with the browser
+pane's toolbar along its top. The list or stream stays beside it, the pane
+keeps its size and moves with the layout, and the post counts as read when
+you open it.
 
+- The toolbar has **Burrow reader | Author's site** (switches this one
+  view), ← and → (the page's own history), ↻, the page's title and address,
+  🛡 (the browser's shield for that site) and ↗ (opens it in your default
+  browser). The action row stays under the page.
 - **j / k** and ↑ / ↓ still move through posts. Space pages down the page,
   and at its end opens the next post to read. A click in the page hands the
   keys back to the list unless you clicked into a text field.
-- **Burrow reader | Author's site**, above the post, switches that one view.
-  The next post you open follows the setting again.
-- A subscription's menu (right-click it in the sources pane) can **Open
-  Posts on the Author's Site** always, **in Burrow's Reader** always, or **as
-  Settings Says**: some blygs look great, some don't.
+- The next post you open follows the setting again. A subscription's menu
+  (right-click it in the sources pane) can **Open Posts on the Author's
+  Site** always, **in Burrow's Reader** always, or **as Settings Says**:
+  some blygs look great, some don't.
 - A post without a page of its own opens in Burrow's reader, and a quiet line
   says so. A pinned version, a diff and a withdrawn post are always Burrow's.
-- The page is shown by a web view of the [browser pane](notes-and-browser.md#the-browser-pane)'s
-  kind: its own cookies, no access to the app, content blocking and the
-  browser's per-site shields. Links you click in it stay in it. **Open in
-  browser ↗** above the page, or **Open on web**, opens it in your default
-  browser.
-- Elsewhere than macOS, opening a post opens its page in your default browser
-  (not while you move with the keys), and Burrow's reader shows it here.
+- The page has the [browser pane](notes-and-browser.md#the-browser-pane)'s
+  cookies, content blocking and per-site shields, and no access to the app.
+  Links you click in it stay in it. Links you click in Burrow's reader still
+  open in the browser pane, which slides over as before.
+- On Windows it's the same (without content blocking, as in the browser
+  pane). Where there's no browser pane, opening a post opens its page in
+  your default browser (not while you move with the keys), and Burrow's
+  reader shows it here.
 
 In the web app, ⚙ Reading has the same choice for that browser: opening a
 post also opens its page in a new tab, and the post stays in Burrow with a
