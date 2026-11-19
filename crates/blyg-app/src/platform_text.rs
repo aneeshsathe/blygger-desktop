@@ -156,8 +156,7 @@ pub(crate) mod scan {
                 };
                 i += open;
                 let mut text = String::new();
-                loop {
-                    let Some(&d) = c.get(i) else { break };
+                while let Some(&d) = c.get(i) {
                     match hashes {
                         Some(h)
                             if d == '"'

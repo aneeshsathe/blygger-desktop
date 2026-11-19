@@ -19,6 +19,8 @@ mod tutorial;
 pub(crate) mod whats_new;
 
 #[cfg(test)]
+mod caption_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;

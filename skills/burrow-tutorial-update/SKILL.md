@@ -14,8 +14,11 @@ tour is a release checklist item, not an afterthought.
    `docs/SPEC.md` in its dense style (file names, keys, rules).
 2. **Tour:** a step in `crates/blyg-app/src/onboarding/steps.rs` that lands on
    the feature (the quick tour, or the matching feature tour).
-3. **Existing steps:** audit every step whose UI, keys or behaviour changed
-   and edit it; don't only add new ones.
+3. **Existing steps:** `onboarding/caption_tests.rs` fails when a step quotes
+   a key nothing binds, a key label that runs another action, a menu item the
+   menus lack, or a “label” the app no longer shows. Quote labels in “…” so
+   it can check them. It can't tell that a step's *behaviour* changed: audit
+   the steps whose UI or behaviour your change touched.
 4. **What's new:** if the tour teaches something new, set the newest entry's
    `version` in `onboarding/whats_new.rs` to the release's. The card stays short
    (version and first step); the details live in `site/src/releases.md`.

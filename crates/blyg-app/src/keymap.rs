@@ -1350,12 +1350,20 @@ pub fn hint_owned(text: String) -> String {
     }
 }
 
-/// The pure part of `hint`: rewrite each run of macOS modifier glyphs
-/// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
-pub fn windows_hint(text: &str) -> String {
+/// A piece of app text, read for its keys (`glyph_parts`).
+enum GlyphPart {
+    Char(char),
+    /// Modifiers with no key after them ("⌘-click", "hold ⌘").
+    Mods(Vec<&'static str>),
+    /// A key, as the table spells it (`alt-cmd-b`; `cmd--` for minus).
+    Key(String),
+}
+
+/// Split text into its keys (each run of macOS modifier glyphs `⌃⌥⇧⌘` and
+/// the key after it) and everything else.
+fn glyph_parts(text: &str) -> Vec<GlyphPart> {
     let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
+    let mut out = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         let mut mods = Vec::new();
@@ -1370,7 +1378,7 @@ pub fn windows_hint(text: &str) -> String {
             i += 1;
         }
         if mods.is_empty() {
-            out.push(chars[i]);
+            out.push(GlyphPart::Char(chars[i]));
             i += 1;
             continue;
         }
@@ -1397,25 +1405,100 @@ pub fn windows_hint(text: &str) -> String {
                 _ => (None, 0),
             }
         };
-        let Some(key) = key else {
-            // Modifiers alone: name them the Windows way.
-            let names: Vec<&str> = mods
-                .iter()
-                .map(|m| match *m {
-                    "cmd" | "ctrl" => "Ctrl",
-                    "alt" => "Alt",
-                    _ => "Shift",
-                })
-                .collect();
-            out.push_str(&names.join("+"));
-            continue;
-        };
-        // `cmd--` is how the table spells a minus key.
-        let mac = format!("{}-{}", mods.join("-"), key);
-        out.push_str(&windows_label(&respell_for_windows(&mac)));
+        out.push(match key {
+            Some(key) => GlyphPart::Key(format!("{}-{}", mods.join("-"), key)),
+            None => GlyphPart::Mods(mods),
+        });
         i += used;
     }
+    out
+}
+
+/// The pure part of `hint`: rewrite each run of macOS modifier glyphs
+/// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+pub fn windows_hint(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for part in glyph_parts(text) {
+        match part {
+            GlyphPart::Char(c) => out.push(c),
+            // Modifiers alone: name them the Windows way.
+            GlyphPart::Mods(mods) => {
+                let names: Vec<&str> = mods
+                    .iter()
+                    .map(|m| match *m {
+                        "cmd" | "ctrl" => "Ctrl",
+                        "alt" => "Alt",
+                        _ => "Shift",
+                    })
+                    .collect();
+                out.push_str(&names.join("+"));
+            }
+            GlyphPart::Key(mac) => out.push_str(&windows_label(&respell_for_windows(&mac))),
+        }
+    }
     windows_words(&out)
+}
+
+/// The keys `text` (as `p` shows it) names, as `p`'s table spells them:
+/// `alt-cmd-b` for "⌥⌘B" on macOS, `ctrl-shift-a` for "Ctrl+Shift+A" on
+/// Windows. Modifiers with no key ("⌘-click") name none.
+#[cfg(test)]
+pub fn hint_keys(text: &str, p: crate::platform_text::Platform) -> Vec<String> {
+    use crate::platform_text::Platform;
+    if p == Platform::Mac {
+        return glyph_parts(text)
+            .into_iter()
+            .filter_map(|part| match part {
+                GlyphPart::Key(k) => Some(k),
+                _ => None,
+            })
+            .collect();
+    }
+    const MODS: [(&str, &str); 4] = [
+        ("Ctrl+", "ctrl"),
+        ("Alt+", "alt"),
+        ("Shift+", "shift"),
+        ("Win+", "cmd"),
+    ];
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(at) = MODS.iter().filter_map(|(s, _)| rest.find(s)).min() {
+        let boundary = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric());
+        let mut s = &rest[at..];
+        let mut mods = Vec::new();
+        while let Some((name, m)) = MODS.iter().find(|(name, _)| s.starts_with(name)) {
+            mods.push(*m);
+            s = &s[name.len()..];
+        }
+        let word: String = s.chars().take_while(|c| c.is_alphanumeric()).collect();
+        let (key, used) = if word.is_empty() {
+            match s.chars().next() {
+                Some(c) if !c.is_whitespace() => (c.to_string(), c.len_utf8()),
+                _ => (String::new(), 0),
+            }
+        } else {
+            let k = word.to_lowercase();
+            (if k == "esc" { "escape".into() } else { k }, word.len())
+        };
+        if boundary && !key.is_empty() && key != "click" {
+            out.push(format!("{}-{key}", mods.join("-")));
+        }
+        rest = &s[used..];
+    }
+    out
+}
+
+/// A key written in macOS terms, as `p`'s table spells it.
+#[cfg(test)]
+pub fn respell_for(key: &str, p: crate::platform_text::Platform) -> String {
+    match p {
+        crate::platform_text::Platform::Mac => key.to_string(),
+        crate::platform_text::Platform::Windows => respell_for_windows(key),
+    }
 }
 
 /// Mac words in the app's text, as Windows says them, longest first so a
@@ -2203,6 +2286,21 @@ mod tests {
         if !cfg!(target_os = "windows") {
             assert_eq!(hint("then ⌘G"), "then ⌘G");
         }
+    }
+
+    #[test]
+    fn hint_keys_reads_both_spellings() {
+        assert_eq!(
+            hint_keys("⌥⌘B shelves, ⌘-click picks, ⇧⌘, and ⌘⏎", Platform::Mac),
+            ["alt-cmd-b", "shift-cmd-,", "cmd-enter"]
+        );
+        assert_eq!(
+            hint_keys(
+                "Ctrl+Shift+A shelves, Ctrl-click and Ctrl+click pick, Ctrl+, and Alt+Up, Esc+X",
+                Platform::Windows
+            ),
+            ["ctrl-shift-a", "ctrl-,", "alt-up"]
+        );
     }
 
     /// On Windows every key is respelled, `⌘` never survives, and the
