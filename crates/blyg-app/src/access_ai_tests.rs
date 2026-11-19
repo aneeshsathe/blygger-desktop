@@ -50,14 +50,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
 }
 
 fn settle(cx: &mut VisualTestContext, done: impl Fn(&mut VisualTestContext) -> bool) {
-    for _ in 0..100 {
-        cx.run_until_parked();
-        if done(cx) {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    cx.run_until_parked();
+    crate::test_wait::until(cx, "the access sheet's next state", done);
 }
 
 fn keys(cx: &mut VisualTestContext, k: &str) {

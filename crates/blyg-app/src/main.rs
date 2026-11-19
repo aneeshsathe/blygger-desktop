@@ -34,6 +34,8 @@ mod ornament; // --- themes ---
 mod platform;
 mod prefs;
 mod settings;
+#[cfg(test)]
+mod test_wait;
 mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;

@@ -48,12 +48,7 @@ pub(crate) fn setup(
     (view, fake, cx)
 }
 
-pub(crate) fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..10 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+pub(crate) use crate::test_wait::settle;
 
 /// The reading screen, `mode`, with the post `(sub, id)` open.
 pub(crate) fn reading_on(

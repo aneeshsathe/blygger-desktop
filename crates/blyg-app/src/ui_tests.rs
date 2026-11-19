@@ -201,13 +201,9 @@ fn publish_sheet_enter_publishes_with_note(cx: &mut TestAppContext) {
     cx.simulate_input("first version");
     cx.simulate_keystrokes("enter");
     // publish runs on the background executor; let it finish.
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if fake.item(&LocalId("01J9QK3".into())).unwrap().status == Status::Public {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    crate::test_wait::until(cx, "the change to land", |_| {
+        fake.item(&LocalId("01J9QK3".into())).unwrap().status == Status::Public
+    });
     let item = fake.item(&LocalId("01J9QK3".into())).unwrap();
     assert_eq!((item.status, item.version), (Status::Public, 1));
     assert_eq!(
@@ -246,13 +242,9 @@ fn publishing_labelled_links_to_an_old_blyg_offers_the_bare_form(cx: &mut TestAp
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     cx.run_until_parked();
     cx.simulate_keystrokes("enter");
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if fake.item(&id).unwrap().status == Status::Public {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    crate::test_wait::until(cx, "the change to land", |_| {
+        fake.item(&id).unwrap().status == Status::Public
+    });
     let item = fake.item(&id).unwrap();
     assert_eq!(item.status, Status::Public);
     assert_eq!(item.content_md, format!("A lighthouse, see [[{LID}]]"));
@@ -277,13 +269,9 @@ fn publish_sheet_escape_cancels(cx: &mut TestAppContext) {
 fn conflict_sheet_keys_resolve(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.trigger_conflict(&LocalId("01J9K7T".into()));
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if view.read_with(cx, |v, _| v.sheet.is_some()) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::test_wait::until(cx, "the change to land", |cx| {
+        view.read_with(cx, |v, _| v.sheet.is_some())
+    });
     assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. }))));
     cx.simulate_keystrokes("3");
     cx.run_until_parked();
@@ -300,14 +288,10 @@ fn a_dismissed_conflict_can_still_be_resolved(cx: &mut TestAppContext) {
     let id = LocalId("01J9K7T".into());
     fake.trigger_conflict(&id);
     let wait_sheet = |cx: &mut gpui_kit::VisualTestContext| {
-        for _ in 0..50 {
-            cx.run_until_parked();
-            if view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. }))) {
-                return true;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
-        false
+        crate::test_wait::until(cx, "the conflict sheet", |cx| {
+            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. })))
+        });
+        true
     };
     assert!(wait_sheet(cx));
     cx.simulate_keystrokes("escape");
@@ -349,13 +333,9 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     assert!(view.read_with(cx, |v, _| v.render_server_notice().is_none()));
     fake.trigger_server_outdated();
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if view.read_with(cx, |v, _| v.toast.is_some()) {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::test_wait::until(cx, "the change to land", |cx| {
+        view.read_with(cx, |v, _| v.toast.is_some())
+    });
     view.read_with(cx, |v, _| {
         let t = v.toast.as_ref().expect("a toast");
         assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
@@ -377,10 +357,7 @@ fn an_outdated_server_says_so_and_how_to_update(cx: &mut TestAppContext) {
 fn a_pre_0_40_studio_opens_no_limits_sheet(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.trigger_server_limited();
-    for _ in 0..10 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(5));
-    }
+    crate::test_wait::settle(cx);
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
 }
 
@@ -406,18 +383,12 @@ fn pasting_an_image_uploads_and_replaces_placeholder(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-v"));
     cx.run_until_parked();
     let id = LocalId("01J9QK3".into());
-    for _ in 0..100 {
-        cx.run_until_parked();
-        if fake
-            .item(&id)
+    crate::test_wait::until(cx, "the change to land", |_| {
+        fake.item(&id)
             .unwrap()
             .content_md
             .contains("![](https://blyg.example.com/media/")
-        {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    });
     let body = fake.item(&id).unwrap().content_md;
     assert!(
         !body.contains("uploading"),
@@ -637,13 +608,9 @@ fn cmd_enter_in_the_editor_publishes(cx: &mut TestAppContext) {
     // ⌘⏎ in the note field publishes, like ⏎.
     cx.simulate_input("from the editor");
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if fake.item(&LocalId("01J9QK3".into())).unwrap().status == Status::Public {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
+    crate::test_wait::until(cx, "the change to land", |_| {
+        fake.item(&LocalId("01J9QK3".into())).unwrap().status == Status::Public
+    });
     assert_eq!(
         fake.item(&LocalId("01J9QK3".into())).unwrap().status,
         Status::Public

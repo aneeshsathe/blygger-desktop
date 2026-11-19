@@ -106,6 +106,17 @@ pub fn studio_sample() -> String {
     )
 }
 
+/// Block this (background) thread for `d`, standing in for a network or
+/// disk round trip in fake mode and the fake AI providers. Fake code only;
+/// tests wait with `crate::test_wait`.
+pub(crate) fn simulate_latency(d: Duration) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "simulated latency is the fake backend's job"
+    )]
+    thread::sleep(d);
+}
+
 #[derive(Clone)]
 pub struct Timing {
     pub debounce: Duration,
@@ -579,7 +590,7 @@ impl FakeBackend {
         let state = self.state.clone();
         let timing = self.timing.clone();
         thread::spawn(move || {
-            thread::sleep(timing.debounce);
+            simulate_latency(timing.debounce);
             if gen_ref.load(Ordering::SeqCst) != generation {
                 return; // superseded by a newer keystroke
             }
@@ -595,7 +606,7 @@ impl FakeBackend {
             if let Some((sink, s)) = fire {
                 sink(CoreEvent::SyncStatus(s));
             }
-            thread::sleep(timing.network);
+            simulate_latency(timing.network);
             if gen_ref.load(Ordering::SeqCst) != generation {
                 return;
             }
@@ -1032,7 +1043,7 @@ impl Backend for FakeBackend {
         &self,
         c: &blyg_core::contacts::ContactInput,
     ) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.create(c)
     }
 
@@ -1041,17 +1052,17 @@ impl Backend for FakeBackend {
         id: &str,
         c: &blyg_core::contacts::ContactInput,
     ) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.update(id, c)
     }
 
     fn delete_contact(&self, id: &str) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.delete(id)
     }
 
     fn resolve_contact(&self, id: &str) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.resolve(id)
     }
 
@@ -1064,7 +1075,7 @@ impl Backend for FakeBackend {
     }
 
     fn outbound_mentions(&self) -> Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(Some(self.lock().book.outbound.clone()))
     }
@@ -1438,7 +1449,7 @@ impl Backend for FakeBackend {
                 .published
                 .ok_or_else(|| CoreError::Other("not published".into()));
         }
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
         if self.item(id).is_some_and(|i| i.conflict) {
@@ -1498,7 +1509,7 @@ impl Backend for FakeBackend {
     }
 
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
         if self.item(id).is_some_and(|i| i.conflict) {
@@ -1529,7 +1540,7 @@ impl Backend for FakeBackend {
     }
 
     fn pin(&self, id: &LocalId, version: u32) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         let v = st
@@ -1542,13 +1553,13 @@ impl Backend for FakeBackend {
     }
 
     fn versions(&self, id: &LocalId) -> Result<Vec<Version>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(self.lock().versions.get(id).cloned().unwrap_or_default())
     }
 
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let sink = {
             let mut st = self.lock();
@@ -1598,7 +1609,7 @@ impl Backend for FakeBackend {
         _item: Option<&LocalId>,
         _alt: Option<&str>,
     ) -> Result<MediaRef> {
-        thread::sleep(self.timing.upload);
+        simulate_latency(self.timing.upload);
         self.remote_guard()?;
         let n = {
             let mut st = self.lock();
@@ -1631,7 +1642,7 @@ impl Backend for FakeBackend {
     }
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         // --- own posts --- your own pin forks as the studio does: its kind
         // and text, `forked_from` naming your origin.
@@ -1673,7 +1684,7 @@ impl Backend for FakeBackend {
     }
 
     fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         let default = st.rd.settings.highlight_generated_default.unwrap_or(false);
@@ -1696,13 +1707,13 @@ impl Backend for FakeBackend {
     }
 
     fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         fake_preview(url)
     }
 
     fn subscribe(&self, url: &str, title: Option<&str>) -> Result<Subscription> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let p = fake_preview(url)?;
         let sub = {
@@ -1891,7 +1902,7 @@ impl Backend for FakeBackend {
     }
 
     fn mentions(&self) -> Result<Vec<Mention>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(self.lock().rd.mentions.clone())
     }
@@ -1910,7 +1921,7 @@ impl Backend for FakeBackend {
     }
 
     fn settings(&self) -> Result<Settings> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(self.lock().rd.settings.clone())
     }
@@ -1918,7 +1929,7 @@ impl Backend for FakeBackend {
     // --- discover --- the sample directory; the fake never reaches the
     // network.
     fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(discover_seed::directory())
     }
@@ -1936,7 +1947,7 @@ impl Backend for FakeBackend {
     // --- end discover ---
 
     fn save_settings(&self, settings: &Settings) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         st.rd.settings = settings.clone();
@@ -1955,7 +1966,7 @@ impl Backend for FakeBackend {
     }
 
     fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let st = self.lock();
         if let Some(log) = st
@@ -1983,7 +1994,7 @@ impl Backend for FakeBackend {
     }
 
     fn remote_pinned(&self, sub_id: &str, remote_id: &str, version: u32) -> Result<PinnedVersion> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         self.lock()
             .rd
@@ -2042,7 +2053,7 @@ impl Backend for FakeBackend {
         if !refresh && let Some(p) = cached {
             return Ok(self.finish_profile(p));
         }
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         if let Err(e) = self.remote_guard() {
             let cached = self.lock().profiles.get(&key).cloned();
             return match cached {
@@ -2436,7 +2447,7 @@ impl Backend for FakeBackend {
     // --- quote targets --- posts nobody here follows, "served" publicly.
 
     fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         st.public_fetches.push(format!("{origin}items/{id}.json"));
@@ -2451,7 +2462,7 @@ impl Backend for FakeBackend {
     }
 
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         // --- own posts --- your own pin files.
         if let Some((pin, _)) = Self::own_pin(&self.lock(), origin, id, version) {
@@ -2554,7 +2565,7 @@ impl Backend for FakeBackend {
     // --- site --- the "server" checks what Studio checks, and refuses as it
     // does (400 with its words).
     fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(self.lock().site.clone())
     }
@@ -2564,7 +2575,7 @@ impl Backend for FakeBackend {
         base: &blyg_core::site::SiteConfig,
         next: &blyg_core::site::SiteConfig,
     ) -> Result<blyg_core::site::SiteConfig> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let refuse = |message: String| CoreError::Rejected {
             status: 400,
@@ -2911,7 +2922,7 @@ impl Backend for FakeBackend {
     }
 
     fn access_sign_in(&self, password: &str) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         if password.is_empty() || password == "wrong" {
             return Err(CoreError::Unauthorized);
@@ -2937,7 +2948,7 @@ impl Backend for FakeBackend {
         &self,
         new: &blyg_core::access_ai::NewAuthorization,
     ) -> Result<blyg_core::access_ai::NewToken> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -2976,7 +2987,7 @@ impl Backend for FakeBackend {
     }
 
     fn revoke_authorization(&self, id: &str) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -2987,7 +2998,7 @@ impl Backend for FakeBackend {
     }
 
     fn revoke_all_authorizations(&self) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -3008,7 +3019,7 @@ impl Backend for FakeBackend {
     }
 
     fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         let ai = &mut st.access_ai.ai;
@@ -3035,7 +3046,7 @@ impl Backend for FakeBackend {
     }
 
     fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let st = self.lock();
         let model = st.access_ai.ai.model_changelog.clone().unwrap_or_default();
@@ -3066,7 +3077,7 @@ impl Backend for FakeBackend {
     }
 
     fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let st = self.lock();
         let model = st.access_ai.ai.model_classify.clone().unwrap_or_default();
@@ -3115,13 +3126,13 @@ impl Backend for FakeBackend {
     }
 
     fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::stale(&self.lock()))
     }
 
     fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         upkeep_seed::one(&self.lock(), id)
     }
@@ -3131,7 +3142,7 @@ impl Backend for FakeBackend {
         id: &LocalId,
         note: Option<&str>,
     ) -> Result<blyg_core::upkeep::Refreshed> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let (r, sink) = {
             let mut st = self.lock();
@@ -3143,7 +3154,7 @@ impl Backend for FakeBackend {
     }
 
     fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         upkeep_seed::version_text(&self.lock(), id, version)
     }
@@ -3153,7 +3164,7 @@ impl Backend for FakeBackend {
         thumb: i8,
         _cursor: Option<&str>,
     ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::thumbs(&self.lock(), thumb))
     }
@@ -3162,7 +3173,7 @@ impl Backend for FakeBackend {
         &self,
         _cursor: Option<&str>,
     ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::interactions(&self.lock()))
     }

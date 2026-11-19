@@ -99,15 +99,12 @@ impl Env<'_> {
     }
 
     fn wait(&mut self, what: &str, f: impl Fn(&MainView) -> bool) {
-        for _ in 0..600 {
-            self.cx.executor().advance_clock(Duration::from_millis(30));
-            self.cx.run_until_parked();
-            if self.view.read_with(self.cx, |v, _| f(v)) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        panic!("timed out waiting for {what}");
+        let view = self.view.clone();
+        crate::test_wait::until(self.cx, what, |cx| {
+            cx.executor().advance_clock(Duration::from_millis(30));
+            cx.run_until_parked();
+            view.read_with(cx, |v, _| f(v))
+        });
     }
 
     fn wait_idle(&mut self) {
@@ -212,7 +209,8 @@ fn esc_cancels_a_running_generation(cx: &mut TestAppContext) {
         );
     });
     assert!(e.toast().contains("cancelled"));
-    std::thread::sleep(Duration::from_millis(30));
+    // The cancelled job's thread would have answered by now.
+    crate::test_wait::wall_clock(Duration::from_millis(30));
     e.cx.executor().advance_clock(Duration::from_millis(100));
     e.cx.run_until_parked();
     assert_eq!(e.text(), "[TK]write something[/TK]", "nothing written");
@@ -541,10 +539,7 @@ impl Env<'_> {
     }
 
     fn settle(&mut self) {
-        for _ in 0..20 {
-            self.cx.run_until_parked();
-            std::thread::sleep(Duration::from_millis(2));
-        }
+        crate::test_wait::settle(self.cx);
     }
 
     fn stubs(&self) -> Vec<blyg_core::Item> {

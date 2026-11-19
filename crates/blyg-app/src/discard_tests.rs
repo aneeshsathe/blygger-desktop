@@ -51,14 +51,7 @@ fn id(s: &str) -> LocalId {
 
 /// The backend call runs on the background executor; let it land.
 fn settle(cx: &mut VisualTestContext, done: impl Fn() -> bool) {
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if done() {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    cx.run_until_parked();
+    crate::test_wait::until(cx, "the discard to land", |_| done());
 }
 
 fn toast(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
@@ -279,11 +272,8 @@ fn the_toolbar_slot_deletes_or_withdraws(cx: &mut TestAppContext) {
         v.sheet,
         Some(Sheet::DeleteDraft { .. })
     )));
-    // Let the sheet finish dropping in (its animation runs on the wall clock).
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-    let cancel = cx.debug_bounds("sheet-cancel").expect("Cancel");
+    // The sheet drops in on the wall clock: click where it comes to rest.
+    let cancel = crate::test_wait::still(cx, "sheet-cancel");
     cx.simulate_click(cancel.center(), Modifiers::none());
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
@@ -518,7 +508,7 @@ fn the_version_browser_discards_changes_on_the_current_version(cx: &mut TestAppC
     let (view, fake, cx) = setup(cx);
     edit_public(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
-    settle(cx, || false);
+    crate::test_wait::settle(cx);
     view.update_in(cx, |v, window, cx| {
         let own = v.reading.own.as_mut().expect("the history is open");
         own.sel = Some(1);

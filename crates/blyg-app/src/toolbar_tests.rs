@@ -338,28 +338,7 @@ fn setup<'a>(
     (view, fake, cx)
 }
 
-/// `selector`'s bounds once it has stopped moving. Sheets and panes slide
-/// in with animations timed on the real clock, so under a loaded test run
-/// an element can still be moving when a test goes to click it.
-pub(crate) fn settled_bounds(
-    cx: &mut VisualTestContext,
-    selector: &'static str,
-) -> gpui_kit::Bounds<gpui_kit::Pixels> {
-    let mut last = None;
-    for _ in 0..100 {
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-        let b = cx
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("{selector} isn't on screen"));
-        if last == Some(b) {
-            return b;
-        }
-        last = Some(b);
-        std::thread::sleep(std::time::Duration::from_millis(16));
-    }
-    last.unwrap()
-}
+use crate::test_wait::still as settled_bounds;
 
 /// Scroll the Settings page until `selector` is inside the window, so a
 /// click lands on it whatever the runner's window height and font metrics.

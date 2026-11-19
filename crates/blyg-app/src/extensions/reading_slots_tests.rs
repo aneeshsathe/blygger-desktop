@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, ReadingItem};
@@ -119,22 +119,13 @@ impl Env<'_> {
     /// Run the window until `done` (the extensions answer from other
     /// processes, in real time).
     fn wait(&mut self, what: &str, mut done: impl FnMut(&MainView) -> bool) {
-        let t = Instant::now();
-        loop {
-            self.cx.run_until_parked();
-            self.view
-                .update_in(self.cx, |v, window, cx| v.ext_pump(window, cx));
-            self.cx.update(|window, _| window.refresh());
-            self.cx.run_until_parked();
-            if self.view.read_with(self.cx, |v, _| done(v)) {
-                return;
-            }
-            assert!(
-                t.elapsed() < Duration::from_secs(20),
-                "timed out waiting for {what}"
-            );
-            std::thread::sleep(Duration::from_millis(15));
-        }
+        let view = self.view.clone();
+        crate::test_wait::until(self.cx, what, |cx| {
+            view.update_in(cx, |v, window, cx| v.ext_pump(window, cx));
+            cx.update(|window, _| window.refresh());
+            cx.run_until_parked();
+            view.read_with(cx, |v, _| done(v))
+        });
     }
 
     fn start(&mut self) {
@@ -324,22 +315,7 @@ fn the_more_chip_opens_inspect_and_copies_the_json(cx: &mut TestAppContext) {
     assert!(env.cx.debug_bounds("slot-code").is_some());
     // The sheet slides in in real time: click Copy once it has stopped
     // moving, or the click can land where it was (seen on Windows CI).
-    let started = std::time::Instant::now();
-    let mut last = None;
-    let copy = loop {
-        env.cx.update(|window, _| window.refresh());
-        env.cx.run_until_parked();
-        let b = env.cx.debug_bounds("slot-copy").expect("Copy JSON");
-        if last == Some(b) {
-            break b;
-        }
-        assert!(
-            started.elapsed() < std::time::Duration::from_secs(5),
-            "Copy JSON kept moving"
-        );
-        last = Some(b);
-        std::thread::sleep(std::time::Duration::from_millis(40));
-    };
+    let copy = crate::test_wait::still(env.cx, "slot-copy");
     env.cx
         .simulate_click(copy.center(), gpui_kit::Modifiers::none());
     env.cx.run_until_parked();

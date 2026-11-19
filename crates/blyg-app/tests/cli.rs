@@ -40,6 +40,10 @@ fn exit_within(child: &mut Child, limit: Duration, what: &str) -> ExitStatus {
             let _ = child.wait();
             panic!("{what}");
         }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the one poll interval for waiting on a child process"
+        )]
         std::thread::sleep(Duration::from_millis(20));
     }
 }
