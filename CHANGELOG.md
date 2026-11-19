@@ -16,6 +16,21 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Added
+- **Desktop: Quiet writing** (`quiet-writing = true`, Settings, View › Quiet Writing, the palette). It hides the lineage line, the loose-ends line and Nearby thoughts together, and stops their background work. ⌘J still opens lineage, the omnibar's `is:`/`has:` operators still filter, and ⌥⌘U opens Nearby for the sitting without changing the saved layout. It's off by default. There's a new Writing-tour step (`quiet-writing`). ⌘J on a draft no longer misses its first press while the line is being built.
+- **Config: retired keys load quietly.** A removed key (`chat-*`, `terminal*`) in the config file is skipped with no warning and no typo hint.
+
+### Changed
+- **Reading: one row of chips under an open post.** Quote, Reply, Catch up and Background/Foreground stay in the row. Hopper, Add to shelf, Add to trail (new as a menu item), Fork, Link post, AI reply, Open on web, → Notes, Clear my choice and the whole-blyg moves are under **⋯ More**. Keys are unchanged. The Stream and the web app use the same grouping; on a phone, ⋯ More opens a second row of buttons. reading.md gains "Which one do I use?".
+- **Reading: the author's site takes the whole reading pane**, under the browser pane's own toolbar (back, forward, reload, address, shields, open in browser), instead of sitting between Burrow's header and the chips. It's still a separate web view of the browser's kind, so links set to open in the app still use the slide-over. Windows now docks it too (WebView2), where it used to open the default browser.
+
+### Removed
+- **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.
+- **The terminal pane** (experimental, crate `blyg-term`, ⌃` and ⇧⌘T): it needs more work before it ships again.
+
+### Not verified
+- The docked author's site and the reading chips on a real Windows machine; the web app's ⋯ More in a browser or on a phone.
+
 ## [0.25.1] - 2026-11-16
 
 ### Changed
