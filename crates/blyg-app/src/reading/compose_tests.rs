@@ -402,6 +402,6 @@ fn launch_without_a_blyg_stays_with_the_connect_sheet(cx: &mut TestAppContext) {
     settle(cx);
     view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Posts);
-        assert!(v.sheet.is_some(), "the Connect sheet");
+        assert!(v.sheet.is_open(), "the Connect sheet");
     });
 }

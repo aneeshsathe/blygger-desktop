@@ -919,7 +919,7 @@ impl MainView {
         // Anything drawn over (or instead of) the preview pane: GPUI sheets, AI
         // overlays, the reading screens and their sheets, and your own post's
         // history (⌘Y), whose body is the reader's WebView.
-        slot.suppressed = self.sheet.is_some()
+        slot.suppressed = self.sheet.is_open()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()

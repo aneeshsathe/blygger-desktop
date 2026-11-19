@@ -12,7 +12,7 @@ use super::{
     ALREADY_WITHDRAWN, Button, CLOSE_SHEET, Facts, Fit, LEFT, NEED_AI, NEED_POST, NEED_POSTS,
     NOT_SCRATCH, Screen, TOO_LONG, ViewMode, buttons, fit, rule, visible,
 };
-use crate::app::{MainView, Sheet, TITLEBAR_H};
+use crate::app::{MainView, TITLEBAR_H};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -391,8 +391,8 @@ fn clicking_publish_opens_the_publish_sheet(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         assert!(
             matches!(
-                v.sheet,
-                Some(Sheet::Publish {
+                v.sheet.get(),
+                Some(crate::app::PublishSheet {
                     next_version: 1,
                     ..
                 })
@@ -580,7 +580,7 @@ fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
     cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Settings { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::SettingsSheet>()));
     // The blyg's changelog choices, as a studio 0.58 or later has them.
     view.update(cx, |v, cx| {
         v.reading.changelogs.settings = crate::app::reading::Load::Ready(Default::default());
@@ -627,12 +627,12 @@ fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
     // esc closes it; ⌘, opens and closes it.
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(cx.debug_bounds("settings-page").is_none());
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
     assert!(cx.debug_bounds("settings-page").is_some());
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }

@@ -1619,8 +1619,8 @@ mod ui {
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
     use super::*;
+    use crate::app::MainView;
     use crate::app::browser::surface::FactoryGlobal;
-    use crate::app::{MainView, Sheet};
 
     fn setup(
         cx: &mut TestAppContext,
@@ -1707,7 +1707,10 @@ mod ui {
         start(&view, cx);
         // The Preview sheet, before anything loads.
         view.read_with(cx, |v, cx| {
-            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+            let Some(s) = v
+                .sheet
+                .get::<crate::app::browser::automation::PreviewSheet>()
+            else {
                 panic!("no preview sheet");
             };
             assert_eq!(s.info.tested, "unverified");
@@ -1716,12 +1719,14 @@ mod ui {
         });
         assert!(dom.borrow().loads.is_empty());
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         // The text is in; nothing is posted until Post.
         assert_eq!(dom.borrow().loads, vec![format!("{ORIGIN}/notes")]);
         assert!(dom.borrow().posted.is_empty());
         view.read_with(cx, |v, _| {
-            let Some(Sheet::MacroPost(s)) = &v.sheet else {
+            let Some(s) = v.sheet.get::<crate::app::browser::automation::PostSheet>() else {
                 unreachable!()
             };
             assert!(!s.info.differs);
@@ -1752,7 +1757,7 @@ mod ui {
         // Again at once: min-interval, no sheet.
         start(&view, cx);
         view.read_with(cx, |v, _| {
-            assert!(v.sheet.is_none());
+            assert!(!v.sheet.is_open());
             assert!(!v.browser.automation.running());
             let t = v.toast.as_ref().unwrap().text.to_string();
             assert!(t.starts_with("Social Notes: wait "), "{t}");
@@ -1771,7 +1776,9 @@ mod ui {
         cx.simulate_resize(gpui_kit::size(gpui_kit::px(1400.), gpui_kit::px(900.)));
         start(&view, cx);
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
             let right = v.macro_sheet_right().expect("beside the pane");
@@ -1807,7 +1814,9 @@ mod ui {
         cx.executor().advance_clock(Duration::from_secs(70)); // min-interval
         start(&view, cx);
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
             assert!(v.macro_sheet_right().is_none());
@@ -1853,7 +1862,9 @@ mod ui {
         assert!(dom.borrow().posted.is_empty());
         // The page loads; before the text goes in, the pane unfolds.
         dom.borrow().clock.set(Duration::from_secs(2));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
             assert!(v.browser.open, "unfolded to type and to check");
@@ -1887,7 +1898,9 @@ mod ui {
         });
         start(&view, cx);
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         view.read_with(cx, |v, _| {
             assert_eq!(v.browser.mode, crate::app::browser::OpenMode::Full);
             // No room beside a full-width pane: the sheet covers as usual.
@@ -1905,7 +1918,9 @@ mod ui {
         view.update_in(cx, |v, window, cx| v.close_browser(window, cx));
         start(&view, cx);
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         view.update_in(cx, |v, window, cx| {
             v.macro_post_answer(PostChoice::Myself, window, cx)
         });
@@ -1931,7 +1946,9 @@ mod ui {
             );
         });
         view.update_in(cx, |v, window, cx| v.macro_preview_answer(true, window, cx));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         view.update_in(cx, |v, window, cx| {
             v.macro_post_answer(PostChoice::Cancel, window, cx)
         });
@@ -1947,7 +1964,10 @@ mod ui {
         // A cancel doesn't count for min-interval.
         start(&view, cx);
         view.read_with(cx, |v, _| {
-            assert!(matches!(v.sheet, Some(Sheet::MacroPreview(_))))
+            assert!(
+                v.sheet
+                    .is::<crate::app::browser::automation::PreviewSheet>()
+            )
         });
         // Closing the sheet another way cancels too.
         view.update_in(cx, |v, window, cx| v.close_sheet(window, cx));
@@ -1964,14 +1984,19 @@ mod ui {
         start(&view, cx);
         let focused = view.update_in(cx, |v, window, cx| {
             use gpui_kit::Focusable as _;
-            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+            let Some(s) = v
+                .sheet
+                .get::<crate::app::browser::automation::PreviewSheet>()
+            else {
                 panic!("no preview sheet");
             };
             s.editor.read(cx).focus_handle(cx).is_focused(window)
         });
         assert!(focused, "the text box has the keyboard");
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         cx.simulate_keystrokes("enter");
         until(&view, cx, |v| !v.browser.automation.running());
         assert_eq!(dom.borrow().posted, vec![PAYLOAD.trim().to_string()]);
@@ -1983,10 +2008,13 @@ mod ui {
         let dom = quick_dom();
         let (view, cx) = setup(cx, dom.clone());
         start(&view, cx);
-        assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_)))));
+        assert!(view.read_with(cx, |v, _| {
+            v.sheet
+                .is::<crate::app::browser::automation::PreviewSheet>()
+        }));
         cx.simulate_keystrokes("escape");
         until(&view, cx, |v| !v.browser.automation.running());
-        assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+        assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
         assert!(dom.borrow().loads.is_empty());
     }
 
@@ -1997,7 +2025,9 @@ mod ui {
         let (view, cx) = setup(cx, dom.clone());
         start(&view, cx);
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-        until(&view, cx, |v| matches!(v.sheet, Some(Sheet::MacroPost(_))));
+        until(&view, cx, |v| {
+            v.sheet.is::<crate::app::browser::automation::PostSheet>()
+        });
         cx.simulate_keystrokes("escape");
         until(&view, cx, |v| !v.browser.automation.running());
         assert!(dom.borrow().posted.is_empty());

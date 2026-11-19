@@ -350,7 +350,7 @@ impl MainView {
             return;
         };
         let gone = match origin {
-            Origin::Settings => !matches!(self.sheet, Some(Sheet::Settings { .. })),
+            Origin::Settings => !self.sheet.is::<super::SettingsSheet>(),
             Origin::Palette => self.cmd_palette.open.is_none(),
         };
         if gone {
@@ -416,7 +416,7 @@ impl MainView {
         self.preview.cursor = row.map(|r| (r, self.kept_pick(r)));
         // The rows sit at the top of the page.
         if row.is_some()
-            && let Some(Sheet::Settings { scroll, .. }) = &self.sheet
+            && let Some(super::SettingsSheet { scroll, .. }) = self.sheet.get()
         {
             scroll.set_offset(point(px(0.), px(0.)));
         }
@@ -524,7 +524,7 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(HOVER_DWELL).await;
             let _ = this.update_in(cx, |v, window, cx| {
-                if v.preview.hover_gen != gen_ || !matches!(v.sheet, Some(Sheet::Settings { .. })) {
+                if v.preview.hover_gen != gen_ || !v.sheet.is::<super::SettingsSheet>() {
                     return;
                 }
                 let want = v
@@ -555,7 +555,7 @@ impl MainView {
         self.preview.hover = None;
         self.preview.hover_gen += 1;
         self.commit_pick(pick, window, cx);
-        if let Some(Sheet::Settings { focus, .. }) = &self.sheet {
+        if let Some(super::SettingsSheet { focus, .. }) = self.sheet.get() {
             let f = focus.clone();
             window.focus(&f, cx);
         }

@@ -432,7 +432,7 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     assert!(log.borrow().visible(Which::Reader));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     settle(cx);
-    assert!(view.read_with(cx, |v, _| v.sheet.is_some()));
+    assert!(view.read_with(cx, |v, _| v.sheet.is_open()));
     assert!(!log.borrow().visible(Which::Reader));
     assert!(!log.borrow().visible(Which::Studio));
 

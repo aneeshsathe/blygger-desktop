@@ -512,7 +512,7 @@ impl MainView {
         if self.cmd_palette.open.is_some() {
             return self.close_palette(window, cx);
         }
-        if self.sheet.is_some()
+        if self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()

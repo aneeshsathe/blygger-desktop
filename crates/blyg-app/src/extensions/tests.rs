@@ -732,7 +732,6 @@ mod macros {
     use gpui_kit::{Bounds, Pixels};
 
     use super::*;
-    use crate::app::Sheet;
     use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
 
     const XP: &str = blyg_ext_crosspost::NAME;
@@ -950,7 +949,10 @@ mod macros {
         view.read_with(cx, |v, _| assert!(v.macro_cross_post_hint()));
         choose_macro(&view, cx);
         wait(&view, cx, "the Preview sheet", |cx| {
-            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_))))
+            view.read_with(cx, |v, _| {
+                v.sheet
+                    .is::<crate::app::browser::automation::PreviewSheet>()
+            })
         });
         // The extension's own template and limit shaped it (macro.prepare
         // ran), from the post as published.
@@ -965,7 +967,10 @@ mod macros {
             "",
         );
         view.read_with(cx, |v, cx| {
-            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+            let Some(s) = v
+                .sheet
+                .get::<crate::app::browser::automation::PreviewSheet>()
+            else {
                 unreachable!()
             };
             assert_eq!(s.info.payload, want.text);
@@ -1045,7 +1050,7 @@ mod macros {
         assert_eq!(text, "Publish it first to cross-post it to Substack Notes");
         assert!(sub.contains("published post"), "{sub}");
         view.read_with(cx, |v, _| {
-            assert!(v.sheet.is_none() && !v.browser.automation.running())
+            assert!(!v.sheet.is_open() && !v.browser.automation.running())
         });
         // A macro that isn't granted (or doesn't exist) runs nothing.
         view.update_in(cx, |v, window, cx| {
@@ -1072,7 +1077,7 @@ mod macros {
         });
         assert_eq!(toast(&view, cx).1, "Nothing was posted to Substack Notes");
         view.read_with(cx, |v, _| {
-            assert!(v.sheet.is_none(), "no Preview sheet");
+            assert!(!v.sheet.is_open(), "no Preview sheet");
             assert!(!v.browser.automation.running());
             assert!(!v.browser.open);
         });

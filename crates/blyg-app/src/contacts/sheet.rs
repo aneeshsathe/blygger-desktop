@@ -6,7 +6,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::{ContactsSheet, Form, NOT_SERVED};
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 
 /// What the sheet says about handles (Studio's address-book hint).
 pub(crate) const ABOUT: &str = "Type @handle while writing. When you publish, it becomes a link \
@@ -280,7 +280,7 @@ impl MainView {
 
     /// The sheet's keys: tab between the form's fields; ↑/↓ over the list.
     fn contacts_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<ContactsSheet>() else {
             return;
         };
         let key = ev.keystroke.key.as_str();

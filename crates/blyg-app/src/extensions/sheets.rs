@@ -116,7 +116,7 @@ impl MainView {
         if matches!(self.ext.overlay, Some(Overlay::Palette { .. })) {
             return self.ext_close(window, cx);
         }
-        if self.sheet.is_some() || self.reading.sheet.is_some() || self.ai.has_overlay() {
+        if self.sheet.is_open() || self.reading.sheet.is_some() || self.ai.has_overlay() {
             return;
         }
         let rows = self.ext_palette_rows(window, cx);

@@ -676,7 +676,7 @@ impl MainView {
         }
         let dropdown = self.reading.opened.as_ref().is_some_and(|o| o.dropdown)
             && self.reading.view == View::Reading;
-        let suppressed = self.sheet.is_some()
+        let suppressed = self.sheet.is_open()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()

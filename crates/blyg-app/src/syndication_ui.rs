@@ -62,6 +62,17 @@ pub(crate) struct CopiesSheet {
     pub served: bool,
 }
 
+impl crate::app::sheet::SheetView for CopiesSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_copies_sheet(self, cx).into()
+    }
+}
+
 /// A copy recorded right after a cross-post: the post and the run's site.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingCopy {
@@ -130,7 +141,7 @@ impl MainView {
     }
 
     fn show_copies_for_current(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::Copies(_))) {
+        if self.sheet.is::<CopiesSheet>() {
             return self.close_sheet(window, cx);
         }
         let Some(id) = self.current.as_ref().map(|c| c.local_id.clone()) else {
@@ -168,9 +179,8 @@ impl MainView {
             self._subs.push(sub);
         }
         url.update(cx, |s, cx| s.focus(window, cx));
-        self.sheet_gen += 1;
         self.reload_copies(id.clone(), cx);
-        self.sheet = Some(Sheet::Copies(Box::new(CopiesSheet {
+        self.sheet.open(CopiesSheet {
             entries: self.backend.syndication(&id),
             id,
             title: vm::truncate_chars(&item.title(), 48),
@@ -180,7 +190,7 @@ impl MainView {
             editing: None,
             error: None,
             served: self.backend.syndication_served(),
-        })));
+        });
         cx.notify();
     }
 
@@ -201,7 +211,7 @@ impl MainView {
         cx.spawn(async move |this, cx| {
             let (err, list, served) = task.await;
             let _ = this.update(cx, |v, cx| {
-                if let Some(Sheet::Copies(s)) = v.sheet.as_mut()
+                if let Some(s) = v.sheet.get_mut::<CopiesSheet>()
                     && s.id == id
                 {
                     s.entries = list;
@@ -218,7 +228,7 @@ impl MainView {
 
     /// ⏎ or Add/Save: add the typed entry, or replace the one being edited.
     pub(crate) fn copies_commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Copies(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<CopiesSheet>() else {
             return;
         };
         let url = s.url.read(cx).value().to_string();
@@ -226,7 +236,7 @@ impl MainView {
         let entry = match parse_entry(&url, &version, s.current) {
             Ok(e) => e,
             Err(why) => {
-                if let Some(Sheet::Copies(s)) = self.sheet.as_mut() {
+                if let Some(s) = self.sheet.get_mut::<CopiesSheet>() {
                     s.error = Some(why);
                 }
                 return cx.notify();
@@ -238,7 +248,7 @@ impl MainView {
 
     /// Remove the entry for `url`.
     pub(crate) fn copies_remove(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Copies(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<CopiesSheet>() else {
             return;
         };
         let list = synd::edit(&s.entries, Some(url), None);
@@ -247,7 +257,7 @@ impl MainView {
 
     /// Put the entry for `url` in the fields to change it.
     pub(crate) fn copies_edit(&mut self, url: &str, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Copies(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<CopiesSheet>() else {
             return;
         };
         let Some(e) = s.entries.iter().find(|e| e.url == url).cloned() else {
@@ -270,13 +280,13 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::Copies(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<CopiesSheet>() else {
             return;
         };
         let id = s.id.clone();
         match self.backend.set_syndication(&id, &list) {
             Ok(kept) => {
-                if let Some(Sheet::Copies(s)) = self.sheet.as_mut() {
+                if let Some(s) = self.sheet.get_mut::<CopiesSheet>() {
                     s.entries = kept;
                     s.editing = None;
                     s.error = None;
@@ -289,7 +299,7 @@ impl MainView {
                 }
             }
             Err(e) => {
-                if let Some(Sheet::Copies(s)) = self.sheet.as_mut() {
+                if let Some(s) = self.sheet.get_mut::<CopiesSheet>() {
                     s.error = Some(e.to_string());
                 }
             }

@@ -488,7 +488,7 @@ impl MainView {
             && r.mode == ReadMode::Stream
             && r.available
             && r.sheet.is_none()
-            && self.sheet.is_none()
+            && !self.sheet.is_open()
             && !self.profile_sheet_open();
         let mut on_screen = Vec::new();
         if watching {

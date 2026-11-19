@@ -252,116 +252,13 @@ enum Mode {
     Edit,
 }
 
-/// How the Connect sheet signs in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ConnectWay {
-    /// OAuth in the system browser (studio 0.28+; the default).
-    Browser,
-    /// A Studio API token, or a server's owner token.
-    Token,
-    /// The studio password (any studio; the fallback).
-    Password,
-}
-
-/// Sets its flag when dropped: cancels a waiting browser sign-in.
-pub(crate) struct CancelOnDrop(Arc<std::sync::atomic::AtomicBool>);
-
-impl Drop for CancelOnDrop {
-    fn drop(&mut self) {
-        self.0.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-}
-
-enum Sheet {
-    Publish {
-        id: LocalId,
-        title: String,
-        next_version: u32,
-        note: Entity<InputState>,
-        /// --- access-ai --- the blyg's draft note and change classifier.
-        ai: note_ai::NoteAi,
-    },
-    /// Publishing a post with labelled links to a blyg below studio 0.47
-    /// (`server_notice::HELD_*`): `⏎` writes them bare and publishes.
-    HeldLabels {
-        id: LocalId,
-        focus: FocusHandle,
-    },
-    Conflict {
-        id: LocalId,
-        mine: Vec<(DiffOp, String)>,
-        theirs: Vec<(DiffOp, String)>,
-        focus: FocusHandle,
-    },
-    Settings {
-        hotkey: Entity<InputState>,
-        hotkey_error: Option<String>,
-        focus: FocusHandle,
-        /// The page's scroll position (`settings_page.rs`).
-        scroll: ScrollHandle,
-    },
-    /// First run (no `blyg-url`): URL + a way in (browser sign-in, API
-    /// token or studio password), verified with `GET /api/items`, then →
-    /// Keychain → config.
-    Connect {
-        url: Entity<InputState>,
-        /// The studio password, or the API token (`way`).
-        token: Entity<InputState>,
-        way: ConnectWay,
-        error: Option<String>,
-        /// The check (or the browser sign-in) is running.
-        busy: bool,
-        /// A browser sign-in waiting for the owner: dropping it (closing or
-        /// replacing the sheet, choosing another way) cancels the wait.
-        waiting: Option<CancelOnDrop>,
-    },
-    /// Forget this blyg: `1` keeps the local copy, `2` deletes it too.
-    Disconnect {
-        host: String,
-        focus: FocusHandle,
-    },
-    // --- delete & withdraw --- (discard.rs)
-    /// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
-    DeleteDraft {
-        id: LocalId,
-        title: String,
-        noun: &'static str,
-        focus: FocusHandle,
-    },
-    /// Post › Withdraw… on a published post, with an optional note.
-    Withdraw {
-        id: LocalId,
-        title: String,
-        note: Entity<InputState>,
-    },
-    /// ⌥⌘Z on a published post with unpublished edits: `⏎` restores the
-    /// published `version`, `esc` keeps the edits.
-    DiscardChanges {
-        id: LocalId,
-        title: String,
-        version: u32,
-        focus: FocusHandle,
-    },
-    // --- browser macros --- (browser/automation): the text before a run,
-    // and what the composer holds before its `submit`.
-    MacroPreview(browser::automation::PreviewSheet),
-    MacroPost(browser::automation::PostSheet),
-    // --- blyg switcher --- every signed-in blyg; switch, add, sign out.
-    Blygs(switcher::BlygSheet),
-    // --- shelf --- ⌘B: the posts you keep to hand.
-    Shelf(shelf::ShelfSheet),
-    // --- access-ai --- Blyg › Client Access… and Blyg › AI on Your Blyg…
-    ClientAccess(Box<access::ClientAccessSheet>),
-    ServerAi(Box<server_ai::ServerAiSheet>),
-    // --- contacts --- Blyg › Contacts…, or an offer to add someone.
-    Contacts(Box<reading::contacts::ContactsSheet>),
-    // --- upkeep --- Blyg › Stale Quotes…, Blyg › Signals…, an image's alt text.
-    StaleQuotes(upkeep::StaleSheet),
-    Signals(upkeep::SignalsSheet),
-    AltText(upkeep::AltSheet),
-    // --- syndication --- Post › Copies Elsewhere…
-    Copies(Box<syndication::CopiesSheet>),
-}
+/// --- sheets --- one main-window sheet at a time; each kind in `sheet/`.
+#[path = "sheet/mod.rs"]
+pub(crate) mod sheet;
+use settings_page::SettingsSheet;
+use sheet::conflict::ConflictSheet;
+pub(crate) use sheet::connect::{CancelOnDrop, ConnectSheet, ConnectWay, DisconnectSheet};
+use sheet::publish::{HeldLabelsSheet, PublishSheet};
 
 struct Toast {
     id: usize,
@@ -404,8 +301,8 @@ pub struct MainView {
     restoring: Option<LocalId>,
     /// The full editor: view mode and the live preview (studio/mod.rs).
     studio: studio::Studio,
-    sheet: Option<Sheet>,
-    sheet_gen: usize,
+    /// The open sheet, if any (`sheet/`).
+    sheet: sheet::SheetSlot,
     toast: Option<Toast>,
     toast_seq: usize,
     shake_gen: usize,
@@ -600,8 +497,7 @@ impl MainView {
                 cx.try_global::<crate::connection::Connection>()
                     .map(|c| c.data_dir.clone()),
             ),
-            sheet: None,
-            sheet_gen: 0,
+            sheet: Default::default(),
             toast: None,
             toast_seq: 0,
             shake_gen: 0,
@@ -733,7 +629,7 @@ impl MainView {
                     ),
                     // An ended browser sign-in: ask for a new one (the
                     // sheet says why) rather than retrying.
-                    (Err(CoreError::Unauthorized), _) if v.sheet.is_none() => {
+                    (Err(CoreError::Unauthorized), _) if !v.sheet.is_open() => {
                         v.signed_out(window, cx);
                     }
                     (Err(e), _) => {
@@ -897,13 +793,11 @@ impl MainView {
             cx.subscribe_in(&url, window, move |this, _, ev, window, cx| {
                 if let InputEvent::PressEnter { .. } = ev {
                     // Signing in with the browser needs only the address.
-                    if matches!(
-                        this.sheet,
-                        Some(Sheet::Connect {
-                            way: ConnectWay::Browser,
-                            ..
-                        })
-                    ) {
+                    if this
+                        .sheet
+                        .get::<ConnectSheet>()
+                        .is_some_and(|s| s.way == ConnectWay::Browser)
+                    {
                         this.submit_connect(window, cx);
                     } else {
                         t2.update(cx, |s, cx| s.focus(window, cx));
@@ -933,8 +827,7 @@ impl MainView {
             url.update(cx, |s, cx| s.set_value(u, window, cx));
         }
         url.update(cx, |s, cx| s.focus(window, cx));
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Connect {
+        self.sheet.open(ConnectSheet {
             url,
             token,
             way: ConnectWay::Browser,
@@ -952,14 +845,14 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(Sheet::Connect {
+        if let Some(ConnectSheet {
             url,
             token,
             way,
             error,
             busy,
             waiting,
-        }) = self.sheet.as_mut()
+        }) = self.sheet.get_mut()
         {
             *way = pick;
             *error = None;
@@ -987,13 +880,13 @@ impl MainView {
     }
 
     fn submit_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Connect {
+        let Some(ConnectSheet {
             url,
             token,
             way,
             busy,
             ..
-        }) = &self.sheet
+        }) = self.sheet.get()
         else {
             return;
         };
@@ -1075,12 +968,12 @@ impl MainView {
             );
         }
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        if let Some(Sheet::Connect {
+        if let Some(ConnectSheet {
             error,
             busy,
             waiting,
             ..
-        }) = self.sheet.as_mut()
+        }) = self.sheet.get_mut()
         {
             *error = None;
             *busy = true;
@@ -1158,13 +1051,13 @@ impl MainView {
     /// The browser sign-in is over: drop its cancel flag (nothing waits on
     /// it any more).
     fn clear_connect_wait(&mut self) {
-        if let Some(Sheet::Connect { waiting, .. }) = self.sheet.as_mut() {
+        if let Some(ConnectSheet { waiting, .. }) = self.sheet.get_mut() {
             waiting.take();
         }
     }
 
     fn set_connect_state(&mut self, err: Option<String>, is_busy: bool, cx: &mut Context<Self>) {
-        if let Some(Sheet::Connect { error, busy, .. }) = self.sheet.as_mut() {
+        if let Some(ConnectSheet { error, busy, .. }) = self.sheet.get_mut() {
             *error = err;
             *busy = is_busy;
         }
@@ -1187,7 +1080,7 @@ impl MainView {
         let host = vm::url_host(&url).unwrap_or(url.clone());
         match crate::connection::go_live(&url, cx) {
             Ok(true) => {
-                self.sheet = None;
+                self.sheet.close();
                 self.base_url = self.backend.base_url();
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
@@ -1195,7 +1088,7 @@ impl MainView {
             }
             Ok(false) => {
                 // Fake mode (or headless tests): nothing to switch.
-                self.sheet = None;
+                self.sheet.close();
                 self.refresh_problems(cx);
                 self.focus_after_sheet(window, cx);
                 if self.backend.server_outdated() {
@@ -1229,8 +1122,7 @@ impl MainView {
         };
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Disconnect {
+        self.sheet.open(DisconnectSheet {
             host: vm::url_host(&url).unwrap_or(url),
             focus,
         });
@@ -1239,7 +1131,7 @@ impl MainView {
 
     /// Forget the token and `blyg-url`; optionally delete the local copy.
     fn disconnect_now(&mut self, delete_local: bool, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         match crate::connection::disconnect(delete_local, cx) {
             Ok(host) => {
                 self.current = None;
@@ -1505,7 +1397,7 @@ impl MainView {
     }
 
     fn close_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.end_preview_from(pref_preview::Origin::Settings, window, cx); // --- preview ---
         self.focus_after_sheet(window, cx);
         cx.notify();
@@ -1692,7 +1584,7 @@ impl MainView {
             // outdated notice already says it all (`server_notice`).
             CoreEvent::ServerLimited => {}
             CoreEvent::SignedOut => {
-                if self.sheet.is_none() {
+                if !self.sheet.is_open() {
                     self.signed_out(window, cx);
                 }
             }
@@ -1712,7 +1604,7 @@ impl MainView {
             cx,
         );
         self.open_connect(window, cx);
-        if let Some(Sheet::Connect { error, .. }) = self.sheet.as_mut()
+        if let Some(ConnectSheet { error, .. }) = self.sheet.get_mut()
             && error.is_none()
         {
             *error = Some(
@@ -1760,19 +1652,12 @@ impl MainView {
     }
 
     fn on_publish(&mut self, _: &Publish, window: &mut Window, cx: &mut Context<Self>) {
-        match &self.sheet {
-            // ⌘⏎ in the publish sheet's note field publishes, like ⏎.
-            Some(Sheet::Publish { note, .. }) => {
-                let text = note.read(cx).value().to_string();
-                self.do_publish(text, window, cx);
-            }
-            Some(Sheet::Connect { .. }) => self.submit_connect(window, cx),
-            Some(Sheet::ServerAi(_)) => self.save_server_ai(window, cx), // --- access-ai ---
-            // --- browser macros --- Never publish under a macro's sheet: its
-            // own ⌘⏎ (MacroContinue, keymap.rs) continues the run.
-            Some(Sheet::MacroPreview(_) | Sheet::MacroPost(_)) => {}
-            Some(_) => {}
-            None => self.publish(window, cx),
+        // Under a sheet, ⌘⏎ is the sheet's own (`SheetView::submit`): it
+        // never publishes.
+        if !self.sheet.is_open() {
+            self.publish(window, cx);
+        } else if let Some(submit) = self.sheet.submit() {
+            submit(self, window, cx);
         }
     }
 
@@ -1803,8 +1688,7 @@ impl MainView {
             PublishDecision::Sheet { .. } if self.labels_held(&item.content_md) => {
                 let focus = cx.focus_handle();
                 window.focus(&focus, cx);
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::HeldLabels {
+                self.sheet.open(HeldLabelsSheet {
                     id: item.local_id,
                     focus,
                 });
@@ -1826,8 +1710,7 @@ impl MainView {
                 });
                 self._subs.push(sub);
                 note.update(cx, |s, cx| s.focus(window, cx));
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::Publish {
+                self.sheet.open(PublishSheet {
                     id: item.local_id,
                     title,
                     next_version,
@@ -1849,7 +1732,7 @@ impl MainView {
     /// The held-labels sheet's `⏎`: write the open post's labelled links
     /// bare (`[[id]]`, `![[id]]`), then publish it.
     fn publish_without_labels(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::HeldLabels { id, .. }) = self.sheet.take() else {
+        let Some(HeldLabelsSheet { id, .. }) = self.sheet.take() else {
             return;
         };
         if self.current.as_ref().map(|c| &c.local_id) == Some(&id) {
@@ -1864,7 +1747,7 @@ impl MainView {
     }
 
     fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Publish { id, ai, .. }) = self.sheet.take() else {
+        let Some(PublishSheet { id, ai, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
@@ -2007,7 +1890,7 @@ impl MainView {
     }
 
     fn open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::Settings { .. })) {
+        if self.sheet.is::<SettingsSheet>() {
             self.close_sheet(window, cx);
             return;
         }
@@ -2027,8 +1910,7 @@ impl MainView {
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
         self.settings_preview_reset(window, cx); // --- preview ---
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Settings {
+        self.sheet.open(SettingsSheet {
             hotkey,
             hotkey_error: None,
             focus,
@@ -2067,11 +1949,11 @@ impl MainView {
             }
             Err(e) => Some(e),
         };
-        if let Some(Sheet::Settings {
+        if let Some(SettingsSheet {
             hotkey_error,
             focus,
             ..
-        }) = self.sheet.as_mut()
+        }) = self.sheet.get_mut()
         {
             *hotkey_error = err;
             if hotkey_error.is_none() {
@@ -2120,7 +2002,7 @@ impl MainView {
     }
 
     fn resolve(&mut self, how: Resolution, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Conflict { id, .. }) = self.sheet.take() else {
+        let Some(ConflictSheet { id, .. }) = self.sheet.take() else {
             return;
         };
         match self.backend.resolve_conflict(&id, how) {
@@ -2612,16 +2494,7 @@ impl Render for MainView {
                 right: side_pad,
             });
         });
-        let sheet_inputs: Vec<&Entity<InputState>> = match &self.sheet {
-            Some(Sheet::Publish { note, .. }) => vec![note],
-            Some(Sheet::Settings { hotkey, .. }) => vec![hotkey],
-            Some(Sheet::Connect { url, token, .. }) => vec![url, token],
-            Some(Sheet::Withdraw { note, .. }) => vec![note], // --- delete & withdraw ---
-            Some(Sheet::ClientAccess(s)) => s.inputs(),       // --- access-ai ---
-            Some(Sheet::ServerAi(s)) => s.inputs(),           // --- access-ai ---
-            _ => vec![],
-        };
-        for input in [&self.omni].into_iter().chain(sheet_inputs) {
+        for input in [&self.omni].into_iter().chain(self.sheet.inputs()) {
             input.update(cx, |s, _| {
                 s.set_editor_style(p.field());
             });
@@ -3337,7 +3210,7 @@ impl MainView {
             .map(|d| self.composer_keys(d, cx))
             .map(|d| self.serendipity_keys(d, cx)) // --- serendipity ---
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                if this.sheet.is_none() {
+                if !this.sheet.is_open() {
                     cx.stop_propagation();
                     // --- focus --- esc leaves focus mode first.
                     if this.focus_escape(window, cx) {
@@ -3429,8 +3302,7 @@ impl MainView {
         let (m, t) = vm::word_diff(mine, theirs);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Conflict {
+        self.sheet.open(ConflictSheet {
             id,
             mine: m,
             theirs: t,
@@ -3449,7 +3321,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.sheet.is_some() {
+        if self.sheet.is_open() {
             return false;
         }
         let Some((mine, theirs)) = self.backend.conflict_texts(id) else {
@@ -3581,7 +3453,7 @@ impl MainView {
                                 cx.new(|_| reading::Tip("Connect your blyg…".into())).into()
                             })
                             .on_click(cx.listener(|this, _, window, cx| {
-                                if this.sheet.is_none() {
+                                if !this.sheet.is_open() {
                                     this.open_connect(window, cx)
                                 }
                             }))
@@ -3703,638 +3575,6 @@ impl MainView {
                 },
             )
             .into_any_element(),
-        )
-    }
-
-    fn render_sheet(
-        &self,
-        ui_font: &SharedString,
-        body_font: &SharedString,
-        cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        let sheet = self.sheet.as_ref()?;
-        let p = self.palette;
-        let theme = &*self.theme;
-        let kbd = |k: &'static str| {
-            crate::theme_ext::kbd(div(), theme)
-                .px(px(6.))
-                .py(px(1.))
-                .min_w(px(20.))
-                .flex()
-                .justify_center()
-                .font_weight(FontWeight::MEDIUM)
-                .text_size(px(11.5))
-                .child(k)
-        };
-        let key_hint = |k: &'static str, label: &'static str| {
-            div()
-                .flex()
-                .items_center()
-                .gap(px(5.))
-                .child(kbd(k))
-                .child(label)
-        };
-        let keys_row = |items: Vec<Div>| {
-            div()
-                .mt(px(12.))
-                .flex()
-                .gap(px(14.))
-                .text_color(p.muted)
-                .children(items)
-        };
-        let heading = |s: String| {
-            div()
-                .mb(px(8.))
-                .font_weight(FontWeight::SEMIBOLD)
-                .text_size(px(13.))
-                .child(s)
-        };
-        let input_box = |el: AnyElement| {
-            crate::theme_ext::field_box(div(), theme)
-                .px(px(10.))
-                .py(px(8.))
-                .text_size(px(14.))
-                .font_family(ui_font.clone())
-                .child(el)
-        };
-
-        let (width, content): (f32, AnyElement) = match sheet {
-            // --- browser macros ---
-            Sheet::MacroPreview(s) => self.render_macro_preview(s, cx),
-            Sheet::MacroPost(s) => self.render_macro_post(s, cx),
-            Sheet::Blygs(s) => self.render_blyg_sheet(s, cx), // --- blyg switcher ---
-            Sheet::Shelf(s) => self.render_shelf_sheet(s, cx), // --- shelf ---
-            Sheet::ClientAccess(s) => self.render_access_sheet(s, cx), // --- access-ai ---
-            Sheet::ServerAi(s) => self.render_server_ai_sheet(s, cx), // --- access-ai ---
-            Sheet::Contacts(s) => self.render_contacts_sheet(s, cx), // --- contacts ---
-            // --- upkeep ---
-            Sheet::StaleQuotes(s) => self.render_stale_sheet(s, cx),
-            Sheet::Signals(s) => self.render_signals_sheet(s, cx),
-            Sheet::AltText(s) => self.render_alt_sheet(s, cx),
-            Sheet::Copies(s) => self.render_copies_sheet(s, cx), // --- syndication ---
-            Sheet::Publish {
-                title,
-                next_version,
-                note,
-                ..
-            } => (
-                460.,
-                div()
-                    .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                        cx.stop_propagation();
-                        this.close_sheet(window, cx);
-                    }))
-                    .child(heading(format!("Publish “{title}” as v{next_version}")))
-                    // A first publish: say it goes public, and for good.
-                    .when(*next_version == 1, |d| {
-                        let host = crate::settings::blyg_url(cx)
-                            .map(|u| crate::vm::url_host(&u).unwrap_or(u));
-                        d.child(
-                            div()
-                                .id("publish-first-note")
-                                .debug_selector(|| "publish-first-note".into())
-                                .mb(px(8.))
-                                .text_size(px(12.))
-                                .text_color(p.muted)
-                                .line_height(relative(1.45))
-                                .child(first_publish_note(host.as_deref())),
-                        )
-                    })
-                    // --- full editor ---
-                    .children(self.studio_publish_warning(cx).map(|w| {
-                        div()
-                            .mb(px(8.))
-                            .text_size(px(12.5))
-                            .text_color(p.warn_text())
-                            .child(w)
-                    }))
-                    .child(input_box(
-                        gpui_kit::base::input::Input::new(note).into_any_element(),
-                    ))
-                    .children(self.render_note_ai(cx)) // --- access-ai ---
-                    .child(keys_row(vec![
-                        key_hint("⏎", "publish"),
-                        key_hint("esc", "cancel"),
-                    ]))
-                    .into_any_element(),
-            ),
-            Sheet::HeldLabels { focus, .. } => (
-                460.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "enter" => this.publish_without_labels(window, cx),
-                            "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading("Labelled links".into()))
-                    .child(
-                        div()
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(crate::keymap::hint(server_notice::HELD_SHEET)),
-                    )
-                    .child(
-                        keys_row(vec![])
-                            .child(crate::platform::key_button(
-                                key_hint("⏎", server_notice::HELD_FIX),
-                                "held-fix",
-                                cx.listener(|this, _, window, cx| {
-                                    this.publish_without_labels(window, cx)
-                                }),
-                            ))
-                            .child(crate::platform::key_button(
-                                key_hint("esc", "cancel"),
-                                "held-cancel",
-                                cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
-                            )),
-                    )
-                    .into_any_element(),
-            ),
-            Sheet::Conflict {
-                mine,
-                theirs,
-                focus,
-                ..
-            } => {
-                let col = |label: &'static str, runs: &Vec<(DiffOp, String)>| {
-                    let text: String = runs.iter().map(|(_, s)| s.as_str()).collect();
-                    let mut hl = Vec::new();
-                    let mut at = 0;
-                    for (op, s) in runs {
-                        let r = at..at + s.len();
-                        at += s.len();
-                        match op {
-                            DiffOp::Insert => hl.push((
-                                r,
-                                HighlightStyle {
-                                    background_color: Some(p.ins_bg),
-                                    ..Default::default()
-                                },
-                            )),
-                            DiffOp::Delete => hl.push((
-                                r,
-                                HighlightStyle {
-                                    background_color: Some(p.del_bg),
-                                    strikethrough: Some(StrikethroughStyle {
-                                        thickness: px(1.),
-                                        color: Some(p.over),
-                                    }),
-                                    ..Default::default()
-                                },
-                            )),
-                            DiffOp::Same => {}
-                        }
-                    }
-                    div()
-                        .id(label)
-                        .flex_1()
-                        .min_w_0()
-                        .max_h(px(260.))
-                        .overflow_y_scroll()
-                        .p(px(8.))
-                        .rounded(px(theme.radius.min(8.)))
-                        .border_1()
-                        .border_color(p.edge())
-                        .child(
-                            div()
-                                .mb(px(4.))
-                                .font_family(theme.chrome_font(&self.prefs))
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .text_size(px(10.5))
-                                .text_color(p.muted)
-                                .child(label),
-                        )
-                        .child(
-                            div()
-                                .font_family(body_font.clone())
-                                .text_size(px(13.))
-                                .line_height(relative(1.45))
-                                .child(StyledText::new(text).with_highlights(hl)),
-                        )
-                };
-                (
-                    560.,
-                    div()
-                        .track_focus(focus)
-                        .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                            match ev.keystroke.key.as_str() {
-                                "1" => this.resolve(Resolution::KeepMine, window, cx),
-                                "2" => this.resolve(Resolution::TakeServer, window, cx),
-                                "3" => this.resolve(Resolution::KeepBoth, window, cx),
-                                "escape" => this.close_sheet(window, cx),
-                                _ => return,
-                            }
-                            cx.stop_propagation();
-                        }))
-                        .child(heading("This post was also edited elsewhere".into()))
-                        .child(
-                            div()
-                                .flex()
-                                .gap(px(10.))
-                                .my(px(8.))
-                                .child(col("ON THIS MAC", mine))
-                                .child(col("ON THE SERVER", theirs)),
-                        )
-                        .child(keys_row(vec![
-                            key_hint("1", "keep mine"),
-                            key_hint("2", "take server's"),
-                            key_hint("3", "keep both"),
-                        ]))
-                        .into_any_element(),
-                )
-            }
-            // Not a sheet: a page over the whole window (`settings_page.rs`).
-            Sheet::Settings {
-                hotkey,
-                hotkey_error,
-                focus,
-                scroll,
-            } => {
-                return Some(self.render_settings_page(
-                    hotkey,
-                    hotkey_error.as_deref(),
-                    focus,
-                    scroll,
-                    ui_font,
-                    cx,
-                ));
-            }
-            Sheet::Disconnect { host, focus } => (
-                460.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "1" => this.disconnect_now(false, window, cx),
-                            "2" => this.disconnect_now(true, window, cx),
-                            "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading(format!("Disconnect from {host}?")))
-                    .child(div().text_color(p.muted).line_height(relative(1.45)).child(
-                        crate::keymap::hint(
-                            "The password or owner token is removed from your Keychain and the \
-                             address from your config file. Nothing changes on the blyg itself.",
-                        ),
-                    ))
-                    // The keys are buttons too on Windows (`platform::key_button`).
-                    .child(
-                        keys_row(vec![])
-                            .child(crate::platform::key_button(
-                                key_hint(
-                                    "1",
-                                    crate::keymap::hint("disconnect, keep the posts on this Mac"),
-                                ),
-                                "disconnect-keep",
-                                cx.listener(|this, _, window, cx| {
-                                    this.disconnect_now(false, window, cx)
-                                }),
-                            ))
-                            .child(crate::platform::key_button(
-                                key_hint("2", "also delete the local copy"),
-                                "disconnect-delete",
-                                cx.listener(|this, _, window, cx| {
-                                    this.disconnect_now(true, window, cx)
-                                }),
-                            )),
-                    )
-                    .child(keys_row(vec![]).child(crate::platform::key_button(
-                        key_hint("esc", "cancel"),
-                        "disconnect-cancel",
-                        cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
-                    )))
-                    .into_any_element(),
-            ),
-            Sheet::Connect {
-                url,
-                token,
-                way,
-                error,
-                busy,
-                waiting,
-            } => {
-                let way = *way;
-                let waiting = waiting.is_some();
-                // "Sign in with browser · API token · Studio password": the
-                // chosen one in ink.
-                let choice = |id: &'static str, text: &'static str, pick: ConnectWay| {
-                    let on = way == pick;
-                    div()
-                        .id(id)
-                        .debug_selector(move || id.into())
-                        .cursor_pointer()
-                        .text_color(if on { p.ink } else { p.muted })
-                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD))
-                        .hover(|s| s.underline())
-                        .child(text)
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.set_connect_way(pick, window, cx)
-                        }))
-                };
-                let label = |s: &'static str| {
-                    div()
-                        .mt(px(10.))
-                        .mb(px(4.))
-                        .text_size(px(10.5))
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .text_color(p.muted)
-                        .child(s)
-                };
-                let note = |s: &'static str| {
-                    div()
-                        .mt(px(8.))
-                        .text_size(px(12.))
-                        .text_color(p.muted)
-                        .line_height(relative(1.45))
-                        .child(s)
-                };
-                let explain = match way {
-                    ConnectWay::Browser => {
-                        "Burrow opens your blyg's studio in your browser. Sign in there and \
-                         allow Burrow; it gets renewable access with every permission, \
-                         kept in your macOS Keychain."
-                    }
-                    ConnectWay::Token => {
-                        "Make a token in your blyg's Studio → More → Client access: choose REST \
-                         API and every permission (read, draft, publish, manage, and reading:state \
-                         where offered). It lasts \
-                         30 days. It is kept in your macOS Keychain."
-                    }
-                    ConnectWay::Password => {
-                        "The password you sign in to the studio with. It is kept in your \
-                         macOS Keychain."
-                    }
-                };
-                (
-                    480.,
-                    div()
-                        .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                            cx.stop_propagation();
-                            this.close_sheet(window, cx);
-                        }))
-                        .child(heading("Connect your blyg".into()))
-                        .child(
-                            div()
-                                .text_color(p.muted)
-                                .line_height(relative(1.45))
-                                .child(CONNECT_INTRO),
-                        )
-                        .child(label("BLYG ADDRESS"))
-                        .child(input_box(
-                            gpui_kit::base::input::Input::new(url).into_any_element(),
-                        ))
-                        .child(
-                            div()
-                                .mt(px(10.))
-                                .flex()
-                                .gap(px(6.))
-                                .text_size(px(12.))
-                                .child(choice(
-                                    "connect-by-browser",
-                                    "Sign in with browser",
-                                    ConnectWay::Browser,
-                                ))
-                                .child(div().text_color(p.muted).child("·"))
-                                .child(choice("connect-by-token", "API token", ConnectWay::Token))
-                                .child(div().text_color(p.muted).child("·"))
-                                .child(choice(
-                                    "connect-by-password",
-                                    "Studio password",
-                                    ConnectWay::Password,
-                                )),
-                        )
-                        .child(note(crate::keymap::hint(explain)))
-                        .when(way != ConnectWay::Browser, |d| {
-                            d.child(label(if way == ConnectWay::Password {
-                                "STUDIO PASSWORD"
-                            } else {
-                                "API TOKEN"
-                            }))
-                            .child(input_box(
-                                gpui_kit::base::input::Input::new(token).into_any_element(),
-                            ))
-                        })
-                        .when_some(error.clone(), |d, e| {
-                            d.child(div().mt(px(8.)).text_color(p.over_text()).child(e))
-                        })
-                        .when(*busy, |d| {
-                            d.child(div().mt(px(8.)).text_color(p.muted).child(match way {
-                                ConnectWay::Browser if waiting => {
-                                    "Waiting for you to allow Burrow in your browser… (esc cancels)"
-                                }
-                                ConnectWay::Browser => "Checking the address…",
-                                ConnectWay::Password => "Signing in…",
-                                ConnectWay::Token => "Checking the address and token…",
-                            }))
-                        })
-                        .child({
-                            let next = if way == ConnectWay::Browser {
-                                "next · open the browser"
-                            } else {
-                                "next · connect"
-                            };
-                            // The keys are buttons too on Windows (`platform::key_button`).
-                            keys_row(vec![])
-                                .child(crate::platform::key_button(
-                                    key_hint("⏎", next),
-                                    "connect-submit",
-                                    cx.listener(|this, _, window, cx| {
-                                        this.submit_connect(window, cx)
-                                    }),
-                                ))
-                                .child(crate::platform::key_button(
-                                    key_hint("esc", "not now"),
-                                    "connect-cancel",
-                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
-                                ))
-                        })
-                        .into_any_element(),
-                )
-            }
-            // --- delete & withdraw --- (discard.rs): the keys are buttons too.
-            Sheet::DeleteDraft {
-                title, noun, focus, ..
-            } => (
-                440.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "enter" => this.confirm_delete(window, cx),
-                            "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading(format!("Delete this {noun}?")))
-                    .child(
-                        div()
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(div().text_color(p.ink).child(format!("“{title}”")))
-                            .child(discard::DELETE_NOTE),
-                    )
-                    .child(
-                        keys_row(vec![])
-                            .child(
-                                key_hint("⏎", "delete")
-                                    .id("sheet-delete")
-                                    .debug_selector(|| "sheet-delete".into())
-                                    .cursor_pointer()
-                                    .text_color(p.over_text())
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.confirm_delete(window, cx)
-                                    })),
-                            )
-                            .child(
-                                key_hint("esc", "cancel")
-                                    .id("sheet-cancel")
-                                    .debug_selector(|| "sheet-cancel".into())
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.close_sheet(window, cx)
-                                    })),
-                            ),
-                    )
-                    .into_any_element(),
-            ),
-            // --- discard changes ---
-            Sheet::DiscardChanges {
-                title,
-                version,
-                focus,
-                ..
-            } => (
-                440.,
-                div()
-                    .track_focus(focus)
-                    .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
-                        match ev.keystroke.key.as_str() {
-                            "enter" => this.confirm_discard_changes(window, cx),
-                            "escape" => this.close_sheet(window, cx),
-                            _ => return,
-                        }
-                        cx.stop_propagation();
-                    }))
-                    .child(heading("Discard unpublished changes?".to_string()))
-                    .child(
-                        div()
-                            .text_color(p.muted)
-                            .line_height(relative(1.45))
-                            .child(div().text_color(p.ink).child(format!("“{title}”")))
-                            .child(format!(
-                                "The editor goes back to v{version} as published. {}",
-                                discard::DISCARD_NOTE
-                            )),
-                    )
-                    .child(
-                        keys_row(vec![])
-                            .child(
-                                key_hint("⏎", "discard changes")
-                                    .id("sheet-discard")
-                                    .debug_selector(|| "sheet-discard".into())
-                                    .cursor_pointer()
-                                    .text_color(p.over_text())
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.confirm_discard_changes(window, cx)
-                                    })),
-                            )
-                            .child(
-                                key_hint("esc", "keep them")
-                                    .id("sheet-cancel")
-                                    .debug_selector(|| "sheet-cancel".into())
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.close_sheet(window, cx)
-                                    })),
-                            ),
-                    )
-                    .into_any_element(),
-            ),
-            Sheet::Withdraw { title, note, .. } => {
-                let note = note.clone();
-                (
-                    460.,
-                    div()
-                        .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                            cx.stop_propagation();
-                            this.close_sheet(window, cx);
-                        }))
-                        .child(heading(format!("Withdraw “{title}”?")))
-                        .child(
-                            div()
-                                .mb(px(8.))
-                                .text_color(p.muted)
-                                .line_height(relative(1.45))
-                                .child(discard::WITHDRAW_NOTE),
-                        )
-                        .child(input_box(
-                            gpui_kit::base::input::Input::new(&note).into_any_element(),
-                        ))
-                        .child(
-                            keys_row(vec![])
-                                .child(
-                                    key_hint("⏎", "withdraw")
-                                        .id("sheet-withdraw")
-                                        .debug_selector(|| "sheet-withdraw".into())
-                                        .cursor_pointer()
-                                        .text_color(p.over_text())
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            let text = note.read(cx).value().to_string();
-                                            this.confirm_withdraw(text, window, cx)
-                                        })),
-                                )
-                                .child(
-                                    key_hint("esc", "cancel")
-                                        .id("sheet-cancel")
-                                        .debug_selector(|| "sheet-cancel".into())
-                                        .cursor_pointer()
-                                        .on_click(cx.listener(|this, _, window, cx| {
-                                            this.close_sheet(window, cx)
-                                        })),
-                                ),
-                        )
-                        .into_any_element(),
-                )
-            }
-        };
-
-        let sheet_gen = self.sheet_gen;
-        Some(
-            div()
-                .absolute()
-                .top(px(TITLEBAR_H))
-                .left_0()
-                // --- browser macros --- beside the side pane, not over it
-                .right(self.macro_sheet_right().unwrap_or(px(0.)))
-                .flex()
-                .justify_center()
-                .child(
-                    div()
-                        .id("sheet")
-                        .occlude()
-                        .w(px(width))
-                        .max_w(relative(0.92))
-                        .map(|d| crate::theme_ext::sheet(d, &self.theme))
-                        .px(px(18.))
-                        .py(px(16.))
-                        .font_family(ui_font.clone())
-                        .text_size(px(13.))
-                        .child(content)
-                        .with_animation(
-                            ("sheet-in", sheet_gen),
-                            Animation::new(Duration::from_millis(220))
-                                .with_easing(ease_out_quint()),
-                            |d, t| d.mt(px(-240.0 * (1.0 - t))).opacity(t.min(1.0) * 0.4 + 0.6),
-                        ),
-                )
-                .into_any_element(),
         )
     }
 }

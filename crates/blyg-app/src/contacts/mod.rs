@@ -13,7 +13,7 @@
 //!   screen's poll status (`poll.rs`).
 //!
 //! A child module of `reading` (it uses the reading screens' helpers); the
-//! sheet is a main-window sheet (`Sheet::Contacts`). Hooks elsewhere are
+//! sheet is a main-window sheet (`ContactsSheet`, in `sheet/`'s registry). Hooks elsewhere are
 //! marked `// --- contacts ---`.
 
 use blyg_core::contacts::{Contact, ContactInput, ContactSeed, held, matching};
@@ -22,7 +22,7 @@ use gpui_kit::base::input::{InputEvent, InputState};
 use gpui_kit::*;
 
 use super::View;
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 
 mod demo;
 pub(crate) mod poll;
@@ -62,6 +62,17 @@ pub(crate) struct ContactsSheet {
     /// Opened as an offer (after subscribing, or for a post's author):
     /// only the form, under this heading and question; done closes it.
     pub offer: Option<Offer>,
+}
+
+impl crate::app::sheet::SheetView for ContactsSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_contacts_sheet(self, cx).into()
+    }
 }
 
 #[derive(Clone)]
@@ -136,7 +147,7 @@ impl MainView {
 
     /// Blyg › Contacts…: open the book, or close it.
     pub(crate) fn toggle_contacts_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::Contacts(_))) {
+        if self.sheet.is::<ContactsSheet>() {
             return self.close_contacts_sheet(window, cx);
         }
         self.open_contacts_sheet(None, None, window, cx);
@@ -154,7 +165,7 @@ impl MainView {
             .new(|cx| InputState::new(window, cx).placeholder("Search by handle, name or address"));
         let sub = cx.subscribe_in(&search, window, |this, _, ev, window, cx| match ev {
             InputEvent::Change => {
-                if let Some(Sheet::Contacts(s)) = this.sheet.as_mut() {
+                if let Some(s) = this.sheet.get_mut::<ContactsSheet>() {
                     s.sel = 0;
                     s.confirm_remove = None;
                 }
@@ -172,8 +183,7 @@ impl MainView {
             Some(f) => f.handle.update(cx, |s, cx| s.focus(window, cx)),
             None => search.update(cx, |s, cx| s.focus(window, cx)),
         }
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Contacts(Box::new(ContactsSheet {
+        self.sheet.open(ContactsSheet {
             focus,
             search,
             book,
@@ -184,7 +194,7 @@ impl MainView {
             checking: None,
             error: None,
             offer,
-        })));
+        });
         cx.notify();
         self.reload_contacts(cx);
     }
@@ -199,7 +209,7 @@ impl MainView {
         cx.spawn(async move |this, cx| {
             let (r, book, served) = task.await;
             let _ = this.update(cx, |v, cx| {
-                if let Some(Sheet::Contacts(s)) = v.sheet.as_mut() {
+                if let Some(s) = v.sheet.get_mut::<ContactsSheet>() {
                     s.book = book;
                     s.served = Some(served);
                     s.sel = s.sel.min(s.book.len().saturating_sub(1));
@@ -216,7 +226,7 @@ impl MainView {
     }
 
     pub(crate) fn close_contacts_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         if self.reading.view == View::Posts {
             self.focus_after_sheet(window, cx);
         } else {
@@ -265,7 +275,7 @@ impl MainView {
     pub(crate) fn new_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let form = self.contact_form(None, ContactInput::default(), window, cx);
         form.handle.update(cx, |s, cx| s.focus(window, cx));
-        if let Some(Sheet::Contacts(s)) = self.sheet.as_mut() {
+        if let Some(s) = self.sheet.get_mut::<ContactsSheet>() {
             s.form = Some(form);
             s.confirm_remove = None;
         }
@@ -274,7 +284,7 @@ impl MainView {
 
     /// Edit the highlighted contact (⏎ in the search box).
     fn edit_selected_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<ContactsSheet>() else {
             return;
         };
         if let Some(id) = s.shown(cx).get(s.sel).map(|c| c.id.clone()) {
@@ -283,7 +293,7 @@ impl MainView {
     }
 
     pub(crate) fn edit_contact(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<ContactsSheet>() else {
             return;
         };
         let Some(c) = s.book.iter().find(|c| c.id == id).cloned() else {
@@ -296,7 +306,7 @@ impl MainView {
         };
         let form = self.contact_form(Some(id), input, window, cx);
         form.name.update(cx, |s, cx| s.focus(window, cx));
-        if let Some(Sheet::Contacts(s)) = self.sheet.as_mut() {
+        if let Some(s) = self.sheet.get_mut::<ContactsSheet>() {
             s.form = Some(form);
             s.confirm_remove = None;
         }
@@ -305,7 +315,7 @@ impl MainView {
 
     /// esc in the form: back to the list (an offer closes: "not now").
     pub(crate) fn cancel_contact_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<ContactsSheet>() else {
             return;
         };
         if s.offer.is_some() || s.form.is_none() {
@@ -324,7 +334,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_ref() else {
+        let Some(s) = self.sheet.get::<ContactsSheet>() else {
             return;
         };
         let Some(f) = s.form.as_ref() else { return };
@@ -341,7 +351,7 @@ impl MainView {
     /// ⏎ / "Save": add or change the contact, checking it first as the
     /// studio would. A new one's page is then checked, best effort.
     pub(crate) fn save_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<ContactsSheet>() else {
             return;
         };
         let Some(f) = s.form.as_mut() else { return };
@@ -375,7 +385,7 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let r = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
-                let Some(Sheet::Contacts(s)) = v.sheet.as_mut() else {
+                let Some(s) = v.sheet.get_mut::<ContactsSheet>() else {
                     return;
                 };
                 match r {
@@ -419,7 +429,7 @@ impl MainView {
 
     /// Remove (click twice).
     pub(crate) fn remove_contact(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<ContactsSheet>() else {
             return;
         };
         if s.confirm_remove.as_deref() != Some(id.as_str()) {
@@ -440,7 +450,7 @@ impl MainView {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 let book = v.backend.contacts();
-                if let Some(Sheet::Contacts(s)) = v.sheet.as_mut() {
+                if let Some(s) = v.sheet.get_mut::<ContactsSheet>() {
                     match &r {
                         Ok(()) => {
                             s.book = book;
@@ -465,7 +475,7 @@ impl MainView {
     /// "Check page": the blyg reads the contact's page for the identifiers
     /// it vouches for (`rel="me"`).
     pub(crate) fn check_contact(&mut self, id: String, cx: &mut Context<Self>) {
-        let Some(Sheet::Contacts(s)) = self.sheet.as_mut() else {
+        let Some(s) = self.sheet.get_mut::<ContactsSheet>() else {
             return;
         };
         if s.checking.is_some() {
@@ -488,7 +498,7 @@ impl MainView {
                     },
                     Err(e) => contact_error(e),
                 };
-                if let Some(Sheet::Contacts(s)) = v.sheet.as_mut() {
+                if let Some(s) = v.sheet.get_mut::<ContactsSheet>() {
                     s.checking = None;
                     match r {
                         Ok(c) => {
@@ -595,7 +605,7 @@ impl MainView {
             let Some(seed) = task.await else { return };
             let _ = this.update_in(cx, |v, window, cx| {
                 // Not over another sheet the owner opened meanwhile.
-                if v.sheet.is_some() || v.reading.sheet.is_some() {
+                if v.sheet.is_open() || v.reading.sheet.is_some() {
                     return;
                 }
                 v.open_contacts_sheet(

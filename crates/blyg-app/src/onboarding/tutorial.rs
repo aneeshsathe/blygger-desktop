@@ -24,9 +24,7 @@ use crate::app::reading::View;
 use crate::app::reading::stream_vm::{self, ReadMode};
 use crate::app::scratch::MakeDraft;
 use crate::app::studio::{ViewMode, ViewSplit, ViewStudio, ViewWrite};
-use crate::app::{
-    MainView, Mode as EditMode, OMNI_H, Publish, STATUS_H, Sheet, TITLEBAR_H, ToggleKind,
-};
+use crate::app::{MainView, Mode as EditMode, OMNI_H, Publish, STATUS_H, TITLEBAR_H, ToggleKind};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
@@ -106,7 +104,7 @@ impl MainView {
             return self.tour_chooser(window, cx);
         }
         self.onboarding.flow = None;
-        self.sheet = None;
+        self.sheet.close();
         self.ai_escape(window, cx);
         self.reading.sheet = None;
         self.leave_reading();
@@ -320,7 +318,7 @@ impl MainView {
         };
         let mut p = t.parked;
         self.ai_escape(window, cx);
-        self.sheet = None;
+        self.sheet.close();
         self.reading.sheet = None;
         self.leave_reading();
         self.close_profile(window, cx);
@@ -548,7 +546,7 @@ impl MainView {
 
     /// A sheet, an AI proposal or a generation is still on screen.
     fn tutorial_busy(&self) -> bool {
-        self.sheet.is_some()
+        self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()
@@ -706,7 +704,7 @@ impl MainView {
             (Key::StubPassage, passage),
             (
                 Key::BlygSwitcher,
-                matches!(self.sheet, Some(Sheet::Blygs(_))),
+                self.sheet.is::<crate::app::switcher::BlygSheet>(),
             ),
             // --- hoppers ---
             (
@@ -752,15 +750,16 @@ impl MainView {
             (Key::SiteSheet, self.site.sheet.is_some()),
             (
                 Key::ContactsSheet,
-                matches!(self.sheet, Some(super::Sheet::Contacts(_))),
+                self.sheet
+                    .is::<crate::app::reading::contacts::ContactsSheet>(),
             ),
             (
                 Key::StaleQuotes,
-                matches!(self.sheet, Some(super::Sheet::StaleQuotes(_))),
+                self.sheet.is::<crate::app::upkeep::StaleSheet>(),
             ),
             (
                 Key::ClientAccess,
-                matches!(self.sheet, Some(super::Sheet::ClientAccess(_))),
+                self.sheet.is::<crate::app::access::ClientAccessSheet>(),
             ),
         ]
         .into_iter()
@@ -841,8 +840,8 @@ impl MainView {
 
     /// Close whatever the last step left open.
     fn tutorial_tidy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sheet.is_some() {
-            self.sheet = None;
+        if self.sheet.is_open() {
+            self.sheet.close();
         }
         if self.ai.has_overlay() {
             self.ai_escape(window, cx);
@@ -986,7 +985,7 @@ impl MainView {
                 }
             }
             Setup::PublishSheet => {
-                if !matches!(self.sheet, Some(Sheet::Publish { .. })) {
+                if !self.sheet.is::<crate::app::PublishSheet>() {
                     self.tutorial_tidy(window, cx);
                     if self.current.is_none() {
                         self.tutorial_open(steps::DRAFT, window, cx);
@@ -1290,7 +1289,7 @@ impl MainView {
             Setup::QuietWriting => {
                 self.tutorial_setup(Setup::Versioned, window, cx);
                 self.quiet.row.set(None);
-                if !matches!(self.sheet, Some(Sheet::Settings { .. })) {
+                if !self.sheet.is::<crate::app::SettingsSheet>() {
                     self.open_settings(&crate::app::OpenSettings, window, cx);
                 }
             }
@@ -1514,7 +1513,7 @@ impl MainView {
             }
             // --- 0.26.0 --- where Settings drew the row.
             Region::QuietSetting => {
-                if !matches!(self.sheet, Some(Sheet::Settings { .. })) {
+                if !self.sheet.is::<crate::app::SettingsSheet>() {
                     return None;
                 }
                 let b = self.quiet.row.get()?;
@@ -1731,7 +1730,7 @@ impl MainView {
         cx: &App,
     ) -> Option<(f32, f32, f32, f32)> {
         let assist = self.assist.read(cx);
-        let covered = self.sheet.is_some()
+        let covered = self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions --- its sheets

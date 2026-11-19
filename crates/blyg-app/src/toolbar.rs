@@ -456,7 +456,7 @@ impl MainView {
             versions_open: self.reading.own.is_some(),
             ai_enabled,
             publishing: self.publishing,
-            sheet_open: self.sheet.is_some() || self.reading.sheet.is_some(),
+            sheet_open: self.sheet.is_open() || self.reading.sheet.is_some(),
             new_note: self.prefs.new_post,
             offline: matches!(self.sync, blyg_core::SyncStatus::Offline { .. }),
             restoring: self

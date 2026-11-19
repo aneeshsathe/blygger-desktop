@@ -71,6 +71,25 @@ pub struct ServerAiSheet {
     pub error: Option<String>,
 }
 
+impl crate::app::sheet::SheetView for ServerAiSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_server_ai_sheet(self, cx).into()
+    }
+
+    fn inputs(&self) -> Vec<&Entity<InputState>> {
+        self.inputs()
+    }
+
+    fn submit(&self) -> Option<crate::app::sheet::Submit> {
+        Some(|v, window, cx| v.save_server_ai(window, cx))
+    }
+}
+
 impl ServerAiSheet {
     pub fn inputs(&self) -> Vec<&Entity<InputState>> {
         vec![&self.other]
@@ -136,7 +155,7 @@ impl MainView {
 
     /// Blyg › AI on Your Blyg…: open it (or close it).
     pub(crate) fn open_server_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::ServerAi(_))) {
+        if self.sheet.is::<ServerAiSheet>() {
             return self.close_sheet(window, cx);
         }
         let style = cx.new(|cx| TextareaState::new(window, cx).soft_wrap(true));
@@ -152,8 +171,7 @@ impl MainView {
             }));
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::ServerAi(Box::new(ServerAiSheet {
+        self.sheet.open(ServerAiSheet {
             focus,
             style,
             feed,
@@ -165,7 +183,7 @@ impl MainView {
             other_for: None,
             busy: false,
             error: None,
-        })));
+        });
         cx.notify();
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move {
@@ -177,7 +195,7 @@ impl MainView {
         cx.spawn_in(window, async move |this, cx| {
             let (settings, models) = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
-                let Some(Sheet::ServerAi(s)) = v.sheet.as_mut() else {
+                let Some(s) = v.sheet.get_mut::<ServerAiSheet>() else {
                     return;
                 };
                 match settings {
@@ -203,10 +221,7 @@ impl MainView {
     }
 
     fn server_ai_sheet(&mut self) -> Option<&mut ServerAiSheet> {
-        match self.sheet.as_mut() {
-            Some(Sheet::ServerAi(s)) => Some(s),
-            _ => None,
-        }
+        self.sheet.get_mut::<ServerAiSheet>()
     }
 
     /// ←/→ (or a click) on a row: the next model, or flip the switch.
@@ -395,10 +410,10 @@ impl MainView {
                 }))
                 .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                     cx.stop_propagation();
-                    let typing = matches!(
-                        &this.sheet,
-                        Some(Sheet::ServerAi(s)) if s.other_for.is_some()
-                    );
+                    let typing = this
+                        .sheet
+                        .get::<ServerAiSheet>()
+                        .is_some_and(|s| s.other_for.is_some());
                     if typing {
                         if let Some(s) = this.server_ai_sheet() {
                             s.other_for = None;

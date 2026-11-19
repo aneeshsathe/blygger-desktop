@@ -48,6 +48,17 @@ pub(crate) struct StaleSheet {
     pub busy: bool,
 }
 
+impl crate::app::sheet::SheetView for StaleSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_stale_sheet(self, cx).into()
+    }
+}
+
 /// The rows for `list`: `own(sid)` finds your post by its server id, and
 /// `title_of(quote)` names a quoted post when it's held here.
 pub fn rows(
@@ -96,7 +107,7 @@ pub fn why_not(row: &Row) -> Option<&'static str> {
 impl MainView {
     /// Blyg › Stale Quotes…: open the sheet (and ask the blyg), or close it.
     pub(crate) fn toggle_stale_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::StaleQuotes(_))) {
+        if self.sheet.is::<StaleSheet>() {
             return self.close_sheet(window, cx);
         }
         let note = cx.new(|cx| {
@@ -119,8 +130,7 @@ impl MainView {
         } else {
             Fetch::Ready(self.stale_rows(cached))
         };
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::StaleQuotes(StaleSheet {
+        self.sheet.open(StaleSheet {
             focus,
             note,
             list,
@@ -128,7 +138,7 @@ impl MainView {
             probed: HashMap::new(),
             done: HashMap::new(),
             busy: false,
-        }));
+        });
         self.reload_stale_sheet(cx);
         cx.notify();
     }
@@ -157,10 +167,7 @@ impl MainView {
     }
 
     fn stale_sheet(&mut self) -> Option<&mut StaleSheet> {
-        match &mut self.sheet {
-            Some(Sheet::StaleQuotes(s)) => Some(s),
-            _ => None,
-        }
+        self.sheet.get_mut::<StaleSheet>()
     }
 
     /// Ask the blyg for the list again (`GET /freshness`).
@@ -216,13 +223,9 @@ impl MainView {
     }
 
     fn stale_note(&self, cx: &App) -> Option<String> {
-        match &self.sheet {
-            Some(Sheet::StaleQuotes(s)) => {
-                let n = s.note.read(cx).value().trim().to_string();
-                Some(if n.is_empty() { DEFAULT_NOTE.into() } else { n })
-            }
-            _ => None,
-        }
+        let s = self.sheet.get::<StaleSheet>()?;
+        let n = s.note.read(cx).value().trim().to_string();
+        Some(if n.is_empty() { DEFAULT_NOTE.into() } else { n })
     }
 
     /// ⏎: refresh the highlighted thread.
@@ -315,7 +318,7 @@ impl MainView {
         else {
             return;
         };
-        self.sheet = None;
+        self.sheet.close();
         self.leave_reading();
         if !self.list.results().iter().any(|i| i.local_id == id) {
             self.set_query_text("", window, cx);

@@ -1158,7 +1158,7 @@ impl MainView {
     pub(crate) fn browser_frame(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         // --- browser macros --- a macro's sheet beside the side pane
         // leaves the page in view.
-        let sheet_covers = self.sheet.is_some() && self.macro_sheet_right().is_none();
+        let sheet_covers = self.sheet.is_open() && self.macro_sheet_right().is_none();
         let covered = sheet_covers
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
