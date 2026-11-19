@@ -8,6 +8,7 @@ mod auth;
 mod config;
 mod config_docs;
 mod contacts;
+mod crate_graph;
 mod e2e;
 mod profiles;
 mod read_sync;

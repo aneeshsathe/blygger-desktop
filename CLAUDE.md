@@ -40,3 +40,4 @@ Rules with an enforcer (a new row needs a check shown failing on a real past ins
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
 | the reading list converges, prunes only after a whole walk, and stays cheap | `blyg-core/src/sync/walk_model_tests.rs` (proptest model driving `walk::Read`) |
+| crates depend only on what their runtime allows (GPUI in `blyg-app` only) | `blyg-core/tests/it/crate_graph.rs` (`cargo metadata`) |
