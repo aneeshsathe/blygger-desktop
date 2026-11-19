@@ -944,3 +944,35 @@ fn imported_text_keeps_its_exact_bytes() {
     assert_eq!(r.content_md, nfd);
     assert_eq!(content_hash(&r.content_md), content_hash(nfd));
 }
+
+// --- unread counts --- One "unread" everywhere: the status bar's count
+// (`unread_count`) is the posts never read or edited since you read them,
+// the rule the reading header and All unread follow (`to_read`).
+#[test]
+fn unread_count_includes_posts_edited_since_you_read_them() {
+    let s = store();
+    let k = kinds(&[("s", SubscriptionKind::Blyg)]);
+    let o = "https://a.example/";
+    let rows = [
+        ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "a"),
+        ri("s", "B", o, None, 1, "2026-01-02T00:00:00Z", "b"),
+        ri("s", "C", o, None, 1, "2026-01-03T00:00:00Z", "c"),
+    ];
+    s.merge_reading(&rows, true, &k).unwrap();
+    assert_eq!(s.unread_count(), 3);
+    s.mark_read("s", "A").unwrap();
+    s.mark_read("s", "B").unwrap();
+    assert_eq!(s.unread_count(), 1);
+    // B is edited after you read it: to read again, and counted.
+    let b2 = ri("s", "B", o, None, 2, "2026-01-04T00:00:00Z", "b, edited");
+    // (A whole pull: the other two come back unchanged.)
+    s.merge_reading(&[rows[0].clone(), b2, rows[2].clone()], true, &k)
+        .unwrap();
+    let held = s.reading();
+    let to_read: Vec<_> = held.iter().filter(|r| r.to_read()).collect();
+    assert_eq!(to_read.len(), 2, "B (edited) and C (never read)");
+    assert_eq!(s.unread_count(), to_read.len(), "the same rule");
+    // Read at its new version, it leaves the count.
+    s.mark_read("s", "B").unwrap();
+    assert_eq!(s.unread_count(), 1);
+}

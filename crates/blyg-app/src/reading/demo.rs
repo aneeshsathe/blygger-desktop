@@ -107,8 +107,24 @@ impl MainView {
             // --- reading compose --- the compose box under the stream, a
             // thought half typed; `rd-compose-reader`: the Reader with a
             // post open and its quote in the box.
-            ("rd-stream-compose", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-compose", 1) => {
+            // --- mark all read --- the question, in the Stream and in the
+            // Reader (Rue picked).
+            ("rd-stream-mark-all" | "rd-mark-all-reader", 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-stream-mark-all", 1) => self.ask_mark_all_read(None, window, cx),
+            ("rd-mark-all-reader", 1) => {
+                self.set_read_mode(super::stream_vm::ReadMode::Reader, window, cx);
+                self.select_source(super::sources_vm::Source::Sub("sub-rue".into()), cx);
+            }
+            ("rd-mark-all-reader", 2) => self.ask_mark_all_read(None, window, cx),
+            // --- reading compose --- `rd-stream-compose-hold`: Post pressed, the
+            // hold counting down.
+            ("rd-stream-compose-hold", 2) => self.compose_post(window, cx),
+            ("rd-stream-compose" | "rd-stream-compose-hold", 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            ("rd-stream-compose" | "rd-stream-compose-hold", 1) => {
                 self.stream_move(1, window, cx);
                 self.focus_compose(window, cx);
                 if let Some(e) = self.reading.compose.editor.clone() {
