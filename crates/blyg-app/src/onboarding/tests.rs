@@ -388,22 +388,14 @@ fn real_is_back(e: &Env) -> bool {
 /// Run the window until `done`: the tour's extensions answer from other
 /// processes, in real time.
 fn wait(e: &mut Env, what: &str, mut done: impl FnMut(&mut Env) -> bool) {
-    let t = std::time::Instant::now();
-    loop {
+    crate::test_wait::poll(what, || {
         e.cx.run_until_parked();
         e.view
             .update_in(e.cx, |v, window, cx| v.ext_pump(window, cx));
         e.cx.update(|window, _| window.refresh());
         e.cx.run_until_parked();
-        if done(e) {
-            return;
-        }
-        assert!(
-            t.elapsed() < Duration::from_secs(30),
-            "timed out waiting for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(15));
-    }
+        done(e)
+    });
 }
 
 /// The tour's sample extensions are up: both notes folders listed and the
@@ -880,15 +872,12 @@ fn do_step(e: &mut Env, id: &str) {
         "hopper-several" => e.cx.simulate_keystrokes("h"),
         "conflict" => {
             // The sheet opens through the fake's Conflict event.
-            for _ in 0..50 {
-                e.cx.run_until_parked();
-                if e.view.read_with(e.cx, |v, _| {
+            let view = e.view.clone();
+            crate::test_wait::until(e.cx, "the conflict sheet", |cx| {
+                view.read_with(cx, |v, _| {
                     matches!(v.sheet, Some(crate::app::Sheet::Conflict { .. }))
-                }) {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
+                })
+            });
             e.cx.simulate_keystrokes("1");
         }
         other => panic!("no way to do step {other}"),

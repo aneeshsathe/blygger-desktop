@@ -30,15 +30,39 @@ pub struct Outcome {
     pub code: u8,
 }
 
+/// What the command line asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Route<'a> {
+    /// No action: start the app.
+    App,
+    /// Run `+action` with the arguments after it, then exit.
+    Action(&'a str, Vec<&'a str>),
+}
+
+/// Read the command line. `--version`/`-V` and `--help`/`-h` are the usual
+/// spellings of `+version` and `+help`, and any other `--option` before an
+/// action is refused: none of them starts the app, which would open the
+/// user's database and Keychain.
+pub fn route(args: &[String]) -> Route<'_> {
+    let Some(at) = args
+        .iter()
+        .position(|a| a.starts_with('+') || a.starts_with("--") || a == "-h" || a == "-V")
+    else {
+        return Route::App;
+    };
+    let rest = args[at + 1..].iter().map(String::as_str).collect();
+    match args[at].as_str() {
+        "--version" | "-V" => Route::Action("+version", rest),
+        "--help" | "-h" => Route::Action("+help", rest),
+        first => Route::Action(first, rest),
+    }
+}
+
 /// `None` when the arguments don't name a `+action` (launch the app).
 pub fn run(args: &[String]) -> Option<ExitCode> {
-    let first = args.iter().find(|a| a.starts_with('+'))?;
-    let rest: Vec<&str> = args
-        .iter()
-        .skip_while(|a| *a != first)
-        .skip(1)
-        .map(String::as_str)
-        .collect();
+    let Route::Action(first, rest) = route(args) else {
+        return None;
+    };
     // A bundled extension speaks BXP over the stdin/stdout Burrow gave it:
     // nothing else may touch them (no console attach, no help text), and it
     // starts before any config, GUI or Keychain work.
@@ -101,8 +125,8 @@ With no action, Burrow starts. Actions:
                           the active one
   +list-blygs             every blyg you're signed in to; * marks the active
                           one (blyg-url)
-  +version                print the version
-  +help                   this help
+  +version                print the version (also --version, -V)
+  +help                   this help (also --help, -h)
 
 Discover every option with: blygger +show-config --default --docs
 ";
@@ -253,6 +277,10 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
             list("font-family-writing:", WRITING_FONTS, &mut o);
             o.stdout.push('\n');
             list("font-family-ui:", UI_FONTS, &mut o);
+        }
+        other if other.starts_with('-') => {
+            o.stderr = format!("blygger: unknown option {other}\n\n{HELP}");
+            o.code = 2;
         }
         other => {
             o.stderr = format!("blygger: unknown action {other}\n\n{HELP}");
@@ -1058,6 +1086,36 @@ mod tests {
 
     fn with(text: &'static str) -> impl FnMut() -> ConfigStore {
         move || ConfigStore::in_memory(text)
+    }
+
+    /// `blygger --version` once started the app on the user's live
+    /// database. Only no arguments (or plain words) start it.
+    #[test]
+    fn dashed_options_never_start_the_app() {
+        let r = |a: &[&str]| -> Vec<String> { a.iter().map(|s| s.to_string()).collect() };
+        let version = r(&["--version"]);
+        assert_eq!(route(&version), Route::Action("+version", vec![]));
+        let v = r(&["-V"]);
+        assert_eq!(route(&v), Route::Action("+version", vec![]));
+        let help = r(&["--help"]);
+        assert_eq!(route(&help), Route::Action("+help", vec![]));
+        let h = r(&["-h"]);
+        assert_eq!(route(&h), Route::Action("+help", vec![]));
+        let unknown = r(&["--frobnicate"]);
+        assert_eq!(route(&unknown), Route::Action("--frobnicate", vec![]));
+        let o = exec("--frobnicate", &[], &mut with(""));
+        assert_eq!(o.code, 2);
+        assert!(
+            o.stderr.contains("unknown option --frobnicate"),
+            "{}",
+            o.stderr
+        );
+        let action = r(&["+show-config", "--default"]);
+        assert_eq!(
+            route(&action),
+            Route::Action("+show-config", vec!["--default"])
+        );
+        assert_eq!(route(&[]), Route::App);
     }
 
     #[test]

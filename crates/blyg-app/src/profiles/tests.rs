@@ -75,15 +75,7 @@ fn setup(cx: &mut TestAppContext) -> Setup<'_> {
     (view, fake, visible, cx)
 }
 
-/// Let background tasks (zero latency) land, and draw.
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
+use crate::test_wait::settle_drawn as settle;
 
 fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let b = cx

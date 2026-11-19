@@ -27,6 +27,8 @@ what earlier ones learned.
 | Skill | Use it when |
 |---|---|
 | `burrow-pr-gate` | before committing a feature, or opening, merging or reviewing a PR |
+| `burrow-code-shape` | you're corrected, fix something twice, add a rule, or build on a module |
+| `verify-burrow` | proving a UI change works in the running app, with a screenshot |
 | `burrow-release` | cutting a release, or merging anything that bumps the version |
 | `burrow-tutorial-update` | a release changes something a user sees |
 | `burrow-cross-platform` | touching keys, menus, paths, web views or native APIs |
@@ -43,5 +45,7 @@ what earlier ones learned.
 
 - Give each skill one job, and phrase its description in the words a task would use.
 - Base every rule on a real failure, and say why in a sentence.
+- Before writing a rule, try to make it a check instead (`burrow-code-shape`);
+  once a check enforces it, delete the rule.
 - Name real files and commands. Update the skill in the same change that renames them.
 - This repo is public: no personal data, no real blyg URLs, no tokens.

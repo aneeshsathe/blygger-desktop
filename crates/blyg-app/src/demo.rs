@@ -47,6 +47,10 @@ impl MainView {
                     super::reading::demo::snapshot_later(window, cx)
                 });
             }
+            // The readiness signal scripts/verify/burrow-verify.sh waits for:
+            // every step has run (a scene's own follow-up animation may
+            // still be finishing).
+            eprintln!("blygger: demo {scenario} ready");
         })
         .detach();
     }

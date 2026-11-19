@@ -108,6 +108,10 @@ windows-core = "0.62"
 [build-dependencies]
 # Windows resources (icon, manifest); build.rs does nothing on other targets.
 embed-resource = "3.0"
+# build_forwarding.rs writes SwitchBackend's forwarding from the Backend trait.
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
 
 [dev-dependencies]
 # --- full editor ---

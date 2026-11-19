@@ -2470,7 +2470,7 @@ impl Provider for CannedAi {
         req: GenRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> blyg_ai::Result<GenResult> {
-        std::thread::sleep(Duration::from_millis(500));
+        crate::fake::simulate_latency(Duration::from_millis(500));
         req.cancel.check()?;
         let text = if req.user.contains("shorten to fit") || req.system.contains("shorten to fit") {
             "A lighthouse keeper's log is mostly weather, and that is the point: wind, swell and \

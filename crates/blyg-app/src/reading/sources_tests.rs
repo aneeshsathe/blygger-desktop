@@ -51,12 +51,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn shown(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<String> {
     view.read_with(cx, |v, _| v.reading_shown_ids())

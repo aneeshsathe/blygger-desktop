@@ -50,13 +50,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-/// Let background tasks (zero latency) land.
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
     let key = view.read_with(cx, |v, _| {

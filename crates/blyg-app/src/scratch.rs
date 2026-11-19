@@ -417,12 +417,7 @@ mod tests {
         cx.run_until_parked();
     }
 
-    fn settle(cx: &mut VisualTestContext) {
-        for _ in 0..20 {
-            cx.run_until_parked();
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-    }
+    use crate::test_wait::settle;
 
     #[gpui_kit::test]
     fn an_image_pasted_into_scratch_is_kept_locally(cx: &mut TestAppContext) {

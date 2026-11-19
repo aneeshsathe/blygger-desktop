@@ -46,14 +46,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
+use crate::test_wait::settle_drawn as settle;
 
 fn read_version(fake: &FakeBackend, id: &str) -> Option<u32> {
     fake.reading()

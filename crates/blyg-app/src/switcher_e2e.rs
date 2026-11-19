@@ -13,7 +13,7 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use blyg_core::api::Api;
 use blyg_core::api::auth::Credential;
@@ -109,18 +109,10 @@ fn wait(
     what: &str,
     mut f: impl FnMut(&mut VisualTestContext) -> bool,
 ) {
-    let t0 = Instant::now();
-    loop {
+    crate::test_wait::poll_within(Duration::from_secs(45), what, || {
         pump(view, cx);
-        if f(cx) {
-            return;
-        }
-        assert!(
-            t0.elapsed() < Duration::from_secs(45),
-            "timed out waiting for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
+        f(cx)
+    });
 }
 
 fn active(cx: &mut VisualTestContext) -> Option<String> {
@@ -351,7 +343,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
     assert!(!a.server_hoppers().contains(&hop_s.name));
     assert!(!s.server_hoppers().contains(&hop_a.name));
     // s's queued edit waited in s's own database: it never went to a.
-    std::thread::sleep(Duration::from_secs(2));
+    crate::test_wait::wall_clock(Duration::from_secs(2));
     assert!(!a.server_has("Edited before the switch."));
     let edit_landed_early = s.server_has(&edit_s);
 

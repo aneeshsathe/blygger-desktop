@@ -13,6 +13,12 @@
 //! crate on every build.
 //!
 //! On Windows it also embeds the exe's icon (`windows_icon`).
+//!
+//! It also writes `SwitchBackend`'s forwarding methods from the `Backend`
+//! trait (`build_forwarding.rs`).
+
+#[path = "build_forwarding.rs"]
+mod forwarding;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,6 +56,8 @@ fn main() {
     println!("cargo:rustc-env=BLYGGER_BUILD_EPOCH={epoch}");
 
     windows_icon(&manifest);
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    forwarding::generate(&manifest, &out);
 }
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {
