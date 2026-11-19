@@ -35,6 +35,9 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Getting started:** the Welcome card explains what a blyg is (blygger.org) and offers sample data; Connect, setup, About and server notices take the studio floor from `MIN_STUDIO` (0.49.12), with a test against stale floors in the UI and docs; the first publish says the post goes public and can be withdrawn, not deleted.
 
 ### Fixed
+- **Sync: reading lists over 2,000 posts no longer re-download every pull.** The walk stopped at its 20-page budget, never completed, so the reading revision was never accepted and every pull (~40 s) re-read the newest 2,000 rows (~24 MB) before merging, and pruning never ran. Pulls now read the head newest-first, merge each page as it arrives and stop at known posts (`sync/walk.rs`); whole walks continue past the budget from their cursor and prune only when complete (`Store::prune_reading_except`); the reading walk keys on the `reading` counter alone, since the studio bumps `subscriptions` on every feed poll. A real-studio e2e with 2,150 posts covers it.
+- **API responses are compressed** (ureq `gzip` + `brotli`; AI streams ask for `identity`). A 100-row reading page drops from ~528 KB to ~81–107 KB.
+- **Search indexes stay compact:** the writer's idle tick weighs each FTS index every 6 h and compacts it in bounded steps once it passes 3.5× its text (`store/fts.rs`).
 - **`blygger --version` (and `-V`, `--help`, `-h`) no longer starts the app**: they print and exit before any config, data or window work, and any other `--option` is refused with exit code 2.
 
 ### Development

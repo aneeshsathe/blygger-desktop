@@ -10,6 +10,19 @@ exceptions). The [Changelog](changelog.md) lists every change in detail.
 A lighter Burrow: two experiments and the web app are gone, the writing
 screen can go quiet, and reading keeps fewer buttons in view.
 
+### Faster sync with long reading lists
+
+With more than 2,000 posts to read, Burrow used to read the newest 2,000
+again every 40 seconds and show new posts only after all of them arrived.
+Now a sync reads from the newest post down and stops once it reaches posts
+it already has, usually one page, and each page shows as it arrives. A full
+read still runs now and then, finishes even on long lists, and only then
+clears out posts your blyg no longer holds. Feed polls on your blyg no longer
+make Burrow read the list again.
+
+Responses from your blyg now arrive compressed (about a fifth of the size),
+and the search index is compacted in the background while you're idle.
+
 ### Quiet writing
 
 **Settings › Quiet writing** (or View › Quiet Writing, or the palette) hides
