@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::ids::{RemoteId, SubId};
+
 /// Client-generated id, stable for the life of the item on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LocalId(pub String);

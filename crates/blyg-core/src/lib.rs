@@ -13,6 +13,7 @@ pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod discover; // --- discover --- (studio 0.60, desktop only)
 pub mod floor;
 pub mod grammar;
+pub mod ids; // SubId, RemoteId: a reading post's two ids, typed apart
 pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod loose; // --- loose ends ---
