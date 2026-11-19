@@ -38,6 +38,7 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Getting started:** the Welcome card explains what a blyg is (blygger.org) and offers sample data; Connect, setup, About and server notices take the studio floor from `MIN_STUDIO` (0.49.12), with a test against stale floors in the UI and docs; the first publish says the post goes public and can be withdrawn, not deleted.
 
 ### Fixed
+- **Windows: nine shortcuts no longer type AltGr characters** on German, Polish, French or Hungarian layouts: Quote into a thread is Ctrl+Shift+Q, Link post Ctrl+Shift+I, Quote tray Ctrl+Shift+T, Nearby Ctrl+Shift+U, Stream Alt+1, Reader Alt+2, Sources pane Alt+S (and in fake mode, offline Ctrl+Shift+F11, conflict Ctrl+Shift+F12). About 70 toasts, tooltips and hints that showed Mac key glyphs on Windows now spell Windows keys.
 - **Sync: reading lists over 2,000 posts no longer re-download every pull.** The walk stopped at its 20-page budget, never completed, so the reading revision was never accepted and every pull (~40 s) re-read the newest 2,000 rows (~24 MB) before merging, and pruning never ran. Pulls now read the head newest-first, merge each page as it arrives and stop at known posts (`sync/walk.rs`); whole walks continue past the budget from their cursor and prune only when complete (`Store::prune_reading_except`); the reading walk keys on the `reading` counter alone, since the studio bumps `subscriptions` on every feed poll. A real-studio e2e with 2,150 posts covers it.
 - **API responses are compressed** (ureq `gzip` + `brotli`; AI streams ask for `identity`). A 100-row reading page drops from ~528 KB to ~81–107 KB.
 - **Search indexes stay compact:** the writer's idle tick weighs each FTS index every 6 h and compacts it in bounded steps once it passes 3.5× its text (`store/fts.rs`).
@@ -48,6 +49,12 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Tests wait for conditions, not fixed sleeps:** one test-only `crate::test_wait` module replaces about 20 local `settle` helpers and counted loops; `std::thread::sleep` is banned in blyg-app by `clippy.toml`.
 - **`skills/verify-burrow`** and `scripts/verify/burrow-verify.sh`: launch a demo scene on sample data in a throwaway dir, check it's ready, capture only its own window, stop it by PID; a feature map for writing, reading, notes, Settings and the switcher.
 - **`skills/burrow-code-shape`** and a rule → enforcer table in CLAUDE.md: how a correction becomes a check, and how to shape code so a change needs little context.
+- **Typed dev flags:** every `BLYGGER_*` variable is parsed once into `DevFlags` (`dev_flags.rs`); `clippy.toml` bans `std::env::var` elsewhere in blyg-app. A bad value exits with code 2.
+- **Demo scene registry** (`scenes.rs`): 171 scenes plus the tour families named once; handlers match enum variants; an unknown `BLYGGER_DEMO` exits with near matches; `blygger +scenes` feeds the verify script.
+- **The reading walk is a pure step machine** (`walk::Read`) with a proptest model of the studio's reading list (`walk_model_tests.rs`); it found that a 1-page budget could starve a walk behind a 409, now fixed (every pull gets at least 2 page requests). docs/SERVER.md has its statechart.
+- **The sleep ban covers blyg-core, blyg-ai and `blyg-ext*`**, through one reviewed `blyg_core::wait` module.
+- **Crate boundaries are a test** (`crate_graph.rs`): GPUI and blyg-app only in blyg-app; each crate depends only on what its runtime allows.
+- **Platform wording is checked:** UI text is built through `keymap::hint` / `platform_text::Text`; a scan fails on bare ⌘ ⌥ ⇧ ⌃ (it found about 70 that Windows showed as Mac glyphs, now fixed). Windows key tables are tested for AltGr characters and clashes, and tour captions for real keys, menu items and labels.
 
 ### Removed
 - **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.

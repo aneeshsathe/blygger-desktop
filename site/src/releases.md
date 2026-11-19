@@ -103,6 +103,15 @@ down. It works on Windows now too, instead of opening your default browser.
   that published posts can be withdrawn, not deleted.
 - The Reading tour has a step for **⋯ More**.
 
+### On Windows
+
+Nine shortcuts typed characters on German, Polish, French or Hungarian
+keyboards (Ctrl+Alt is AltGr there), so they move: Quote into a thread is
+**Ctrl+Shift+Q**, Link post **Ctrl+Shift+I**, the quote tray
+**Ctrl+Shift+T**, Nearby **Ctrl+Shift+U**, Stream **Alt+1**, Reader
+**Alt+2** and the sources pane **Alt+S**. Hints and messages that showed Mac
+key symbols now spell Windows keys.
+
 ### Removed
 
 - **#thicket chat** is gone: not enough people used it.
