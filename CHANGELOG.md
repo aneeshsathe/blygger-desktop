@@ -34,6 +34,15 @@ teaches something new in the tour, set the newest entry's `version` in
 - **Stream search** marks matches and shows "N found · esc clears"; in the Stream's side pane 👍👎 stay at the right of the chips and the post title is a heading.
 - **Getting started:** the Welcome card explains what a blyg is (blygger.org) and offers sample data; Connect, setup, About and server notices take the studio floor from `MIN_STUDIO` (0.49.12), with a test against stale floors in the UI and docs; the first publish says the post goes public and can be withdrawn, not deleted.
 
+### Fixed
+- **`blygger --version` (and `-V`, `--help`, `-h`) no longer starts the app**: they print and exit before any config, data or window work, and any other `--option` is refused with exit code 2.
+
+### Development
+- **`SwitchBackend` forwarding is generated** from the `Backend` trait at build time (`crates/blyg-app/build_forwarding.rs`), so a new backend method can't silently fall back to its default in the real app.
+- **Tests wait for conditions, not fixed sleeps:** one test-only `crate::test_wait` module replaces about 20 local `settle` helpers and counted loops; `std::thread::sleep` is banned in blyg-app by `clippy.toml`.
+- **`skills/verify-burrow`** and `scripts/verify/burrow-verify.sh`: launch a demo scene on sample data in a throwaway dir, check it's ready, capture only its own window, stop it by PID; a feature map for writing, reading, notes, Settings and the switcher.
+- **`skills/burrow-code-shape`** and a rule → enforcer table in CLAUDE.md: how a correction becomes a check, and how to shape code so a change needs little context.
+
 ### Removed
 - **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.
 - **The terminal pane** (experimental, crate `blyg-term`, ⌃` and ⇧⌘T): it needs more work before it ships again.
