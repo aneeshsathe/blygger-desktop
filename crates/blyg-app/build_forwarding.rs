@@ -152,7 +152,13 @@ fn not_connected_answer(sig: &syn::Signature) -> TokenStream {
              \n    fn {name}(&self, ..) -> {ty} {{ .. }}\n\n\
              (or give the trait method a default, if every backend may answer that way).\n",
             name = sig.ident,
-            ty = ty.to_token_stream(),
+            ty = ty
+                .to_token_stream()
+                .to_string()
+                .replace(" :: ", "::")
+                .replace(" <", "<")
+                .replace("< ", "<")
+                .replace(" >", ">"),
         ),
     }
 }
