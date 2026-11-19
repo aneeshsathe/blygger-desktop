@@ -14,8 +14,6 @@
 - [Themes](themes.md)
 - [Extensions](extensions.md)
   - [Community extensions](generated/community-extensions.md)
-- [#thicket chat (experimental)](chat.md)
-- [The terminal pane (experimental)](terminal.md)
 
 # Reference
 

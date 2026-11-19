@@ -28,7 +28,9 @@ config-file = ?optional/extra.config
 - An empty value (`key =`) resets a key to its default, and a repeatable key
   to an empty list.
 - Unknown keys are warnings; malformed lines and bad values are errors.
-  Neither stops the rest of the file from loading.
+  Neither stops the rest of the file from loading. Keys of features Burrow
+  no longer has (`chat-tab`, `chat-nick`, `chat-server`, `chat-notifications`,
+  `terminal`, `terminal-shell`) are ignored quietly; you can delete them.
 
 Files are loaded in this order, later ones overriding earlier ones:
 

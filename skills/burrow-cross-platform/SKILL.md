@@ -1,6 +1,6 @@
 ---
 name: burrow-cross-platform
-description: Check a Burrow change for Windows + macOS (and web) compatibility. Use when a change touches keys, menus, file paths, web views, the terminal, the browser pane, native APIs, or adds a cfg!(target_os) gate.
+description: Check a Burrow change for Windows + macOS (and web) compatibility. Use when a change touches keys, menus, file paths, web views, the browser pane, native APIs, or adds a cfg!(target_os) gate.
 ---
 
 # Windows + macOS compatibility pass
@@ -25,7 +25,6 @@ took four CI rounds to go green there. Check these before pushing.
 - Web views: WKWebView on macOS, WebView2 on Windows. WebView2 double-encodes
   `eval` results, reports no key modifiers on clicks, and completes
   navigations the policy cancelled; test those paths.
-- Terminal (ConPTY): answer the device-status query (`ESC[6n`) at startup.
 - Paths: build them with `Path`/`PathBuf`, never `/` string joins; data dir,
   config path and Keychain/Credential Manager names don't change per platform
   without a migration.
