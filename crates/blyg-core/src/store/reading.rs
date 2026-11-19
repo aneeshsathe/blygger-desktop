@@ -315,14 +315,52 @@ impl Store {
             .iter()
             .map(|i| (i.subscription_id.clone(), i.remote_id.clone()))
             .collect();
+        let mut changed = self.merge_reading_rows(items, &incoming, sub_kinds)?;
+        let oldest = items
+            .iter()
+            .map(|i| i.observed_at.as_str())
+            .min()
+            .map(str::to_string);
+        changed |= self.prune_reading(|s, rid, obs| {
+            !incoming.contains(&(s.to_string(), rid.to_string()))
+                && (complete || oldest.as_deref().is_some_and(|o| obs >= o))
+        })?;
+        Ok(changed)
+    }
+
+    /// Upsert pulled reading rows (a page of a walk) and remove nothing.
+    /// `listed`: every row the walk has read so far, these included. A held
+    /// row of the same subscription and page that isn't among them is taken
+    /// for this post under its old id (an RSS guid changed on edit).
+    /// Returns true if anything changed.
+    pub fn merge_reading_rows(
+        &self,
+        items: &[ReadingItem],
+        listed: &HashSet<(String, String)>,
+        sub_kinds: &HashMap<String, SubscriptionKind>,
+    ) -> Result<bool> {
+        Ok(self.merge_reading_page(items, listed, sub_kinds)?.0)
+    }
+
+    /// [`Store::merge_reading_rows`], also saying which of `items` were new
+    /// here or rewritten (by index; read state alone doesn't count).
+    pub fn merge_reading_page(
+        &self,
+        items: &[ReadingItem],
+        listed: &HashSet<(String, String)>,
+        sub_kinds: &HashMap<String, SubscriptionKind>,
+    ) -> Result<(bool, Vec<usize>)> {
+        let incoming = listed;
         let mut changed = false;
+        let mut written = Vec::new();
         // In slices of `MERGE_CHUNK` rows, each its own transaction, so a
         // big pull (a blyg's whole archive) never holds the store for
         // seconds: other reads and writes get in between slices.
-        for chunk in items.chunks(MERGE_CHUNK) {
+        for (n, chunk) in items.chunks(MERGE_CHUNK).enumerate() {
             let mut c = self.conn();
             let tx = c.transaction()?;
-            for it in chunk {
+            for (k, it) in chunk.iter().enumerate() {
+                let at = n * MERGE_CHUNK + k;
                 let kept = retainable(&tx, it)?;
                 let it = &kept;
                 let json = to_json(it)?;
@@ -364,6 +402,7 @@ impl Store {
                     // the WAL for nothing, with the store locked throughout.
                     if old.json != json {
                         changed = true;
+                        written.push(at);
                         put_refs(&tx, it)?;
                         tx.prepare_cached(
                         "UPDATE reading SET origin = ?3, observed_at = ?4, page_url = ?5, sub_kind = ?6, state = ?7, \
@@ -392,6 +431,7 @@ impl Store {
                     continue;
                 }
                 changed = true;
+                written.push(at);
                 put_refs(&tx, it)?;
                 // Same subscription, same page, different id that the server no
                 // longer lists: an RSS guid that changed on edit. Same post.
@@ -450,15 +490,23 @@ impl Store {
             // for the whole merge after all.
             std::thread::sleep(MERGE_PAUSE);
         }
+        Ok((changed, written))
+    }
 
-        // Prune rows the server no longer returns.
+    /// After a walk that reached the list's end: remove every held row it
+    /// didn't read (`keys`: the rows of that one coherent walk). Nothing
+    /// else removes the rows the server stopped listing (docs/SERVER.md,
+    /// "One coherent acquisition"). True if any row went.
+    pub fn prune_reading_except(&self, keys: &HashSet<(String, String)>) -> Result<bool> {
+        self.prune_reading(|s, rid, _| !keys.contains(&(s.to_string(), rid.to_string())))
+    }
+
+    /// Remove the held rows `gone(subscription, remote id, observed_at)`
+    /// picks. True if any went.
+    fn prune_reading(&self, gone: impl Fn(&str, &str, &str) -> bool) -> Result<bool> {
+        let mut changed = false;
         let mut c = self.conn();
         let tx = c.transaction()?;
-        let oldest = items
-            .iter()
-            .map(|i| i.observed_at.as_str())
-            .min()
-            .map(str::to_string);
         let stale: Vec<(String, String)> = {
             let mut st =
                 tx.prepare("SELECT subscription_id, remote_id, observed_at FROM reading")?;
@@ -470,10 +518,7 @@ impl Store {
                 ))
             })?
             .filter_map(|r| r.ok())
-            .filter(|(s, rid, obs)| {
-                !incoming.contains(&(s.clone(), rid.clone()))
-                    && (complete || oldest.as_deref().is_some_and(|o| obs.as_str() >= o))
-            })
+            .filter(|(s, rid, obs)| gone(s, rid, obs))
             .map(|(s, rid, _)| (s, rid))
             .collect()
         };
@@ -955,3 +1000,7 @@ pub(super) fn backfill_sort_at(conn: &mut rusqlite::Connection) -> Result<()> {
     tx.commit()?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "reading_walk_tests.rs"]
+mod walk_tests;

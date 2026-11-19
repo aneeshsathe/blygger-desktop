@@ -382,9 +382,24 @@ The key points:
   `forkedFrom`, `generated`); dates are ISO 8601 UTC or null. `wire::imported_row` maps
   them onto `ReadingItem` (`withdrawn` → `state: "tombstone"`). Each row's lineage is
   the origin's own, so it is known for every row but an L0 or withdrawn one.
-- A pull is one acquisition (`Engine::fetch_reading`), up to `reading_pages` pages
-  (20); only a walk that reached `nextCursor: null` prunes rows. A walk stopped by the
-  page budget is merged without pruning; `cursor-expired` restarts it from the first page.
+- Burrow reads the list two ways (`Engine::read_reading`, the decisions in
+  `sync/walk.rs`), merging every page as it arrives (and telling the UI), at most
+  `reading_pages` pages (20) a pull:
+  - **Head reads.** When the `reading` counter moved, newest-first pages until the first
+    page that changed nothing here, or one that reaches back past what the last read
+    covered (an hour before its newest row, meta `reading_head_mark`). The studio
+    stamps an import, an edit or a withdrawal with a new `observedAt`, so they come
+    back at the head. A head read removes nothing, and accepts the `reading` revision.
+    One that runs out of pages carries on as a whole walk.
+  - **Whole walks.** The safety net, a first sync, a real change to the subscription
+    list (one added, removed or renamed; not the poll bookkeeping that moves the
+    `subscriptions` counter on every feed poll), and a head read that found nothing for
+    a moved counter or a row the studio wrote late (an edit that kept its stamp, a read
+    mark from another device on an old post), at most every `full_pull_every`. A walk
+    longer than the budget goes on from its cursor in the next pull (2 s later in the
+    background); only a walk that reached `nextCursor: null` prunes, the rows that one
+    walk didn't read. `cursor-expired` restarts it from the first page, and nothing read
+    before counts towards the prune.
 - Read state is advertised on `GET /api/reading` (`readState`, `readStateClear`), read
   once a session from `GET /api/reading?limit=1`.
 
