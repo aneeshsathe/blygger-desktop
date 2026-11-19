@@ -156,54 +156,6 @@ The language your posts are written in, as a language tag (en, fr, pt-BR, ar…)
 Open a post you read on its author's own site, styled as they styled it, where Burrow's reader would show it (macOS; elsewhere the page opens in your default browser). A post without a page of its own still opens in Burrow's reader. The toggle above an open post switches that one view; a subscription's menu can always or never open its posts this way. Settings (⌘,) toggles it.
 
 
-### `chat-tab`
-
-- **Values:** `true` or `false`
-- **Default:** `true`
-
-Show the #thicket chat tab beside the views in the title bar. Experimental: it may be removed. The tab chats in #thicket, a channel for Burrow users on Libera.Chat (an IRC network). Nothing connects to Libera.Chat until you set it up in the tab (sign in, or create an account). false hides the tab and disconnects. Settings (⌘,) toggles it.
-
-
-### `chat-nick`
-
-- **Values:** text
-- **Default:** unset
-
-Your Libera.Chat nick (also your account name), e.g. chat-nick = ada_example. The chat tab writes it when you finish setting up, and then signs in on its own each time Burrow opens (SASL over TLS). The password is in the macOS Keychain, never in this file. Unset: the tab shows its setup and connects to nothing.
-
-
-### `chat-server`
-
-- **Values:** text
-- **Default:** `irc.libera.chat:6697`
-
-The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Chat is supported for now.
-
-
-### `chat-notifications`
-
-- **Values:** `true` or `false`
-- **Default:** `true`
-
-A system notification when someone mentions your nick in #thicket (or messages you) while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) toggles it.
-
-
-### `terminal`
-
-- **Values:** `true` or `false`
-- **Default:** `true`
-
-The terminal pane at the foot of the window (⌃` shows and hides it): your login shell, for a CLI agent (claude, codex…), git or wrangler beside your posts. Experimental. The shell gets your environment minus everything of Burrow's (no BLYGGER_* variable, no token) and talks to Burrow only through the pane. false turns it off and ends a running shell.
-
-
-### `terminal-shell`
-
-- **Values:** text
-- **Default:** unset
-
-The program the terminal pane runs, with its arguments, instead of your login shell ($SHELL -l on macOS, %COMSPEC% on Windows), e.g. terminal-shell = /bin/zsh -l or terminal-shell = pwsh.
-
-
 ### `focus-line`
 
 - **Values:** a number from 0.1 to 0.9

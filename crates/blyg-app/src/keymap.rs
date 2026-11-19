@@ -85,10 +85,6 @@ use crate::app::server_ai::ShowServerAi;
 // --- upkeep ---
 use crate::app::syndication::ShowCopiesElsewhere;
 use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes}; // --- syndication ---
-// --- chat ---
-use crate::app::chat::ShowChat;
-// --- terminal ---
-use crate::app::terminal::{SendSelectionToTerminal, ToggleTerminal};
 // --- trails ---
 use crate::app::trails::PublishTrail;
 // --- tray ---
@@ -899,32 +895,6 @@ pub fn mac_table() -> Vec<Keybind> {
             ReaderBack,
             "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
             "Blyg › Back"
-        ),
-        // --- chat --- the experimental #thicket tab (I for IRC; ⌘I is the
-        // profile sheet).
-        kb!(
-            "cmd-shift-i",
-            Main,
-            ShowChat,
-            "#thicket chat on Libera.Chat (experimental; again: back to posts)",
-            Some("Blyg › #thicket Chat (Experimental)")
-        ),
-        // --- terminal --- the experimental pane: ⌃` as in VS Code and Zed
-        // (⌘` is the system's Cycle Windows). The pane keeps every other key
-        // while it has the keyboard, but for ⌘-keys (Ctrl+Shift on Windows).
-        kb!(
-            "ctrl-`",
-            Main,
-            ToggleTerminal,
-            "Terminal pane: show it and type there (experimental; again: hide it)",
-            Some("View › Terminal (Experimental)")
-        ),
-        kb!(
-            "cmd-shift-t",
-            Main,
-            SendSelectionToTerminal,
-            "Send the editor's selection to the terminal pane, quoted",
-            Some("Post › Send Selection to Terminal")
         ),
         kb!(
             "cmd-shift-h",

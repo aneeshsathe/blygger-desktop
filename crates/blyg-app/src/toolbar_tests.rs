@@ -555,7 +555,6 @@ const SETTINGS_ROWS: &[&str] = &[
     "THEME",
     "LAYOUT",
     "BUTTONS",
-    "CHAT",
     "SERENDIPITY",
     "SOUNDS",
     "NEARBY",
@@ -573,7 +572,6 @@ const SETTINGS_ROWS: &[&str] = &[
 const SETTINGS_CHIPS: &[&str] = &[
     "th-aizome",
     "show-buttons-off",
-    "chat-notify",
     "sounds-quiet",
     "nearby-local",
     "nearby-rerank",

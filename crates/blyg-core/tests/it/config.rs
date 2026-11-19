@@ -147,6 +147,25 @@ fn unknown_keys_are_warnings_with_a_hint() {
     assert_eq!(l.config.theme(), "light");
 }
 
+/// A config written for an older Burrow, with the keys of the #thicket chat
+/// tab and the terminal pane (removed in 0.26.0), loads without a warning.
+#[test]
+fn retired_keys_load_quietly() {
+    let l = load_text(
+        "chat-tab = false\nchat-nick = ada_example\nchat-server = irc.libera.chat:6697\n\
+         chat-notifications = false\nterminal = false\nterminal-shell = /bin/zsh -l\n\
+         theme = light\nchat-tabb = true\n",
+    );
+    assert_eq!(l.config.theme(), "light");
+    // Only the typo is reported, and it isn't steered to a retired key.
+    assert_eq!(l.diagnostics.len(), 1, "{:?}", l.diagnostics);
+    assert_eq!(l.diagnostics[0].line, 8);
+    assert!(!l.diagnostics[0].message.contains("did you mean `chat"));
+    for k in blyg_core::config::keys::RETIRED_KEYS {
+        assert!(blyg_core::config::keys::spec(k).is_none(), "{k} is retired");
+    }
+}
+
 #[test]
 fn config_file_includes() {
     let dir = tempfile::tempdir().unwrap();

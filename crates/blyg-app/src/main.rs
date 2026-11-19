@@ -444,11 +444,6 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Open Beside", app::split::OpenBeside),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
-                // --- terminal ---
-                MenuItem::action(
-                    "Send Selection to Terminal",
-                    app::terminal::SendSelectionToTerminal,
-                ),
                 // --- extensions ---
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
@@ -495,8 +490,6 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Mentions", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::action("Contacts…", app::reading::contacts::ShowContacts), // --- contacts ---
-                // --- chat ---
-                MenuItem::action("#thicket Chat (Experimental)", app::chat::ShowChat),
                 MenuItem::separator(),
                 MenuItem::action("Subscribe…", app::reading::SubscribeTo),
                 // --- OPML ---
@@ -552,8 +545,6 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Open Browser…", app::browser::OpenBrowser),
                 MenuItem::action("Show/Hide Browser Pane", app::browser::ToggleBrowser),
                 MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
-                // --- terminal ---
-                MenuItem::action("Terminal (Experimental)", app::terminal::ToggleTerminal),
             ],
             disabled: false,
         },

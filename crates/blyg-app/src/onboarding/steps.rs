@@ -112,12 +112,6 @@ pub enum Key {
     // --- hover cards ---
     /// A hover card is showing over a `[[…]]` in the editor.
     HoverCard,
-    // --- chat ---
-    /// The #thicket chat tab came to the front (⇧⌘I or the tab).
-    Chat,
-    // --- terminal ---
-    /// The terminal pane was shown or hidden (⌃`).
-    Terminal,
     // --- flow ---
     /// The command palette opened (⇧⌘P, View › Command Palette…).
     Palette,
@@ -688,65 +682,6 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
-    // --- chat --- the setup screen only: the tour never connects.
-    Step {
-        id: "chat",
-        since: "0.18.0",
-        title: "#thicket, an experimental chat",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), \
-             beside the views. It's experimental and may be removed. Sign in or create an \
-             account there when you like: nothing connects until you do, and Settings hides \
-             the tab."
-        } else {
-            "⇧⌘I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), beside the \
-             views. It's experimental and may be removed. Sign in or create an account there \
-             when you like: nothing connects until you do, and Settings hides the tab."
-        },
-        keys: &[Key::Chat],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+I"
-        } else {
-            "⇧⌘I"
-        },
-        region: Region::Whole,
-        button: None,
-        setup: Setup::Posts,
-        pause_ms: 1600,
-        settle: false,
-        stay: true,
-    },
-    // --- terminal --- the key showing the pane counts: the tour never
-    // needs a shell to start (none does in the tests).
-    Step {
-        id: "terminal",
-        since: "0.18.0",
-        title: "A terminal at the foot of the window",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+` opens a terminal under your posts (experimental): your own shell, for a \
-             CLI agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
-             token and no BLYGGER_* variable. Ctrl+` again hides it; Ctrl+Shift+T sends the \
-             editor's selection to it, quoted."
-        } else {
-            "⌃` opens a terminal under your posts (experimental): your own shell, for a CLI \
-             agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
-             token and no BLYGGER_* variable. ⌃` again hides it; ⇧⌘T sends the editor's \
-             selection to it, quoted."
-        },
-        keys: &[Key::Terminal],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+`"
-        } else {
-            "⌃`"
-        },
-        region: Region::Whole,
-        button: None,
-        setup: Setup::Posts,
-        pause_ms: 1600,
-        settle: false,
-        stay: true,
-    },
-    // --- end terminal ---
     // --- flow ---
     Step {
         id: "palette",
@@ -1953,10 +1888,8 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "workspace",
         title: "Workspace",
-        blurb: "Palette, chat, terminal, focus, split, dock.",
+        blurb: "Palette, focus, split, dock.",
         steps: &[
-            "chat",
-            "terminal",
             "palette",
             "focus",
             "serendipity",
@@ -2089,8 +2022,6 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat,        // --- chat ---
-            Key::Terminal,    // --- terminal ---
             Key::Palette,     // --- flow ---
             Key::Focus,       // --- flow ---
             Key::Serendipity, // --- flow ---

@@ -300,49 +300,6 @@ pub const KEYS: &[KeySpec] = &[
          always or never open its posts this way. Settings (⌘,) toggles it.",
     ),
     // --- end reader view / changelog ---
-    // --- chat --- (experimental: the #thicket tab; may be removed)
-    docs(
-        key("chat-tab", ValueKind::Bool, Some("true")),
-        "Show the #thicket chat tab beside the views in the title bar. Experimental: it may be \
-         removed. The tab chats in #thicket, a channel for Burrow users on Libera.Chat (an IRC \
-         network). Nothing connects to Libera.Chat until you set it up in the tab (sign in, or \
-         create an account). false hides the tab and disconnects. Settings (⌘,) toggles it.",
-    ),
-    docs(
-        key("chat-nick", ValueKind::Text, None),
-        "Your Libera.Chat nick (also your account name), e.g. chat-nick = ada_example. The chat \
-         tab writes it when you finish setting up, and then signs in on its own each time \
-         Burrow opens (SASL over TLS). The password is in the macOS Keychain, never in this \
-         file. Unset: the tab shows its setup and connects to nothing.",
-    ),
-    docs(
-        key("chat-server", ValueKind::Text, Some("irc.libera.chat:6697")),
-        "The IRC server the chat tab uses, as host:port, always over TLS. Only Libera.Chat is \
-         supported for now.",
-    ),
-    docs(
-        key("chat-notifications", ValueKind::Bool, Some("true")),
-        "A system notification when someone mentions your nick in #thicket (or messages you) \
-         while the chat tab isn't in front. false keeps only the tab's marks. Settings (⌘,) \
-         toggles it.",
-    ),
-    // --- end chat ---
-    // --- terminal --- (experimental: the pane at the foot of the window)
-    docs(
-        key("terminal", ValueKind::Bool, Some("true")),
-        "The terminal pane at the foot of the window (⌃` shows and hides it): your login \
-         shell, for a CLI agent (claude, codex…), git or wrangler beside your posts. \
-         Experimental. The shell gets your environment minus everything of Burrow's (no \
-         BLYGGER_* variable, no token) and talks to Burrow only through the pane. false \
-         turns it off and ends a running shell.",
-    ),
-    docs(
-        key("terminal-shell", ValueKind::Text, None),
-        "The program the terminal pane runs, with its arguments, instead of your login shell \
-         ($SHELL -l on macOS, %COMSPEC% on Windows), e.g. terminal-shell = /bin/zsh -l or \
-         terminal-shell = pwsh.",
-    ),
-    // --- end terminal ---
     // --- flow --- focus mode, serendipity, sounds
     docs(
         key(
@@ -543,6 +500,24 @@ pub const KEYS: &[KeySpec] = &[
 
 pub fn spec(name: &str) -> Option<&'static KeySpec> {
     KEYS.iter().find(|k| k.name == name)
+}
+
+/// Keys of features Burrow no longer has. A config file that still sets one
+/// loads without a warning: the line is ignored, and left in the file.
+pub const RETIRED_KEYS: &[&str] = &[
+    // The #thicket chat tab, removed in 0.26.0.
+    "chat-tab",
+    "chat-nick",
+    "chat-server",
+    "chat-notifications",
+    // The terminal pane, removed in 0.26.0.
+    "terminal",
+    "terminal-shell",
+];
+
+/// Whether `name` is a key of a removed feature (`RETIRED_KEYS`).
+pub fn is_retired(name: &str) -> bool {
+    RETIRED_KEYS.contains(&name)
 }
 
 #[cfg(test)]
