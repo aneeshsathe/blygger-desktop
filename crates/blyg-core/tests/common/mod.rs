@@ -34,7 +34,7 @@ use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -1819,13 +1819,6 @@ pub fn fast() -> SyncOptions {
 }
 
 /// Poll `f` until it's true or `timeout` passes.
-pub fn wait_until(timeout: Duration, mut f: impl FnMut() -> bool) -> bool {
-    let end = Instant::now() + timeout;
-    while Instant::now() < end {
-        if f() {
-            return true;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
-    f()
+pub fn wait_until(timeout: Duration, f: impl FnMut() -> bool) -> bool {
+    blyg_core::wait::poll_until(timeout, Duration::from_millis(10), f)
 }

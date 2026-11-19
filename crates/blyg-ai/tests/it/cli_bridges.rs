@@ -176,7 +176,7 @@ fn cancel_kills_the_cli() {
     let c = CancelFlag::new();
     let c2 = c.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(150));
+        blyg_core::wait::wall_clock(Duration::from_millis(150));
         c2.cancel();
     });
     let start = Instant::now();

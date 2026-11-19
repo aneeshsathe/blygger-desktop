@@ -358,10 +358,8 @@ impl ChatGptOAuth {
 }
 
 fn sleep_cancellable(d: Duration, cancel: &CancelFlag) -> Result<()> {
-    let end = Instant::now() + d;
-    while Instant::now() < end {
+    if !blyg_core::wait::nap(d, || cancel.is_cancelled()) {
         cancel.check()?;
-        std::thread::sleep((end - Instant::now()).min(Duration::from_millis(50)));
     }
     Ok(())
 }
@@ -430,7 +428,7 @@ impl BrowserLogin {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
+                    blyg_core::wait::pace(Duration::from_millis(50));
                 }
                 Err(e) => return Err(AiError::Provider(e.to_string())),
             }

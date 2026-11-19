@@ -181,6 +181,29 @@ first one; a pull reads at most 20 pages.
   pulls, from the cursor; a `cursor-expired` restarts the walk. Only a walk that reached
   the end removes the rows it didn't read.
 
+One pull's read (`walk::Read` in `crates/blyg-core/src/sync/walk.rs`; property tests
+against a model of this list in `walk_model_tests.rs`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Head: counter moved, mark known
+    [*] --> Whole: safety net, first sync, subscription change, deep walk due
+    [*] --> Whole: walk under way (from its cursor)
+    Head --> Head: page changed rows, inside the last read
+    Head --> Accepted: page changed nothing, or reached past the mark
+    Head --> Whole: page budget spent (kept for the next pull)
+    Whole --> Whole: next page
+    Whole --> Kept: page budget spent
+    Whole --> Whole: cursor-expired (from page 1, nothing read counts)
+    Whole --> Pruned: nextCursor null
+    Pruned --> Accepted
+    Kept --> [*]: next pull carries on
+    Accepted --> [*]: revision accepted, mark set
+```
+
+A head read that found nothing for a moved counter, or wrote a row no newer than the
+mark, asks for a whole walk once the last one is `full_pull_every` old.
+
 `GET /api/reading` (the studio's own list, also your own posts) leaves withdrawn entries
 out unless `background=true`, which lists only them. Burrow reads it only for its
 read-state flags.

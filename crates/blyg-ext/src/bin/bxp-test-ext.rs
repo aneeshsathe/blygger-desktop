@@ -58,7 +58,7 @@ impl Extension for TestExt {
             std::process::exit(3);
         }
         if set("hang-init") == Some("1") {
-            std::thread::sleep(Duration::from_secs(600));
+            blyg_core::wait::pace(Duration::from_secs(600)); // a hung extension
         }
         let protocol_version = set("protocol")
             .and_then(|v| v.parse().ok())
@@ -81,7 +81,7 @@ impl Extension for TestExt {
                 let toast = match p.id.as_str() {
                     "echo" => sel,
                     "sleep" => {
-                        std::thread::sleep(Duration::from_secs(10));
+                        blyg_core::wait::pace(Duration::from_secs(10)); // a slow command
                         "slept".into()
                     }
                     "crash" => std::process::exit(7),

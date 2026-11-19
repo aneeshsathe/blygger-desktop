@@ -19,10 +19,19 @@ happened at least once and could happen again.
 2. **Make the build fail**, with a message that names the replacement:
    types, `pub(crate)`, `#[must_use]`, clippy `disallowed-methods` with a
    `reason` (`crates/blyg-app/clippy.toml` bans `std::thread::sleep` and
-   points at `crate::test_wait`). If the bad pattern is common, block new
-   uses first, then migrate the old ones in the same wave.
+   points at `crate::test_wait`; blyg-core's, blyg-ai's and each
+   `blyg-ext*`'s point at `blyg_core::wait`). If the bad pattern is common,
+   block new uses first, then migrate the old ones in the same wave. A rule
+   about the shape of the workspace is a test over `cargo metadata`
+   (`blyg-core/tests/it/crate_graph.rs`: GPUI only in blyg-app, each
+   crate's allowed workspace dependencies).
 3. **A behaviour test** of what a user would see (`tests/cli.rs` runs the
-   real `blygger --version` and fails if it starts the app).
+   real `blygger --version` and fails if it starts the app). For state
+   that lives across many steps (sync, paging, retries), a property test
+   over a model: make the decisions a pure step machine and drive it with
+   random histories (`sync/walk.rs`'s `Read`, driven by
+   `walk_model_tests.rs` with proptest). Examples miss the bug that needs
+   ten pulls and a 409 in the right place; a shrunk history doesn't.
 4. **Prose**, only for a judgement call nothing can check, with the failure
    that taught it.
 

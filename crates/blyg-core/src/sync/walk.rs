@@ -17,6 +17,10 @@
 //!   `nextCursor: null`, merged as they arrive, `reading_pages` of them per
 //!   pull, continued on the next pull from the cursor. Only a walk that
 //!   reached the end prunes, with the keys of that one coherent walk.
+//!
+//! [`Read`] is one pull's read as a step machine; `walk_model_tests.rs`
+//! drives it against a model of the studio's list (property tests of
+//! convergence, pruning and cost).
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -217,6 +221,162 @@ impl Walk {
     }
 }
 
+/// What one page of the reading list did here, for [`Read::on_page`].
+#[derive(Debug, Default)]
+pub struct PageFacts {
+    /// The page's `nextCursor` (`None`: the list's end).
+    pub next: Option<String>,
+    /// Merging it (rows, read state, lineage…) changed something here.
+    pub changed: bool,
+    /// Its oldest and newest `observedAt` (ms).
+    pub oldest_ms: Option<i64>,
+    pub newest_ms: Option<i64>,
+    /// The `observedAt` (ms) of each row merging it wrote (new or
+    /// rewritten): one no newer than the mark is [`late`].
+    pub written_ms: Vec<i64>,
+}
+
+/// What [`Engine::read_reading`](super::Engine) does next.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// Read the page at `walk.cursor`.
+    Fetch,
+    /// Done for this pull: keep [`Read::kept`] for the next one, accept
+    /// nothing.
+    Stop,
+    /// The read is done: prune to `walk.keys` first when `whole`, then
+    /// accept `walk.rev` and set the mark to [`Read::next_mark`].
+    Done { whole: bool },
+}
+
+/// One pull's read of the reading list: every decision of
+/// `Engine::read_reading`, with the I/O (fetch, merge, prune, accept) left
+/// to it. A pure step machine: `(Read, event) → (Read, Step)`, driven
+/// against a model of the studio in `walk_model_tests.rs`.
+#[derive(Debug)]
+pub struct Read {
+    pub walk: Walk,
+    /// The head mark when the pull began (`HEAD_MARK`).
+    mark: Option<i64>,
+    budget: u32,
+    /// Page requests this pull (a `cursor-expired` counts).
+    pages: u32,
+    restarts: usize,
+    /// Read marks went from here since the last head read.
+    reads_sent: bool,
+    /// A whole walk is wanted later (`deep_pending`): a late row, or a head
+    /// read that found nothing for a moved counter.
+    pub deep: bool,
+}
+
+impl Read {
+    /// Start the read `start` asks for; `held` is the walk an earlier pull
+    /// left (for [`Start::Continue`]). `None`: nothing to read.
+    pub fn begin(
+        start: Start,
+        held: Option<Walk>,
+        rev: Option<ChangeState>,
+        forced: bool,
+        mark: Option<i64>,
+        budget: u32,
+        reads_sent: bool,
+    ) -> Option<Read> {
+        let walk = match start {
+            Start::Nothing => return None,
+            Start::Continue => held.unwrap_or_else(|| Walk::new(true, rev, false)),
+            Start::Whole => Walk::new(true, rev, forced),
+            Start::Head => Walk::new(false, rev, false),
+        };
+        Some(Read {
+            walk,
+            mark,
+            // At least a `cursor-expired` and the first page again: with
+            // one, a walk under a changing list spends every pull on the
+            // 409 and never shows a new post (walk_model_tests (e)).
+            budget: budget.max(2),
+            pages: 0,
+            restarts: 0,
+            reads_sent,
+            deep: false,
+        })
+    }
+
+    /// The head mark this read stops against.
+    pub fn mark(&self) -> Option<i64> {
+        self.mark
+    }
+
+    /// A page arrived and was merged (its keys already in `walk.keys`).
+    pub fn on_page(&mut self, page: PageFacts) -> Step {
+        self.pages += 1;
+        if !self.walk.whole && late(page.written_ms, self.mark) {
+            self.deep = true;
+        }
+        self.walk.changed |= page.changed;
+        self.walk.newest_ms = self.walk.newest_ms.max(page.newest_ms);
+        let has_next = page.next.is_some();
+        // Opaque cursor: passed back verbatim.
+        self.walk.cursor = page.next;
+        match after_page(
+            self.walk.whole,
+            has_next,
+            !page.changed,
+            page.oldest_ms,
+            boundary(self.mark),
+            self.pages,
+            self.budget,
+        ) {
+            Next::Page => Step::Fetch,
+            Next::Yield => {
+                // A head read that ran this long becomes a whole walk.
+                self.walk.whole = true;
+                Step::Stop
+            }
+            Next::HeadDone => {
+                if !self.walk.changed && !self.reads_sent {
+                    self.deep = true;
+                }
+                Step::Done { whole: false }
+            }
+            Next::Complete => {
+                self.deep = false;
+                Step::Done { whole: true }
+            }
+        }
+    }
+
+    /// The list changed under the read (409 `cursor-expired`): from the
+    /// first page again under `rev`, the revisions captured for this pull,
+    /// at most `CURSOR_RESTARTS` times and within the page budget.
+    pub fn on_expired(&mut self, rev: Option<ChangeState>) -> Step {
+        self.pages += 1;
+        self.restarts += 1;
+        self.walk.restart(rev);
+        if self.restarts > crate::api::CURSOR_RESTARTS || self.pages >= self.budget {
+            Step::Stop
+        } else {
+            Step::Fetch
+        }
+    }
+
+    /// The head mark once this read is done: a whole walk saw the list's
+    /// newest row; a head read keeps the newer of its own and the last.
+    pub fn next_mark(&self, whole: bool) -> Option<i64> {
+        let held = if whole { None } else { self.mark };
+        self.walk.newest_ms.max(held)
+    }
+
+    /// What the next pull carries on: a whole walk (a head read is
+    /// dropped, and the next pull reads the head again).
+    pub fn kept(self) -> Option<Walk> {
+        self.walk.whole.then_some(self.walk)
+    }
+}
+
 #[cfg(test)]
 #[path = "walk_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "walk_model_tests.rs"]
+mod model_tests;

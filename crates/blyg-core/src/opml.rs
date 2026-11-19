@@ -506,17 +506,7 @@ fn with_details(message: String, details: &[String]) -> String {
 
 /// Sleep `d`, waking early when `cancel` is set. False when cancelled.
 fn nap(d: Duration, cancel: &AtomicBool) -> bool {
-    let until = Instant::now() + d;
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            return false;
-        }
-        let now = Instant::now();
-        if now >= until {
-            return true;
-        }
-        std::thread::sleep((until - now).min(Duration::from_millis(100)));
-    }
+    crate::wait::nap(d, || cancel.load(Ordering::Relaxed))
 }
 
 /// Subscribe to `feeds` (blocking; run it off the UI thread). Each one is

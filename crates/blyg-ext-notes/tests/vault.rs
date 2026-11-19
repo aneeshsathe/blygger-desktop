@@ -373,11 +373,9 @@ fn notes_added_on_disk_show_up_after_a_poll() {
         &env.vault.join("New").join("Aurora.md"),
         "Green lights in the north.\n",
     );
-    let deadline = Instant::now() + WAIT;
-    while env.search("aurora").is_empty() {
-        assert!(Instant::now() < deadline, "never indexed");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    blyg_core::wait::until_within(WAIT, "the new note indexed", || {
+        !env.search("aurora").is_empty()
+    });
     assert_eq!(env.search("aurora")[0].id, "New/Aurora.md");
 }
 

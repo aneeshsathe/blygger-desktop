@@ -711,7 +711,8 @@ fn no_consent_no_start_then_reload_starts_it() {
 #[test]
 fn disabled_extensions_never_run_and_unknown_ones_are_missing() {
     let env = setup_with(&[], &[], &[], |c| c.enabled = vec!["not-installed".into()]);
-    std::thread::sleep(Duration::from_millis(300));
+    // Nothing to wait for: give a wrong start the time to show.
+    blyg_core::wait::wall_clock(Duration::from_millis(300));
     let st = env.host.status();
     let names: Vec<(&str, &ExtState)> = st.iter().map(|s| (s.name.as_str(), &s.state)).collect();
     assert_eq!(
@@ -741,10 +742,9 @@ fn hooks_reach_only_extensions_holding_them() {
     env.host.item_published(&item, &publish(), Some("a note"));
     env.host.item_saved(&item); // not granted
     let events = env.storage().join("events.jsonl");
-    let deadline = Instant::now() + WAIT;
-    while read_lines(&events).is_empty() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    let _ = blyg_core::wait::poll_until(WAIT, Duration::from_millis(20), || {
+        !read_lines(&events).is_empty()
+    });
     // A round trip after the notifications, so anything else sent has arrived.
     env.command("echo", None).unwrap();
     let lines = read_lines(&events);
@@ -903,7 +903,8 @@ fn a_reload_without_its_extension_line_stops_it() {
         matches!(e, ExtEvent::Stopped { message: None, .. })
     });
     let starts = read_lines(&env.storage().join("starts.log")).len();
-    std::thread::sleep(Duration::from_millis(600));
+    // Nothing to wait for: give a wrong restart the time to show.
+    blyg_core::wait::wall_clock(Duration::from_millis(600));
     assert_eq!(read_lines(&env.storage().join("starts.log")).len(), starts);
     assert_eq!(env.host.status()[0].state, ExtState::Disabled);
 }

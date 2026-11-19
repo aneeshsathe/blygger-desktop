@@ -74,8 +74,10 @@ fn the_sync_worker_ignores_scratch_notes() {
         .create_scratch(Kind::Fragment, "only on this Mac")
         .unwrap();
     b.save(&id, "only on this Mac, edited").unwrap();
-    // Let the worker run a few debounces and pulls.
-    std::thread::sleep(Duration::from_millis(800));
+    // Let the worker run two pulls (each past the save's debounce).
+    let pulls = || env.mock.state().count("GET /api/changes");
+    let before = pulls();
+    blyg_core::wait::until("two worker pulls", || pulls() >= before + 2);
     let st = env.mock.state();
     assert_eq!(st.count("POST"), 0, "{:?}", st.log);
     assert_eq!(st.count("PUT"), 0, "{:?}", st.log);

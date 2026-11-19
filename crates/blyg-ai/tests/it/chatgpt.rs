@@ -243,7 +243,7 @@ fn browser_login_via_localhost_callback() {
             let _ = s.read_to_string(&mut out);
             out
         };
-        std::thread::sleep(Duration::from_millis(50));
+        blyg_core::wait::wall_clock(Duration::from_millis(50));
         let bad = hit("/auth/callback?code=nope&state=wrong".into());
         let good = hit(format!("/auth/callback?code=the-code&state={state}"));
         (bad, good)
@@ -277,7 +277,7 @@ fn browser_login_can_be_cancelled() {
     let c = CancelFlag::new();
     let c2 = c.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(100));
+        blyg_core::wait::wall_clock(Duration::from_millis(100));
         c2.cancel();
     });
     let e = o

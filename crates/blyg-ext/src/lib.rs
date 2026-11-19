@@ -31,6 +31,8 @@ pub use api::{BackendApi, HostApi, NoBlyg};
 /// The bracket grammar (`[[id]]`, `![[id | label]]`), for extensions that
 /// read post Markdown.
 pub use blyg_core::grammar;
+/// How an extension waits (the only sleep: each crate's `clippy.toml`).
+pub use blyg_core::wait;
 pub use capability::{CONSENT_CAVEAT, Capability, DECLARED_SUFFIX, consent_sentence, describe};
 pub use grants::{Grants, settings_from_lines};
 pub use host::{

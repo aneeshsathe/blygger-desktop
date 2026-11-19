@@ -38,7 +38,7 @@ impl Extension for Slots {
                 let p: EntryBylineParams = params(p)?;
                 let md = p.entry.content_md.as_str();
                 if md.contains("slow") {
-                    std::thread::sleep(std::time::Duration::from_secs(3));
+                    blyg_core::wait::pace(std::time::Duration::from_secs(3)); // a slow slot
                 }
                 if md.contains("broken") {
                     return Err(RpcError::new(-1, "broken entry"));
