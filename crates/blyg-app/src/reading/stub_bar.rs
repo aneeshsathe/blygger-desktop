@@ -22,6 +22,19 @@ use crate::app::MainView;
 use crate::app::studio::StubPage;
 use crate::app::studio::webview::StubPick;
 
+/// The hint line above a reply's draft. Reply opens with the whole post
+/// quoted and the caret below it, so that case says plainly where the reply
+/// goes; the other cases keep the studio's wording (`stub_hint`, which
+/// stays as ported).
+pub(crate) fn reply_hint(md: &str, id: &str) -> String {
+    match stub_quote_form(md, id) {
+        Some(StubQuoteForm::Whole) => {
+            "Quoting the whole post. Write your reply below the quote.".into()
+        }
+        _ => stub_hint(md, id),
+    }
+}
+
 /// A passage selected in the editor preview, as the page reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
@@ -244,7 +257,7 @@ impl MainView {
                 .hover(|s| s.underline())
                 .child(label)
         };
-        let mut hint = stub_hint(&text, &id);
+        let mut hint = reply_hint(&text, &id);
         if form.is_some() {
             hint.push_str(" To quote only part of it, select the text in the preview.");
         }
@@ -323,9 +336,20 @@ impl MainView {
 
 #[cfg(test)]
 mod tests {
-    use super::{StubPage, StubPick, caret_at_new_quote, pick_passage, quote_boxes};
+    use super::{StubPage, StubPick, caret_at_new_quote, pick_passage, quote_boxes, reply_hint};
 
     const ID: &str = "7c9wk2mhq0v3xj8tn5rzfd41bg";
+
+    #[test]
+    fn a_fresh_reply_says_where_the_reply_goes() {
+        let fresh = blyg_render::stub_quote::stub_body(ID);
+        assert_eq!(
+            reply_hint(&fresh, ID),
+            "Quoting the whole post. Write your reply below the quote."
+        );
+        // The other forms keep the studio's words.
+        assert!(reply_hint("words", ID).starts_with("Not quoting"));
+    }
 
     fn bq(id: Option<&str>, inner: &str) -> String {
         match id {

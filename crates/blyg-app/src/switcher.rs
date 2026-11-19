@@ -33,6 +33,7 @@ gpui_kit::actions!(
     [
         ShowBlygSwitcher,
         AddBlyg,
+        ConnectBlyg,
         ManageBlygs,
         SwitchBlyg1,
         SwitchBlyg2,
@@ -190,7 +191,9 @@ impl MainView {
             .on_action(cx.listener(|this, _: &ManageBlygs, window, cx| {
                 this.toggle_blyg_switcher(true, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &AddBlyg, window, cx| this.add_blyg(window, cx)));
+            .on_action(cx.listener(|this, _: &AddBlyg, window, cx| this.add_blyg(window, cx)))
+            // Burrow › Connect…: the Connect sheet, the way back after skipping setup.
+            .on_action(cx.listener(|this, _: &ConnectBlyg, window, cx| this.add_blyg(window, cx)));
         nth!(d,
             SwitchBlyg1 => 0, SwitchBlyg2 => 1, SwitchBlyg3 => 2,
             SwitchBlyg4 => 3, SwitchBlyg5 => 4, SwitchBlyg6 => 5,

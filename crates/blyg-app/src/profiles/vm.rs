@@ -199,7 +199,7 @@ pub fn empty_note(p: &Profile, tab: Tab) -> &'static str {
         Tab::Blogroll if !p.has_blogroll => "No public blogroll.",
         Tab::Blogroll => "Their blogroll is empty.",
         Tab::Posts => "No posts to show.",
-        Tab::Connections => "No quotes, stubs or forks in the posts we hold.",
+        Tab::Connections => "No quotes, replies or forks in the posts we hold.",
     }
 }
 
@@ -356,7 +356,7 @@ pub fn lineage(item: &blyg_core::Lineage, held: &[ReadingItem]) -> Vec<Lineage> 
         };
         out.push(Lineage {
             id: "pf-lineage-stub",
-            lead: "↳ stub of",
+            lead: "↳ reply to",
             link: format!("{host}{rest}"),
             url: target.to_string(),
             name: host,
@@ -477,7 +477,7 @@ mod tests {
         assert_eq!(p[0].title, "Untitled");
         assert_eq!(p[0].sub, "≡ thread · v3 📌");
         let c = rows(&profile(), Tab::Connections, &subs, now);
-        assert_eq!(c[0].sub, "stubbed 2 posts");
+        assert_eq!(c[0].sub, "replied to 2 posts");
     }
 
     /// No follower, subscriber or reader counts: nothing in the header, the

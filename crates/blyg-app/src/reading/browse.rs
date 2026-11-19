@@ -277,7 +277,7 @@ fn top_clone(stack: &[Step]) -> Step {
 pub fn via_word(via: BrowseVia) -> &'static str {
     match via {
         BrowseVia::Start => "opened",
-        BrowseVia::Stub => "stubbed source",
+        BrowseVia::Stub => "replied-to post",
         BrowseVia::Quote => "quoted layer",
         BrowseVia::Link => "link",
         BrowseVia::Back => "back",

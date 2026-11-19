@@ -22,7 +22,7 @@ use crate::theme::Rule; // --- themes --- dividers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResponseRow {
     pub who: String,
-    /// "quoted this" / "stubbed this" / "forked this" (and "… a passage of
+    /// "quoted this" / "replied to this" / "forked this" (and "… a passage of
     /// this" when the quote is partial).
     pub what: &'static str,
     pub when: String,
@@ -39,8 +39,8 @@ fn what_of(r: Relation, partial: bool) -> &'static str {
     match (r, partial) {
         (Relation::Quotes, false) => "quoted this",
         (Relation::Quotes, true) => "quoted a passage of this",
-        (Relation::Stubs, false) => "stubbed this",
-        (Relation::Stubs, true) => "stubbed a passage of this",
+        (Relation::Stubs, false) => "replied to this",
+        (Relation::Stubs, true) => "replied to a passage of this",
         (Relation::Forks, _) => "forked this",
     }
 }
@@ -50,7 +50,7 @@ fn what_of(r: Relation, partial: bool) -> &'static str {
 fn strength(what: &str) -> u8 {
     match what.split(' ').next() {
         Some("forked") => 3,
-        Some("stubbed") => 2,
+        Some("replied") => 2,
         Some("quoted") => 1,
         _ => 0,
     }
@@ -58,7 +58,7 @@ fn strength(what: &str) -> u8 {
 
 fn mention_what(rel: Option<&str>) -> &'static str {
     match rel {
-        Some("stub") => "stubbed this",
+        Some("stub") => "replied to this",
         Some("fork") => "forked this",
         Some("transclusion") => "quoted this",
         // Studio 0.41+: generated text drew on this post.
@@ -294,7 +294,7 @@ mod tests {
         ];
         let rows = response_rows(&network, &mentions, "01own", now);
         let got: Vec<(&str, &str)> = rows.iter().map(|r| (r.who.as_str(), r.what)).collect();
-        assert_eq!(got, [("Rue", "stubbed this"), ("Lin", "forked this")]);
+        assert_eq!(got, [("Rue", "replied to this"), ("Lin", "forked this")]);
         for r in &rows {
             let words = format!("{} {}", r.who, r.what);
             assert!(!words.chars().any(|c| c.is_ascii_digit()), "{words}");
@@ -327,6 +327,6 @@ mod tests {
         }];
         let rows = response_rows(&network, &[m], "01own", now);
         let got: Vec<&str> = rows.iter().map(|r| r.what).collect();
-        assert_eq!(got, ["stubbed a passage of this"]);
+        assert_eq!(got, ["replied to a passage of this"]);
     }
 }

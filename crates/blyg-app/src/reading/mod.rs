@@ -147,7 +147,7 @@ impl View {
         match self {
             View::Posts => "Posts",
             View::Reading => "Reading",
-            View::Mentions => "Mentions",
+            View::Mentions => "Responses",
             View::Subscriptions => "Subscriptions",
         }
     }

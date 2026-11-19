@@ -42,17 +42,17 @@
 | ⌘G | Generate: fill the [TK] under the caret, or open the AI helpers | Post › Generate (TK) |
 | ⇧⌘G | Shorten to fit 1000 (AI; you accept or reject) | Post › Shorten to Fit 1000 |
 | ⌘R | Reading list (again: back to posts) | Blyg › Reading |
-| ⇧⌘M | Mentions & responses | Blyg › Mentions |
+| ⇧⌘M | Responses: who quoted, replied to or forked your posts | Blyg › Responses |
 | ⇧⌘S | Subscriptions | Blyg › Subscriptions |
 | ⌘Y | Versions of this post | Post › Versions… |
 | ⌘J | Lineage: what this post draws on and what draws on it | Post › Lineage… |
 | ⌘K | Quote a post in this thread | Post › Quote… |
-| ⌥⌘R | Reply · new stub: a thread of yours that's a stub of this post (yours too) | Post › Reply · New Stub |
+| ⌥⌘R | Reply: a new thread of yours that replies to this post (yours too) | Post › Reply |
 | ⌥⌘Q | Quote this post into a thread (![[…]]; the draft open, or a new one) | Post › Quote into a Thread |
-| ⌥⌘L | Link post · new fragment: [[…]] to this post, no stub_of | Post › Link Post · New Fragment |
+| ⌥⌘L | Link post · new fragment: [[…]] to this post, not a reply | Post › Link Post · New Fragment |
 | ⌥⌘P | Hopper ›: put this post in one of your hoppers, or take it out (h on the reading screen) | Post › Put in Hopper… |
 | ⌘B | Shelf: the posts you keep to hand (1–9 opens one) | Post › Shelf… |
-| ⌥⌘B | Put the open post on your shelf, or take it off | Post › Put on Shelf / Take Off |
+| ⌥⌘B | Add the open post to your shelf, or remove it | Post › Add to Shelf / Remove from Shelf |
 | ⌥⌘T | Publish trail…: the current trail as a thread draft (t / ⇧T in Reading add stops) | Blyg › Publish Trail… |
 | ⌥⌘K | Quote tray: put this post on it, to quote later (⌘K lists it first; q in Reading) | Post › Put on Quote Tray |
 | ⌥⌘⏎ | Split view: the selected post beside the one you're writing (again: close it) | Post › Open Beside |
@@ -73,7 +73,7 @@
 | ⌥⌘← | Tutorial: previous step |  |
 | ⇧⌘B | Browser pane: close it, or bring back the last page (none yet: open it to type an address) | View › Show/Hide Browser Pane |
 | ⇧⌘N | Notes pane: open it and move into it, or close it from inside (quotes a selected passage) | View › Notes |
-| ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft | Post › Quote Selection in Draft |
+| ⇧⌘D | Quote the highlighted passage (a page, a post, your notes, or a reply's preview quote) in the draft | Post › Quote Selection in Draft |
 | ⇧⌘P | Command palette: every action, theme, font, blyg, hopper and post, by name | View › Command Palette… |
 | ⌥⌘F | Focus mode: the line you're on stays put, the rest steps back (esc leaves) | View › Focus |
 
@@ -113,6 +113,7 @@
 | Check spelling while typing (on/off; the spellcheck config key) | Edit › Spelling › Check Spelling While Typing |
 | Disconnect from this blyg | Burrow › Disconnect… |
 | Open the config file | Burrow › Open Config File |
+| Connect your blyg: the Connect sheet (address, then sign in or a token) | Burrow › Connect… |
 | Sign in to another blyg (the others stay signed in) | Blyg › Add a Blyg… |
 | Manage blygs: sign out of one, keeping or deleting its posts on this Mac | Blyg › Manage Blygs… |
 | Check for a new release now (whatever auto-update says) | Burrow › Check for Updates… |
@@ -132,7 +133,7 @@
 | Copies elsewhere: where this published post is also posted (no new version) | Post › Copies Elsewhere… |
 | A new folder for your subscriptions (on this Mac only) | Blyg › New Folder… |
 | A new hopper on your blyg: a collection of posts, private until you make it public | Blyg › New Hopper… |
-| Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen) | Blyg › Back |
+| Reading pane: back along the quotes, replies and links you followed (⌘[ on the reading screen) | Blyg › Back |
 | Withdraw this published post (asks first; permanent and visible) | Post › Withdraw… |
 | Your own profile, as visitors see it | Blyg › My Profile |
 | The interactive tutorial (on sample data) | Help › Burrow Tutorial |

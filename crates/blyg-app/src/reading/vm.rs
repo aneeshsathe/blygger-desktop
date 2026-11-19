@@ -386,15 +386,14 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
                 .into(),
         ),
         "Reply" => on(
-            "Reply · new stub",
-            "Starts a new thread of yours that's a stub of this post (stub_of), \
+            "Reply",
+            "Starts a new thread of yours that replies to this post, \
              with the post quoted at the top."
                 .into(),
         ),
         "AI reply" => on(
-            "AI reply · new stub",
-            "A reply stub with an AI-drafted answer for you to review; nothing is published."
-                .into(),
+            "AI reply",
+            "A reply with an AI-drafted answer for you to review; nothing is published.".into(),
         ),
         "Fork" => ActionChip {
             id,
@@ -407,7 +406,7 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         "Link post" => on(
             "Link post · new fragment",
             "Starts a new fragment of yours containing [[…]], a plain link to this post: \
-             not a reply, so no stub_of and no mention."
+             not a reply."
                 .into(),
         ),
         "Open on web" => on(
