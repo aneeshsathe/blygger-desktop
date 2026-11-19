@@ -195,6 +195,13 @@ pub(crate) mod quiet;
 #[path = "quiet_tests.rs"]
 mod quiet_tests;
 
+// --- preview --- trying a theme, font or size before keeping it.
+#[path = "pref_preview.rs"]
+pub(crate) mod pref_preview;
+#[cfg(test)]
+#[path = "pref_preview_tests.rs"]
+mod pref_preview_tests;
+
 // --- capture --- a web address pasted into the omnibar.
 #[path = "capture_link.rs"]
 pub(crate) mod capture_link;
@@ -465,6 +472,7 @@ pub struct MainView {
     contacts: reading::contacts::State, // --- contacts --- Mentions › Sent
     upkeep: upkeep::Upkeep,             // --- upkeep ---
     quiet: quiet::Quiet,                // --- quiet ---
+    preview: pref_preview::State,       // --- preview ---
     _tasks: Vec<Task<()>>,
     _subs: Vec<Subscription>,
 }
@@ -640,6 +648,7 @@ impl MainView {
             contacts: Default::default(),                      // --- contacts ---
             upkeep: Default::default(),                        // --- upkeep ---
             quiet: quiet::Quiet::new(cx),                      // --- quiet ---
+            preview: Default::default(),                       // --- preview ---
             _tasks: tasks,
             _subs: subs,
         };
@@ -758,6 +767,7 @@ impl MainView {
                         }
                         "font-size" => p.font_size = self.prefs.font_size,
                         "theme" => p.theme = self.prefs.theme.clone(),
+                        "theme-dark" => p.theme_dark = self.prefs.theme_dark.clone(),
                         "layout" => p.layout = self.prefs.layout,
                         "capture-hotkey" => p.hotkey = self.prefs.hotkey.clone(),
                         "show-buttons" => p.show_buttons = self.prefs.show_buttons, // --- buttons ---
@@ -830,6 +840,7 @@ impl MainView {
         let fresh = crate::settings::prefs(cx);
         let hotkey_changed = fresh.hotkey != self.prefs.hotkey;
         self.persisted = fresh.clone();
+        self.preview.active = None; // --- preview --- the file wins
         self.prefs = fresh;
         let mut msg = "Config reloaded".to_string();
         if hotkey_changed && let Err(e) = crate::capture::set_hotkey(&self.prefs.hotkey, cx) {
@@ -1495,6 +1506,7 @@ impl MainView {
 
     fn close_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.sheet = None;
+        self.end_preview_from(pref_preview::Origin::Settings, window, cx); // --- preview ---
         self.focus_after_sheet(window, cx);
         cx.notify();
     }
@@ -1509,6 +1521,7 @@ impl MainView {
 
     /// Apply `prefs` to the UI and write the changed keys to the config file.
     fn apply_prefs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.drop_preview_overlay(); // --- preview ---
         self.apply_prefs_live(window, cx);
         self.save_prefs(cx);
     }
@@ -1522,7 +1535,9 @@ impl MainView {
     /// Resolve the theme for the prefs and this window's appearance, and
     /// take its palette and suggested fonts.
     fn apply_theme(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let theme = crate::theme::resolve(&self.prefs, window.appearance(), cx);
+        // --- preview --- the window's appearance, or the slot being tried.
+        let appearance = self.preview_appearance(window);
+        let theme = crate::theme::resolve(&self.prefs, appearance, cx);
         self.prefs.adopt_theme_fonts(&theme);
         crate::fonts::ensure(self.prefs.writing().bundled, cx);
         crate::fonts::ensure(self.prefs.ui().bundled, cx);
@@ -2011,6 +2026,7 @@ impl MainView {
         self._subs.push(sub);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
+        self.settings_preview_reset(window, cx); // --- preview ---
         self.sheet_gen += 1;
         self.sheet = Some(Sheet::Settings {
             hotkey,
@@ -2066,14 +2082,17 @@ impl MainView {
     }
 
     fn font_bigger(&mut self, _: &FontBigger, window: &mut Window, cx: &mut Context<Self>) {
+        self.drop_preview_overlay(); // --- preview ---
         self.prefs.bigger();
         self.apply_prefs(window, cx);
     }
     fn font_smaller(&mut self, _: &FontSmaller, window: &mut Window, cx: &mut Context<Self>) {
+        self.drop_preview_overlay(); // --- preview ---
         self.prefs.smaller();
         self.apply_prefs(window, cx);
     }
     fn font_reset(&mut self, _: &FontReset, window: &mut Window, cx: &mut Context<Self>) {
+        self.drop_preview_overlay(); // --- preview ---
         self.prefs.reset_size();
         self.apply_prefs(window, cx);
     }
@@ -2512,6 +2531,7 @@ impl Render for MainView {
                 }
             });
         }
+        self.preview_frame(window, cx); // --- preview ---
         let p = self.palette;
         let size = self.prefs.font_size;
         let ui_font: SharedString = self.prefs.ui().family.into();

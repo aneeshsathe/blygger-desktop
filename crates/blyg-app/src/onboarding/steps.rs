@@ -703,13 +703,15 @@ pub const STEPS: &[Step] = &[
         caption: if cfg!(target_os = "windows") {
             "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
              hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
-             Changes); each row shows its key. Enter runs it, Ctrl+Enter runs it and keeps \
-             the palette open, and the last ten come first."
+             Changes); each row shows its key, and a theme or font row shows itself on the window \
+             as you move to it. Enter runs it, Ctrl+Enter runs it and keeps the palette open, \
+             and the last ten come first."
         } else {
             "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
              your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
-             each row shows its key. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and \
-             the last ten come first."
+             each row shows its key, and a theme or font row shows itself on the window as you \
+             move to it. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and the last ten \
+             come first."
         },
         keys: &[Key::Palette],
         key_label: if cfg!(target_os = "windows") {

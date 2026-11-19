@@ -13,7 +13,13 @@ keys.
 **⇧⌘P** opens the command palette: every action below, plus themes, fonts,
 blygs, hoppers, extension commands and your posts, found by typing part of a
 name. Each row shows its key, so it's also a way to learn them. ⏎ runs a row,
-⌘⏎ runs it and keeps the palette open. Focus mode (⌥⌘F) is Ctrl+Shift+F on
+⌘⏎ runs it and keeps the palette open. Highlighting a theme or font row
+shows it on the whole window at once; ⏎ keeps it, esc puts yours back.
+
+**In Settings** (⌘,), ⇥ and ⇧⇥ move between Writing font, Interface font,
+Size and Theme, and the arrow keys try each option on the whole window. ⏎ or
+Space keeps it; esc puts yours back (a second esc leaves the row, a third
+closes Settings). Focus mode (⌥⌘F) is Ctrl+Shift+F on
 Windows, because Ctrl+Alt is AltGr there.
 
 ⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply, Quote into a thread, Link post) act on

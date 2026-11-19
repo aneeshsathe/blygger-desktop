@@ -308,6 +308,16 @@ impl Prefs {
         if self.theme != old.theme {
             out.push(("theme", Change::Set(self.theme.clone())));
         }
+        // Settings' dark slot: a theme, or "Same as light" (no line).
+        if self.theme_dark != old.theme_dark {
+            out.push((
+                "theme-dark",
+                match &self.theme_dark {
+                    Some(d) => Change::Set(d.clone()),
+                    None => Change::Remove,
+                },
+            ));
+        }
         if self.layout != old.layout {
             out.push(("layout", Change::Set(self.layout.value().into())));
         }
@@ -488,6 +498,24 @@ mod tests {
                 .ends_with("layout = stacked\nshow-buttons = false\n")
         );
         assert_eq!(Prefs::from_config(s.config()), new);
+    }
+
+    /// Settings' dark slot writes `theme-dark`, and "Same as light" removes it.
+    #[test]
+    fn the_dark_slot_writes_and_removes_theme_dark() {
+        let mut s = ConfigStore::in_memory("theme = cutaway\n");
+        let old = Prefs::from_config(s.config());
+        let mut new = old.clone();
+        new.theme_dark = Some("fortress".into());
+        s.set(&new.changes_from(&old)).unwrap();
+        assert_eq!(
+            s.text().unwrap(),
+            "theme = cutaway\ntheme-dark = fortress\n"
+        );
+        let old = new.clone();
+        new.theme_dark = None;
+        s.set(&new.changes_from(&old)).unwrap();
+        assert_eq!(s.text().unwrap(), "theme = cutaway\n");
     }
 
     // --- lang ---
