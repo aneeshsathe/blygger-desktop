@@ -82,6 +82,7 @@ impl Provider for OpenAiApi {
             .set("authorization", &format!("Bearer {}", self.api_key))
             .set("content-type", "application/json")
             .set("accept", "text/event-stream")
+            .set("accept-encoding", crate::http::SSE_ENCODING)
             .send_json(self.body(&req))
             .map_err(|e| http::map_err("OpenAI", e))?;
         let model = req.model.clone().unwrap_or_else(|| self.model.clone());
