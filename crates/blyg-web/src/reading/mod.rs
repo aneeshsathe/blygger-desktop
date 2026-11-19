@@ -12,8 +12,6 @@ pub enum View {
     Reading,
     Mentions,
     Subscriptions,
-    /// The experimental #thicket tab (native only; never shown here).
-    Chat,
 }
 
 pub mod own {

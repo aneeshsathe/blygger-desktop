@@ -13,14 +13,15 @@
 //! a line (so `#fff` in a value is fine). Values may be double-quoted; inside
 //! quotes `\"`, `\\`, `\n` and `\t` are escapes. An empty value resets a key
 //! to its default (a repeatable key to an empty list). Unknown keys are
-//! warnings; malformed lines and bad values are errors. Neither stops the
-//! rest of the file from loading.
+//! warnings, except the retired keys of removed features (`RETIRED_KEYS`),
+//! which are ignored quietly; malformed lines and bad values are errors.
+//! Neither stops the rest of the file from loading.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use super::keys::{KEYS, KeySpec, ValueKind, spec};
+use super::keys::{KEYS, KeySpec, ValueKind, is_retired, spec};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Severity {
@@ -367,12 +368,16 @@ pub struct Config {
 }
 
 impl Config {
-    /// Apply entries in order. Unknown keys → warning; bad values → error
-    /// (the key keeps its previous value).
+    /// Apply entries in order. Unknown keys → warning; retired keys (of
+    /// removed features) → ignored quietly; bad values → error (the key
+    /// keeps its previous value).
     pub fn from_entries(entries: &[Entry], diags: &mut Vec<Diagnostic>) -> Config {
         let mut c = Config::default();
         for e in entries {
             let Some(spec) = spec(&e.key) else {
+                if is_retired(&e.key) {
+                    continue;
+                }
                 let hint = suggest(&e.key)
                     .map(|s| format!(" (did you mean `{s}`?)"))
                     .unwrap_or_default();
@@ -548,45 +553,6 @@ impl Config {
         self.get("nearby-rerank") == Some("on")
     }
     // --- end nearby ---
-
-    // --- chat --- (experimental)
-    /// `chat-tab`: show the #thicket tab (on unless `false`).
-    pub fn chat_tab(&self) -> bool {
-        self.get("chat-tab") != Some("false")
-    }
-
-    /// `chat-nick`: the Libera.Chat nick and account, once set up.
-    pub fn chat_nick(&self) -> Option<&str> {
-        self.get("chat-nick")
-            .map(str::trim)
-            .filter(|n| !n.is_empty())
-    }
-
-    /// `chat-server`: `host:port`, over TLS.
-    pub fn chat_server(&self) -> &str {
-        self.get("chat-server").unwrap_or("irc.libera.chat:6697")
-    }
-
-    /// `chat-notifications`: notify about mentions (on unless `false`).
-    pub fn chat_notifications(&self) -> bool {
-        self.get("chat-notifications") != Some("false")
-    }
-    // --- end chat ---
-
-    // --- terminal --- (experimental)
-    /// `terminal`: the terminal pane (on unless `false`).
-    pub fn terminal(&self) -> bool {
-        self.get("terminal") != Some("false")
-    }
-
-    /// `terminal-shell`: the program (and arguments) the pane runs instead
-    /// of the login shell.
-    pub fn terminal_shell(&self) -> Option<&str> {
-        self.get("terminal-shell")
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-    }
-    // --- end terminal ---
 
     pub fn font_family_writing(&self) -> &str {
         self.get("font-family-writing").unwrap_or("Literata")

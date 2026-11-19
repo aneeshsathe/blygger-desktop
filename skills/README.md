@@ -29,7 +29,7 @@ what earlier ones learned.
 | `burrow-pr-gate` | before committing a feature, or opening, merging or reviewing a PR |
 | `burrow-release` | cutting a release, or merging anything that bumps the version |
 | `burrow-tutorial-update` | a release changes something a user sees |
-| `burrow-cross-platform` | touching keys, menus, paths, web views, the terminal or native APIs |
+| `burrow-cross-platform` | touching keys, menus, paths, web views or native APIs |
 | `burrow-agent-cohort` | running several agents at once |
 | `burrow-web-handoff` | a web build is going to whoever deploys it |
 | `spec-client-build` | implementing something the spec or studio defines |

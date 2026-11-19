@@ -727,10 +727,6 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the sample quotes a post");
             v.hover_show(d, cx)
         }),
-        "chat" => {
-            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
-        } // --- chat ---
-        "terminal" => e.cx.dispatch_action(crate::app::terminal::ToggleTerminal), // --- terminal ---
         // --- flow ---
         "palette" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))

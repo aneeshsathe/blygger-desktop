@@ -192,4 +192,20 @@ mod tests {
         std::fs::write(AppState::path(dir.path()), "{not json").unwrap();
         assert_eq!(AppState::load(dir.path()), AppState::default());
     }
+
+    /// Fields this version doesn't know (say, of a removed feature such as
+    /// the chat tab or the terminal pane) don't lose the rest of the state.
+    #[test]
+    fn unknown_fields_are_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            AppState::path(dir.path()),
+            r#"{"launched_before": true, "view": "split", "terminal_open": true,
+                "terminal_height": 240, "chat_last_read": "2026-11-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+        let s = AppState::load(dir.path());
+        assert!(s.launched_before);
+        assert_eq!(s.view.as_deref(), Some("split"));
+    }
 }

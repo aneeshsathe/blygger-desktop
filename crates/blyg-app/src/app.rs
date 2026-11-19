@@ -159,12 +159,6 @@ pub(crate) mod lineage_strip;
 // --- hover cards --- (what a [[id]] is, on hover; hooks marked the same way)
 #[path = "hover_card.rs"]
 pub(crate) mod hover_card;
-// --- chat --- (the experimental #thicket tab; hooks marked the same way)
-#[path = "chat/mod.rs"]
-pub(crate) mod chat;
-// --- terminal --- (the experimental terminal pane; hooks marked the same way)
-#[path = "terminal/mod.rs"]
-pub(crate) mod terminal;
 // --- flow --- (the command palette, focus mode, serendipity, delight;
 // hooks marked `// --- palette ---`, `// --- focus ---`, `// --- serendipity ---`,
 // `// --- delight ---`)
@@ -419,10 +413,6 @@ pub struct MainView {
     lineage_strip: lineage_strip::State,
     // --- hover cards ---
     hover: hover_card::State,
-    // --- chat ---
-    chat: chat::Chat,
-    // --- terminal ---
-    terminal: terminal::Dock,
     // --- flow ---
     cmd_palette: command_palette::State,
     focus_mode: focus::State,
@@ -590,8 +580,6 @@ impl MainView {
             new_post: None,                    // --- new post ---
             lineage_strip: Default::default(), // --- lineage ---
             hover: Default::default(),         // --- hover cards ---
-            chat: Default::default(),          // --- chat ---
-            terminal: Default::default(),      // --- terminal ---
             // --- flow ---
             cmd_palette: Default::default(),
             focus_mode: Default::default(),
@@ -627,7 +615,6 @@ impl MainView {
         this.browser_init(window, cx); // --- browser ---
         this.watch_config(window, cx);
         this.ext_init(window, cx); // --- extensions ---
-        this.chat_init(window, cx); // --- chat ---
         this.nearby_init(cx); // --- nearby ---
         this.site_init(cx); // --- site ---
         this.omni.update(cx, |s, cx| s.focus(window, cx));
@@ -821,8 +808,6 @@ impl MainView {
         }
         self.apply_prefs_live(window, cx);
         self.ext_reload(window, cx); // --- extensions ---
-        self.chat_reload(window, cx); // --- chat ---
-        self.terminal_reload(window, cx); // --- terminal ---
         self.nearby_reload(cx); // --- nearby ---
         self.show_toast(msg, None, cx);
     }
@@ -2616,8 +2601,6 @@ impl Render for MainView {
             .map(|d| self.trails_actions(d, cx)) // --- trails ---
             .map(|d| self.tray_actions(d, cx)) // --- tray ---
             .map(|d| self.split_actions(d, cx)) // --- split ---
-            .map(|d| self.chat_actions(d, cx)) // --- chat ---
-            .map(|d| self.terminal_actions(d, cx)) // --- terminal ---
             .map(|d| self.palette_actions(d, cx)) // --- palette ---
             .map(|d| self.focus_actions(d, cx)) // --- focus ---
             .map(|d| self.nearby_actions(d, cx)) // --- nearby ---
@@ -2699,7 +2682,6 @@ impl Render for MainView {
                                     }),
                             ),
                     })
-                    .children(self.render_terminal(window, cx)) // --- terminal ---
                     .children(self.render_tray(cx)) // --- tray ---
                     .into_any_element();
                 d.child(self.side_row(main, cx))

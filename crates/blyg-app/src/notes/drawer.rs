@@ -95,7 +95,7 @@ impl MainView {
         .detach();
     }
 
-    /// ⇧⌘N / View › Notes, as ⌃` is for the terminal: closed, or open
+    /// ⇧⌘N / View › Notes: closed, or open
     /// without the keyboard, it opens (or stays) and takes the keyboard;
     /// with the keyboard in it, it closes.
     pub(crate) fn toggle_notes(

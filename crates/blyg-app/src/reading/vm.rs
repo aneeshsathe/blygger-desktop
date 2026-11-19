@@ -40,8 +40,7 @@ pub fn screen_status(view: super::View, unread: usize) -> ScreenStatus {
             post: false,
             to_read,
         },
-        // --- chat --- (the #thicket tab: the sync state too)
-        super::View::Mentions | super::View::Subscriptions | super::View::Chat => ScreenStatus {
+        super::View::Mentions | super::View::Subscriptions => ScreenStatus {
             post: false,
             to_read: None,
         },

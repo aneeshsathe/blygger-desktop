@@ -820,8 +820,6 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
-        let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
-        let d = on!(d, crate::app::terminal::ToggleTerminal, Key::Terminal); // --- terminal ---
         // --- tangles ---
         let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
         let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
@@ -860,8 +858,6 @@ impl MainView {
             self.close_profile(window, cx);
         }
         self.ext_tour_close_sheets(window, cx);
-        self.chat_tour_tidy(); // --- chat ---
-        self.terminal_tour_tidy(window, cx); // --- terminal ---
         // --- flow --- the palette closed, focus mode left.
         if self.cmd_palette.open.is_some() {
             self.close_palette(window, cx);
