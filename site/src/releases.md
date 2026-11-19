@@ -18,6 +18,23 @@ Nearby thoughts, all at once. ⌘J still opens a post's lineage, the search's
 `is:` and `has:` filters still work, and ⌥⌘U opens Nearby for this sitting.
 It's off unless you turn it on. See [Quiet writing](writing.md#quiet-writing).
 
+### Fewer buttons under a post
+
+The chips under an open post fit on one line again. Quote, Reply, Catch up
+and Background stay in view; Hopper, Add to shelf, Add to trail, Fork, Link
+post, AI reply, Open on web and → Notes are under **⋯ More**. Every key
+works as before (h, t, b, q, ⇧C, ⌥⌘B). The Stream and the web app group
+them the same way. Not sure which of shelf, hopper, trail, tray or
+Background to use? See [Which one do I use?](reading.md#which-one-do-i-use).
+
+### The author's site fills the reading pane
+
+With **Open posts on the author's site** on, the page now takes the whole
+reading pane, under the browser's own bar (back, forward, reload, address,
+🛡 and open in your browser), instead of sitting in a box between Burrow's
+header and the chips. j/k still move through posts and Space still pages
+down. It works on Windows now too, instead of opening your default browser.
+
 ### Removed
 
 - **#thicket chat** is gone: not enough people used it.
