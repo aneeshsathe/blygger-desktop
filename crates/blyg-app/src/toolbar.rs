@@ -22,6 +22,7 @@ use super::reading::View as Screen;
 use super::studio::ViewMode;
 use super::*;
 use crate::keymap::{self, Keybind};
+use crate::scenes::Scene;
 
 macro_rules! icon {
     ($name:literal) => {
@@ -688,47 +689,45 @@ impl MainView {
     /// button (an in-app event, not an OS one) so its tooltip shows.
     pub(crate) fn toolbar_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if n == 0
-            && let Some(w) = std::env::var("BLYGGER_SNAPSHOT_WIDTH")
-                .ok()
-                .and_then(|w| w.parse::<f32>().ok())
+            && let Some(w) = crate::dev_flags::get().snapshot.width
         {
             let h = window.viewport_size().height;
             window.resize(size(px(w), h));
         }
         match (scenario, n) {
-            ("tb-long", 0) => {
+            (Scene::TbLong, 0) => {
                 self.open(&LocalId("01J9QK3".into()), window, cx);
                 let extra = " The log keeps the weather so the keeper doesn't have to.".repeat(18);
                 self.editor.update(cx, |s, cx| s.insert(extra, window, cx));
                 self.after_edit(cx);
             }
-            ("tb-settings", 0) => self.open_settings(&OpenSettings, window, cx),
+            (Scene::TbSettings, 0) => self.open_settings(&OpenSettings, window, cx),
             // --- delete & withdraw --- the confirmation sheets (discard.rs)
-            ("tb-delete" | "tb-withdraw" | "tb-discard", 0) => {
+            (Scene::TbDelete | Scene::TbWithdraw | Scene::TbDiscard, 0) => {
                 self.discard_demo(scenario, window, cx)
             }
-            ("tb-capture", 0) => crate::capture::toggle(cx),
-            ("tb-capture", 1) => crate::capture::demo_fill(
+            (Scene::TbCapture, 0) => crate::capture::toggle(cx),
+            (Scene::TbCapture, 1) => crate::capture::demo_fill(
                 "An idea on the stairs: tide tables as a writing prompt.",
                 cx,
             ),
-            ("tb-capture", 2) => {
-                if let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") {
-                    crate::capture::demo_snapshot(&path, cx);
+            (Scene::TbCapture, 2) => {
+                if let Some(path) = &crate::dev_flags::get().snapshot.path {
+                    crate::capture::demo_snapshot(path, cx);
                 }
                 return;
             }
             _ => {}
         }
         if n == 2 {
-            if let Ok(action) = std::env::var("BLYGGER_DEMO_HOVER") {
-                self.demo_hover(&action, window, cx);
+            if let Some(action) = &crate::dev_flags::get().demo.hover {
+                self.demo_hover(action, window, cx);
             }
             super::reading::demo::snapshot_later(window, cx);
         }

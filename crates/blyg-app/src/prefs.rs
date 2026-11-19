@@ -234,7 +234,7 @@ impl Prefs {
     /// `BLYGGER_THEME=<name>`: a dev/screenshot override (any theme name,
     /// and it beats `theme-dark`), not persisted unless a setting is changed.
     pub fn apply_theme_override(&mut self) {
-        if let Ok(t) = std::env::var("BLYGGER_THEME") {
+        if let Some(t) = &crate::dev_flags::get().theme {
             let t = t.trim().to_ascii_lowercase();
             if blyg_core::config::theme::valid_name(&t) {
                 self.theme = t;

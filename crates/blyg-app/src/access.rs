@@ -22,6 +22,7 @@ use blyg_core::access_ai::{
 };
 
 use super::*;
+use crate::scenes::Scene;
 
 gpui_kit::actions!(
     blygger,
@@ -527,7 +528,7 @@ impl MainView {
     /// and the publish sheet with the blyg's AI.
     pub(crate) fn access_ai_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -541,9 +542,9 @@ impl MainView {
             v.access_sign_in(window, cx);
         };
         match (scenario, n) {
-            ("aa-access" | "aa-confirm" | "aa-token", 0) => sign_in(self, window, cx),
-            ("aa-confirm", 1) => self.access_confirm(Some(0), window, cx),
-            ("aa-token", 1) => {
+            (Scene::AaAccess | Scene::AaConfirm | Scene::AaToken, 0) => sign_in(self, window, cx),
+            (Scene::AaConfirm, 1) => self.access_confirm(Some(0), window, cx),
+            (Scene::AaToken, 1) => {
                 self.access_new_token(window, cx);
                 if let Some(Sheet::ClientAccess(s)) = &self.sheet {
                     let name = s.name.clone();
@@ -551,14 +552,14 @@ impl MainView {
                 }
                 self.access_toggle_scope(1, cx);
             }
-            ("aa-token", 2) => self.access_create(window, cx),
-            ("aa-ai", 0) => self.open_server_ai(window, cx),
-            ("aa-publish", 0) => {
+            (Scene::AaToken, 2) => self.access_create(window, cx),
+            (Scene::AaAi, 0) => self.open_server_ai(window, cx),
+            (Scene::AaPublish, 0) => {
                 self.open(&LocalId("01J9PX1".into()), window, cx);
                 self.demo_type(" Then the rain came.", window, cx);
             }
-            ("aa-publish", 1) => self.publish(window, cx),
-            ("aa-publish", 2) => self.draft_change_note(window, cx),
+            (Scene::AaPublish, 1) => self.publish(window, cx),
+            (Scene::AaPublish, 2) => self.draft_change_note(window, cx),
             _ => {}
         }
     }

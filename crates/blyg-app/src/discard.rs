@@ -19,6 +19,7 @@
 //! marked `// --- delete & withdraw ---`.
 
 use super::*;
+use crate::scenes::Scene;
 
 gpui_kit::actions!(
     blygger,
@@ -377,20 +378,20 @@ impl MainView {
     /// published post / that post with an edit.
     pub(super) fn discard_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match scenario {
-            "tb-delete" => {
+            Scene::TbDelete => {
                 self.open(&LocalId("01J9QK3".into()), window, cx);
                 self.on_delete_draft(&DeleteDraft, window, cx);
             }
-            "tb-withdraw" => {
+            Scene::TbWithdraw => {
                 self.open(&LocalId("01J9PX1".into()), window, cx);
                 self.on_withdraw(&Withdraw, window, cx);
             }
-            "tb-discard" => {
+            Scene::TbDiscard => {
                 let id = LocalId("01J9PX1".into());
                 self.open(&id, window, cx);
                 self.editor.update(cx, |s, cx| {

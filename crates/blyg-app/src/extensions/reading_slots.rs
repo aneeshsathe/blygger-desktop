@@ -28,6 +28,7 @@ use gpui_kit::*;
 use super::Launch;
 use crate::app::reading::Tip;
 use crate::app::{MainView, TITLEBAR_H};
+use crate::scenes::Scene;
 
 #[cfg(test)]
 #[path = "reading_slots_tests.rs"]
@@ -408,7 +409,7 @@ impl MainView {
     /// runs.
     pub(crate) fn slots_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -418,7 +419,7 @@ impl MainView {
                 self.show_view(crate::app::reading::View::Reading, window, cx);
                 self.stream_move(1, window, cx);
             }
-            2 if scenario == "ext-slots-inspect" => {
+            2 if scenario == Scene::ExtSlotsInspect => {
                 let item = self.reading.sel.as_ref().and_then(|k| {
                     self.reading
                         .rows

@@ -43,6 +43,7 @@ use blyg_ext::{
 use gpui_kit::*;
 
 use crate::app::MainView;
+use crate::scenes::Scene;
 
 pub(crate) use library::Library;
 pub(crate) use sheets::Overlay;
@@ -1101,19 +1102,21 @@ impl MainView {
     /// note open: `BLYGGER_DEMO_NOTE`, default the first in the folder).
     pub(crate) fn ext_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
             (_, 0) => self.ext_start(window, cx),
-            (s, n) if s.starts_with("ext-slots") => self.slots_demo(s, n, window, cx), // --- reading slots ---
-            ("ext-palette", 1) => self.ext_toggle_palette(window, cx),
-            ("ext-manage", 1) => self.ext_open_manage(window, cx),
-            ("ext-notes", 1) => self.ext_lib_show(window, cx),
-            ("ext-notes", 2) => {
-                let id = std::env::var("BLYGGER_DEMO_NOTE").ok().or_else(|| {
+            (s @ (Scene::ExtSlots | Scene::ExtSlotsInspect), n) => {
+                self.slots_demo(s, n, window, cx)
+            } // --- reading slots ---
+            (Scene::ExtPalette, 1) => self.ext_toggle_palette(window, cx),
+            (Scene::ExtManage, 1) => self.ext_open_manage(window, cx),
+            (Scene::ExtNotes, 1) => self.ext_lib_show(window, cx),
+            (Scene::ExtNotes, 2) => {
+                let id = crate::dev_flags::get().demo.note.clone().or_else(|| {
                     self.ext
                         .lib
                         .entries

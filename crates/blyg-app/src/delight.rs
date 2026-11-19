@@ -91,8 +91,8 @@ pub fn reduce_motion() -> bool {
     use std::sync::Mutex;
     use std::time::{Duration as D, Instant};
     static CACHE: Mutex<Option<(Instant, bool)>> = Mutex::new(None);
-    if let Some(v) = std::env::var_os("BLYGGER_REDUCE_MOTION") {
-        return v != "0";
+    if let Some(v) = crate::dev_flags::get().reduce_motion {
+        return v;
     }
     let mut c = CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, v)) = *c

@@ -2493,7 +2493,7 @@ impl Provider for CannedAi {
 /// window's last frame to a PNG and quit (same as the reading demos; only
 /// in a `--cfg blygger_snap` build with `gpui-kit/test-support`).
 pub(super) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
-    let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") else {
+    let Some(path) = crate::dev_flags::get().snapshot.path.clone() else {
         return;
     };
     cx.spawn_in(window, async move |_, cx| {

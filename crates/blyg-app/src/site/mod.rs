@@ -21,6 +21,7 @@ use gpui_kit::base::input::{InputEvent, InputState, TextareaState};
 use gpui_kit::*;
 
 use super::MainView;
+use crate::scenes::Scene;
 
 mod view;
 
@@ -688,33 +689,33 @@ impl MainView {
     /// with `BLYGGER_FAKE_STUDIO_LATEST` set).
     pub(crate) fn site_demo(
         &mut self,
-        s: &str,
+        s: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (s, n) {
-            ("site-notice", _) => {}
+            (Scene::SiteNotice, _) => {}
             (_, 0) => self.open_site(window, cx),
             (_, 1) => {
                 let section = match s {
-                    "site-home" => Section::HomePage,
-                    "site-links" => Section::Links,
-                    "site-profile" => Section::Profile,
-                    "site-network" => Section::Network,
-                    "site-updates" => Section::Updates,
-                    "site-extensions" => Section::Extensions,
+                    Scene::SiteHome => Section::HomePage,
+                    Scene::SiteLinks => Section::Links,
+                    Scene::SiteProfile => Section::Profile,
+                    Scene::SiteNetwork => Section::Network,
+                    Scene::SiteUpdates => Section::Updates,
+                    Scene::SiteExtensions => Section::Extensions,
                     _ => Section::Appearance,
                 };
                 if let Some(sh) = self.site.sheet.as_mut() {
                     sh.section = section;
                 }
-                if s == "site-custom" {
+                if s == Scene::SiteCustom {
                     self.site_choose_theme(site::CUSTOM_THEME_ID, window, cx);
                     self.site_toggle_dark_companion(window, cx);
                     self.site_edit(cx, |sh| sh.editing_dark = false);
                 }
-                if s == "site-links" {
+                if s == Scene::SiteLinks {
                     let first = published_threads(&self.backend.items()).into_iter().next();
                     if let Some((id, _)) = first {
                         self.site_edit(cx, |sh| sh.form.links_threads = Some(vec![id]));

@@ -77,9 +77,7 @@ pub const TEARDOWN_AFTER: Duration = Duration::from_secs(180);
 /// (smoke tests measure the freed process without waiting minutes).
 pub fn teardown_after() -> Duration {
     if cfg!(debug_assertions)
-        && let Some(ms) = std::env::var("BLYGGER_BROWSER_TEARDOWN_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
+        && let Some(ms) = crate::dev_flags::get().browser.teardown_ms
     {
         return Duration::from_millis(ms);
     }

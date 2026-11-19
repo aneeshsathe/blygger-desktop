@@ -32,6 +32,7 @@ use gpui_kit::*;
 
 use super::{Load, View};
 use crate::app::MainView;
+use crate::scenes::Scene;
 use crate::theme::Rule;
 
 gpui_kit::actions!(blygger, [ReaderBack, ToggleBrowseHistory]);
@@ -1150,7 +1151,7 @@ impl MainView {
     /// follows, and a stream post whose quote quotes another.
     pub(crate) fn browse_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1160,7 +1161,7 @@ impl MainView {
         };
         match (scenario, n) {
             (_, 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-nested", 1) => {
+            (Scene::RdStreamNested, 1) => {
                 // A post (on screen only) quoting Ada's reply, which quotes
                 // Lin's bench note.
                 let Some(mut q) = self
@@ -1217,7 +1218,7 @@ impl MainView {
                     cx,
                 );
             }
-            ("rd-browse-peek", 2) => {
+            (Scene::RdBrowsePeek, 2) => {
                 let link = format!("{KIT}f/{KIT_TIDES}/");
                 self.reading.browse.classified.insert(
                     link.clone(),
@@ -1228,9 +1229,9 @@ impl MainView {
                 );
                 self.browse_link(link, false, true, window, cx);
             }
-            ("rd-browse" | "rd-browse-history", 2) => {
+            (Scene::RdBrowse | Scene::RdBrowseHistory, 2) => {
                 self.browse_link(format!("{ADA}f/{ADA_TIDES}/"), false, true, window, cx);
-                if scenario == "rd-browse-history" {
+                if scenario == Scene::RdBrowseHistory {
                     self.reading.browse.history_open = true;
                     self.load_browse_history(cx);
                 }

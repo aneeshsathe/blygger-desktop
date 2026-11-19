@@ -17,6 +17,9 @@
 //! It also writes `SwitchBackend`'s forwarding methods from the `Backend`
 //! trait (`build_forwarding.rs`).
 
+// A build script reads Cargo's variables; the app's own go through `dev_flags`.
+#![allow(clippy::disallowed_methods)]
+
 #[path = "build_forwarding.rs"]
 mod forwarding;
 

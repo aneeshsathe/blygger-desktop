@@ -158,6 +158,9 @@ pub fn exec(action: &str, args: &[&str], load: &mut dyn FnMut() -> ConfigStore) 
                 }
             }
         }
+        // Development (not in +help): every `BLYGGER_DEMO` scene, one per
+        // line, from the registry (`scenes.rs`). `burrow-verify.sh` reads it.
+        "+scenes" => o.stdout = crate::scenes::Scene::all().join("\n") + "\n",
         "+list-keybinds" => o.stdout = crate::keymap::list(),
         // `run` serves a bundled extension before it gets here; what's left
         // is a missing or unknown name.
@@ -360,13 +363,13 @@ fn opml_backend(store: &ConfigStore, blyg: Option<&str>) -> Result<blyg_core::Li
     use blyg_core::config::{MemoryTokenStore, TokenStore};
     let url = resolve_blyg(store, blyg)?;
     // BLYGGER_TEST_TOKEN: an in-memory token (a local studio), no Keychain.
-    let tokens: std::sync::Arc<dyn TokenStore> = match std::env::var("BLYGGER_TEST_TOKEN") {
-        Ok(t) => {
+    let tokens: std::sync::Arc<dyn TokenStore> = match &crate::dev_flags::get().test_token {
+        Some(t) => {
             let m = MemoryTokenStore::default();
             let _ = m.set(&url, t.trim());
             std::sync::Arc::new(m)
         }
-        Err(_) => std::sync::Arc::new(blyg_core::config::KeychainTokenStore),
+        None => std::sync::Arc::new(blyg_core::config::KeychainTokenStore),
     };
     let opts = blyg_core::SyncOptions {
         start_worker: false,

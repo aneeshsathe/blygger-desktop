@@ -711,7 +711,7 @@ impl MainView {
                     let js = webview::SELECTION_UI_JS;
                     self.studio.reader.slot.borrow_mut().with(|s| s.eval(js));
                 }
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());
                 }
             }

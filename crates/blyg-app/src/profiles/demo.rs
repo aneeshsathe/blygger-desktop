@@ -16,11 +16,12 @@ use crate::app::MainView;
 use crate::app::reading::View;
 use crate::fake::profile_seed::TIDES;
 use crate::fake::reading_seed::{LIN, LIN_GARDENS, OMAR, RUE};
+use crate::scenes::Scene;
 
 impl MainView {
     pub(crate) fn profile_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -38,21 +39,21 @@ impl MainView {
             }
         };
         match (scenario, n) {
-            ("pf-reading", 0) => open_lin(self, window, cx),
-            ("pf-reading", 1) => self.profile_for_context(window, cx),
-            ("pf-blogroll", 0) => open_lin(self, window, cx),
-            ("pf-blogroll", 1) => self.open_profile(LIN, window, cx),
-            ("pf-blogroll", 2) => self.open_profile(TIDES, window, cx),
-            ("pf-connections", 0) => open_lin(self, window, cx),
-            ("pf-connections", 1) => self.open_profile(LIN, window, cx),
-            ("pf-connections", 2) => self.set_profile_tab(Tab::Connections, cx),
-            ("pf-posts", 0) => self.show_view(View::Reading, window, cx),
-            ("pf-posts", 1) => self.open_profile(RUE, window, cx),
-            ("pf-posts", 2) => self.set_profile_tab(Tab::Posts, cx),
-            ("pf-feed", 0) => self.show_view(View::Reading, window, cx),
-            ("pf-feed", 1) => self.open_profile(format!("{OMAR}feed.xml"), window, cx),
-            ("pf-own", 1) => self.open_own_profile(window, cx),
-            ("pf-ask", 1) => {
+            (Scene::PfReading, 0) => open_lin(self, window, cx),
+            (Scene::PfReading, 1) => self.profile_for_context(window, cx),
+            (Scene::PfBlogroll, 0) => open_lin(self, window, cx),
+            (Scene::PfBlogroll, 1) => self.open_profile(LIN, window, cx),
+            (Scene::PfBlogroll, 2) => self.open_profile(TIDES, window, cx),
+            (Scene::PfConnections, 0) => open_lin(self, window, cx),
+            (Scene::PfConnections, 1) => self.open_profile(LIN, window, cx),
+            (Scene::PfConnections, 2) => self.set_profile_tab(Tab::Connections, cx),
+            (Scene::PfPosts, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::PfPosts, 1) => self.open_profile(RUE, window, cx),
+            (Scene::PfPosts, 2) => self.set_profile_tab(Tab::Posts, cx),
+            (Scene::PfFeed, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::PfFeed, 1) => self.open_profile(format!("{OMAR}feed.xml"), window, cx),
+            (Scene::PfOwn, 1) => self.open_own_profile(window, cx),
+            (Scene::PfAsk, 1) => {
                 self.ask_profile_url(window, cx);
                 if let Some(i) = self.profiles.ask.clone() {
                     i.update(cx, |s, cx| {
