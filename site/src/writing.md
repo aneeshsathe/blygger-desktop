@@ -10,7 +10,7 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 
 | Operator | Lists |
 |---|---|
-| `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
+| `is:orphan` | published posts, a week old or more, that nothing points at yet: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
 | `is:draft` / `is:stale` | drafts / drafts untouched for a month |
 | `is:stale-quote` | threads that quote an older version of a post (see [Stale quotes](#stale-quotes)) |
 | `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
@@ -21,8 +21,11 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 
 `is:draft tide` lists drafts that mention tides. ⏎ never starts a post from
 operators alone. With the search empty, a quiet line over the list says
-what's loose, in words ("2 orphans · 1 ungenerated TK"); click a part to list
-those posts.
+what's loose, in plain words ("2 posts not linked yet · 1 ungenerated TK ·
+1 thread with outdated quotes"). Hover a part for what it counts; click it to
+list those posts (it puts the operator in the search). A post made in the last
+seven days isn't counted as not linked yet, by the line or by `is:orphan`:
+nobody has had the time to link to it.
 
 **A web address.** Paste one into the search and, when no post has it, ⏎
 starts a fragment with that link, titled from the page (fetched once, without
@@ -190,7 +193,10 @@ fit 1000** (⇧⌘G) is the other way out; see [AI helpers](ai.md).
 ## Publishing and versions
 
 ⌘⏎ publishes. A sheet drops from the title bar, "Publish … as v2", with an
-optional **version note**; ⏎ publishes and esc cancels. A toast shows the
+optional **version note**; ⏎ publishes and esc cancels. A post's first
+publish (v1) adds one quiet line: "This goes public at blyg.example.com.
+Published posts can be withdrawn, not deleted." That's how blygs work: a
+published post stays on the record, and withdrawing it says so visibly. A toast shows the
 result and its address, and ⌘O opens the post on the web.
 
 | | |
@@ -370,7 +376,7 @@ quote it. It's never put in for you.
   where you pasted it, and the preview shows it. Burrow then asks what the
   image shows: type it and press ⏎ to add it as alt text
   (`![two crabs at dusk](…)`), or esc to skip. Until a published post shows
-  it, an upload is private on studio 0.28 or later: only you (and Burrow,
+  it, an upload is private: only you (and Burrow,
   signed in as you) can see it.
 - **Spellcheck** with the macOS spell checker, your languages and learned
   words: a red wavy underline, and right-click for suggestions, Learn Spelling
@@ -547,7 +553,7 @@ the quote publishing will make, and the publish sheet warns before you
 publish. Delete the line, or name the post in the instruction if you meant
 it.
 
-**Highlighting generated text** (studio 0.27 or later): the blyg's public
+**Highlighting generated text**: the blyg's public
 pages can tint generated passages and mark them with a small robot that says
 what you disclosed. Your blyg's settings (in the Reader's site settings) set
 the default; the ⌘G palette sets it per post (default, on or off; **H** cycles

@@ -19,7 +19,7 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes. Burrow 0.16 needs blygger-studio 0.49.12 or later, stock and unpatched.
+Yes. Burrow needs blygger-studio 0.49.12 or later, stock and unpatched.
 Sign in with your browser, an API token from the studio's Client access page
 (or, once connected, Burrow's **Blyg › Client Access…**), or your studio
 password. On an older blyg nothing syncs: your posts stay on

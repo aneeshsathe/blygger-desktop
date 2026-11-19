@@ -17,11 +17,15 @@ use crate::model::{Item, Kind, Status, post_key};
 /// A draft untouched this long is stale (`is:stale`).
 pub const STALE_MS: i64 = 30 * 24 * 3600 * 1000;
 
+/// A post made more recently than this isn't an orphan yet (`is:orphan`
+/// and the loose-ends line alike): nobody has had the time to link to it.
+pub const ORPHAN_GRACE_MS: i64 = 7 * 24 * 3600 * 1000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Op {
-    /// Published, and nothing points at it: no held post quotes, stubs or
-    /// forks it, no verified mention, no other post of yours links or
-    /// quotes it.
+    /// Published, made at least [`ORPHAN_GRACE_MS`] ago, and nothing
+    /// points at it: no held post quotes, stubs or forks it, no verified
+    /// mention, no other post of yours links or quotes it.
     Orphan,
     Draft,
     /// No outbound directive: no `![[id]]`, no stub, no fork.
@@ -278,13 +282,21 @@ fn stale(i: &Item, now: i64) -> bool {
         && crate::util::parse_ts_ms(&i.updated).is_some_and(|t| now - t >= STALE_MS)
 }
 
+/// Made within [`ORPHAN_GRACE_MS`] (an unreadable date counts as old).
+fn young(i: &Item, now: i64) -> bool {
+    crate::util::parse_ts_ms(&i.created).is_some_and(|t| now - t < ORPHAN_GRACE_MS)
+}
+
 fn matches(op: &Op, i: &Item, facts: &Facts, linked: &HashSet<String>, now: i64) -> bool {
     match op {
         Op::Orphan => {
             let Some(sid) = i.server_id.as_ref().map(|s| s.0.to_ascii_lowercase()) else {
                 return false;
             };
-            is_published(i) && !facts.inbound.contains(&sid) && !linked.contains(&sid)
+            is_published(i)
+                && !young(i, now)
+                && !facts.inbound.contains(&sid)
+                && !linked.contains(&sid)
         }
         Op::Draft => i.status == Status::Draft,
         Op::Leaf => {
@@ -393,13 +405,17 @@ impl Summary {
     }
 
     /// The parts that apply, each with the query it stands for:
-    /// `("2 orphans", "is:orphan")`.
+    /// `("2 posts not linked yet", "is:orphan")`. Plain words: the
+    /// operators keep their short names, the line doesn't.
     pub fn parts(&self) -> Vec<(String, &'static str)> {
         let plural =
             |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
         let mut out = Vec::new();
         if self.orphans > 0 {
-            out.push((plural(self.orphans, "orphan", "orphans"), "is:orphan"));
+            out.push((
+                plural(self.orphans, "post not linked yet", "posts not linked yet"),
+                "is:orphan",
+            ));
         }
         if self.ungenerated_tk > 0 {
             out.push((
@@ -422,8 +438,8 @@ impl Summary {
             out.push((
                 plural(
                     self.stale_quotes,
-                    "thread with stale quotes",
-                    "threads with stale quotes",
+                    "thread with outdated quotes",
+                    "threads with outdated quotes",
                 ),
                 "is:stale-quote",
             ));
@@ -431,7 +447,31 @@ impl Summary {
         out
     }
 
-    /// `"2 orphans · 1 ungenerated TK"`; empty when nothing is loose.
+    /// The tooltip for the part standing for `query`: what it counts, in a
+    /// sentence, and the operator a click puts in the search.
+    pub fn tip(query: &str) -> &'static str {
+        match query {
+            "is:orphan" => {
+                "Published posts at least a week old that nothing points at yet: no post \
+                 you read quotes or replies to them, no mention names them, and none of your \
+                 own posts links to them. Click to list them (is:orphan)."
+            }
+            "has:tk" => {
+                "Posts with a [TK] gap that hasn't been generated yet. Click to list them \
+                 (has:tk)."
+            }
+            "is:stale" => "Drafts you haven't touched for a month. Click to list them (is:stale).",
+            "is:stale-quote" => {
+                "Your threads quoting a post that has changed since: the quote shows an \
+                 older version. Click to list them (is:stale-quote); Blyg › Stale Quotes… \
+                 updates them."
+            }
+            _ => "Click to list them.",
+        }
+    }
+
+    /// `"2 posts not linked yet · 1 ungenerated TK"`; empty when nothing
+    /// is loose.
     pub fn words(&self) -> String {
         self.parts()
             .into_iter()
