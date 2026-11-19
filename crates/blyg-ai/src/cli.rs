@@ -223,7 +223,7 @@ pub(crate) fn run_streaming(
                     }
                     return;
                 }
-                std::thread::sleep(Duration::from_millis(25));
+                blyg_core::wait::pace(Duration::from_millis(25));
             }
         })
     };

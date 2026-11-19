@@ -1067,7 +1067,7 @@ fn run(ext: Arc<Ext>, ctx: RunCtx, ctl: Receiver<Ctl>) {
         failures.push(Instant::now());
         failures.retain(|t| t.elapsed() < ctx.timing.failure_window);
         // Let the stderr thread catch up with a child that just died.
-        std::thread::sleep(Duration::from_millis(50));
+        blyg_core::wait::pace(Duration::from_millis(50));
         ctx.emit(ExtEvent::Failed {
             name: name.clone(),
             message: message.clone(),
@@ -1120,14 +1120,17 @@ fn run(ext: Arc<Ext>, ctx: RunCtx, ctl: Receiver<Ctl>) {
 }
 
 fn wait_briefly(child: &mut Child) -> String {
-    for _ in 0..20 {
-        if let Ok(Some(s)) = child.try_wait() {
-            return match s.code() {
-                Some(c) => format!(" (exit code {c})"),
-                None => " (killed by a signal)".into(),
-            };
-        }
-        std::thread::sleep(Duration::from_millis(10));
+    let mut status = None;
+    let step = Duration::from_millis(10);
+    if blyg_core::wait::poll_until(20 * step, step, || {
+        status = child.try_wait().ok().flatten();
+        status.is_some()
+    }) && let Some(s) = status
+    {
+        return match s.code() {
+            Some(c) => format!(" (exit code {c})"),
+            None => " (killed by a signal)".into(),
+        };
     }
     kill(child);
     String::new()
@@ -1145,12 +1148,10 @@ fn stop_child(ext: &Ext, live: &mut Live, timing: &Timing) {
         .conn
         .request(methods::SHUTDOWN, json!({}), timing.shutdown);
     live.conn.close();
-    let deadline = Instant::now() + timing.shutdown;
-    while Instant::now() < deadline {
-        if let Ok(Some(_)) = live.child.try_wait() {
-            return;
-        }
-        std::thread::sleep(Duration::from_millis(10));
+    if blyg_core::wait::poll_until(timing.shutdown, Duration::from_millis(10), || {
+        matches!(live.child.try_wait(), Ok(Some(_)))
+    }) {
+        return;
     }
     kill(&mut live.child);
 }

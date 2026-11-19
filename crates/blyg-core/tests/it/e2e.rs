@@ -205,12 +205,16 @@ fn server_rev(sid: &str) -> u64 {
         .expect("contract 5 items carry a revision")
 }
 
-fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
-    let t0 = Instant::now();
-    while !f() {
-        assert!(t0.elapsed() < timeout, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+fn wait_until(what: &str, timeout: Duration, f: impl FnMut() -> bool) {
+    wait_every(what, timeout, Duration::from_millis(50), f);
+}
+
+/// [`wait_until`], looking every `step` (a slow server-side job).
+fn wait_every(what: &str, timeout: Duration, step: Duration, f: impl FnMut() -> bool) {
+    assert!(
+        wait::poll_until(timeout, step, f),
+        "timed out waiting for {what}"
+    );
 }
 
 fn sid_of(b: &LiveBackend, id: &LocalId) -> String {
@@ -440,7 +444,7 @@ fn discard_changes_goes_back_to_the_published_version() {
     }
 
     // Past the debounce and a pull: the old text never comes back.
-    std::thread::sleep(Duration::from_millis(600));
+    wait::wall_clock(Duration::from_millis(600));
     b.sync_now().unwrap();
     assert_eq!(server_item(&sid)["contentMd"], v1_text);
     let it = b.item(&id).unwrap();
@@ -1675,7 +1679,8 @@ fn sync_until_held(b: &LiveBackend, rids: &[&str]) {
 fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) -> bool {
     let e = e2e();
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     subscriber.sync_now().unwrap();
     if reading_item(subscriber, rid).is_some_and(|r| r.version >= want_version) {
         return true;
@@ -2240,7 +2245,7 @@ fn reading_is_walked_only_when_reading_moves() {
     while start.elapsed() < Duration::from_secs(10) {
         other.pull_now().unwrap();
         pulls += 1;
-        std::thread::sleep(Duration::from_millis(250));
+        wait::wall_clock(Duration::from_millis(250));
     }
     let idle = proxy.take_full();
     eprintln!(
@@ -2365,20 +2370,20 @@ fn poll_all_feeds(api: &Api) {
     assert_eq!(st, 200, "{v}");
     let mut last = before;
     let mut still = Instant::now();
-    let t0 = Instant::now();
-    loop {
-        std::thread::sleep(Duration::from_millis(250));
-        let now = counter(api, "subscriptions");
-        if now != last {
-            (last, still) = (now, Instant::now());
-        } else if last != before && still.elapsed() >= Duration::from_secs(2) {
-            return;
-        }
-        assert!(
-            t0.elapsed() < Duration::from_secs(120),
-            "the polls never settled"
-        );
-    }
+    wait_every(
+        "the polls to settle",
+        Duration::from_secs(120),
+        Duration::from_millis(250),
+        || {
+            let now = counter(api, "subscriptions");
+            if now != last {
+                (last, still) = (now, Instant::now());
+                false
+            } else {
+                last != before && still.elapsed() >= Duration::from_secs(2)
+            }
+        },
+    );
 }
 
 /// A reading list longer than one pull's page budget (20 pages of 100):
@@ -2421,25 +2426,25 @@ fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
         .subscribe(&format!("{host}/small.xml?run={t}"), Some("Walk small"))
         .expect("subscribe to a local feed");
     let _small = Unsub(&me, small.id.clone());
-    wait_until("the small feed's import", Duration::from_secs(60), || {
-        count(&small.id) >= 3 || {
-            std::thread::sleep(Duration::from_millis(500));
-            false
-        }
-    });
+    wait_every(
+        "the small feed's import",
+        Duration::from_secs(60),
+        Duration::from_millis(500),
+        || count(&small.id) >= 3,
+    );
     // The studio stamps a poll's rows to the second: the big feed's later.
-    std::thread::sleep(Duration::from_millis(1_100));
+    wait::wall_clock(Duration::from_millis(1_100));
     let seeding = Instant::now();
     let big = me
         .subscribe(&format!("{host}/big.xml?run={t}"), Some("Walk big"))
         .expect("subscribe to a local feed");
     let _big = Unsub(&me, big.id.clone());
-    wait_until("the big feed's import", Duration::from_secs(600), || {
-        count(&big.id) >= BIG || {
-            std::thread::sleep(Duration::from_secs(1));
-            false
-        }
-    });
+    wait_every(
+        "the big feed's import",
+        Duration::from_secs(600),
+        Duration::from_secs(1),
+        || count(&big.id) >= BIG,
+    );
     let total = served_reading(&api).len();
     eprintln!(
         "long list: {BIG} posts imported in {:.1} s; {total} rows on the blyg",
@@ -2788,7 +2793,7 @@ fn studio_login(base: &str, password: &str) -> String {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
             {
-                std::thread::sleep(Duration::from_secs(5))
+                wait::wall_clock(Duration::from_secs(5))
             }
             r => break r.expect("studio sign-in"),
         }
@@ -3389,25 +3394,25 @@ fn subscription_rename_and_revert_to_source() {
     // record an index sync over it, and the manifest then waits a day. So
     // hand the name back again, and poll, every few seconds until it shows.
     me.poll_subscriptions().unwrap();
-    let t0 = Instant::now();
     let mut asked = Instant::now();
-    loop {
+    let mut s = sub_of(&me, &sub.id);
+    let named = wait::poll_until(Duration::from_secs(30), Duration::from_millis(50), || {
         me.sync_now().unwrap();
-        let s = sub_of(&me, &sub.id);
+        s = sub_of(&me, &sub.id);
         if s.title == own {
-            break;
+            return true;
         }
         if asked.elapsed() >= Duration::from_secs(4) {
             me.rename_subscription(&sub.id, None).unwrap();
             me.poll_subscriptions().unwrap();
             asked = Instant::now();
         }
-        assert!(
-            t0.elapsed() < Duration::from_secs(30),
-            "timed out waiting for the source's name {own:?}; still {s:?}"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
+        false
+    });
+    assert!(
+        named,
+        "timed out waiting for the source's name {own:?}; still {s:?}"
+    );
     me.unsubscribe(&sub.id).unwrap();
 }
 
@@ -3443,7 +3448,8 @@ fn check_all_feeds_and_check_one_now() {
             .unwrap_or(Value::Null)
     };
     let before = polled_at();
-    std::thread::sleep(Duration::from_millis(1100));
+    // `lastPollAt` keeps whole seconds.
+    wait::wall_clock(Duration::from_millis(1100));
     let n = me.poll_subscriptions().unwrap();
     assert!(n >= 1, "polling {n} subscriptions");
     wait_until("the background poll", Duration::from_secs(20), || {
@@ -3667,7 +3673,7 @@ fn read_and_unread_sync_through_upstreams_read_state() {
     mac1.sync_now().unwrap();
     assert_eq!(server_read_version(&b), Some(Value::Null));
     mac1.set_read(&both[1..], true).unwrap(); // queued, not sent yet
-    std::thread::sleep(Duration::from_millis(30));
+    wait::wall_clock(Duration::from_millis(30));
     // Another device clears it after that read happened.
     let (st, v) = owner(
         "DELETE",
@@ -4265,7 +4271,7 @@ fn a_refused_token_stops_sync_and_keeps_the_change() {
     });
     let _ = proxy.take();
     // The worker's backoff here is 200–800 ms: a retry loop would show.
-    std::thread::sleep(Duration::from_secs(3));
+    wait::wall_clock(Duration::from_secs(3));
     assert_eq!(
         proxy.take(),
         Vec::<String>::new(),
@@ -4787,7 +4793,8 @@ fn withdrawn_posts_are_background() {
     source.withdraw(&local, Some("retracted")).unwrap();
     // The reading list hides the tombstone, so `poll` can't see it.
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     me.sync_now().unwrap();
     let gone = |me: &LiveBackend| {
         me.reading_row(&sub.id, &rid)
@@ -4920,7 +4927,8 @@ fn burrows_background_is_the_studios() {
     // Withdrawn on `b`: always Background.
     source.withdraw(&gone_local, Some("retracted")).unwrap();
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     Api::new(&e.url, e.cred.clone())
         .resync_subscription(&sub.id)
         .unwrap();
@@ -5434,7 +5442,7 @@ fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
         .unwrap();
     me.sync_now().unwrap();
     // The studio keeps whole seconds; within one, ties go by id.
-    std::thread::sleep(Duration::from_millis(1100));
+    wait::wall_clock(Duration::from_millis(1100));
     me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &first, true)
         .unwrap();
     me.sync_now().unwrap();
@@ -5908,7 +5916,7 @@ fn client_access_lists_makes_and_revokes_a_token() {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
             {
-                std::thread::sleep(Duration::from_secs(5))
+                wait::wall_clock(Duration::from_secs(5))
             }
             r => break r.expect("list"),
         }

@@ -19,8 +19,9 @@ happened at least once and could happen again.
 2. **Make the build fail**, with a message that names the replacement:
    types, `pub(crate)`, `#[must_use]`, clippy `disallowed-methods` with a
    `reason` (`crates/blyg-app/clippy.toml` bans `std::thread::sleep` and
-   points at `crate::test_wait`). If the bad pattern is common, block new
-   uses first, then migrate the old ones in the same wave.
+   points at `crate::test_wait`; blyg-core's, blyg-ai's and each
+   `blyg-ext*`'s point at `blyg_core::wait`). If the bad pattern is common,
+   block new uses first, then migrate the old ones in the same wave.
 3. **A behaviour test** of what a user would see (`tests/cli.rs` runs the
    real `blygger --version` and fails if it starts the app). For state
    that lives across many steps (sync, paging, retries), a property test

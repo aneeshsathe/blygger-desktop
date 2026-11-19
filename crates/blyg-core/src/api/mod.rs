@@ -1678,7 +1678,8 @@ mod tests {
         let out = bounded((0..20).collect(), 4, |i: u32| {
             let n = now.fetch_add(1, Ordering::SeqCst) + 1;
             peak.fetch_max(n, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(5));
+            // Work that takes a while, so the tasks overlap.
+            crate::wait::wall_clock(Duration::from_millis(5));
             now.fetch_sub(1, Ordering::SeqCst);
             Ok(i * 2)
         })

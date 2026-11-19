@@ -387,8 +387,10 @@ fn nothing_is_fetched_until_a_profile_is_opened() {
     b.sync_now().unwrap();
     b.pull_now().unwrap();
     // The background worker too.
+    let pulls = || env.mock.state().count("GET /api/changes");
+    let before = pulls();
     let live = env.open(fast());
-    std::thread::sleep(std::time::Duration::from_millis(900));
+    blyg_core::wait::until("two worker pulls", || pulls() >= before + 2);
     drop(live);
     assert!(
         f.state().log.is_empty(),

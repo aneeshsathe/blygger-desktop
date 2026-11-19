@@ -3,8 +3,6 @@
 //! and it lands in the store in order. A real `LiveBackend` on a temp dir
 //! with the sync worker off (port 9 is never dialled).
 
-use std::time::{Duration, Instant};
-
 use blyg_core::store::Store;
 use blyg_core::*;
 
@@ -29,12 +27,8 @@ fn stored(dir: &std::path::Path, id: &LocalId) -> Item {
         .unwrap()
 }
 
-fn eventually(mut f: impl FnMut() -> bool) {
-    let t = Instant::now();
-    while !f() {
-        assert!(t.elapsed() < Duration::from_secs(10), "never happened");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+fn eventually(f: impl FnMut() -> bool) {
+    blyg_core::wait::until("it", f);
 }
 
 #[test]
@@ -73,7 +67,7 @@ fn other_calls_see_typed_text_first() {
     // A plain save after a typed one is the one that stays.
     b.save_typing(&id, "typed").unwrap();
     b.save(&id, "saved").unwrap();
-    std::thread::sleep(Duration::from_millis(50));
+    eventually(|| stored(dir.path(), &id).content_md == "saved");
     assert_eq!(stored(dir.path(), &id).content_md, "saved");
     assert_eq!(b.item(&id).unwrap().content_md, "saved");
 }

@@ -488,7 +488,7 @@ impl Store {
             // The store's mutex isn't fair: without a pause this thread
             // takes it straight back, and a reader waiting on it waits
             // for the whole merge after all.
-            std::thread::sleep(MERGE_PAUSE);
+            crate::wait::pace(MERGE_PAUSE);
         }
         Ok((changed, written))
     }

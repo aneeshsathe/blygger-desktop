@@ -40,6 +40,7 @@ pub mod tk;
 pub mod trails; // --- trails ---
 pub mod upkeep; // --- upkeep --- stale quotes, signals
 mod util;
+pub mod wait; // the one sleep (crates' clippy.toml)
 
 pub use backend::{
     Backend, CoreError, MediaRef, Promote, Promoted, PublicItem, PublishOutcome, Result,

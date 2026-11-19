@@ -376,11 +376,7 @@ fn upkeep_runs_on_the_typing_writer() {
     )
     .unwrap();
     let store = Store::open(&dir.path().join(crate::live::DB_FILE)).unwrap();
-    let t = Instant::now();
-    while store.meta("fts.test.thread").is_none() {
-        assert!(t.elapsed().as_secs() < 20, "no upkeep ran");
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
+    crate::wait::until("an upkeep run", || store.meta("fts.test.thread").is_some());
     assert_eq!(
         store.meta("fts.test.thread").as_deref(),
         Some("blyg-typing")
