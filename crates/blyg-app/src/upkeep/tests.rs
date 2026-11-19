@@ -9,7 +9,7 @@ use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, LocalId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -105,7 +105,7 @@ fn the_stale_sheet_says_what_changed_and_refreshes(cx: &mut TestAppContext) {
     cx.dispatch_action(super::ShowStaleQuotes);
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
-        let Some(Sheet::StaleQuotes(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::upkeep::StaleSheet>() else {
             panic!("the sheet is open")
         };
         let rows = s.list.ready().expect("the list loaded");
@@ -141,7 +141,7 @@ fn the_stale_sheet_says_what_changed_and_refreshes(cx: &mut TestAppContext) {
     assert_eq!(note.as_deref(), Some(super::stale::DEFAULT_NOTE));
     view.read_with(cx, |v, _| {
         assert!(!v.has_stale_quote(&item), "the ↻ is gone");
-        let Some(Sheet::StaleQuotes(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::upkeep::StaleSheet>() else {
             panic!("the sheet stays open")
         };
         assert_eq!(
@@ -167,9 +167,11 @@ fn edits_hold_a_refresh_and_refresh_all_skips_them(cx: &mut TestAppContext) {
         .unwrap();
     cx.dispatch_action(super::ShowStaleQuotes);
     cx.run_until_parked();
-    let rows = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::StaleQuotes(s)) => s.list.ready().cloned().unwrap(),
-        _ => panic!("open"),
+    let rows = view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::upkeep::StaleSheet>() {
+            Some(s) => s.list.ready().cloned().unwrap(),
+            _ => panic!("open"),
+        }
     });
     let held = rows.iter().find(|r| r.id == Some(id(STALE))).unwrap();
     assert!(super::stale::why_not(held).is_some_and(|w| w.contains("unpublished edits")));
@@ -192,16 +194,20 @@ fn signals_list_likes_dislikes_and_activity(cx: &mut TestAppContext) {
         .unwrap();
     cx.dispatch_action(super::ShowSignals);
     cx.run_until_parked();
-    let liked = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Signals(s)) => s.rows().to_vec(),
-        _ => panic!("open"),
+    let liked = view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::upkeep::SignalsSheet>() {
+            Some(s) => s.rows().to_vec(),
+            _ => panic!("open"),
+        }
     });
     assert!(liked.iter().all(|row| row.what.is_none()));
     cx.simulate_keystrokes("2");
     cx.run_until_parked();
-    let disliked = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Signals(s)) => s.rows().to_vec(),
-        _ => panic!("open"),
+    let disliked = view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::upkeep::SignalsSheet>() {
+            Some(s) => s.rows().to_vec(),
+            _ => panic!("open"),
+        }
     });
     assert_eq!(disliked.len(), 1);
     assert_eq!(
@@ -210,9 +216,11 @@ fn signals_list_likes_dislikes_and_activity(cx: &mut TestAppContext) {
     );
     cx.simulate_keystrokes("3");
     cx.run_until_parked();
-    let activity = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Signals(s)) => s.rows().to_vec(),
-        _ => panic!("open"),
+    let activity = view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::upkeep::SignalsSheet>() {
+            Some(s) => s.rows().to_vec(),
+            _ => panic!("open"),
+        }
     });
     assert!(
         activity
@@ -226,7 +234,7 @@ fn signals_list_likes_dislikes_and_activity(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none());
+        assert!(!v.sheet.is_open());
         assert_eq!(
             v.reading.opened.as_ref().map(|o| o.key.clone()),
             Some((r.subscription_id.clone(), r.remote_id.clone()))
@@ -293,11 +301,11 @@ fn a_pasted_image_asks_for_its_alt_text(cx: &mut TestAppContext) {
         v.start_upload(vec![1, 2, 3], "image/png".into(), window, cx)
     });
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::AltText(_)))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::upkeep::AltSheet>()));
     cx.simulate_input("two crabs at dusk");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     let text = fake.item(&id(FRICTION)).unwrap().content_md;
     assert!(text.contains("![two crabs at dusk](https://"), "{text}");
 }

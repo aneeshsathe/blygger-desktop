@@ -13,8 +13,8 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::FlowStep;
 use super::steps::{self, Pick, Region, STEPS, TOURS};
+use crate::app::MainView;
 use crate::app::studio::webview::{FactoryGlobal, PreviewSurface};
-use crate::app::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
@@ -433,7 +433,7 @@ fn first_launch_without_a_blyg_shows_onboarding(cx: &mut TestAppContext) {
     let mut e = setup(cx, "# fresh\n", false);
     assert_eq!(flow_step(&mut e), Some(FlowStep::Welcome));
     assert!(
-        e.view.read_with(e.cx, |v, _| v.sheet.is_none()),
+        e.view.read_with(e.cx, |v, _| !v.sheet.is_open()),
         "the Connect sheet waits for its step"
     );
     // ⏎ goes on to "Connect your blyg"; ⏎ there opens the existing sheet.
@@ -444,13 +444,13 @@ fn first_launch_without_a_blyg_shows_onboarding(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. })))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::ConnectSheet>())
     );
     // esc on the sheet comes back to the step.
     e.cx.simulate_keystrokes("escape");
     e.cx.run_until_parked();
     assert_eq!(flow_step(&mut e), Some(FlowStep::Connect));
-    assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
+    assert!(e.view.read_with(e.cx, |v, _| !v.sheet.is_open()));
 }
 
 #[gpui_kit::test]
@@ -874,9 +874,7 @@ fn do_step(e: &mut Env, id: &str) {
             // The sheet opens through the fake's Conflict event.
             let view = e.view.clone();
             crate::test_wait::until(e.cx, "the conflict sheet", |cx| {
-                view.read_with(cx, |v, _| {
-                    matches!(v.sheet, Some(crate::app::Sheet::Conflict { .. }))
-                })
+                view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConflictSheet>())
             });
             e.cx.simulate_keystrokes("1");
         }
@@ -1474,13 +1472,13 @@ fn replay_from_settings(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Settings { .. })))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::SettingsSheet>())
     );
     e.view
         .update_in(e.cx, |v, window, cx| v.help_replay(window, cx));
     e.cx.run_until_parked();
     assert!(chooser_up(&mut e), "Take a tour… opens the chooser");
-    assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
+    assert!(e.view.read_with(e.cx, |v, _| !v.sheet.is_open()));
     // Mid-tour, it's the chooser again.
     e.cx.simulate_keystrokes("4");
     e.cx.run_until_parked();
@@ -1843,10 +1841,7 @@ fn the_0_12_steps_show_the_warning_and_the_note(cx: &mut TestAppContext) {
     do_step(&mut e, "echoed-quote");
     assert!(tour_done(&mut e));
     let warning = e.view.update_in(e.cx, |v, _, cx| {
-        assert!(
-            matches!(v.sheet, Some(Sheet::Publish { .. })),
-            "the sheet is up"
-        );
+        assert!(v.sheet.is::<crate::app::PublishSheet>(), "the sheet is up");
         v.studio_publish_warning(cx)
     });
     let warning = warning.expect("the sheet warns");
@@ -1927,7 +1922,7 @@ fn the_0_13_steps_show_discard_own_posts_and_links(cx: &mut TestAppContext) {
     do_step(&mut e, "discard");
     assert!(tour_done(&mut e));
     let asked = e.view.read_with(e.cx, |v, _| {
-        matches!(v.sheet, Some(Sheet::DiscardChanges { .. }))
+        v.sheet.is::<crate::app::discard::DiscardChangesSheet>()
     });
     assert!(asked, "the confirm sheet is up");
     e.cx.simulate_keystrokes("enter");
@@ -2052,7 +2047,7 @@ fn the_0_14_steps_land_on_their_features(cx: &mut TestAppContext) {
     assert!(tour_done(&mut e));
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Blygs(_))))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::switcher::BlygSheet>())
     );
     e.view
         .update_in(e.cx, |v, window, cx| v.switch_nth(1, window, cx));

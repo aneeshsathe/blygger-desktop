@@ -22,7 +22,7 @@ use blyg_core::config::{MemoryTokenStore, TokenStore};
 use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LocalId, SyncStatus};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use super::super::{MainView, Sheet};
+use super::super::MainView;
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::dev_flags::TestEnv;
 use crate::prefs::Prefs;
@@ -388,7 +388,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
     assert!(b.item(&id_s).is_some() && b.item(&id_a).is_none());
     view.read_with(cx, |v, _| {
         assert!(
-            !matches!(v.sheet, Some(Sheet::Conflict { .. })),
+            !v.sheet.is::<crate::app::ConflictSheet>(),
             "no conflict sheet from the other blyg"
         );
         assert_eq!(v.base_url.as_deref(), Some(s.url.as_str()));

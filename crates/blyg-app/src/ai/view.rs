@@ -1202,7 +1202,7 @@ impl MainView {
     }
 
     pub(super) fn ai_open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         let input =
             |masked: bool, ph: &'static str, window: &mut Window, cx: &mut Context<Self>| {
                 cx.new(|cx| InputState::new(window, cx).masked(masked).placeholder(ph))

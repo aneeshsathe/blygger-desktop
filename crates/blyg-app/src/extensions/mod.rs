@@ -675,7 +675,7 @@ impl MainView {
         let cfg = crate::settings::get(cx).store.config().clone();
         let (changes, keys) = vault_add_changes(&cfg, &texts);
         // From Settings: out of the way, so the consent sheet can follow.
-        if self.sheet.is_some() {
+        if self.sheet.is_open() {
             self.close_sheet(window, cx);
         }
         if keys.is_empty() {
@@ -1046,7 +1046,7 @@ impl MainView {
 
     /// Something else is on screen that a sheet mustn't cover.
     fn ext_blocked(&self) -> bool {
-        self.sheet.is_some()
+        self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()

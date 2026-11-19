@@ -111,8 +111,10 @@ impl MainView {
     }
 
     fn note_ai(&mut self, sheet: usize) -> Option<(&LocalId, &mut NoteAi, &Entity<InputState>)> {
-        match self.sheet.as_mut() {
-            Some(Sheet::Publish { id, ai, note, .. }) if ai.sheet == sheet => Some((id, ai, note)),
+        match self.sheet.get_mut() {
+            Some(super::PublishSheet { id, ai, note, .. }) if ai.sheet == sheet => {
+                Some((&*id, ai, &*note))
+            }
             _ => None,
         }
     }
@@ -128,8 +130,8 @@ impl MainView {
         if next_version < 2 {
             return;
         }
-        let sheet = self.sheet_gen;
-        if let Some(Sheet::Publish { ai, .. }) = self.sheet.as_mut() {
+        let sheet = self.sheet.generation();
+        if let Some(super::PublishSheet { ai, .. }) = self.sheet.get_mut() {
             ai.sheet = sheet;
         }
         let backend = self.backend.clone();
@@ -173,8 +175,8 @@ impl MainView {
 
     /// ⌥⌘N / the chip: draft the note now.
     pub(crate) fn draft_change_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let offered = match &self.sheet {
-            Some(Sheet::Publish { ai, .. }) => ai.helpers.map(|h| (h.draft, ai.sheet)),
+        let offered = match self.sheet.get() {
+            Some(super::PublishSheet { ai, .. }) => ai.helpers.map(|h| (h.draft, ai.sheet)),
             _ => {
                 return self.show_toast(
                     crate::keymap::hint("Draft a note in the publish sheet: ⌘⏎ opens it"),
@@ -289,7 +291,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::Publish { ai, note, .. }) = self.sheet.as_mut() else {
+        let Some(super::PublishSheet { ai, note, .. }) = self.sheet.get_mut() else {
             return;
         };
         let in_note = ai.in_note();
@@ -312,9 +314,7 @@ impl MainView {
 
     /// Hook: the publish sheet's AI line (nothing when the blyg offers none).
     pub(super) fn render_note_ai(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let Some(Sheet::Publish { ai, note, .. }) = &self.sheet else {
-            return None;
-        };
+        let super::PublishSheet { ai, note, .. } = self.sheet.get()?;
         let h = ai.helpers?;
         let p = self.palette;
         let theme = &*self.theme;
@@ -399,7 +399,7 @@ impl MainView {
                     .child(if on { "☑" } else { "☐" })
                     .child("Summarize the full history so far")
                     .on_click(cx.listener(|this, _, _, cx| {
-                        if let Some(Sheet::Publish { ai, .. }) = this.sheet.as_mut() {
+                        if let Some(super::PublishSheet { ai, .. }) = this.sheet.get_mut() {
                             ai.history = !ai.history;
                             cx.notify();
                         }

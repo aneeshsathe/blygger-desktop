@@ -398,7 +398,7 @@ impl MainView {
         let dropdown = self.reading.opened.as_ref().is_some_and(|o| o.dropdown);
         // As the reader's own web view: every GPUI overlay that can sit over
         // the body hides it (a native view draws above all GPUI content).
-        let covered = self.sheet.is_some()
+        let covered = self.sheet.is_open()
             || self.ai.has_overlay()
             || self.ext.has_overlay()
             || self.reading.sheet.is_some()

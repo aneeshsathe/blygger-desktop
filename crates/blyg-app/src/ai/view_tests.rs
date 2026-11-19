@@ -329,13 +329,13 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(matches!(v.ai.overlay, Some(Overlay::PublishWarning { .. })));
-        assert!(v.sheet.is_none(), "no publish sheet behind the warning");
+        assert!(!v.sheet.is_open(), "no publish sheet behind the warning");
     });
     // ⏎ is Cancel (the default).
     e.cx.simulate_keystrokes("enter");
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
-        assert!(v.ai.overlay.is_none() && v.sheet.is_none());
+        assert!(v.ai.overlay.is_none() && !v.sheet.is_open());
     });
     assert_eq!(e.fake.item(&LocalId(DRAFT.into())).unwrap().version, 0);
 
@@ -346,7 +346,7 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(v.ai.overlay.is_none());
-        assert!(matches!(v.sheet, Some(crate::app::Sheet::Publish { .. })));
+        assert!(v.sheet.is::<crate::app::PublishSheet>());
     });
 }
 
@@ -360,7 +360,7 @@ fn publishing_with_the_extension_does_not_warn(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(v.ai.overlay.is_none());
-        assert!(matches!(v.sheet, Some(crate::app::Sheet::Publish { .. })));
+        assert!(v.sheet.is::<crate::app::PublishSheet>());
     });
 }
 

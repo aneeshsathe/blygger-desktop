@@ -862,7 +862,7 @@ impl MainView {
         if self.onboarding.flow.is_some() || self.onboarding.tutorial.is_some() {
             return;
         }
-        if self.sheet.is_some() || self.reading.sheet.is_some() {
+        if self.sheet.is_open() || self.reading.sheet.is_some() {
             return;
         }
         let mode = crate::connection::mode(cx);

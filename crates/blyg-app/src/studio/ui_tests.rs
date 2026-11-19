@@ -13,7 +13,7 @@ use gpui_kit::{Bounds, Entity, Pixels, TestAppContext, VisualTestContext};
 
 use super::webview::{FactoryGlobal, PreviewSurface, SurfaceEvent};
 use super::{MainView, ViewMode};
-use crate::app::{Mode, Sheet};
+use crate::app::Mode;
 use crate::fake::{FakeBackend, SAMPLE_QUOTE_ID, Timing};
 use crate::prefs::Prefs;
 
@@ -386,7 +386,7 @@ fn a_sheet_hides_the_native_view(cx: &mut TestAppContext) {
     assert_eq!(log.borrow().visible(), Some(true));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     frame(cx);
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Publish { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::PublishSheet>()));
     assert_eq!(log.borrow().visible(), Some(false));
     cx.simulate_keystrokes("escape");
     frame(cx);

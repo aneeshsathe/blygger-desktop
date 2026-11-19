@@ -35,7 +35,7 @@ pub use runner::{MacroRun, Outcome, PostChoice};
 use self::js::{Op, Reply};
 use self::runner::{Confirm, Pacing, Page, Preview};
 use super::surface::PageState;
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 
 /// How long one in-page operation may take to answer.
 const EVAL_TIMEOUT: Duration = Duration::from_secs(3);
@@ -138,11 +138,33 @@ pub struct PreviewSheet {
     reply: async_channel::Sender<Option<String>>,
 }
 
+impl crate::app::sheet::SheetView for PreviewSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_macro_preview(self, cx).into()
+    }
+}
+
 /// The Post sheet: what the composer holds, before `submit`.
 pub struct PostSheet {
     pub info: Confirm,
     pub focus: FocusHandle,
     reply: async_channel::Sender<PostChoice>,
+}
+
+impl crate::app::sheet::SheetView for PostSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_macro_post(self, cx).into()
+    }
 }
 
 /// Run `run` in the browser pane: what the ⇧⌘P palette calls for a macro
@@ -445,10 +467,7 @@ impl MainView {
             r.stop.set(true);
         }
         self.browser.automation.tour_sample(false); // --- onboarding ---
-        if matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if self.macro_sheet_open() {
             self.close_sheet(window, cx);
         }
     }
@@ -461,10 +480,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         let ran = self.browser.automation.running.take();
-        if matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if self.macro_sheet_open() {
             self.close_sheet(window, cx);
         }
         if let Some(host) = super::host_of(&run.site.origin)
@@ -626,12 +642,11 @@ impl MainView {
         // The sheet's keys, not the page's (it may sit beside the pane).
         self.browser.with(|s| s.focus_parent());
         editor.update(cx, |s, cx| s.focus(window, cx));
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::MacroPreview(PreviewSheet {
+        self.sheet.open(PreviewSheet {
             info,
             editor,
             reply,
-        }));
+        });
         cx.notify();
         if demo_auto() {
             self.macro_demo_answer("preview", window, cx);
@@ -645,7 +660,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::MacroPreview(s)) = self.sheet.take() else {
+        let Some(s) = self.sheet.take::<PreviewSheet>() else {
             return;
         };
         let text = s.editor.read(cx).value().to_string();
@@ -667,8 +682,7 @@ impl MainView {
         self.browser.with(|s| s.focus_parent());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::MacroPost(PostSheet { info, focus, reply }));
+        self.sheet.open(PostSheet { info, focus, reply });
         cx.notify();
         if demo_auto() {
             self.macro_demo_answer("post", window, cx);
@@ -682,7 +696,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::MacroPost(s)) = self.sheet.take() else {
+        let Some(s) = self.sheet.take::<PostSheet>() else {
             return;
         };
         let _ = s.reply.try_send(choice);
@@ -753,11 +767,13 @@ impl MainView {
             }
             let _ = this.update_in(cx, |v, window, cx| {
                 println!("macro-sheet {which}");
-                match (which, &v.sheet) {
-                    ("preview", Some(Sheet::MacroPreview(_))) => {
-                        v.macro_preview_answer(true, window, cx)
-                    }
-                    ("post", Some(Sheet::MacroPost(s))) => {
+                match (
+                    which,
+                    v.sheet.is::<PreviewSheet>(),
+                    v.sheet.get::<PostSheet>(),
+                ) {
+                    ("preview", true, _) => v.macro_preview_answer(true, window, cx),
+                    ("post", _, Some(s)) => {
                         println!(
                             "macro-readback differs={} {:?}",
                             s.info.differs, s.info.read_back
@@ -998,16 +1014,18 @@ impl MainView {
 pub const SHEET_ROOM_MIN: f32 = 360.;
 
 impl MainView {
+    /// The Preview or the Post sheet is up.
+    pub(crate) fn macro_sheet_open(&self) -> bool {
+        self.sheet.is::<PreviewSheet>() || self.sheet.is::<PostSheet>()
+    }
+
     /// Where the Preview or Post sheet sits: beside the open side pane, over
     /// the app's content, so the page stays in view (`Some(the pane's
     /// width)`, the sheet's right margin). `None`: centred over the window
     /// as other sheets are (the pane full width, folded, or the window too
     /// narrow); the web view then hides under it.
     pub(crate) fn macro_sheet_right(&self) -> Option<Pixels> {
-        if !matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if !self.macro_sheet_open() {
             return None;
         }
         let b = &self.browser;

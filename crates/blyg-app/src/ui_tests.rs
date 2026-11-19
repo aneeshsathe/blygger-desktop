@@ -8,7 +8,7 @@ use blyg_core::config::{Change, MemoryTokenStore, TokenStore};
 use blyg_core::{Backend, ConfigStore, Kind, LocalId, Status};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use super::{MainView, Mode, Sheet};
+use super::{MainView, Mode};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -163,7 +163,7 @@ fn cmd_t_toggles_kind_and_over_limit_publish_shakes(cx: &mut TestAppContext) {
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
         assert!(
-            v.sheet.is_none(),
+            !v.sheet.is_open(),
             "no publish sheet for an over-limit fragment"
         );
         assert_eq!(v.shake_gen, 1);
@@ -182,8 +182,8 @@ fn cmd_t_toggles_kind_and_over_limit_publish_shakes(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::Publish {
+        v.sheet.get(),
+        Some(crate::app::PublishSheet {
             next_version: 1,
             ..
         })
@@ -197,7 +197,7 @@ fn publish_sheet_enter_publishes_with_note(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Publish { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::PublishSheet>()));
     cx.simulate_input("first version");
     cx.simulate_keystrokes("enter");
     // publish runs on the background executor; let it finish.
@@ -215,7 +215,7 @@ fn publish_sheet_enter_publishes_with_note(cx: &mut TestAppContext) {
             .as_deref(),
         Some("first version")
     );
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }
 
 /// Below studio 0.47 a post with labelled links gets the held sheet: ⏎
@@ -233,10 +233,10 @@ fn publishing_labelled_links_to_an_old_blyg_offers_the_bare_form(cx: &mut TestAp
     cx.run_until_parked();
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::HeldLabels { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::HeldLabelsSheet>()));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(fake.item(&id).unwrap().content_md, text, "left as it was");
 
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
@@ -255,10 +255,10 @@ fn publish_sheet_escape_cancels(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("enter cmd-enter"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_some()));
+    assert!(view.read_with(cx, |v, _| v.sheet.is_open()));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(
         fake.item(&LocalId("01J9QK3".into())).unwrap().status,
         Status::Draft
@@ -270,12 +270,12 @@ fn conflict_sheet_keys_resolve(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.trigger_conflict(&LocalId("01J9K7T".into()));
     crate::test_wait::until(cx, "the change to land", |cx| {
-        view.read_with(cx, |v, _| v.sheet.is_some())
+        view.read_with(cx, |v, _| v.sheet.is_open())
     });
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConflictSheet>()));
     cx.simulate_keystrokes("3");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(fake.items().len(), 7, "keep both makes a new draft");
     assert!(!fake.item(&LocalId("01J9K7T".into())).unwrap().conflict);
 }
@@ -289,14 +289,14 @@ fn a_dismissed_conflict_can_still_be_resolved(cx: &mut TestAppContext) {
     fake.trigger_conflict(&id);
     let wait_sheet = |cx: &mut gpui_kit::VisualTestContext| {
         crate::test_wait::until(cx, "the conflict sheet", |cx| {
-            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Conflict { .. })))
+            view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConflictSheet>())
         });
         true
     };
     assert!(wait_sheet(cx));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()), "dismissed");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()), "dismissed");
     assert!(fake.item(&id).unwrap().conflict, "still in conflict");
 
     // A refused publish brings the sheet back, not a toast.
@@ -358,7 +358,7 @@ fn a_pre_0_40_studio_opens_no_limits_sheet(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     fake.trigger_server_limited();
     crate::test_wait::settle(cx);
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }
 
 #[gpui_kit::test]
@@ -418,19 +418,19 @@ fn config_text(cx: &mut VisualTestContext) -> String {
 fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     let tokens = Arc::new(MemoryTokenStore::default());
     let (view, _, cx) = setup_with(cx, "# fresh\n", tokens.clone());
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConnectSheet>()));
     assert_eq!(view.read_with(cx, |v, _| v.title.clone()), "Burrow");
     // Browser sign-in is the default; this test takes the password way in.
     assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::Connect {
+        v.sheet.get(),
+        Some(crate::app::ConnectSheet {
             way: super::ConnectWay::Browser,
             ..
         })
     )));
     view.update_in(cx, |v, window, cx| {
         v.set_connect_way(super::ConnectWay::Password, window, cx);
-        if let Some(Sheet::Connect { url, .. }) = &v.sheet {
+        if let Some(crate::app::ConnectSheet { url, .. }) = v.sheet.get() {
             url.update(cx, |s, cx| s.focus(window, cx));
         }
     });
@@ -441,8 +441,8 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     cx.simulate_input("secret-token");
     cx.simulate_keystrokes("enter");
     cx.run_until_parked();
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Connect { error, .. }) => assert!(error.is_some()),
+    view.read_with(cx, |v, _| match v.sheet.get() {
+        Some(crate::app::ConnectSheet { error, .. }) => assert!(error.is_some()),
         _ => panic!("sheet closed on a bad URL"),
     });
     assert_eq!(tokens.get("https://blyg.example.com").unwrap(), None);
@@ -450,7 +450,7 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
     // Fix the address: the password (the default way in) goes to the
     // Keychain under its own account, the URL to the config.
     view.update_in(cx, |v, window, cx| {
-        if let Some(Sheet::Connect { url, .. }) = &v.sheet {
+        if let Some(crate::app::ConnectSheet { url, .. }) = v.sheet.get() {
             url.update(cx, |s, cx| {
                 s.set_value("https://blyg.example.com/", window, cx)
             });
@@ -458,7 +458,7 @@ fn first_run_asks_to_connect_a_blyg(cx: &mut TestAppContext) {
         v.submit_connect(window, cx);
     });
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(
         blyg_core::config::load_credential(
             &(tokens.clone() as Arc<dyn TokenStore>),
@@ -488,7 +488,7 @@ fn escape_postpones_connecting(cx: &mut TestAppContext) {
     let (view, _, cx) = setup_with(cx, "", Arc::new(MemoryTokenStore::default()));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }
 
 #[gpui_kit::test]
@@ -603,7 +603,7 @@ fn cmd_enter_in_the_editor_publishes(cx: &mut TestAppContext) {
     let before = editor_text(&view, cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Publish { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::PublishSheet>()));
     assert_eq!(editor_text(&view, cx), before, "no newline was typed");
     // ⌘⏎ in the note field publishes, like ⏎.
     cx.simulate_input("from the editor");
@@ -699,7 +699,7 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
     });
     let attempt = |cx: &mut VisualTestContext| {
         view.update_in(cx, |v, window, cx| {
-            if let Some(Sheet::Connect { url, token, .. }) = &v.sheet {
+            if let Some(crate::app::ConnectSheet { url, token, .. }) = v.sheet.get() {
                 url.update(cx, |s, cx| {
                     s.set_value("https://blyg.example.com", window, cx)
                 });
@@ -710,8 +710,8 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
         cx.run_until_parked();
     };
     let error = |cx: &mut VisualTestContext| {
-        view.read_with(cx, |v, _| match &v.sheet {
-            Some(Sheet::Connect { error, busy, .. }) => {
+        view.read_with(cx, |v, _| match v.sheet.get() {
+            Some(crate::app::ConnectSheet { error, busy, .. }) => {
                 assert!(!busy);
                 error.clone()
             }
@@ -738,7 +738,7 @@ fn connecting_verifies_before_saving(cx: &mut TestAppContext) {
     }
     set_verifier(cx, |_, _| Ok(3));
     attempt(cx);
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(
         tokens.get("https://blyg.example.com").unwrap().as_deref(),
         Some("a-token")
@@ -765,7 +765,7 @@ fn connecting_to_an_old_blyg_says_it_needs_updating(cx: &mut TestAppContext) {
     view.update_in(cx, |v, window, cx| {
         v.toast = None;
         v.set_connect_way(super::ConnectWay::Token, window, cx);
-        if let Some(Sheet::Connect { url, token, .. }) = &v.sheet {
+        if let Some(crate::app::ConnectSheet { url, token, .. }) = v.sheet.get() {
             url.update(cx, |s, cx| {
                 s.set_value("https://blyg.example.com", window, cx)
             });
@@ -775,7 +775,7 @@ fn connecting_to_an_old_blyg_says_it_needs_updating(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none(), "connected");
+        assert!(!v.sheet.is_open(), "connected");
         let t = v.toast.as_ref().expect("a toast");
         assert_eq!(t.text.as_ref(), crate::app::server_notice::OUTDATED_TOAST);
         assert!(v.render_server_notice().is_some());
@@ -789,10 +789,10 @@ fn disconnect_forgets_token_and_url(cx: &mut TestAppContext) {
     let (view, _, cx) = setup_with(cx, CONNECTED, tokens.clone());
     cx.dispatch_action(super::Disconnect);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Disconnect { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::DisconnectSheet>()));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(
         tokens.get("https://blyg.example.com").unwrap().is_some(),
         "esc cancels"
@@ -804,5 +804,5 @@ fn disconnect_forgets_token_and_url(cx: &mut TestAppContext) {
     assert_eq!(tokens.get("https://blyg.example.com").unwrap(), None);
     assert!(!config_text(cx).contains("blyg-url"));
     // …and it offers to connect again.
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConnectSheet>()));
 }

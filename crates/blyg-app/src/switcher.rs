@@ -80,6 +80,17 @@ pub struct BlygSheet {
     pub confirm: Option<usize>,
 }
 
+impl crate::app::sheet::SheetView for BlygSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_blyg_sheet(self, cx).into()
+    }
+}
+
 /// Every signed-in blyg, with what was remembered of each.
 pub fn entries(cx: &App) -> Vec<Entry> {
     let active = active_url(cx);
@@ -207,7 +218,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if let Some(Sheet::Blygs(s)) = &mut self.sheet {
+        if let Some(s) = self.sheet.get_mut::<BlygSheet>() {
             if s.manage == manage {
                 return self.close_sheet(window, cx);
             }
@@ -219,14 +230,13 @@ impl MainView {
         let entries = entries(cx);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Blygs(BlygSheet {
+        self.sheet.open(BlygSheet {
             sel: entries.iter().position(|e| e.active).unwrap_or(0),
             focus,
             entries,
             manage,
             confirm: None,
-        }));
+        });
         cx.notify();
     }
 
@@ -237,7 +247,7 @@ impl MainView {
             return; // --- onboarding --- the tour's sample blyg only
         }
         self.open_connect(window, cx);
-        if let Some(Sheet::Connect { url, .. }) = &self.sheet {
+        if let Some(super::ConnectSheet { url, .. }) = self.sheet.get() {
             url.update(cx, |s, cx| s.set_value("", window, cx));
         }
     }
@@ -272,7 +282,7 @@ impl MainView {
         let host = vm::url_host(&url).unwrap_or_else(|| url.clone());
         match crate::connection::switch_to(&url, cx) {
             Ok(crate::connection::Switched::Same) => {
-                if matches!(self.sheet, Some(Sheet::Blygs(_))) {
+                if self.sheet.is::<BlygSheet>() {
                     self.close_sheet(window, cx);
                 }
             }
@@ -288,9 +298,9 @@ impl MainView {
             }
             Ok(crate::connection::Switched::NeedsSignIn) => {
                 self.open_connect(window, cx);
-                if let Some(Sheet::Connect {
+                if let Some(super::ConnectSheet {
                     url: field, error, ..
-                }) = &mut self.sheet
+                }) = self.sheet.get_mut()
                 {
                     field.update(cx, |s, cx| s.set_value(url.clone(), window, cx));
                     *error = Some(format!(
@@ -325,7 +335,7 @@ impl MainView {
     /// of the active one): drop what belonged to the old blyg and load
     /// everything from the new one.
     pub(crate) fn blyg_switched(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.leave_new_post(window, cx); // --- new post ---
         self.current = None;
         self.restoring = None;
@@ -398,7 +408,7 @@ impl MainView {
         let card = cards(cx).remove(&blygs::identity(&url)).unwrap_or_default();
         let p = self.palette.on_bar();
         let plate = crate::ornament::title_plate(&self.theme);
-        let open = matches!(self.sheet, Some(Sheet::Blygs(_)));
+        let open = self.sheet.is::<BlygSheet>();
         let many = crate::settings::known_blygs(cx).len() > 1;
         let tip = crate::keymap::action_glyphs("ShowBlygSwitcher").unwrap_or_default();
         Some(
@@ -441,7 +451,7 @@ impl MainView {
     // ------------------------------------------------------------ the sheet
 
     fn blyg_sheet_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Blygs(s)) = &mut self.sheet else {
+        let Some(s) = self.sheet.get_mut::<BlygSheet>() else {
             return;
         };
         let key = ev.keystroke.key.as_str();
@@ -525,12 +535,12 @@ impl MainView {
                     {
                         self.open_connect(window, cx);
                     }
-                } else if let Some(Sheet::Blygs(s)) = &mut self.sheet {
+                } else if let Some(s) = self.sheet.get_mut::<BlygSheet>() {
                     s.entries = entries(cx);
                     s.confirm = None;
                     s.sel = s.sel.min(s.entries.len().saturating_sub(1));
                     if s.entries.is_empty() {
-                        self.sheet = None;
+                        self.sheet.close();
                     }
                 }
                 self.show_toast(format!("Signed out of {}", out.host), sub, cx);
@@ -650,7 +660,7 @@ impl MainView {
                                 .child(kbd("esc".into()))
                                 .child("cancel")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    if let Some(Sheet::Blygs(s)) = &mut this.sheet {
+                                    if let Some(s) = this.sheet.get_mut::<BlygSheet>() {
                                         s.confirm = None;
                                     }
                                     cx.notify();
@@ -716,7 +726,7 @@ impl MainView {
                     })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         if manage {
-                            if let Some(Sheet::Blygs(s)) = &mut this.sheet {
+                            if let Some(s) = this.sheet.get_mut::<BlygSheet>() {
                                 s.sel = i;
                                 s.confirm = Some(i);
                             }
@@ -758,7 +768,7 @@ impl MainView {
                         if s.manage { "Done" } else { "Manage…" },
                     )
                     .on_click(cx.listener(|this, _, _, cx| {
-                        if let Some(Sheet::Blygs(s)) = &mut this.sheet {
+                        if let Some(s) = this.sheet.get_mut::<BlygSheet>() {
                             s.manage = !s.manage;
                             s.confirm = None;
                         }

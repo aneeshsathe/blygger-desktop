@@ -30,7 +30,7 @@ use blyg_core::config::Change;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{MainView, Sheet};
+use super::MainView;
 use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
@@ -276,8 +276,8 @@ impl MainView {
         if self.onboarding.tutorial.is_some() {
             self.finish_tutorial(window, cx);
         }
-        if matches!(self.sheet, Some(Sheet::Settings { .. })) {
-            self.sheet = None;
+        if self.sheet.is::<super::SettingsSheet>() {
+            self.sheet.close();
         }
         self.onboarding.finished_tours = tutorial::finished_tours(cx);
         self.onboarding.flow = Some(Flow {
@@ -417,7 +417,7 @@ impl MainView {
     /// The flow waits behind the Connect sheet and Settings › AI; pick up
     /// when they close.
     fn onboarding_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let connect_open = matches!(self.sheet, Some(Sheet::Connect { .. }));
+        let connect_open = self.sheet.is::<super::ConnectSheet>();
         let ai_open = self.ai.has_overlay();
         let Some(f) = self.onboarding.flow.as_mut() else {
             return;
@@ -969,13 +969,13 @@ impl MainView {
     /// Settings › Help › Take a tour…: the chooser (the quick tour and the
     /// feature tours).
     pub(super) fn help_replay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.start_tutorial(window, cx);
     }
 
     /// Settings › Help › Show onboarding again.
     pub(super) fn help_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.open_onboarding(FlowStep::Welcome, window, cx);
     }
 

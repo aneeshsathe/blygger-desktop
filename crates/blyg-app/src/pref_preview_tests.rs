@@ -146,7 +146,7 @@ fn settings_arrows_try_themes_and_enter_keeps_one(cx: &mut TestAppContext) {
     );
     view.read_with(cx, |v, _| {
         assert!(matches!(&v.preview.cursor, Some((Row::Theme, Pick::Theme { id: Some(id), .. })) if id == "light"));
-        assert!(v.sheet.is_some(), "esc while trying doesn't close Settings");
+        assert!(v.sheet.is_open(), "esc while trying doesn't close Settings");
     });
     assert_eq!(config_text(cx), before);
     // ⏎ keeps the one being tried and writes it.
@@ -165,10 +165,10 @@ fn settings_arrows_try_themes_and_enter_keeps_one(cx: &mut TestAppContext) {
     // esc with nothing being tried leaves the row, then closes Settings.
     keys(cx, "escape");
     view.read_with(cx, |v, _| {
-        assert!(v.preview.cursor.is_none() && v.sheet.is_some())
+        assert!(v.preview.cursor.is_none() && v.sheet.is_open())
     });
     keys(cx, "escape");
-    view.read_with(cx, |v, _| assert!(v.sheet.is_none()));
+    view.read_with(cx, |v, _| assert!(!v.sheet.is_open()));
 }
 
 #[gpui_kit::test]
@@ -206,7 +206,7 @@ fn fonts_and_size_are_tried_and_put_back_on_leaving(cx: &mut TestAppContext) {
     // Closing Settings (⌘, again) puts everything back.
     keys(cx, "cmd-,");
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none());
+        assert!(!v.sheet.is_open());
         assert_eq!(v.prefs.font_size, crate::prefs::DEFAULT_SIZE);
         assert_eq!(v.prefs.ui().label, kept_ui);
         assert!(v.preview.active.is_none());

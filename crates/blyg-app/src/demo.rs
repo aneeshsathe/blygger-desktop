@@ -134,7 +134,7 @@ impl MainView {
             }
             (Scene::Publish, 1) => {
                 self.publish(window, cx);
-                if let Some(super::Sheet::Publish { note, .. }) = &self.sheet {
+                if let Some(super::PublishSheet { note, .. }) = self.sheet.get() {
                     note.update(cx, |s, cx| s.set_value("first version", window, cx));
                 }
             }
@@ -260,7 +260,7 @@ impl MainView {
             // (BLYGGER_DEMO_URL; nothing is saved when the check fails).
             (Scene::ConnectCheck, 0) => {
                 let url = crate::dev_flags::get().demo.url.clone().unwrap_or_default();
-                if let Some(super::Sheet::Connect { url: u, token, .. }) = &self.sheet {
+                if let Some(super::ConnectSheet { url: u, token, .. }) = self.sheet.get() {
                     u.update(cx, |s, cx| s.set_value(url, window, cx));
                     token.update(cx, |s, cx| s.set_value("not-the-right-token", window, cx));
                 }

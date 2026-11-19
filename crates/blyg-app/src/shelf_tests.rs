@@ -7,7 +7,7 @@ use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, LocalId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -74,9 +74,10 @@ fn current(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<LocalI
 }
 
 fn sheet_rows(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<Vec<String>> {
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Shelf(s)) => Some(s.posts.iter().map(|p| p.local_id.0.clone()).collect()),
-        _ => None,
+    view.read_with(cx, |v, _| {
+        v.sheet
+            .get::<crate::app::shelf::ShelfSheet>()
+            .map(|s| s.posts.iter().map(|p| p.local_id.0.clone()).collect())
     })
 }
 

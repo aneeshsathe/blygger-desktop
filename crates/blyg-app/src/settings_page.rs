@@ -8,9 +8,38 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use super::pref_preview::{Pick, Row};
+use super::sheet::{Kit, SheetView, Shown};
 use super::{MainView, OMNI_H, ReloadConfig, TITLEBAR_H};
 use crate::prefs::{self, LayoutPref};
 use crate::theme::{Palette, Rule};
+
+/// Settings' state while it's open (a page, registered as a sheet so only
+/// one of them is up).
+pub(crate) struct SettingsSheet {
+    pub(crate) hotkey: Entity<InputState>,
+    pub(crate) hotkey_error: Option<String>,
+    pub(crate) focus: FocusHandle,
+    /// The page's scroll position.
+    pub(crate) scroll: ScrollHandle,
+}
+
+impl SheetView for SettingsSheet {
+    /// Not a sheet: a page over the whole window.
+    fn render(&self, v: &MainView, kit: &Kit, cx: &mut Context<MainView>) -> Shown {
+        Shown::Page(v.render_settings_page(
+            &self.hotkey,
+            self.hotkey_error.as_deref(),
+            &self.focus,
+            &self.scroll,
+            kit.ui_font,
+            cx,
+        ))
+    }
+
+    fn inputs(&self) -> Vec<&Entity<InputState>> {
+        vec![&self.hotkey]
+    }
+}
 
 /// The label column on the left of every row.
 pub(crate) const LABEL_W: f32 = 92.;
@@ -97,7 +126,7 @@ impl MainView {
             }
             // `BLYGGER_DEMO_SCROLL=bottom`: the end of the page.
             2 if crate::dev_flags::get().demo.scroll_bottom => {
-                if let Some(super::Sheet::Settings { scroll, .. }) = &self.sheet {
+                if let Some(SettingsSheet { scroll, .. }) = self.sheet.get() {
                     scroll.scroll_to_bottom();
                 }
                 cx.notify();
@@ -234,10 +263,10 @@ impl MainView {
                 // --- preview --- the page's own keys (not a field's): move
                 // through the fonts, size and themes, trying each.
                 let k = &ev.keystroke;
-                let page_has_keys = matches!(
-                    &this.sheet,
-                    Some(super::Sheet::Settings { focus, .. }) if focus.is_focused(window)
-                );
+                let page_has_keys = this
+                    .sheet
+                    .get::<SettingsSheet>()
+                    .is_some_and(|s| s.focus.is_focused(window));
                 if page_has_keys
                     && !k.modifiers.platform
                     && !k.modifiers.control
