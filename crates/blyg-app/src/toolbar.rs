@@ -694,9 +694,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         if n == 0
-            && let Some(w) = std::env::var("BLYGGER_SNAPSHOT_WIDTH")
-                .ok()
-                .and_then(|w| w.parse::<f32>().ok())
+            && let Some(w) = crate::dev_flags::get().snapshot.width
         {
             let h = window.viewport_size().height;
             window.resize(size(px(w), h));
@@ -719,16 +717,16 @@ impl MainView {
                 cx,
             ),
             ("tb-capture", 2) => {
-                if let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") {
-                    crate::capture::demo_snapshot(&path, cx);
+                if let Some(path) = &crate::dev_flags::get().snapshot.path {
+                    crate::capture::demo_snapshot(path, cx);
                 }
                 return;
             }
             _ => {}
         }
         if n == 2 {
-            if let Ok(action) = std::env::var("BLYGGER_DEMO_HOVER") {
-                self.demo_hover(&action, window, cx);
+            if let Some(action) = &crate::dev_flags::get().demo.hover {
+                self.demo_hover(action, window, cx);
             }
             super::reading::demo::snapshot_later(window, cx);
         }

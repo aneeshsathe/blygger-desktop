@@ -386,7 +386,7 @@ impl FakeBackend {
                 prov_unavailable: false,
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
-                read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                read_ext: !crate::dev_flags::get().fake.no_read,
                 discover_seen: discover_seed::seen_at(), // --- discover ---
                 outdated: false,
                 uploads: 0,
@@ -3235,7 +3235,11 @@ fn fake_site() -> blyg_core::site::SiteConfig {
 fn fake_studio_update() -> Option<blyg_core::site::StudioUpdate> {
     Some(blyg_core::site::StudioUpdate {
         current: Some("0.56.0".into()),
-        latest: std::env::var("BLYGGER_FAKE_STUDIO_LATEST").unwrap_or_else(|_| "0.56.0".into()),
+        latest: crate::dev_flags::get()
+            .fake
+            .studio_latest
+            .clone()
+            .unwrap_or_else(|| "0.56.0".into()),
         checked_at: "2026-11-07T08:00:00Z".into(),
     })
 }

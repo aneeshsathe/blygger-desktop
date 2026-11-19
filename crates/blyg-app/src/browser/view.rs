@@ -594,7 +594,7 @@ impl MainView {
                     v.browser.placed.borrow_mut().surface = None;
                     v.browser.placed.borrow_mut().frame = None;
                     v.browser.poll = None;
-                    if std::env::var_os("BLYGGER_TIMING").is_some() {
+                    if crate::dev_flags::get().timing {
                         println!("browser-teardown");
                     }
                 }
@@ -660,7 +660,7 @@ impl MainView {
                 p.frame = None;
                 p.visible = false;
                 b.dark = None;
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     println!("browser-webview-created ms={}", t0.elapsed().as_millis());
                 }
             }
@@ -699,7 +699,7 @@ impl MainView {
             self.browser.with(|s| s.load_url(&url));
             self.browser.page.loading = true;
             self.browser_poll(cx);
-            if std::env::var_os("BLYGGER_TIMING").is_some() {
+            if crate::dev_flags::get().timing {
                 let ready = self.browser.rules.borrow().ready();
                 println!("browser-first-load lists_ready={ready}");
             }
@@ -722,7 +722,7 @@ impl MainView {
                 crate::connection::mode(cx),
                 Some(crate::connection::Mode::Fake) | None
             );
-            let download = !fake && std::env::var_os("BLYGGER_NO_BLOCKLIST_DOWNLOAD").is_none();
+            let download = !fake && !crate::dev_flags::get().browser.no_blocklist_download;
             let this = cx.entity().downgrade();
             let driver = super::driver::Driver {
                 data_dir,
@@ -1566,8 +1566,11 @@ impl MainView {
             match n {
                 0 | 1 => self.reading_demo("rd-reading", n, window, cx),
                 _ => {
-                    let url = std::env::var("BLYGGER_DEMO_URL")
-                        .unwrap_or_else(|_| "https://blyg.example.com/".into());
+                    let url = crate::dev_flags::get()
+                        .demo
+                        .url
+                        .clone()
+                        .unwrap_or_else(|| "https://blyg.example.com/".into());
                     self.open_url_in_app(&url, OpenMode::Slide, window, cx);
                     crate::app::reading::demo::snapshot_later(window, cx);
                 }
@@ -1577,8 +1580,11 @@ impl MainView {
         if n != 0 {
             return;
         }
-        let url = std::env::var("BLYGGER_DEMO_URL")
-            .unwrap_or_else(|_| "https://blyg.example.com/".into());
+        let url = crate::dev_flags::get()
+            .demo
+            .url
+            .clone()
+            .unwrap_or_else(|| "https://blyg.example.com/".into());
         let mode = if scenario == "br-full" {
             OpenMode::Full
         } else {
@@ -1588,7 +1594,7 @@ impl MainView {
         let t0 = std::time::Instant::now();
         self.open_url_in_app(&url, mode, window, cx);
         println!("browser-open ms={}", t0.elapsed().as_millis());
-        if std::env::var_os("BLYGGER_TIMING").is_some()
+        if crate::dev_flags::get().timing
             && let Some(pid) = self.browser.with(|s| s.web_process_id()).flatten()
         {
             println!("browser-webcontent-pid={pid}");
@@ -1686,7 +1692,7 @@ impl MainView {
             // Shield off here again, then the page itself goes to another
             // host (BLYGGER_DEMO_URL2) whose shield is on: the navigation
             // hook must put the lists back before that page loads.
-            if let Ok(url2) = std::env::var("BLYGGER_DEMO_URL2") {
+            if let Some(url2) = crate::dev_flags::get().demo.url2.clone() {
                 let _ = this.update(cx, |v, cx| v.browser_toggle_shield(cx));
                 wait_loaded(cx).await;
                 let js = format!(

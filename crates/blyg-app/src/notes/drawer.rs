@@ -1240,8 +1240,11 @@ impl MainView {
                 self.reading_demo("rd-reading", 0, window, cx);
             }
             ("notes-over-browser", 1) => {
-                let url = std::env::var("BLYGGER_DEMO_URL")
-                    .unwrap_or_else(|_| "https://blyg.example.com/".into());
+                let url = crate::dev_flags::get()
+                    .demo
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "https://blyg.example.com/".into());
                 self.open_url_in_app(&url, crate::app::browser::OpenMode::Slide, window, cx);
                 self.browser_send_to_notes(window, cx);
             }

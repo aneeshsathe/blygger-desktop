@@ -1113,7 +1113,7 @@ impl MainView {
             ("ext-manage", 1) => self.ext_open_manage(window, cx),
             ("ext-notes", 1) => self.ext_lib_show(window, cx),
             ("ext-notes", 2) => {
-                let id = std::env::var("BLYGGER_DEMO_NOTE").ok().or_else(|| {
+                let id = crate::dev_flags::get().demo.note.clone().or_else(|| {
                     self.ext
                         .lib
                         .entries

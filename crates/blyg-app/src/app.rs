@@ -705,7 +705,7 @@ impl MainView {
             let _ = this.update_in(cx, |v, window, cx| {
                 v.loading = false;
                 v.requery(window, cx);
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     println!("initial-sync items={n} ok={}", result.is_ok());
                 }
                 match (result, connected_to) {
@@ -1911,7 +1911,7 @@ impl MainView {
             let result = task.await;
             let _ = this.update_in(cx, |v, window, cx| {
                 v.publishing = false;
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     match &result {
                         Ok(out) => println!("publish ok v{} {}", out.version, out.permalink),
                         Err(e) => println!("publish failed: {e}"),
@@ -2519,7 +2519,7 @@ impl Render for MainView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(t0) = self.first_frame.take() {
             window.on_next_frame(move |_, _| {
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     let epoch = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .map(|d| d.as_millis())

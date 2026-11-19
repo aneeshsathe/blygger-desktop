@@ -19,7 +19,7 @@ use super::rules::{self, RuleList};
 use super::rules_handle::Handle;
 
 fn timing() -> bool {
-    std::env::var_os("BLYGGER_TIMING").is_some()
+    crate::dev_flags::get().timing
 }
 
 fn now_secs() -> u64 {

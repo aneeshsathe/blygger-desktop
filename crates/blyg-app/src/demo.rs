@@ -16,7 +16,7 @@ impl MainView {
         // window size, and a frame saved after the last step whatever the
         // scenario (the theme audit renders offscreen, so a locked screen or
         // a window macOS won't show doesn't matter).
-        let snapshot = std::env::var_os("BLYGGER_SNAPSHOT").is_some();
+        let snapshot = crate::dev_flags::get().snapshot.path.is_some();
         if snapshot {
             window.resize(size(px(1100.), px(720.)));
         }
@@ -232,7 +232,7 @@ impl MainView {
             // The Connect sheet checking a wrong token against a real blyg
             // (BLYGGER_DEMO_URL; nothing is saved when the check fails).
             ("connect-check", 0) => {
-                let url = std::env::var("BLYGGER_DEMO_URL").unwrap_or_default();
+                let url = crate::dev_flags::get().demo.url.clone().unwrap_or_default();
                 if let Some(super::Sheet::Connect { url: u, token, .. }) = &self.sheet {
                     u.update(cx, |s, cx| s.set_value(url, window, cx));
                     token.update(cx, |s, cx| s.set_value("not-the-right-token", window, cx));

@@ -360,13 +360,13 @@ fn opml_backend(store: &ConfigStore, blyg: Option<&str>) -> Result<blyg_core::Li
     use blyg_core::config::{MemoryTokenStore, TokenStore};
     let url = resolve_blyg(store, blyg)?;
     // BLYGGER_TEST_TOKEN: an in-memory token (a local studio), no Keychain.
-    let tokens: std::sync::Arc<dyn TokenStore> = match std::env::var("BLYGGER_TEST_TOKEN") {
-        Ok(t) => {
+    let tokens: std::sync::Arc<dyn TokenStore> = match &crate::dev_flags::get().test_token {
+        Some(t) => {
             let m = MemoryTokenStore::default();
             let _ = m.set(&url, t.trim());
             std::sync::Arc::new(m)
         }
-        Err(_) => std::sync::Arc::new(blyg_core::config::KeychainTokenStore),
+        None => std::sync::Arc::new(blyg_core::config::KeychainTokenStore),
     };
     let opts = blyg_core::SyncOptions {
         start_worker: false,

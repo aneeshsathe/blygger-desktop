@@ -188,7 +188,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if std::env::var_os("BLYGGER_DEMO").is_some() {
+        if crate::dev_flags::get().demo.scene.is_some() {
             return false;
         }
         // Without a data dir (headless tests) there's no first-run memory:
@@ -1044,9 +1044,9 @@ impl MainView {
             // shows (up to `whats_new::running_version`).
             // `ob-news-go`: then "Show me what's new".
             ("ob-news" | "ob-news-go", 0) => {
-                let news = match std::env::var("BLYGGER_DEMO_FROM") {
-                    Ok(from) => whats_new::since(Some(&from), &whats_new::running_version()),
-                    Err(_) => whats_new::RELEASES.iter().collect(),
+                let news = match &crate::dev_flags::get().demo.from {
+                    Some(from) => whats_new::since(Some(from), &whats_new::running_version()),
+                    None => whats_new::RELEASES.iter().collect(),
                 };
                 self.start_whats_new(news, window, cx)
             }

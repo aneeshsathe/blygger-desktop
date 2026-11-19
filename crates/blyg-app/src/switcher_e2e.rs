@@ -24,11 +24,12 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::super::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
+use crate::dev_flags::TestEnv;
 use crate::prefs::Prefs;
 
-fn env(key: &str) -> String {
-    let v = std::env::var(key)
-        .unwrap_or_else(|_| panic!("{key} not set: run scripts/e2e-local.sh"))
+fn env(key: &str, value: Option<String>) -> String {
+    let v = value
+        .unwrap_or_else(|| panic!("{key} not set: run scripts/e2e-local.sh"))
         .trim_end_matches('/')
         .to_string();
     if key.ends_with("URL") {
@@ -151,13 +152,14 @@ fn owner_of(dir: &Path) -> String {
 #[gpui_kit::test]
 #[ignore = "needs two local blygs: scripts/e2e-local.sh"]
 fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
+    let e = TestEnv::from_env();
     let a = Blyg {
-        url: env("BLYG_E2E_URL"),
-        token: env("BLYG_E2E_TOKEN"),
+        url: env("BLYG_E2E_URL", e.e2e_url.clone()),
+        token: env("BLYG_E2E_TOKEN", e.e2e_token.clone()),
     };
     let s = Blyg {
-        url: env("BLYG_E2E_SWITCH_URL"),
-        token: env("BLYG_E2E_SWITCH_TOKEN"),
+        url: env("BLYG_E2E_SWITCH_URL", e.e2e_switch_url.clone()),
+        token: env("BLYG_E2E_SWITCH_TOKEN", e.e2e_switch_token.clone()),
     };
     assert!(
         !blygs::same(&a.url, &s.url),
@@ -218,7 +220,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
 
     // --- one blyg per host: b at a's host (127.0.0.1, another port) is
     // refused before its sign-in could replace a's in the Keychain ---
-    if let Ok(b_same_host) = std::env::var("BLYG_E2E_URL_B") {
+    if let Some(b_same_host) = e.e2e_url_b.clone() {
         let err = cx
             .update(|_, cx| {
                 crate::settings::connect(

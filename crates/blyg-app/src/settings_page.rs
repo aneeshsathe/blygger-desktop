@@ -84,10 +84,10 @@ impl MainView {
     pub(super) fn settings_demo(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
         match n {
             0 => {
-                let env = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<f32>().ok());
+                let snap = &crate::dev_flags::get().snapshot;
                 let now = window.viewport_size();
-                let w = env("BLYGGER_SNAPSHOT_WIDTH").map(px).unwrap_or(now.width);
-                let h = env("BLYGGER_SNAPSHOT_HEIGHT").map(px).unwrap_or(now.height);
+                let w = snap.width.map(px).unwrap_or(now.width);
+                let h = snap.height.map(px).unwrap_or(now.height);
                 window.resize(size(w, h));
                 self.open_settings(&super::OpenSettings, window, cx);
             }
@@ -96,7 +96,7 @@ impl MainView {
                 cx.notify();
             }
             // `BLYGGER_DEMO_SCROLL=bottom`: the end of the page.
-            2 if std::env::var("BLYGGER_DEMO_SCROLL").as_deref() == Ok("bottom") => {
+            2 if crate::dev_flags::get().demo.scroll_bottom => {
                 if let Some(super::Sheet::Settings { scroll, .. }) = &self.sheet {
                     scroll.scroll_to_bottom();
                 }
@@ -119,9 +119,9 @@ impl MainView {
         match n {
             0 => self.settings_demo(0, window, cx),
             1 => {
-                let want =
-                    std::env::var("BLYGGER_DEMO_PREVIEW").unwrap_or_else(|_| "kumiko".into());
-                let dark = std::env::var("BLYGGER_DEMO_SLOT").as_deref() == Ok("dark");
+                let demo = &crate::dev_flags::get().demo;
+                let want = demo.preview.clone().unwrap_or_else(|| "kumiko".into());
+                let dark = demo.slot_dark;
                 if dark {
                     self.set_theme_slot(true, window, cx);
                 }

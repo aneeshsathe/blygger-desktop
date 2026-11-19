@@ -244,10 +244,10 @@ pub fn disabled_reason() -> Option<&'static str> {
     if cfg!(test) {
         return Some("test build");
     }
-    if std::env::var_os("BLYGGER_FAKE").is_some() {
+    if crate::dev_flags::get().fake.on {
         return Some("BLYGGER_FAKE is set");
     }
-    if std::env::var_os("BLYGGER_NO_UPDATE").is_some() {
+    if crate::dev_flags::get().update.off {
         return Some("BLYGGER_NO_UPDATE is set");
     }
     // Releases, signing and the bundle swap are macOS-only so far. Windows
@@ -297,10 +297,12 @@ fn real_env() -> Env {
 
 #[cfg(debug_assertions)]
 fn debug_overrides() -> (String, VerifyingKey, bool) {
-    let url = std::env::var("BLYGGER_UPDATE_URL").ok();
-    let key = std::env::var("BLYGGER_UPDATE_PUBKEY")
-        .ok()
-        .and_then(|k| verify::parse_public_key(&k).ok())
+    let flags = &crate::dev_flags::get().update;
+    let url = flags.url.clone();
+    let key = flags
+        .pubkey
+        .as_deref()
+        .and_then(|k| verify::parse_public_key(k).ok())
         .unwrap_or_else(verify::release_key);
     let allow_local = url.is_some();
     (
@@ -596,10 +598,10 @@ fn smoke_hook(cx: &mut App) {
     if !matches!(cx.global::<Updater>().phase, Phase::Ready { .. }) {
         return;
     }
-    match std::env::var("BLYGGER_UPDATE_SMOKE").as_deref() {
-        Ok("restart") => cx.defer(restart_to_update),
-        Ok("quit") => cx.defer(|cx| cx.quit()),
-        _ => {}
+    match crate::dev_flags::get().update.smoke {
+        Some(crate::dev_flags::UpdateSmoke::Restart) => cx.defer(restart_to_update),
+        Some(crate::dev_flags::UpdateSmoke::Quit) => cx.defer(|cx| cx.quit()),
+        None => {}
     }
 }
 

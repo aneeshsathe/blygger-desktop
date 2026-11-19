@@ -173,7 +173,11 @@ pub fn append_log(data_dir: &Path, ext: &str, line: &str) {
 /// (the smoke test). Never in a release build.
 pub(crate) fn demo_auto() -> bool {
     cfg!(debug_assertions)
-        && std::env::var("BLYGGER_DEMO").is_ok_and(|d| d == "br-macro" || d == "br-macro-ext")
+        && crate::dev_flags::get()
+            .demo
+            .scene
+            .as_deref()
+            .is_some_and(|d| d == "br-macro" || d == "br-macro-ext")
 }
 
 /// The pane, the sheets and the clipboard, as the runner's [`Page`].
@@ -193,7 +197,7 @@ struct UiPage<'a> {
 /// `BLYGGER_MACRO_TRACE=1`: `macro.log` gets the page's outline after every
 /// step (tags, classes, roles, aria labels, button labels; never the text).
 pub(crate) fn tracing() -> bool {
-    std::env::var("BLYGGER_MACRO_TRACE").is_ok_and(|v| v == "1")
+    crate::dev_flags::get().browser.macro_trace
 }
 
 impl Page for UiPage<'_> {
@@ -348,7 +352,7 @@ impl Page for UiPage<'_> {
     }
 
     fn progress(&mut self, index: usize, step: &blyg_ext::recipe::Step) {
-        if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
+        if demo_auto() || crate::dev_flags::get().timing {
             println!(
                 "macro-step {} {} {}",
                 index + 1,
@@ -504,7 +508,7 @@ impl MainView {
             let time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             append_log(&dir, &run.ext, &runner::log_line(&time, run, &out));
         }
-        if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
+        if demo_auto() || crate::dev_flags::get().timing {
             match &out {
                 Outcome::Posted { message, via } => {
                     println!("macro-posted via={} {message:?}", via.name())
@@ -698,7 +702,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let dir = std::env::var("BLYGGER_SNAPSHOT_DIR").ok();
+        let dir = crate::dev_flags::get().snapshot.dir.clone();
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(700))
@@ -706,11 +710,8 @@ impl MainView {
             // `BLYGGER_DEMO_HOLD_MS`: the sheet stays up longer (a window
             // screenshot); with `BLYGGER_DEMO_FOLD=1`, the Post sheet's pane
             // is folded for that time and unfolded again (⇧⌘B both ways).
-            let hold = std::env::var("BLYGGER_DEMO_HOLD_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-            let fold = which == "post" && std::env::var_os("BLYGGER_DEMO_FOLD").is_some();
+            let hold = crate::dev_flags::get().demo.hold_ms;
+            let fold = which == "post" && crate::dev_flags::get().demo.fold;
             if hold > 0 {
                 println!("macro-hold {which}");
                 cx.background_executor()
@@ -1100,7 +1101,7 @@ impl MainView {
         if !demo_auto() {
             return;
         }
-        let Ok(base) = std::env::var("BLYGGER_DEMO_URL") else {
+        let Some(base) = crate::dev_flags::get().demo.url.clone() else {
             eprintln!("br-macro: set BLYGGER_DEMO_URL to the fixture site");
             return;
         };

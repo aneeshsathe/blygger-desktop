@@ -384,9 +384,9 @@ impl MainView {
             // times so a capture of the window shows the last step.
             ("rd-author-site" | "rd-stream-author-site" | "rd-changelog" | "rd-summary", 2) => {
                 // Set once the post has loaded (opening it reloads the item).
-                if let (Some(o), Ok(u)) = (
+                if let (Some(o), Some(u)) = (
                     self.reading.opened.as_mut(),
-                    std::env::var("BLYGGER_DEMO_SITE_URL"),
+                    crate::dev_flags::get().demo.site_url.clone(),
                 ) && !u.is_empty()
                 {
                     o.item.page = Some(u);
@@ -548,7 +548,7 @@ impl MainView {
 /// `RUSTFLAGS="--cfg blygger_snap" cargo build -p blyg-app --features gpui-kit/test-support`
 /// (GPUI's `render_to_image` is a test-support API); a no-op otherwise.
 pub(crate) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
-    let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") else {
+    let Some(path) = crate::dev_flags::get().snapshot.path.clone() else {
         return;
     };
     cx.spawn_in(window, async move |_, cx| {

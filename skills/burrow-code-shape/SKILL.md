@@ -61,7 +61,9 @@ what can change it in under 30 seconds.
   make the states an enum (or a table) instead.
 - **Let types carry knowledge.** Parse config, env vars, CLI args and wire
   JSON into typed values where they enter (`cli::route`, `Prefs::from_config`,
-  `model.rs`), then trust them. Give ids their own type (`LocalId`), not
+  `model.rs`), then trust them. Environment variables are parsed once into
+  `DevFlags` (`crates/blyg-app/src/dev_flags.rs`); clippy refuses
+  `std::env::var` anywhere else in blyg-app. Give ids their own type (`LocalId`), not
   `&str`. Keep business rules in plain functions in `blyg-core` or the
   `*_vm.rs` files, away from GPUI.
 - **Narrow state.** A return value over a field, a field over a global.

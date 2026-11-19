@@ -2005,7 +2005,7 @@ fn save_chip(t: &crate::theme::Theme, id: &'static str) -> Option<Stateful<Div>>
 
 /// `BLYGGER_TIMING`: print what AI did (automation; never any secret).
 fn timing() -> bool {
-    std::env::var_os("BLYGGER_TIMING").is_some()
+    crate::dev_flags::get().timing
 }
 
 /// `H` in the palette: default → on → off → default.
