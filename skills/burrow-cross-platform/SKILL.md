@@ -14,9 +14,9 @@ took four CI rounds to go green there. Check these before pushing.
   `keymap::hint` / `platform_text::Text` (a test fails on any other literal
   glyph). Text Windows says differently, not just with other keys, is
   `ui_text_per_platform(mac, windows)`, never a `cfg!(target_os)` branch.
-- **AltGr is Ctrl+Alt on Windows**, so Ctrl+Alt+letter shortcuts eat
-  characters on many keyboard layouts. Use `WINDOWS_OVERRIDES` for a different
-  binding.
+- Windows keys are the macOS ones respelled; `keymap.rs` tests refuse a
+  Windows key that AltGr typing would trigger (Ctrl+Alt is AltGr) or that
+  clashes, and point at `WINDOWS_OVERRIDES`. Pick the override's key yourself.
 - Windows has no global menu bar; the Windows Menu button's panel must offer
   every menu item. Panels over web views must hide the view.
 

@@ -103,7 +103,7 @@ paragraph.
   how wide.
 
 On Windows the keys are Alt+Up/Alt+Down, Alt+Enter, Alt+Shift+Enter and
-Ctrl+Alt+U. Posts you already link or quote aren't offered again, and
+Ctrl+Shift+U. Posts you already link or quote aren't offered again, and
 withdrawn posts never are. Nothing is fetched to make a suggestion: only
 what this computer already holds.
 
@@ -150,7 +150,7 @@ While it's on, each is still a key away:
 Nothing hidden does any work: the lineage line isn't built, loose ends aren't
 counted and Nearby matches nothing. Hover cards, the quote tray and focus
 mode don't change, since they only appear when you ask. On Windows the keys
-are Ctrl+J and Ctrl+Alt+U.
+are Ctrl+J and Ctrl+Shift+U.
 
 ### Serendipity
 

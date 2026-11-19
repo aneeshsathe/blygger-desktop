@@ -804,7 +804,7 @@ pub const STEPS: &[Step] = &[
              lists the tray first when you quote, and you can drag a tray chip, a stream post or \
              a Reader row straight into a post: a quote in a thread, a link in a fragment. \
              Dropped on the omnibar, it starts a new thread.",
-            "q (or Ctrl+Alt+K) puts the post on the quote tray, the strip above the status bar. \
+            "q (or Ctrl+Shift+T) puts the post on the quote tray, the strip above the status bar. \
              Ctrl+K lists the tray first when you quote, and you can drag a tray chip, a stream \
              post or a Reader row straight into a post: a quote in a thread, a link in a \
              fragment. Dropped on the search box, it starts a new thread.",
@@ -844,7 +844,7 @@ pub const STEPS: &[Step] = &[
         title: ui_text("Nearby thoughts, while you write"),
         caption: ui_text_per_platform(
             "⌥⌘U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share, ⌥⇧⏎ quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this Mac that matches meaning, not just words.",
-            "Ctrl+Alt+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words.",
+            "Ctrl+Shift+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words.",
         ),
         keys: &[Key::Nearby],
         key_label: ui_text("⌥⌘U"),

@@ -40,3 +40,4 @@ Rules with an enforcer (a new row needs a check shown failing on a real past ins
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
+| Windows keys: no AltGr characters, no clashes, overrides name real keys | `keymap.rs` tests `no_windows_key_is_an_altgr_character`, `windows_overrides_are_real_and_clash_with_nothing` (run on every platform) |

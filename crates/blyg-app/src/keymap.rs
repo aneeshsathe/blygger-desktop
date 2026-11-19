@@ -1174,6 +1174,31 @@ fn platform_keys(rows: Vec<Keybind>) -> Vec<Keybind> {
     rows
 }
 
+/// The table as `p` binds it, on any platform: the tests check the
+/// Windows keys on macOS too.
+#[cfg(test)]
+pub fn table_for(p: crate::platform_text::Platform) -> Vec<Keybind> {
+    use crate::platform_text::Platform;
+    match p {
+        Platform::Mac => mac_table(),
+        Platform::Windows => {
+            let spell = |k: &str| -> &'static str {
+                if k.is_empty() {
+                    ""
+                } else {
+                    Box::leak(respell_for_windows(k).into_boxed_str())
+                }
+            };
+            let mut rows = drop_windows_keys(mac_table());
+            for k in &mut rows {
+                k.key = spell(k.key);
+                k.menu_key = k.menu_key.map(spell);
+            }
+            rows
+        }
+    }
+}
+
 /// Actions with a key on macOS and none on Windows. Discard changes is
 /// ⌥⌘Z, which Windows would spell Ctrl+Alt+Z, and Windows reports AltGr as
 /// Ctrl+Alt: on layouts where AltGr+Z types a letter (Polish programmer's
@@ -1202,7 +1227,7 @@ fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
     rows
 }
 
-/// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-o` → `ctrl-alt-o`).
+/// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-t` → `ctrl-alt-t`).
 /// Interned, so the table can keep `&'static str` keys.
 #[cfg(target_os = "windows")]
 pub fn platform_key(key: &'static str) -> &'static str {
@@ -1249,6 +1274,24 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     // --- access-ai --- Ctrl+Alt+N is AltGr+N, which types a letter on some
     // layouts (Polish ń): drafting a change note is Ctrl+Shift+E there.
     ("alt-cmd-n", "ctrl-shift-e"),
+    // Ctrl+Alt+<key> is AltGr+<key> on Windows, and these type a character
+    // on a common layout (`ALTGR_TYPES`): German @ (Q), Polish ł and ś (L,
+    // S), Hungarian ł and € (K, U), Hungarian ~ and German ² (1, 2).
+    // --- own posts --- Quote into a thread, Link post.
+    ("alt-cmd-q", "ctrl-shift-q"),
+    ("alt-cmd-l", "ctrl-shift-i"),
+    // --- tray --- (Ctrl+Shift+K is the picker's neighbour, ⇧⌘K compose.)
+    ("alt-cmd-k", "ctrl-shift-t"),
+    // --- nearby ---
+    ("alt-cmd-u", "ctrl-shift-u"),
+    // --- stream --- and --- reader folders --- the reading screen's layout:
+    // Alt alone (Windows has no menu bar for Alt to open).
+    ("alt-cmd-1", "alt-1"),
+    ("alt-cmd-2", "alt-2"),
+    ("alt-cmd-s", "alt-s"),
+    // BLYGGER_FAKE's two (Polish ó and ć): function keys type nothing.
+    ("ctrl-alt-cmd-o", "ctrl-shift-f11"),
+    ("ctrl-alt-cmd-c", "ctrl-shift-f12"),
 ];
 
 /// The pure part of `platform_key`.
@@ -1694,7 +1737,9 @@ pub fn clash_with_hotkey(hotkey: &str) -> Option<Keybind> {
 /// Windows shortcuts the system (or every Windows app) owns, in the
 /// respelled form `table()` produces there.
 #[cfg(all(test, target_os = "windows"))]
-pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
+pub const RESERVED: &[(&str, &str, Option<&str>)] = WINDOWS_RESERVED;
+#[cfg(test)]
+pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-q", "Quit", Some("Quit")),
     ("alt-f4", "Close window", None),
     ("alt-tab", "App switcher", None),
@@ -1793,7 +1838,149 @@ pub fn list() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_text::Platform;
     use std::collections::HashMap;
+
+    /// Keys that type a character with AltGr on a common Windows layout.
+    /// Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt+<key> binding eats
+    /// that character there. (key, layout, what AltGr+key types)
+    const ALTGR_TYPES: &[(&str, &str, &str)] = &[
+        // Polish (programmer's), the default Polish layout.
+        ("a", "Polish", "ą"),
+        ("c", "Polish", "ć"),
+        ("e", "Polish", "ę"),
+        ("l", "Polish", "ł"),
+        ("n", "Polish", "ń"),
+        ("o", "Polish", "ó"),
+        ("s", "Polish", "ś"),
+        ("x", "Polish", "ź"),
+        ("z", "Polish", "ż"),
+        // German.
+        ("q", "German", "@"),
+        ("m", "German", "µ"),
+        ("2", "German", "²"),
+        ("3", "German", "³"),
+        ("7", "German", "{"),
+        ("8", "German", "["),
+        ("9", "German", "]"),
+        ("0", "German", "}"),
+        // French (AZERTY).
+        ("4", "French", "{"),
+        ("5", "French", "["),
+        ("6", "French", "|"),
+        // Hungarian.
+        ("1", "Hungarian", "~"),
+        ("b", "Hungarian", "{"),
+        ("f", "Hungarian", "["),
+        ("g", "Hungarian", "]"),
+        ("k", "Hungarian", "ł"),
+        ("u", "Hungarian", "€"),
+        ("v", "Hungarian", "@"),
+        ("w", "Hungarian", "|"),
+    ];
+
+    fn windows_live() -> Vec<Keybind> {
+        table_for(Platform::Windows)
+            .into_iter()
+            .filter(|k| !k.key.is_empty())
+            .collect()
+    }
+
+    /// Checked on every platform, so a Mac-only change can't ship a Windows
+    /// key that eats a character (⌥⌘B shipped as Ctrl+Alt+B, AltGr+B's `{`,
+    /// until 2bbe972; ⌥⌘Z needed WINDOWS_KEYLESS, 4b0b9d9).
+    #[test]
+    fn no_windows_key_is_an_altgr_character() {
+        let mut bad = Vec::new();
+        for k in windows_live() {
+            let (mods, last) = normalize(k.key);
+            if !(mods.contains(&"ctrl") && mods.contains(&"alt")) {
+                continue;
+            }
+            for (key, layout, ch) in ALTGR_TYPES.iter().filter(|(c, _, _)| *c == last) {
+                bad.push(format!(
+                    "  {} ({}) is {} on Windows: AltGr+{} types {ch} on {layout} layouts",
+                    k.action,
+                    mac_glyphs(mac_key(k.action)),
+                    windows_label(k.key),
+                    key.to_uppercase()
+                ));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "Windows keys that AltGr typing would trigger:\n{}\nGive each a Windows key \
+             in keymap::WINDOWS_OVERRIDES (or list the action in WINDOWS_KEYLESS).",
+            bad.join("\n")
+        );
+    }
+
+    fn mac_key(action: &str) -> &'static str {
+        mac_table()
+            .into_iter()
+            .find(|k| k.action == action)
+            .map_or("", |k| k.key)
+    }
+
+    /// The overrides respell keys that exist, and the Windows table they
+    /// make has no clashes: not between our actions, not with the default
+    /// quick-capture hotkey, not with keys Windows keeps for itself.
+    #[test]
+    fn windows_overrides_are_real_and_clash_with_nothing() {
+        let mac = mac_table();
+        for (from, to) in WINDOWS_OVERRIDES {
+            assert!(
+                mac.iter().any(|k| k.key == *from),
+                "WINDOWS_OVERRIDES respells {from}, which no binding has: drop it"
+            );
+            assert!(
+                !to.split('-').any(|p| p == "cmd"),
+                "{from} → {to}: Windows has no ⌘"
+            );
+            let n = WINDOWS_OVERRIDES.iter().filter(|(f, _)| f == from).count();
+            assert_eq!(n, 1, "{from} is overridden {n} times");
+        }
+        for a in WINDOWS_KEYLESS {
+            assert!(
+                mac.iter().any(|k| k.action == *a),
+                "WINDOWS_KEYLESS: no {a}"
+            );
+        }
+        let mut bad = Vec::new();
+        let mut seen: HashMap<(&str, (Vec<&str>, String)), &str> = HashMap::new();
+        let hotkey = normalize(crate::prefs::DEFAULT_HOTKEY);
+        for k in windows_live() {
+            let n = normalize(k.key);
+            let slot = (k.scope.place(), n.clone());
+            if let Some(prev) = seen.get(&slot)
+                && *prev != k.action
+            {
+                bad.push(format!("  {} is both {prev} and {}", k.key, k.action));
+            }
+            seen.insert(slot, k.action);
+            if n == hotkey {
+                bad.push(format!(
+                    "  {} ({}) is quick capture's default hotkey",
+                    k.key, k.action
+                ));
+            }
+            if let Some((r, what, allowed)) =
+                WINDOWS_RESERVED.iter().find(|(r, _, _)| normalize(r) == n)
+                && *allowed != Some(k.action)
+            {
+                bad.push(format!(
+                    "  {} ({}) is Windows' {what} ({r})",
+                    k.key, k.action
+                ));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "the Windows key table clashes:\n{}\nPick another Windows key in \
+             keymap::WINDOWS_OVERRIDES.",
+            bad.join("\n")
+        );
+    }
 
     fn live() -> Vec<Keybind> {
         table().into_iter().filter(|k| !k.key.is_empty()).collect()
@@ -1963,7 +2150,7 @@ mod tests {
     fn keys_respell_for_windows() {
         assert_eq!(respell_for_windows("cmd-l"), "ctrl-l");
         assert_eq!(respell_for_windows("cmd-shift-,"), "ctrl-shift-,");
-        assert_eq!(respell_for_windows("ctrl-alt-cmd-o"), "ctrl-alt-o");
+        assert_eq!(respell_for_windows("ctrl-alt-cmd-t"), "ctrl-alt-t");
         assert_eq!(respell_for_windows("cmd--"), "ctrl--");
         assert_eq!(respell_for_windows("cmd-shift--"), "ctrl-shift--");
         assert_eq!(respell_for_windows("alt-up"), "alt-up");
