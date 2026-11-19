@@ -91,9 +91,21 @@ impl Typing {
     }
 }
 
+/// The first text-index upkeep (`Store::fts_upkeep`) waits this long after
+/// launch, out of the way of the first pull.
+#[cfg(not(test))]
+const UPKEEP_FIRST: Duration = Duration::from_secs(90);
+#[cfg(test)]
+const UPKEEP_FIRST: Duration = Duration::ZERO;
+/// Then it looks in this often (it does nothing until a weighing is due),
+/// or at every idle tick while a compaction has steps left.
+const UPKEEP_EVERY: Duration = Duration::from_secs(5 * 60);
+
 /// The typing writer: writes whatever is pending as soon as it's there;
 /// after a pause (the push debounce) re-indexes the text it wrote for
-/// search (`Store::flush_fts`).
+/// search (`Store::flush_fts`); and when idle keeps the text indexes
+/// compact (`Store::fts_upkeep`), a short step at a time, so typing never
+/// waits on it for long and the UI thread never does.
 fn spawn_writer(engine: Arc<Engine>, typing: Arc<Typing>, tx: Sender<Msg>) -> JoinHandle<()> {
     let tx = Mutex::new(tx);
     let pause = Duration::from_millis(engine.debounce_ms().max(1) as u64);
@@ -101,6 +113,7 @@ fn spawn_writer(engine: Arc<Engine>, typing: Arc<Typing>, tx: Sender<Msg>) -> Jo
         .name("blyg-typing".into())
         .spawn(move || {
             let mut unindexed = false;
+            let mut upkeep_at = std::time::Instant::now() + UPKEEP_FIRST;
             loop {
                 {
                     let mut pending = lock(&typing.pending);
@@ -114,6 +127,19 @@ fn spawn_writer(engine: Arc<Engine>, typing: Arc<Typing>, tx: Sender<Msg>) -> Jo
                             drop(pending);
                             let _ = engine.store.flush_fts();
                             unindexed = false;
+                            pending = lock(&typing.pending);
+                        } else if timeout.timed_out()
+                            && pending.is_empty()
+                            && std::time::Instant::now() >= upkeep_at
+                        {
+                            drop(pending);
+                            let _ = engine.store.fts_upkeep(crate::util::now_ms());
+                            upkeep_at = std::time::Instant::now()
+                                + if engine.store.fts_compacting() {
+                                    Duration::ZERO
+                                } else {
+                                    UPKEEP_EVERY
+                                };
                             pending = lock(&typing.pending);
                         }
                     }

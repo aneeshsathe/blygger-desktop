@@ -273,6 +273,24 @@ keystroke, at 2,000 posts and a 20k-character thread: `blyg-app/src/posts_perf_t
   only notes what the index still holds (`items_fts_stale`); `Store::flush_fts` re-indexes after a
   typing pause, after each pull and at open. Searches (the omnibar, the picker) treat noted rows
   as unindexed and check their text directly, so they never miss a word.
+- **The text indexes stay compact** (`store/fts.rs`). An edit or delete leaves the old text's
+  entries in the trigram indexes (`items_fts`, `reading_fts`) behind a delete marker until a merge
+  reaches them, which at the biggest level may be never (one long-used reading index had grown to
+  ten times its text). So when idle, the `blyg-typing` thread weighs each index against its text
+  every 6 hours (`Store::fts_upkeep`; first 90 s after launch) and, past 3.5 times its text (1.5
+  times its size after the last compaction; never under 1 MB), merges it into one segment, 64
+  pages a step, each step its own transaction, at most ~150 ms of steps per idle tick: typing and
+  pulls never wait long behind it, and the UI thread never does. Compaction also drops what a
+  withdrawn post left in the index (§13.4). At 6,000 posts of 11 KB: 4.4 s of steps in all, the
+  index from 5.1 to 2.6 times its text. FTS5's `secure-delete` would avoid the growth but made
+  each edited or deleted post ~35 times slower to write (~140 ms), so it stays off. No schema
+  change. A reading post is indexed by its Markdown (its HTML only when it has none) and
+  re-indexed only when that text changes (v16), so an HTML-only change rewrites nothing.
+- **API responses arrive compressed.** ureq's `gzip` and `brotli` features are on, so every
+  request asks for `gzip, br` and the body is decoded on the fly (size caps apply to the
+  decoded bytes). Cloudflare compresses a 100-row reading page about five-fold (528 KB → 107 KB
+  gzip, 81 KB brotli). AI streams (Server-Sent Events) ask for `identity`, so no compressing
+  server holds events back; requests with a `Range` header get no `accept-encoding` (ureq).
 - **Two connections.** The store's writes, and the reading list's cache, use one connection; the
   reads of your own posts the UI makes (the list, search, one item, the picker, the sync status,
   the public origin) use a second, read-only one, so they never wait for a pull's merge (WAL). A
