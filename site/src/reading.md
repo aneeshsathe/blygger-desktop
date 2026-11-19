@@ -334,8 +334,10 @@ The selected post shows its actions. Each says what it makes:
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.
 - **Fork**: a new thread from a *pinned* version of the post. Forking only
-  descends from pins, so on the current version Fork is greyed out and its
-  tooltip says where to find a pin.
+  descends from pins, so on an unpinned current version Fork is greyed out
+  and its tooltip says where to find a pin. When the current version is
+  itself pinned (the pill reads `📌 vN · current`), it says **Fork this pin**
+  and forks it there.
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
 - **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
 

@@ -416,6 +416,43 @@ impl FakeBackend {
         }
     }
 
+    /// Tests: the author pins the post's current version (the changelog
+    /// marks it, and its text becomes a pin others may fork).
+    #[cfg(test)]
+    pub fn pin_current(&self, sub_id: &str, remote_id: &str) {
+        let mut st = self.lock();
+        let Some(it) = st
+            .rd
+            .reading
+            .iter()
+            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+            .cloned()
+        else {
+            return;
+        };
+        let key = (sub_id.to_string(), remote_id.to_string());
+        if let Some(log) = st.rd.changelogs.get_mut(&key) {
+            for v in log.iter_mut().filter(|v| v.current) {
+                v.pinned = true;
+            }
+        }
+        st.rd.pins.insert(
+            (key.0, key.1, it.version),
+            PinnedVersion {
+                version: it.version,
+                at: it.updated.clone().unwrap_or_default(),
+                note: None,
+                content_hash: blyg_core::content_hash(&it.content_md),
+                content_md: it.content_md.clone(),
+                content_html: it.content_html.clone(),
+                origin: it.origin.clone(),
+                id: it.remote_id.clone(),
+                author: None,
+                hash_mismatch: false,
+            },
+        );
+    }
+
     /// Tests: keep uploads in memory only (don't touch the data dir).
     #[cfg(test)]
     pub fn without_media_cache(mut self) -> Self {

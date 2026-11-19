@@ -487,9 +487,14 @@ impl MainView {
                     vm::quote_pinned(&text, &vm::host(&item.origin), v.version, url.as_deref());
                 self.quote_into_thread(snippet, window, cx);
             }
-            "Fork this pin" => {
-                // Forking descends from pins only.
-                let Some(v) = pinned else { return };
+            "Fork this pin" | "Fork" => {
+                // Forking descends from pins only: the pin on screen, or a
+                // current version that is itself pinned.
+                let version = match pinned {
+                    Some(v) => v.version,
+                    None if o.current_is_pinned() => item.version,
+                    None => return,
+                };
                 // --- own fork --- yours forks from ⌘Y only.
                 if super::own::is_own_row(&item) {
                     return;
@@ -497,7 +502,7 @@ impl MainView {
                 let of = RemoteRef {
                     origin: item.origin.clone(),
                     id: item.remote_id.clone(),
-                    version: v.version,
+                    version,
                     cited: None,
                 };
                 self.fork_pin(of, window, cx);
@@ -640,6 +645,7 @@ impl MainView {
                 version: item.version,
                 current: item.version,
                 pins: vec![],
+                current_pinned: false,
                 shelved: false,
             };
             return ["Subscribe", "Reply", "Open on web"]
@@ -670,6 +676,7 @@ impl MainView {
                 .filter(|v| !v.current && v.pinned)
                 .map(|v| v.version)
                 .collect(),
+            current_pinned: o.current_is_pinned(),
             shelved: self.on_reading_shelf(item), // --- shelf sync ---
         };
         // --- own posts --- your row: no AI reply (and Fork per FORK_OWN).

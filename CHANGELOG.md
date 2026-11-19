@@ -16,6 +16,12 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Fixed
+- **Desktop: a post whose current version is pinned can be forked.** The version pill shows such a version once, as the current one, so Fork stayed greyed out and its tooltip pointed to a pin there was no way to reach (or said the post had none). Fork is now live there as **Fork this pin**, and the pill reads `📌 vN · current`.
+
+### Not verified
+- The fork fix is covered by a headless test on Linux. It has not been tried by hand in the running app on Windows or macOS.
+
 ## [0.25.1] - 2026-11-16
 
 ### Changed
