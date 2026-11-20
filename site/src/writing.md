@@ -554,7 +554,7 @@ Your posts are also a source in Reading; see
 ### New items from a thread: tangling
 
 While you write a thread, you can turn part of it into a post of its own
-without leaving it. On blygger-studio 0.63 and later:
+without leaving it. Step by step, with pictures: [How to tangle](tangling.md). On blygger-studio 0.63 and later:
 
 ```markdown
 Notes from the harbour walk.
