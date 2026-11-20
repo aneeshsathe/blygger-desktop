@@ -10,13 +10,16 @@ These are the checks reviewers used to catch in PRs. Run them while writing.
 ## Mechanical (must pass)
 
 ```sh
-cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app
+scripts/check.sh --fix          # Windows: bash scripts/check.sh --fix (Git Bash)
+scripts/check.sh docs           # also, after changing site/
 ```
 
-The second run spells every UI string as Windows does (`Ctrl+B`, not `⌘B`),
-so a test that expects Mac glyphs fails on your Mac instead of on Windows CI
-(CI's macOS job runs it too).
+`scripts/check.sh` is the gate and CI calls it, step by step, so what passes
+here passes there. It formats (`--fix`), then runs clippy with `-D warnings`,
+the workspace tests, and blyg-app's tests again with every UI string spelled
+as Windows does (`Ctrl+B`, not `⌘B`), so a test that expects Mac glyphs fails
+on your Mac instead of on Windows CI. Cargo runs `--locked`. Add a new
+mechanical check as a step there, not as a line in this skill.
 
 Commit tests before the feature: the first commit adds tests that fail,
 later ones make them pass. `scripts/test-first.sh <base> <branch>` checks the

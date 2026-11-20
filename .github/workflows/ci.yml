@@ -36,25 +36,25 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # Each step is one step of scripts/check.sh, the gate contributors run
+      # locally (`scripts/check.sh --fix`), so the two can't drift.
       - name: Format
-        run: cargo fmt --all -- --check
+        run: scripts/check.sh fmt
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: scripts/check.sh clippy
 
       # Also fails when site/src/generated/ is out of date with the config
       # keys or the keymap (run scripts/gen-docs.sh).
       - name: Test
-        run: cargo test --workspace --locked
+        run: scripts/check.sh test
 
       # blyg-app's tests again with every UI string spelled as Windows shows
       # it (Ctrl+B, not ⌘B): a test that expects Mac glyphs fails here, not
       # only on Windows CI. Key bindings stay macOS's. See
       # skills/burrow-cross-platform ("Testing wording").
       - name: Test (Windows wording)
-        env:
-          BLYGGER_TEST_SPELLING: windows
-        run: cargo test -p blyg-app --locked
+        run: scripts/check.sh wording
 
   # Windows is a supported platform: the same checks (and, in the
   # windows-package job, a release build). Tests that need macOS are
@@ -74,14 +74,18 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
 
+      # scripts/check.sh, as on macOS, run by Git Bash.
       - name: Format
-        run: cargo fmt --all -- --check
+        shell: bash
+        run: bash scripts/check.sh fmt
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        shell: bash
+        run: bash scripts/check.sh clippy
 
       - name: Test
-        run: cargo test --workspace --locked
+        shell: bash
+        run: bash scripts/check.sh test
 
   # The release build packaged as the zip a release would attach (kept a
   # week, for testing a pull request on a real Windows machine). Its own job,
@@ -150,8 +154,8 @@ jobs:
       # The community extension list: format only (valid TOML, required
       # fields, names, https URLs, sorted). It never fetches or runs anything.
       - name: Check the community extension list
-        run: python3 scripts/community-extensions.py check
+        run: scripts/check.sh extensions
 
       # The pinned mdBook; fails on mdBook errors or broken links.
       - name: Build the book
-        run: scripts/build-site.sh
+        run: scripts/check.sh docs

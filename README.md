@@ -71,8 +71,10 @@ No blyg? Try it on the built-in sample data.
 Issues and pull requests are welcome. Start with
 [Building and testing](https://aneeshsathe.github.io/blygger-desktop/dev/building.html)
 and [the architecture](https://aneeshsathe.github.io/blygger-desktop/dev/architecture.html).
-Every commit must pass
-`cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`.
+Every commit must pass `scripts/check.sh --fix`, which formats the code and
+then runs what CI runs: clippy with warnings as errors, and the tests. On
+Windows, run `bash scripts/check.sh --fix` from Git Bash.
+`scripts/check.sh --help` lists its steps.
 Changes must keep Windows building too: CI runs the same checks on
 `windows-latest`, and platform code goes behind `cfg(target_os = …)` (see
 [Keeping Windows building](https://aneeshsathe.github.io/blygger-desktop/dev/building.html#keeping-windows-building)).
