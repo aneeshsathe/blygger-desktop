@@ -20,10 +20,11 @@ env:
   CARGO_PROFILE_DEV_DEBUG: "0"
 
 jobs:
-  # Whether the Rust jobs run. A pull request that changes only paths in
-  # scripts/ci-skip.py's SKIP list (screenshots, HTML mocks: nothing a test
-  # reads) skips them; they show as skipped, which counts as passing. Pushes
-  # to main always run everything. The check step fails if code reads a
+  # Whether the Rust jobs run. A pull request that only adds or modifies
+  # files in scripts/ci-skip.py's SKIP list (screenshots, HTML mocks: nothing
+  # a test reads) skips them; a deletion or rename there runs everything.
+  # Skipped jobs show as skipped, which counts as passing. Pushes to main
+  # always run everything. The check step fails if code reads a
   # SKIP path, so the list can't outgrow what's safe.
   changes:
     name: what changed

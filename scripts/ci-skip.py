@@ -2,11 +2,13 @@
 """Which pull requests may skip CI's Rust jobs, and the check that keeps
 that list honest.
 
-A pull request whose every changed file is under a SKIP directory runs no
-Rust job (fmt, clippy, tests, the Windows release build); the docs-site job
+A pull request whose every change adds or modifies a file under a SKIP
+directory runs no Rust job (fmt, clippy, tests, the Windows release build); the docs-site job
 and test-first still run, and pushes to main always run everything. A path
 belongs in SKIP only if no test, build script or script a test runs reads
-it, which `check` enforces.
+it, which `check` enforces. A deletion or rename there runs everything:
+tests check that paths named in CLAUDE.md and skills/ exist, and some name
+SKIP files.
 
   scripts/ci-skip.py decide BASE HEAD   prints rust=true or rust=false (CI)
   scripts/ci-skip.py check              fails if code may read a SKIP path
@@ -34,6 +36,9 @@ SKIP = [
 # Files allowed to call `git ls-files`, and why that doesn't read SKIP.
 LS_FILES_OK = {
     "crates/blyg-app/build.rs": "asks only whether build.rs itself is tracked",
+    # Lands with the doc-path check; it reads names, not contents, and a
+    # name only changes by a deletion or rename, which `decide` never skips.
+    "crates/blyg-core/tests/it/doc_paths.rs": "checks that named paths exist; decide runs all on D/R",
 }
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,9 +54,15 @@ def skipped(path):
     return any(path.startswith(s) for s in SKIP)
 
 
+def skippable(status_line):
+    # "M\tpath", "A\tpath"; D, R (two paths), C, T and the rest run all.
+    status, *paths = status_line.split("\t")
+    return status in ("A", "M") and all(skipped(p) for p in paths)
+
+
 def decide(base, head):
-    changed = [p for p in git("diff", "--name-only", f"{base}...{head}").splitlines() if p]
-    rust = not changed or not all(skipped(p) for p in changed)
+    changed = [p for p in git("diff", "--name-status", f"{base}...{head}").splitlines() if p]
+    rust = not changed or not all(skippable(c) for c in changed)
     line = f"rust={'true' if rust else 'false'}"
     print(line)
     out = os.environ.get("GITHUB_OUTPUT")
@@ -59,7 +70,7 @@ def decide(base, head):
         with open(out, "a") as f:
             f.write(line + "\n")
     if not rust:
-        print("only skip-listed paths changed:", *changed, sep="\n  ", file=sys.stderr)
+        print("only files added or modified under SKIP:", *changed, sep="\n  ", file=sys.stderr)
 
 
 def names_skip_path(literal):
