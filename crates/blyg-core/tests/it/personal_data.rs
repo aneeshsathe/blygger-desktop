@@ -347,6 +347,10 @@ fn near_misses_still_fail() {
         [(Kind::Home, concat!("/Us", "ers/someone-else").to_string())]
     );
     assert_eq!(
+        found(concat!("cd /ho", "me/someone-else/src")),
+        [(Kind::Home, concat!("/ho", "me/someone-else").to_string())]
+    );
+    assert_eq!(
         found(concat!(r"vault = C:\Us", r"ers\someone-else\Notes")),
         [(
             Kind::Home,
