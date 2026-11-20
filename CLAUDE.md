@@ -32,7 +32,7 @@ goes once its mistake is a compile error):
 
 | Rule | Enforced by |
 |---|---|
-| fmt, clippy (`-D warnings`) and tests pass | CI `.github/workflows/ci.yml` (macOS and Windows) |
+| fmt, clippy (`-D warnings`) and tests pass | `scripts/check.sh`, which every CI step in `.github/workflows/ci.yml` calls (macOS and Windows) |
 | `BLYGGER_*` and other env vars are read only through `DevFlags` | `crates/blyg-app/clippy.toml` bans `std::env::var`/`var_os`; read `crate::dev_flags::get()` |
 | a main-window feature lives in its own file (`app/<feature>.rs`, an `impl MainView` block), not in `app.rs` | `crates/blyg-app/src/app/size_cap.rs`: `app.rs` may not grow past `APP_RS_MAX_LINES` (lowered, never raised) |
 | tests wait for a condition, never a fixed sleep | `clippy.toml` bans `std::thread::sleep` in blyg-app (use `crate::test_wait`) and in blyg-core, blyg-ai, `blyg-ext*` (use `blyg_core::wait`) |
@@ -42,7 +42,7 @@ goes once its mistake is a compile error):
 | the running version has a `releases.md` heading | `update/tests.rs` |
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
-| UI text tests hold on both platforms' spelling | CI's macOS step "Test (Windows wording)" (`BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app`); `platform_text::spelled_as` for one test |
+| UI text tests hold on both platforms' spelling | `scripts/check.sh wording` (CI's macOS step "Test (Windows wording)"); `platform_text::spelled_as` for one test |
 | tests move the caret with keys both platforms read alike (no ⌘+arrow, ⌥+←/→) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
 | Windows keys: no AltGr characters, no clashes, overrides name real keys | `keymap.rs` tests `no_windows_key_is_an_altgr_character`, `windows_overrides_are_real_and_clash_with_nothing` (run on every platform) |
 | tour steps quote real keys (bound to what the step waits for), menu items and “labels” | `onboarding/caption_tests.rs` (both platforms' wording) |
@@ -50,3 +50,14 @@ goes once its mistake is a compile error):
 | crates depend only on what their runtime allows (GPUI in `blyg-app` only) | `blyg-core/tests/it/crate_graph.rs` (`cargo metadata`) |
 | each new thing in the target studio's contract gets a test before it's built (or an exemption with a reason); a sync starts at `[target]` | `blyg-core/tests/it/contract_coverage.rs` over `openapi-current.json` and `tests/fixtures/contract-coverage.toml` |
 | tests are committed before the code they test, and fail without it | `scripts/test-first.sh` (`--run` before each merge); CI's `test-first` job fails a PR changing product code with no test, unless a commit has `No-test: <reason>` |
+| every repo path or file name a dev doc names in backticks exists (another repo's path followed by `(other repo: <name>)`) | `blyg-core/tests/it/doc_paths.rs` |
+| a PR skips the Rust jobs only for paths no code reads | `scripts/ci-skip.py check` (CI `changes` job) |
+| new dependencies pass licences and sources (and RustSec advisories when dependencies change, weekly and on main) | `deny.toml` + CI `deny` job |
+| unsafe code only in blyg-app, item by item | every other crate root has `#![forbid(unsafe_code)]` (`crate_graph.rs`); `[workspace.lints] unsafe_code = "deny"` + `#[expect(unsafe_code, reason)]` in blyg-app |
+| process spawning only where a module says why | clippy `disallowed-types` `std::process::Command` in each crate's `clippy.toml` |
+| the files lifting the unsafe or `Command` ban are one reviewed list | `blyg-core/tests/it/lint_exceptions.rs` + `tests/fixtures/lint-exceptions.txt` |
+| a silenced lint says why, and goes once stale | clippy `allow_attributes` + `allow_attributes_without_reason` (workspace lints) |
+| every crate has a `clippy.toml` and `[lints] workspace = true`; tracked crates are members; only the NETWORK crates have direct HTTP-client dependencies | `blyg-core/tests/it/crate_graph.rs` |
+| no personal data that a pattern can find (home paths, emails, blyg-named hosts, GitHub owners) in tracked or new files; names and account ids still need the rule above | `blyg-core/tests/it/personal_data.rs` + `tests/fixtures/personal-data-allow.txt` |
+| checks that read git don't skip on CI | `blyg-core/tests/it/no_git.rs` |
+| names existing installs depend on never change (bundle ID, Keychain, data dir, db, config path, binary, key contexts, action namespaces, `BLYGGER_*` names DevFlags reads) | `crates/blyg-app/src/never_rename_tests.rs` |

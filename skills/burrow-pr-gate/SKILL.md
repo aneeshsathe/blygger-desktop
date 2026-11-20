@@ -65,6 +65,8 @@ the PR changes `Cargo.lock` or `deny.toml` (and weekly, and on main). Run
 No check can judge a change to `.github/workflows/`, a `build.rs`, or a
 script CI runs (`scripts/`). Reviewing those stays with the maintainer:
 an outside contribution that touches them waits for the maintainer's own
-read. Also read for new network calls, `unsafe` and process spawning
-until a check covers them. Merging a version bump releases
+read. A new exception to the `unsafe` or process-spawning ban shows up as
+a change to `crates/blyg-core/tests/fixtures/lint-exceptions.txt`: read
+that file's diff. New network calls inside the crates allowed an HTTP
+client still need a read. Merging a version bump releases
 (`burrow-release`).

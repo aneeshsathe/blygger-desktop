@@ -25,13 +25,13 @@ the rest of the checklist.
 
 <!--
 What could break and for whom. Say yes or no to each:
-- public-repo hygiene: no names, emails, real blyg URLs, home paths, account ids or tokens
-- never-renamed identifiers (bundle ID, Keychain, data dir, config path, BLYGGER_* vars, binary, crates)
+- public-repo hygiene the scan can't see: names, account ids, tokens, a blyg on its own domain
+- crate names stay (the other never-renamed identifiers are pinned by a test)
 - the UI talks only to Arc<dyn Backend>; nothing new on the UI thread per keystroke
 - remote content, network or web view (skills/client-security)
 - Windows and macOS (skills/burrow-cross-platform)
 - studio parity and capability gating (skills/capability-gating)
-- new dependencies, unsafe, process spawning, CI workflow or build-script changes
+- new network calls; CI workflow, build-script or CI-script changes
 -->
 
 ## Verification
