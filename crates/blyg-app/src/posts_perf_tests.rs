@@ -1,18 +1,23 @@
 //! The Posts screen at scale: typing into a long thread with the preview
 //! up, and typing an omnibar search, over thousands of your own posts and
 //! a reading list (invented content: `blyg_core::synth`), on the real
-//! store through a `LiveBackend` that never syncs. What's timed is the
-//! UI thread's work for one keystroke, against a budget in frames.
+//! store through a `LiveBackend` that never syncs.
 //!
-//!     cargo test -p blyg-app --release posts_perf_tests -- --nocapture
+//! What gates a merge is the store's work per keystroke, in SQLite VM
+//! steps (`LiveBackend::count_store_work`): a keystroke that reads every
+//! post shows on any machine. The UI thread's time per keystroke, against
+//! a budget in frames, is a report (`timing_…`, run by CI's timing job):
 //!
-//! Debug builds hold fewer posts and get looser budgets.
+//!     cargo test -p blyg-app --release posts_perf_tests -- --ignored --nocapture
+//!
+//! Debug builds hold fewer posts.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::store::Store;
+use blyg_core::store::{Store, Work};
+use blyg_core::wait::Budget;
 use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LiveBackend, LocalId, SyncOptions, synth};
 use gpui_kit::{Entity, Keystroke, TestAppContext, VisualTestContext};
 
@@ -25,6 +30,10 @@ const CONNECTED: &str = "# test config\nblyg-url = https://blyg.example.com\n";
 /// One frame at 60 Hz.
 const FRAME_MS: f64 = 1000.0 / 60.0;
 
+/// The UI thread's budget for one keystroke in a release build: a quarter
+/// of a frame (the rest is the draw).
+const KEY_MS: f64 = FRAME_MS / 4.0;
+
 fn posts() -> usize {
     if cfg!(debug_assertions) { 500 } else { 2_000 }
 }
@@ -33,25 +42,16 @@ fn reading_rows() -> usize {
     if cfg!(debug_assertions) { 1_000 } else { 4_000 }
 }
 
-/// A quarter of a frame in a release build: the rest of the frame is the
-/// draw. Debug builds get 15x; Windows 4x on top (its CI runners are
-/// several times slower at everything that touches the disk).
-fn budget() -> Duration {
-    let debug = if cfg!(debug_assertions) { 15.0 } else { 1.0 };
-    let os = if cfg!(windows) { 4.0 } else { 1.0 };
-    Duration::from_secs_f64(FRAME_MS / 4.0 * debug * os / 1e3)
-}
-
 fn ms(d: Duration) -> f64 {
     d.as_secs_f64() * 1e3
 }
 
 /// Per-keystroke wall-clock times. The worst one is what you feel, and
 /// it's printed, but the budget is checked against the median: on a busy
-/// machine (a CI runner, a build alongside) the worst of two hundred
-/// keystrokes measures the scheduler. The work this guards against (a
-/// store transaction, a copy of every post) is in every keystroke, so it
-/// moves the median: it was 50 ms here before.
+/// machine the worst of two hundred keystrokes measures the scheduler.
+/// The work this guards against (a store transaction, a copy of every
+/// post) is in every keystroke, so it moves the median: it was 50 ms here
+/// before.
 #[derive(Default)]
 struct Keys(Vec<Duration>);
 
@@ -70,6 +70,29 @@ impl Keys {
             ms(worst) / FRAME_MS
         );
         median
+    }
+}
+
+/// The store's work over a run of keystrokes, per keystroke.
+struct Steps {
+    work: Work,
+    keys: u64,
+}
+
+impl Steps {
+    fn start(live: &LiveBackend) -> Steps {
+        Steps {
+            work: live.count_store_work(),
+            keys: 0,
+        }
+    }
+
+    /// The VM steps per keystroke since the start (or the last `per_key`).
+    fn per_key(&mut self, label: &str) -> u64 {
+        let per = self.work.take() / self.keys.max(1);
+        eprintln!("{label:<40} {} keys · {per} VM steps a key", self.keys);
+        self.keys = 0;
+        per
     }
 }
 
@@ -161,10 +184,18 @@ fn key(cx: &mut VisualTestContext, k: &str) -> Duration {
     t.elapsed()
 }
 
+fn key_name(c: char) -> String {
+    if c == ' ' {
+        "space".to_string()
+    } else {
+        c.to_string()
+    }
+}
+
 /// Typing into a 20k-character thread with the preview up: every
-/// keystroke saves, re-titles the list row and schedules a render.
-#[gpui_kit::test]
-fn typing_at_scale_within_budget(cx: &mut TestAppContext) {
+/// keystroke saves, re-titles the list row and schedules a render. Returns
+/// the keystrokes' times, and the store's work a keystroke.
+fn type_into_long_thread(cx: &mut TestAppContext) -> (Keys, u64) {
     let dir = tempfile::tempdir().unwrap();
     let (view, live, thread, cx) = setup(dir.path(), cx);
     eprintln!(
@@ -181,15 +212,12 @@ fn typing_at_scale_within_budget(cx: &mut TestAppContext) {
     let before = live.item(&thread).unwrap().content_md;
 
     let mut keys = Keys::default();
+    let mut steps = Steps::start(&live);
     let typed = "the quiet harbour keeps its lanterns lit ";
     for round in 0..5 {
         for c in typed.chars() {
-            let k = if c == ' ' {
-                "space".to_string()
-            } else {
-                c.to_string()
-            };
-            keys.0.push(key(cx, &k));
+            keys.0.push(key(cx, &key_name(c)));
+            steps.keys += 1;
         }
         // Background work (the writer, a render) runs between bursts, as
         // it would while you type.
@@ -197,10 +225,9 @@ fn typing_at_scale_within_budget(cx: &mut TestAppContext) {
             settle(cx);
         }
     }
-    let median = keys.report("typing (20k thread, preview up)");
-
     // Every keystroke landed, in order, and the list row shows it.
     settle(cx);
+    let per_key = steps.per_key("typing (20k thread, preview up)");
     let want = format!("{before}{}", typed.repeat(5));
     let editor = view.read_with(cx, |v, cx| v.editor.read(cx).value().to_string());
     assert_eq!(editor, want);
@@ -215,33 +242,57 @@ fn typing_at_scale_within_budget(cx: &mut TestAppContext) {
             .unwrap();
         assert_eq!(row.content_md, want);
     });
+    (keys, per_key)
+}
+
+#[gpui_kit::test]
+fn typing_at_scale_does_bounded_work(cx: &mut TestAppContext) {
+    let (_, per_key) = type_into_long_thread(cx);
+    // A keystroke writes one row (about 270 steps at 500 posts); reading
+    // every post costs several steps a post.
+    let limit = posts() as u64 * 2;
     assert!(
-        median < budget(),
-        "median keystroke {median:?} (budget {:?})",
-        budget()
+        per_key < limit,
+        "{per_key} VM steps a keystroke over {} posts (limit {limit})",
+        posts()
     );
+}
+
+#[gpui_kit::test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_typing_at_scale(cx: &mut TestAppContext) {
+    let (keys, _) = type_into_long_thread(cx);
+    let median = keys.report("typing (20k thread, preview up)");
+    let mut budget = Budget::default();
+    budget.check("median keystroke", median, KEY_MS);
+    budget.done();
+}
+
+/// What typing an omnibar search, and the list's refresh after a sync
+/// tick, cost: their times, and the store's work a keystroke and a tick.
+struct Omnibar {
+    typing: Keys,
+    ticks: Keys,
+    steps_a_key: u64,
+    steps_a_tick: u64,
 }
 
 /// Typing an omnibar search over thousands of posts, and the list's
 /// refresh after a sync tick.
-#[gpui_kit::test]
-fn omnibar_search_at_scale_within_budget(cx: &mut TestAppContext) {
+fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     let dir = tempfile::tempdir().unwrap();
     let (view, live, thread, cx) = setup(dir.path(), cx);
-    let mut keys = Keys::default();
+    let mut typing = Keys::default();
+    let mut steps = Steps::start(&live);
     for (i, c) in "garden notes".chars().enumerate() {
-        let k = if c == ' ' {
-            "space".to_string()
-        } else {
-            c.to_string()
-        };
-        let t = key(cx, &k);
+        let t = key(cx, &key_name(c));
+        steps.keys += 1;
         let q: String = "garden notes".chars().take(i + 1).collect();
         eprintln!("  omnibar keystroke {q:<14?} {:>7.3} ms", ms(t));
-        keys.0.push(t);
+        typing.0.push(t);
     }
-    let typing = keys.report("omnibar typing");
     settle(cx);
+    let steps_a_key = steps.per_key("omnibar typing");
     // What's listed is exactly what the backend finds for the query.
     let want: Vec<LocalId> = live
         .search("garden notes")
@@ -262,17 +313,24 @@ fn omnibar_search_at_scale_within_budget(cx: &mut TestAppContext) {
     view.update_in(cx, |v, window, cx| v.set_query_text("", window, cx));
     settle(cx);
     let mut ticks = Keys::default();
+    let mut tick_steps = 0;
     for i in 0..5 {
         live.save(&thread, &format!("{} {i}", long_thread()))
             .unwrap();
+        steps.work.take();
         let t = Instant::now();
         view.update_in(cx, |v, window, cx| {
             v.on_core_event(CoreEvent::ItemsChanged, window, cx)
         });
         ticks.0.push(t.elapsed());
         settle(cx);
+        tick_steps += steps.work.take();
     }
-    let tick = ticks.report("ItemsChanged (empty query)");
+    let steps_a_tick = tick_steps / 5;
+    eprintln!(
+        "{:<40} {steps_a_tick} VM steps a tick",
+        "ItemsChanged (empty query)"
+    );
     let n = view.read_with(cx, |v, _| v.list.results().len());
     assert_eq!(n, live.items().len());
     // The background search itself, for the record (not on the UI thread).
@@ -286,9 +344,54 @@ fn omnibar_search_at_scale_within_budget(cx: &mut TestAppContext) {
             ms(t.elapsed())
         );
     }
+    Omnibar {
+        typing,
+        ticks,
+        steps_a_key,
+        steps_a_tick,
+    }
+}
+
+#[gpui_kit::test]
+fn omnibar_search_at_scale_does_bounded_work(cx: &mut TestAppContext) {
+    let o = omnibar_search(cx);
+    // Both read what's held (a keystroke about 17 steps a held row today; a
+    // tick after a save, the posts again, about 60 a post): each is held
+    // to about twice that, so a step that starts reading more goes over.
+    let posts = posts() as u64;
+    let held = posts + reading_rows() as u64;
     assert!(
-        typing < budget() && tick < budget(),
-        "median omnibar keystroke {typing:?}, median refresh {tick:?} (budget {:?})",
-        budget()
+        o.steps_a_key < held * PER_HELD_ROW_A_KEY,
+        "{} VM steps an omnibar keystroke over {held} held rows",
+        o.steps_a_key
     );
+    assert!(
+        o.steps_a_tick < posts * PER_POST_ON_A_TICK,
+        "{} VM steps a refresh over {posts} posts",
+        o.steps_a_tick
+    );
+}
+
+/// VM steps a refresh after a save may spend on each post it lists.
+const PER_POST_ON_A_TICK: u64 = 120;
+
+/// VM steps an omnibar keystroke may spend on each held row.
+const PER_HELD_ROW_A_KEY: u64 = 35;
+
+#[gpui_kit::test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_omnibar_search_at_scale(cx: &mut TestAppContext) {
+    let o = omnibar_search(cx);
+    let mut budget = Budget::default();
+    budget.check(
+        "median omnibar keystroke",
+        o.typing.report("omnibar typing"),
+        KEY_MS,
+    );
+    budget.check(
+        "median refresh",
+        o.ticks.report("ItemsChanged (empty query)"),
+        KEY_MS,
+    );
+    budget.done();
 }

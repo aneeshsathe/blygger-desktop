@@ -4,7 +4,7 @@
 //! brought up to date incrementally, then the rail in a headless window.
 //! No test downloads a model: `ConceptEmbedder` stands in for one.
 //!
-//!     cargo test -p blyg-app --release nearby -- --nocapture   (speed numbers)
+//!     cargo test -p blyg-app --release timing_nearby -- --ignored --nocapture   (speed numbers)
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -355,9 +355,11 @@ fn the_index_is_kept_in_the_store_and_updated_post_by_post() {
 
 /// The numbers: building the index and asking it, over a few thousand
 /// held posts (invented text), and brute-force cosine at 10k pieces of a
-/// 256-dimension model (potion-base-8M's size).
+/// 256-dimension model (potion-base-8M's size). A report, not a gate: the
+/// work (nothing embedded twice) is checked above.
 #[test]
-fn speed_at_scale() {
+#[ignore = "timing: run by the CI timing job"]
+fn timing_nearby_at_scale() {
     let n = if cfg!(debug_assertions) { 600 } else { 4_000 };
     let dir = tempfile::tempdir().unwrap();
     {
@@ -421,9 +423,11 @@ fn speed_at_scale() {
         built.pieces * 256 * 2 / 1024,
     );
     assert_eq!(again.embedded, 0);
-    let slack = if cfg!(debug_assertions) { 20.0 } else { 1.0 };
-    assert!(brute_ms < 25.0 * slack, "{brute_ms} ms");
-    assert!(query_ms < 150.0 * slack, "{query_ms} ms");
+    let mut budget = blyg_core::wait::Budget::default();
+    let ms = Duration::from_secs_f64;
+    budget.check("cosine over 10k×256", ms(brute_ms / 1e3), 25.0);
+    budget.check("a query", ms(query_ms / 1e3), 150.0);
+    budget.done();
 }
 
 // ------------------------------------------------------------ the window

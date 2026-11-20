@@ -183,32 +183,38 @@ fn bench_search_5000() {
         }
         tx.commit().unwrap();
     }
-    // warm up
-    assert_eq!(s.search("zebracorn").len(), 20);
-    let n = 50;
-    let t = Instant::now();
-    for _ in 0..n {
-        assert_eq!(s.search("zebracorn").len(), 20);
+    // A search goes through the trigram index: its work is the 20 hits,
+    // not the 5,000 items. Measured against one plain scan of them.
+    let work = s.count_work();
+    s.conn()
+        .query_row(
+            "SELECT count(*) FROM items WHERE content_md LIKE '%zebracorn%'",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .unwrap();
+    let scan = work.take();
+    for q in ["zebracorn", "ebraco"] {
+        assert_eq!(s.search(q).len(), 20);
+        let steps = work.take();
+        eprintln!("search {q:?} over 5000 items: {steps} VM steps (a scan: {scan})");
+        assert!(steps < scan / 2, "search {q:?} took {steps} VM steps");
     }
-    let per = t.elapsed() / n;
-    let t = Instant::now();
-    for _ in 0..n {
-        assert_eq!(s.search("ebraco").len(), 20);
-    }
-    let per_mid = t.elapsed() / n;
-    eprintln!("search over 5000 items: {per:?} (full word), {per_mid:?} (mid-word)");
-    assert!(per.as_micros() < 5000, "search took {per:?}");
-    assert!(per_mid.as_micros() < 5000, "search took {per_mid:?}");
 
+    let n = 50;
     let t = Instant::now();
     let all = s.items();
     eprintln!("items() over 5000 items, cold: {:?}", t.elapsed());
     assert_eq!(all.len(), 5000);
+    work.take();
     let t = Instant::now();
     for _ in 0..n {
         assert_eq!(s.items().len(), 5000);
     }
     eprintln!("items() over 5000 items, cached: {:?}", t.elapsed() / n);
+    // Cached: no reads but the commit stamp.
+    let steps = work.take() / n as u64;
+    assert!(steps < 50, "a cached items() took {steps} VM steps");
     // the cache is invalidated by writes
     let id = s.create_draft(Kind::Fragment, "fresh", 0).unwrap();
     assert_eq!(s.items()[0].local_id, id);

@@ -42,7 +42,8 @@ use serde_json::Value;
 const ALLOWED: &[(&str, &[&str])] = &[
     ("blyg-render", &[]),
     ("blyg-embed", &[]),
-    ("blyg-core", &["blyg-render"]),
+    // Itself: its `test-support` feature, for its integration tests.
+    ("blyg-core", &["blyg-core", "blyg-render"]),
     ("blyg-ai", &["blyg-core", "blyg-render"]),
     ("blyg-ext", &["blyg-core", "blyg-render"]),
     ("blyg-ext-*", &["blyg-ext", "blyg-core", "blyg-render"]),
@@ -168,6 +169,59 @@ fn crates_depend_only_on_what_their_runtime_allows() {
     assert!(
         bad.is_empty(),
         "crate boundaries broken (tests/it/crate_graph.rs):\n  {}",
+        bad.join("\n  ")
+    );
+}
+
+/// blyg-core's test-only hooks (`Store::count_work`) sit behind its
+/// `test-support` feature, so a product call doesn't compile; that holds
+/// only while no crate turns the feature on outside `[dev-dependencies]`,
+/// and no other blyg-core feature (a default one) turns it on.
+const TEST_SUPPORT: &str = "test-support";
+
+/// Every place `test-support` is turned on for a build that isn't a test.
+fn test_support_leaks(m: &Value) -> Vec<String> {
+    let mut bad = Vec::new();
+    for p in m["packages"].as_array().unwrap() {
+        let name = p["name"].as_str().unwrap();
+        for d in p["dependencies"].as_array().unwrap() {
+            let on = d["features"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|f| f.as_str() == Some(TEST_SUPPORT));
+            let kind = d["kind"].as_str().unwrap_or("normal");
+            if d["name"] == "blyg-core" && on && kind != "dev" {
+                bad.push(format!(
+                    "{name} enables blyg-core's {TEST_SUPPORT} in its {kind} dependencies \
+                     (only [dev-dependencies] may)"
+                ));
+            }
+        }
+        if name == "blyg-core" {
+            for (feature, enables) in p["features"].as_object().unwrap() {
+                let leaks = enables
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|f| f.as_str() == Some(TEST_SUPPORT));
+                if feature != TEST_SUPPORT && leaks {
+                    bad.push(format!(
+                        "blyg-core's feature {feature} enables {TEST_SUPPORT}"
+                    ));
+                }
+            }
+        }
+    }
+    bad
+}
+
+#[test]
+fn test_support_is_only_a_dev_dependency() {
+    let bad = test_support_leaks(&metadata());
+    assert!(
+        bad.is_empty(),
+        "test-only hooks reachable from product code (tests/it/crate_graph.rs):\n  {}",
         bad.join("\n  ")
     );
 }

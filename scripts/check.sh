@@ -26,6 +26,13 @@
 #               --locked`). Its halves: deny-policy (bans, licences, sources:
 #               what this tree says) and deny-advisories (RustSec: what the
 #               world found since), which CI runs on separate conditions.
+#   timing      the wall-clock timing reports, in a release build (what the
+#               budgets mean): every test named timing_… and
+#               ignored with "timing: run by the CI timing job" (budgets go
+#               through blyg_core::wait::Budget). They measure the machine as
+#               much as the code, so CI's timing job runs them without
+#               blocking a merge, and neither the default run nor `all` does.
+#               --no-fail-fast: one overrun still lets every report run.
 #
 # docs and deny aren't in the default run: docs downloads mdBook on first use
 # and checks only site/; deny needs a tool most machines lack and fetches the
@@ -47,7 +54,7 @@ for arg in "$@"; do
     --fix) fix=1 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     all) steps+=(fmt extensions ci-skip clippy test wording docs deny) ;;
-    fmt|clippy|test|wording|extensions|ci-skip|docs|deny|deny-policy|deny-advisories) steps+=("$arg") ;;
+    fmt|clippy|test|wording|extensions|ci-skip|docs|deny|deny-policy|deny-advisories|timing) steps+=("$arg") ;;
     *) echo "check.sh: unknown step '$arg' (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -80,6 +87,7 @@ for step in "${steps[@]}"; do
     deny) run cargo deny --locked check ;;
     deny-policy) run cargo deny --locked check bans licenses sources ;;
     deny-advisories) run cargo deny --locked check advisories ;;
+    timing) run cargo test --workspace --locked --release --no-fail-fast -- --ignored timing_ ;;
   esac
 done
 echo "check.sh: passed (${steps[*]})" >&2
