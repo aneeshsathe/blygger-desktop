@@ -36,7 +36,7 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 
 Journeys (0.27.0):
 - Why is this in Background? Reader › Background: each row carries a badge
-  ("part of a burst", "no words of its own", "republished unchanged").
+  ("published with ‘<thread title>’", "no words of its own", "republished unchanged").
 - Background rules: Settings (⌘,), the BACKGROUND row near CHANGELOG; turn a
   chip off, close Settings, and the rule's posts are back in the stream.
 - "+N parts": click it under a stream card to unfold; the open thread lists

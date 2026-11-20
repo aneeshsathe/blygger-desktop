@@ -239,7 +239,7 @@ fn each_reason_says_why_as_the_studio_does() {
     let burst = json!({"thread": "t"});
     assert_eq!(
         why(&["burst"], burst.clone()).as_deref(),
-        Some("part of a burst")
+        Some("published with a thread")
     );
     assert_eq!(
         why(&["wordless"], Value::Null).as_deref(),

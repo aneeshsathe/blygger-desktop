@@ -12,8 +12,8 @@
 //! marks anything read or changes anything published. An older studio gets
 //! none of it: its Background lens holds withdrawn posts, as before.
 //!
-//! In the Background list each post says why it's there ("part of a
-//! burst", …; `EntryBackground::why`). A thread published with its parts
+//! In the Background list each post says why it's there ("published with
+//! ‘<thread>’", …; `MainView::background_why`). A thread published with its parts
 //! (studio 0.64) says "+N parts": on its row, as a fold under its card in
 //! the stream, and listed under it when open (`render_burst_parts`); a
 //! part opens like any post.
@@ -169,9 +169,28 @@ pub fn placed_toast(placement: Option<Placement>) -> &'static str {
 }
 
 impl MainView {
-    /// Why `r` is in Background, as its badge says it.
+    /// Why `r` is in Background, as its badge says it. A thread's part
+    /// names the thread ("published with ‘A morning on the harbour wall’")
+    /// when its title is known.
     pub(crate) fn background_why(&self, r: &ReadingItem) -> Option<String> {
-        why(r)
+        let why = why(r)?;
+        if why != blyg_core::background::BURST_WHY {
+            return Some(why);
+        }
+        let thread = r.background.as_ref().and_then(|b| b.burst_thread());
+        let title = thread
+            .and_then(|t| {
+                self.reading
+                    .rows
+                    .iter()
+                    .find(|x| x.subscription_id == r.subscription_id && x.remote_id.as_ref() == t)
+            })
+            .map(vm::post_title)
+            .filter(|t| t != "…" && !t.trim().is_empty());
+        Some(match title {
+            Some(t) => format!("published with ‘{t}’"),
+            None => why,
+        })
     }
 
     /// The reading pane's Background chips for the open post.
@@ -547,7 +566,7 @@ impl MainView {
     /// Why the post is in Background, as a quiet badge (its row in the
     /// Background list, and its open view); `None` in the foreground.
     pub(crate) fn render_background_why(&self, r: &ReadingItem) -> Option<AnyElement> {
-        let why = why(r)?;
+        let why = self.background_why(r)?;
         let (fg, bg) = self.palette.on_page().quiet_badge();
         Some(
             div()
