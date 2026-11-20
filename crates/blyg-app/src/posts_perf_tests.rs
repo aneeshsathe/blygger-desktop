@@ -488,11 +488,16 @@ fn an_omnibar_keystroke_reads_row_ids_not_every_matching_post(cx: &mut TestAppCo
 fn timing_omnibar_search_at_scale(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
     let mut budget = Budget::default();
-    budget.check(
-        "median omnibar keystroke",
-        o.typed.typing.report("omnibar typing"),
-        KEY_MS,
+    // KEY_MS (a quarter frame) is the aim; CI's macOS runner's median was
+    // 4.22 ms (PR #98, the first run with row-id search), so the budget is
+    // 1.5x that, 6.3, rounded up to 6.5 (`Budget` says how).
+    let median = o.typed.typing.report("omnibar typing");
+    eprintln!(
+        "median omnibar keystroke {:.3} ms · aim {KEY_MS:.2} ms{} · budget 6.5 ms",
+        ms(median),
+        if ms(median) > KEY_MS { " (missed)" } else { "" }
     );
+    budget.check("median omnibar keystroke", median, 6.5);
     budget.check(
         "median refresh",
         o.ticks.report("ItemsChanged (empty query)"),

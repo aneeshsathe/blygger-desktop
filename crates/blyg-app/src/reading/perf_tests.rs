@@ -214,11 +214,10 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     meter.step(
         cx,
         "open a post (mark read)",
-        // An estimate until CI prints this measurement: it was set when
-        // opening also refreshed the whole list (about twice a refresh
-        // with a post open, 218 ms at worst on CI). The read mark now
-        // updates its row in place, so this is generous.
-        cost(650.0, 4.0),
+        // CI's macOS runner: 77.7 ms (PR #98, the first run with the read
+        // mark in place: 1 poll round, all of it outside the pauses), so
+        // 1.5x is 116.6, rounded up to 120.
+        cost(120.0, 4.0),
         |cx| {
             let t = Instant::now();
             view.update_in(cx, |v, window, cx| v.open_reading(key.clone(), window, cx));
