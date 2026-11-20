@@ -399,8 +399,18 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Copy", Copy),
                 MenuItem::action("Paste", Paste),
                 MenuItem::action("Select All", SelectAll),
-                // --- composer ---
+                // --- format ---
                 MenuItem::separator(),
+                MenuItem::submenu(Menu {
+                    name: "Format".into(),
+                    items: vec![
+                        MenuItem::action("Bold", app::format::FormatBold),
+                        MenuItem::action("Italic", app::format::FormatItalic),
+                        MenuItem::action("Formula", app::format::InsertFormula),
+                    ],
+                    disabled: false,
+                }),
+                // --- composer ---
                 MenuItem::submenu(Menu {
                     name: "Spelling".into(),
                     items: vec![

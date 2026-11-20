@@ -1,0 +1,12 @@
+{
+  "name": "math_display_in_text",
+  "kind": "fragment",
+  "md": "Text $$\\sum_{i=1}^n i$$ more.",
+  "html": "<p>Text <math display=\"block\" class=\"tml-display\"><semantics><mrow><mrow><munderover><mo movablelimits=\"false\">∑</mo><mrow><mi>i</mi><mo>=</mo><mn>1</mn></mrow><mi>n</mi></munderover></mrow><mi>i</mi></mrow><annotation encoding=\"application/x-tex\">\\sum_{i=1}^n i</annotation></semantics></math> more.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

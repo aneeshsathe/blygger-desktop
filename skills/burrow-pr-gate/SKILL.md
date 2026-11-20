@@ -18,6 +18,12 @@ The second run spells every UI string as Windows does (`Ctrl+B`, not `⌘B`),
 so a test that expects Mac glyphs fails on your Mac instead of on Windows CI
 (CI's macOS job runs it too).
 
+Commit tests before the feature: the first commit adds tests that fail,
+later ones make them pass. `scripts/test-first.sh <base> <branch>` checks the
+order (`--run` also runs those tests without the feature and wants a
+failure). CI's `test-first` job fails a PR that changes product code but no
+test, unless a commit has a `No-test: <reason>` trailer.
+
 Server-facing changes also run the real-studio e2e
 (`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
 changes run `scripts/browser-*-check.sh`.

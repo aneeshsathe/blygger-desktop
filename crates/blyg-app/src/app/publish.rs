@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// A publish failure longer than this (in characters) stays until it's
+/// dismissed: 2.6 seconds is too short to read it.
+const LONG_TOAST: usize = 72;
+
 impl MainView {
     pub(super) fn on_publish(&mut self, _: &Publish, window: &mut Window, cx: &mut Context<Self>) {
         // Under a sheet, ⌘⏎ is the sheet's own (`SheetView::submit`): it
@@ -100,6 +104,13 @@ impl MainView {
     }
 
     pub(super) fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
+        // A formula that doesn't parse, or a span in a fragment: the sheet
+        // says why, and ⏎ waits (the blyg would refuse it).
+        if self.sheet.is::<PublishSheet>() && self.studio_publish_block(cx).is_some() {
+            self.shake_gen += 1;
+            cx.notify();
+            return;
+        }
         let Some(PublishSheet { id, ai, .. }) = self.sheet.take() else {
             return;
         };
@@ -131,6 +142,12 @@ impl MainView {
     ) {
         self.publishing = true;
         cx.notify();
+        // --- tangle --- what a confirmed tangle sends, so the same text
+        // again can be caught in the confirm step.
+        let tangled = extras
+            .tangle
+            .then(|| self.backend.item(&id).map(|i| i.content_md))
+            .flatten();
         let backend = self.backend.clone();
         let task = cx.background_spawn({
             let id = id.clone();
@@ -155,6 +172,12 @@ impl MainView {
                 }
                 match result {
                     Ok(out) => {
+                        // --- tangle --- the editor takes the server's rewrite,
+                        // or its next save would bring the spans back.
+                        if let Some(text) = &out.rewritten {
+                            v.take_rewritten(&id, text, window, cx);
+                            v.studio.guards.last_tangle = tangled.map(|t| (id.clone(), t));
+                        }
                         v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
                         v.delight_published(&id, cx); // --- delight ---
                         let head = match &note_opt {
@@ -171,11 +194,31 @@ impl MainView {
                             "{} · ⌘O opens it{cross}",
                             vm::short_permalink(&out.permalink)
                         ));
+                        let head = match out.parts.len() {
+                            0 => head,
+                            1 => format!("{head} · and 1 new item"),
+                            n => format!("{head} · and {n} new items"),
+                        };
                         let head = match out.warning {
                             Some(w) => format!("{head} · {w}"),
                             None => head,
                         };
                         v.show_toast(head, Some(sub.into()), cx);
+                    }
+                    // --- tangle --- new items need the author's yes first.
+                    Err(CoreError::TangleConfirm { count, parts }) => {
+                        let focus = cx.focus_handle();
+                        window.focus(&focus, cx);
+                        let repeat = v.is_repeat_tangle(&id);
+                        v.sheet.open(TangleSheet {
+                            id: id.clone(),
+                            note: note_opt.clone(),
+                            extras,
+                            count,
+                            parts,
+                            repeat,
+                            focus,
+                        });
                     }
                     Err(CoreError::Offline) => {
                         v.show_toast("Offline. Publish again when you're back online.", None, cx)
@@ -183,7 +226,7 @@ impl MainView {
                     // --- conflicts --- refused for a conflict: the sheet
                     // again, not a toast with no way out (issue #52).
                     Err(_) if v.reopen_conflict(&id, window, cx) => {}
-                    Err(e) => v.show_toast(format!("Publish failed: {e}"), None, cx),
+                    Err(e) => v.publish_failed(&e, cx),
                 }
                 // --- follow-ups --- promotion may have rewritten local images.
                 v.scratch_sync_editor(&id, window, cx);
@@ -191,6 +234,101 @@ impl MainView {
             });
         })
         .detach();
+    }
+
+    /// A publish the blyg refused: say why.
+    /// A long one (a formula and its reason) stays until it's dismissed.
+    pub(crate) fn publish_failed(&mut self, e: &CoreError, cx: &mut Context<Self>) {
+        let text = format!("Publish failed: {e}");
+        if text.chars().count() > LONG_TOAST {
+            self.show_toast_until_dismissed(text, cx);
+        } else {
+            self.show_toast(text, None, cx);
+        }
+    }
+
+    /// --- tangle --- The confirm step's `⏎` (publish all): the same publish
+    /// again, with `tangle: true`.
+    pub(crate) fn publish_tangled(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(TangleSheet {
+            id, note, extras, ..
+        }) = self.sheet.take()
+        else {
+            return;
+        };
+        self.focus_after_sheet(window, cx);
+        let extras = blyg_core::access_ai::PublishExtras {
+            tangle: true,
+            ..extras
+        };
+        self.start_publish_with(id, note, extras, window, cx);
+    }
+
+    /// --- tangle --- The post's text is the one last tangled: publishing
+    /// it again would make its new items twice.
+    fn is_repeat_tangle(&self, id: &LocalId) -> bool {
+        let Some((last, text)) = &self.studio.guards.last_tangle else {
+            return false;
+        };
+        last == id && self.backend.item(id).is_some_and(|i| &i.content_md == text)
+    }
+
+    /// --- tangle --- After a tangle the open post's text is the server's
+    /// rewrite (each span now `![[id | label]]`); put it in the editor.
+    /// The undo history goes with it: the rewrite is a save point, so ⌘Z
+    /// can't bring the spans back to publish them twice.
+    fn take_rewritten(
+        &mut self,
+        id: &LocalId,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.current.as_ref().map(|c| &c.local_id) != Some(id) {
+            return;
+        }
+        let old = self.editor.read(cx).value().to_string();
+        if old != text {
+            let (range, insert) = vm::splice(&old, text);
+            let caret = vm::shift_cursor(self.editor.read(cx).cursor(), &range, insert.len());
+            self.set_editor_text(text, window, cx);
+            self.editor.update(cx, |s, cx| {
+                let c = caret.min(s.text().len());
+                s.set_selected_range(c..c, cx);
+            });
+        }
+        self.current = self.backend.item(id);
+        self.refresh_preview(true, cx);
+    }
+
+    /// --- tangle --- The `rd-tangle` scene: a thread with a passage and a
+    /// placeholder, its preview beside it, then publish up to the confirm
+    /// step (the sample backend answers as studio 0.63 does), or not
+    /// (`rd-tangle-preview`: the sheet would cover the preview).
+    pub(crate) fn tangle_demo(
+        &mut self,
+        n: usize,
+        confirm: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match n {
+            0 => {
+                self.open(
+                    &LocalId(crate::fake::tangle_seed::DEMO_THREAD.into()),
+                    window,
+                    cx,
+                );
+                let old = self.editor.read(cx).value().to_string();
+                self.splice_editor(&old, crate::fake::tangle_seed::SAMPLE, None, window, cx);
+                self.after_edit(cx);
+                self.studio_set_view(studio::ViewMode::Split, cx);
+            }
+            1 if confirm => self.publish(window, cx),
+            2 if confirm => self.do_publish(String::new(), window, cx),
+            _ => {}
+        }
+        cx.notify();
     }
 
     pub(super) fn fake_offline(

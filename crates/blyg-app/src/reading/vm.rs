@@ -184,8 +184,35 @@ pub fn post_title(r: &ReadingItem) -> String {
     }
     match r.stub_of.as_ref().and_then(|s| s.target()) {
         Some(target) => format!("In response to {}", host(target)),
-        None => "…".into(),
+        // Only quotes: named by what it quotes, as the blyg baked it (user
+        // testing, R6), rather than "…".
+        None => quoted_words(&r.content_html)
+            .map(|q| format!("Quotes: {q}"))
+            .unwrap_or_else(|| "…".into()),
     }
+}
+
+/// The first eight words of the first quote baked into `html` (its
+/// provenance line left out), "…" when cut.
+fn quoted_words(html: &str) -> Option<String> {
+    let start = html.find("<blockquote class=\"blyg-transclusion\"")?;
+    let rest = &html[start..];
+    let inner = &rest[rest.find('>')? + 1..];
+    let end = ["<p class=\"provenance\"", "</blockquote>"]
+        .iter()
+        .filter_map(|m| inner.find(m))
+        .min()
+        .unwrap_or(inner.len());
+    let text = html_text(&inner[..end]);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+    let mut out = words[..words.len().min(8)].join(" ");
+    if words.len() > 8 {
+        out.push('…');
+    }
+    Some(out)
 }
 
 /// `rue.blyg.example.com` from an origin, for display: an internationalized
@@ -788,6 +815,9 @@ pub struct MentionRow {
     pub new: bool,
     pub hidden: bool,
     pub source: String,
+    /// A link notice (studio 0.64): listed apart, under "Linked from",
+    /// after the post's responses.
+    pub notice: bool,
 }
 
 pub fn relation_label(r: Option<&str>) -> &'static str {
@@ -797,6 +827,8 @@ pub fn relation_label(r: Option<&str>) -> &'static str {
         Some("fork") => "forked",
         // Studio 0.41+: the post drew on yours for generated text.
         Some("source") => "drew on it",
+        // Studio 0.64: a link notice, said as Studio's "linked".
+        Some("link") => "linked to this",
         _ => "mentioned",
     }
 }
@@ -822,6 +854,7 @@ pub fn mention_row(
         new: is_new_mention(m, seen, now),
         hidden: m.hidden,
         source: m.source.clone(),
+        notice: blyg_core::outbound::is_link_notice(m.relation.as_deref()),
     }
 }
 
@@ -866,6 +899,10 @@ pub fn group_mentions<'a>(
             }
         };
         out[at].2.push(row);
+    }
+    // A post's link notices come after its responses, each side in order.
+    for (_, _, rows) in &mut out {
+        rows.sort_by_key(|r| r.notice);
     }
     out
 }
@@ -1620,5 +1657,39 @@ mod search_tests {
                 "{hay:?} / {q:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod link_notice_tests {
+    use super::{Mention, group_mentions, mention_row};
+
+    #[test]
+    fn link_notices_are_labelled_and_listed_after_the_responses() {
+        let now = chrono::Utc::now();
+        let m = |id: &str, rel: &str, hours: i64| Mention {
+            id: id.into(),
+            target_item_id: "01OWN".into(),
+            status: "verified".into(),
+            relation: Some(rel.into()),
+            source: format!("https://rue.blyg.example.com/t/{id}"),
+            source_origin: Some("https://rue.blyg.example.com/".into()),
+            source_id: Some(id.into()),
+            source_kind: Some("thread".into()),
+            source_version: Some(1),
+            source_author: None,
+            first_seen: (now - chrono::Duration::hours(hours)).to_rfc3339(),
+            verified_at: None,
+            hidden: false,
+        };
+        // Newest first, as the screen sorts them: a notice in between.
+        let ms = [m("a", "stub", 1), m("b", "link", 2), m("c", "fork", 3)];
+        let seen = Default::default();
+        let rows: Vec<_> = ms.iter().map(|x| (mention_row(x, &seen, now), x)).collect();
+        assert_eq!(rows[1].0.relation, "linked to this");
+        assert!(rows[1].0.notice && !rows[0].0.notice);
+        let groups = group_mentions(rows, &[]);
+        let ids: Vec<&str> = groups[0].2.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, ["a", "c", "b"]);
     }
 }

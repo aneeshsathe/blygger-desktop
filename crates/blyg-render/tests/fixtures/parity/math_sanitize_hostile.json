@@ -1,0 +1,17 @@
+{
+  "name": "math_sanitize_hostile",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vm3]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vm3\" data-blyg-version=\"1\">\n<p>Hostile <math><semantics><mrow><mi>x</mi><mo>&lt;</mo><mi>/</mi><mi>a</mi><mi>n</mi><mi>n</mi><mi>o</mi><mi>t</mi><mi>a</mi><mi>t</mi><mi>i</mi><mi>o</mi><mi>n</mi><mo rspace=\"0em\">&gt;</mo><mo lspace=\"0em\">&lt;</mo><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>p</mi><mi>t</mi><mo>&gt;</mo><mi>a</mi><mi>l</mi><mi>e</mi><mi>r</mi><mi>t</mi><mrow><mo fence=\"true\" form=\"prefix\" stretchy=\"false\">(</mo><mn>1</mn><mo fence=\"true\" form=\"postfix\" stretchy=\"false\">)</mo></mrow><mo>&lt;</mo><mi>/</mi><mi>s</mi><mi>c</mi><mi>r</mi><mi>i</mi><mi>p</mi><mi>t</mi><mo>&gt;</mo></mrow><annotation encoding=\"application/x-tex\">x&lt;/annotation&gt;&lt;script&gt;alert(1)&lt;/script&gt;</annotation></semantics></math> and <math><semantics><mi>a</mi><annotation encoding=\"application/x-tex\">a</annotation></semantics></math> and  end.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm3/\">fragment ↗</a> · snapshot of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm3",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

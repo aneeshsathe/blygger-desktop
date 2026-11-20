@@ -35,6 +35,31 @@ pub(crate) fn reply_hint(md: &str, id: &str) -> String {
     }
 }
 
+/// --- maths --- The studio's note when a selection takes in a formula.
+pub(crate) const ACROSS_FORMULA: &str =
+    "A passage can’t include a formula. Quote the whole post, or the prose either side of it.";
+
+/// A line of the stub bar: something to do, or a refusal of what was
+/// selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StubLine {
+    Action,
+    Refusal,
+}
+
+/// How the formula note reads.
+pub(crate) const ACROSS_FORMULA_LINE: StubLine = StubLine::Refusal;
+
+/// A stub-bar line's colour: an action is the accent, like a link; a
+/// refusal is the theme's warning text, set apart (user testing, W8: the
+/// two in one colour read as two errors).
+pub(crate) fn stub_line_color(line: StubLine, p: &crate::theme::Palette) -> Hsla {
+    match line {
+        StubLine::Action => p.accent,
+        StubLine::Refusal => p.warn_text(),
+    }
+}
+
 /// A passage selected in the editor preview, as the page reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
@@ -98,6 +123,9 @@ pub fn pick_passage(
     id: &str,
 ) -> Option<(usize, String)> {
     let page = page?;
+    if pick.across_formula {
+        return None; // --- maths --- refused, as publish would refuse it
+    }
     if pick.gen_ != page.gen_ || page.src != text {
         return None; // the preview is behind the draft
     }
@@ -253,7 +281,7 @@ impl MainView {
                 .id(id)
                 .debug_selector(move || id.into())
                 .cursor_pointer()
-                .text_color(p.accent)
+                .text_color(stub_line_color(StubLine::Action, &p))
                 .hover(|s| s.underline())
                 .child(label)
         };
@@ -289,6 +317,25 @@ impl MainView {
             )
             .on_click(cx.listener(|this, _, window, cx| this.stub_choose_passage(window, cx))),
         );
+        // --- maths --- (studio 0.62) a selection that cuts through a formula.
+        let across = !chosen
+            && self
+                .reading
+                .stub
+                .as_ref()
+                .is_some_and(|p| p.pick.across_formula);
+        if across {
+            row = row.child(
+                div()
+                    .id("stub-formula")
+                    .debug_selector(|| "stub-formula".into())
+                    .w_full()
+                    .mt(px(4.))
+                    .italic()
+                    .text_color(stub_line_color(ACROSS_FORMULA_LINE, &p))
+                    .child(ACROSS_FORMULA),
+            );
+        }
         let pill = chosen.then(|| {
             div()
                 .id("stub-only")
@@ -338,6 +385,24 @@ impl MainView {
 mod tests {
     use super::{StubPage, StubPick, caret_at_new_quote, pick_passage, quote_boxes, reply_hint};
 
+    /// User testing (W8): the formula refusal sat under "select a passage in
+    /// the preview" in the same accent, so the two lines read as two errors.
+    #[test]
+    fn the_formula_refusal_reads_apart_from_the_passage_link() {
+        use super::{ACROSS_FORMULA_LINE, StubLine, stub_line_color};
+        assert_eq!(ACROSS_FORMULA_LINE, StubLine::Refusal);
+        for p in [
+            crate::theme::Palette::light(),
+            crate::theme::Palette::dark(),
+        ] {
+            let p = p.on_page();
+            assert_ne!(
+                stub_line_color(StubLine::Refusal, &p),
+                stub_line_color(StubLine::Action, &p)
+            );
+        }
+    }
+
     const ID: &str = "7c9wk2mhq0v3xj8tn5rzfd41bg";
 
     #[test]
@@ -367,6 +432,7 @@ mod tests {
             gen_,
             index,
             text: text.into(),
+            across_formula: false,
         }
     }
 
@@ -429,6 +495,12 @@ mod tests {
         let out = blyg_render::stub_quote::with_stub_quote_nth(&md, ID, Some("Second words."), 1);
         assert!(out.ends_with(&format!("![[{ID}]]\n> Second words.\n\nMy end.")));
         assert!(out.starts_with(&format!("![[{ID}]]\n\nMy point.")));
+        // --- maths --- the same selection, cutting through a formula.
+        let across = StubPick {
+            across_formula: true,
+            ..pick(4, 3, "Second words.")
+        };
+        assert_eq!(pick_passage(&across, page, &md, ID), None);
     }
 
     #[test]

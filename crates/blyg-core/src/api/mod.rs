@@ -25,12 +25,14 @@ pub mod auth;
 pub mod background_api; // --- background --- (studio 0.61, contract 5.10.0)
 pub mod browse; // --- browse --- (studio 0.49)
 pub mod changelog; // --- changelog display --- (studio 0.58, contract 5.8.0)
+pub mod conditional; // conditional reads (studio 0.65, contract 5.14.0)
 pub mod contacts; // --- contacts --- (studio 0.56, contract 5.7.0)
 pub mod discover; // --- discover --- (studio 0.60, contract 5.9.0)
 pub mod lineage; // --- lineage counts --- (studio extension lineage-glyph)
 pub mod media;
 pub mod oauth;
 pub mod public;
+pub mod read_batch; // read batches, conditional children (studio 0.65)
 // --- site ---
 pub mod site;
 // --- end site ---
@@ -43,6 +45,7 @@ pub mod wire; // --- syndication --- (decision #98)
 
 use std::io::Read;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde::de::DeserializeOwned;
@@ -54,11 +57,17 @@ use crate::model::{
     Settings, SubId, SubscribePreview, Subscription, SubscriptionKind, Version,
 };
 use auth::Credential;
+pub use conditional::Traffic;
+use conditional::{Counters, Validators};
 use wire::*;
 
 /// The private API contract major this Burrow speaks: blygger-studio's
 /// 5.0.0 (studio 0.49.10+; Burrow's minimum is 0.49.12, which also keeps
-/// tokens made for the old host-root `/api` working). Anything else is
+/// tokens made for the old host-root `/api` of a mounted blyg working, up
+/// to studio 0.64; 0.65 refuses them, and Burrow asks for a new sign-in:
+/// `Api::audience_moved`). Contract 6 (studio 0.67) drops `GET
+/// /api/changes`; sync already does without it (`api::conditional`).
+/// Anything else is
 /// refused before a list is read, because a page in another shape would
 /// read as the end of the list and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
@@ -131,6 +140,13 @@ pub struct Api {
     /// Whether `POST /api/subscriptions` takes `wholeBlyg` (contract 5.1+),
     /// once the capabilities were read.
     whole_blyg: Mutex<Option<bool>>,
+    /// Each `GET` URL's last body and its `ETag` (`conditional`).
+    validators: Mutex<Validators>,
+    /// Send `If-None-Match` with a kept ETag (on unless turned off to
+    /// measure the difference).
+    conditional: AtomicBool,
+    /// What's been asked, for measuring.
+    counters: Counters,
 }
 
 /// The settings an item's derived fields depend on.
@@ -192,7 +208,43 @@ impl Api {
             session: Mutex::new(None),
             site: Mutex::new(None),
             whole_blyg: Mutex::new(None),
+            validators: Mutex::new(Validators::default()),
+            conditional: AtomicBool::new(true),
+            counters: Counters::default(),
         }
+    }
+
+    /// Ask `GET`s conditionally (`If-None-Match` with the ETag of the body
+    /// kept for that URL). On by default; off sends every `GET` whole, as
+    /// Burrow did before studio 0.65 (to measure the difference).
+    pub fn set_conditional(&self, on: bool) {
+        self.conditional.store(on, Ordering::Relaxed);
+    }
+
+    /// Whether this blyg has answered with an `ETag`: it offers
+    /// conditional reads (studio 0.65+; there's no capability for it).
+    pub fn conditional_reads(&self) -> bool {
+        self.counters.etags_seen()
+    }
+
+    /// The requests, `304`s and body bytes so far.
+    pub fn traffic(&self) -> Traffic {
+        self.counters.snapshot()
+    }
+
+    /// Whether the credential was made for a different API address than
+    /// this blyg's (`{blyg}/api`): a token or browser sign-in made for the
+    /// host-root `{origin}/api` of a blyg mounted under a path. Studio 0.65
+    /// refuses those (the alias is gone, studio#151), so only a new
+    /// sign-in, which finds the API under the mount, helps. A password, or
+    /// a token that doesn't say its audience: false.
+    pub fn audience_moved(&self) -> bool {
+        let token = match &self.cred {
+            Credential::Token(t) => t.clone(),
+            Credential::OAuth(s) => s.grant().access,
+            Credential::Password(_) => return false,
+        };
+        oauth::audience_moved(&token, &self.api_url())
     }
 
     pub fn base_url(&self) -> &str {
@@ -238,11 +290,21 @@ impl Api {
     }
 
     /// A request at an absolute URL, with the 403 scope message.
-    fn send_url(&self, method: &str, url: &str, body: &Body) -> (Result<Value>, Option<String>) {
-        let (req, bearer) = match self.request_url(method, url) {
+    /// `if_none_match`: ask conditionally with that ETag.
+    fn send_url(
+        &self,
+        method: &str,
+        url: &str,
+        body: &Body,
+        if_none_match: Option<&str>,
+    ) -> (Result<Answer>, Option<String>) {
+        let (mut req, bearer) = match self.request_url(method, url) {
             Ok(r) => r,
             Err(e) => return (Err(e), None),
         };
+        if let Some(etag) = if_none_match {
+            req = req.set("if-none-match", etag);
+        }
         let res = match body {
             Body::None => req.call(),
             Body::Json(v) => req.send_json(v.clone()),
@@ -271,7 +333,12 @@ impl Api {
                 bearer,
             );
         }
-        (read_json(res), bearer)
+        let a = read_answer(res);
+        match &a {
+            Ok(a) => self.counters.note(a.status, a.text.len(), a.etag.is_some()),
+            Err(_) => self.counters.note(0, 0, false),
+        }
+        (a, bearer)
     }
 
     /// One call. `path` starts with `/api/`, under the blyg's mount. With
@@ -284,20 +351,94 @@ impl Api {
     }
 
     /// `exec` at an absolute URL: a 401 signs in again (a password) or
-    /// refreshes the browser sign-in once, and the request is retried.
+    /// refreshes the browser sign-in once, and the request is retried. A
+    /// `GET` is asked conditionally (`get_validated`).
     fn exec_url(&self, method: &str, url: &str, body: Body) -> Result<Value> {
-        let (r, bearer) = self.send_url(method, url, &body);
+        if method == "GET" {
+            return self.get_validated(url).map(|(v, _)| v);
+        }
+        json_of(&self.exec_answer(method, url, &body, None)?.text)
+    }
+
+    /// One request, with the 401 retry.
+    fn exec_answer(
+        &self,
+        method: &str,
+        url: &str,
+        body: &Body,
+        if_none_match: Option<&str>,
+    ) -> Result<Answer> {
+        let (r, bearer) = self.send_url(method, url, body, if_none_match);
         match (&self.cred, r) {
             (Credential::Password(_), Err(CoreError::Unauthorized)) => {
                 *self.session.lock().unwrap() = None;
-                self.send_url(method, url, &body).0
+                self.send_url(method, url, body, if_none_match).0
             }
             (Credential::OAuth(s), Err(CoreError::Unauthorized)) if bearer.is_some() => {
                 s.after_unauthorized(bearer.as_deref())?;
-                self.send_url(method, url, &body).0
+                self.send_url(method, url, body, if_none_match).0
             }
             (_, r) => r,
         }
+    }
+
+    /// A `GET`, asked with the ETag of the body last read from `url` when
+    /// there is one (`conditional`). A 304 hands back that body, never
+    /// nothing; a 200 with an `ETag` is kept for next time. The `bool`:
+    /// the blyg said nothing changed (304).
+    fn get_validated(&self, url: &str) -> Result<(Value, bool)> {
+        let kept = self.kept_etag(url);
+        let etag = kept.as_ref().map(|k| k.etag.as_str());
+        let a = self.exec_answer("GET", url, &Body::None, etag)?;
+        if a.status != 304 {
+            return self.keep(url, a).map(|v| (v, false));
+        }
+        // The kept body is the answer, unless the 304 names another
+        // validator (or nothing was kept): then ask whole.
+        if let Some(k) = &kept
+            && a.etag.as_deref().is_none_or(|e| e == k.etag)
+        {
+            return Ok((json_of(&k.body)?, true));
+        }
+        self.forget_etag(url);
+        let a = self.exec_answer("GET", url, &Body::None, None)?;
+        if a.status == 304 {
+            return Err(CoreError::Other(format!(
+                "the blyg answered 304 to a request with no validator ({})",
+                url_path(url)
+            )));
+        }
+        self.keep(url, a).map(|v| (v, false))
+    }
+
+    /// A `GET`'s 200: keep it beside its `ETag` (when the blyg sent one).
+    fn keep(&self, url: &str, a: Answer) -> Result<Value> {
+        let v = json_of(&a.text)?;
+        match &a.etag {
+            Some(etag) => self.remember_etag(url, etag, &a.text),
+            None => self.forget_etag(url),
+        }
+        Ok(v)
+    }
+
+    /// The body and ETag kept for `url` (none while conditional reads are
+    /// off).
+    fn kept_etag(&self, url: &str) -> Option<conditional::Kept> {
+        if !self.conditional.load(Ordering::Relaxed) {
+            return None;
+        }
+        self.validators.lock().unwrap().get(url)
+    }
+
+    /// Keep `text` as `url`'s body under `etag`.
+    fn remember_etag(&self, url: &str, etag: &str, text: &str) {
+        if self.conditional.load(Ordering::Relaxed) {
+            self.validators.lock().unwrap().put(url, etag, text);
+        }
+    }
+
+    fn forget_etag(&self, url: &str) {
+        self.validators.lock().unwrap().forget(url);
     }
 
     fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value> {
@@ -337,7 +478,28 @@ impl Api {
         limit: u32,
         cursor: Option<&str>,
     ) -> Result<CursorPage<T>> {
-        let mut url = format!("{path}?");
+        self.page_validated(path, query, limit, cursor)
+            .map(|(p, _)| p)
+    }
+
+    /// `page`, and whether the blyg said it hadn't changed (304: the page
+    /// is the one last read at that URL, whole).
+    fn page_validated<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        query: &str,
+        limit: u32,
+        cursor: Option<&str>,
+    ) -> Result<(CursorPage<T>, bool)> {
+        let (v, same) = self.get_validated(&self.page_url(path, query, limit, cursor))?;
+        serde_json::from_value(v)
+            .map(|p| (p, same))
+            .map_err(|e| CoreError::Other(format!("unexpected response from {path}: {e}")))
+    }
+
+    /// A page's absolute URL (the key its ETag is kept under).
+    fn page_url(&self, path: &str, query: &str, limit: u32, cursor: Option<&str>) -> String {
+        let mut url = format!("{}{path}?", self.base);
         if !query.is_empty() {
             url.push_str(query);
             url.push('&');
@@ -347,7 +509,7 @@ impl Api {
             url.push_str("&cursor=");
             url.push_str(&enc(c));
         }
-        self.call_as("GET", &url, None)
+        url
     }
 
     /// Every element of a cursor-paged list, as one coherent acquisition:
@@ -1033,11 +1195,26 @@ impl Api {
     /// `CursorExpired` the walk starts over.
     pub fn reading(&self, limit: u32, cursor: Option<&str>) -> Result<Option<ReadingPage>> {
         let limit = limit.clamp(1, IMPORTED_READING_MAX);
-        let page: Option<CursorPage<Value>> =
-            Self::optional(self.page("/api/reading/imported", "", limit, cursor))?;
-        let Some(page) = page else {
+        const PATH: &str = "/api/reading/imported";
+        // The first page as last read, to tell a page whose rows are all as
+        // they were (only its cursor moved, with a feed poll or a thumb)
+        // from one with something new.
+        let before = cursor
+            .is_none()
+            .then(|| self.kept_etag(&self.page_url(PATH, "", limit, cursor)))
+            .flatten();
+        let page: Option<(CursorPage<Value>, bool)> =
+            Self::optional(self.page_validated(PATH, "", limit, cursor))?;
+        let Some((page, not_modified)) = page else {
             return Ok(None);
         };
+        let unchanged = not_modified
+            || before.is_some_and(|k| {
+                serde_json::from_str::<Value>(&k.body)
+                    .ok()
+                    .and_then(|v| v.get("items").cloned())
+                    .is_some_and(|rows| rows.as_array() == Some(&page.items))
+            });
         let mut items = Vec::with_capacity(page.items.len());
         let mut syndication = Vec::new(); // --- syndication ---
         for row in &page.items {
@@ -1059,6 +1236,7 @@ impl Api {
             items,
             next: page.page.next_cursor,
             syndication,
+            unchanged,
         }))
     }
 
@@ -1528,19 +1706,53 @@ fn enc(s: &str) -> String {
         .replace('+', "%20")
 }
 
+/// A 2xx/3xx answer: its status, `ETag` and body text (empty for a 304).
+struct Answer {
+    status: u16,
+    etag: Option<String>,
+    text: String,
+}
+
+/// An answer's JSON (`Null` when it had no body).
+fn json_of(s: &str) -> Result<Value> {
+    if s.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_str(s).map_err(|e| CoreError::Other(format!("bad JSON from server: {e}")))
+}
+
+/// A URL's path, for messages (never its host or query).
+fn url_path(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    let path = rest.find('/').map_or("/", |i| &rest[i..]);
+    path.split('?').next().unwrap_or(path)
+}
+
 fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Value> {
+    json_of(&read_answer(res)?.text)
+}
+
+fn read_answer(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Answer> {
     match res {
         Ok(r) => {
-            let mut s = String::new();
+            let status = r.status();
+            let etag = r.header("etag").map(str::to_string);
+            // A 304 has no body. Not reading one (ureq would wait for the
+            // connection to close, and then reuse a dead one) drops the
+            // connection instead of pooling it.
+            if status == 304 {
+                return Ok(Answer {
+                    status,
+                    etag,
+                    text: String::new(),
+                });
+            }
+            let mut text = String::new();
             r.into_reader()
                 .take(64 * 1024 * 1024)
-                .read_to_string(&mut s)
+                .read_to_string(&mut text)
                 .map_err(|_| CoreError::Offline)?;
-            if s.trim().is_empty() {
-                return Ok(Value::Null);
-            }
-            serde_json::from_str(&s)
-                .map_err(|e| CoreError::Other(format!("bad JSON from server: {e}")))
+            Ok(Answer { status, etag, text })
         }
         Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
         Err(ureq::Error::Status(401, _)) => Err(CoreError::Unauthorized),
@@ -1558,6 +1770,7 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
             match (code, code_str) {
                 (409, "revision-conflict") => return Err(CoreError::RevisionConflict),
                 (409, "cursor-expired") => return Err(CoreError::CursorExpired),
+                (409, "tangle-confirmation-required") => return Err(tangle_confirm(&body)),
                 _ => {}
             }
             let message = body
@@ -1590,6 +1803,27 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
             })
         }
     }
+}
+
+/// --- tangle --- the 409 `tangle-confirmation-required` body:
+/// `details: {count, parts: [label, …]}`.
+fn tangle_confirm(body: &Value) -> CoreError {
+    let d = body.get("details");
+    let parts: Vec<String> = d
+        .and_then(|d| d.get("parts"))
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let count = d
+        .and_then(|d| d.get("count"))
+        .and_then(Value::as_u64)
+        .map_or(parts.len(), |n| n as usize);
+    CoreError::TangleConfirm { count, parts }
 }
 
 /// `errors` entries are strings, `{directive, reason}` (transclusions) or TK issue objects.
@@ -1765,7 +1999,28 @@ mod tests {
             json!({ "expectedRevision": 4, "note": "fixed a typo" })
         );
     }
-}
 
-#[cfg(test)]
-mod compress_tests;
+    #[test]
+    fn the_tangle_gate_reads_its_count_and_parts() {
+        let body = serde_json::json!({
+            "code": "tangle-confirmation-required",
+            "message": "publishing this thread also publishes 2 new items; send tangle: true to confirm",
+            "details": {"count": 2, "parts": ["A passage…", "an idea (linked)"]}
+        });
+        match tangle_confirm(&body) {
+            CoreError::TangleConfirm { count, parts } => {
+                assert_eq!(count, 2);
+                assert_eq!(parts, ["A passage…", "an idea (linked)"]);
+            }
+            e => panic!("{e}"),
+        }
+        let e = CoreError::TangleConfirm {
+            count: 1,
+            parts: vec![],
+        };
+        assert_eq!(
+            e.to_string(),
+            "publishing this thread also publishes 1 new item"
+        );
+    }
+}

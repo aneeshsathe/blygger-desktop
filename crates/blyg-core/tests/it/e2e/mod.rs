@@ -21,6 +21,14 @@
 //! Run with `--test-threads=1`: the offline test takes the Worker down.
 //! Never point these at a real blyg: they publish, withdraw and pin.
 
+// Studio 0.64 parity: one file per work package (each may `use super::*`;
+// the helpers below are visible to them).
+mod background;
+mod conditional;
+mod links;
+mod maths;
+mod tangle;
+
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
@@ -186,7 +194,7 @@ fn conforms(method: &str, base: &str, path: &str) -> Value {
     let (st, v) = owner(method, base, path, None);
     let (p, _) = path.split_once('?').unwrap_or((path, ""));
     let segs: Vec<&str> = p.trim_start_matches('/').split('/').collect();
-    if let Err(e) = contract::contract().check_response(method, &segs, st, &v) {
+    if let Err(e) = contract::current().check_response(method, &segs, st, &v) {
         panic!("{method} {path} broke the contract: {e}\n{v}");
     }
     assert_eq!(st, 200, "{method} {path}: {v}");
@@ -959,12 +967,14 @@ fn pasted_images_render_once_inline() {
 #[ignore = "needs a local Worker: scripts/e2e-local.sh"]
 fn tk_output_with_dollar_patterns_publishes_verbatim() {
     // Worker patch 9: splicing is $-safe, so `$&`, `$1`, `$$` and `` $` ``
-    // in generated text come out exactly as written.
+    // in generated text come out exactly as written. Each dollar is escaped
+    // (`\$`): since studio 0.62 a bare `$…$` pair is a formula, and an escaped
+    // dollar is not, while the text still holds every replacement pattern.
     let dir = tempfile::tempdir().unwrap();
     let e = e2e();
     let b = manual(dir.path());
     let t = tag("dollar");
-    let output = "It costs $& and $1, or $$ and $` $' in total.";
+    let output = r"It costs \$& and \$1, or \$\$ and \$` \$' in total.";
     let text = format!("{t}\n\n[TK]price it[=]{output}[/TK]");
     let id = b.create_draft(Kind::Fragment, &t).unwrap();
     b.save_with_provenance(&id, &text, &[prov("test-model-1", &[])])
@@ -1228,7 +1238,7 @@ fn discover_seen_at_round_trips_and_leaves_other_settings() {
     // A visit: the directory (the fixture, from localhost), and the mark
     // moves to the newest listing it holds.
     let blygs = discover::fetch(&serve_json_once(include_str!(
-        "../fixtures/discover/blygs.json"
+        "../../fixtures/discover/blygs.json"
     )))
     .unwrap();
     assert_eq!(blygs.len(), 5);
@@ -4636,7 +4646,7 @@ fn links_that_name_blyg_items_classify() {
             Some(json!({ "urls": urls })),
         );
         if let Err(err) =
-            contract::contract().check_response("POST", &["api", "peek", "links"], st, &v)
+            contract::current().check_response("POST", &["api", "peek", "links"], st, &v)
         {
             panic!("POST /api/peek/links broke the contract: {err}\n{v}");
         }
@@ -6111,6 +6121,7 @@ fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
             &PublishExtras {
                 note_generated: true,
                 change_category: Some(Some(ChangeCategory::Minor)),
+                ..Default::default()
             },
         )
         .expect("publish with extras");

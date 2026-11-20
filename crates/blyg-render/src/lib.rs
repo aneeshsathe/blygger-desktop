@@ -15,6 +15,7 @@
 //! assert_eq!(out.html, "<p data-line=\"0\">Hello <em>world</em></p>\n");
 //! ```
 
+mod comments; // --- comments --- `/* … */` notes to self
 mod embeds;
 mod emph;
 mod grammar;
@@ -23,11 +24,13 @@ mod linemap;
 mod linkify;
 mod links;
 mod markdown;
+pub mod math;
 mod native;
 mod punycode;
 mod sanitize;
 mod shell;
 pub mod stub_quote;
+pub mod tangle; // --- tangle --- `![[+ …]]` / `[[+ …]]` (studio 0.63)
 mod tk;
 mod transclusion;
 mod util;
@@ -49,8 +52,8 @@ pub use shell::{
 };
 pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
-    Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
-    Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
+    Found, NestedSource, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT,
+    TextQuoteSelector, Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
 pub use util::{absolutize_html, escape_html, is_js_ws, item_document_url};
 
@@ -139,6 +142,9 @@ pub struct Stats {
     pub images: usize,
     /// The resolved quotes in directive order (the wire's `transclusions[]`).
     pub transclusions: Vec<Quote>,
+    /// Formulas that don't draw, in document order: publish refuses each
+    /// with this reason (studio 0.62, a 400 naming the formula).
+    pub math_errors: Vec<math::MathError>,
 }
 
 /// A rendered preview.
@@ -169,6 +175,18 @@ pub fn render_preview(
     } else {
         md
     };
+    // --- tangle --- a thread's `![[+ …]]` spans and `[[+ …]]` placeholders
+    // become tokens first, drawn as the new items they'll be at the end
+    // (`previewTangles`, studio 0.63).
+    let tangles = (kind == Kind::Thread)
+        .then(|| tangle::preview(md))
+        .flatten();
+    let md = tangles.as_ref().map_or(md, |t| t.doc.text.as_str());
+    // --- comments --- comments to self (`/* … */`) are left out, as the
+    // studio's preview does (`previewComments`).
+    let commented = comments::preview(md, tangles.as_ref().map(|t| &t.doc));
+    let mapped = commented.as_ref().or(tangles.as_ref().map(|t| &t.doc));
+    let md = mapped.map_or(md, |d| d.text.as_str());
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
     // h-cards with the `[[id]]` tokens below (`withMentionCards`).
@@ -176,7 +194,10 @@ pub fn render_preview(
     let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);
-    let src = linemap::Mapped::identity(md);
+    let src = match mapped {
+        Some(d) if d.lines.len() == markdown::line_starts(md).len() => d.with_text(md.to_string()),
+        _ => linemap::Mapped::identity(md),
+    };
     let (stripped, spans) = tk::preview_strip(&src, &scopes);
     let annotated = tk::annotate(&stripped, &spans, kind == Kind::Thread);
 
@@ -193,6 +214,7 @@ pub fn render_preview(
         let (html, md_stats) = markdown::render(text, None);
         stats.images += md_stats.images;
         stats.videos += md_stats.videos;
+        stats.math_errors.extend(md_stats.math_errors);
         blocks.push(tk::Block {
             token: token.clone(),
             html: format!("<div class=\"blyg-tk-gen\">{html}</div>"),
@@ -245,18 +267,24 @@ pub fn render_preview(
                 markdown::render(&doc.text, if opts.data_line { Some(&map) } else { None });
             stats.images += md_stats.images;
             stats.videos += md_stats.videos;
+            stats.math_errors.extend(md_stats.math_errors);
             (html, md_stats.block_lines)
         }
         Kind::Thread => {
             let w = transclusion::walk(doc, resolver, opts.self_id.as_deref(), opts.data_line);
             stats.images += w.md.images;
             stats.videos += w.md.videos;
+            stats.math_errors.extend(w.md.math_errors);
             stats.quotes = w.quotes.len();
             stats.unresolved = w.unresolved;
             stats.unresolved.extend(link_errors);
             stats.transclusions = w.quotes.iter().map(|(q, _)| q.clone()).collect();
-            // previewTransclusions sanitizes the walked HTML, markers and all.
+            // previewTransclusions sanitizes the walked HTML, markers and
+            // all, and the generated blocks spliced into it (studio 0.64).
             let html = sanitize::sanitize_html(&w.html);
+            for b in &mut blocks {
+                b.html = sanitize::sanitize_html(&b.html);
+            }
             let html = tk::apply_wrappers(html, &blocks, annotated.has_inline);
             let mut html = splice(html);
             if opts.provenance {
@@ -268,8 +296,12 @@ pub fn render_preview(
                     })
                     .collect();
                 html = transclusion::inject_provenance(&html, &lines);
+                html = transclusion::inject_nested_provenance(&html, resolver, &opts.mount);
             }
-            let html = util::absolutize_html(&html, &our_origin(&opts.mount));
+            let mut html = util::absolutize_html(&html, &our_origin(&opts.mount));
+            if let Some(t) = &tangles {
+                html = tangle_finish(&html, t, resolver, opts);
+            }
             let line_map = w
                 .block_lines
                 .into_iter()
@@ -299,6 +331,33 @@ pub fn render_preview(
         line_map,
         stats,
     }
+}
+
+/// --- tangle --- Each quoted span rendered on its own, as the new item it
+/// will be (links and quotes resolved, no line attributes), then every
+/// token drawn in place.
+fn tangle_finish(
+    html: &str,
+    t: &tangle::Preview,
+    resolver: &dyn Resolver,
+    opts: &RenderOpts,
+) -> String {
+    // As the studio's preview: no provenance line on a quote inside a
+    // span, and it isn't one of the thread's `transclusions`.
+    let inner = RenderOpts {
+        data_line: false,
+        provenance: false,
+        ..opts.clone()
+    };
+    let quotes: Vec<String> = t
+        .spans
+        .iter()
+        .map(|s| match s.kind {
+            tangle::SpanKind::Quote => render_preview(&s.text, Kind::Thread, resolver, &inner).html,
+            tangle::SpanKind::Link => String::new(),
+        })
+        .collect();
+    tangle::finish(html, &t.spans, &quotes)
 }
 
 /// The identity origin a mount names (`https://blyg.example.com/blyg` →

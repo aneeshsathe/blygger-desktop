@@ -1,0 +1,12 @@
+{
+  "name": "math_money_spaces",
+  "kind": "fragment",
+  "md": "$ x $ and $x $ and $ x$ stay prose, as does $5x$3.",
+  "html": "<p>$ x $ and <code class=\"math-error\" title=\"Can&#39;t use function &#39;$&#39; in math mode at position 3: \nx $̲ and $ x\">$x $ and $ x$</code> stay prose, as does $5x$3.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "math_bad_tex",
+  "kind": "fragment",
+  "md": "Broken $\\frac{a$ here.",
+  "html": "<p>Broken <code class=\"math-error\" title=\"Unexpected end of input in a macro argument, expected &#39;}&#39; at end of input: \\frac{a\">$\\frac{a$</code> here.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

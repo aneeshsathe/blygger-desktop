@@ -65,6 +65,22 @@ pub trait Resolver {
         self.resolve(id)
     }
 
+    /// What a quote nested inside a baked quote names on its provenance line
+    /// (pages.ts `injectNestedProvenance`): the item `id` from `origin`
+    /// (`None`: your own), as far as the store holds it. The default asks
+    /// [`Resolver::resolve`]; a resolver whose `resolve` is costly (it renders)
+    /// or guarded (cycles) should answer from its store directly.
+    fn nested_source(&self, origin: Option<&str>, id: &str) -> NestedSource {
+        match self.resolve(id) {
+            Resolution::Found(f) if f.origin.as_deref() == origin => NestedSource {
+                kind: Some(f.kind),
+                page: f.page,
+                title: f.author,
+            },
+            _ => NestedSource::default(),
+        }
+    }
+
     /// --- contacts --- The contact an `@handle` names (any case), when the
     /// blyg rewrites handles at publish. The default knows nobody, so every
     /// `@handle` stays literal prose, as on a blyg without contacts.
@@ -72,6 +88,19 @@ pub trait Resolver {
         let _ = handle;
         None
     }
+}
+
+/// A nested quote's source, for its provenance line ([`Resolver::nested_source`]).
+/// Everything is optional: an unknown kind reads "fragment", a missing title
+/// gives the origin's host, as the studio's line degrades.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct NestedSource {
+    /// The item's authored kind, when the store holds it.
+    pub kind: Option<ItemKind>,
+    /// For an imported item: the origin's own `page` path, when declared.
+    pub page: Option<String>,
+    /// For an imported item: the source blyg's display name.
+    pub title: Option<String>,
 }
 
 /// A resolver that knows nothing (every quote is unresolved).
@@ -219,24 +248,92 @@ pub(crate) fn is_quote_line(line: &str) -> bool {
     line.trim_start_matches(is_js_ws).starts_with('>')
 }
 
-/// transclusion.ts `attachedQuote`: the run of `>` lines directly after the
-/// directive at `i` (no blank line between), each stripped of its marker and
-/// at most one following whitespace character, and the index to resume at.
-/// The run ends at the first line that is not a quote line; a line empty
-/// after its marker is a paragraph break inside the selection.
-pub(crate) fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
-    let mut j = i + 1;
-    let mut run: Vec<&str> = Vec::new();
-    while j < lines.len() && is_quote_line(lines[j]) {
-        let rest = &lines[j].trim_start_matches(is_js_ws)[1..];
-        let rest = match rest.chars().next() {
-            Some(c) if is_js_ws(c) => &rest[c.len_utf8()..],
-            _ => rest,
-        };
-        run.push(rest);
-        j += 1;
+/// directives.ts `parser`: markdown-it's default block rules (no HTML),
+/// used only to measure a blockquote. Its own engine, as in the studio, so
+/// a block rule added to the renderer can't move where a quote ends.
+fn extent_engine() -> &'static markdown_it::MarkdownIt {
+    static MD: OnceLock<markdown_it::MarkdownIt> = OnceLock::new();
+    MD.get_or_init(|| {
+        use markdown_it::plugins::cmark::block;
+        let mut md = markdown_it::MarkdownIt::new();
+        block::code::add(&mut md);
+        block::fence::add(&mut md);
+        block::blockquote::add(&mut md);
+        block::hr::add(&mut md);
+        block::list::add(&mut md);
+        block::reference::add(&mut md);
+        block::heading::add(&mut md);
+        block::lheading::add(&mut md);
+        block::paragraph::add(&mut md);
+        markdown_it::plugins::extra::tables::add(&mut md);
+        md
+    })
+}
+
+/// directives.ts `quoteExtent`: how many of `lines` (the first a quote
+/// line) the blockquote opening there spans, CommonMark's lazy continuation
+/// included (§10.1, decision #76). A quote line's leading whitespace is
+/// ignored, and an unprefixed directive or reserved line is never lazy text.
+fn quote_extent(lines: &[&str]) -> usize {
+    use markdown_it::plugins::cmark::block::blockquote::Blockquote;
+    let end = lines
+        .iter()
+        .position(|l| js_trim(l).is_empty())
+        .unwrap_or(lines.len());
+    let src = lines[..end]
+        .iter()
+        .map(|l| {
+            if is_quote_line(l) {
+                l.trim_start_matches(is_js_ws)
+            } else {
+                l
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let root = extent_engine().parse(&src);
+    let starts = markdown::line_starts(&src);
+    let mut n = root
+        .children
+        .iter()
+        .find(|c| c.is::<Blockquote>())
+        .and_then(|q| q.srcmap)
+        .map(|m| m.get_byte_offsets())
+        .filter(|&(s, _)| markdown::line_index(&starts, s) == 0)
+        .map_or(1, |(s, e)| {
+            (markdown::line_index(&starts, e.saturating_sub(1).max(s)) + 1).min(end)
+        });
+    if let Some(k) = (1..n).find(|&k| !is_quote_line(lines[k]) && is_directive_line(lines[k])) {
+        n = k;
     }
-    ((!run.is_empty()).then(|| run.join("\n")), j)
+    n.max(1)
+}
+
+/// directives.ts `attachedQuote`: the blockquote directly after the
+/// directive at `i` (no blank line between) and the index to resume at.
+/// Its extent is CommonMark's, lazy continuation lines included
+/// ([`quote_extent`]). Each `>` line loses its marker and at most one
+/// following whitespace character; a lazy line is kept as written. A line
+/// empty after its marker is a paragraph break inside the selection.
+pub(crate) fn attached_quote(lines: &[&str], i: usize) -> (Option<String>, usize) {
+    if i + 1 >= lines.len() || !is_quote_line(lines[i + 1]) {
+        return (None, i + 1);
+    }
+    let n = quote_extent(&lines[i + 1..]);
+    let run: Vec<&str> = lines[i + 1..i + 1 + n]
+        .iter()
+        .map(|l| {
+            if !is_quote_line(l) {
+                return *l;
+            }
+            let rest = &l.trim_start_matches(is_js_ws)[1..];
+            match rest.chars().next() {
+                Some(c) if is_js_ws(c) => &rest[c.len_utf8()..],
+                _ => rest,
+            }
+        })
+        .collect();
+    (Some(run.join("\n")), i + 1 + n)
 }
 
 /// transclusion.ts `selectionFromQuote`: the selection a quote run denotes,
@@ -403,6 +500,7 @@ pub(crate) fn walk(
             let (html, stats) = markdown::render(&chunk, if lines_on { Some(&map) } else { None });
             md.images += stats.images;
             md.videos += stats.videos;
+            md.math_errors.extend(stats.math_errors); // --- maths ---
             block_lines.extend(stats.block_lines);
             parts.push(html);
         }
@@ -619,25 +717,81 @@ fn is_baked_quote(tag: &str) -> bool {
     })
 }
 
-/// pages.ts `injectProvenance`: one provenance paragraph inside each
-/// top-level baked quote (whole or partial), in order; nested quotes get none.
-pub(crate) fn inject_provenance(html: &str, provenance: &[String]) -> String {
+/// The `<blockquote …>` / `</blockquote>` tags, as pages.ts scans them.
+fn blockquote_tags() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| Regex::new(r"<blockquote\b[^>]*>|</blockquote>").expect("bq re"));
+    RE.get_or_init(|| Regex::new(r"<blockquote\b[^>]*>|</blockquote>").expect("bq re"))
+}
+
+/// pages.ts `clampForeign`: whitespace runs as one space, trimmed, and cut
+/// to `max` UTF-16 units with an ellipsis (whole characters; the studio cuts
+/// at a grapheme boundary).
+fn clamp_foreign(raw: &str, max: usize) -> String {
+    let flat = raw
+        .split(is_js_ws)
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if flat.encode_utf16().count() <= max {
+        return flat;
+    }
+    let mut units = 0;
+    let mut end = 0;
+    for (i, c) in flat.char_indices() {
+        units += c.len_utf16();
+        if units > max - 1 {
+            break;
+        }
+        end = i + c.len_utf8();
+    }
+    format!("{}…", &flat[..end])
+}
+
+/// pages.ts `bakedLabel`: a baked quote's `data-blyg-label` (decision #81),
+/// decoded and flattened to one short line; `None` when the tag has none.
+fn baked_label(tag: &str) -> Option<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r#"\sdata-blyg-label="([^"]*)""#).expect("label re"));
+    let raw = re.captures(tag)?;
+    let text = clamp_foreign(&html_escape::decode_html_entities(&raw[1]), 120);
+    (!text.is_empty()).then_some(text)
+}
+
+/// pages.ts `labelledProvenance`: the quoter's label becomes the line's
+/// anchor text, and what the anchor said (the source blyg, or the local
+/// kind) stays beside it as plain text: `<a>label ↗</a> · fragment · …`.
+fn labelled_provenance(line: &str, label: &str) -> String {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(?s)(<a\b[^>]*>)(.*?)(?: ↗)?</a>").expect("anchor re"));
+    re.replace(line, |c: &regex::Captures| {
+        format!("{}{} ↗</a> · {}", &c[1], escape_html(label), &c[2])
+    })
+    .into_owned()
+}
+
+/// pages.ts `injectProvenance`: one provenance paragraph inside each
+/// top-level baked quote (whole or partial), in order; nested quotes get
+/// theirs from [`inject_nested_provenance`]. A labelled quote's line
+/// anchors on the label ([`labelled_provenance`], studio 0.59).
+pub(crate) fn inject_provenance(html: &str, provenance: &[String]) -> String {
     let mut out =
         String::with_capacity(html.len() + provenance.iter().map(|p| p.len() + 1).sum::<usize>());
     let mut last = 0;
     let mut depth = 0usize;
     let mut in_transclusion = false;
+    let mut label: Option<String> = None;
     let mut i = 0;
-    for m in re.find_iter(html) {
+    for m in blockquote_tags().find_iter(html) {
         if m.as_str().starts_with("</") {
             depth = depth.saturating_sub(1);
             if depth == 0 && in_transclusion {
                 out.push_str(&html[last..m.start()]);
                 if let Some(p) = provenance.get(i) {
                     out.push('\n');
-                    out.push_str(p);
+                    match &label {
+                        Some(l) => out.push_str(&labelled_provenance(p, l)),
+                        None => out.push_str(p),
+                    }
                 }
                 i += 1;
                 last = m.start();
@@ -645,10 +799,132 @@ pub(crate) fn inject_provenance(html: &str, provenance: &[String]) -> String {
             }
         } else {
             if depth == 0 {
+                label = baked_label(m.as_str());
                 in_transclusion = is_baked_quote(m.as_str());
             }
             depth += 1;
         }
+    }
+    out.push_str(&html[last..]);
+    out
+}
+
+/// One open `<blockquote>` while [`inject_nested_provenance`] scans.
+struct Layer {
+    transclusion: bool,
+    id: Option<String>,
+    version: Option<String>,
+    origin: Option<String>,
+    partial: bool,
+    nested: bool,
+    label: Option<String>,
+}
+
+/// A nested layer's provenance anchor: its source blyg (or your own kind),
+/// linked where the store says the item lives.
+fn nested_link(layer_origin: Option<&str>, id: &str, src: NestedSource, mount: &str) -> String {
+    let kind = src.kind.unwrap_or(ItemKind::Fragment);
+    let (href, label) = match layer_origin {
+        Some(origin) => (
+            blyg_item_url(origin, kind, id, src.page.as_deref()),
+            match src.title.filter(|t| !t.is_empty()) {
+                Some(t) => format!("from <em>{}</em> ↗", escape_html(&clamp_foreign(&t, 60))),
+                None => format!("from {} ↗", escape_html(&host_of(origin))),
+            },
+        ),
+        None => {
+            let seg = if kind == ItemKind::Thread { "t" } else { "f" };
+            (
+                format!("{mount}/{seg}/{id}/"),
+                format!("{} ↗", kind.as_str()),
+            )
+        }
+    };
+    format!(
+        "<a href=\"{}\">{label}</a>",
+        crate::util::escape_href(&href)
+    )
+}
+
+/// pages.ts `injectNestedProvenance` (studio 0.49, in the preview since
+/// 0.64): a `p.provenance.nested` line in every baked quote nested inside
+/// another, at any depth, read from the nested quote's own `data-blyg-*`
+/// attributes. An absent `data-blyg-origin` means the origin of the layer
+/// that baked it, so the origin is carried down. Presentation only.
+pub(crate) fn inject_nested_provenance(html: &str, resolver: &dyn Resolver, mount: &str) -> String {
+    if !html.contains("data-blyg-id=") {
+        return html.to_string();
+    }
+    static ATTRS: OnceLock<[Regex; 4]> = OnceLock::new();
+    let attrs = ATTRS.get_or_init(|| {
+        [
+            "class",
+            "data-blyg-id",
+            "data-blyg-version",
+            "data-blyg-origin",
+        ]
+        .map(|n| Regex::new(&format!(r#"\b{n}="([^"]*)""#)).expect("attr re"))
+    });
+    let attr = |tag: &str, k: usize| attrs[k].captures(tag).map(|c| c[1].to_string());
+    let mut stack: Vec<Layer> = Vec::new();
+    let mut closes: Vec<(usize, Layer)> = Vec::new();
+    for m in blockquote_tags().find_iter(html) {
+        let tag = m.as_str();
+        if tag.starts_with("</") {
+            if let Some(layer) = stack.pop()
+                && layer.transclusion
+                && layer.nested
+                && layer.id.is_some()
+            {
+                closes.push((m.start(), layer));
+            }
+            continue;
+        }
+        let class = attr(tag, 0).unwrap_or_default();
+        let has = |t: &str| class.split(is_js_ws).any(|x| x == t);
+        // The preview's unresolved marker is not a quote (and holds none).
+        let transclusion = has("blyg-transclusion") && !has("unresolved");
+        let enclosing = stack.iter().rev().find(|l| l.transclusion);
+        let layer = Layer {
+            transclusion,
+            id: attr(tag, 1),
+            version: attr(tag, 2),
+            origin: attr(tag, 3).or_else(|| enclosing.and_then(|l| l.origin.clone())),
+            partial: has("blyg-partial"),
+            nested: enclosing.is_some(),
+            label: if transclusion { baked_label(tag) } else { None },
+        };
+        stack.push(layer);
+    }
+    if closes.is_empty() {
+        return html.to_string();
+    }
+    let mut links: std::collections::HashMap<(Option<String>, String), String> =
+        std::collections::HashMap::new();
+    let mut out = String::with_capacity(html.len() + closes.len() * 120);
+    let mut last = 0;
+    for (at, layer) in &closes {
+        let id = layer.id.as_deref().unwrap_or_default();
+        let origin = layer.origin.as_deref();
+        let link = links
+            .entry((layer.origin.clone(), id.to_string()))
+            .or_insert_with(|| nested_link(origin, id, resolver.nested_source(origin, id), mount));
+        let line = format!(
+            "<p class=\"provenance nested\">{link} · {} v{}</p>",
+            if layer.partial {
+                "excerpt of"
+            } else {
+                "snapshot of"
+            },
+            escape_html(layer.version.as_deref().unwrap_or("?"))
+        );
+        out.push_str(&html[last..*at]);
+        out.push('\n');
+        match &layer.label {
+            Some(l) => out.push_str(&labelled_provenance(&line, l)),
+            None => out.push_str(&line),
+        }
+        last = *at;
     }
     out.push_str(&html[last..]);
     out
@@ -717,10 +993,30 @@ mod tests {
 
     #[test]
     fn attached_quote_run() {
-        let lines = ["![[x]]", "> a", ">", "  >b", ">\tc", "after", "> not"];
+        let lines = ["![[x]]", "> a", ">", "  >b", ">\tc", "", "after"];
         let (q, next) = attached_quote(&lines, 0);
         assert_eq!(q.as_deref(), Some("a\n\nb\nc"));
         assert_eq!(next, 5);
+        // Lazy continuation (decision #76): a line that would continue the
+        // quote's paragraph is the quote's, kept as written; the `>` line
+        // after it too.
+        let lines = ["![[x]]", "> a", "  lazy", "> b", "after"];
+        assert_eq!(
+            attached_quote(&lines, 0),
+            (Some("a\n  lazy\nb\nafter".into()), 5)
+        );
+        // Not after an empty `>` line, and not a line opening a block of
+        // its own, or a directive.
+        for stop in [
+            "# h",
+            "- item",
+            "---",
+            "```",
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        ] {
+            assert_eq!(attached_quote(&["d", "> a", stop], 0).1, 2, "{stop}");
+        }
+        assert_eq!(attached_quote(&["d", "> a", ">", "text"], 0).1, 3);
         // Only one space after the marker goes, so "> > nested" stays nested.
         let (q, _) = attached_quote(&["d", ">  > nested"], 0);
         assert_eq!(q.as_deref(), Some(" > nested"));
@@ -881,19 +1177,21 @@ mod tests {
         }
 
         #[test]
-        fn run_ends_at_first_non_quote_line() {
+        fn run_takes_lazy_lines_and_ends_at_a_new_block() {
+            // Decision #76: an unmarked line continuing the quote's
+            // paragraph is the quote's; a list item opens a block of its own.
             let s = store(&[(T, 1, TARGET)]);
             let r = render(
                 &s,
                 &format!(
-                    "![[{T}]]\n> Stigmergy is what a protocol looks like from inside,\nCommentary on the same line-run."
+                    "![[{T}]]\n> Stigmergy is what a protocol looks like from inside,\nand the reason it\n- Commentary as a list."
                 ),
             );
             assert!(r.html.contains("blyg-partial"));
-            assert!(r.html.contains("<p>Commentary on the same line-run.</p>"));
+            assert!(r.html.contains("<li>Commentary as a list.</li>"));
             assert_eq!(
                 exact(&r),
-                Some("Stigmergy is what a protocol looks like from inside,")
+                Some("Stigmergy is what a protocol looks like from inside, and the reason it")
             );
         }
 

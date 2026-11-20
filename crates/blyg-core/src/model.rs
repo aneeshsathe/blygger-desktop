@@ -1343,8 +1343,19 @@ fn plain_line(line: &str) -> String {
     let t =
         crate::grammar::replace_links(t, |r| Some(r.label.clone().unwrap_or_else(|| "↗".into())));
     let c: Vec<char> = t.chars().collect();
+    // A formula reads as its TeX, dollars dropped, its marks kept (user
+    // testing, W7/R5); money stays money. (char start, char end, TeX).
+    let formulas: Vec<(usize, usize, String)> = blyg_render::math::formula_spans(&t)
+        .into_iter()
+        .map(|(a, b, tex)| (t[..a].chars().count(), t[..b].chars().count(), tex))
+        .collect();
     let mut i = 0;
     while i < c.len() {
+        if let Some((_, end, tex)) = formulas.iter().find(|f| f.0 == i) {
+            out.push_str(tex);
+            i = *end;
+            continue;
+        }
         // ![[id]] (a transclusion): dropped.
         if c[i] == '!'
             && c.get(i + 1) == Some(&'[')
@@ -1471,6 +1482,25 @@ mod title_tests {
         );
         // A leading heading is the title, whatever follows.
         assert_eq!(t("## On Protocols\n\nProtocols are thin."), "On Protocols");
+    }
+
+    /// User testing (W7, R5): a formula in a row title reads as its TeX,
+    /// without the dollars; money stays money.
+    #[test]
+    fn titles_flatten_formulas() {
+        let t = |s: &str| plain_title(s).unwrap_or_default();
+        assert_eq!(
+            t("Euler's identity, $e^{i\\pi} + 1 = 0$, ties five constants together."),
+            "Euler's identity, e^{i\\pi} + 1 = 0, ties five constants together."
+        );
+        assert_eq!(t("$$\\int_0^1 x^2\\,dx$$"), "\\int_0^1 x^2\\,dx");
+        // Markdown's own marks inside a formula are TeX, not emphasis.
+        assert_eq!(t("Let $x_{n} * y_1$ be"), "Let x_{n} * y_1 be");
+        assert_eq!(
+            t("It cost $5 and $10 to print."),
+            "It cost $5 and $10 to print."
+        );
+        assert_eq!(t("A \\$5 note and $x$"), "A \\$5 note and x");
     }
 }
 

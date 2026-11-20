@@ -736,6 +736,22 @@ impl MainView {
             (Key::Focus, self.focus_on()),
             (Key::Serendipity, self.serendipity_shown(cx)),
             (Key::QuietWriting, crate::app::quiet::on(cx)), // --- 0.26.0 ---
+            // --- 0.27.0 --- the sample thread's parts listed, or one open.
+            (
+                Key::Parts,
+                reading && {
+                    let thread = crate::fake::background_seed::thread_key();
+                    let bg = &self.reading.background;
+                    bg.parts_listed(&thread, false)
+                        || self
+                            .reading
+                            .opened
+                            .as_ref()
+                            .is_some_and(|o| bg.parts_of(&thread).contains(&o.key))
+                },
+            ),
+            // --- 0.27.0 --- the tangle confirm step.
+            (Key::Tangle, self.sheet.is::<crate::app::TangleSheet>()),
             (
                 Key::MoreMenu,
                 reading
@@ -835,6 +851,7 @@ impl MainView {
         let d = on!(d, crate::app::nearby::ToggleNearby, Key::Nearby);
         let d = on!(d, crate::app::nearby::NearbyDown, Key::Nearby);
         let d = on!(d, crate::app::nearby::NearbyLink, Key::Nearby);
+        let d = on!(d, crate::app::format::InsertFormula, Key::Formula); // --- 0.27.0 ---
         on!(d, crate::app::reading::QuotePicker, Key::QuotePicker)
     }
 
@@ -1293,6 +1310,46 @@ impl MainView {
                     self.open_settings(&crate::app::OpenSettings, window, cx);
                 }
             }
+            // --- 0.27.0 --- a fresh draft each time, so a step done
+            // before (the sample published, its spans rewritten) starts over.
+            Setup::Tangle => {
+                self.tutorial_tidy(window, cx);
+                let md = crate::fake::tangle_seed::SAMPLE;
+                if let Ok(id) = self.backend.create_draft(Kind::Thread, md) {
+                    self.set_query_text("", window, cx);
+                    self.current = None;
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(ViewMode::Split, cx);
+            }
+            Setup::Parts => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let thread = crate::fake::background_seed::thread_key();
+                match self.reading.shown_pos(&thread) {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
+            }
+            Setup::Maths(tex) => {
+                self.tutorial_tidy(window, cx);
+                let md = format!(
+                    "The area of a circle: {tex}, near enough.\n\nBasel's sum:\n\n\
+                     $$\\sum_{{n=1}}^{{\\infty}} \\frac{{1}}{{n^2}} = \\frac{{\\pi^2}}{{6}}$$\n\n\
+                     The print run cost $5 and $10.\n"
+                );
+                if let Ok(id) = self.backend.create_draft(Kind::Fragment, &md) {
+                    self.set_query_text("", window, cx);
+                    self.current = None;
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(ViewMode::Split, cx);
+                if let Some(at) = md.find(tex) {
+                    self.editor.update(cx, |s, cx| {
+                        s.focus(window, cx);
+                        s.set_selected_range(at..at + tex.len(), cx);
+                    });
+                }
+            }
         }
     }
 
@@ -1371,6 +1428,12 @@ impl MainView {
                 self.set_quiet_writing(true, cx);
             } // --- 0.26.0 ---
             "more-menu" => self.tutorial_open_more(cx),
+            // --- 0.27.0 --- the publish sheet, then its ⏎: the confirm step.
+            "tangle" => {
+                self.publish(window, cx);
+                self.do_publish(String::new(), window, cx);
+            }
+            "maths" => window.dispatch_action(Box::new(crate::app::format::InsertFormula), cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),

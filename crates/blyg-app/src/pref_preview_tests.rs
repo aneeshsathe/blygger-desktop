@@ -214,8 +214,13 @@ fn fonts_and_size_are_tried_and_put_back_on_leaving(cx: &mut TestAppContext) {
     assert_eq!(config_text(cx), before);
     // ⏎ on a tried size keeps it.
     open_settings(cx);
+    // ⇧⇥ from nothing: BACKGROUND's rules, THEME, then SIZE.
     keys(cx, "shift-tab");
     keys(cx, "shift-tab");
+    keys(cx, "shift-tab");
+    view.read_with(cx, |v, _| {
+        assert_eq!(v.preview.cursor.as_ref().map(|c| c.0), Some(Row::Size));
+    });
     keys(cx, "left");
     keys(cx, "enter");
     view.read_with(cx, |v, _| {

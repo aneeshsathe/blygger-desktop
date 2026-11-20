@@ -192,11 +192,140 @@ fn rules_default_on_and_patch_only_the_one_changed() {
     assert!(!r.on("minor"));
     let r = BackgroundRules::from_settings(&json!({"backgroundRules": {}})).unwrap();
     assert!(r.on("minor"), "a rule not sent reads as on");
+    assert!(!r.offers("minor"), "…but isn't offered");
     assert!(BackgroundRules::from_settings(&json!({"siteTitle": "x"})).is_none());
     assert_eq!(
         BackgroundRules::patch("minor", false),
         json!({"backgroundRules": {"minor": false}})
     );
+}
+
+/// Studio 0.61 refuses `burst` (strict schema, 400), so only the rules a
+/// studio's settings list are offered; 0.64 lists all four, in its order.
+#[test]
+fn only_the_rules_the_studio_lists_are_offered() {
+    let old = BackgroundRules::from_settings(&json!({"backgroundRules": {"minor": true}})).unwrap();
+    assert_eq!(old.rules, vec![("minor".to_string(), true)]);
+    assert!(!old.offers(BURST) && !old.offers("wordless") && !old.offers("maintenance"));
+    let new = BackgroundRules::from_settings(&json!({"backgroundRules": {
+        "minor": true, "maintenance": true, "wordless": false, "burst": true, "later": true,
+    }}))
+    .unwrap();
+    let names: Vec<&str> = new.rules.iter().map(|(r, _)| r.as_str()).collect();
+    assert_eq!(names, ["burst", "wordless", "maintenance", "minor"]);
+    assert!(!new.on("wordless") && new.on(BURST));
+    assert_eq!(
+        BackgroundRules::patch(BURST, false),
+        json!({"backgroundRules": {"burst": false}}),
+        "partial: the other rules keep their stored values"
+    );
+    for rule in RULES {
+        assert!(!rule_label(rule).0.is_empty(), "{rule} has a label");
+    }
+}
+
+#[test]
+fn each_reason_says_why_as_the_studio_does() {
+    let why = |reasons: &[&str], detail: Value| {
+        let entry = imported(
+            "s",
+            "p",
+            json!({"reasons": reasons, "placement": null, "blyg": false, "detail": detail}),
+        );
+        BackgroundSet::from_entries(&[entry], None)
+            .of(&k("s", "p"))
+            .why()
+    };
+    let burst = json!({"thread": "t"});
+    assert_eq!(
+        why(&["burst"], burst.clone()).as_deref(),
+        Some("published with a thread")
+    );
+    assert_eq!(
+        why(&["wordless"], Value::Null).as_deref(),
+        Some("no words of its own")
+    );
+    assert_eq!(
+        why(&["maintenance", "wordless"], Value::Null).as_deref(),
+        Some("republished unchanged")
+    );
+    assert_eq!(why(&["withdrawn", "burst"], burst), None);
+}
+
+/// Studio 0.64's "+N parts": the parts are the Background entries with
+/// reason `burst` naming the thread, of its own blyg, oldest first.
+#[test]
+fn a_threads_parts_are_its_burst_entries() {
+    let part = |sub: &str, id: &str, thread: &str| {
+        let b = json!({"reasons": ["burst"], "placement": null, "blyg": false, "detail": {"thread": thread}});
+        if sub == OWN_SUBSCRIPTION {
+            own(id, b)
+        } else {
+            imported(sub, id, b)
+        }
+    };
+    let set = BackgroundSet::from_entries(
+        &[
+            part("s", "p2", "t"),
+            part("s", "p1", "t"),
+            part("s", "gone", "t"),
+            part(OWN_SUBSCRIPTION, "o1", "mine"),
+            // Wordless, not a part.
+            imported(
+                "s",
+                "w",
+                json!({"reasons": ["wordless"], "placement": null, "blyg": false}),
+            ),
+        ],
+        None,
+    )
+    .indexed();
+    let mut rows = vec![
+        row("s", "t", "current"),
+        row("s", "p2", "current"),
+        row("s", "p1", "current"),
+        row("s", "gone", "tombstone"),
+        row("s", "w", "current"),
+        row(OWN_SUBSCRIPTION, "mine", "current"),
+        row(OWN_SUBSCRIPTION, "o1", "current"),
+    ];
+    rows[1].created = Some("2026-11-01T10:05:00Z".into());
+    rows[2].created = Some("2026-11-01T10:01:00Z".into());
+    set.annotate(&mut rows);
+    let parts = burst_parts(&rows);
+    assert_eq!(parts.len(), 2);
+    assert_eq!(
+        parts[&k("s", "t")],
+        [k("s", "p1"), k("s", "p2")],
+        "oldest first; a withdrawn part isn't listed"
+    );
+    assert_eq!(
+        parts[&k(OWN_SUBSCRIPTION, "mine")],
+        [k(OWN_SUBSCRIPTION, "o1")]
+    );
+    assert_eq!(parts_label(2, false), "+2 parts");
+    assert_eq!(parts_label(1, true), "−1 part");
+
+    // Made in the same second: in the order the thread quotes them.
+    rows[1].created = rows[2].created.clone();
+    rows[0].transclusions = serde_json::from_value(json!([{"id": "p2"}, {"id": "p1"}])).unwrap();
+    assert_eq!(
+        burst_parts(&rows)[&k("s", "t")],
+        [k("s", "p2"), k("s", "p1")]
+    );
+
+    // The burst rule off: the studio no longer counts the reason, the parts
+    // are back in the foreground, and the thread lists none.
+    let off = BackgroundSet::from_entries(
+        &[imported(
+            "s",
+            "p1",
+            json!({"reasons": [], "placement": "background", "blyg": false, "detail": {"thread": "t"}}),
+        )],
+        None,
+    );
+    off.annotate(&mut rows);
+    assert!(burst_parts(&rows).is_empty());
 }
 
 #[test]

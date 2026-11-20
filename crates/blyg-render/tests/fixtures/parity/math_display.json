@@ -1,0 +1,12 @@
+{
+  "name": "math_display",
+  "kind": "fragment",
+  "md": "Before.\n\n$$\\frac{a}{b}$$\n\nAfter.",
+  "html": "<p>Before.</p>\n<p><math display=\"block\" class=\"tml-display\"><semantics><mfrac><mi>a</mi><mi>b</mi></mfrac><annotation encoding=\"application/x-tex\">\\frac{a}{b}</annotation></semantics></math></p>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

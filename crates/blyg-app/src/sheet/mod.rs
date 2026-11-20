@@ -70,6 +70,8 @@ sheets! {
     Publish(publish::PublishSheet),
     /// Publishing labelled links to a blyg below studio 0.47.
     HeldLabels(publish::HeldLabelsSheet),
+    /// --- tangle --- a thread's spans would publish new items: confirm.
+    Tangle(publish::TangleSheet),
     Conflict(conflict::ConflictSheet),
     /// Not a sheet: the Settings page over the whole window.
     Settings(super::settings_page::SettingsSheet),

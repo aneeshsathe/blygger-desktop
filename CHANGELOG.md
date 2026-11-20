@@ -16,6 +16,35 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-19
+
+Studio parity with blygger-studio 0.64.1 and 0.65.0 (contract 5.14.0). The floor stays 0.49.12 (`MIN_STUDIO`); each feature below is asked for only where the blyg offers it.
+
+### Added
+- **Writing: tangling** (studio 0.63/0.64.1). In a thread, `![[+ passage]]` (from a line's start to a line's end, over paragraphs if need be) becomes a new item the thread quotes, and an inline `[[+ idea]]` a new item it links. The preview draws a span as a dashed "NEW ITEM" quote and a placeholder as a dashed link. Publishing asks first ("This will publish N new items and this thread", the items listed; ⏎ publishes all, esc goes back), then the editor takes the blyg's rewrite (`![[id | first words…]]`, `[[id | text]]`) as an undo save point, so ⌘Z can't bring the spans back and mint the parts twice; publishing the same spans again right after warns first. The toast adds "· and N new items". A span in a fragment is caught in the publish sheet, which names ⌘T and holds ⏎; more than 10, or a malformed span, is refused before sending, in the studio's words. A placeholder carries a "NEW ITEM" tag in the preview. `[[+` and `![[+` don't open the picker. `blyg_render::tangle`, `sheet/publish.rs`, `app/publish.rs`, `blyg_core::grammar::tangle_error`.
+- **Writing: maths** (studio 0.62). `$…$` inline and `$$…$$` display formulas are drawn in the preview as MathML; money (`$5 and $10`), `\$` and code stay text. A formula that doesn't parse shows red with its reason, and the publish sheet names it ("⚠ This formula doesn't parse: … Fix it to publish.") and holds ⏎ until it parses. List titles show a formula as its TeX, without dollars (`plain_title`), and in Reading a quote-only post is titled "Quotes: …" after its quote. A passage quote can't cut through a formula ("A passage can’t include a formula. Quote the whole post, or the prose either side of it."). `blyg_render::math`.
+- **Writing: Bold, Italic and Formula keys:** Edit › Format › Bold ⌃⌘B, Italic ⌃⌘I, Formula ⌃⌘M (Alt+B, Alt+I, Alt+M on Windows), as the studio's format shortcuts; pressing bold or italic again takes the markers off, and a formula over whole lines puts `$$` on lines of their own. The palette finds Formula by maths, math, latex, tex or equation (Bold by strong, Italic by emphasis). On Windows the first Ctrl+B while writing says once "Bold is Alt+B; Ctrl+B opens the Shelf". `app/format.rs`.
+- **Writing: comments to self** in the preview: `/* … */` notes are left out, as publish removes them, and a comment that would stop a publish shows as a ⚠ line at the preview's end. `blyg_render::comments`.
+- **Reading: formulas in others' posts** are drawn from each `<math>` element's TeX annotation (never kept as sent); the Stream's cards show the TeX.
+- **Reading: Background's new rules** (studio 0.64): Parts published with a thread, Posts with no words of their own, Republished unchanged, beside Your own minor changes; Settings shows the ones your blyg offers. Each Background post says why on a badge ("published with ‘‹thread title›’", "no words of its own", "republished unchanged"). The rules work by keys: ⇥ past THEME reaches them, ←/→ pick, space or ⏎ toggles; chips read "✓ label" / "○ label off", withdrawn is a fixed chip, and a toast confirms ("… are back in your lists" / "… go to Background again").
+- **Reading: "+N parts".** A thread published with its parts lists them as "+N parts" on its row, under its stream card (click to unfold) and under the open thread ("−N parts" folds them). `p` folds or unfolds them (the open thread, else the selected stream card) and 1–9 open a listed part.
+- **Responses by keys:** j/k (↓/↑) move a row cursor through responses and link notices, h hides or unhides, r replies, o or ⏎ opens ↗; the header lists the keys.
+- **Responses: link notices** (studio 0.64, contract 5.13). A post's `[[id]]` links from other blygs are listed after its responses, under "Linked from · only you see these", with ↗, Reply and Hide; they're never counted or listed as responses. No counts line (no social counts).
+- **Sync: conditional reads** (studio 0.65, contract 5.14.0). Reads carry `If-None-Match`, and a `304` hands back the body kept from the last `200`, never an empty list; `read-batch` children too. When `/api/changes` is gone (studio 0.67) sync polls each list conditionally every 60 s. `api/conditional.rs`, `api/read_batch.rs`.
+- **Sign-in: a blyg mounted under a path** whose old sign-in studio 0.65 refuses (the host-root `/api` alias is gone, studio#151) gets a message saying why, and the new sign-in finds the mounted API; changes are kept.
+- **Toasts:** a long publish failure stays until clicked.
+- **Tour:** Writing-tour steps for tangling (`tangle`) and formulas (`maths`), a Reading-tour step for a thread's parts (`parts`), all new in 0.27.0, and a what's-new entry.
+- **Docs:** a Writing syntax page (`site/src/syntax.md`: maths, `![[+ …]]`, `[[+ …]]`, comments to self, labelled quotes); writing, reading, FAQ and SPEC sections for everything above.
+
+### Changed
+- **Preview and reader rendering follow studio 0.64.1:** a labelled quote's attribution line leads with the label; a quote inside a quote gets its own smaller line; an unmarked line straight under a passage's `>` line belongs to the passage. The render parity fixtures are re-synced to 0.64.1 (`docs/RENDER.md`).
+- **Docs:** Background's rules are under Settings › BACKGROUND (there's no Reading heading in Settings).
+
+### Development
+- **e2e against the real studio** for tangling, maths, Background, link notices and conditional reads (`crates/blyg-core/tests/it/e2e/*.rs`, one file per package), and the newest contract (5.14.0) vendored as `openapi-current.json`.
+- **User-testing pass** (`skills/user-testing-pass`): agents act as users of the reader and the writer after every update; their flow tests are `flow_tests.rs` and `writer_flow_tests.rs`.
+- `skills/list-order-and-refresh`: `/changes` is deprecated in studio 0.65 and gone in 0.67; Burrow falls back to conditional reads.
+
 ## [0.26.0] - 2026-11-19
 
 ### Added

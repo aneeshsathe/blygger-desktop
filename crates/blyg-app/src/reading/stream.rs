@@ -802,6 +802,8 @@ impl MainView {
                             .text_color(p.ink)
                             .children(body),
                     )
+                    // --- background --- "+N parts", folded (studio 0.64).
+                    .children(self.render_burst_parts(r, false, cx))
                     .when(selected, |d| d.child(self.render_stream_actions(r, cx))),
             )
             .into_any_element()

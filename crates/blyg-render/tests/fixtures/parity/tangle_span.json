@@ -1,0 +1,12 @@
+{
+  "name": "tangle_span",
+  "kind": "thread",
+  "md": "Intro.\n\n![[+ A new idea,\nover two lines.]]\n\nAfter.",
+  "html": "<p>Intro.</p>\n<blockquote class=\"blyg-tangle-new\"><p class=\"blyg-tangle-label\">new item</p><p>A new idea,\nover two lines.</p>\n</blockquote>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

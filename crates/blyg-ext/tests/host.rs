@@ -730,7 +730,7 @@ fn hooks_reach_only_extensions_holding_them() {
     let publish = || PublishOutcome {
         version: 2,
         permalink: "https://blyg.example.com/f/X/".into(),
-        warning: None,
+        ..Default::default()
     };
     let env = setup(&["hooks:itemPublished"], &["hooks:itemPublished"], &[]);
     env.started();

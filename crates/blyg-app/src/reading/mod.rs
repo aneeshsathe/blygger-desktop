@@ -361,6 +361,8 @@ pub struct State {
     pub mentions: Load<Vec<Mention>>,
     pub mentions_seen: HashSet<String>,
     pub show_hidden: bool,
+    /// Responses' row cursor: the selected mention's id (j/k).
+    pub mention_sel: Option<String>,
     pub own: Option<OwnVersions>,
     pub sheet: Option<RSheet>,
     pub sheet_gen: usize,
@@ -473,6 +475,7 @@ impl State {
             mentions: Load::Idle,
             mentions_seen: HashSet::new(),
             show_hidden: false,
+            mention_sel: None,
             own: None,
             sheet: None,
             sheet_gen: 0,
@@ -768,6 +771,7 @@ impl MainView {
         let r = &mut self.reading;
         r.own_posts = own_posts;
         r.own_origin = own_origin;
+        r.background.set_rows(&r.rows); // --- background --- "+N parts"
         r.refilter();
         self.refresh_lineage_counts(cx); // --- lineage counts ---
         let r = &mut self.reading;
@@ -820,6 +824,8 @@ impl MainView {
                 self.reload_reading_shelf(); // --- shelf sync ---
                 self.load_kept_reading_mentions(); // --- contacts ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
+                let r = &mut self.reading;
+                r.background.set_rows(&r.rows); // --- background --- "+N parts"
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);
@@ -1082,6 +1088,10 @@ impl MainView {
                 self.step_version(1, cx);
                 true
             }
+            // --- background --- `p` folds a thread's parts, 1–9 open one.
+            (View::Reading, key) if self.burst_parts_key(key, window, cx) => true,
+            // --- responses --- the row cursor and its keys.
+            (View::Mentions, key) if self.mentions_key(key, window, cx) => true,
             // --- stream --- j/k select, ⏎/Space read more, esc closes the pane.
             (View::Reading, key) if stream && self.stream_key(key, window, cx) => true,
             // --- reader folders --- ←/→ between the panes, ↑/↓ within one,

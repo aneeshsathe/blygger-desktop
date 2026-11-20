@@ -57,10 +57,10 @@ block scope is rendered on its own, so here the preview splits its output
 at each such line (outside code, with any attached `>` run): the prose on
 either side becomes its own `div.blyg-tk-gen`, the directive stays in the
 document for the thread walk, and whitespace-only prose is dropped. That
-is what the decision says publish produces. The studio's preview does not
-do it (it shows the directive as text inside the block, and so does its
-publish for a scope with recorded provenance, an upstream inconsistency),
-so four fixtures are known divergences (see "Parity"). Since decision #102
+is what the decision says publish produces. Since 0.59 the studio bakes
+the quote too, but inside the block's wrapper, so the parity test rewrites
+the studio's shape to this one for four fixtures (`SPEC_BLOCK_SPLIT`, see
+"Parity"). Since decision #102
 (protocol 0.4 §5.7) this shape is the rule: a baked quote is never inside
 a `blyg-tk-gen` wrapper. An inline span that a quote interrupts closes
 before it and reopens after it (`<span>one</span>` | quote |
@@ -360,11 +360,15 @@ pub fn preview_script() -> String;  pub fn embed_css() -> &'static str;  pub fn 
 `tests/fixtures/gen_parity.mjs` bundles `tests/fixtures/gen_parity_worker.js`
 with the Worker's own `markdown.ts`, `embeds.ts`, `tk.ts`, `authoring.ts`,
 `transclusion.ts`, `importer/sanitize.ts`, `pages.ts`, `grammar.ts` and
-`link-label.ts`, using the Worker's
+`link-label.ts`, `comments.ts`, `contacts.ts` and `read-api.ts`'s
+`previewTangles` (exposed to the bundle only), using the Worker's
 esbuild, and runs the bundle in workerd through the Worker's own Miniflare
-(the sanitizer is built on workerd's HTMLRewriter, which Node lacks). The
+(the sanitizer is built on workerd's HTMLRewriter, which Node lacks). Since
+studio 0.59 that is Miniflare 4, which takes each Worker as
+`workers: [{ config }]` with its code as a module manifest; the generator
+reads the compatibility date from the studio's `wrangler.jsonc`. The
 harness is the body of `read-api.ts`'s `POST /api/preview` handler and
-`threadPreview()`, called with a fake D1 that serves `fake_store.json`;
+`threadPreview()`, step for step, called with a fake D1 that serves `fake_store.json`;
 `tests/common` implements the same store as a Rust `Resolver`. It writes the
 expected HTML to `tests/fixtures/parity/`, and runs the vectors in
 `grammar_input.json` through `grammar.ts` and `link-label.ts` into
@@ -376,12 +380,121 @@ nothing is written unless every case rendered.
 # after editing corpus.json, fake_store.json, media_input.json or
 # grammar_input.json, or when
 # the studio changes: clone stock blygger-studio into a scratch directory,
-# check out the release tag and `npm ci` there, then
+# check out the release tag and `npm ci` there (or `cp -R` a built copy;
+# never build in a checkout someone else uses), then
 node crates/blyg-render/tests/fixtures/gen_parity.mjs /path/to/studio/clone
 cargo test -p blyg-render
 ```
 
-**Reference version.** The fixtures come from stock blygger-studio
+**Reference version: studio 0.64.1** (tag `v0.64.1`, unpatched),
+re-generated 2026-11-19 from 0.49.1 (markdown-it 14.3.3). The 0.49.1
+fixtures could not be regenerated against 0.59 or later until the
+generator moved to Miniflare 4. The harness now follows 0.64.1's preview
+handler: comments to self dropped (`previewComments`), `@handle` mentions
+resolved (`consumeHandles`; the fake store has no contacts), tangle spans
+(`previewTangles`, threads only), the generated blocks passed to the walk,
+and `injectNestedProvenance` after `injectProvenance`.
+
+Of the 257 existing cases 15 changed, all from studio changes:
+
+- #81's label bake (`data-blyg-label`) is the studio's own now, so the r15
+  label rewrite (`SPEC_LABELS`) is gone. The provenance line of a labelled
+  quote now anchors on the label: `<a>label ↗</a> · fragment · snapshot of
+  vN` (`labelledProvenance`). Six `label_*` cases; adopted (below).
+- A quote nested in a quote gets its own `p.provenance.nested` line
+  (`tr_found_local_thread`, `tr_provenance_order`); adopted.
+- A partial quote's `>` run takes lazy continuation lines
+  (`tr_partial_unknown_consumes`); adopted.
+- A generated block's HTML in a thread preview is sanitized
+  (`tr_sanitize_tk_block` loses `style`); adopted.
+- An own-line `![[id]]` in a generated block is baked as a quote, inside
+  the block's `div.blyg-tk-gen` (the four decision-#60 cases). This crate
+  already baked them, between two wrappers, as #102 (9) says; the parity
+  test now rewrites the studio's shape to the spec's (`SPEC_BLOCK_SPLIT`)
+  and compares the rest byte for byte, so they are no longer known
+  divergences.
+- `tk_inline_dollar` holds a formula now (maths, below).
+
+28 cases were added: maths (`math_*`: inline, display, display inside a
+paragraph, money `$5 and $10`, `$ x $`-style spacing, `\$`, code, bad TeX,
+a refused `\cancel`, emphasis, TK, links, a thread's own formulas, and four
+sanitizer cases over new fake-store items `…vm1`–`…vm4`: a `<math>` with an
+x-tex annotation, display and bare and case-folded encodings, hostile
+annotations and nested `<math>`, bad TeX in an annotation), tangling
+(`tangle_*`: a span, a span with a quote or link inside, placeholders,
+escaping, code, mid-line and unclosed openers, a span between quotes, a
+placeholder in a fragment) and `comment_to_self`. Three `withStubQuote`
+vectors put the directive inside a `![[+ …]]` span.
+
+**Adopted from 0.64.1** (the eleven former `TO_ADOPT` cases):
+
+- *Labelled provenance* (`transclusion::inject_provenance`, pages.ts
+  `bakedLabel` + `labelledProvenance`): a quote whose tag carries
+  `data-blyg-label` gets the label (decoded, whitespace flattened, cut to
+  120 UTF-16 units) as its line's anchor, and the old anchor text follows
+  as plain text: `<a>label ↗</a> · from <em>Blyg</em> · snapshot of v5`.
+  The cut is at a character, where the studio cuts at a grapheme.
+- *Nested provenance* (`inject_nested_provenance`, pages.ts
+  `injectNestedProvenance`): every baked quote inside a baked quote, at any
+  depth, gets `p.provenance.nested`, read from its own `data-blyg-*`
+  attributes, the origin carried down from the layer that baked it. Its
+  link comes from `Resolver::nested_source` (default: `resolve`; the app's
+  `StoreResolver` answers from the store without rendering). Labelled
+  nested quotes anchor on the label too. The app now renders a quoted own
+  thread with `provenance: false`, as publish bakes it, so a nested quote
+  has one line, not two.
+- *Lazy continuation* (`attached_quote`, directives.ts `attachedQuote` /
+  `quoteExtent`, decision #76): a partial quote's run is the blockquote's
+  CommonMark extent, measured by its own markdown-it block parser as the
+  studio's is. An unmarked line continuing the quote's paragraph belongs to
+  it (kept as written); not after an empty `>` line, not a line opening a
+  block, and never a directive or reserved line. The walker, TK block
+  splitting, the stub chooser (`with_stub_quote`, and `add_stub_quote`'s
+  step past the quote the caret is in) all share it.
+- *Generated blocks sanitized* in the thread preview, as the walked HTML is
+  (`previewTransclusions` sanitizes `blockReplacements`).
+- *Comments to self* (`comments.rs`, `comments.ts` `parseComments` /
+  `previewComments`): `/* … */` is dropped from the preview in both kinds,
+  after tangle spans and before handles, with the studio's whitespace
+  tidying (`closeUp`), its line map kept for `data-line`. What would stop a
+  publish (unclosed, a stray `*/`, a `/*` attached to a word) is appended as
+  `⚠ …` paragraphs, in the studio's words. `tangle.rs` reads comment ranges
+  from it. Code is found once per comment, as in the studio; a text that
+  can hold no code (no backtick, tilde, tab or four spaces) skips the parse.
+  A long draft with code and hundreds of comments is still quadratic.
+
+**Formulas are compared by shape** (`tests/it/math_shape.rs`). The studio
+draws with temml 0.14; no Rust crate matches it byte for byte. Each
+top-level `<math>` on both sides becomes a stand-in holding only inline or
+display and the entity-decoded `application/x-tex` annotation (the
+author's TeX). This crate's formula must also use only `MATH_ELEMENTS` and
+`MATH_ATTRIBUTES` and have exactly one annotation; the studio's own are
+checked the same way. A refused formula's `code.math-error` keeps its text
+and loses its `title` (temml's parse message), which must not be empty.
+Everything around a formula is compared byte for byte, and whether a
+formula is drawn, refused or prose must agree.
+
+**Expected-to-fail lists** in `tests/it/parity.rs`. A listed case is
+expected to fail; once it passes, the test fails with "now passing, remove
+from its list", so every list only shrinks:
+
+- `PENDING`: cases waiting for the 0.64.1 cohort's WP1 (tangle preview) and
+  WP2 (maths, sanitizer maths); `STUB_SPANS_PENDING` holds the stub-chooser
+  span vectors for WP1. Empty both once WP1 and WP2 are merged.
+- `TO_ADOPT`: studio changes not followed yet; empty since the 0.64.1
+  adoption below.
+- `KNOWN_DIVERGENCES`: deliberate differences; empty since 0.64.1.
+
+Bug emulation: none. The patched-Worker bugs (patch 9) and the 0.47.0
+label bugs were dropped earlier; the three Worker behaviours under
+"Worker behaviour pinned as it is" are still the studio's in 0.64.1, and
+the r15 rewrites below that 0.64.1 still needs (#102 (9) inline spans, the
+reserved labelled `@vN`, the no-`page` link, the fragment directive error)
+remain.
+
+### Earlier syncs
+
+**Studio 0.49.1.** The fixtures came from stock blygger-studio
 0.49.1 (tag `v0.49.1`, unpatched), re-generated 2026-10-31
 (`parity/_manifest.json` records the studio, markdown-it and linkify-it
 versions). Every case came out byte-identical to the 0.48.0 fixtures:
@@ -422,7 +535,9 @@ scopes, the sanitizer (a hostile quoted target, Markdown that loses
 attributes, a sanitized TK block) and TK or links in code, plus a media
 case for placed and `inline` attachments.
 
-**Protocol 0.4 r15 rewrites** (2026-11-13). Where decisions #81 and #102
+**Protocol 0.4 r15 rewrites** (2026-11-13; the label rewrite went with the
+0.64.1 fixtures, and the no-`page` rule now spots the provenance line by its
+`p.provenance` rather than its text). Where decisions #81 and #102
 change what the 0.49.1 fixtures show, `tests/it/parity.rs` rewrites the
 expected HTML before comparing, so the rest of each case is still checked:
 `SPEC_LABELS` adds `data-blyg-label` to the labelled quotes, the no-`page`
@@ -439,22 +554,19 @@ block's quotes inside the block, #105), so a re-sync is its own task. The
 rewrites follow the spec where the studio differs; studio 0.59 already
 bakes `data-blyg-label` exactly as rewritten.
 
-Results. Tests compare after collapsing whitespace between tags, but every
-matching case is also byte-identical. The four known divergences are the
-block-scope directive cases of decision #60 (`tr_in_tk_block`,
+Results (studio 0.64.1). Tests compare after collapsing whitespace between
+tags. The block-scope directive cases of decision #60 (`tr_in_tk_block`,
 `tr_block_tk_directive_output`, `tr_block_tk_directive_split`,
-`tr_block_tk_directive_attached`); `tests/it/preview.rs` pins this crate's
-output for them. The split shape (generated | quote | generated, and how
-`generated[]` pairs with the pieces) is not ruled yet, so these four are
-provisional: revisit them when upstream fixes its preview and publish.
+`tr_block_tk_directive_attached`) match after the `SPEC_BLOCK_SPLIT`
+rewrite; `tests/it/preview.rs` still pins this crate's output for them.
 
-| suite | cases | normalised | byte-identical |
+| suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing) | 257 | 253 (16 of them rewritten to r15) + 4 known | 237 |
-| CommonMark 0.31.2 spec examples | 652 | 652 | 652 |
-| linkify-it + markdown-it linkify test vectors | 206 | 206 | 206 |
-| attachments (`mediaHtml`) | 4 | 4 | 4 |
-| bracket grammar (links, directive, `stripGeneratedGrammar`; `labelText`/`linkSource`; `linkLabel`; `withStubQuote`; `unrequestedOutputDirectives`) | 49 + 19 + 5 + 5 + 9 | exact | exact |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 285 (258 byte-identical; 15 rewritten to r15; 11 with formulas compared by shape) | 0 |
+| CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
+| linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
+| attachments (`mediaHtml`) | 4 | 4 | 0 |
+| bracket grammar (links, directive, `stripGeneratedGrammar`; `labelText`/`linkSource`; `linkLabel`; `withStubQuote`; `unrequestedOutputDirectives`) | 49 + 19 + 5 + 8 + 9 | exact | 3 `withStubQuote` span vectors (WP1) |
 
 **Studio 0.48.0** (re-synced 2026-10-19 from 0.47.0). The release fixes
 the six label-grammar bugs that 0.47.0 had and this crate pinned
@@ -580,12 +692,11 @@ pairing), and loose `>` markers. Unit tests ported from the studio's
 `selection.test.ts` and `partial-transclusion.test.ts` cover the normalizer
 and selector context as well.
 
-**Provenance on the preview is the desktop's own combination.** The Worker's
-previews (`POST /api/preview`, the thread editor) show no provenance.
-`injectProvenance` only ever runs on published HTML, which can't hold an
-unresolved marker. The generator composes the preview with the page's
-`injectProvenance`, as this crate does, and hides unresolved markers from it,
-as they would be absent on the page.
+**Provenance on the preview is the desktop's own combination.** Since
+studio 0.59 the thread preview adds provenance lines (`injectProvenance`,
+then `injectNestedProvenance`), but only when every quote resolved. The
+desktop preview adds them always, so the generator does too, and hides
+unresolved markers from them, as they would be absent on the page.
 
 Every fixture also checks the unresolved directives and reasons, in order,
 and the TK error count against the Worker; thread fixtures also check the

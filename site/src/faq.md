@@ -128,6 +128,11 @@ token (made in the studio's **More › Client access**, or in another Burrow
 connected to the blyg, under **Blyg › Client Access…**), and what waited is
 sent.
 
+If your blyg lives under a path (`https://blyg.example.com/blyg/`) and you
+signed in long ago, blygger-studio 0.65 may refuse that sign-in because it
+was made for the blyg's old API address. Burrow then says "Your blyg now
+serves its API only at …": sign in again, and your changes are kept.
+
 ### Who can act as me on my blyg? How do I revoke a token?
 
 **Blyg › Client Access…** lists every app and token that can act as you:

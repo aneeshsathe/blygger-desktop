@@ -2,7 +2,7 @@
   "name": "tr_block_tk_directive_attached",
   "kind": "thread",
   "md": "[TK]bridge[=]One.\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n> Small tools\n\nTwo.[/TK]",
-  "html": "<div class=\"blyg-tk-gen\"><p>One.\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]</p>\n<blockquote>\n<p>Small tools</p>\n</blockquote>\n<p>Two.</p>\n</div>\n",
+  "html": "<div class=\"blyg-tk-gen\"><p>One.</p>\n\n<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · excerpt of v3</p></blockquote>\n<p>Two.</p>\n</div>\n",
   "tk": {
     "scopes": [
       {
@@ -14,6 +14,15 @@
     ],
     "errors": []
   },
-  "transclusions": [],
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3,
+      "selector": {
+        "exact": "Small tools",
+        "suffix": ", used daily, beat big tools use"
+      }
+    }
+  ],
   "errors": []
 }

@@ -161,6 +161,15 @@ pub enum Key {
     QuietWriting,
     /// The open post's ⋯ More menu is showing.
     MoreMenu,
+    // --- 0.27.0 ---
+    /// The tangle confirm step is showing ("This will publish N new items
+    /// and this thread"): ⌘⏎, then ⏎ on the publish sheet.
+    Tangle,
+    /// Edit › Format › Formula (⌃⌘M) ran.
+    Formula,
+    /// The sample burst thread's "+N parts" are listed: unfolded under
+    /// its stream card (`p` or a click), or a part of it is open.
+    Parts,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -307,6 +316,15 @@ pub enum Setup {
     /// --- 0.26.0 --- The published sample post open (its lineage line
     /// under it), with Settings open over it at Quiet writing.
     QuietWriting,
+    /// --- 0.27.0 --- A new thread draft holding a `![[+ …]]` passage and a
+    /// `[[+ …]]` idea, its preview beside it.
+    Tangle,
+    /// A new draft with a formula in it, its preview beside it, and this
+    /// TeX selected.
+    Maths(&'static str),
+    /// Reading, in the Stream, Lin's thread published with two parts
+    /// selected ("+2 parts"), the side pane closed.
+    Parts,
 }
 
 /// One step of the tour.
@@ -1001,6 +1019,46 @@ pub const STEPS: &[Step] = &[
         settle: true,
         stay: false,
     },
+    // --- 0.27.0 --- tangling and formulas (studio 0.62–0.64.1).
+    Step {
+        id: "tangle",
+        since: "0.27.0",
+        title: ui_text("New items from a thread"),
+        caption: ui_text(
+            "In a thread, ![[+ …]] around a passage (from a line's start to a line's end) \
+                  makes it a post of its own, which the thread quotes; [[+ an idea]] in a \
+                  sentence makes one the thread links. The preview marks each as a new item. \
+                  Press ⌘⏎, then ⏎: Burrow lists what it will publish first, and ⏎ there \
+                  publishes all, esc goes back.",
+        ),
+        keys: &[Key::Tangle],
+        key_label: ui_text("⌘⏎"),
+        region: Region::Whole,
+        button: Some("Publish"),
+        setup: Setup::Tangle,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
+    Step {
+        id: "maths",
+        since: "0.27.0",
+        title: ui_text("Formulas"),
+        caption: ui_text(
+            "Write LaTeX between dollars: $x^2$ in a sentence, $$…$$ on lines of their own \
+                  ($5 and $10 stay money). The preview draws each one, a broken one shows red, \
+                  and publishing waits until it parses. ⌃⌘M (Edit › Format › Formula) makes \
+                  the selection a formula; ⌃⌘B and ⌃⌘I make it bold or italic.",
+        ),
+        keys: &[Key::Formula],
+        key_label: ui_text("⌃⌘M"),
+        region: Region::Whole,
+        button: None,
+        setup: Setup::Maths("A = \\pi r^2"),
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "echoed-quote",
         since: "0.12.0",
@@ -1289,6 +1347,27 @@ pub const STEPS: &[Step] = &[
         button: None,
         setup: Setup::Background,
         pause_ms: 1800,
+        settle: false,
+        stay: true,
+    },
+    // --- 0.27.0 --- Background says why; a thread's parts (studio 0.64).
+    Step {
+        id: "parts",
+        since: "0.27.0",
+        title: ui_text("A thread and its parts"),
+        caption: ui_text(
+            "Lin published this thread together with the posts it quotes. The parts go to \
+                  Background, each with a badge saying why, “published with ‘…’”, and the thread says \
+                  “+2 parts”. Press p (or click it) to unfold them under the card, then 1 or 2 \
+                  to open one. Settings › BACKGROUND has the rules, and turning “Parts \
+                  published with a thread” off puts the parts back in your lists.",
+        ),
+        keys: &[Key::Parts],
+        key_label: ui_text("p"),
+        region: Region::Stream,
+        button: None,
+        setup: Setup::Parts,
+        pause_ms: 1600,
         settle: false,
         stay: true,
     },
@@ -1875,6 +1954,8 @@ pub const TOURS: &[Tour] = &[
             "loose-ends",
             "quiet-writing",
             "quotes",
+            "tangle",
+            "maths",
             "mentions",
         ],
     },
@@ -1913,6 +1994,7 @@ pub const TOURS: &[Tour] = &[
             "more-menu",
             "reader",
             "background",
+            "parts",
             "shelf-add",
             "shelf-lens",
             "mentions-feed",
@@ -2126,6 +2208,9 @@ mod tests {
             Key::Discover,
             Key::MentionsFeed,
             Key::MoreMenu, // --- 0.26.0 ---
+            Key::Tangle,   // --- 0.27.0 ---
+            Key::Formula,
+            Key::Parts,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
@@ -2211,6 +2296,10 @@ mod tests {
         assert_eq!(
             ids(news_run(&["0.26.0"])),
             ["quiet-writing", "more-menu", END]
+        );
+        assert_eq!(
+            ids(news_run(&["0.27.0"])),
+            ["tangle", "maths", "parts", END]
         );
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);

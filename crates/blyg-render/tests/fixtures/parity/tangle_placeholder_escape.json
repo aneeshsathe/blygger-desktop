@@ -1,0 +1,12 @@
+{
+  "name": "tangle_placeholder_escape",
+  "kind": "thread",
+  "md": "Mind [[+ a <b> & \"c\"]] here.\n\n![[+ <b>bold</b> & *em*]]",
+  "html": "<p>Mind <span class=\"blyg-tangle-link\" title=\"new item, linked\">a &lt;b&gt; &amp; &quot;c&quot;</span> here.</p>\n<blockquote class=\"blyg-tangle-new\"><p class=\"blyg-tangle-label\">new item</p><p>&lt;b&gt;bold&lt;/b&gt; &amp; <em>em</em></p>\n</blockquote>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -15,6 +15,29 @@ commit dc632c5 (branch ext/lineage-glyph, PR #53, studio 0.39.0; same
 license). The Rust types are in `src/lineage.rs`; its tests check them
 against this file, and the e2e checks a real studio's answers against it.
 
-To update the contract, copy `openapi.json` from a newer upstream checkout,
-then run `cargo test -p blyg-core`. Any contract violation fails the test that
-caused it.
+`openapi-current.json` is the newest studio's contract (5.14.0, studio v0.65.0,
+same license). The e2e (`tests/it/e2e`) checks a real studio's answers against it
+(`contract::current()`); the mock keeps to `openapi.json`, the oldest contract
+Burrow supports, so it isn't taught every new field.
+
+To follow a new studio, copy its `openapi.json` over `openapi-current.json`,
+move `[target]` in `contract-coverage.toml`, write the tests the coverage check
+lists (below), then build and run the e2e (`scripts/e2e-local.sh`). Replace
+`openapi.json` only when Burrow's oldest supported studio (`MIN_STUDIO`) moves.
+
+`contract-coverage.toml` is what `tests/it/contract_coverage.rs` checks: every
+operation, property, enum value, parameter and response header in
+`openapi-current.json` is named by a test, or listed there as `[[exempt]]`
+(with a reason), `[[pending]]` (a work package is building it: a warning until
+a test names it, then a failure until the entry goes) or in the generated
+`baseline = true` group: everything in the contract at studio v0.61.0, the last
+studio synced before the check existed. `[target]` names the studio Burrow
+follows; `openapi-current.json` must be its contract, and with
+`BLYG_WORKER_DIR` set to a studio checkout, byte for byte its `openapi.json` at
+that tag. Regenerate the baseline (only to change which studio it stands for):
+
+```sh
+git -C <studio checkout> show v0.61.0:openapi.json > /tmp/baseline.json
+BLYG_BASELINE_CONTRACT=/tmp/baseline.json BLYG_BASELINE_STUDIO=0.61.0 \
+  cargo test -p blyg-core --test it contract_coverage::regenerate_baseline -- --ignored
+```

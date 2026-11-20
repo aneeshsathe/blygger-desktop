@@ -261,6 +261,8 @@ enum Mode {
 mod publish;
 mod upload;
 mod writing;
+// --- format --- bold, italic and formulas
+pub(crate) mod format;
 
 /// --- sheets --- one main-window sheet at a time; each kind in `sheet/`.
 #[path = "sheet/mod.rs"]
@@ -268,7 +270,7 @@ pub(crate) mod sheet;
 use settings_page::SettingsSheet;
 use sheet::conflict::ConflictSheet;
 pub(crate) use sheet::connect::{CancelOnDrop, ConnectSheet, ConnectWay, DisconnectSheet};
-use sheet::publish::{HeldLabelsSheet, PublishSheet};
+use sheet::publish::{HeldLabelsSheet, PublishSheet, TangleSheet};
 
 // The main window's features, each a child module extending `MainView`.
 mod chrome; // title bar, config-problems banner, status bar, toasts
@@ -1001,6 +1003,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.format_actions(d, cx)) // --- format ---
             .map(|d| self.access_actions(d, cx)) // --- access-ai ---
             .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---
@@ -1111,7 +1114,7 @@ impl Render for MainView {
             .children(self.render_trail_publish(cx)) // --- trails ---
             .children(self.render_site_overlay(window, cx)) // --- site ---
             .children(profile_overlay) // --- profiles ---
-            .children(self.render_toast())
+            .children(self.render_toast(cx))
             .children(onboarding) // --- onboarding ---
             .children(crate::platform::menu_panel(p, window, cx)) // Windows menu
     }

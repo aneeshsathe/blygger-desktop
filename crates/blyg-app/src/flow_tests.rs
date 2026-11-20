@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, Kind, LocalId};
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Focusable as _, TestAppContext, VisualTestContext};
 
 use crate::app::MainView;
 use crate::app::command_palette::Cmd;
@@ -481,3 +481,386 @@ fn the_list_crossfades_when_the_blyg_changes(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.delight_list_gen()), before + 1);
 }
+
+// ------------------------------------------------------------ 0.27.0 user test (keyboard-only)
+
+fn editor_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+    view.update_in(cx, |v, window, cx| {
+        v.editor.read(cx).focus_handle(cx).is_focused(window)
+    })
+}
+
+fn focus_editor(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+    view.update_in(cx, |v, window, cx| {
+        let f = v.editor.read(cx).focus_handle(cx);
+        window.focus(&f, cx);
+    });
+    cx.run_until_parked();
+}
+
+fn toast_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |v, _| {
+        v.toast
+            .as_ref()
+            .map(|t| t.text.to_string())
+            .unwrap_or_default()
+    })
+}
+
+/// Tangling by keys alone: ⌘⏎ ⏎ reaches the confirm step with the keyboard
+/// on it; esc goes back to the text with the caret there; ⌘⏎ ⏎ ⏎ publishes
+/// all, and the spans become ids.
+#[gpui_kit::test]
+fn the_tangle_confirm_step_answers_enter_and_esc(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| v.tangle_demo(0, false, window, cx));
+    cx.run_until_parked();
+    focus_editor(&view, cx);
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("tangle-confirm").is_some(),
+        "the confirm step"
+    );
+    keys(cx, "escape");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()), "esc cancels");
+    assert!(editor_text(&view, cx).contains("![[+"), "nothing published");
+    assert!(editor_focused(&view, cx), "the caret is back in the text");
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    keys(cx, "enter");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
+    let text = editor_text(&view, cx);
+    assert!(!text.contains("[[+"), "the spans became ids: {text}");
+    assert!(text.contains("![[") && text.contains(" | "), "{text}");
+    assert!(
+        toast_text(&view, cx).ends_with("and 2 new items"),
+        "{}",
+        toast_text(&view, cx)
+    );
+    assert!(editor_focused(&view, cx), "still writing after publish");
+}
+
+/// ⌃⌘B / ⌃⌘I / ⌃⌘M on a keyboard selection.
+#[gpui_kit::test]
+fn bold_italic_and_formula_keys_wrap_the_selection(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    assert!(
+        editor_focused(&view, cx),
+        "opening a draft puts the caret in it"
+    );
+    keys(cx, "cmd-a");
+    cx.simulate_input("x^2");
+    cx.run_until_parked();
+    keys(cx, "cmd-a");
+    keys(cx, "ctrl-cmd-m");
+    assert_eq!(editor_text(&view, cx), "$x^2$");
+    keys(cx, "cmd-a");
+    cx.simulate_input("word");
+    cx.run_until_parked();
+    keys(cx, "cmd-a");
+    keys(cx, "ctrl-cmd-b");
+    assert_eq!(editor_text(&view, cx), "**word**");
+    keys(cx, "ctrl-cmd-b");
+    assert_eq!(editor_text(&view, cx), "word", "again: plain");
+    keys(cx, "ctrl-cmd-i");
+    assert_eq!(editor_text(&view, cx), "*word*");
+    // No selection: an empty pair with the caret inside.
+    keys(cx, "cmd-a");
+    cx.simulate_input("Let ");
+    cx.run_until_parked();
+    keys(cx, "ctrl-cmd-m");
+    cx.simulate_input("y");
+    cx.run_until_parked();
+    assert_eq!(editor_text(&view, cx), "Let $y$");
+}
+
+/// Settings' "Parts published with a thread" turned off: Lin's parts are
+/// back in the reading list, and the thread no longer counts them.
+#[gpui_kit::test]
+fn turning_the_burst_rule_off_brings_the_parts_back(cx: &mut TestAppContext) {
+    use crate::fake::background_seed::{LIN_PART_1, thread_key};
+    let (view, _, cx) = setup(cx);
+    let shown = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let part = v
+                .reading
+                .shown_rows()
+                .any(|r| r.remote_id.as_ref() == LIN_PART_1);
+            (part, v.reading.background.parts_of(&thread_key()).len())
+        })
+    };
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBackgroundRuleOff, 0, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    assert_eq!(shown(&view, cx), (false, 2), "a part waits in Background");
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBackgroundRuleOff, 1, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    assert_eq!(shown(&view, cx), (true, 0), "the part is back");
+}
+
+// ------------------------------------------------------------ 0.27.0 user-test fixes (FX1)
+
+fn frame(cx: &mut VisualTestContext) {
+    cx.update(|window, _| window.refresh());
+    cx.run_until_parked();
+}
+
+fn open_settings_page(cx: &mut VisualTestContext) {
+    keys(cx, "cmd-,");
+    crate::test_wait::settle_drawn(cx);
+}
+
+fn rule_on(view: &Entity<MainView>, cx: &mut VisualTestContext, rule: &str) -> bool {
+    view.read_with(cx, |v, _| match &v.reading.background.rules {
+        crate::app::reading::Load::Ready(r) => r.on(rule),
+        _ => panic!("Settings read the Background rules"),
+    })
+}
+
+/// Finding 1: Settings › BACKGROUND's rule chips are in the tab order after
+/// the appearance rows, with a focus ring; space and ⏎ turn the rule under
+/// the ring off and on; the arrows move between the rules.
+#[gpui_kit::test]
+fn background_rule_chips_take_tab_space_and_enter(cx: &mut TestAppContext) {
+    use blyg_core::background::BURST;
+    let (view, _, cx) = setup(cx);
+    open_settings_page(cx);
+    assert!(rule_on(&view, cx, BURST));
+    // WRITING FONT, INTERFACE FONT, SIZE, THEME, then BACKGROUND.
+    for _ in 0..5 {
+        keys(cx, "tab");
+    }
+    frame(cx);
+    assert!(
+        cx.debug_bounds("bg-rule-focused").is_some(),
+        "a focus ring on the first rule"
+    );
+    keys(cx, "space");
+    assert!(!rule_on(&view, cx, BURST), "space turns it off");
+    keys(cx, "enter");
+    assert!(rule_on(&view, cx, BURST), "⏎ turns it back on");
+    keys(cx, "right");
+    keys(cx, "space");
+    assert!(!rule_on(&view, cx, "wordless"), "→ moves to the next rule");
+    assert!(rule_on(&view, cx, BURST));
+    // ⇧⇥ goes back to THEME.
+    keys(cx, "shift-tab");
+    view.read_with(cx, |v, _| {
+        assert_eq!(
+            v.preview.cursor.as_ref().map(|c| c.0),
+            Some(crate::app::pref_preview::Row::Theme)
+        )
+    });
+}
+
+/// Finding 8: "Withdrawn posts" reads as fixed, not as a rule; turning a
+/// rule off or on says what happened.
+#[gpui_kit::test]
+fn background_rules_show_their_state_and_say_what_changed(cx: &mut TestAppContext) {
+    use blyg_core::background::BURST;
+    let (view, _, cx) = setup(cx);
+    open_settings_page(cx);
+    frame(cx);
+    assert!(
+        cx.debug_bounds("bg-withdrawn-fixed").is_some(),
+        "withdrawn posts are shown as always on"
+    );
+    assert!(
+        cx.debug_bounds("bg-rule-withdrawn").is_none(),
+        "not a chip like the rules"
+    );
+    view.update(cx, |v, cx| v.save_background_rule(BURST, false, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        toast_text(&view, cx),
+        "Parts published with a thread are back in your lists"
+    );
+    view.update(cx, |v, cx| v.save_background_rule(BURST, true, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        toast_text(&view, cx),
+        "Parts published with a thread go to Background again"
+    );
+}
+
+/// Finding 2: `p` folds and unfolds the parts of the selected stream card
+/// and of the open thread, the key is shown beside "+N parts", and a part's
+/// number opens it.
+#[gpui_kit::test]
+fn p_folds_a_threads_parts_and_a_number_opens_one(cx: &mut TestAppContext) {
+    use crate::fake::background_seed::thread_key;
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBurst, 0, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    keys(cx, "alt-cmd-1"); // the stream (tests start in the Reader)
+    let thread = thread_key();
+    for _ in 0..40 {
+        if view.read_with(cx, |v, _| v.reading.sel.as_ref() == Some(&thread)) {
+            break;
+        }
+        keys(cx, "j");
+    }
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.sel.clone()),
+        Some(thread.clone())
+    );
+    let listed = |view: &Entity<MainView>, cx: &mut VisualTestContext, open: bool| {
+        view.read_with(cx, |v, _| {
+            v.reading.background.parts_listed(&thread_key(), open)
+        })
+    };
+    frame(cx);
+    assert!(
+        cx.debug_bounds("burst-key-hint").is_some(),
+        "the selected card shows its key"
+    );
+    keys(cx, "p");
+    assert!(listed(&view, cx, false), "p unfolds the card's parts");
+    keys(cx, "p");
+    assert!(!listed(&view, cx, false), "p again folds them");
+    // The thread open beside the stream: its parts are listed; p folds them.
+    keys(cx, "enter");
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.opened.as_ref().map(|o| o.key.clone())),
+        Some(thread.clone())
+    );
+    assert!(listed(&view, cx, true));
+    keys(cx, "p");
+    assert!(!listed(&view, cx, true), "p folds the open thread's parts");
+    keys(cx, "p");
+    assert!(listed(&view, cx, true));
+    // 1 opens the first part.
+    let first = view.read_with(cx, |v, _| {
+        v.reading.background.parts_of(&thread_key())[0].clone()
+    });
+    keys(cx, "1");
+    assert_eq!(
+        view.read_with(cx, |v, _| v.reading.opened.as_ref().map(|o| o.key.clone())),
+        Some(first)
+    );
+}
+
+/// Finding 3: Responses has a row cursor: j/k (↑/↓) move it, h hides, o
+/// opens the response, r replies; link notices are rows too.
+#[gpui_kit::test]
+fn responses_have_a_row_cursor_and_keys(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    keys(cx, "cmd-shift-m");
+    crate::test_wait::settle_drawn(cx);
+    let rows: Vec<(String, String, bool)> = view.read_with(cx, |v, _| {
+        v.mention_groups()
+            .into_iter()
+            .flat_map(|g| g.3)
+            .map(|r| (r.id, r.source, r.notice))
+            .collect()
+    });
+    assert!(rows.len() >= 3, "{rows:?}");
+    assert!(rows.iter().any(|r| r.2), "a link notice among them");
+    keys(cx, "j");
+    frame(cx);
+    assert!(
+        cx.debug_bounds("mention-selected").is_some(),
+        "a visible selection"
+    );
+    keys(cx, "o");
+    assert_eq!(
+        cx.opened_url().as_deref(),
+        Some(rows[0].1.as_str()),
+        "o opens the first"
+    );
+    keys(cx, "down");
+    keys(cx, "o");
+    assert_eq!(
+        cx.opened_url().as_deref(),
+        Some(rows[1].1.as_str()),
+        "↓ moves"
+    );
+    keys(cx, "k");
+    keys(cx, "h");
+    cx.run_until_parked();
+    let hidden = |id: &str| {
+        fake.mentions()
+            .unwrap()
+            .into_iter()
+            .find(|m| m.id == id)
+            .is_some_and(|m| m.hidden)
+    };
+    assert!(hidden(&rows[0].0), "h hides the selected response");
+    // Every row is reachable, the link notice too.
+    let notice = rows.iter().find(|r| r.2).unwrap().1.clone();
+    let mut reached = false;
+    for _ in 0..rows.len() + 1 {
+        keys(cx, "o");
+        if cx.opened_url().as_deref() == Some(notice.as_str()) {
+            reached = true;
+            break;
+        }
+        keys(cx, "j");
+    }
+    assert!(reached, "the link notice takes the cursor");
+    // r replies to the selected response (a draft, or a toast saying why not).
+    keys(cx, "k");
+    let before = view.read_with(cx, |v, _| v.current.as_ref().map(|c| c.local_id.clone()));
+    keys(cx, "r");
+    cx.run_until_parked();
+    let after = view.read_with(cx, |v, _| v.current.as_ref().map(|c| c.local_id.clone()));
+    assert!(
+        after != before || !toast_text(&view, cx).is_empty(),
+        "r did something"
+    );
+    // The header names the keys.
+    let hint = view.read_with(cx, |v, _| v.mentions_screen_strings()[1].clone());
+    for k in ["j/k", "h hide", "r reply", "o open"] {
+        assert!(hint.contains(k), "{k} in {hint}");
+    }
+}
+
+/// Finding 10: a part's Background badge names its thread.
+#[gpui_kit::test]
+fn a_parts_badge_names_its_thread(cx: &mut TestAppContext) {
+    use crate::fake::background_seed::LIN_PART_1;
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBurst, 0, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    let why = view.read_with(cx, |v, _| {
+        let r = v
+            .reading
+            .rows
+            .iter()
+            .find(|r| r.remote_id.as_ref() == LIN_PART_1)
+            .expect("the part is held");
+        v.background_why(r)
+    });
+    assert_eq!(
+        why.as_deref(),
+        Some("published with ‘A morning on the harbour wall’")
+    );
+}
+
+/// Finding 11: what "Linked from" is, plainly.
+#[gpui_kit::test]
+fn linked_from_says_only_you_see_these(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    keys(cx, "cmd-shift-m");
+    crate::test_wait::settle_drawn(cx);
+    let strings = view.read_with(cx, |v, _| v.mentions_screen_strings());
+    assert!(
+        strings.iter().any(|s| s == "only you see these"),
+        "{strings:?}"
+    );
+    assert!(!strings.iter().any(|s| s.contains("notices")));
+}
+
+// --- user testing --- the writer's studio 0.64 journeys.
+#[path = "writer_flow_tests.rs"]
+mod writer;

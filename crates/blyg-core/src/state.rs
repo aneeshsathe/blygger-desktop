@@ -110,6 +110,10 @@ pub struct AppState {
     /// `onboarding::steps::TOURS`): the chooser ticks them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tours_done: Vec<String>,
+    /// --- format --- Windows: the "Bold is Alt+B; Ctrl+B opens the Shelf"
+    /// hint was shown (once, the first Ctrl+B while writing).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub bold_key_hint_shown: bool,
 }
 
 /// --- tray --- A post waiting in the quote tray: what the picker writes

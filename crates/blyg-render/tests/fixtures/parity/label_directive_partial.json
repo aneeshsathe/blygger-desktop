@@ -2,7 +2,7 @@
   "name": "label_directive_partial",
   "kind": "thread",
   "md": "![[01j9zq3k4m5n6p7q8r9s0t1v2w | the tools line]]\n> Small tools, used daily\n\nMy reply.",
-  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · excerpt of v3</p></blockquote>\n<p>My reply.</p>\n",
+  "html": "<blockquote class=\"blyg-transclusion blyg-partial\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\" data-blyg-label=\"the tools line\">\n<p>Small tools, used daily</p>\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">the tools line ↗</a> · fragment · excerpt of v3</p></blockquote>\n<p>My reply.</p>\n",
   "tk": {
     "scopes": [],
     "errors": []

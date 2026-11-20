@@ -47,7 +47,10 @@ Rules with an enforcer (a new row needs a check shown failing on a real past ins
 | UI verification never touches real data | `scripts/verify/burrow-verify.sh` refusals, `tests/verify_script.rs` |
 | UI text with ⌘ ⌥ ⇧ ⌃ is respelled on Windows (`keymap::hint` or `platform_text::Text`) | `platform_text.rs` scan of blyg-app's string literals; `steps.rs` Windows-wording test |
 | UI text tests hold on both platforms' spelling | CI's macOS step "Test (Windows wording)" (`BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app`); `platform_text::spelled_as` for one test |
+| tests move the caret with keys both platforms read alike (no ⌘+arrow, ⌥+←/→) | `platform_text.rs` `tests_dont_send_macos_only_caret_keys` (scan of blyg-app's sources) |
 | Windows keys: no AltGr characters, no clashes, overrides name real keys | `keymap.rs` tests `no_windows_key_is_an_altgr_character`, `windows_overrides_are_real_and_clash_with_nothing` (run on every platform) |
 | tour steps quote real keys (bound to what the step waits for), menu items and “labels” | `onboarding/caption_tests.rs` (both platforms' wording) |
 | the reading list converges, prunes only after a whole walk, and stays cheap | `blyg-core/src/sync/walk_model_tests.rs` (proptest model driving `walk::Read`) |
 | crates depend only on what their runtime allows (GPUI in `blyg-app` only) | `blyg-core/tests/it/crate_graph.rs` (`cargo metadata`) |
+| each new thing in the target studio's contract gets a test before it's built (or an exemption with a reason); a sync starts at `[target]` | `blyg-core/tests/it/contract_coverage.rs` over `openapi-current.json` and `tests/fixtures/contract-coverage.toml` |
+| tests are committed before the code they test, and fail without it | `scripts/test-first.sh` (`--run` before each merge); CI's `test-first` job fails a PR changing product code with no test, unless a commit has `No-test: <reason>` |

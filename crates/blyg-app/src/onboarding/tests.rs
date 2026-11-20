@@ -755,6 +755,14 @@ fn do_step(e: &mut Env, id: &str) {
         "capture" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-d")),
         "publish" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter")),
         "publish-note" => e.cx.simulate_keystrokes("enter"),
+        // --- 0.27.0 --- ⌘⏎, then the publish sheet's ⏎: the confirm step.
+        "tangle" => {
+            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+            e.cx.run_until_parked();
+            e.cx.simulate_keystrokes("enter");
+        }
+        "maths" => e.cx.simulate_keystrokes(&crate::keymap::keys("ctrl-cmd-m")),
+        "parts" => e.cx.simulate_keystrokes("p"),
         "full-editor" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-3")),
         "write-view" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-1")),
         "tk" => e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-g")),

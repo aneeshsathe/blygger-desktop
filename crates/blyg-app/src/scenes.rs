@@ -170,6 +170,12 @@ scenes! {
         RdBrowseHistory = "rd-browse-history",
         RdBrowsePeek = "rd-browse-peek",
         RdStreamNested = "rd-stream-nested",
+        RdBurst = "rd-burst",
+        // --- maths --- a post with formulas in the reader; a draft's preview
+        RdMaths = "rd-maths",
+        RdMathsPreview = "rd-maths-preview",
+        // Reply to it, then select a passage that takes in a formula.
+        RdMathsQuote = "rd-maths-quote",
     }
     /// profiles/demo.rs
     Profiles {
@@ -268,6 +274,35 @@ scenes! {
         CtAuthor = "ct-author",
         CtSent = "ct-sent",
         CtSubs = "ct-subs",
+    }
+    /// app/publish.rs (--- tangle ---)
+    Main {
+        RdTangle = "rd-tangle",
+        RdTanglePreview = "rd-tangle-preview",
+    }
+    /// reading/demo.rs: studio 0.64 link notices on Responses
+    Reading {
+        RdLinkedFrom = "rd-linked-from",
+        // --- background --- "Parts published with a thread" turned off in
+        // Settings: Lin's first part open, back in the main lists.
+        RdBackgroundRuleOff = "rd-background-rule-off",
+        // The stream at Lin's burst thread, its "+2 parts" still folded.
+        RdStreamBurst = "rd-stream-burst",
+    }
+    /// reading/demo.rs (--- render ---): studio 0.64.1's labelled and nested
+    /// provenance, lazy quote lines and comments to self, in the preview
+    Reading {
+        RdProvenance = "rd-provenance",
+    }
+    /// app/demo.rs (--- FX1 ---): Settings with the keyboard on BACKGROUND's
+    /// second rule (⇥ ×5, →), scrolled to it
+    Main {
+        SettingsBackgroundKeys = "settings-background-keys",
+    }
+    /// reading/demo.rs (--- FX1 ---): Responses with the row cursor on the
+    /// link notice (j ×3)
+    Reading {
+        RdResponsesKeys = "rd-responses-keys",
     }
 }
 

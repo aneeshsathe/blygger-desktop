@@ -147,7 +147,9 @@ pub fn link_trigger(old: &str, new: &str, cursor: usize) -> Option<usize> {
 }
 
 /// The query typed after the brackets that start at `at`, while the caret
-/// is still there: on the same line, with no `]` yet.
+/// is still there: on the same line, with no `]` yet. A `+` right after the
+/// brackets is tangling's `[[+ …]]` / `![[+ …]]` (studio 0.63), not a
+/// search: the picker closes.
 pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&str> {
     let open = kind.open();
     if text.get(at..at + open.len()) != Some(open) {
@@ -158,7 +160,7 @@ pub fn query(text: &str, at: usize, kind: PickKind, cursor: usize) -> Option<&st
         return None;
     }
     let q = text.get(start..cursor)?;
-    (!q.contains(['\n', ']', '[']) && q.chars().count() <= 80).then_some(q)
+    (!q.starts_with('+') && !q.contains(['\n', ']', '[']) && q.chars().count() <= 80).then_some(q)
 }
 
 /// Replace the typed brackets and query (`at..cursor`, plus a `]]` the
@@ -463,6 +465,11 @@ mod tests {
         assert_eq!(query("[[a\nb", 0, PickKind::Link, 5), None);
         assert_eq!(query("![[ti", 0, PickKind::Quote, 5), Some("ti"));
         assert_eq!(query("![[ti", 0, PickKind::Link, 5), None);
+        // --- tangle --- `[[+` and `![[+` are a new item, not a pick.
+        assert_eq!(query("see [[+", 4, PickKind::Link, 7), None);
+        assert_eq!(query("see [[+ an idea", 4, PickKind::Link, 15), None);
+        assert_eq!(query("![[+ ", 0, PickKind::Quote, 5), None);
+        assert_eq!(query("see [[a+b", 4, PickKind::Link, 9), Some("a+b"));
     }
 
     #[test]

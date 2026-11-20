@@ -559,6 +559,7 @@ const SETTINGS_CHIPS: &[&str] = &[
     "changelog-reader-summary",
     "changelog-page-summary",
     "bg-rule-minor",
+    "bg-rule-burst", // studio 0.64's longest rule
     "ai-open-settings",
     "ext-vault",
 ];

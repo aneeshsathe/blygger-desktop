@@ -1,0 +1,12 @@
+{
+  "name": "comment_to_self",
+  "kind": "thread",
+  "md": "Kept /* a note to self */ text.\n\n/* a whole\nparagraph note */\n\nAfter.",
+  "html": "<p>Kept text.</p>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
