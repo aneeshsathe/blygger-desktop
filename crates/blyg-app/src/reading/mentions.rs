@@ -1,6 +1,8 @@
 //! Mentions & responses (⇧⌘M): a list, never a count. Who, origin,
 //! relation, when; a dot for new; hide a mention; and per post, whether its
-//! responses show on the public page.
+//! responses show on the public page. Keys: j/k (↓/↑) move a row cursor
+//! over every row (link notices too), h hides or unhides, r replies, o or ⏎
+//! opens the response (↗).
 
 use blyg_core::ResponsesMode;
 use gpui_kit::prelude::FluentBuilder as _;
@@ -89,7 +91,93 @@ impl MainView {
     }
 
     fn mentions_hint(&self) -> String {
-        "who quoted, replied to, forked or linked to your posts · esc back".into()
+        format!("who responded to your posts · {MENTION_KEYS} · esc back")
+    }
+
+    /// The rows in the order they're drawn (each post's responses, then
+    /// its link notices).
+    fn mention_order(&self) -> Vec<MentionRow> {
+        self.mention_groups()
+            .into_iter()
+            .flat_map(|g| g.3)
+            .collect()
+    }
+
+    /// Responses' keys (the Received side): j/k or ↓/↑ move the row cursor,
+    /// h hides or unhides, r replies, o or ⏎ opens the response (↗).
+    /// Returns whether the key was taken.
+    pub(super) fn mentions_key(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.contacts.sent.showing || self.reading.mentions.ready().is_none() {
+            return false;
+        }
+        let rows = self.mention_order();
+        if rows.is_empty() {
+            return false;
+        }
+        let at = self
+            .reading
+            .mention_sel
+            .as_ref()
+            .and_then(|id| rows.iter().position(|r| r.id == *id));
+        let step = |delta: isize| -> usize {
+            match at {
+                None if delta > 0 => 0,
+                None => rows.len() - 1,
+                Some(i) => (i as isize + delta).clamp(0, rows.len() as isize - 1) as usize,
+            }
+        };
+        match key {
+            "j" | "down" | "k" | "up" => {
+                let i = step(if matches!(key, "j" | "down") { 1 } else { -1 });
+                self.reading.mention_sel = Some(rows[i].id.clone());
+                cx.notify();
+                true
+            }
+            "h" | "r" | "o" | "enter" => {
+                let Some(i) = at else {
+                    self.show_toast("Pick a response first (j/k)", None, cx);
+                    return true;
+                };
+                let row = &rows[i];
+                match key {
+                    "h" => {
+                        // Hidden rows leave the list: the cursor moves on.
+                        if !row.hidden && !self.reading.show_hidden {
+                            let next = rows
+                                .get(i + 1)
+                                .or(i.checked_sub(1).and_then(|j| rows.get(j)));
+                            self.reading.mention_sel = next.map(|r| r.id.clone());
+                        }
+                        self.hide_mention(row.id.clone(), !row.hidden, cx);
+                    }
+                    "r" => {
+                        let m = self
+                            .reading
+                            .mentions
+                            .ready()
+                            .and_then(|ms| ms.iter().find(|m| m.id == row.id).cloned());
+                        match m {
+                            Some(m) if m.source_id.is_some() && m.status != "gone" => {
+                                self.reply_to_mention(&m, window, cx)
+                            }
+                            _ => self.show_toast(
+                                "That response isn't a blyg post to reply to",
+                                None,
+                                cx,
+                            ),
+                        }
+                    }
+                    _ => cx.open_url(&row.source),
+                }
+                true
+            }
+            _ => false,
+        }
     }
 
     fn hide_mention(&mut self, id: String, hidden: bool, cx: &mut Context<Self>) {
@@ -337,12 +425,20 @@ impl MainView {
         let p = self.palette.on_page();
         let (id, hidden, source) = (r.id.clone(), r.hidden, r.source.clone());
         let profile_of = r.source.clone(); // --- profiles ---
+        let selected = self.reading.mention_sel.as_deref() == Some(r.id.as_str());
         div()
             .id(SharedString::from(format!("mention-{}", r.id)))
             .flex()
             .items_center()
             .gap(px(8.))
             .py(px(6.))
+            // The row cursor (j/k), drawn as the reading list's selection.
+            .mx(px(-6.))
+            .px(px(6.))
+            .rounded(px(4.))
+            .when(selected, |d| {
+                d.debug_selector(|| "mention-selected".into()).bg(p.sel)
+            })
             .when(hidden, |d| d.opacity(0.5))
             .child(
                 div()
@@ -407,10 +503,14 @@ impl MainView {
 /// The one control's label: what it decides.
 const ON_PAGE: &str = "On the post's page:";
 
-/// The heading over a post's link notices, and what they are (Studio's
-/// words).
+/// The heading over a post's link notices, and who sees them (Studio says
+/// "notices, never shown on the page"; this says it plainly).
 const LINKED_FROM: &str = "Linked from";
-const NOTICES: &str = "notices, never shown on the page";
+const NOTICES: &str = "only you see these";
+
+/// The row keys, as the header shows them (the reading list's letters:
+/// j/k move, as `⌥⌘R` replies and `⌘O` opens; h hides).
+const MENTION_KEYS: &str = "j/k move · h hide · r reply · o open ↗";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).

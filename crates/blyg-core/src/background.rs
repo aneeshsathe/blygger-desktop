@@ -55,6 +55,10 @@ pub const RULES: [&str; 4] = [BURST, "wordless", "maintenance", "minor"];
 /// `detail.thread` names the thread.
 pub const BURST: &str = "burst";
 
+/// What a thread's part says of itself when the thread's title isn't known
+/// (Burrow's UI names the thread: "published with ‘<title>’").
+pub const BURST_WHY: &str = "published with a thread";
+
 /// The owner's choice on one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -112,7 +116,7 @@ impl EntryBackground {
             return Some("blyg in Background".into());
         }
         match self.reasons.first().map(String::as_str) {
-            Some(BURST) => Some("part of a burst".into()),
+            Some(BURST) => Some(BURST_WHY.into()),
             Some("wordless") => Some("no words of its own".into()),
             Some("maintenance") => Some("republished unchanged".into()),
             Some("minor") => Some(

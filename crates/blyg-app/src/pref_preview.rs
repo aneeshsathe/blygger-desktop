@@ -43,6 +43,9 @@ pub(crate) enum Pick {
     UiFont(&'static str),
     /// `font-size`.
     Size(f32),
+    /// A Background rule (Settings › BACKGROUND): never tried, only
+    /// turned off or on with space or ⏎ (`save_background_rule`).
+    Rule(&'static str),
 }
 
 impl Pick {
@@ -66,6 +69,7 @@ impl Pick {
             Pick::Size(s) => {
                 p.font_size = s.clamp(prefs::MIN_SIZE, prefs::MAX_SIZE);
             }
+            Pick::Rule(_) => {}
         }
     }
 
@@ -85,6 +89,7 @@ impl Pick {
                 p.ui_font_set = kept.ui_font_set;
             }
             Pick::Size(_) => p.font_size = kept.font_size,
+            Pick::Rule(_) => {}
         }
     }
 }
@@ -107,17 +112,26 @@ pub(crate) struct Active {
     pub force_dark: Option<bool>,
 }
 
-/// The rows of Settings that preview, in the page's order.
+/// The rows of Settings that take ⇥ and the arrow keys, in the page's
+/// order. All but `Background` preview; BACKGROUND's rules (lower on the
+/// page, when the blyg offers any) are turned off and on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Row {
     WritingFont,
     UiFont,
     Size,
     Theme,
+    Background,
 }
 
 impl Row {
-    pub const ALL: [Row; 4] = [Row::WritingFont, Row::UiFont, Row::Size, Row::Theme];
+    pub const ALL: [Row; 5] = [
+        Row::WritingFont,
+        Row::UiFont,
+        Row::Size,
+        Row::Theme,
+        Row::Background,
+    ];
 }
 
 #[derive(Default)]
@@ -132,6 +146,9 @@ pub(crate) struct State {
     hover_gen: usize,
     /// The window was dark at the last frame (for Settings' slot notes).
     pub os_dark: bool,
+    /// Scroll the BACKGROUND rule under the cursor into view at the next
+    /// frame (it sits below the fold).
+    pub reveal: std::rc::Rc<std::cell::Cell<bool>>,
 }
 
 impl State {
@@ -197,7 +214,8 @@ pub fn options(row: Row, dark: bool, cx: &App) -> Vec<Pick> {
             .map(|f| Pick::UiFont(f.label))
             .collect(),
         Row::Theme => theme_options(dark, cx),
-        Row::Size => Vec::new(),
+        // Steps (Size), or the blyg's rules (`MainView::background_rule_picks`).
+        Row::Size | Row::Background => Vec::new(),
     }
 }
 
@@ -384,7 +402,21 @@ impl MainView {
                 dark: false,
                 id: Some(p.theme.clone()),
             },
+            Row::Background => self
+                .background_rule_picks()
+                .into_iter()
+                .next()
+                .unwrap_or(Pick::Rule(blyg_core::background::BURST)),
         }
+    }
+
+    /// The rows ⇥ walks: BACKGROUND only while the blyg offers rules.
+    fn tab_rows(&self) -> Vec<Row> {
+        let bg = !self.background_rule_picks().is_empty();
+        Row::ALL
+            .into_iter()
+            .filter(|r| *r != Row::Background || bg)
+            .collect()
     }
 
     /// Switch the THEME row between the light and dark slots.
@@ -414,8 +446,10 @@ impl MainView {
     ) {
         self.end_preview_from(Origin::Settings, window, cx);
         self.preview.cursor = row.map(|r| (r, self.kept_pick(r)));
-        // The rows sit at the top of the page.
-        if row.is_some()
+        if row == Some(Row::Background) {
+            self.preview.reveal.set(true);
+        } else if row.is_some()
+            // The appearance rows sit at the top of the page.
             && let Some(super::SettingsSheet { scroll, .. }) = self.sheet.get()
         {
             scroll.set_offset(point(px(0.), px(0.)));
@@ -432,7 +466,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        let rows = Row::ALL;
+        let rows = self.tab_rows();
         let at = self.preview.cursor.as_ref().map(|(r, _)| *r);
         let row_index = at.and_then(|r| rows.iter().position(|x| *x == r));
         match key {
@@ -453,6 +487,15 @@ impl MainView {
                     return true;
                 };
                 let back = matches!(key, "up" | "left");
+                if row == Row::Background {
+                    let opts = self.background_rule_picks();
+                    if let Some(next) = step(&opts, &pick, if back { -1 } else { 1 }) {
+                        self.preview.cursor = Some((row, next));
+                        self.preview.reveal.set(true);
+                    }
+                    cx.notify();
+                    return true;
+                }
                 let next = match (row, &pick) {
                     (Row::Size, Pick::Size(s)) => {
                         let s = if back { s - 1.0 } else { s + 1.0 };
@@ -475,6 +518,10 @@ impl MainView {
                 let Some((row, pick)) = self.preview.cursor.clone() else {
                     return false;
                 };
+                if let Pick::Rule(rule) = pick {
+                    self.toggle_background_rule(rule, cx);
+                    return true;
+                }
                 if pick != self.kept_pick(row) {
                     self.commit_pick(pick, window, cx);
                 }

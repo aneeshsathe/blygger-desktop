@@ -68,7 +68,7 @@ fn a_thread_knows_its_parts_and_each_part_says_why() {
     assert_eq!(b.parts_of(&key("t")), [key("p1"), key("p2")]);
     assert!(b.parts_of(&key("p1")).is_empty());
     assert!(b.parts_listed(&key("t"), true) && !b.parts_listed(&key("t"), false));
-    assert_eq!(why(&rows[1]).as_deref(), Some("part of a burst"));
+    assert_eq!(why(&rows[1]).as_deref(), Some("published with a thread"));
     assert_eq!(why(&rows[0]), None, "the thread is in the foreground");
     let now = chrono::Utc::now();
     assert!(

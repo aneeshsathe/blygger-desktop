@@ -91,7 +91,7 @@ fn sync_until(me: &LiveBackend, what: &str, mut ok: impl FnMut(&[ReadingItem]) -
 
 /// `b` publishes two fragments and then, within the 15-minute window, a
 /// thread with words of its own quoting both. `a` polls it: both fragments
-/// go to Background as "part of a burst" naming the thread, the thread
+/// go to Background as "published with a thread" naming the thread, the thread
 /// stays in the foreground and lists them as "+2 parts". With the burst
 /// rule off (a partial write: the other rules keep their stored values)
 /// the parts come back at once; on again, they fold again.
@@ -139,7 +139,7 @@ fn a_burst_folds_under_its_thread_and_the_rule_turns_it_off() {
         let b = row_of(&rows, &sid, p).background.clone().unwrap();
         assert_eq!(b.reasons, [BURST], "{p}: {b:?}");
         assert_eq!(b.burst_thread(), Some(thread.as_str()), "detail.thread");
-        assert_eq!(b.why().as_deref(), Some("part of a burst"));
+        assert_eq!(b.why().as_deref(), Some("published with a thread"));
     }
     assert!(
         !row_of(&rows, &sid, &thread).is_background(),
