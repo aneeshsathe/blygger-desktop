@@ -2074,6 +2074,80 @@ impl Proxy {
     }
 }
 
+/// --- conditional reads --- Studio 0.65's ETags: reading a list again
+/// sends each page's validator back, an unchanged page is a 304 answered
+/// from the body read before, and a change comes back whole. An older
+/// studio sends no ETag, and the test says so.
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn unchanged_reads_are_304s_and_a_change_comes_back_whole() {
+    let e = e2e();
+    let api = Api::new(&e.url, e.cred.clone());
+    let ids = |items: &[blyg_core::api::wire::WireItem]| -> HashSet<String> {
+        items.iter().map(|w| w.id.clone()).collect()
+    };
+    // Whether the studio sends validators, asked of it directly.
+    let token = match &e.cred {
+        Credential::Token(t) => t.clone(),
+        _ => {
+            eprintln!("skipped: the conditional-read check signs in with a token");
+            return;
+        }
+    };
+    let etag = agent()
+        .get(&format!("{}/api/items?limit=100", e.url))
+        .set("authorization", &format!("Bearer {token}"))
+        .call()
+        .ok()
+        .and_then(|r| r.header("etag").map(str::to_string));
+    if etag.is_none() {
+        eprintln!("skipped: this studio sends no ETags (older than studio 0.65)");
+        return;
+    }
+    let first = api.list_items().unwrap();
+    assert_eq!(api.revalidated(), 0, "nothing to revalidate yet");
+    let again = api.list_items().unwrap();
+    assert!(api.revalidated() > 0, "the second read sent its validators");
+    assert_eq!(ids(&first), ids(&again), "a 304 answers with what was read");
+    let subs = api.list_subscriptions().unwrap();
+    let before = api.revalidated();
+    assert_eq!(api.list_subscriptions().unwrap().len(), subs.len());
+    assert!(api.revalidated() > before, "every list revalidates");
+
+    // A new draft changes the list: it comes back whole, with the draft.
+    let t = tag("etag");
+    let (status, created) = owner(
+        "POST",
+        &e.url,
+        "/api/items",
+        Some(json!({"mode": "blank", "kind": "fragment", "contentMd": t})),
+    );
+    assert_eq!(status, 201, "{created}");
+    let sid = created["id"].as_str().unwrap().to_string();
+    let after = api.list_items().unwrap();
+    assert!(
+        ids(&after).contains(&sid),
+        "the change was read, not a stale body"
+    );
+    let edited = after.iter().find(|w| w.id == sid).unwrap();
+    assert_eq!(edited.content_md, t);
+
+    // An item's own GET revalidates too, and sees an edit.
+    let one = api.get_item(&sid).unwrap();
+    let before = api.revalidated();
+    assert_eq!(api.get_item(&sid).unwrap().revision, one.revision);
+    assert!(api.revalidated() > before);
+    let text = format!("{t}\n\nedited");
+    let (status, body) = owner(
+        "PATCH",
+        &e.url,
+        &format!("/api/items/{sid}"),
+        Some(json!({"contentMd": text, "expectedRevision": one.revision})),
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(api.get_item(&sid).unwrap().content_md, text);
+}
+
 /// `GET /api/changes` is there (studio 0.32+); else the test says so.
 fn has_changes() -> bool {
     let e = e2e();

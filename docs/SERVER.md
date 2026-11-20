@@ -349,7 +349,14 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
   thumb reads `GET /api/signals`, a moved hopper reads the hoppers. As a safety net
   everything is read whole after 10 minutes; each such pass that finds nothing the
   counters hadn't said doubles the wait, up to 2 hours. See
-  [Cloudflare's free D1 plan](#cloudflares-free-d1-plan).
+  [Cloudflare's free D1 plan](#cloudflares-free-d1-plan). Studio 0.65 deprecates the
+  counters and 0.67 removes them; without them (a 404), every pull reads every list
+  whole, once a minute.
+- **Conditional reads (studio 0.65, contract 5.14.0):** every owner-API GET sends back
+  the `ETag` of the body it last read at that address as `If-None-Match`, and a `304`
+  is answered from that body (`api/validators.rs`; up to 32 MiB kept, in memory only).
+  So an unchanged page, of any list, costs a bodyless `304`, with or without the
+  counters. A studio that sends no `ETag` is read exactly as before.
 - **The blyg fails (`5xx`):** its Worker or its database is down, or a `D1_ERROR` says
   the daily limit is spent. Changes stay queued; the status bar says "blyg
   unavailable" in grey, and Burrow waits 30 s, then twice as long each time, up to

@@ -42,6 +42,14 @@ the counters don't watch) the reading list is always read. Everything is read wh
 every 10 min as a safety net. With `/api/changes` the worker pulls every
 `pull_interval / 4` (15 s); a 404 keeps the old full pull every `pull_interval`.
 
+Studio 0.65 deprecates `/api/changes` (0.67 removes it) in favour of conditional
+reads: each private GET answers with an `ETag`, and `If-None-Match` with it gets a
+bodyless `304` while the representation is unchanged. `Api` sends every GET's last
+validator back and answers a `304` from the body it kept (`api/validators.rs`:
+bounded, in memory, oldest first; a 304 whose body went is read again whole). The
+sync engine is unchanged: the counters still decide what's read while the studio
+serves them, and once it doesn't, the full pull's pages are mostly `304`s.
+
 ## Work budgets (studio 0.28+)
 
 A 429 maps to `CoreError::RateLimited { retry_after }` (`Retry-After`, default

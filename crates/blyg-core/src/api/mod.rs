@@ -39,6 +39,7 @@ pub mod upkeep;
 // --- end upkeep ---
 pub mod shelf_api; // --- shelf sync --- (studio 0.61)
 pub mod syndication_api;
+pub mod validators; // --- conditional reads --- (studio 0.65, contract 5.14.0)
 pub mod wire; // --- syndication --- (decision #98)
 
 use std::io::Read;
@@ -131,6 +132,9 @@ pub struct Api {
     /// Whether `POST /api/subscriptions` takes `wholeBlyg` (contract 5.1+),
     /// once the capabilities were read.
     whole_blyg: Mutex<Option<bool>>,
+    /// --- conditional reads --- each GET's `ETag` and body, so an
+    /// unchanged read is a 304 (`validators.rs`).
+    validators: Mutex<validators::Validators>,
 }
 
 /// The settings an item's derived fields depend on.
@@ -192,7 +196,14 @@ impl Api {
             session: Mutex::new(None),
             site: Mutex::new(None),
             whole_blyg: Mutex::new(None),
+            validators: Mutex::default(),
         }
+    }
+
+    /// --- conditional reads --- How many GETs the studio answered with a
+    /// 304, reusing a body read before.
+    pub fn revalidated(&self) -> u64 {
+        self.validators.lock().unwrap().revalidated()
     }
 
     pub fn base_url(&self) -> &str {
@@ -237,11 +248,44 @@ impl Api {
         })
     }
 
-    /// A request at an absolute URL, with the 403 scope message.
+    /// A request at an absolute URL, with the 403 scope message. A GET
+    /// sends the validator of the body it last read there, if any, and a
+    /// 304 answers with that body (`validators.rs`).
     fn send_url(&self, method: &str, url: &str, body: &Body) -> (Result<Value>, Option<String>) {
+        let conditional = method == "GET" && matches!(body, Body::None);
+        let etag = conditional
+            .then(|| self.validators.lock().unwrap().etag(url))
+            .flatten();
+        match self.send_once(method, url, body, etag.as_deref()) {
+            (Some(r), bearer) => (r, bearer),
+            // A 304, but the body went meanwhile: read it whole.
+            (None, _) => match self.send_once(method, url, body, None) {
+                (Some(r), bearer) => (r, bearer),
+                (None, bearer) => (
+                    Err(CoreError::Other(format!(
+                        "{url} answered 304 to a plain GET"
+                    ))),
+                    bearer,
+                ),
+            },
+        }
+    }
+
+    /// One request; `None` is a 304 whose body is no longer kept.
+    fn send_once(
+        &self,
+        method: &str,
+        url: &str,
+        body: &Body,
+        etag: Option<&str>,
+    ) -> (Option<Result<Value>>, Option<String>) {
         let (req, bearer) = match self.request_url(method, url) {
             Ok(r) => r,
-            Err(e) => return (Err(e), None),
+            Err(e) => return (Some(Err(e)), None),
+        };
+        let req = match etag {
+            Some(e) => req.set("if-none-match", e),
+            None => req,
         };
         let res = match body {
             Body::None => req.call(),
@@ -263,15 +307,48 @@ impl Api {
             };
             let message = oauth::missing_scope_message(&needed, granted.as_deref());
             return (
-                Err(CoreError::Rejected {
+                Some(Err(CoreError::Rejected {
                     status: 403,
                     message,
                     details: vec![],
-                }),
+                })),
                 bearer,
             );
         }
-        (read_json(res), bearer)
+        if method == "GET" && matches!(body, Body::None) {
+            return (self.read_validated(url, res), bearer);
+        }
+        (Some(read_json(res)), bearer)
+    }
+
+    /// --- conditional reads --- A GET's answer: a 304 is the kept body
+    /// (`None` when it's no longer kept), a 200 is kept with its `ETag` (or,
+    /// without one, forgets the old).
+    fn read_validated(
+        &self,
+        url: &str,
+        res: std::result::Result<ureq::Response, ureq::Error>,
+    ) -> Option<Result<Value>> {
+        match res {
+            Ok(r) if r.status() == 304 => {
+                let kept = self.validators.lock().unwrap().not_modified(url);
+                kept.map(|body| parse_json(&body))
+            }
+            Ok(r) => {
+                let etag = r.header("etag").map(str::to_string);
+                Some(body_text(r).and_then(|s| {
+                    self.validators
+                        .lock()
+                        .unwrap()
+                        .store(url, etag.as_deref(), &s);
+                    parse_json(&s)
+                }))
+            }
+            Err(e) => {
+                self.validators.lock().unwrap().forget(url);
+                Some(read_json(Err(e)))
+            }
+        }
     }
 
     /// One call. `path` starts with `/api/`, under the blyg's mount. With
@@ -1528,20 +1605,27 @@ fn enc(s: &str) -> String {
         .replace('+', "%20")
 }
 
+/// A successful answer's body, up to 64 MiB.
+fn body_text(r: ureq::Response) -> Result<String> {
+    let mut s = String::new();
+    r.into_reader()
+        .take(64 * 1024 * 1024)
+        .read_to_string(&mut s)
+        .map_err(|_| CoreError::Offline)?;
+    Ok(s)
+}
+
+/// A body as JSON (an empty one is `null`).
+fn parse_json(s: &str) -> Result<Value> {
+    if s.trim().is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_str(s).map_err(|e| CoreError::Other(format!("bad JSON from server: {e}")))
+}
+
 fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Value> {
     match res {
-        Ok(r) => {
-            let mut s = String::new();
-            r.into_reader()
-                .take(64 * 1024 * 1024)
-                .read_to_string(&mut s)
-                .map_err(|_| CoreError::Offline)?;
-            if s.trim().is_empty() {
-                return Ok(Value::Null);
-            }
-            serde_json::from_str(&s)
-                .map_err(|e| CoreError::Other(format!("bad JSON from server: {e}")))
-        }
+        Ok(r) => parse_json(&body_text(r)?),
         Err(ureq::Error::Transport(_)) => Err(CoreError::Offline),
         Err(ureq::Error::Status(401, _)) => Err(CoreError::Unauthorized),
         Err(ureq::Error::Status(404, _)) => Err(CoreError::NotFound),
