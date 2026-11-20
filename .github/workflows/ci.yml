@@ -4,12 +4,17 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, Monday 06:00 UTC: RustSec advisories against main's lockfile
+  # (only the changes and deny jobs do anything).
+  schedule:
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # The event is in the group so the weekly run can't cancel a push to main.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -32,6 +37,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       rust: ${{ steps.decide.outputs.rust }}
+      deps: ${{ steps.decide.outputs.deps }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,12 +53,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          if [ "$EVENT" = pull_request ]; then
-            python3 scripts/ci-skip.py decide "$BASE" "$HEAD"
-          else
-            echo "rust=true" | tee -a "$GITHUB_OUTPUT"
-          fi
+        run: python3 scripts/ci-skip.py decide "$EVENT" ${BASE:+"$BASE" "$HEAD"}
 
   check:
     name: fmt · clippy · test
@@ -182,11 +183,13 @@ jobs:
           HEAD: ${{ github.event.pull_request.head.sha }}
         run: scripts/test-first.sh --pr "$BASE" "$HEAD"
 
-  # Dependencies: RustSec advisories, licences and sources, by deny.toml.
-  # A new advisory fails every PR until it's fixed, or listed in deny.toml
-  # with its reason.
+  # Dependencies, by deny.toml. Bans, licences and sources on every run.
+  # RustSec advisories on pushes to main, weekly, and on a PR that changes
+  # Cargo.lock or deny.toml, so a new advisory doesn't fail unrelated PRs;
+  # it fails the weekly run until it's fixed or listed with its reason.
   deny:
     name: dependencies (cargo deny)
+    needs: changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -202,11 +205,16 @@ jobs:
         with:
           tool: cargo-deny@0.20.2
 
-      - name: cargo deny
-        run: scripts/check.sh deny
+      - name: Bans, licences, sources
+        run: scripts/check.sh deny-policy
+
+      - name: Advisories
+        if: needs.changes.outputs.deps == 'true'
+        run: scripts/check.sh deny-advisories
 
   docs:
     name: docs site
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

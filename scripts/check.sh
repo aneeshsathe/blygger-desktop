@@ -21,8 +21,11 @@
 #   extensions  format check of extensions/community.toml (no network)
 #   ci-skip     no code reads a path CI may skip (scripts/ci-skip.py check)
 #   docs        the docs site with the pinned mdBook (scripts/build-site.sh)
-#   deny        cargo deny --locked check (deny.toml): advisories, licences, sources;
-#               needs cargo-deny (`cargo install cargo-deny --locked`)
+#   deny        cargo deny --locked check (deny.toml): advisories, licences,
+#               bans, sources; needs cargo-deny (`cargo install cargo-deny
+#               --locked`). Its halves: deny-policy (bans, licences, sources:
+#               what this tree says) and deny-advisories (RustSec: what the
+#               world found since), which CI runs on separate conditions.
 #
 # docs and deny aren't in the default run: docs downloads mdBook on first use
 # and checks only site/; deny needs a tool most machines lack and fetches the
@@ -44,7 +47,7 @@ for arg in "$@"; do
     --fix) fix=1 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
     all) steps+=(fmt extensions ci-skip clippy test wording docs deny) ;;
-    fmt|clippy|test|wording|extensions|ci-skip|docs|deny) steps+=("$arg") ;;
+    fmt|clippy|test|wording|extensions|ci-skip|docs|deny|deny-policy|deny-advisories) steps+=("$arg") ;;
     *) echo "check.sh: unknown step '$arg' (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -75,6 +78,8 @@ for step in "${steps[@]}"; do
     ci-skip) run "$PY" scripts/ci-skip.py check ;;
     docs) run scripts/build-site.sh ;;
     deny) run cargo deny --locked check ;;
+    deny-policy) run cargo deny --locked check bans licenses sources ;;
+    deny-advisories) run cargo deny --locked check advisories ;;
   esac
 done
 echo "check.sh: passed (${steps[*]})" >&2

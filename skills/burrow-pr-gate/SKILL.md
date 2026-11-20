@@ -51,9 +51,11 @@ for duplicated or dropped lines.
 ## Outside contributions
 
 Read the whole diff before merging. CI checks new dependencies: the `deny`
-job (`scripts/check.sh deny`, policy in `deny.toml`) fails on a RustSec
-advisory, a licence outside the allowed list, or a source other than
-crates.io. A change to `deny.toml` is a policy change; it needs its reason.
+job (policy in `deny.toml`) fails on a licence outside the allowed list or
+a source other than crates.io on every PR, and on a RustSec advisory when
+the PR changes `Cargo.lock` or `deny.toml` (and weekly, and on main). Run
+`scripts/check.sh deny` after changing dependencies. A change to
+`deny.toml` is a policy change; it needs its reason.
 
 No check can judge a change to `.github/workflows/`, a `build.rs`, or a
 script CI runs (`scripts/`). Reviewing those stays with the maintainer:

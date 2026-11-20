@@ -6,11 +6,16 @@ A pull request whose every change adds or modifies a file under a SKIP
 directory runs no Rust job (fmt, clippy, tests, the Windows release build); the docs-site job
 and test-first still run, and pushes to main always run everything. A path
 belongs in SKIP only if no test, build script or script a test runs reads
-it, which `check` enforces. A deletion or rename there runs everything:
+it, which `check` enforces. `deps` says whether the RustSec advisory check
+runs: on a pull request only when Cargo.lock or deny.toml changed (the
+policy checks run on every one), and always on pushes and the weekly run.
+A scheduled run is for advisories only, so it sets rust=false. A deletion or rename there runs everything:
 tests check that paths named in CLAUDE.md and skills/ exist, and some name
 SKIP files.
 
-  scripts/ci-skip.py decide BASE HEAD   prints rust=true or rust=false (CI)
+  scripts/ci-skip.py decide EVENT [BASE HEAD]
+                                        prints rust= and deps= (true/false)
+                                        for CI's job conditions
   scripts/ci-skip.py check              fails if code may read a SKIP path
 
 `check` scans every tracked file under crates/ and scripts/ (outside SKIP)
@@ -60,16 +65,25 @@ def skippable(status_line):
     return status in ("A", "M") and all(skipped(p) for p in paths)
 
 
-def decide(base, head):
-    changed = [p for p in git("diff", "--name-status", f"{base}...{head}").splitlines() if p]
-    rust = not changed or not all(skippable(c) for c in changed)
-    line = f"rust={'true' if rust else 'false'}"
-    print(line)
+DEPS_FILES = {"Cargo.lock", "deny.toml"}
+
+
+def decide(event, base=None, head=None):
+    changed = []
+    if event == "pull_request":
+        changed = [p for p in git("diff", "--name-status", f"{base}...{head}").splitlines() if p]
+        rust = not changed or not all(skippable(c) for c in changed)
+        deps = any(set(c.split("\t")[1:]) & DEPS_FILES for c in changed)
+    else:
+        rust = event != "schedule"
+        deps = True
+    lines = [f"rust={str(rust).lower()}", f"deps={str(deps).lower()}"]
+    print(*lines, sep="\n")
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a") as f:
-            f.write(line + "\n")
-    if not rust:
+            f.write("".join(line + "\n" for line in lines))
+    if not rust and changed:
         print("only files added or modified under SKIP:", *changed, sep="\n  ", file=sys.stderr)
 
 
@@ -119,8 +133,8 @@ def check():
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 4 and sys.argv[1] == "decide":
-        decide(sys.argv[2], sys.argv[3])
+    if len(sys.argv) in (3, 5) and sys.argv[1] == "decide":
+        decide(*sys.argv[2:])
     elif len(sys.argv) == 2 and sys.argv[1] == "check":
         check()
     else:
