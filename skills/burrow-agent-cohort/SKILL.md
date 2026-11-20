@@ -16,6 +16,11 @@ description: Run several AI coding agents on Burrow at once without them clobber
 - **Non-overlapping scopes.** Give each agent a subtree. When two must touch a
   file, give each a named region and say so in both prompts. One agent per
   cohort owns `Cargo.toml` files.
+- **Changelog: each agent writes a fragment, never `CHANGELOG.md`.** A
+  user-visible change adds `changes/unreleased/<slug>.md` (format in
+  `changes/unreleased/README.md`), with a slug no other agent will pick (its
+  branch or feature name). Fragments are separate files, so they never
+  conflict; the release stitches them (`burrow-release`).
 
 ## Load
 

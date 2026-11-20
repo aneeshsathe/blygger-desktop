@@ -56,6 +56,6 @@ passed on macOS and failed only on Windows CI ("On your shelf · Ctrl+B").
 
 - Tests that only run on one platform say so; shared view-model tests must
   pass on both.
-- If you couldn't run it on a real machine, say so in the CHANGELOG's "Not
-  verified" note and the PR. Cross-compiling (e.g. the MinGW target) proves it
+- If you couldn't run it on a real machine, say so in a `Not verified`
+  changelog fragment (`changes/unreleased/`) and the PR. Cross-compiling (e.g. the MinGW target) proves it
   builds, not that it works.
