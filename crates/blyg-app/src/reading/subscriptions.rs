@@ -2,7 +2,7 @@
 //! pause/resume, and the blogroll flag. Following is client-local: there are
 //! no follower counts anywhere.
 
-use blyg_core::SubscriptionKind;
+use blyg_core::{SubId, SubscriptionKind};
 use gpui_kit::base::input::{Escape, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -123,7 +123,7 @@ impl MainView {
         cx.notify();
     }
 
-    fn sub_op(&mut self, sub_id: String, op: SubOp, cx: &mut Context<Self>) {
+    fn sub_op(&mut self, sub_id: SubId, op: SubOp, cx: &mut Context<Self>) {
         let backend = self.backend.clone();
         let id = sub_id.clone();
         let task = cx.background_spawn(async move {
@@ -334,7 +334,7 @@ impl MainView {
                     )
                     .when(confirming, |d| d.border_color(p.over).text_color(p.over))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        if this.reading.unsub_confirm.as_deref() == Some(id3.as_str()) {
+                        if this.reading.unsub_confirm.as_ref() == Some(&id3) {
                             this.reading.unsub_confirm = None;
                             this.sub_op(id3.clone(), SubOp::Unsubscribe, cx);
                         } else {

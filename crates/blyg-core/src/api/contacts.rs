@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use super::{Api, enc};
 use crate::backend::{CoreError, Result};
 use crate::contacts::{Contact, ContactInput, parse_contacts, parse_reading_keys, serves_contacts};
+use crate::model::{RemoteId, SubId};
 use crate::outbound::{MentionGroup, MentionSource, MentionSummary, OutboundMention};
 
 /// Pages read at most, so a misbehaving cursor can't loop forever.
@@ -52,7 +53,7 @@ impl Api {
 
     /// `GET /api/reading?mentions=true`: `(subscription id, remote id)` of
     /// the held posts that mention you. `Ok(None)`: not served.
-    pub fn reading_mentions(&self) -> Result<Option<Vec<(String, String)>>> {
+    pub fn reading_mentions(&self) -> Result<Option<Vec<(SubId, RemoteId)>>> {
         if !self.serves_contacts()? {
             return Ok(None);
         }

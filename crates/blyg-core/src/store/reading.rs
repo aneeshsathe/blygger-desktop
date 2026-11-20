@@ -26,7 +26,7 @@ use rusqlite::{OptionalExtension, params};
 
 use super::Store;
 use crate::backend::{CoreError, Result};
-use crate::model::{ReadingItem, SubscriptionKind};
+use crate::model::{ReadingItem, RemoteId, SubId, SubscriptionKind};
 
 struct Row {
     item: ReadingItem,
@@ -275,7 +275,7 @@ fn raise_read(tx: &rusqlite::Connection, it: &ReadingItem) -> Result<bool> {
 
 /// The duplicate groups of the held rows named in `targets`; `None` when
 /// none of them is held.
-fn target_groups(rows: &[Arc<Row>], targets: &[(String, String)]) -> Option<HashSet<String>> {
+fn target_groups(rows: &[Arc<Row>], targets: &[(SubId, RemoteId)]) -> Option<HashSet<String>> {
     let want: HashSet<(&str, &str)> = targets
         .iter()
         .map(|(s, r)| (s.as_str(), r.as_str()))
@@ -309,9 +309,9 @@ impl Store {
         &self,
         items: &[ReadingItem],
         complete: bool,
-        sub_kinds: &HashMap<String, SubscriptionKind>,
+        sub_kinds: &HashMap<SubId, SubscriptionKind>,
     ) -> Result<bool> {
-        let incoming: HashSet<(String, String)> = items
+        let incoming: HashSet<(SubId, RemoteId)> = items
             .iter()
             .map(|i| (i.subscription_id.clone(), i.remote_id.clone()))
             .collect();
@@ -322,7 +322,7 @@ impl Store {
             .min()
             .map(str::to_string);
         changed |= self.prune_reading(|s, rid, obs| {
-            !incoming.contains(&(s.to_string(), rid.to_string()))
+            !incoming.contains(&(s.clone(), rid.clone()))
                 && (complete || oldest.as_deref().is_some_and(|o| obs >= o))
         })?;
         Ok(changed)
@@ -336,8 +336,8 @@ impl Store {
     pub fn merge_reading_rows(
         &self,
         items: &[ReadingItem],
-        listed: &HashSet<(String, String)>,
-        sub_kinds: &HashMap<String, SubscriptionKind>,
+        listed: &HashSet<(SubId, RemoteId)>,
+        sub_kinds: &HashMap<SubId, SubscriptionKind>,
     ) -> Result<bool> {
         Ok(self.merge_reading_page(items, listed, sub_kinds)?.0)
     }
@@ -347,8 +347,8 @@ impl Store {
     pub fn merge_reading_page(
         &self,
         items: &[ReadingItem],
-        listed: &HashSet<(String, String)>,
-        sub_kinds: &HashMap<String, SubscriptionKind>,
+        listed: &HashSet<(SubId, RemoteId)>,
+        sub_kinds: &HashMap<SubId, SubscriptionKind>,
     ) -> Result<(bool, Vec<usize>)> {
         let incoming = listed;
         let mut changed = false;
@@ -371,7 +371,7 @@ impl Store {
                     "SELECT json, origin, observed_at, page_url, sub_kind, state, version, sort_at \
                      FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
                 )?
-                .query_row([&it.subscription_id, &it.remote_id], |r| {
+                .query_row(params![it.subscription_id, it.remote_id], |r| {
                     Ok(Held {
                         json: r.get(0)?,
                         origin: r.get(1)?,
@@ -435,14 +435,14 @@ impl Store {
                 put_refs(&tx, it)?;
                 // Same subscription, same page, different id that the server no
                 // longer lists: an RSS guid that changed on edit. Same post.
-                let renamed: Option<String> = match &it.page {
+                let renamed: Option<RemoteId> = match &it.page {
                     Some(page) if !page.is_empty() => {
                         let mut st = tx.prepare_cached(
                         "SELECT remote_id FROM reading WHERE subscription_id = ?1 AND page_url = ?2 AND remote_id <> ?3",
                     )?;
                         let cands = st
-                            .query_map([&it.subscription_id, page, &it.remote_id], |r| {
-                                r.get::<_, String>(0)
+                            .query_map(params![it.subscription_id, page, it.remote_id], |r| {
+                                r.get::<_, RemoteId>(0)
                             })?
                             .collect::<rusqlite::Result<Vec<_>>>()?;
                         cands.into_iter().find(|rid| {
@@ -497,23 +497,23 @@ impl Store {
     /// didn't read (`keys`: the rows of that one coherent walk). Nothing
     /// else removes the rows the server stopped listing (docs/SERVER.md,
     /// "One coherent acquisition"). True if any row went.
-    pub fn prune_reading_except(&self, keys: &HashSet<(String, String)>) -> Result<bool> {
-        self.prune_reading(|s, rid, _| !keys.contains(&(s.to_string(), rid.to_string())))
+    pub fn prune_reading_except(&self, keys: &HashSet<(SubId, RemoteId)>) -> Result<bool> {
+        self.prune_reading(|s, rid, _| !keys.contains(&(s.clone(), rid.clone())))
     }
 
     /// Remove the held rows `gone(subscription, remote id, observed_at)`
     /// picks. True if any went.
-    fn prune_reading(&self, gone: impl Fn(&str, &str, &str) -> bool) -> Result<bool> {
+    fn prune_reading(&self, gone: impl Fn(&SubId, &RemoteId, &str) -> bool) -> Result<bool> {
         let mut changed = false;
         let mut c = self.conn();
         let tx = c.transaction()?;
-        let stale: Vec<(String, String)> = {
+        let stale: Vec<(SubId, RemoteId)> = {
             let mut st =
                 tx.prepare("SELECT subscription_id, remote_id, observed_at FROM reading")?;
             st.query_map([], |r| {
                 Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
+                    r.get::<_, SubId>(0)?,
+                    r.get::<_, RemoteId>(1)?,
                     r.get::<_, String>(2)?,
                 ))
             })?
@@ -525,7 +525,7 @@ impl Store {
         for (s, rid) in stale {
             tx.execute(
                 "DELETE FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
-                [&s, &rid],
+                params![s, rid],
             )?;
             drop_refs(&tx, &s, &rid)?;
             changed = true;
@@ -564,11 +564,11 @@ impl Store {
     /// Which row a post shows as depends on its whole group (duplicates of
     /// it, which may carry other ids), so the groups those rows are in are
     /// collapsed exactly as `reading()` collapses them.
-    pub fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+    pub fn reading_with_id(&self, remote_id: &RemoteId) -> Vec<ReadingItem> {
         let rows = self.reading_rows();
         let groups: HashSet<String> = rows
             .iter()
-            .filter(|r| r.item.remote_id == remote_id)
+            .filter(|r| r.item.remote_id == *remote_id)
             .map(|r| group_key(&r.item))
             .collect();
         if groups.is_empty() {
@@ -581,7 +581,7 @@ impl Store {
             .collect();
         listed(&members)
             .into_iter()
-            .filter(|r| r.item.remote_id == remote_id)
+            .filter(|r| r.item.remote_id == *remote_id)
             .map(|r| r.item.clone())
             .collect()
     }
@@ -607,10 +607,10 @@ impl Store {
 
     /// --- background --- Every held row of one subscription, withdrawn ones
     /// too (a whole blyg moved to Background or back).
-    pub fn reading_rows_of(&self, sub: &str) -> Vec<ReadingItem> {
+    pub fn reading_rows_of(&self, sub: &SubId) -> Vec<ReadingItem> {
         self.reading_rows()
             .iter()
-            .filter(|r| r.item.subscription_id == sub)
+            .filter(|r| r.item.subscription_id == *sub)
             .map(|r| r.item.clone())
             .collect()
     }
@@ -653,7 +653,7 @@ impl Store {
 
     /// Mark a reading item, and every duplicate of the same post, as read at
     /// its current version.
-    pub fn mark_read(&self, sub: &str, remote_id: &str) -> Result<bool> {
+    pub fn mark_read(&self, sub: &SubId, remote_id: &RemoteId) -> Result<bool> {
         Ok(!self.mark_read_rows(sub, remote_id, false)?.is_empty())
     }
 
@@ -662,11 +662,11 @@ impl Store {
     /// (the server keeps read state per subscription row).
     pub fn mark_read_rows(
         &self,
-        sub: &str,
-        remote_id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
         queue: bool,
     ) -> Result<Vec<crate::api::wire::ReadMark>> {
-        let marks = self.mark_many_read(&[(sub.to_string(), remote_id.to_string())], queue)?;
+        let marks = self.mark_many_read(&[(sub.clone(), remote_id.clone())], queue)?;
         if marks.is_none() {
             return Err(CoreError::NotFound);
         }
@@ -680,7 +680,7 @@ impl Store {
     /// op per such row, replacing any waiting `unread` op (last action wins).
     pub fn mark_many_read(
         &self,
-        targets: &[(String, String)],
+        targets: &[(SubId, RemoteId)],
         queue: bool,
     ) -> Result<Option<Vec<crate::api::wire::ReadMark>>> {
         let rows = self.reading_rows();
@@ -726,7 +726,7 @@ impl Store {
     /// that were read, or `None` when none of `targets` is held.
     pub fn mark_many_unread(
         &self,
-        targets: &[(String, String)],
+        targets: &[(SubId, RemoteId)],
         queue: bool,
     ) -> Result<Option<Vec<crate::api::wire::UnreadMark>>> {
         let rows = self.reading_rows();
@@ -764,12 +764,16 @@ impl Store {
 
     /// One cached row (not de-duplicated, tombstones included) and its
     /// subscription kind (`"blyg"` | `"rss"`, when known).
-    pub fn reading_row(&self, sub: &str, remote_id: &str) -> Option<(ReadingItem, Option<String>)> {
+    pub fn reading_row(
+        &self,
+        sub: &SubId,
+        remote_id: &RemoteId,
+    ) -> Option<(ReadingItem, Option<String>)> {
         let c = self.conn();
         let (json, rv, sub_kind): (String, Option<i64>, Option<String>) = c
             .query_row(
                 "SELECT json, read_version, sub_kind FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
-                [sub, remote_id],
+                params![sub, remote_id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .ok()?;
@@ -846,13 +850,13 @@ impl Store {
         out
     }
 
-    pub fn set_thumb(&self, sub: &str, remote_id: &str, thumb: Option<i8>) -> Result<bool> {
+    pub fn set_thumb(&self, sub: &SubId, remote_id: &RemoteId, thumb: Option<i8>) -> Result<bool> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let json: Option<String> = tx
             .query_row(
                 "SELECT json FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
-                [sub, remote_id],
+                params![sub, remote_id],
                 |r| r.get(0),
             )
             .optional()?;
@@ -929,10 +933,10 @@ fn relation_of(s: &str) -> Option<crate::profile::Relation> {
     })
 }
 
-fn drop_refs(tx: &rusqlite::Connection, sub: &str, rid: &str) -> Result<()> {
+fn drop_refs(tx: &rusqlite::Connection, sub: &SubId, rid: &RemoteId) -> Result<()> {
     tx.execute(
         "DELETE FROM reading_refs WHERE subscription_id = ?1 AND remote_id = ?2",
-        [sub, rid],
+        params![sub, rid],
     )?;
     Ok(())
 }

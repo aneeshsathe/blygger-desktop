@@ -45,8 +45,8 @@ fn ri(
     }
 }
 
-fn kinds(pairs: &[(&str, SubscriptionKind)]) -> HashMap<String, SubscriptionKind> {
-    pairs.iter().map(|(k, v)| (k.to_string(), *v)).collect()
+fn kinds(pairs: &[(&str, SubscriptionKind)]) -> HashMap<SubId, SubscriptionKind> {
+    pairs.iter().map(|(k, v)| ((*k).into(), *v)).collect()
 }
 
 #[test]
@@ -62,7 +62,8 @@ fn upserts_one_row_per_post_and_keeps_read_state() {
     )
     .unwrap();
     assert!(s.reading()[0].is_unread());
-    s.mark_read("s1", "A1").unwrap();
+    s.mark_read(&SubId::from("s1"), &RemoteId::from("A1"))
+        .unwrap();
     let r = &s.reading()[0];
     assert_eq!(r.read_version, Some(1));
     assert!(!r.edited_since_read());
@@ -159,7 +160,11 @@ fn collapses_cross_subscription_duplicates_preferring_blyg() {
     assert_eq!(all.iter().filter(|r| r.remote_id == "B7").count(), 1);
 
     // reading one copy marks the post read everywhere
-    s.mark_read("rss", "https://a.example/f/A1").unwrap();
+    s.mark_read(
+        &SubId::from("rss"),
+        &RemoteId::from("https://a.example/f/A1"),
+    )
+    .unwrap();
     assert!(!s.reading()[0].is_unread());
 }
 
@@ -183,7 +188,8 @@ fn rss_id_change_on_edit_is_the_same_post() {
         &k,
     )
     .unwrap();
-    s.mark_read("feed", "guid-1").unwrap();
+    s.mark_read(&SubId::from("feed"), &RemoteId::from("guid-1"))
+        .unwrap();
     // The feed re-issued the post under a new guid.
     s.merge_reading(
         &[ri(
@@ -229,11 +235,16 @@ fn hides_tombstones_unless_signalled_or_hoppered() {
     kept_hopper.hoppers = vec!["later".into()];
     s.merge_reading(&[gone, kept_thumb, kept_hopper], true, &k)
         .unwrap();
-    let ids: Vec<_> = s.reading().into_iter().map(|r| r.remote_id).collect();
+    let ids: Vec<_> = s
+        .reading()
+        .into_iter()
+        .map(|r| r.remote_id.into_string())
+        .collect();
     assert_eq!(ids.len(), 2);
     assert!(!ids.contains(&"T1".to_string()));
     // signalling a hidden tombstone brings it back
-    s.set_thumb("s", "T1", Some(-1)).unwrap();
+    s.set_thumb(&SubId::from("s"), &RemoteId::from("T1"), Some(-1))
+        .unwrap();
     assert_eq!(s.reading().len(), 3);
 }
 
@@ -249,7 +260,11 @@ fn prunes_only_what_the_pull_covered() {
     // partial pull (more pages exist) reaching back to 2026-01-15: OLD is outside it
     let mid = ri("s", "MID", "o", None, 1, "2026-01-15T00:00:00Z", "mid");
     s.merge_reading(&[keep.clone(), mid], false, &k).unwrap();
-    let ids: Vec<_> = s.reading().into_iter().map(|r| r.remote_id).collect();
+    let ids: Vec<_> = s
+        .reading()
+        .into_iter()
+        .map(|r| r.remote_id.into_string())
+        .collect();
     assert_eq!(ids, vec!["NEW", "MID", "OLD"]);
     // a complete pull drops everything not listed
     s.merge_reading(&[keep], true, &k).unwrap();
@@ -259,7 +274,7 @@ fn prunes_only_what_the_pull_covered() {
 #[test]
 fn mark_read_unknown_is_not_found() {
     assert!(matches!(
-        store().mark_read("x", "y"),
+        store().mark_read(&SubId::from("x"), &RemoteId::from("y")),
         Err(crate::CoreError::NotFound)
     ));
 }
@@ -316,7 +331,8 @@ fn withdrawal_drops_content_that_no_pin_backs() {
     live.content_html = "<p>secret body</p>".into();
     s.merge_reading(std::slice::from_ref(&live), true, &k)
         .unwrap();
-    s.mark_read("s", "W1").unwrap();
+    s.mark_read(&SubId::from("s"), &RemoteId::from("W1"))
+        .unwrap();
     // A careless server that still sends the old bytes on the tombstone.
     let mut gone = tombstone(&live, 2);
     gone.thumb = Some(1); // signalled, so it's still listed
@@ -494,7 +510,10 @@ fn dated(rid: &str, observed: &str, created: Option<&str>, updated: Option<&str>
 }
 
 fn order_of(s: &Store) -> Vec<String> {
-    s.reading().into_iter().map(|r| r.remote_id).collect()
+    s.reading()
+        .into_iter()
+        .map(|r| r.remote_id.into_string())
+        .collect()
 }
 
 #[test]
@@ -621,7 +640,10 @@ fn read_state_survives_the_reorder() {
     );
     s.merge_reading(std::slice::from_ref(&a), true, &HashMap::new())
         .unwrap();
-    assert!(s.mark_read("s", "a").unwrap());
+    assert!(
+        s.mark_read(&SubId::from("s"), &RemoteId::from("a"))
+            .unwrap()
+    );
     let mut a2 = a;
     a2.version = 2;
     a2.updated = Some("2029-09-01T00:00:00Z".into());
@@ -774,7 +796,11 @@ fn background_lists_every_tombstone_newest_first() {
     s.merge_reading(&[live, gone_quiet, gone_loud], true, &k)
         .unwrap();
     // The reading list hides the unsignalled one; Background has both.
-    let reading: Vec<_> = s.reading().into_iter().map(|r| r.remote_id).collect();
+    let reading: Vec<_> = s
+        .reading()
+        .into_iter()
+        .map(|r| r.remote_id.into_string())
+        .collect();
     assert_eq!(reading, ["T", "L"]);
     let bg: Vec<_> = s
         .background_reading()
@@ -828,7 +854,10 @@ fn text_index_follows_text_changes_only_after_migrating() {
         .query_row("SELECT count(*) FROM reading_fts_data", [], |r| r.get(0))
         .unwrap();
     // A thumb rewrites the JSON, not the text: the index isn't touched.
-    assert!(s.set_thumb("s", "A", Some(1)).unwrap());
+    assert!(
+        s.set_thumb(&SubId::from("s"), &RemoteId::from("A"), Some(1))
+            .unwrap()
+    );
     let after: i64 = s
         .conn()
         .query_row("SELECT count(*) FROM reading_fts_data", [], |r| r.get(0))
@@ -893,11 +922,18 @@ fn reading_cache_follows_every_write() {
     let a = ri("s", "A", o, None, 1, "2026-01-01T00:00:00Z", "a");
     let b = ri("s", "B", o, None, 1, "2026-01-02T00:00:00Z", "b");
     s.merge_reading(&[a.clone(), b.clone()], true, &k).unwrap();
-    let ids = |s: &Store| -> Vec<String> { s.reading().into_iter().map(|r| r.remote_id).collect() };
+    let ids = |s: &Store| -> Vec<String> {
+        s.reading()
+            .into_iter()
+            .map(|r| r.remote_id.into_string())
+            .collect()
+    };
     assert_eq!(ids(&s), ["B", "A"]);
     // Read state, a thumb: updates through other methods.
-    s.mark_read("s", "A").unwrap();
-    s.set_thumb("s", "B", Some(1)).unwrap();
+    s.mark_read(&SubId::from("s"), &RemoteId::from("A"))
+        .unwrap();
+    s.set_thumb(&SubId::from("s"), &RemoteId::from("B"), Some(1))
+        .unwrap();
     let r = s.reading();
     assert_eq!(r[1].read_version, Some(1));
     assert_eq!(r[0].thumb, Some(1));
@@ -960,8 +996,10 @@ fn unread_count_includes_posts_edited_since_you_read_them() {
     ];
     s.merge_reading(&rows, true, &k).unwrap();
     assert_eq!(s.unread_count(), 3);
-    s.mark_read("s", "A").unwrap();
-    s.mark_read("s", "B").unwrap();
+    s.mark_read(&SubId::from("s"), &RemoteId::from("A"))
+        .unwrap();
+    s.mark_read(&SubId::from("s"), &RemoteId::from("B"))
+        .unwrap();
     assert_eq!(s.unread_count(), 1);
     // B is edited after you read it: to read again, and counted.
     let b2 = ri("s", "B", o, None, 2, "2026-01-04T00:00:00Z", "b, edited");
@@ -973,6 +1011,7 @@ fn unread_count_includes_posts_edited_since_you_read_them() {
     assert_eq!(to_read.len(), 2, "B (edited) and C (never read)");
     assert_eq!(s.unread_count(), to_read.len(), "the same rule");
     // Read at its new version, it leaves the count.
-    s.mark_read("s", "B").unwrap();
+    s.mark_read(&SubId::from("s"), &RemoteId::from("B"))
+        .unwrap();
     assert_eq!(s.unread_count(), 1);
 }

@@ -50,7 +50,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use async_channel::{Receiver, Sender};
-use blyg_core::ReadingItem;
+use blyg_core::{ReadingItem, SubId};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -194,7 +194,7 @@ pub struct SiteView {
     /// This one view's choice (the toggle above the post), for its post.
     pub item: Option<(Key, bool)>,
     /// Per subscription: always (`true`) or never (`false`).
-    pub subs: BTreeMap<String, bool>,
+    pub subs: BTreeMap<SubId, bool>,
     data_dir: Option<PathBuf>,
     generation: u64,
     teardown: Option<Task<()>>,
@@ -342,7 +342,7 @@ impl MainView {
     /// or as Settings says (`None`). Kept in `state.json`.
     pub(crate) fn set_site_for_sub(
         &mut self,
-        sub: String,
+        sub: SubId,
         on: Option<bool>,
         cx: &mut Context<Self>,
     ) {

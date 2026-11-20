@@ -207,8 +207,8 @@ fn the_stream_byline_shows_reading_time_once_it_answers(cx: &mut TestAppContext)
     let want = blyg_ext_reading_time::byline(&ReadingEntry::of(&row)).expect("it has text");
     let key = (
         RT.to_string(),
-        row.subscription_id.clone(),
-        row.remote_id.clone(),
+        row.subscription_id.to_string(),
+        row.remote_id.to_string(),
         row.version,
     );
     env.wait("the marker", |v| v.ext.slots.marker(&key).is_some());

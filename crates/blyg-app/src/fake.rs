@@ -201,7 +201,7 @@ struct State {
         bool,
         Option<blyg_core::background::Placement>,
     )>,
-    bg_blygs: Vec<String>,
+    bg_blygs: Vec<SubId>,
     bg_minor: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
@@ -752,7 +752,7 @@ impl FakeBackend {
     }
     /// Serve the blyg's Mentions lens (`None`: not served).
     #[cfg(test)]
-    pub fn set_mentions_lens(&self, keys: Option<Vec<(String, String)>>) {
+    pub fn set_mentions_lens(&self, keys: Option<Vec<(SubId, RemoteId)>>) {
         self.lock().book.lens = keys;
     }
 
@@ -1005,8 +1005,8 @@ impl Backend for FakeBackend {
     }
     fn reading_syndication(
         &self,
-        _sub_id: &str,
-        remote_id: &str,
+        _sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Vec<blyg_core::syndication::SyndicationEntry> {
         if remote_id == reading_seed::KIT_TIDES {
             vec![blyg_core::syndication::SyndicationEntry::new(
@@ -1055,11 +1055,11 @@ impl Backend for FakeBackend {
         true
     }
 
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.lock().book.lens.clone()
     }
 
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.reading_mentions()
     }
 
@@ -1443,14 +1443,14 @@ impl Backend for FakeBackend {
         v
     }
 
-    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
+    fn mark_read(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<()> {
         let changed = {
             let mut st = self.lock();
             st.reading_sends.push(format!("read:{sub_id}:{remote_id}"));
             let mut changed = false;
             for r in st.rd.reading.iter_mut() {
-                if r.subscription_id == sub_id
-                    && r.remote_id == remote_id
+                if r.subscription_id == *sub_id
+                    && r.remote_id == *remote_id
                     && r.read_version != Some(r.version)
                 {
                     r.read_version = Some(r.version);
@@ -1757,7 +1757,7 @@ impl Backend for FakeBackend {
             }
             st.next_id += 1;
             let sub = Subscription {
-                id: format!("sub-{}", st.next_id),
+                id: format!("sub-{}", st.next_id).into(),
                 kind: p.kind,
                 origin: p.origin.clone().unwrap_or_else(|| url.to_string()),
                 feed_url: p.feed_url.clone().unwrap_or_else(|| url.to_string()),
@@ -1779,7 +1779,7 @@ impl Backend for FakeBackend {
     }
 
     // --- subscription names & checks --- (studio 0.30)
-    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+    fn rename_subscription(&self, sub_id: &SubId, title: Option<&str>) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1787,7 +1787,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             match title.map(str::trim) {
                 Some("") => {
@@ -1818,14 +1818,14 @@ impl Backend for FakeBackend {
         Ok(st.rd.subs.iter().filter(|s| s.status != "paused").count() as u32 + 1)
     }
 
-    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+    fn check_subscription(&self, sub_id: &SubId) -> Result<bool> {
         self.remote_guard()?;
         let _ = sub_id;
         Ok(false)
     }
 
     // --- read/unread ---
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
         let n = {
             let mut st = self.lock();
             for (s, id) in rows {
@@ -1853,12 +1853,12 @@ impl Backend for FakeBackend {
         Ok(n)
     }
 
-    fn unsubscribe(&self, sub_id: &str) -> Result<()> {
+    fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
-            st.rd.subs.retain(|s| s.id != sub_id);
-            st.rd.reading.retain(|r| r.subscription_id != sub_id);
+            st.rd.subs.retain(|s| s.id != *sub_id);
+            st.rd.reading.retain(|r| r.subscription_id != *sub_id);
         }
         self.reading_changed();
         Ok(())
@@ -1866,7 +1866,7 @@ impl Backend for FakeBackend {
 
     fn set_subscription(
         &self,
-        sub_id: &str,
+        sub_id: &SubId,
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()> {
@@ -1877,7 +1877,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             if let Some(b) = in_blogroll {
                 s.in_blogroll = b;
@@ -1890,7 +1890,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
+    fn pause_subscription(&self, sub_id: &SubId, paused: bool) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1898,7 +1898,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             s.status = if paused { "paused" } else { "active" }.into();
         }
@@ -1906,7 +1906,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
+    fn signal(&self, sub_id: &SubId, remote_id: &RemoteId, thumb: Option<i8>) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1916,7 +1916,7 @@ impl Backend for FakeBackend {
                 .rd
                 .reading
                 .iter_mut()
-                .filter(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+                .filter(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)
             {
                 r.thumb = thumb;
             }
@@ -1989,22 +1989,18 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
+    fn remote_versions(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<Vec<RemoteVersion>> {
         simulate_latency(self.timing.network);
         self.remote_guard()?;
         let st = self.lock();
-        if let Some(log) = st
-            .rd
-            .changelogs
-            .get(&(sub_id.to_string(), remote_id.to_string()))
-        {
+        if let Some(log) = st.rd.changelogs.get(&(sub_id.clone(), remote_id.clone())) {
             return Ok(log.clone());
         }
         let it = st
             .rd
             .reading
             .iter()
-            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+            .find(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)
             .ok_or(CoreError::NotFound)?;
         Ok(vec![RemoteVersion {
             version: it.version,
@@ -2017,13 +2013,18 @@ impl Backend for FakeBackend {
         }])
     }
 
-    fn remote_pinned(&self, sub_id: &str, remote_id: &str, version: u32) -> Result<PinnedVersion> {
+    fn remote_pinned(
+        &self,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        version: u32,
+    ) -> Result<PinnedVersion> {
         simulate_latency(self.timing.network);
         self.remote_guard()?;
         self.lock()
             .rd
             .pins
-            .get(&(sub_id.to_string(), remote_id.to_string(), version))
+            .get(&(sub_id.clone(), remote_id.clone(), version))
             .cloned()
             .ok_or(CoreError::Rejected {
                 status: 404,
@@ -2032,13 +2033,13 @@ impl Backend for FakeBackend {
             })
     }
 
-    fn pinned_diff_base(&self, sub_id: &str, remote_id: &str) -> Option<PinnedVersion> {
+    fn pinned_diff_base(&self, sub_id: &SubId, remote_id: &RemoteId) -> Option<PinnedVersion> {
         let read = self
             .lock()
             .rd
             .reading
             .iter()
-            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)?
+            .find(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)?
             .read_version?;
         self.remote_pinned(sub_id, remote_id, read).ok()
     }
@@ -2371,7 +2372,7 @@ impl Backend for FakeBackend {
         v
     }
 
-    fn subscription_folders(&self) -> HashMap<String, String> {
+    fn subscription_folders(&self) -> HashMap<SubId, String> {
         self.lock().rd.filed.clone()
     }
 
@@ -2436,7 +2437,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+    fn set_subscription_folder(&self, sub_id: &SubId, folder: Option<&str>) -> Result<()> {
         let mut st = self.lock();
         match folder {
             None => {
@@ -2446,7 +2447,7 @@ impl Backend for FakeBackend {
                 if !st.rd.folders.iter().any(|f| f.id == fid) {
                     return Err(CoreError::NotFound);
                 }
-                st.rd.filed.insert(sub_id.to_string(), fid.to_string());
+                st.rd.filed.insert(sub_id.clone(), fid.to_string());
             }
         }
         Ok(())
@@ -2706,7 +2707,12 @@ impl Backend for FakeBackend {
                 .iter()
                 .filter(|i| i.status == Status::Withdrawn)
                 .filter_map(|i| i.server_id.as_ref())
-                .map(|s| (blyg_core::OWN_SUBSCRIPTION.to_string(), s.0.clone()))
+                .map(|s| {
+                    (
+                        SubId::from(blyg_core::OWN_SUBSCRIPTION),
+                        RemoteId::from(&s.0),
+                    )
+                })
                 .collect();
             (st.bg_blygs.clone(), st.bg_choices.clone(), own)
         };
@@ -2751,12 +2757,12 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+    fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
         self.remote_guard()?;
         let mut st = self.lock();
         st.bg_blygs.retain(|s| s != sub);
         if on {
-            st.bg_blygs.push(sub.to_string());
+            st.bg_blygs.push(sub.clone());
         }
         Ok(())
     }
@@ -2787,9 +2793,9 @@ impl Backend for FakeBackend {
         self.lock().rd.hoppers.clone()
     }
 
-    fn hopper_members(&self) -> HashMap<(String, String), Vec<String>> {
+    fn hopper_members(&self) -> HashMap<(SubId, RemoteId), Vec<String>> {
         let st = self.lock();
-        let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+        let mut out: HashMap<(SubId, RemoteId), Vec<String>> = HashMap::new();
         for (h, s, r) in &st.rd.hopper_items {
             out.entry((s.clone(), r.clone()))
                 .or_default()
@@ -2803,9 +2809,9 @@ impl Backend for FakeBackend {
 
     /// The memberships were added in the list's order: the last added
     /// first.
-    fn hopper_order(&self) -> HashMap<String, Vec<(String, String)>> {
+    fn hopper_order(&self) -> HashMap<String, Vec<(SubId, RemoteId)>> {
         let st = self.lock();
-        let mut out: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut out: HashMap<String, Vec<(SubId, RemoteId)>> = HashMap::new();
         for (h, s, r) in st.rd.hopper_items.iter().rev() {
             out.entry(h.clone())
                 .or_default()
@@ -2901,7 +2907,13 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+    fn set_in_hopper(
+        &self,
+        hopper: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         let changed = {
             let mut st = self.lock();
             let st = &mut *st;
@@ -2917,7 +2929,7 @@ impl Backend for FakeBackend {
                 (None, true) => {
                     st.rd
                         .hopper_items
-                        .push((hopper.into(), sub_id.into(), remote_id.into()));
+                        .push((hopper.into(), sub_id.clone(), remote_id.clone()));
                     h.count += 1;
                     true
                 }
@@ -3273,7 +3285,7 @@ fn fake_studio_update() -> Option<blyg_core::site::StudioUpdate> {
     })
 }
 
-fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {
+fn fake_hoppered(items: &[(String, SubId, RemoteId)], rows: &mut [ReadingItem]) {
     for r in rows {
         r.hoppers = items
             .iter()

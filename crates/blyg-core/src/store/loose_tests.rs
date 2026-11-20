@@ -107,7 +107,7 @@ fn sample() -> Store {
             [&old.0],
         )
         .unwrap();
-    let kinds = HashMap::from([("s1".to_string(), SubscriptionKind::Blyg)]);
+    let kinds = HashMap::from([("s1".into(), SubscriptionKind::Blyg)]);
     s.merge_reading(
         &[held(LIN, "https://lin.example.org", Some((A, OWN)))],
         true,

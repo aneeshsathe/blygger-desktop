@@ -12,7 +12,7 @@ use std::cell::{OnceCell, RefCell};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use blyg_core::{Backend, Item, Kind, ReadingItem, Status, SubscriptionKind};
+use blyg_core::{Backend, Item, Kind, ReadingItem, RemoteId, Status, SubId, SubscriptionKind};
 use blyg_render::{
     Found, ItemKind, RenderOpts, Resolution, Resolver, UnresolvedReason, render_preview,
 };
@@ -29,7 +29,7 @@ pub struct StoreResolver {
     /// Where an id not in `own` / `remote` yet is looked up (`lazy`).
     source: Option<Arc<dyn Backend>>,
     /// The RSS subscriptions' ids (`lazy`: read on first need).
-    rss: OnceCell<Vec<String>>,
+    rss: OnceCell<Vec<SubId>>,
     mount: String,
     /// Ids being baked right now (cycle and depth guard).
     stack: RefCell<Vec<String>>,
@@ -67,7 +67,7 @@ impl StoreResolver {
     pub fn new(
         items: Vec<Item>,
         reading: Vec<ReadingItem>,
-        rss_subs: &[String],
+        rss_subs: &[SubId],
         mount: &str,
     ) -> Self {
         let own = items
@@ -78,7 +78,7 @@ impl StoreResolver {
         for r in reading {
             let rss = rss_subs.contains(&r.subscription_id);
             remote
-                .entry(r.remote_id.clone())
+                .entry(r.remote_id.to_string())
                 .or_default()
                 .push((r, rss));
         }
@@ -95,7 +95,7 @@ impl StoreResolver {
 
     /// Everything the backend holds locally, copied now.
     pub fn snapshot(backend: &dyn Backend, mount: &str) -> Self {
-        let rss: Vec<String> = backend
+        let rss: Vec<SubId> = backend
             .subscriptions()
             .into_iter()
             .filter(|s| s.kind == SubscriptionKind::Rss)
@@ -145,7 +145,7 @@ impl StoreResolver {
                 .collect()
         });
         let rows: Vec<(ReadingItem, bool)> = src
-            .reading_with_id(id)
+            .reading_with_id(&RemoteId::from(id))
             .into_iter()
             .map(|r| {
                 let is_rss = rss.contains(&r.subscription_id);
@@ -447,7 +447,7 @@ mod tests {
         let r = StoreResolver::new(
             vec![],
             vec![reading(THEIRS, "https://feed.example.org/", "rss1")],
-            &["rss1".to_string()],
+            &["rss1".into()],
             "/blyg",
         );
         assert_eq!(r.resolve(THEIRS), Resolution::RssNotQuotable);

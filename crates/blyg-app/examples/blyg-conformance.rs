@@ -113,7 +113,7 @@ fn reading(v: &Value) -> Option<ReadingItem> {
         _ => return None,
     };
     Some(ReadingItem {
-        subscription_id: format!("sub {origin}"),
+        subscription_id: format!("sub {origin}").into(),
         remote_id: s(v, "id").into(),
         subscription_title: String::new(),
         origin,

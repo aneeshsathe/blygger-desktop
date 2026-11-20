@@ -68,8 +68,7 @@ fn fetched(h: Hopper, members: &[(&str, &str)]) -> FetchedHopper {
 /// s1/A and s1/B held; one hopper H1 holding A.
 fn seeded() -> Store {
     let s = store();
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     s.merge_reading(&[ri("s1", "A"), ri("s1", "B")], true, &kinds)
         .unwrap();
     s.replace_hoppers(&[fetched(hopper("H1", "Slow", 1), &[("s1", "A")])])
@@ -78,7 +77,10 @@ fn seeded() -> Store {
 }
 
 fn row_hoppers(s: &Store, rid: &str) -> Vec<String> {
-    s.reading_row("s1", rid).unwrap().0.hoppers
+    s.reading_row(&SubId::from("s1"), &RemoteId::from(rid))
+        .unwrap()
+        .0
+        .hoppers
 }
 
 fn hopper_ops(s: &Store) -> Vec<super::HopperOp> {
@@ -105,7 +107,10 @@ fn a_read_fills_the_list_and_the_rows() {
 #[test]
 fn an_add_is_local_and_queued_and_the_last_action_wins() {
     let s = seeded();
-    assert!(s.set_hopper_member("H1", "s1", "B", true).unwrap());
+    assert!(
+        s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+            .unwrap()
+    );
     assert_eq!(row_hoppers(&s, "B"), ["H1"]);
     assert_eq!(s.hoppers()[0].count, 2, "the count follows");
     assert_eq!(
@@ -118,23 +123,34 @@ fn an_add_is_local_and_queued_and_the_last_action_wins() {
         }]
     );
     // Already in: nothing more is queued.
-    assert!(!s.set_hopper_member("H1", "s1", "B", true).unwrap());
+    assert!(
+        !s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+            .unwrap()
+    );
     // Out again: one op waits, the latest.
-    assert!(s.set_hopper_member("H1", "s1", "B", false).unwrap());
+    assert!(
+        s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), false)
+            .unwrap()
+    );
     let ops = hopper_ops(&s);
     assert_eq!(ops.len(), 1);
     assert!(!ops[0].on);
     assert!(row_hoppers(&s, "B").is_empty());
     assert_eq!(s.hoppers()[0].count, 1);
     // An unknown hopper changes nothing.
-    assert!(!s.set_hopper_member("H9", "s1", "B", true).unwrap());
+    assert!(
+        !s.set_hopper_member("H9", &SubId::from("s1"), &RemoteId::from("B"), true)
+            .unwrap()
+    );
 }
 
 #[test]
 fn a_fresh_read_keeps_what_still_waits() {
     let s = seeded();
-    s.set_hopper_member("H1", "s1", "B", true).unwrap();
-    s.set_hopper_member("H1", "s1", "A", false).unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("A"), false)
+        .unwrap();
     // The server hasn't heard yet: it still says A, not B.
     s.replace_hoppers(&[fetched(hopper("H1", "Slow", 1), &[("s1", "A")])])
         .unwrap();
@@ -142,8 +158,7 @@ fn a_fresh_read_keeps_what_still_waits() {
     assert!(row_hoppers(&s, "A").is_empty());
     // A reading pull that writes the server's memberships into the rows
     // is set right again.
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     let mut a = ri("s1", "A");
     a.hoppers = vec!["H1".into()];
     s.merge_reading(&[a, ri("s1", "B")], true, &kinds).unwrap();
@@ -155,7 +170,8 @@ fn a_fresh_read_keeps_what_still_waits() {
 #[test]
 fn a_hopper_gone_from_the_server_takes_its_ops_along() {
     let s = seeded();
-    s.set_hopper_member("H1", "s1", "B", true).unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
     s.replace_hoppers(&[]).unwrap();
     assert!(s.hoppers().is_empty());
     assert!(hopper_ops(&s).is_empty());
@@ -171,7 +187,8 @@ fn deleting_a_hopper_lets_go_of_the_posts_only() {
         fetched(hopper("H2", "Gardens", 1), &[("s1", "A")]),
     ])
     .unwrap();
-    s.set_hopper_member("H1", "s1", "B", true).unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
     assert!(s.remove_hopper("H1").unwrap());
     assert_eq!(s.hoppers(), vec![hopper("H2", "Gardens", 1)]);
     assert_eq!(row_hoppers(&s, "A"), ["H2"]);
@@ -207,15 +224,24 @@ fn made_renamed_and_made_public_in_place() {
 fn your_own_posts_are_members_too() {
     let s = seeded();
     assert!(
-        s.set_hopper_member("H1", OWN_SUBSCRIPTION, "OWNPOST", true)
-            .unwrap()
+        s.set_hopper_member(
+            "H1",
+            &SubId::from(OWN_SUBSCRIPTION),
+            &RemoteId::from("OWNPOST"),
+            true
+        )
+        .unwrap()
     );
     assert_eq!(
         s.hopper_members()
             .get(&(OWN_SUBSCRIPTION.into(), "OWNPOST".into())),
         Some(&vec!["H1".to_string()])
     );
-    let key = hopper_key("H1", OWN_SUBSCRIPTION, "OWNPOST");
+    let key = hopper_key(
+        "H1",
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from("OWNPOST"),
+    );
     assert!(s.ops().unwrap().iter().any(|o| o.local_id == key));
     // The server's read lists it; it stays a member.
     s.replace_hoppers(&[fetched(
@@ -249,8 +275,7 @@ fn a_post_only_the_hopper_holds_is_kept_for_it() {
 #[test]
 fn before_the_first_read_the_rows_keep_the_pulled_memberships() {
     let s = store();
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     let mut a = ri("s1", "A");
     a.hoppers = vec!["H1".into()];
     s.merge_reading(&[a], true, &kinds).unwrap();
@@ -263,8 +288,7 @@ fn a_hopper_not_read_here_yet_keeps_the_rows_word() {
     // Made on another Mac since the last full read: the reading pull says
     // A is in it, and nothing here says otherwise.
     let s = seeded();
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     let mut a = ri("s1", "A");
     a.hoppers = vec!["H1".into(), "H7".into()];
     s.merge_reading(&[a, ri("s1", "B")], true, &kinds).unwrap();
@@ -287,13 +311,14 @@ fn a_hopper_is_ordered_newest_added_first_and_a_local_add_goes_on_top() {
     let ids = |s: &Store| -> Vec<String> {
         s.hopper_order()["H1"]
             .iter()
-            .map(|(_, r)| r.clone())
+            .map(|(_, r)| r.to_string())
             .collect()
     };
     assert_eq!(ids(&s), ["new", "a", "b", "old"]);
     // Put in here: on top at once, and still after a read that hasn't
     // seen it yet.
-    s.set_hopper_member("H1", "s1", "fresh", true).unwrap();
+    s.set_hopper_member("H1", &SubId::from("s1"), &RemoteId::from("fresh"), true)
+        .unwrap();
     assert_eq!(ids(&s)[0], "fresh");
     let mut again = fetched(hopper("H1", "Slow", 4), &[]);
     again.members = vec![("s1".into(), "old".into(), "2026-09-01T00:00:00.000Z".into())];

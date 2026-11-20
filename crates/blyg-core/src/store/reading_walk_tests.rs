@@ -37,14 +37,18 @@ fn row(sub: &str, rid: &str, observed: &str, page: Option<&str>) -> ReadingItem 
     }
 }
 
-fn keys(rows: &[ReadingItem]) -> HashSet<(String, String)> {
+fn keys(rows: &[ReadingItem]) -> HashSet<(SubId, RemoteId)> {
     rows.iter()
         .map(|r| (r.subscription_id.clone(), r.remote_id.clone()))
         .collect()
 }
 
 fn held(s: &Store) -> Vec<String> {
-    let mut v: Vec<String> = s.reading().into_iter().map(|r| r.remote_id).collect();
+    let mut v: Vec<String> = s
+        .reading()
+        .into_iter()
+        .map(|r| r.remote_id.into_string())
+        .collect();
     v.sort();
     v
 }
@@ -107,7 +111,10 @@ fn a_row_listed_further_on_is_not_taken_for_a_renamed_one() {
     // guid that changed on edit)…
     let first = [new.clone()];
     s.merge_reading_rows(&first, &keys(&first), &kinds).unwrap();
-    let has = |rid: &str| s.reading_row("s1", rid).is_some();
+    let has = |rid: &str| {
+        s.reading_row(&SubId::from("s1"), &RemoteId::from(rid))
+            .is_some()
+    };
     assert!(has("new") && !has("old"));
     // …and comes back when the walk reaches it, as its own row.
     let mut walked = keys(&first);

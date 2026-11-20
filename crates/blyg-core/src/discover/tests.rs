@@ -22,7 +22,7 @@ fn origins<'a>(v: impl IntoIterator<Item = &'a DirectoryBlyg>) -> Vec<&'a str> {
 
 fn sub(origin: &str, feed: &str) -> Subscription {
     Subscription {
-        id: format!("sub-{origin}"),
+        id: format!("sub-{origin}").into(),
         kind: SubscriptionKind::Blyg,
         origin: origin.into(),
         feed_url: feed.into(),

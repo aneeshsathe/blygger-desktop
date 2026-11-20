@@ -31,18 +31,18 @@ use rusqlite::{OptionalExtension, params};
 use super::{OpKind, Store};
 use crate::api::wire::{ReadMark, UnreadMark};
 use crate::backend::Result;
-use crate::model::LocalId;
+use crate::model::{LocalId, RemoteId, SubId};
 use crate::util::{iso_from_ms, now_ms};
 
 /// Outbox key for a reading row's read or unread op.
-pub(crate) fn read_key(sub: &str, remote_id: &str) -> LocalId {
+pub(crate) fn read_key(sub: &SubId, remote_id: &RemoteId) -> LocalId {
     LocalId(format!("read\u{1f}{sub}\u{1f}{remote_id}"))
 }
 
 /// `(sub, remote_id)` back from a `read_key`.
-fn row_of_key(key: &str) -> Option<(String, String)> {
+fn row_of_key(key: &str) -> Option<(SubId, RemoteId)> {
     let mut it = key.strip_prefix("read\u{1f}")?.splitn(2, '\u{1f}');
-    Some((it.next()?.to_string(), it.next()?.to_string()))
+    Some((it.next()?.into(), it.next()?.into()))
 }
 
 /// The `read_at` a read op carries: the local mark time, ISO-8601 UTC.
@@ -137,7 +137,7 @@ pub struct ReadPlan {
 }
 
 /// A row's read state as held: (sub, remote id, read version, read_at, floor).
-type HeldRead = (String, String, Option<u32>, Option<i64>, Option<u32>);
+type HeldRead = (SubId, RemoteId, Option<u32>, Option<i64>, Option<u32>);
 
 impl Store {
     /// Queue read ops for these rows (coalescing per row).
@@ -189,7 +189,7 @@ impl Store {
     }
 
     /// Rows with a read or unread op in the outbox (waiting or on the wire).
-    pub fn pending_read_rows(&self) -> Result<HashSet<(String, String)>> {
+    pub fn pending_read_rows(&self) -> Result<HashSet<(SubId, RemoteId)>> {
         let c = self.conn();
         let mut st = c.prepare("SELECT local_id FROM outbox WHERE op IN ('read', 'unread')")?;
         let v = st
@@ -227,7 +227,7 @@ impl Store {
     /// Rows the server didn't report are left out.
     pub fn reads_ahead_of(
         &self,
-        server: &HashMap<(String, String), Option<u32>>,
+        server: &HashMap<(SubId, RemoteId), Option<u32>>,
     ) -> Result<Vec<ReadMark>> {
         let ahead = self
             .read_marks(false)?
@@ -257,7 +257,7 @@ impl Store {
     ///   queued as an unread when `clear`; otherwise it stays on this Mac.
     pub fn reconcile_read_state(
         &self,
-        server: &HashMap<(String, String), Option<u32>>,
+        server: &HashMap<(SubId, RemoteId), Option<u32>>,
         clear: bool,
     ) -> Result<ReadPlan> {
         let pending = self.pending_read_rows()?;

@@ -86,8 +86,8 @@ pub struct ReadingEntry {
 impl ReadingEntry {
     pub fn of(r: &blyg_core::ReadingItem) -> Self {
         ReadingEntry {
-            subscription_id: r.subscription_id.clone(),
-            remote_id: r.remote_id.clone(),
+            subscription_id: r.subscription_id.to_string(),
+            remote_id: r.remote_id.to_string(),
             origin: r.origin.clone(),
             kind: kind_str(r.kind).into(),
             state: r.state.clone(),

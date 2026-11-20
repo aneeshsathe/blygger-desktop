@@ -442,7 +442,7 @@ mod tests {
 
     fn row(origin: &str, id: &str, text: &str) -> ReadingItem {
         ReadingItem {
-            subscription_id: format!("sub-{origin}"),
+            subscription_id: format!("sub-{origin}").into(),
             remote_id: id.into(),
             subscription_title: vm::host(origin),
             origin: origin.into(),

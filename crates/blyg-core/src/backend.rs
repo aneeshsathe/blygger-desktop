@@ -177,8 +177,8 @@ pub trait Backend: Send + Sync {
     /// nothing is fetched from the copies.
     fn reading_syndication(
         &self,
-        sub_id: &str,
-        remote_id: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Vec<crate::syndication::SyndicationEntry> {
         let _ = (sub_id, remote_id);
         Vec::new()
@@ -199,13 +199,13 @@ pub trait Backend: Send + Sync {
     /// --- contacts --- `(subscription id, remote id)` of the held posts
     /// that mention you, from the blyg's mentions lens (blocking). `None`
     /// when it isn't served.
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         None
     }
     /// --- contacts --- The lens's last answer (`reading_mentions`), kept
     /// so the Mentions feed's first paint already holds it. Local. `None`:
     /// not served, or never asked.
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         None
     }
     /// --- contacts --- Whether the blyg keeps an address book Burrow can
@@ -345,10 +345,10 @@ pub trait Backend: Send + Sync {
     /// `reading()`'s rows whose `remote_id` is `remote_id`, in its order.
     /// Additive; the default filters `reading()`, the live backend without
     /// copying the rest.
-    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+    fn reading_with_id(&self, remote_id: &RemoteId) -> Vec<ReadingItem> {
         self.reading()
             .into_iter()
-            .filter(|r| r.remote_id == remote_id)
+            .filter(|r| r.remote_id == *remote_id)
             .collect()
     }
     /// How many of `reading()`'s posts are to read
@@ -372,7 +372,7 @@ pub trait Backend: Send + Sync {
     fn subscriptions(&self) -> Vec<Subscription>;
     /// Record that the user has seen the current version of a reading item
     /// (and of any duplicates of the same post). Local only.
-    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()>;
+    fn mark_read(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<()>;
 
     /// Mark many reading items (`(sub_id, remote_id)`, each with its
     /// duplicates) read at their current versions, or unread: a selection
@@ -380,7 +380,7 @@ pub trait Backend: Send + Sync {
     /// that syncs read state the change is queued for it (unread only when
     /// the server can clear read state; otherwise unread stays on this Mac).
     /// Returns how many rows changed.
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize>;
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize>;
 
     // --- scratch notes ---
     // docs/SPEC.md § Scratch notes. Scratch items have `Status::Scratch`:
@@ -477,19 +477,19 @@ pub trait Backend: Send + Sync {
     fn sync_now(&self) -> Result<()>;
     fn preview_subscription(&self, url: &str) -> Result<SubscribePreview>;
     fn subscribe(&self, url: &str, title: Option<&str>) -> Result<Subscription>;
-    fn unsubscribe(&self, sub_id: &str) -> Result<()>;
+    fn unsubscribe(&self, sub_id: &SubId) -> Result<()>;
     fn set_subscription(
         &self,
-        sub_id: &str,
+        sub_id: &SubId,
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()>;
-    fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()>;
+    fn pause_subscription(&self, sub_id: &SubId, paused: bool) -> Result<()>;
     /// Name a subscription: `Some(name)` is a name of your own (the source
     /// stops renaming it); `None` hands the name back to the source, which
     /// refreshes it while polling (studio 0.30, `title_follows_source`).
     /// Additive; the default sets a name and refuses `None`.
-    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+    fn rename_subscription(&self, sub_id: &SubId, title: Option<&str>) -> Result<()> {
         match title {
             Some(t) => self.set_subscription(sub_id, None, Some(t)),
             None => Err(CoreError::Other(
@@ -508,14 +508,14 @@ pub trait Backend: Send + Sync {
     /// "Check now" for one subscription: a blyg's index is reconciled at
     /// once (true when anything changed); a feed is polled with the rest.
     /// A pull follows. Additive; the default refuses.
-    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+    fn check_subscription(&self, sub_id: &SubId) -> Result<bool> {
         let _ = sub_id;
         Err(CoreError::Other(
             "checking feeds isn't supported here".into(),
         ))
     }
     /// thumb: Some(1) / Some(-1) / None (clear).
-    fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()>;
+    fn signal(&self, sub_id: &SubId, remote_id: &RemoteId, thumb: Option<i8>) -> Result<()>;
     fn mentions(&self) -> Result<Vec<Mention>>;
     fn set_mention_hidden(&self, mention_id: &str, hidden: bool) -> Result<()>;
     fn settings(&self) -> Result<Settings>;
@@ -554,7 +554,7 @@ pub trait Backend: Send + Sync {
     /// `{origin}items/{id}.json` (blyg-kind subscriptions; RSS/L0 items return
     /// just their current version). Cached briefly; offline falls back to the
     /// last fetched changelog.
-    fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
+    fn remote_versions(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<Vec<RemoteVersion>> {
         let _ = (sub_id, remote_id);
         Err(CoreError::Other("unsupported".into()))
     }
@@ -562,7 +562,11 @@ pub trait Backend: Send + Sync {
     /// What the version browser shows for someone else's post: only the
     /// current and pinned versions (`model::shown_versions` over
     /// `remote_versions`). Unpinned versions don't appear at all.
-    fn remote_shown_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
+    fn remote_shown_versions(
+        &self,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+    ) -> Result<Vec<RemoteVersion>> {
         self.remote_versions(sub_id, remote_id)
             .map(|v| shown_versions(&v))
     }
@@ -572,7 +576,12 @@ pub trait Backend: Send + Sync {
     /// doesn't mark `version` pinned; that refusal and a 404 are both
     /// `Rejected{status: 404}` ("not pinned"). A `content_hash` mismatch is
     /// flagged in `hash_mismatch`, not an error.
-    fn remote_pinned(&self, sub_id: &str, remote_id: &str, version: u32) -> Result<PinnedVersion> {
+    fn remote_pinned(
+        &self,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        version: u32,
+    ) -> Result<PinnedVersion> {
         let _ = (sub_id, remote_id, version);
         Err(CoreError::Other("unsupported".into()))
     }
@@ -581,7 +590,7 @@ pub trait Backend: Send + Sync {
     /// pinned version, so the UI can diff pinned → current (both sides
     /// public). `None` otherwise (unread, unpinned, not fetchable): the UI then
     /// shows only the changelog notes in between, never a diff.
-    fn pinned_diff_base(&self, sub_id: &str, remote_id: &str) -> Option<PinnedVersion> {
+    fn pinned_diff_base(&self, sub_id: &SubId, remote_id: &RemoteId) -> Option<PinnedVersion> {
         let _ = (sub_id, remote_id);
         None
     }
@@ -714,7 +723,7 @@ pub trait Backend: Send + Sync {
     }
 
     /// Subscription id → folder id, for each filed subscription.
-    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+    fn subscription_folders(&self) -> std::collections::HashMap<SubId, String> {
         Default::default()
     }
 
@@ -743,7 +752,7 @@ pub trait Backend: Send + Sync {
     }
 
     /// File a subscription in a folder, or unfile it (`None`).
-    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+    fn set_subscription_folder(&self, sub_id: &SubId, folder: Option<&str>) -> Result<()> {
         let _ = (sub_id, folder);
         Err(CoreError::Other("folders aren't supported here".into()))
     }
@@ -999,7 +1008,7 @@ pub trait Backend: Send + Sync {
     }
 
     /// Move a whole blyg (a subscription id) to Background, or back. Remote.
-    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+    fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
         let _ = (sub, on);
         Err(CoreError::Other("Background isn't supported here".into()))
     }
@@ -1034,14 +1043,14 @@ pub trait Backend: Send + Sync {
 
     /// (subscription id, remote id) → the ids of the hoppers holding that
     /// post; your own posts are `("~own", server id)`. Local.
-    fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+    fn hopper_members(&self) -> std::collections::HashMap<(SubId, RemoteId), Vec<String>> {
         Default::default()
     }
 
     /// Hopper id → its posts as (subscription id, remote id) in the
     /// hopper's own order: newest added first, as the studio lists them.
     /// A post put in here waits at the top until the blyg says when. Local.
-    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(SubId, RemoteId)>> {
         Default::default()
     }
 
@@ -1073,7 +1082,13 @@ pub trait Backend: Send + Sync {
     /// Put a post in a hopper (`on`) or take it out. Local and instant (the
     /// row's `hoppers` and the count follow at once); queued for the blyg.
     /// `sub_id` is `"~own"` with your post's server id for one of yours.
-    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+    fn set_in_hopper(
+        &self,
+        hopper: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         let _ = (hopper, sub_id, remote_id, on);
         Err(CoreError::Other("hoppers aren't supported here".into()))
     }
@@ -1363,8 +1378,8 @@ pub trait Backend: Send + Sync {
     /// when the post is opened, never for a card.
     fn summarize_reading_changelog(
         &self,
-        sub_id: &str,
-        remote_id: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Result<crate::changelog::ChangelogSummary> {
         let _ = (sub_id, remote_id);
         Err(CoreError::Other(

@@ -5,7 +5,7 @@
 
 use blyg_core::contacts::{Contact, ContactId, ContactInput};
 use blyg_core::outbound::OutboundMention;
-use blyg_core::{CoreError, Result, Subscription, SubscriptionFlag};
+use blyg_core::{CoreError, RemoteId, Result, SubId, Subscription, SubscriptionFlag};
 use chrono::{Duration, Utc};
 
 use super::reading_seed::{LIN, OMAR, OWN_GARDENS_SERVER};
@@ -25,7 +25,7 @@ pub struct Book {
     pub rewrites: bool,
     /// The blyg's Mentions lens (`None`: not served; the demo and tests
     /// serve one).
-    pub lens: Option<Vec<(String, String)>>,
+    pub lens: Option<Vec<(SubId, RemoteId)>>,
 }
 
 impl Default for Book {

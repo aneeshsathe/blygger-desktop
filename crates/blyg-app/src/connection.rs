@@ -625,10 +625,10 @@ impl Disconnected {
     fn clear_browse(&self, _: Option<&str>) -> Result<()> {
         Ok(())
     }
-    fn mark_read(&self, _: &str, _: &str) -> Result<()> {
+    fn mark_read(&self, _: &SubId, _: &RemoteId) -> Result<()> {
         Ok(())
     }
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
         if read {
             Ok(rows.len())
         } else {

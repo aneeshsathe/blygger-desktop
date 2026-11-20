@@ -5,7 +5,7 @@
 //! holds is ever indexed: your own published posts and current posts from
 //! blyg subscriptions. A withdrawn post's vectors are deleted with it.
 
-use crate::model::{Item, ReadingItem, Status};
+use crate::model::{Item, ReadingItem, RemoteId, Status, SubId};
 
 /// One embedded piece of a post.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,7 +27,7 @@ pub fn own_key(local_id: &str) -> String {
 }
 
 /// The key of a post held from a subscription.
-pub fn reading_key(subscription_id: &str, remote_id: &str) -> String {
+pub fn reading_key(subscription_id: &SubId, remote_id: &RemoteId) -> String {
     format!("reading:{subscription_id}/{remote_id}")
 }
 
@@ -61,7 +61,7 @@ mod tests {
     #[test]
     fn keys_and_hashes() {
         assert_eq!(own_key("l1"), "own:l1");
-        assert_eq!(reading_key("s", "r"), "reading:s/r");
+        assert_eq!(reading_key(&"s".into(), &"r".into()), "reading:s/r");
         assert_eq!(text_hash("a"), text_hash("a"));
         assert_ne!(text_hash("a"), text_hash("b"));
         assert_eq!(text_hash("a").len(), 32);

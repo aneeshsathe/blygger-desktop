@@ -203,7 +203,7 @@ mod tests {
         let before = f.keys(&rows, own);
         assert!(before.contains(&key(&rows[0])));
         assert_eq!(f.tags(&key(&rows[0])), ["linked you"]);
-        let named = ("s".to_string(), "r".to_string());
+        let named = (blyg_core::SubId::from("s"), blyg_core::RemoteId::from("r"));
         f.set_served(Some(HashSet::from([named.clone(), key(&rows[0])])));
         let after = f.keys(&rows, own);
         assert!(after.is_superset(&before));

@@ -59,7 +59,7 @@ impl MainView {
     pub(crate) fn reading_shown_ids(&self) -> Vec<String> {
         self.reading
             .shown_rows()
-            .map(|r| r.remote_id.clone())
+            .map(|r| r.remote_id.to_string())
             .collect()
     }
 
@@ -519,7 +519,7 @@ impl MainView {
                 }
                 let of = RemoteRef {
                     origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
+                    id: item.remote_id.to_string(),
                     version: v.version,
                     cited: None,
                 };
@@ -589,7 +589,7 @@ impl MainView {
             "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
             // --- catch up --- the conversation leading to it.
             "Catch up" => {
-                self.open_catch_up(item.origin.clone(), item.remote_id.clone(), window, cx)
+                self.open_catch_up(item.origin.clone(), item.remote_id.to_string(), window, cx)
             }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
@@ -624,7 +624,7 @@ impl MainView {
         let body = vm::stub_body(&item.remote_id);
         let of = RemoteRef {
             origin: item.origin.clone(),
-            id: item.remote_id.clone(),
+            id: item.remote_id.to_string(),
             version: item.version,
             cited: None,
         };

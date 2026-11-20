@@ -40,7 +40,7 @@ use super::*;
 use crate::api::wire::ChangeState;
 use crate::sync::{SyncOptions, next_full_every};
 
-type Key = (String, String);
+type Key = (SubId, RemoteId);
 
 const SEC: i64 = 1000;
 const PULL_INTERVAL: i64 = 60 * SEC;
@@ -221,7 +221,7 @@ impl Sim {
         for &(sub, age_s) in rows {
             s.next_id += 1;
             s.rows.insert(
-                (format!("s{sub}"), format!("r{}", s.next_id)),
+                (format!("s{sub}").into(), format!("r{}", s.next_id).into()),
                 Row {
                     stamp: now - age_s as i64 * SEC,
                     ver: 1,
@@ -258,7 +258,7 @@ impl Sim {
                 };
                 s.next_id += 1;
                 s.rows.insert(
-                    (format!("s{sub}"), format!("r{}", s.next_id)),
+                    (format!("s{sub}").into(), format!("r{}", s.next_id).into()),
                     Row {
                         stamp: now - back,
                         ver: 1,

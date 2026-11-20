@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::model::{OWN_SUBSCRIPTION, ReadingItem};
+use crate::model::{OWN_SUBSCRIPTION, ReadingItem, RemoteId, SubId};
 
 /// The capability that says a studio has Background (`PUT
 /// /api/reading/placement`); `GET /api/reading?background=true`, the
@@ -117,7 +117,7 @@ impl EntryBackground {
 
 /// A reading row's key: `(subscription id, remote id)`, your own posts as
 /// `("~own", id)`, as every Burrow list keys them.
-pub type Key = (String, String);
+pub type Key = (SubId, RemoteId);
 
 /// The studio's Background lens as last read, plus the Foreground choices
 /// made here (the studio only shows a Foreground choice on an entry it
@@ -139,7 +139,7 @@ pub struct BackgroundSet {
 struct Index {
     on: HashMap<Key, usize>,
     fg: HashSet<Key>,
-    blygs: HashSet<String>,
+    blygs: HashSet<SubId>,
 }
 
 /// One `GET /api/reading` entry's key and `background`. `None` for a shape
@@ -147,14 +147,14 @@ struct Index {
 pub fn parse_entry(v: &Value) -> Option<(Key, EntryBackground)> {
     let key = if let Some(own) = v.get("own").filter(|o| o.is_object()) {
         (
-            OWN_SUBSCRIPTION.to_string(),
-            own.get("id")?.as_str()?.to_string(),
+            SubId::from(OWN_SUBSCRIPTION),
+            RemoteId::from(own.get("id")?.as_str()?),
         )
     } else {
         let imp = v.get("imported").filter(|o| o.is_object())?;
         (
-            imp.get("subscriptionId")?.as_str()?.to_string(),
-            imp.get("remoteId")?.as_str()?.to_string(),
+            SubId::from(imp.get("subscriptionId")?.as_str()?),
+            RemoteId::from(imp.get("remoteId")?.as_str()?),
         )
     };
     let b = v.get("background")?;
@@ -255,10 +255,10 @@ impl BackgroundSet {
 
     /// Whether a whole blyg (a subscription id) is in Background, as far as
     /// its entries in the set say.
-    pub fn blyg_on(&self, sub: &str) -> bool {
+    pub fn blyg_on(&self, sub: &SubId) -> bool {
         match &self.index {
             Some(ix) => ix.blygs.contains(sub),
-            None => self.entries.iter().any(|(k, e)| e.blyg && k.0 == sub),
+            None => self.entries.iter().any(|(k, e)| e.blyg && k.0 == *sub),
         }
     }
 
@@ -318,14 +318,14 @@ impl BackgroundSet {
     /// The owner moved the blyg `sub` to Background (`on`) or back: each
     /// entry of it without a choice of its own follows, as far as the set
     /// knows (the studio is read again after).
-    pub fn place_blyg(&mut self, sub: &str, on: bool, rows: &[ReadingItem]) {
-        for (_, e) in self.entries.iter_mut().filter(|(k, _)| k.0 == sub) {
+    pub fn place_blyg(&mut self, sub: &SubId, on: bool, rows: &[ReadingItem]) {
+        for (_, e) in self.entries.iter_mut().filter(|(k, _)| k.0 == *sub) {
             e.blyg = on;
         }
         if on {
             let have: HashSet<Key> = self.entries.iter().map(|(k, _)| k.clone()).collect();
             let fg: HashSet<&Key> = self.foreground.iter().collect();
-            for r in rows.iter().filter(|r| r.subscription_id == sub) {
+            for r in rows.iter().filter(|r| r.subscription_id == *sub) {
                 let k = (r.subscription_id.clone(), r.remote_id.clone());
                 if have.contains(&k) || fg.contains(&k) {
                     continue;
@@ -346,7 +346,7 @@ impl BackgroundSet {
             }
         } else {
             self.entries.retain(|(k, e)| {
-                k.0 != sub || e.placement == Some(Placement::Background) || !e.reasons.is_empty()
+                k.0 != *sub || e.placement == Some(Placement::Background) || !e.reasons.is_empty()
             });
         }
         self.index = None;

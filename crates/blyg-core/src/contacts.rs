@@ -14,6 +14,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::model::{RemoteId, SubId};
+
 /// One address-book entry.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Contact {
@@ -86,7 +88,7 @@ pub fn parse_contacts(v: &Value) -> Vec<Contact> {
 
 /// `(subscription id, remote id)` of each imported row in a
 /// `GET /api/reading` page.
-pub fn parse_reading_keys(v: &Value) -> Vec<(String, String)> {
+pub fn parse_reading_keys(v: &Value) -> Vec<(SubId, RemoteId)> {
     v.get("items")
         .and_then(Value::as_array)
         .map(|a| {
@@ -94,8 +96,8 @@ pub fn parse_reading_keys(v: &Value) -> Vec<(String, String)> {
                 .filter_map(|e| {
                     let i = e.get("imported")?;
                     Some((
-                        i.get("subscriptionId")?.as_str()?.to_string(),
-                        i.get("remoteId")?.as_str()?.to_string(),
+                        SubId::from(i.get("subscriptionId")?.as_str()?),
+                        RemoteId::from(i.get("remoteId")?.as_str()?),
                     ))
                 })
                 .collect()

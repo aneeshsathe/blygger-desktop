@@ -27,7 +27,7 @@
 use std::path::PathBuf;
 
 use blyg_core::state::TrayEntry;
-use blyg_core::{Pickable, ReadingItem};
+use blyg_core::{Pickable, ReadingItem, RemoteId};
 use gpui_kit::base::input::RopeExt as _;
 
 use super::reading::{View, vm as rvm};
@@ -156,7 +156,7 @@ pub fn tray_first(items: &[TrayEntry], found: Vec<Pickable>, query: &str) -> Vec
 /// A reading row as a tray entry (a blyg post's id and its quote label).
 pub fn entry_for_row(r: &ReadingItem) -> TrayEntry {
     TrayEntry {
-        id: r.remote_id.clone(),
+        id: r.remote_id.to_string(),
         label: rvm::quote_label(r),
         title: rvm::post_title(r),
         subscription_id: r.subscription_id.clone(),
@@ -227,7 +227,7 @@ pub struct DraggedQuote {
 impl DraggedQuote {
     pub fn row(r: &ReadingItem, title: String) -> DraggedQuote {
         DraggedQuote {
-            id: r.remote_id.clone(),
+            id: r.remote_id.to_string(),
             title,
             label: None,
             key: Some(rvm::key(r)),
@@ -240,7 +240,7 @@ impl DraggedQuote {
             id: e.id.clone(),
             title: e.title.clone(),
             label: Some(e.label.clone()),
-            key: Some((e.subscription_id.clone(), e.id.clone())),
+            key: Some((e.subscription_id.clone(), RemoteId::from(&e.id))),
             from_tray,
         }
     }

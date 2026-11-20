@@ -320,7 +320,7 @@ impl MainView {
         };
         let of = blyg_core::RemoteRef {
             origin: item.origin.clone(),
-            id: item.remote_id.clone(),
+            id: item.remote_id.to_string(),
             version: item.version,
             cited: None,
         };

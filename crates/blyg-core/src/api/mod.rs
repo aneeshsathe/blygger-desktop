@@ -50,8 +50,8 @@ use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
 use crate::model::{
-    Hopper, HopperEdit, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings,
-    SubscribePreview, Subscription, SubscriptionKind, Version,
+    Hopper, HopperEdit, Kind, Mention, RemoteId, RemoteRef, ResponsesMode, ScopeProvenance,
+    Settings, SubId, SubscribePreview, Subscription, SubscriptionKind, Version,
 };
 use auth::Credential;
 use wire::*;
@@ -831,7 +831,7 @@ impl Api {
     }
 
     /// `POST /api/subscriptions {url, confirm:true, title?}` → new subscription id.
-    pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<String> {
+    pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<SubId> {
         let mut body = self.subscribe_body(url);
         body["confirm"] = json!(true);
         if let Some(t) = title {
@@ -839,7 +839,8 @@ impl Api {
         }
         Ok(self
             .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
-            .id)
+            .id
+            .into())
     }
 
     /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
@@ -905,7 +906,7 @@ impl Api {
 
     // ---------- signals / mentions ----------
 
-    pub fn set_signal(&self, sub: &str, remote_id: &str, thumb: i8) -> Result<()> {
+    pub fn set_signal(&self, sub: &SubId, remote_id: &RemoteId, thumb: i8) -> Result<()> {
         self.call(
             "PUT",
             &format!("/api/signals/{}/{}", enc(sub), enc(remote_id)),
@@ -934,7 +935,7 @@ impl Api {
         )
     }
 
-    pub fn clear_signal(&self, sub: &str, remote_id: &str) -> Result<()> {
+    pub fn clear_signal(&self, sub: &SubId, remote_id: &RemoteId) -> Result<()> {
         self.call(
             "DELETE",
             &format!("/api/signals/{}/{}", enc(sub), enc(remote_id)),
@@ -1075,8 +1076,8 @@ impl Api {
     /// (`stored: false`).
     pub fn put_read(
         &self,
-        sub: &str,
-        remote_id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
         version: u32,
         read_at: Option<&str>,
     ) -> Result<ReadAck> {
@@ -1093,7 +1094,7 @@ impl Api {
 
     /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread.
     /// Idempotent; 200 for a row the server doesn't hold.
-    pub fn delete_read(&self, sub: &str, remote_id: &str) -> Result<()> {
+    pub fn delete_read(&self, sub: &SubId, remote_id: &RemoteId) -> Result<()> {
         self.call(
             "DELETE",
             &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
@@ -1271,7 +1272,13 @@ impl Api {
 
     /// `PUT` (`on`) or `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}`.
     /// `sub` is `~own` for one of your own posts. Both are idempotent.
-    pub fn set_hopper_item(&self, id: &str, sub: &str, remote_id: &str, on: bool) -> Result<()> {
+    pub fn set_hopper_item(
+        &self,
+        id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         self.call(
             if on { "PUT" } else { "DELETE" },
             &format!(

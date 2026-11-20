@@ -110,7 +110,8 @@ fn reading_one_entry_per_post_across_edits_and_feeds() {
     let r = b.reading();
     assert_eq!(r.len(), 1);
     assert_eq!(r[0].subscription_id, "B", "blyg row preferred");
-    b.mark_read("B", "A1").unwrap();
+    b.mark_read(&SubId::from("B"), &RemoteId::from("A1"))
+        .unwrap();
 
     // the author edits it: the server bumps version/observed_at on the same row
     env.mock.state().reading = Some(vec![
@@ -155,17 +156,19 @@ fn signals_update_the_cache() {
     )]);
     let b = env.manual();
     b.sync_now().unwrap();
-    b.signal("S", "R", Some(1)).unwrap();
+    b.signal(&SubId::from("S"), &RemoteId::from("R"), Some(1))
+        .unwrap();
     assert_eq!(b.reading()[0].thumb, Some(1));
     assert_eq!(
         env.mock.state().signals[&("S".to_string(), "R".to_string())],
         1
     );
-    b.signal("S", "R", None).unwrap();
+    b.signal(&SubId::from("S"), &RemoteId::from("R"), None)
+        .unwrap();
     assert_eq!(b.reading()[0].thumb, None);
     assert!(env.mock.state().signals.is_empty());
     assert!(matches!(
-        b.signal("S", "R", Some(3)),
+        b.signal(&SubId::from("S"), &RemoteId::from("R"), Some(3)),
         Err(CoreError::Rejected { .. })
     ));
 }
@@ -201,7 +204,10 @@ fn subscriptions_lifecycle() {
     assert_eq!(b.subscriptions()[0].status, "active");
     b.unsubscribe(&s.id).unwrap();
     assert!(b.subscriptions().is_empty());
-    assert!(matches!(b.unsubscribe("gone"), Err(CoreError::NotFound)));
+    assert!(matches!(
+        b.unsubscribe(&SubId::from("gone")),
+        Err(CoreError::NotFound)
+    ));
 }
 
 #[test]

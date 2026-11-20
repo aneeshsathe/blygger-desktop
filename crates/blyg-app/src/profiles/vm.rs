@@ -4,7 +4,7 @@
 //! lists only, never a follower or subscriber count.
 
 use blyg_core::profile::{Connection, same_origin, under_origin};
-use blyg_core::{Profile, ProfileKind, ReadingItem, Subscription, SubscriptionKind};
+use blyg_core::{Profile, ProfileKind, ReadingItem, SubId, Subscription, SubscriptionKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -46,7 +46,7 @@ pub struct Row {
     /// Posts: read it on the web.
     pub open_url: Option<String>,
     /// Your own blogroll: `(subscription id, in the blogroll)`.
-    pub blogroll_toggle: Option<(String, bool)>,
+    pub blogroll_toggle: Option<(SubId, bool)>,
 }
 
 impl Row {

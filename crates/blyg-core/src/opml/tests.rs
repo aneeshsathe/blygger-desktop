@@ -487,6 +487,7 @@ fn import_folder_is_made_once_and_reused_on_real_sqlite() {
     );
     assert_eq!(b.folders().len(), 2);
     // Filing by id holds before the subscription is in the local list.
-    b.set_subscription_folder("sub-later", Some(&f.id)).unwrap();
+    b.set_subscription_folder(&"sub-later".into(), Some(&f.id))
+        .unwrap();
     assert_eq!(b.subscription_folders().get("sub-later"), Some(&f.id));
 }

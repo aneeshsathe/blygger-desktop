@@ -11,7 +11,7 @@
 use super::Engine;
 use crate::backend::Result;
 use crate::background::{BackgroundSet, Key, Placement};
-use crate::model::{CoreEvent, ReadingItem};
+use crate::model::{CoreEvent, ReadingItem, SubId};
 
 /// What the Background lens depends on (`GET /api/changes` domains).
 pub const BACKGROUND_DEPS: &[&str] = &["reading", "subscriptions", "settings"];
@@ -62,7 +62,7 @@ impl Engine {
 
     /// Move the whole blyg `sub` to Background (`on`) or back. Sent at
     /// once; its rows follow here at once, as far as what's held says.
-    pub fn set_blyg_background(&self, sub: &str, on: bool, rows: &[ReadingItem]) -> Result<()> {
+    pub fn set_blyg_background(&self, sub: &SubId, on: bool, rows: &[ReadingItem]) -> Result<()> {
         self.track(self.api.set_subscription_background(sub, on))?;
         if let Some(mut set) = self.store.background_set() {
             set.place_blyg(sub, on, rows);

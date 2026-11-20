@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use blyg_core::{Backend, LocalId, RemoteMedia, SubscriptionKind};
+use blyg_core::{Backend, LocalId, RemoteMedia, SubId, SubscriptionKind};
 use blyg_render::{RenderOpts, ShellOpts};
 use gpui_kit::*;
 
@@ -497,7 +497,7 @@ pub fn render_remote_md(
 ) -> String {
     let mount = origin.trim_end_matches('/').to_string();
     let resolver = if md.contains("![[") {
-        let rss: Vec<String> = backend
+        let rss: Vec<SubId> = backend
             .subscriptions()
             .into_iter()
             .filter(|s| s.kind == SubscriptionKind::Rss)
@@ -544,7 +544,7 @@ impl MainView {
                 let kind = render_kind(item.kind);
                 let scope = Scope::Remote {
                     origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
+                    id: item.remote_id.to_string(),
                 };
                 if let Some(v) = o.pinned_on_screen() {
                     if o.diff_vs_now {

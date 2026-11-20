@@ -115,7 +115,7 @@ mod tests {
     use super::*;
 
     fn k(s: &str) -> Key {
-        ("sub".to_string(), s.to_string())
+        ("sub".into(), s.into())
     }
 
     fn keys(v: &[&str]) -> Vec<Key> {

@@ -359,7 +359,8 @@ fn connections_use_lineage_from_item_documents_already_fetched() {
     );
     assert!(!f.state().log.iter().any(|l| l.contains("/items/E")));
     // Opening the item fetches its document (and caches it).
-    b.remote_versions(SUB, "E").unwrap();
+    b.remote_versions(&SubId::from(SUB), &RemoteId::from("E"))
+        .unwrap();
     let n = f.state().log.len();
     let p = b.profile(&origin, true).unwrap();
     let got = rels(&p);

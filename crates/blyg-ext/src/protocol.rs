@@ -666,8 +666,8 @@ pub struct ReadingSummary {
 impl ReadingSummary {
     pub fn of(r: &blyg_core::ReadingItem) -> Self {
         ReadingSummary {
-            subscription_id: r.subscription_id.clone(),
-            remote_id: r.remote_id.clone(),
+            subscription_id: r.subscription_id.to_string(),
+            remote_id: r.remote_id.to_string(),
             subscription_title: r.subscription_title.clone(),
             origin: r.origin.clone(),
             title: blyg_core::plain_title(&r.content_md).unwrap_or_default(),

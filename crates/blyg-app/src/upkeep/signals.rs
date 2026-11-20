@@ -46,7 +46,7 @@ pub struct SignalRow {
     pub origin: String,
     pub at: String,
     /// (subscription, remote id), while you follow it.
-    pub key: Option<(String, String)>,
+    pub key: Option<crate::app::reading::vm::Key>,
 }
 
 impl SignalRow {

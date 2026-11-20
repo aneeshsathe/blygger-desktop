@@ -317,7 +317,7 @@ fn centre_of(origin: &str, id: &str, src: &Sources) -> Centre {
     match (&held, own) {
         (Some(r), _) => Centre {
             origin: r.origin.clone(),
-            id: r.remote_id.clone(),
+            id: r.remote_id.to_string(),
             title: vm::post_title(r),
             who: who_of(r),
             kind: Some(r.kind),

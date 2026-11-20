@@ -90,7 +90,7 @@ impl MainView {
             }
             (Scene::RdStreamCatchup | Scene::RdStreamCatchupWhole, 2) => {
                 if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
-                    let (o, i) = (r.origin.clone(), r.remote_id.clone());
+                    let (o, i) = (r.origin.clone(), r.remote_id.to_string());
                     self.open_catch_up(o, i, window, cx);
                 }
                 if scenario == Scene::RdStreamCatchupWhole {
@@ -246,7 +246,7 @@ impl MainView {
                 use super::sources::MenuTarget;
                 let _ = self
                     .backend
-                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                    .rename_subscription(&"sub-omar".into(), Some("Omar's field notes"));
                 self.reading.subs = self.backend.subscriptions();
                 self.set_pane(super::sources_vm::Pane::Sources, cx);
                 self.open_source_menu(
@@ -260,7 +260,7 @@ impl MainView {
             (Scene::RdSubRename, 1) => {
                 let _ = self
                     .backend
-                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                    .rename_subscription(&"sub-omar".into(), Some("Omar's field notes"));
                 self.reading.subs = self.backend.subscriptions();
                 self.open_sub_name_sheet("sub-omar".into(), window, cx);
             }

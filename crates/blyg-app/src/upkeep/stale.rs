@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use blyg_core::upkeep::{QuoteFreshness, Refreshed, ThreadFreshness};
 
 use super::*;
+use blyg_core::RemoteId;
 
 /// The note a refresh publishes with, unless you type another (Studio's).
 pub const DEFAULT_NOTE: &str = "refreshed quoted snapshots";
@@ -158,7 +159,7 @@ impl MainView {
             None => self.backend.own_item(&q.id).map(|i| vm::item_title(&i)),
             Some(origin) => self
                 .backend
-                .reading_with_id(&q.id)
+                .reading_with_id(&RemoteId::from(&q.id))
                 .into_iter()
                 .find(|r| blyg_core::profile::same_origin(&r.origin, origin))
                 .and_then(|r| blyg_core::plain_title(&r.content_md)),

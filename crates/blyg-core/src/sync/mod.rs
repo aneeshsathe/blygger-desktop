@@ -1596,7 +1596,7 @@ impl Engine {
         let Some(details) = self.api.hopper_details()? else {
             return self.store.replace_hoppers(&[]);
         };
-        let subs: HashMap<String, (String, String)> = self
+        let subs: HashMap<SubId, (String, String)> = self
             .store
             .subscriptions()
             .into_iter()
@@ -1980,7 +1980,7 @@ impl Engine {
         ) else {
             return Ok(out);
         };
-        let kinds: HashMap<String, SubscriptionKind> = self
+        let kinds: HashMap<SubId, SubscriptionKind> = self
             .store
             .subscriptions()
             .into_iter()
@@ -2153,8 +2153,8 @@ impl Engine {
     fn fill_lineage(
         &self,
         items: &[ReadingItem],
-        listed: &HashSet<(String, String)>,
-        kinds: &std::collections::HashMap<String, SubscriptionKind>,
+        listed: &HashSet<(SubId, RemoteId)>,
+        kinds: &std::collections::HashMap<SubId, SubscriptionKind>,
         budget: &mut LineageBudget,
     ) -> Result<bool> {
         let mut filled = false;

@@ -103,7 +103,7 @@ mod tests;
 use std::collections::{HashMap, HashSet};
 
 use blyg_core::{
-    CoreError, LocalId, Mention, PinnedVersion, ReadingItem, RemoteVersion, Settings,
+    CoreError, LocalId, Mention, PinnedVersion, ReadingItem, RemoteVersion, Settings, SubId,
     SubscribePreview, Subscription, Version,
 };
 use gpui_kit::base::input::{InputState, TextareaState};
@@ -281,7 +281,7 @@ pub enum RSheet {
         rename: Option<String>,
         /// File this subscription in the new folder once it's made
         /// ("Move to folder › New Folder…").
-        then_file: Option<String>,
+        then_file: Option<SubId>,
         error: Option<String>,
         /// The name the error is about.
         tried: String,
@@ -289,7 +289,7 @@ pub enum RSheet {
     /// --- subscription names --- Rename… a subscription.
     SubName {
         input: Entity<InputState>,
-        sub: String,
+        sub: SubId,
         error: Option<String>,
         busy: bool,
     },
@@ -357,7 +357,7 @@ pub struct State {
     pub subs: Vec<Subscription>,
     pub sub_sel: usize,
     /// A subscription whose "Unsubscribe" was clicked once (click again).
-    pub unsub_confirm: Option<String>,
+    pub unsub_confirm: Option<SubId>,
     pub mentions: Load<Vec<Mention>>,
     pub mentions_seen: HashSet<String>,
     pub show_hidden: bool,
@@ -400,7 +400,7 @@ pub struct State {
     // --- reader folders --- the Reader's three panes.
     /// Local folders, in order, and subscription id → folder id.
     pub folders: Vec<blyg_core::Folder>,
-    pub filed: HashMap<String, String>,
+    pub filed: HashMap<SubId, String>,
     /// --- hoppers --- the blyg's hoppers, in its order.
     pub hoppers: Vec<blyg_core::Hopper>,
     /// --- hoppers --- rows held only because a hopper read returned them
