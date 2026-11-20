@@ -272,12 +272,9 @@ fn timing_typing_at_scale(cx: &mut TestAppContext) {
 /// tick, cost: their times, and the store's work and trigram hits a
 /// keystroke (with the rows held, then with twice as many) and a tick.
 struct Omnibar {
-    typing: Keys,
+    typed: Typed,
     ticks: Keys,
-    steps_a_key: u64,
-    hits_a_key: u64,
-    steps_a_key_doubled: u64,
-    hits_a_key_doubled: u64,
+    doubled: Typed,
     steps_a_tick: u64,
 }
 
@@ -285,16 +282,16 @@ const QUERY: &str = "garden notes";
 
 /// Type `QUERY` into the empty omnibar, a key at a time, each key's
 /// search landing before the next key (a typist's pace: a search takes
-/// milliseconds, a keystroke a tenth of a second). Returns the
-/// keystrokes' times, the store's work a keystroke and the trigram hits a
-/// keystroke, and checks that what's listed is exactly what the backend
-/// finds for the query.
+/// milliseconds, a keystroke a tenth of a second). Measures the
+/// keystrokes' and their searches' times, the store's work and the
+/// trigram hits a keystroke, and checks that what's listed is exactly
+/// what the backend finds for the query.
 fn type_query(
     view: &Entity<MainView>,
     live: &LiveBackend,
     cx: &mut VisualTestContext,
     label: &str,
-) -> (Keys, u64, u64) {
+) -> Typed {
     let mut typing = Keys::default();
     let mut steps = Steps::start(live);
     for (i, c) in QUERY.chars().enumerate() {
@@ -317,16 +314,39 @@ fn type_query(
     });
     assert!(!want.is_empty(), "the query finds posts");
     assert_eq!(shown, want);
-    // The trigram index's hits a keystroke (the keys of three or more
-    // characters search it; shorter ones read the snapshot).
-    let trigram_hits: usize = (1..=QUERY.chars().count())
-        .map(|n| QUERY.chars().take(n).collect::<String>())
-        .filter(|q| q.trim().chars().count() >= 3)
-        .map(|q| live.search(&q).len())
-        .sum();
+    // Each key's search again, as the background thread ran it: its time
+    // (which the keystroke's doesn't include), and the trigram index's
+    // hits (the keys of three or more characters search it; shorter ones
+    // read the snapshot).
+    let mut searches = Keys::default();
+    let mut trigram_hits = 0;
+    for n in 1..=QUERY.chars().count() {
+        let q: String = QUERY.chars().take(n).collect();
+        let t = Instant::now();
+        let hits = live.search(&q).len();
+        searches.0.push(t.elapsed());
+        if q.trim().chars().count() >= 3 {
+            trigram_hits += hits;
+        }
+    }
     let hits_a_key = trigram_hits as u64 / QUERY.chars().count() as u64;
     eprintln!("{label:<40} {hits_a_key} trigram hits a key");
-    (typing, per_key, hits_a_key)
+    Typed {
+        typing,
+        searches,
+        steps_a_key: per_key,
+        hits_a_key,
+    }
+}
+
+/// What `type_query` measured.
+struct Typed {
+    /// The keystrokes' times on the UI thread.
+    typing: Keys,
+    /// Each key's search's time (on a background thread in the app).
+    searches: Keys,
+    steps_a_key: u64,
+    hits_a_key: u64,
 }
 
 /// Typing an omnibar search over thousands of posts, and the list's
@@ -335,7 +355,7 @@ fn type_query(
 fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     let dir = tempfile::tempdir().unwrap();
     let (view, live, thread, cx) = setup(dir.path(), cx);
-    let (typing, steps_a_key, hits_a_key) = type_query(&view, &live, cx, "omnibar typing");
+    let typed = type_query(&view, &live, cx, "omnibar typing");
 
     // A sync tick after a save: the list is refreshed for the query.
     view.update_in(cx, |v, window, cx| v.set_query_text("", window, cx));
@@ -398,15 +418,11 @@ fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     settle(cx);
     assert_eq!(live.items().len(), own + posts());
     assert!(live.reading().len() >= held * 2 - held / 50);
-    let (_, steps_a_key_doubled, hits_a_key_doubled) =
-        type_query(&view, &live, cx, "omnibar typing (twice the rows)");
+    let doubled = type_query(&view, &live, cx, "omnibar typing (twice the rows)");
     Omnibar {
-        typing,
+        typed,
         ticks,
-        steps_a_key,
-        hits_a_key,
-        steps_a_key_doubled,
-        hits_a_key_doubled,
+        doubled,
         steps_a_tick,
     }
 }
@@ -444,19 +460,13 @@ const FIXED_A_KEY: u64 = 500;
 /// the index finds (a few steps each, `PER_HIT_A_KEY`), not with the rows
 /// held and not by decoding each matching post. Checked with the rows
 /// held and with twice as many. The Rust side (resolving and copying the
-/// hits) is no VM step: `timing_omnibar_search_at_scale` reports its
-/// time, and is the measure of it.
+/// hits) is no VM step: `timing_omnibar_search_at_scale` reports each
+/// key's search time (a report, not a gate), and is the measure of it.
 #[gpui_kit::test]
 fn an_omnibar_keystroke_reads_row_ids_not_every_matching_post(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
-    for (label, steps, hits) in [
-        ("the rows held", o.steps_a_key, o.hits_a_key),
-        (
-            "twice the rows",
-            o.steps_a_key_doubled,
-            o.hits_a_key_doubled,
-        ),
-    ] {
+    for (label, t) in [("the rows held", &o.typed), ("twice the rows", &o.doubled)] {
+        let (steps, hits) = (t.steps_a_key, t.hits_a_key);
         let limit = hits * PER_HIT_A_KEY + FIXED_A_KEY;
         assert!(
             steps <= limit,
@@ -473,7 +483,7 @@ fn timing_omnibar_search_at_scale(cx: &mut TestAppContext) {
     let mut budget = Budget::default();
     budget.check(
         "median omnibar keystroke",
-        o.typing.report("omnibar typing"),
+        o.typed.typing.report("omnibar typing"),
         KEY_MS,
     );
     budget.check(
@@ -481,5 +491,10 @@ fn timing_omnibar_search_at_scale(cx: &mut TestAppContext) {
         o.ticks.report("ItemsChanged (empty query)"),
         KEY_MS,
     );
+    // Each key's search, off the UI thread: reported, not budgeted.
+    o.typed.searches.report("omnibar search a key");
+    o.doubled
+        .searches
+        .report("omnibar search a key (twice the rows)");
     budget.done();
 }
