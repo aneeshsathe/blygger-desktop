@@ -16,6 +16,7 @@ mod contacts;
 mod contract_coverage;
 mod crate_graph;
 mod e2e;
+mod no_git;
 mod personal_data;
 mod profiles;
 mod read_sync;
