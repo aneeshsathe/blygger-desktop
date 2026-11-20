@@ -36,7 +36,7 @@ fn held(s: &Store, sub: &str, id: &str, state: &str) {
 fn ids(s: &Store, trail: &str) -> Vec<String> {
     s.trail_stops(trail)
         .into_iter()
-        .map(|x| x.remote_id)
+        .map(|x| x.remote_id.into_string())
         .collect()
 }
 

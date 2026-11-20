@@ -12,7 +12,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
 use crate::backend::{CoreError, Result};
-use crate::model::OWN_SUBSCRIPTION;
+use crate::model::{OWN_SUBSCRIPTION, RemoteId, SubId};
 use crate::trails::{TRAIL_MAX_STOPS, Trail, TrailStop};
 use crate::util::{new_local_id, now_iso};
 
@@ -24,7 +24,7 @@ fn bad(message: impl Into<String>) -> CoreError {
     }
 }
 
-fn stop_keys(tx: &Transaction, trail: &str) -> Result<Vec<(String, String)>> {
+fn stop_keys(tx: &Transaction, trail: &str) -> Result<Vec<(SubId, RemoteId)>> {
     let mut st = tx.prepare_cached(
         "SELECT subscription_id, remote_id FROM trail_stops WHERE trail_id = ?1 \
          ORDER BY position, rowid",
@@ -35,7 +35,7 @@ fn stop_keys(tx: &Transaction, trail: &str) -> Result<Vec<(String, String)>> {
     Ok(v)
 }
 
-fn renumber(tx: &Transaction, trail: &str, keys: &[(String, String)]) -> Result<()> {
+fn renumber(tx: &Transaction, trail: &str, keys: &[(SubId, RemoteId)]) -> Result<()> {
     let mut st = tx.prepare_cached(
         "UPDATE trail_stops SET position = ?1 \
          WHERE trail_id = ?2 AND subscription_id = ?3 AND remote_id = ?4",
@@ -59,7 +59,7 @@ fn trail_exists(tx: &Transaction, trail: &str) -> Result<()> {
 }
 
 /// Is the post a stop names withdrawn, as far as this Mac knows?
-fn is_withdrawn(tx: &Transaction, sub: &str, remote: &str) -> Result<bool> {
+fn is_withdrawn(tx: &Transaction, sub: &SubId, remote: &RemoteId) -> Result<bool> {
     let w = if sub == OWN_SUBSCRIPTION {
         tx.query_row(
             "SELECT status = 'withdrawn' FROM items WHERE server_id = ?1",
@@ -154,7 +154,7 @@ impl Store {
     fn trail_stops_inner(&self, trail: &str) -> Result<Vec<TrailStop>> {
         let mut c = self.conn();
         let tx = c.transaction()?;
-        let rows: Vec<(String, String, String, String, Option<String>)> = {
+        let rows: Vec<(SubId, RemoteId, String, String, Option<String>)> = {
             let mut st = tx.prepare_cached(
                 "SELECT subscription_id, remote_id, origin, why, title FROM trail_stops \
                  WHERE trail_id = ?1 ORDER BY position, rowid",

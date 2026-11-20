@@ -51,6 +51,18 @@ macro_rules! string_id {
             }
         }
 
+        impl From<&String> for $name {
+            fn from(s: &String) -> Self {
+                Self(s.clone())
+            }
+        }
+
+        impl From<&$name> for $name {
+            fn from(id: &$name) -> Self {
+                id.clone()
+            }
+        }
+
         impl From<$name> for String {
             fn from(id: $name) -> String {
                 id.0

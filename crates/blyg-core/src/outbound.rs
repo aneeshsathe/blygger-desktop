@@ -14,6 +14,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::model::SubId;
+
 /// One Webmention your blyg sent (the contract's `OutboundMention`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -89,20 +91,20 @@ pub struct MentionGroup {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MentionSource {
     /// The subscription that holds the source post (you can stub back).
-    pub holder: Option<String>,
+    pub holder: Option<SubId>,
     /// The subscription to the source's blyg, held or not: `(id, title)`.
-    pub subscription: Option<(String, String)>,
+    pub subscription: Option<(SubId, String)>,
 }
 
 impl MentionSource {
     pub fn parse(v: &Value) -> MentionSource {
         let s = |v: &Value, k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
         MentionSource {
-            holder: s(v, "holder").filter(|h| !h.is_empty()),
+            holder: s(v, "holder").filter(|h| !h.is_empty()).map(SubId::from),
             subscription: v
                 .get("subscription")
                 .filter(|s| s.is_object())
-                .and_then(|sub| Some((s(sub, "id")?, s(sub, "title").unwrap_or_default()))),
+                .and_then(|sub| Some((s(sub, "id")?.into(), s(sub, "title").unwrap_or_default()))),
         }
     }
 }

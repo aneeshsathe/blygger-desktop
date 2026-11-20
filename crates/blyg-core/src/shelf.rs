@@ -27,6 +27,8 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use crate::model::{RemoteId, SubId};
+
 /// The `sub` of one of your own items (the studio's `OWN_SUBSCRIPTION`).
 pub const OWN: &str = crate::model::OWN_SUBSCRIPTION;
 
@@ -51,13 +53,13 @@ pub const REVISION_META: &str = "shelf_revision";
 /// One shelf entry, as the wire names it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Entry {
-    pub sub: String,
+    pub sub: SubId,
     #[serde(rename = "remoteId")]
-    pub remote_id: String,
+    pub remote_id: RemoteId,
 }
 
 impl Entry {
-    pub fn new(sub: impl Into<String>, remote_id: impl Into<String>) -> Entry {
+    pub fn new(sub: impl Into<SubId>, remote_id: impl Into<RemoteId>) -> Entry {
         Entry {
             sub: sub.into(),
             remote_id: remote_id.into(),
@@ -66,7 +68,7 @@ impl Entry {
 
     /// One of your own items, by its server id.
     pub fn own(server_id: impl Into<String>) -> Entry {
-        Entry::new(OWN, server_id)
+        Entry::new(OWN, server_id.into())
     }
 
     pub fn is_own(&self) -> bool {

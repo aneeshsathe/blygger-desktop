@@ -170,7 +170,10 @@ mod tests {
     fn summaries_round_trip_on_disk_with_their_age() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("blygger.db");
-        let (a, b) = (imported_key("s1", "A"), imported_key("s1", "B"));
+        let (a, b) = (
+            imported_key(&"s1".into(), &"A".into()),
+            imported_key(&"s1".into(), &"B".into()),
+        );
         {
             let s = Store::open(&path).unwrap();
             assert_eq!(s.lineage_served(), Served::Unknown);
@@ -211,7 +214,7 @@ mod tests {
     #[test]
     fn a_404_turns_it_off_and_drops_what_it_served() {
         let s = Store::open_in_memory().unwrap();
-        let a = imported_key("s1", "A");
+        let a = imported_key(&"s1".into(), &"A".into());
         s.put_lineage_summaries(
             std::slice::from_ref(&a),
             &HashMap::from([(a.clone(), summary(1, 1))]),

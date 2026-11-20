@@ -248,7 +248,7 @@ impl From<WireMention> for Mention {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WireSubscription {
-    pub id: String,
+    pub id: crate::model::SubId,
     pub kind: SubscriptionKind,
     #[serde(default)]
     pub origin: String,
@@ -566,9 +566,9 @@ impl ReadingFlags {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadMark {
-    pub sub: String,
+    pub sub: crate::model::SubId,
     #[serde(alias = "remote_id")]
-    pub remote_id: String,
+    pub remote_id: crate::model::RemoteId,
     pub version: u32,
     #[serde(default, alias = "read_at", skip_serializing_if = "Option::is_none")]
     pub read_at: Option<String>,
@@ -579,9 +579,9 @@ pub struct ReadMark {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnreadMark {
-    pub sub: String,
+    pub sub: crate::model::SubId,
     #[serde(alias = "remote_id")]
-    pub remote_id: String,
+    pub remote_id: crate::model::RemoteId,
 }
 
 /// `PUT /api/reading/{sub}/{remoteId}/read` → whether the read was stored

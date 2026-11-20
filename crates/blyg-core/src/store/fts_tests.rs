@@ -54,8 +54,8 @@ fn prose(rng: &mut Rng, words: &[String], bytes: usize) -> String {
 
 fn row(i: usize, version: u32, body: String) -> ReadingItem {
     ReadingItem {
-        subscription_id: format!("s{}", i % 50),
-        remote_id: format!("R{i}"),
+        subscription_id: format!("s{}", i % 50).into(),
+        remote_id: format!("R{i}").into(),
         subscription_title: "A blyg".into(),
         origin: format!("https://b{}.blyg.example.com/", i % 50),
         kind: Kind::Fragment,
@@ -88,9 +88,9 @@ fn row(i: usize, version: u32, body: String) -> ReadingItem {
     }
 }
 
-fn kinds() -> HashMap<String, SubscriptionKind> {
+fn kinds() -> HashMap<SubId, SubscriptionKind> {
     (0..50)
-        .map(|i| (format!("s{i}"), SubscriptionKind::Blyg))
+        .map(|i| (format!("s{i}").into(), SubscriptionKind::Blyg))
         .collect()
 }
 

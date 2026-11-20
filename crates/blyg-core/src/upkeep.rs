@@ -235,10 +235,10 @@ pub struct Thumb {
     pub thumb: i8,
     pub at: String,
     pub origin: String,
-    pub remote_id: String,
+    pub remote_id: crate::model::RemoteId,
     /// The subscription it came through, while you still follow it.
     #[serde(default)]
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<crate::model::SubId>,
     /// The post's title, when the blyg knows it.
     #[serde(default)]
     pub label: Option<String>,
@@ -285,7 +285,7 @@ pub struct Interaction {
     pub at: String,
     pub kind: InteractionKind,
     pub origin: String,
-    pub remote_id: String,
+    pub remote_id: crate::model::RemoteId,
     #[serde(default)]
     pub version: Option<u32>,
     /// Your post it happened in (a stub, a fork, a quote), by server id.
@@ -301,7 +301,7 @@ pub struct Interaction {
     #[serde(default)]
     pub backfilled: bool,
     #[serde(default)]
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<crate::model::SubId>,
     #[serde(default)]
     pub label: Option<String>,
 }

@@ -7,7 +7,7 @@
 
 use std::cmp::Ordering;
 
-use crate::model::{Item, OWN_SUBSCRIPTION, ReadingItem, Status, StubOf};
+use crate::model::{Item, OWN_SUBSCRIPTION, ReadingItem, RemoteId, Status, StubOf};
 use crate::order;
 
 /// One of your own rows (never sent anywhere as a reading row).
@@ -34,7 +34,7 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
     let sid = item.server_id.as_ref()?.0.clone();
     Some(ReadingItem {
         subscription_id: OWN_SUBSCRIPTION.into(),
-        remote_id: sid,
+        remote_id: RemoteId::from(sid),
         subscription_title: "You".into(),
         origin: citation_origin(origin),
         kind: item.kind,

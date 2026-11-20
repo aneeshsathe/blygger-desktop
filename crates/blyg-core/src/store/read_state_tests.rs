@@ -42,10 +42,10 @@ fn ri(sub: &str, rid: &str, page: Option<&str>, version: u32, observed: &str) ->
     }
 }
 
-fn kinds() -> HashMap<String, SubscriptionKind> {
+fn kinds() -> HashMap<SubId, SubscriptionKind> {
     [
-        ("s1".to_string(), SubscriptionKind::Blyg),
-        ("s2".to_string(), SubscriptionKind::Rss),
+        ("s1".into(), SubscriptionKind::Blyg),
+        ("s2".into(), SubscriptionKind::Rss),
     ]
     .into_iter()
     .collect()
@@ -93,7 +93,9 @@ fn seeded() -> Store {
 }
 
 fn row(s: &Store, sub: &str, rid: &str) -> ReadingItem {
-    s.reading_row(sub, rid).unwrap().0
+    s.reading_row(&SubId::from(sub), &RemoteId::from(rid))
+        .unwrap()
+        .0
 }
 
 /// (op, sub, remote_id) of every read/unread op in the outbox, in order.
@@ -113,15 +115,13 @@ fn read_ops(s: &Store) -> Vec<(OpKind, String, String)> {
         .collect()
 }
 
-fn pairs(v: &[(&str, &str)]) -> Vec<(String, String)> {
-    v.iter()
-        .map(|(a, b)| (a.to_string(), b.to_string()))
-        .collect()
+fn pairs(v: &[(&str, &str)]) -> Vec<(SubId, RemoteId)> {
+    v.iter().map(|(a, b)| ((*a).into(), (*b).into())).collect()
 }
 
-fn server(v: &[(&str, &str, Option<u32>)]) -> HashMap<(String, String), Option<u32>> {
+fn server(v: &[(&str, &str, Option<u32>)]) -> HashMap<(SubId, RemoteId), Option<u32>> {
     v.iter()
-        .map(|(s, r, rv)| ((s.to_string(), r.to_string()), *rv))
+        .map(|(s, r, rv)| (((*s).into(), (*r).into()), *rv))
         .collect()
 }
 

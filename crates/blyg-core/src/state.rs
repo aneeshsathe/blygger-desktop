@@ -105,7 +105,7 @@ pub struct AppState {
     /// never (`false`) open on the author's site, whatever
     /// `open-posts-on-site` says, by subscription id.
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub author_site_subs: std::collections::BTreeMap<String, bool>,
+    pub author_site_subs: std::collections::BTreeMap<crate::model::SubId, bool>,
     /// --- tours --- The feature tours walked to their end card (tour ids,
     /// `onboarding::steps::TOURS`): the chooser ticks them.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -121,7 +121,7 @@ pub struct TrayEntry {
     pub label: String,
     pub title: String,
     /// The reading row's subscription (`~own` for yours).
-    pub subscription_id: String,
+    pub subscription_id: crate::model::SubId,
 }
 
 /// --- blyg switcher --- A blyg as the switcher shows it.

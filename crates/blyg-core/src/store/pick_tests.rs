@@ -54,11 +54,11 @@ fn ri(sub: &str, rid: &str, updated: &str, body: &str) -> ReadingItem {
     }
 }
 
-fn kinds() -> HashMap<String, SubscriptionKind> {
+fn kinds() -> HashMap<SubId, SubscriptionKind> {
     [
-        ("blog".to_string(), SubscriptionKind::Blyg),
-        ("other".to_string(), SubscriptionKind::Blyg),
-        ("feed".to_string(), SubscriptionKind::Rss),
+        ("blog".into(), SubscriptionKind::Blyg),
+        ("other".into(), SubscriptionKind::Blyg),
+        ("feed".into(), SubscriptionKind::Rss),
     ]
     .into_iter()
     .collect()

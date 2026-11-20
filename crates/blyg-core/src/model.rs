@@ -242,7 +242,7 @@ pub enum SubscriptionKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subscription {
-    pub id: String,
+    pub id: SubId,
     pub kind: SubscriptionKind,
     pub origin: String,
     pub feed_url: String,
@@ -312,8 +312,8 @@ pub struct Author {
 /// One item from a subscription (imported_items), for the reading view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReadingItem {
-    pub subscription_id: String,
-    pub remote_id: String,
+    pub subscription_id: SubId,
+    pub remote_id: RemoteId,
     pub subscription_title: String,
     pub origin: String,
     pub kind: Kind,
@@ -872,8 +872,8 @@ pub fn own_responses(items: &[Item], own_origin: &str, origin: &str, id: &str) -
         }
         let Some(r) = refs.pop() else { continue };
         let item = ReadingItem {
-            subscription_id: String::new(),
-            remote_id: sid.0.clone(),
+            subscription_id: SubId::default(),
+            remote_id: RemoteId::from(sid.0.clone()),
             subscription_title: "you".into(),
             origin: own_origin.to_string(),
             kind: it.kind,

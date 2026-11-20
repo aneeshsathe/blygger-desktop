@@ -36,7 +36,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Item, Mention, ReadingItem, Status, post_key};
+use crate::model::{Item, Mention, ReadingItem, RemoteId, Status, SubId, post_key};
 use crate::profile::{Relation, normalize_origin};
 
 /// The extension's name: the `/api/ext/<name>/` prefix.
@@ -196,10 +196,10 @@ pub struct SummariesPage {
 /// A reading entry's key, as `GET /api/reading` names it and the summaries
 /// route takes it: `imported:["<sub>","<id>"]` (the studio's
 /// `JSON.stringify([sub, id])`).
-pub fn imported_key(sub: &str, id: &str) -> String {
+pub fn imported_key(sub: &SubId, id: &RemoteId) -> String {
     format!(
         "imported:{}",
-        serde_json::to_string(&[sub, id]).unwrap_or_default()
+        serde_json::to_string(&[sub.as_str(), id.as_str()]).unwrap_or_default()
     )
 }
 
@@ -214,7 +214,7 @@ pub enum Centre {
     /// One of yours (`?id=`).
     Own(String),
     /// An imported post (`?sub=&id=`).
-    Imported { sub: String, id: String },
+    Imported { sub: SubId, id: RemoteId },
     /// Any other node a lineage named (`?origin=&id=`).
     Remote { origin: String, id: String },
 }
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(l.summary(THEM, H).up, rc(0, 1, 0));
         assert_eq!(l.summary(THEM, H).down, rc(0, 0, 0));
         assert_eq!(
-            imported_key("them", H),
+            imported_key(&"them".into(), &H.into()),
             format!("imported:[\"them\",\"{H}\"]")
         );
     }

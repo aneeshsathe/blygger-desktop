@@ -26,7 +26,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use crate::api::wire::ChangeState;
-use crate::model::Subscription;
+use crate::model::{RemoteId, SubId, Subscription};
 
 /// `meta` key: the newest `observedAt` (ms) the last accepted read of the
 /// reading list saw. A head read stops once a page reaches back past it,
@@ -186,7 +186,7 @@ pub struct Walk {
     pub cursor: Option<String>,
     /// Every row this walk has read (since its last restart): what a
     /// complete walk keeps.
-    pub keys: HashSet<(String, String)>,
+    pub keys: HashSet<(SubId, RemoteId)>,
     /// The revisions captured before its first page (R3): what's accepted
     /// when it ends.
     pub rev: Option<ChangeState>,

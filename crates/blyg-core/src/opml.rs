@@ -400,7 +400,7 @@ impl FailKind {
 pub enum Outcome {
     /// 201: subscribed (and filed in the import folder).
     Added {
-        id: String,
+        id: crate::model::SubId,
         title: String,
     },
     /// 409: already following it.
@@ -553,7 +553,7 @@ pub(crate) fn run_paced(
     pace: &Pace,
     cancel: &AtomicBool,
     subscribe: &(dyn Fn(&str) -> crate::Result<Subscription> + Sync),
-    file: &(dyn Fn(&str) + Sync),
+    file: &(dyn Fn(&crate::model::SubId) + Sync),
     on: &(dyn Fn(Progress) + Sync),
 ) -> Vec<Option<Outcome>> {
     let results: Mutex<Vec<Option<Outcome>>> = Mutex::new(vec![None; feeds.len()]);

@@ -223,7 +223,7 @@ impl LiveBackend {
 
     /// One stored reading row as pulled, tombstones included (`reading()`
     /// hides and collapses some).
-    pub fn reading_row(&self, sub: &str, remote_id: &str) -> Option<ReadingItem> {
+    pub fn reading_row(&self, sub: &SubId, remote_id: &RemoteId) -> Option<ReadingItem> {
         self.engine
             .store
             .reading_row(sub, remote_id)
@@ -332,7 +332,7 @@ impl LiveBackend {
 
     /// A cached reading row and whether it came through a blyg-kind
     /// subscription (only those have a public item document and pins).
-    fn remote_row(&self, sub_id: &str, remote_id: &str) -> Result<(ReadingItem, bool)> {
+    fn remote_row(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<(ReadingItem, bool)> {
         let (it, sub_kind) = self
             .e()
             .store
@@ -345,7 +345,7 @@ impl LiveBackend {
                 .store
                 .subscriptions()
                 .iter()
-                .any(|s| s.id == sub_id && s.kind == SubscriptionKind::Blyg),
+                .any(|s| s.id == *sub_id && s.kind == SubscriptionKind::Blyg),
         };
         Ok((it, blyg))
     }
@@ -757,8 +757,8 @@ impl Backend for LiveBackend {
 
     fn reading_syndication(
         &self,
-        sub_id: &str,
-        remote_id: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Vec<crate::syndication::SyndicationEntry> {
         self.engine.store.reading_syndication(sub_id, remote_id)
     }
@@ -785,7 +785,7 @@ impl Backend for LiveBackend {
         self.engine.store.meta(CONTACTS_SERVED_META).as_deref() == Some("1")
     }
 
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         let got = self.e().track(self.e().api.reading_mentions()).ok()?;
         // Kept for the next first paint; a lens no longer served is forgotten.
         let store = &self.engine.store;
@@ -798,7 +798,7 @@ impl Backend for LiveBackend {
         got
     }
 
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         serde_json::from_str(&self.engine.store.meta(MENTIONS_SERVED_META)?).ok()
     }
 
@@ -1060,7 +1060,7 @@ impl Backend for LiveBackend {
         self.engine.store.unread_count()
     }
 
-    fn reading_with_id(&self, remote_id: &str) -> Vec<ReadingItem> {
+    fn reading_with_id(&self, remote_id: &RemoteId) -> Vec<ReadingItem> {
         self.engine.store.reading_with_id(remote_id)
     }
 
@@ -1074,7 +1074,7 @@ impl Backend for LiveBackend {
         self.engine.store.subscriptions()
     }
 
-    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
+    fn mark_read(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<()> {
         // Instant and local; on a server that syncs read state (extension 5)
         // the same write queues one `read` op per row it raised.
         let sync = self.e().read_sync_on();
@@ -1088,7 +1088,7 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
         // Local and instant. Reads queue for a server that syncs read state;
         // unreads only for one that can clear it (else they stay here).
         let sync = self.e().read_sync_on();
@@ -1466,7 +1466,7 @@ impl Backend for LiveBackend {
         Ok(sub)
     }
 
-    fn unsubscribe(&self, sub_id: &str) -> Result<()> {
+    fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.e().track(self.e().api.delete_subscription(sub_id))?;
         self.e().store.edit_subscription(sub_id, |_| false)?;
         self.e().emit(CoreEvent::ReadingChanged);
@@ -1476,7 +1476,7 @@ impl Backend for LiveBackend {
 
     fn set_subscription(
         &self,
-        sub_id: &str,
+        sub_id: &SubId,
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()> {
@@ -1498,7 +1498,7 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
-    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+    fn rename_subscription(&self, sub_id: &SubId, title: Option<&str>) -> Result<()> {
         let title = title.map(str::trim);
         if title == Some("") {
             return Err(CoreError::Rejected {
@@ -1533,13 +1533,13 @@ impl Backend for LiveBackend {
         Ok(n)
     }
 
-    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+    fn check_subscription(&self, sub_id: &SubId) -> Result<bool> {
         let kind = self
             .e()
             .store
             .subscriptions()
             .into_iter()
-            .find(|s| s.id == sub_id)
+            .find(|s| s.id == *sub_id)
             .map(|s| s.kind);
         // Resync is for blyg subscriptions (409 on a feed): a feed is polled
         // with the rest.
@@ -1552,7 +1552,7 @@ impl Backend for LiveBackend {
         Ok(changed)
     }
 
-    fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
+    fn pause_subscription(&self, sub_id: &SubId, paused: bool) -> Result<()> {
         self.e()
             .track(self.e().api.pause_subscription(sub_id, paused))?;
         self.e().store.edit_subscription(sub_id, |s| {
@@ -1563,7 +1563,7 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
-    fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
+    fn signal(&self, sub_id: &SubId, remote_id: &RemoteId, thumb: Option<i8>) -> Result<()> {
         let r = match thumb {
             Some(t @ (1 | -1)) => self.e().api.set_signal(sub_id, remote_id, t),
             Some(_) => {
@@ -1628,7 +1628,7 @@ impl Backend for LiveBackend {
     }
     // --- end discover ---
 
-    fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
+    fn remote_versions(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<Vec<RemoteVersion>> {
         let (it, blyg) = self.remote_row(sub_id, remote_id)?;
         if !blyg {
             // RSS/L0: no public changelog, just what the feed shows now.
@@ -1645,12 +1645,17 @@ impl Backend for LiveBackend {
         self.changelog(&it)
     }
 
-    fn remote_pinned(&self, sub_id: &str, remote_id: &str, version: u32) -> Result<PinnedVersion> {
+    fn remote_pinned(
+        &self,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        version: u32,
+    ) -> Result<PinnedVersion> {
         let (it, blyg) = self.remote_row(sub_id, remote_id)?;
         self.pinned_for(&it, blyg, version)
     }
 
-    fn pinned_diff_base(&self, sub_id: &str, remote_id: &str) -> Option<PinnedVersion> {
+    fn pinned_diff_base(&self, sub_id: &SubId, remote_id: &RemoteId) -> Option<PinnedVersion> {
         let (it, blyg) = self.remote_row(sub_id, remote_id).ok()?;
         let read = it.read_version?;
         self.pinned_for(&it, blyg, read).ok()
@@ -1791,7 +1796,7 @@ impl Backend for LiveBackend {
         self.e().store.folders()
     }
 
-    fn subscription_folders(&self) -> std::collections::HashMap<String, String> {
+    fn subscription_folders(&self) -> std::collections::HashMap<SubId, String> {
         self.e().store.subscription_folders()
     }
 
@@ -1811,7 +1816,7 @@ impl Backend for LiveBackend {
         self.e().store.move_folder(id, index)
     }
 
-    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+    fn set_subscription_folder(&self, sub_id: &SubId, folder: Option<&str>) -> Result<()> {
         self.e().store.set_subscription_folder(sub_id, folder)
     }
 
@@ -2005,7 +2010,7 @@ impl Backend for LiveBackend {
         self.e().set_reading_placement(key, withdrawn, placement)
     }
 
-    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+    fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
         if !self.e().background_served() {
             return Err(CoreError::Other(crate::background::NOT_SERVED.into()));
         }
@@ -2034,7 +2039,7 @@ impl Backend for LiveBackend {
         self.e().store.hoppers()
     }
 
-    fn hopper_members(&self) -> std::collections::HashMap<(String, String), Vec<String>> {
+    fn hopper_members(&self) -> std::collections::HashMap<(SubId, RemoteId), Vec<String>> {
         self.e().store.hopper_members()
     }
 
@@ -2042,7 +2047,7 @@ impl Backend for LiveBackend {
         self.e().store.hopper_unheld()
     }
 
-    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(String, String)>> {
+    fn hopper_order(&self) -> std::collections::HashMap<String, Vec<(SubId, RemoteId)>> {
         self.e().store.hopper_order()
     }
 
@@ -2096,7 +2101,13 @@ impl Backend for LiveBackend {
         Ok(())
     }
 
-    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+    fn set_in_hopper(
+        &self,
+        hopper: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         if self
             .e()
             .store
@@ -2269,8 +2280,8 @@ impl Backend for LiveBackend {
 
     fn summarize_reading_changelog(
         &self,
-        sub_id: &str,
-        remote_id: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Result<crate::changelog::ChangelogSummary> {
         let of = crate::changelog::SummaryOf::Imported {
             subscription_id: sub_id.to_string(),

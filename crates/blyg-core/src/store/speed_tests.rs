@@ -214,6 +214,6 @@ fn reading_with_id_is_reading_filtered() {
     let all = s.reading();
     for id in ["r000010", "rss-guid", "r000003", "r000129", "nope"] {
         let want: Vec<_> = all.iter().filter(|r| r.remote_id == id).cloned().collect();
-        assert_eq!(s.reading_with_id(id), want, "{id}");
+        assert_eq!(s.reading_with_id(&RemoteId::from(id)), want, "{id}");
     }
 }
