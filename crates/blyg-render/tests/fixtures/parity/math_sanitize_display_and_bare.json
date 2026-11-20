@@ -1,0 +1,17 @@
+{
+  "name": "math_sanitize_display_and_bare",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vm2]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vm2\" data-blyg-version=\"1\">\n<p>Shown:</p>\n<math display=\"block\" class=\"tml-display\"><semantics><mfrac><mi>a</mi><mi>b</mi></mfrac><annotation encoding=\"application/x-tex\">\\frac{a}{b}</annotation></semantics></math>\n<p>Bare  gone, and  kept.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm2/\">fragment ↗</a> · snapshot of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm2",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "tangle_unclosed",
+  "kind": "thread",
+  "md": "![[+ never closed\n\nMore.",
+  "html": "<p>![[+ never closed</p>\n<p>More.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

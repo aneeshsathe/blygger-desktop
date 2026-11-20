@@ -1,0 +1,12 @@
+{
+  "name": "tangle_placeholder",
+  "kind": "thread",
+  "md": "See [[+ a later post]] soon, and [[+ another]].",
+  "html": "<p>See <span class=\"blyg-tangle-link\" title=\"new item, linked\">a later post</span> soon, and <span class=\"blyg-tangle-link\" title=\"new item, linked\">another</span>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

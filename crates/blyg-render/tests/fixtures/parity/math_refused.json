@@ -1,0 +1,12 @@
+{
+  "name": "math_refused",
+  "kind": "fragment",
+  "md": "Struck $\\cancel{x}$ out.",
+  "html": "<p>Struck <code class=\"math-error\" title=\"\\cancel needs a stylesheet most readers will not have, so the Studio does not publish it\">$\\cancel{x}$</code> out.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

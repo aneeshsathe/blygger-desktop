@@ -1,0 +1,19 @@
+{
+  "name": "math_in_tk",
+  "kind": "fragment",
+  "md": "Lead [TK]p[=]$x^2$ said[/TK] end.",
+  "html": "<p>Lead <span class=\"blyg-tk-gen\"><math><semantics><msup><mi>x</mi><mn class=\"tml-sml-pad\">2</mn></msup><annotation encoding=\"application/x-tex\">x^2</annotation></semantics></math> said</span> end.</p>\n",
+  "tk": {
+    "scopes": [
+      {
+        "instruction": "p",
+        "generated": true,
+        "block": false,
+        "source_ids": []
+      }
+    ],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

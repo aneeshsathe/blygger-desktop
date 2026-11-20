@@ -1,0 +1,17 @@
+{
+  "name": "math_thread_own",
+  "kind": "thread",
+  "md": "Own $e^x$ and\n\n$$\\sqrt{2}$$\n\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+  "html": "<p>Own <math><semantics><msup><mi>e</mi><mi class=\"tml-sml-pad\">x</mi></msup><annotation encoding=\"application/x-tex\">e^x</annotation></semantics></math> and</p>\n<p><math display=\"block\" class=\"tml-display\"><semantics><msqrt><mn>2</mn></msqrt><annotation encoding=\"application/x-tex\">\\sqrt{2}</annotation></semantics></math></p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">fragment ↗</a> · snapshot of v3</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1v2w",
+      "version": 3
+    }
+  ],
+  "errors": []
+}

@@ -1,0 +1,12 @@
+{
+  "name": "tangle_not_line_start",
+  "kind": "thread",
+  "md": "Text ![[+ mid line]]",
+  "html": "<p>Text ![[+ mid line]]</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
