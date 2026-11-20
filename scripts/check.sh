@@ -3,7 +3,9 @@
 # CI calls this script step by step, so a check added here runs in CI too.
 #
 #   scripts/check.sh --fix        the gate before a commit: format the code,
-#                                 then fmt, clippy, test and wording
+#                                 then fmt, extensions, ci-skip, clippy,
+#                                 test and wording (what CI's PR jobs run,
+#                                 bar docs and deny)
 #   scripts/check.sh              the same, failing on unformatted code
 #   scripts/check.sh STEP...      only those steps, in that order
 #   scripts/check.sh all          every step, docs and deny included
@@ -17,8 +19,8 @@
 #               Mac too (skills/burrow-cross-platform, "Testing wording").
 #               Skipped by default on Windows, where it is the normal spelling.
 #   extensions  format check of extensions/community.toml (no network)
-#   docs        the docs site with the pinned mdBook (scripts/build-site.sh)
 #   ci-skip     no code reads a path CI may skip (scripts/ci-skip.py check)
+#   docs        the docs site with the pinned mdBook (scripts/build-site.sh)
 #   deny        cargo deny --locked check (deny.toml): advisories, licences, sources;
 #               needs cargo-deny (`cargo install cargo-deny --locked`)
 #
@@ -29,6 +31,8 @@
 # dependencies.
 #
 # On Windows, run it from Git Bash (`bash scripts/check.sh`); CI does the same.
+# The Python steps use python3, or python where python3 doesn't run (as on
+# a Windows machine with only the python.org installer).
 # Cargo runs with --locked, so a stale Cargo.lock fails here as it does in CI.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -39,18 +43,20 @@ for arg in "$@"; do
   case "$arg" in
     --fix) fix=1 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-    all) steps+=(fmt clippy test wording extensions ci-skip docs deny) ;;
+    all) steps+=(fmt extensions ci-skip clippy test wording docs deny) ;;
     fmt|clippy|test|wording|extensions|ci-skip|docs|deny) steps+=("$arg") ;;
     *) echo "check.sh: unknown step '$arg' (try --help)" >&2; exit 2 ;;
   esac
 done
 if [ ${#steps[@]} -eq 0 ]; then
-  steps=(fmt clippy test)
+  steps=(fmt extensions ci-skip clippy test)
   case "$(uname -s)" in
     MINGW*|MSYS*|CYGWIN*) ;;
     *) steps+=(wording) ;;
   esac
 fi
+
+if python3 -c '' >/dev/null 2>&1; then PY=python3; else PY=python; fi
 
 run() {
   echo "==> $*" >&2
@@ -65,8 +71,8 @@ for step in "${steps[@]}"; do
     clippy) run cargo clippy --workspace --all-targets --locked -- -D warnings ;;
     test) run cargo test --workspace --locked ;;
     wording) run env BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app --locked ;;
-    extensions) run python3 scripts/community-extensions.py check ;;
-    ci-skip) run python3 scripts/ci-skip.py check ;;
+    extensions) run "$PY" scripts/community-extensions.py check ;;
+    ci-skip) run "$PY" scripts/ci-skip.py check ;;
     docs) run scripts/build-site.sh ;;
     deny) run cargo deny --locked check ;;
   esac

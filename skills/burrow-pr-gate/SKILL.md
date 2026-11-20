@@ -15,7 +15,8 @@ scripts/check.sh docs           # also, after changing site/
 ```
 
 `scripts/check.sh` is the gate and CI calls it, step by step, so what passes
-here passes there. It formats (`--fix`), then runs clippy with `-D warnings`,
+here passes there. It formats (`--fix`), checks the community extension list
+and the CI skip list (`scripts/ci-skip.py`), then runs clippy with `-D warnings`,
 the workspace tests, and blyg-app's tests again with every UI string spelled
 as Windows does (`Ctrl+B`, not `⌘B`), so a test that expects Mac glyphs fails
 on your Mac instead of on Windows CI. Cargo runs `--locked`. Add a new
