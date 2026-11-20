@@ -1208,10 +1208,18 @@ pub fn table_for(p: crate::platform_text::Platform) -> Vec<Keybind> {
 pub const WINDOWS_KEYLESS: &[&str] = &["DiscardChanges"];
 
 /// `action` has no key on this platform although the table gives it one
-/// (`WINDOWS_KEYLESS`).
+/// (`WINDOWS_KEYLESS`). The tests' question about bindings; app text asks
+/// `keyless_on(action, Platform::spelling())`.
+#[cfg(test)]
 pub fn keyless_here(action: &str) -> bool {
-    crate::platform_text::Platform::HERE == crate::platform_text::Platform::Windows
-        && WINDOWS_KEYLESS.contains(&action)
+    keyless_on(action, crate::platform_text::Platform::HERE)
+}
+
+/// `action` has no key on `p`. Text that names the key or its stand-in
+/// asks with `Platform::spelling()`, so its wording follows the spelling
+/// tests pick (`platform_text::spelled_as`); bindings use `keyless_here`.
+pub fn keyless_on(action: &str, p: crate::platform_text::Platform) -> bool {
+    p == crate::platform_text::Platform::Windows && WINDOWS_KEYLESS.contains(&action)
 }
 
 /// The `WINDOWS_KEYLESS` rows without their key: menu (and button) only.
@@ -1324,26 +1332,37 @@ pub fn respell_for_windows(key: &str) -> String {
 /// (`⇧⌘G` → `Ctrl+Shift+G`, `⌘Y` → `Ctrl+Shift+Y`). Interned, so it can
 /// stand wherever the literal did.
 pub fn hint(text: &'static str) -> &'static str {
-    #[cfg(target_os = "windows")]
+    // Compiled on Windows, and in tests on every platform (a test can ask
+    // for Windows' spelling: `platform_text::spelled_as`). A macOS build
+    // is just `text`.
+    #[cfg(any(target_os = "windows", test))]
     {
+        use crate::platform_text::Platform;
         use std::collections::HashMap;
         use std::sync::{Mutex, OnceLock};
-        static SPELLED: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+        type Spelled = HashMap<(Platform, &'static str), &'static str>;
+        let p = Platform::spelling();
+        if p == Platform::Mac {
+            return text;
+        }
+        // Keyed by the spelling as well: a test process asks for both, and
+        // must never get one platform's entry for the other's text.
+        static SPELLED: OnceLock<Mutex<Spelled>> = OnceLock::new();
         let mut spelled = SPELLED
             .get_or_init(Default::default)
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         spelled
-            .entry(text)
+            .entry((p, text))
             .or_insert_with(|| Box::leak(windows_hint(text).into_boxed_str()))
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", test)))]
     text
 }
 
 /// `hint` for text built at runtime (`format!`).
 pub fn hint_owned(text: String) -> String {
-    if crate::platform_text::Platform::HERE == crate::platform_text::Platform::Windows {
+    if crate::platform_text::Platform::spelling() == crate::platform_text::Platform::Windows {
         windows_hint(&text)
     } else {
         text
@@ -2282,10 +2301,16 @@ mod tests {
             "Posts you read here still show as unread on your other PCs."
         );
         assert_eq!(windows_hint("Macintosh"), "Macintosh");
-        // macOS text is untouched.
-        if !cfg!(target_os = "windows") {
+        // macOS text is untouched; Windows' is respelled, owned or not.
+        use crate::platform_text::{Platform, spelled_as};
+        spelled_as(Platform::Mac, || {
             assert_eq!(hint("then ⌘G"), "then ⌘G");
-        }
+            assert_eq!(hint_owned("then ⌘G".into()), "then ⌘G");
+        });
+        spelled_as(Platform::Windows, || {
+            assert_eq!(hint("then ⌘G"), "then Ctrl+G");
+            assert_eq!(hint_owned("then ⌘G".into()), "then Ctrl+G");
+        });
     }
 
     #[test]

@@ -869,6 +869,11 @@ mod tests {
                 "6 known here draw on it: 2 replies, 4 quotes (of passages)\n⌘J or a click: see who"
             )
         );
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Windows, || g.tip()),
+            "6 known here draw on it: 2 replies, 4 quotes (of passages)\nCtrl+J or a click: see who"
+        );
     }
 
     #[test]

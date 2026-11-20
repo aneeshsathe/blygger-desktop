@@ -17,7 +17,7 @@
 //! and fails on any other literal glyph, naming these.
 
 /// The platform whose wording the app uses.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Platform {
     Mac,
     Windows,
@@ -30,6 +30,75 @@ impl Platform {
     } else {
         Platform::Mac
     };
+
+    /// The platform whose spelling the app's text uses: [`Self::HERE`].
+    /// Tests can pick either ([`spelled_as`] for one test,
+    /// `BLYGGER_TEST_SPELLING=windows` for the whole suite), so a macOS run
+    /// checks Windows' wording too. Outside tests it's the constant.
+    #[inline]
+    pub fn spelling() -> Platform {
+        #[cfg(test)]
+        {
+            test_spelling::current()
+        }
+        #[cfg(not(test))]
+        {
+            Self::HERE
+        }
+    }
+}
+
+/// Run `f` with the app's text spelled as `p` on this thread (tests only):
+/// `spelled_as(Platform::Windows, || toggled_toast(true))` is
+/// "On your shelf · Ctrl+B" on any machine. The previous spelling comes
+/// back afterwards, panic or not. Only the wording changes, not the key
+/// bindings.
+#[cfg(test)]
+pub fn spelled_as<R>(p: Platform, f: impl FnOnce() -> R) -> R {
+    let _restore = test_spelling::Override::set(p);
+    f()
+}
+
+/// The spelling tests use: a per-thread override (`spelled_as`) over a
+/// process-wide default (`BLYGGER_TEST_SPELLING=windows|mac`, read once),
+/// which every thread sees, GPUI's and spawned ones alike.
+#[cfg(test)]
+mod test_spelling {
+    use super::Platform;
+    use std::cell::Cell;
+    use std::sync::OnceLock;
+
+    thread_local! {
+        static OVERRIDE: Cell<Option<Platform>> = const { Cell::new(None) };
+    }
+
+    fn default() -> Platform {
+        static DEFAULT: OnceLock<Platform> = OnceLock::new();
+        *DEFAULT.get_or_init(|| {
+            crate::dev_flags::TestEnv::from_env()
+                .spelling
+                .unwrap_or(Platform::HERE)
+        })
+    }
+
+    pub fn current() -> Platform {
+        OVERRIDE.with(Cell::get).unwrap_or_else(default)
+    }
+
+    /// Puts the previous override back when dropped (also when unwinding).
+    pub struct Override(Option<Platform>);
+
+    impl Override {
+        pub fn set(p: Platform) -> Self {
+            Self(OVERRIDE.with(|o| o.replace(Some(p))))
+        }
+    }
+
+    impl Drop for Override {
+        fn drop(&mut self) {
+            OVERRIDE.with(|o| o.set(self.0));
+        }
+    }
 }
 
 /// App text in macOS terms, shown as each platform spells it.
@@ -59,7 +128,7 @@ impl Text {
     /// As this platform shows it. Interned on Windows, so it lives as long
     /// as the literal did.
     pub fn get(self) -> &'static str {
-        crate::keymap::hint(self.source(Platform::HERE))
+        crate::keymap::hint(self.source(Platform::spelling()))
     }
 
     /// As `p` shows it, on any platform: the tests read Windows' wording on
@@ -486,8 +555,42 @@ mod tests {
             own.on(Platform::Windows),
             "Post › Discard Changes… discards"
         );
-        if Platform::HERE == Platform::Mac {
+        spelled_as(Platform::Mac, || {
             assert_eq!(t.get(), "⌥⌘B shelves it on this Mac");
-        }
+        });
+        spelled_as(Platform::Windows, || {
+            assert_eq!(t.get(), "Ctrl+Shift+A shelves it on this PC");
+            assert_eq!(own.get(), "Post › Discard Changes… discards");
+        });
+    }
+
+    #[test]
+    fn spelled_as_restores_the_spelling_after_a_panic() {
+        let before = Platform::spelling();
+        let r = std::panic::catch_unwind(|| {
+            spelled_as(Platform::Windows, || {
+                spelled_as(Platform::Mac, || panic!("inside"));
+            })
+        });
+        assert!(r.is_err());
+        assert_eq!(Platform::spelling(), before);
+        spelled_as(Platform::Windows, || {
+            let r = std::panic::catch_unwind(|| spelled_as(Platform::Mac, || panic!("inside")));
+            assert!(r.is_err());
+            assert_eq!(Platform::spelling(), Platform::Windows, "the outer one");
+        });
+    }
+
+    #[test]
+    fn a_hint_is_interned_per_spelling() {
+        let text = "⌥⌘B is interned per spelling";
+        let win = spelled_as(Platform::Windows, || crate::keymap::hint(text));
+        let mac = spelled_as(Platform::Mac, || crate::keymap::hint(text));
+        assert_eq!(win, "Ctrl+Shift+A is interned per spelling");
+        assert_eq!(mac, text);
+        assert_eq!(
+            spelled_as(Platform::Windows, || crate::keymap::hint(text)),
+            win
+        );
     }
 }

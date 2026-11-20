@@ -20,6 +20,27 @@ took four CI rounds to go green there. Check these before pushing.
 - Windows has no global menu bar; the Windows Menu button's panel must offer
   every menu item. Panels over web views must hide the view.
 
+## Testing wording
+
+Six tests once compared UI text with Mac glyphs ("On your shelf · ⌘B"); they
+passed on macOS and failed only on Windows CI ("On your shelf · Ctrl+B").
+
+- A test of text that can hold a key writes the expected string through
+  `keymap::hint("… ⌘B")` (or `hint_owned`), so it holds on either platform.
+- A test that means one platform's wording wraps the code that builds the
+  text: `platform_text::spelled_as(Platform::Windows, || toggled_toast(true))`
+  is "On your shelf · Ctrl+B" on any machine. Assert a literal Windows string
+  at least once, so the test proves the spelling and not just `hint == hint`.
+  Tests about macOS glyphs themselves pin `spelled_as(Platform::Mac, …)`.
+- Only wording changes: `spelled_as` and the whole-suite mode leave the key
+  bindings (`keymap::keys`, `keyless_here`, the table) as this machine's.
+- Whole suite: `BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app` starts
+  every test thread in Windows' wording. Run it before pushing a wording
+  change; CI's macOS job runs it.
+- Wording read through `Platform::spelling()` (`hint`, `hint_owned`,
+  `Text::get`) follows the override; a bare `cfg!(target_os = "windows")`
+  branch doesn't, which is one more reason to write `ui_text_per_platform`.
+
 ## Platform features
 
 - Gate on a capability function (e.g. `browser::pane_available()`), not on

@@ -262,6 +262,12 @@ fn cmd_y_forks_your_pin_and_greys_fork_on_an_unpinned_version(cx: &mut TestAppCo
         super::vm::OwnAction::ForkNeedsPin.tip(1),
         crate::keymap::hint("Pin one in ⌘Y to fork it")
     );
+    assert_eq!(
+        crate::platform_text::spelled_as(crate::platform_text::Platform::Windows, || {
+            super::vm::OwnAction::ForkNeedsPin.tip(1)
+        }),
+        "Pin one in Ctrl+Shift+Y to fork it"
+    );
     let before = fake.items();
     view.update_in(cx, |v, window, cx| v.fork_own_pin(2, window, cx));
     settle(cx);

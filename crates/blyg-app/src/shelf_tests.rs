@@ -98,6 +98,19 @@ fn shelving_puts_the_post_on_top_and_the_shelf_opens_it(cx: &mut TestAppContext)
             Some(crate::keymap::hint("On your shelf · ⌘B"))
         );
     });
+    // The same toast in Windows' wording (the keys stay this platform's):
+    // off the shelf and back on.
+    crate::platform_text::spelled_as(crate::platform_text::Platform::Windows, || {
+        keys(cx, "alt-cmd-b");
+        keys(cx, "alt-cmd-b");
+    });
+    assert_eq!(fake.shelf(), [id(PUBLIC)], "back on the shelf");
+    view.read_with(cx, |v, _| {
+        assert_eq!(
+            v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
+            Some("On your shelf · Ctrl+B")
+        );
+    });
 
     // ⌘B, then 1, from another post.
     open(&view, cx, DRAFT);

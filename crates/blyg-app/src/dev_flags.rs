@@ -145,6 +145,10 @@ pub struct TestEnv {
     pub e2e_switch_token: Option<String>,
     /// `BLYG_E2E_URL_B`: a second blyg at `a`'s host.
     pub e2e_url_b: Option<String>,
+    /// `BLYGGER_TEST_SPELLING=windows|mac`: the platform whose wording every
+    /// test thread starts with (`platform_text::spelled_as` still picks one
+    /// for a test). Unset: this machine's.
+    pub spelling: Option<crate::platform_text::Platform>,
 }
 
 type Lookup<'a> = &'a dyn Fn(&str) -> Option<OsString>;
@@ -240,6 +244,14 @@ impl TestEnv {
             e2e_switch_url: get("BLYG_E2E_SWITCH_URL"),
             e2e_switch_token: get("BLYG_E2E_SWITCH_TOKEN"),
             e2e_url_b: get("BLYG_E2E_URL_B"),
+            spelling: get("BLYGGER_TEST_SPELLING").map(|v| {
+                use crate::platform_text::Platform;
+                match v.to_ascii_lowercase().as_str() {
+                    "windows" => Platform::Windows,
+                    "mac" | "macos" => Platform::Mac,
+                    other => panic!("BLYGGER_TEST_SPELLING={other}: say windows or mac"),
+                }
+            }),
         }
     }
 }

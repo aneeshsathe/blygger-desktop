@@ -542,4 +542,9 @@ fn the_still_unpublished_line_has_no_runs_of_spaces() {
     );
     assert!(!line.contains("  "), "{line}");
     assert!(!crate::keymap::hint_owned(line).contains("  "));
+    use crate::platform_text::{Platform, spelled_as};
+    assert_eq!(
+        spelled_as(Platform::Windows, || super::still_unpublished(1, 2)),
+        "Still marked unpublished: v1 has generated text. Ctrl+Enter publishes it as v2"
+    );
 }

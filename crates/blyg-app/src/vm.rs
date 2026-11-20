@@ -302,7 +302,8 @@ pub fn has_unpublished_edits(item: &Item) -> bool {
 /// names the menu item. `None` without unpublished edits.
 pub fn edits_tip(item: &Item) -> Option<String> {
     has_unpublished_edits(item).then(|| {
-        let discard = if crate::keymap::keyless_here("DiscardChanges") {
+        let spelling = crate::platform_text::Platform::spelling();
+        let discard = if crate::keymap::keyless_on("DiscardChanges", spelling) {
             "Discard Changes in the Post menu"
         } else {
             crate::keymap::hint("⌥⌘Z discards them")
@@ -1236,13 +1237,16 @@ mod tests {
         it.version = 1;
         assert_eq!(edits_tip(&it), None, "clean");
         it.dirty = true;
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Mac, || edits_tip(&it)).as_deref(),
+            Some("⌘⏎ publishes them as v2 · ⌥⌘Z discards them")
+        );
         // Windows' spelling (there Discard has no key).
-        let want = if crate::keymap::keyless_here("DiscardChanges") {
-            "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
-        } else {
-            "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"
-        };
-        assert_eq!(edits_tip(&it).as_deref(), Some(want));
+        assert_eq!(
+            spelled_as(Platform::Windows, || edits_tip(&it)).as_deref(),
+            Some("Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu")
+        );
     }
 
     /// Discard changes: only a published post with unpublished edits, and
