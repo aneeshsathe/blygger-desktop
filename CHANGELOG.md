@@ -33,7 +33,11 @@ A speed update: searching from the omnibar and opening an unread post do much le
   read in place: its dot, the header's "N to read", the status bar and the
   sources pane's counts follow at once, without reading every post again
   (about 43 ms at 10,000 posts before). All unread still drops a post read
-  elsewhere; a read state from another device still refreshes the list.
+  elsewhere; in the Stream, a card counted as seen stays listed (the Stream
+  lists every post, whatever source the Reader last had); a read mark is
+  applied only as this blyg's own store holds it, so one from a blyg just
+  switched away from changes nothing; a read state from another device
+  still refreshes the list.
   A local read mark is now `CoreEvent::ReadMarked` with the rows it raised
   (`blyg-core/src/model.rs`); `crates/blyg-app/src/reading/read_mark.rs`.
 
