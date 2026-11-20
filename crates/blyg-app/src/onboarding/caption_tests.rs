@@ -51,6 +51,9 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         Key::Discover => &["ShowDiscover"],
         Key::Nearby => &["ToggleNearby"],
         Key::QuietWriting => &["ToggleQuietWriting"],
+        // --- 0.27.0 --- ⌘⏎ (then ⏎) reaches the confirm step.
+        Key::Tangle => &["Publish"],
+        Key::Formula => &["InsertFormula"],
         // ⇧⌘B shows or hides the pane; the step waits for it to close.
         Key::CloseBrowser => &["ToggleBrowser"],
         Key::LineageMap | Key::LineageRing => &["ShowLineage"],
@@ -73,6 +76,7 @@ fn key_actions(k: Key) -> &'static [&'static str] {
         | Key::ShelfLens
         | Key::MentionsFeed
         | Key::MoreMenu
+        | Key::Parts // `p`: reading_key_down
         | Key::ConflictAnswered => &[],
     }
 }
@@ -267,8 +271,9 @@ fn every_label_a_step_quotes_is_shown_by_the_app() {
 
 /// Quoted text in captions that is sample data or typing, not a label.
 const QUOTED_NOT_LABELS: &[&str] = &[
-    "V2: …",   // a sample post's own first line
-    "· 3 min", // the sample extension's reading-time slot
-    "1 · 2",   // a lineage glyph's counts, drawn from numbers
-    "R · 2",   // the ring's reply count, likewise
+    "V2: …",    // a sample post's own first line
+    "· 3 min",  // the sample extension's reading-time slot
+    "1 · 2",    // a lineage glyph's counts, drawn from numbers
+    "R · 2",    // the ring's reply count, likewise
+    "+2 parts", // a thread's parts, counted (`parts_label`)
 ];

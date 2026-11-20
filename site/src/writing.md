@@ -388,6 +388,26 @@ quote it. It's never put in for you.
 |---|---|
 | ![Picking a blyg after @](screenshots/mention-picker.png) | ![Spelling suggestions](screenshots/spellcheck.png) |
 
+## Bold, italic and formulas
+
+Select some text and press:
+
+- **⌃⌘B** for bold (`**…**`);
+- **⌃⌘I** for italic (`*…*`);
+- **⌃⌘M** for a formula (`$…$`; a selection over whole lines goes between
+  `$$` lines of its own). With nothing selected, ⌃⌘M writes a pair of dollars with the caret
+  between them.
+
+Press bold or italic again on marked text to take the markers off. They're in
+**Edit › Format** too. On Windows the keys are **Alt+B**, **Alt+I** and
+**Alt+M**: Ctrl+B is the Shelf there, as ⌘B is on a Mac, and the first time
+you press it while writing Burrow reminds you. In the command palette (⇧⌘P),
+“maths”, “latex” or “equation” finds Formula.
+
+The markers are typed into your text as Markdown, so ⌘Z takes them back. How
+to write formulas, and what else your blyg understands, is on
+[Writing syntax](syntax.md).
+
 ## The preview and the full editor
 
 A live preview beside the editor shows the post exactly as your blyg will
@@ -530,6 +550,43 @@ pinned version, and choose **Fork this pin** for a new draft that descends
 from it. On an unpinned version it's greyed out ("Pin one in ⌘Y to fork it").
 Your posts are also a source in Reading; see
 [Your blyg](reading.md#your-blyg).
+
+### New items from a thread: tangling
+
+While you write a thread, you can turn part of it into a post of its own
+without leaving it. On blygger-studio 0.63 and later:
+
+```markdown
+Notes from the harbour walk.
+
+![[+ The tide tables were wrong by an hour. Nobody on the quay seemed
+to mind; the boats left when the water said so.]]
+
+Next time I'll write up [[+ the ferry timetable]] properly.
+```
+
+- **`![[+ passage]]`** makes the passage a **new item**, which the thread then
+  quotes in its place. The `![[+` starts a line and the `]]` ends one; the
+  passage can run over several paragraphs.
+- **`[[+ idea]]`**, inside a sentence, makes a new item holding the idea as
+  its heading, and the thread links to it.
+
+The preview shows each passage as a dashed quote marked **New item**, and each
+idea as a dashed link with the same tag. Publish as usual (⌘⏎, then ⏎). Before anything is
+published, Burrow asks: "This will publish 2 new items and this thread", with
+the new items listed (an idea's ends "(linked)"). **⏎** publishes all of them,
+the new items first; **esc** goes back to your text. Afterwards the editor
+shows what your blyg made of them, `![[id | first words…]]` and
+`[[id | text]]`, and the toast adds "· and 2 new items". ⌘Z stops at that
+point, so undo can't bring the `![[+ …]]` back to be published twice (if the
+same text reaches the confirm step again, Burrow warns you). Each new item is
+a thread of its own: to change one later, open it.
+
+Tangling only works in threads: in a fragment the publish sheet says so and
+waits ("Press ⌘T to switch this draft to a thread"). One publish makes at
+most 10 new items. `![[+` and `[[+` are plain text in code, in TK gaps and in
+comments to self, and typing them doesn't open the picker. See
+[Writing syntax](syntax.md) for the exact rules.
 
 ## TK: gaps for later
 

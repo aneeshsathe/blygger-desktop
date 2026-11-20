@@ -29,6 +29,9 @@ while its tab was open. Both bugs were invisible in unit tests.
 - **Poll while visible.** A cheap `GET /api/changes` every ~15 s (the studio's
   pace) while the view is visible and online; full re-read only for lists whose
   change counters moved. Stop while hidden; check at once on becoming visible.
+- **`/changes` is going away.** Studio 0.65 deprecates `GET /api/changes` and
+  0.67 removes it; Burrow then falls back to conditional reads (ETag /
+  `If-None-Match`, 304) of each list, every 60 s.
 - **Refresh right after your own writes** (publish, restore, withdraw, delete).
 - **Per-list dependencies.** Hoppers and thumbs/signals have their own counters;
   don't hang them off the reading counter.
