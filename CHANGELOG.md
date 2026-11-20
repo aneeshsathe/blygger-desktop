@@ -6,15 +6,21 @@ documented here. The format follows
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 break things.
 
-To cut a release: rename `[Unreleased]` to `[x.y.z] - YYYY-MM-DD`, bump
-`version` in the root `Cargo.toml`, commit, and merge to `main`: the release
-workflow sees the untagged version, tags the commit, and publishes that
-section as the release notes. Add the release's section to
+Changes don't edit this file: each adds a fragment in `changes/unreleased/`
+(its README has the format). To cut a release, run
+`scripts/changelog-stitch.py stitch x.y.z`: it writes the fragments into a
+new `[x.y.z] - YYYY-MM-DD` section below `[Unreleased]` and deletes them.
+Then bump `version` in the root `Cargo.toml`, commit, and merge to `main`:
+the release workflow sees the untagged version, tags the commit, and
+publishes that section as the release notes. Add the release's section to
 `site/src/releases.md` (what the app's "What's new" opens). If the release
 teaches something new in the tour, set the newest entry's `version` in
 `crates/blyg-app/src/onboarding/whats_new.rs` to the release's.
 
 ## [Unreleased]
+
+Pending changes are fragments in `changes/unreleased/`; the release stitches
+them in here.
 
 ## [0.27.0] - 2026-11-19
 
