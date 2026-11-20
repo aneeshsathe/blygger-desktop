@@ -81,6 +81,85 @@ fn search_unicode_case_folding() {
     assert_eq!(s.search("äRGER")[0].local_id, a);
 }
 
+fn ids_of(items: Vec<Item>) -> Vec<LocalId> {
+    items.into_iter().map(|i| i.local_id).collect()
+}
+
+/// Typing on narrows the last search's hits (`Store::search`): every
+/// prefix typed, and every backspace, finds exactly what a store that
+/// never searched before finds, in the same order.
+#[test]
+fn search_typed_a_key_at_a_time_finds_what_a_fresh_search_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    for md in [
+        "Garden notes, spring",
+        "the GARDEN in winter: notes",
+        "gardening",
+        "Ärger im Garten",
+        "a garden \"quoted\" note",
+        "nothing to see",
+        "",
+    ] {
+        s.create_draft(Kind::Fragment, md, 0).unwrap();
+    }
+    for typed in ["garden notes", "Ärger", "\"quoted\" n", "gart"] {
+        let mut q = String::new();
+        let mut steps: Vec<String> = Vec::new();
+        for c in typed.chars() {
+            q.push(c);
+            steps.push(q.clone());
+        }
+        // ...then backspace back to one character.
+        while q.chars().count() > 1 {
+            q.pop();
+            steps.push(q.clone());
+        }
+        for q in steps {
+            let fresh = Store::open(&path).unwrap();
+            assert_eq!(ids_of(s.search(&q)), ids_of(fresh.search(&q)), "{q:?}");
+        }
+    }
+}
+
+/// What a search narrows is forgotten once anything is committed: an
+/// edit or delete here, a write from another connection (the sync
+/// worker's), on a file store and an in-memory one.
+#[test]
+fn search_narrowing_sees_edits_and_syncs() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("blygger.db");
+    let s = Store::open(&path).unwrap();
+    let a = s.create_draft(Kind::Fragment, "garden a", 0).unwrap();
+    let b = s.create_draft(Kind::Fragment, "lake b", 0).unwrap();
+    assert_eq!(ids_of(s.search("gar")), vec![a.clone()]);
+    // An edit makes b match.
+    s.save(&b, "garden b", 0).unwrap();
+    let hits = ids_of(s.search("gard"));
+    assert!(hits.contains(&b), "{hits:?}");
+    // Another connection adds c and removes a.
+    let other = Store::open(&path).unwrap();
+    let c = other.create_draft(Kind::Fragment, "garden c", 0).unwrap();
+    let hits = ids_of(s.search("garde"));
+    assert!(hits.contains(&c), "{hits:?}");
+    other.delete_item(&a).unwrap();
+    let hits = ids_of(s.search("garden"));
+    assert!(!hits.contains(&a) && hits.len() == 2, "{hits:?}");
+    // And an edit that makes a hit stop matching.
+    s.save(&b, "gone", 0).unwrap();
+    assert_eq!(ids_of(s.search("garden")), vec![c.clone()]);
+
+    let m = store();
+    let x = m.create_draft(Kind::Fragment, "garden x", 0).unwrap();
+    let y = m.create_draft(Kind::Fragment, "lake y", 0).unwrap();
+    assert_eq!(ids_of(m.search("ga")), vec![x.clone()]);
+    m.save(&y, "garden y", 0).unwrap();
+    assert!(ids_of(m.search("gar")).contains(&y));
+    m.delete_item(&x).unwrap();
+    assert_eq!(ids_of(m.search("gard")), vec![y]);
+}
+
 #[test]
 fn save_coalesces_into_one_op() {
     let s = store();
