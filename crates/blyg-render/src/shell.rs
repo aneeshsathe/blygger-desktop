@@ -373,6 +373,19 @@ mod tests {
         assert_ne!(n1, nonce());
     }
 
+    /// User testing (W6): a `[[+ …]]` placeholder is labelled "new item" in
+    /// the preview, like a passage. The studio's HTML has no label for it,
+    /// so the preview's CSS adds one and the HTML stays as the studio's.
+    #[test]
+    fn a_placeholder_is_labelled_a_new_item() {
+        let css = studio_css();
+        let rule = css
+            .lines()
+            .find(|l| l.starts_with(".blyg-tangle-link::after"))
+            .expect("a label after the placeholder");
+        assert!(rule.contains("content: \"new item\""), "{rule}");
+    }
+
     #[test]
     fn citations() {
         let c = Citation {

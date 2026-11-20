@@ -257,8 +257,31 @@ mod tests {
         assert_eq!((e.start, e.end), (6, 9));
         let e = formula_edit("", 0, 0);
         assert_eq!((e.insert.as_str(), e.start, e.end), ("$$", 1, 1));
+        // A whole line picked with its line break: `$$` on lines of their
+        // own, the break kept outside (user testing, R4).
         let t = "a\n\\int f\n";
         let e = formula_edit(t, 2, 9);
-        assert_eq!(e.apply(t), "a\n$$\\int f$$");
+        assert_eq!(e.apply(t), "a\n$$\n\\int f\n$$\n");
+        assert_eq!(&e.apply(t)[e.start..e.end], "\\int f");
+    }
+
+    /// User testing (R4): ⇧↓ over the middle line, then ⌃⌘M.
+    #[test]
+    fn a_formula_over_a_whole_line_keeps_the_text_after_it() {
+        let t = "Area:\n\\frac{a}{b}\nand on.";
+        let from = t.find('\\').unwrap();
+        let to = t.find("and").unwrap();
+        let e = formula_edit(t, from, to);
+        let out = e.apply(t);
+        assert_eq!(out, "Area:\n$$\n\\frac{a}{b}\n$$\nand on.");
+        assert_eq!(&out[e.start..e.end], "\\frac{a}{b}");
+        // It draws as displayed maths.
+        let html = blyg_render::render_markdown(&out);
+        assert!(html.contains("display=\"block\""), "{html}");
+        assert!(html.contains("and on."), "{html}");
+        // Picked mid-line, across a break: the `$$` still go on their own.
+        let t = "say a\nb now";
+        let e = formula_edit(t, 4, 7);
+        assert_eq!(e.apply(t), "say \n$$\na\nb\n$$\n now");
     }
 }

@@ -197,6 +197,7 @@ impl MainView {
                             extras,
                             count,
                             parts,
+                            repeat: false,
                             focus,
                         });
                     }
@@ -206,7 +207,7 @@ impl MainView {
                     // --- conflicts --- refused for a conflict: the sheet
                     // again, not a toast with no way out (issue #52).
                     Err(_) if v.reopen_conflict(&id, window, cx) => {}
-                    Err(e) => v.show_toast(format!("Publish failed: {e}"), None, cx),
+                    Err(e) => v.publish_failed(&e, cx),
                 }
                 // --- follow-ups --- promotion may have rewritten local images.
                 v.scratch_sync_editor(&id, window, cx);
@@ -214,6 +215,11 @@ impl MainView {
             });
         })
         .detach();
+    }
+
+    /// A publish the blyg refused: say why.
+    pub(crate) fn publish_failed(&mut self, e: &CoreError, cx: &mut Context<Self>) {
+        self.show_toast(format!("Publish failed: {e}"), None, cx);
     }
 
     /// --- tangle --- The confirm step's `⏎` (publish all): the same publish

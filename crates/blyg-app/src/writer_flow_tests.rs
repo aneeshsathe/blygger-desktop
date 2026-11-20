@@ -262,3 +262,191 @@ fn everyday_a_plain_fragment_from_the_omnibar(cx: &mut TestAppContext) {
             .contains("loud and steady")
     );
 }
+
+// ---------------------------------------------------------------- fixes
+// The user-test findings, as the tester's own keys.
+
+/// Publish a tangle by keys: ⌘⏎ ⏎ ⏎ on the open thread's sample.
+fn publish_the_tangle(view: &Entity<MainView>, fake: &FakeBackend, cx: &mut VisualTestContext) {
+    let v0 = version(fake, THREAD);
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    settle(cx, "the tangle confirm step", |cx| {
+        view.read_with(cx, |v, _| v.sheet.is::<TangleSheet>())
+    });
+    keys(cx, "enter");
+    settle(cx, "the thread published", |_| {
+        version(fake, THREAD) == v0 + 1
+    });
+}
+
+/// W1 (blocker): after a tangle, ⌘Z can't bring the `[[+` spans back (a
+/// republish would make the parts twice).
+#[gpui_kit::test]
+fn undo_never_brings_the_tangle_spans_back(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    open(&view, cx, THREAD);
+    type_over(cx, crate::fake::tangle_seed::SAMPLE);
+    publish_the_tangle(&view, &fake, cx);
+    assert!(!editor_text(&view, cx).contains("[[+"));
+    keys(cx, "cmd-down");
+    cx.simulate_input("A line after publishing.\n");
+    cx.run_until_parked();
+    // ⌘Z twice is the tester's steps; the line's break is an undo step of
+    // its own, so go on until undo has nothing left.
+    for n in 1..=4 {
+        keys(cx, "cmd-z");
+        let text = editor_text(&view, cx);
+        assert!(
+            !text.contains("[[+"),
+            "undo ×{n} crossed the rewrite: {text:?}"
+        );
+    }
+}
+
+/// W1's second guard: the same tangle text again, right after a tangle,
+/// is warned about in the confirm step.
+#[gpui_kit::test]
+fn the_same_tangle_again_is_warned_in_the_confirm_step(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    open(&view, cx, THREAD);
+    type_over(cx, crate::fake::tangle_seed::SAMPLE);
+    publish_the_tangle(&view, &fake, cx);
+    // The spans back, however they came (a paste, an old copy).
+    type_over(cx, crate::fake::tangle_seed::SAMPLE);
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    settle(cx, "the confirm step again", |cx| {
+        view.read_with(cx, |v, _| v.sheet.is::<TangleSheet>())
+    });
+    assert!(view.read_with(cx, |v, _| v.sheet.get::<TangleSheet>().unwrap().repeat));
+    // A new tangle is not a repeat.
+    keys(cx, "escape");
+    type_over(cx, "Fresh. [[+ another idea]]\n");
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    settle(cx, "a new confirm step", |cx| {
+        view.read_with(cx, |v, _| v.sheet.is::<TangleSheet>())
+    });
+    assert!(!view.read_with(cx, |v, _| v.sheet.get::<TangleSheet>().unwrap().repeat));
+}
+
+/// W2: a formula that doesn't parse is named in the publish step, and ⏎
+/// waits until it's fixed.
+#[gpui_kit::test]
+fn a_formula_that_does_not_parse_holds_publish(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    let v0 = version(&fake, DRAFT);
+    type_over(cx, crate::fake::maths_seed::DRAFT_MATHS);
+    keys(cx, "cmd-enter");
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<PublishSheet>()));
+    let w = publish_warning(&view, cx).unwrap_or_default();
+    assert!(w.contains("$\\frac{1}{$"), "names the formula: {w:?}");
+    assert!(w.contains("parse"), "says why: {w:?}");
+    keys(cx, "enter");
+    cx.run_until_parked();
+    assert_eq!(version(&fake, DRAFT), v0, "held");
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<PublishSheet>()));
+    // Fixed: it goes.
+    keys(cx, "escape");
+    type_over(cx, "Area of a circle, $A = \\pi r^2$, and $5 to print.");
+    keys(cx, "cmd-enter");
+    assert_eq!(publish_warning(&view, cx), None);
+    keys(cx, "enter");
+    settle(cx, "published", |_| version(&fake, DRAFT) == v0 + 1);
+}
+
+/// W2: a long publish failure stays until it's dismissed.
+#[gpui_kit::test]
+fn a_long_publish_failure_stays_until_dismissed(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    let e = blyg_core::CoreError::Rejected {
+        status: 400,
+        message: "a formula does not parse: $\\frac{$ (Expected '}', got 'EOF' at end of input)"
+            .into(),
+        details: vec![],
+    };
+    view.update(cx, |v, cx| v.publish_failed(&e, cx));
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(30));
+    cx.run_until_parked();
+    assert!(
+        toast(&view, cx).contains("does not parse"),
+        "still there: {:?}",
+        toast(&view, cx)
+    );
+}
+
+/// W3: a span in a fragment is caught in the publish step, naming the key
+/// that makes the draft a thread, and nothing is sent.
+#[gpui_kit::test]
+fn a_span_in_a_fragment_is_caught_before_sending(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    let v0 = version(&fake, DRAFT);
+    type_over(cx, "A fragment that tries [[+ a new idea]] inline.");
+    keys(cx, "cmd-enter");
+    let w = publish_warning(&view, cx).unwrap_or_default();
+    assert!(w.contains("thread"), "{w:?}");
+    assert!(
+        w.contains(crate::keymap::hint("⌘T")),
+        "names the key: {w:?}"
+    );
+    keys(cx, "enter");
+    cx.run_until_parked();
+    assert_eq!(version(&fake, DRAFT), v0, "nothing sent");
+    // ⌘T, as it says: a thread now, and no warning.
+    keys(cx, "escape");
+    keys(cx, "cmd-t");
+    keys(cx, "cmd-enter");
+    assert_eq!(publish_warning(&view, cx), None);
+}
+
+/// W4: the palette finds the format actions by their everyday names.
+#[gpui_kit::test]
+fn the_palette_finds_formula_by_maths_words(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    for (q, want) in [
+        ("maths", "Formula"),
+        ("math", "Formula"),
+        ("latex", "Formula"),
+        ("equation", "Formula"),
+        ("bold", "Bold"),
+        ("strong", "Bold"),
+        ("italic", "Italic"),
+        ("emphasis", "Italic"),
+    ] {
+        keys(cx, "cmd-shift-p");
+        cx.simulate_input(q);
+        cx.run_until_parked();
+        let rows = shown(&view, cx);
+        assert!(
+            rows.first().is_some_and(|r| r.0.starts_with(want)),
+            "{q}: {rows:?}"
+        );
+        keys(cx, "escape");
+    }
+}
+
+/// R9: on Windows, Ctrl+B in the editor opens the Shelf; the first time,
+/// a hint says bold is Alt+B. Once only, and never on a Mac.
+#[gpui_kit::test]
+fn ctrl_b_on_windows_hints_at_bold_once(cx: &mut TestAppContext) {
+    use crate::platform_text::{Platform, spelled_as};
+    const HINT: &str = "Bold is Alt+B; Ctrl+B opens the Shelf";
+    let (view, _, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    spelled_as(Platform::Mac, || keys(cx, "cmd-b"));
+    assert!(!toast(&view, cx).contains(HINT), "{:?}", toast(&view, cx));
+    keys(cx, "escape");
+    open(&view, cx, DRAFT);
+    spelled_as(Platform::Windows, || keys(cx, "cmd-b"));
+    assert!(toast(&view, cx).contains(HINT), "{:?}", toast(&view, cx));
+    keys(cx, "escape");
+    view.update(cx, |v, _| v.toast = None);
+    open(&view, cx, DRAFT);
+    spelled_as(Platform::Windows, || keys(cx, "cmd-b"));
+    assert!(!toast(&view, cx).contains(HINT), "only once");
+}

@@ -1472,6 +1472,25 @@ mod title_tests {
         // A leading heading is the title, whatever follows.
         assert_eq!(t("## On Protocols\n\nProtocols are thin."), "On Protocols");
     }
+
+    /// User testing (W7, R5): a formula in a row title reads as its TeX,
+    /// without the dollars; money stays money.
+    #[test]
+    fn titles_flatten_formulas() {
+        let t = |s: &str| plain_title(s).unwrap_or_default();
+        assert_eq!(
+            t("Euler's identity, $e^{i\\pi} + 1 = 0$, ties five constants together."),
+            "Euler's identity, e^{i\\pi} + 1 = 0, ties five constants together."
+        );
+        assert_eq!(t("$$\\int_0^1 x^2\\,dx$$"), "\\int_0^1 x^2\\,dx");
+        // Markdown's own marks inside a formula are TeX, not emphasis.
+        assert_eq!(t("Let $x_{n} * y_1$ be"), "Let x_{n} * y_1 be");
+        assert_eq!(
+            t("It cost $5 and $10 to print."),
+            "It cost $5 and $10 to print."
+        );
+        assert_eq!(t("A \\$5 note and $x$"), "A \\$5 note and x");
+    }
 }
 
 #[cfg(test)]

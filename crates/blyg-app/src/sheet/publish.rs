@@ -103,6 +103,9 @@ pub(crate) struct TangleSheet {
     /// The new items' names as the blyg gave them (a placeholder's ends
     /// " (linked)").
     pub(crate) parts: Vec<String>,
+    /// The same text as the last tangle of this post: publishing it again
+    /// would make the new items twice.
+    pub(crate) repeat: bool,
     pub(crate) focus: FocusHandle,
 }
 
@@ -112,6 +115,11 @@ pub(crate) fn tangle_heading(count: usize) -> String {
         "This will publish {count} new item{} and this thread",
         if count == 1 { "" } else { "s" }
     )
+}
+
+/// Item `i` of the confirm step's list.
+pub(crate) fn part_line(i: usize, label: &str) -> String {
+    format!("{}. {label}", i + 1)
 }
 
 /// The studio's hint under the list.
@@ -152,7 +160,7 @@ impl SheetView for TangleSheet {
                             parts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, label)| div().child(format!("{}. {label}", i + 1))),
+                                .map(|(i, label)| div().child(part_line(i, label))),
                         ),
                 )
                 .child(
@@ -220,5 +228,30 @@ impl SheetView for HeldLabelsSheet {
                 )
                 .into_any_element(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::part_line;
+
+    /// User testing (W5, R12): the studio's label for a cut passage ends
+    /// "…" even after a full stop; the list doesn't show ".…".
+    #[test]
+    fn a_part_ending_in_punctuation_shows_no_ellipsis() {
+        assert_eq!(
+            part_line(0, "The tide tables were wrong by an hour.…"),
+            "1. The tide tables were wrong by an hour."
+        );
+        assert_eq!(part_line(1, "Ready? Then go!…"), "2. Ready? Then go!");
+        // A cut mid-sentence keeps its ellipsis.
+        assert_eq!(
+            part_line(0, "one two three four five six seven eight…"),
+            "1. one two three four five six seven eight…"
+        );
+        assert_eq!(
+            part_line(1, "the ferry timetable (linked)"),
+            "2. the ferry timetable (linked)"
+        );
     }
 }
