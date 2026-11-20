@@ -42,6 +42,11 @@ output for the PR. Then add a row to the rule → enforcer table in
 `CLAUDE.md` and delete the prose it replaces. If a rule in the table breaks
 again, move its enforcer up a level in the same change.
 
+A row goes once its mistake is a compile error. The table lists what a
+change can still get wrong and which check catches it; a mistake that no
+longer compiles (a generated impl, a private enum, a distinct id type)
+needs no reminder, and the code that makes it impossible stays the record.
+
 Don't write comments that justify a workaround ("sleep 250 ms so the
 animation finishes") or state a constraint ("keep in sync with …", "must
 stay in this order"): each is a missing check. Encode it, then delete the
