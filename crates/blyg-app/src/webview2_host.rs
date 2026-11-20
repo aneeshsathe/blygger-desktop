@@ -15,6 +15,11 @@
 //! would cover any child window; `main` turns that off on Windows
 //! (`GPUI_DISABLE_DIRECT_COMPOSITION`) so these views show above the app.
 
+#![expect(
+    unsafe_code,
+    reason = "Win32 timers and window handles: every call here (Windows only)"
+)]
+
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroIsize;
 use std::rc::{Rc, Weak};

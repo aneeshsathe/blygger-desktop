@@ -6,7 +6,10 @@
 //! *symbols* count as punctuation (`isPunctChar = P || S`) and whitespace is
 //! markdown-it's `isWhiteSpace`. markdown-it.rs only treats `P` as
 //! punctuation, so `*€*x` differed (CommonMark example 354).
-#![allow(clippy::all)]
+#![allow(
+    clippy::all,
+    reason = "a vendored copy kept line-for-line with markdown-it.rs, so it diffs cleanly against upstream"
+)]
 
 use std::cmp::min;
 
@@ -237,7 +240,6 @@ fn is_odd_match(opener: &EmphMarker, closer: &EmphMarker) -> bool {
     // closing delimiters must not be a multiple of 3 unless both lengths
     // are multiples of 3.
     //
-    #[allow(clippy::collapsible_if)]
     if opener.close || closer.open {
         if (opener.length + closer.length) % 3 == 0 {
             if opener.length % 3 != 0 || closer.length % 3 != 0 {

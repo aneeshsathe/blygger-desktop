@@ -35,6 +35,10 @@ pub use provider::{
 
 /// Open a URL in the default browser (macOS `open`; on Windows the shell's
 /// URL handler, which takes the URL as one argument, `&` and all).
+#[expect(
+    clippy::disallowed_types,
+    reason = "the system opener (open, rundll32) shows the sign-in page"
+)]
 pub fn open_in_browser(url: &str) -> Result<()> {
     #[cfg(windows)]
     let mut cmd = {

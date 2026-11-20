@@ -1,5 +1,6 @@
 [package]
 name = "blyg-ext-crosspost"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -19,3 +20,6 @@ name = "burrow-cross-post"
 path = "src/bin/burrow-cross-post.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "blyg-render"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -20,3 +21,6 @@ math-core = "0.9.0"
 [dev-dependencies]
 serde_json = "1"
 regex = "1"
+
+[lints]
+workspace = true

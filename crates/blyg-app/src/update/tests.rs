@@ -3,6 +3,11 @@
 //! and the real `ditto` / `plutil` (codesign is stubbed: the fake bundles
 //! aren't signed).
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "tests build, sign and zip real bundles"
+)]
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};

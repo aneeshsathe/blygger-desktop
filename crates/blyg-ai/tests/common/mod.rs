@@ -2,8 +2,6 @@
 //! connection, `Connection: close`), SSE builders, fake JWTs, and fake CLI
 //! scripts. Nothing here touches the network or a real CLI.
 
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;

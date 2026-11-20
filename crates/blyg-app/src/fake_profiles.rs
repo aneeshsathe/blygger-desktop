@@ -44,7 +44,10 @@ fn post(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 fn blyg(
     origin: &str,
     name: &str,

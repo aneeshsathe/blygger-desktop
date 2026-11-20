@@ -238,7 +238,7 @@ pub struct OwnVersions {
     pub network: Option<(String, String, Vec<blyg_core::Response>)>,
 }
 
-#[allow(clippy::large_enum_variant)] // one sheet at a time
+#[expect(clippy::large_enum_variant, reason = "one sheet at a time")]
 pub enum RSheet {
     /// Type-to-confirm pin of your own version.
     Pin {

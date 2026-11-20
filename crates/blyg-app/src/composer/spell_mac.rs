@@ -1,6 +1,8 @@
 //! The macOS system spell checker (`NSSpellChecker`): the user's languages,
 //! their learned words, no bundled dictionary.
 
+#![expect(unsafe_code, reason = "NSSpellChecker through objc2 (macOS only)")]
+
 use std::ops::Range;
 use std::sync::Mutex;
 

@@ -18,8 +18,14 @@
 //! `Disconnected` (not-connected answers) from the trait
 //! (`build_forwarding.rs`).
 
-// A build script reads Cargo's variables; the app's own go through `dev_flags`.
-#![allow(clippy::disallowed_methods)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "a build script reads Cargo's variables; the app's own go through dev_flags"
+)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "a build script asks git for the commit it embeds"
+)]
 
 #[path = "build_forwarding.rs"]
 mod forwarding;

@@ -173,6 +173,10 @@ pub fn reload(cx: &mut App) {
 
 /// Create the config file if needed (with a commented header) and open it
 /// in the default text editor.
+#[expect(
+    clippy::disallowed_types,
+    reason = "the default text editor opens the config file"
+)]
 pub fn open_config_file(cx: &App) -> Result<PathBuf, String> {
     let path = get(cx)
         .store

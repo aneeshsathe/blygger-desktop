@@ -20,6 +20,14 @@
 //! Everything here is plain Rust (tests run it); compiling and attaching the
 //! lists is `super::rules` (macOS only).
 
+#![cfg_attr(
+    not(target_os = "macos"),
+    allow(
+        dead_code,
+        reason = "fetching and compiling run on macOS only (driver); what that leaves unused elsewhere differs between app and test builds, so no expect holds on both"
+    )
+)]
+
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -513,7 +521,10 @@ pub fn lists_dir(data_dir: &Path) -> PathBuf {
     browser_dir(data_dir).join("lists")
 }
 
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(
+    test,
+    expect(dead_code, reason = "the app web view uses it; tests build none")
+)]
 pub fn compiled_dir(data_dir: &Path) -> PathBuf {
     browser_dir(data_dir).join("compiled")
 }

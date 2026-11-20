@@ -39,6 +39,10 @@ enum Job {
 /// Run `blygger +convert-blocklists` (this same executable) so the
 /// conversion's memory goes back to the system when it exits; in-process if
 /// the child can't be started.
+#[expect(
+    clippy::disallowed_types,
+    reason = "block lists compile in a child process (blygger +convert)"
+)]
 fn convert_in_child(
     data_dir: &Path,
     out: &Path,
@@ -68,6 +72,7 @@ fn convert_in_child(
 /// WebKit compiles rule lists in this process and its DFAs take a few
 /// hundred MB for the full lists; hand the freed pages back to the system
 /// afterwards instead of keeping them in malloc's free lists.
+#[expect(unsafe_code, reason = "libmalloc FFI: malloc_zone_pressure_relief")]
 fn release_memory() {
     unsafe extern "C" {
         fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize;

@@ -7,6 +7,11 @@
 //! removed, and the old one put back if anything fails. Nothing but the
 //! bundle the app is running from is ever touched.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "the installer runs plutil, codesign, ditto and the relauncher"
+)]
+
 use std::io;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt as _;

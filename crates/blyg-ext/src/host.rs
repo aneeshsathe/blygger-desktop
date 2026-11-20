@@ -1156,6 +1156,10 @@ fn stop_child(ext: &Ext, live: &mut Live, timing: &Timing) {
     kill(&mut live.child);
 }
 
+#[expect(
+    clippy::disallowed_types,
+    reason = "extensions run as their own processes"
+)]
 fn launch(ext: &Arc<Ext>, ctx: &RunCtx, generation: u64, log: &StderrLog) -> Result<Live, String> {
     let name = ext.name().to_string();
     let m = &ext.installed.manifest;

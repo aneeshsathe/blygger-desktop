@@ -65,6 +65,7 @@ pub fn play(sound: Sound, cx: &App) {
 }
 
 #[cfg(target_os = "macos")]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSSound")]
 fn play_named(name: &str, volume: f32) {
     use objc2::runtime::AnyObject;
     use objc2::{class, msg_send};
@@ -106,6 +107,7 @@ pub fn reduce_motion() -> bool {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSWorkspace's reduce-motion setting")]
 fn system_reduce_motion() -> bool {
     use objc2::runtime::AnyObject;
     use objc2::{class, msg_send};

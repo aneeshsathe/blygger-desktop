@@ -102,7 +102,10 @@ mod update_view;
 #[path = "browser/mod.rs"]
 // The pane is macOS and Windows only (WKWebView, WebView2); elsewhere links
 // open in the default browser, which leaves its machinery unused.
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows")),
+    expect(dead_code, reason = "a macOS and Windows feature")
+)]
 pub(crate) mod browser;
 // --- notes --- (the notes drawer; hooks marked the same way)
 #[path = "notes/mod.rs"]

@@ -4,6 +4,8 @@
 //! data: a release or installed build, overriding the data/config/token
 //! variables, a config naming a real blyg. It starts no app.
 
+#![expect(clippy::disallowed_types, reason = "tests run the verification script")]
+
 #[cfg(target_os = "macos")]
 #[test]
 fn the_verify_script_passes_its_selftest() {

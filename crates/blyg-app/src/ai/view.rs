@@ -714,7 +714,10 @@ impl MainView {
 
     /// Write generated text with its provenance: through the editor (one
     /// undoable splice) when the item is open, else straight to the backend.
-    #[allow(clippy::too_many_arguments)]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one argument per field it fills; a struct would only rename them"
+    )]
     fn ai_write(
         &mut self,
         id: &LocalId,

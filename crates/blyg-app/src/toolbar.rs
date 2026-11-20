@@ -373,7 +373,10 @@ impl Render for ButtonTip {
 
 /// One quiet button: icon, and a label unless `icons_only`. Shared with the
 /// quick-capture row.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 pub fn button_element(
     id: SharedString,
     icon: &'static str,
