@@ -1,5 +1,6 @@
 //! What a check that reads git does when there's no git (a source tarball,
-//! no `git` on the PATH): skip locally, with a note.
+//! no `git` on the PATH): skip locally, with a note, but fail on CI, where a
+//! skip would hide the check.
 
 /// Whether this run is on CI (`CI` is set by GitHub Actions and most others).
 pub fn on_ci() -> bool {
@@ -7,7 +8,11 @@ pub fn on_ci() -> bool {
 }
 
 /// Called when `what` can't run for want of git.
-pub fn skip_or_fail(_on_ci: bool, what: &str) {
+pub fn skip_or_fail(on_ci: bool, what: &str) {
+    assert!(
+        !on_ci,
+        "{what} needs git, and CI must run it: is the checkout there and git on the PATH?"
+    );
     eprintln!("skipped {what}: no git checkout");
 }
 

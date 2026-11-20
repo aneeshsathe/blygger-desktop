@@ -277,7 +277,7 @@ fn allowlist() -> Allow {
 #[test]
 fn no_personal_data_in_the_repo() {
     let Some(files) = files_to_scan(&root()) else {
-        eprintln!("skipped: no git checkout");
+        crate::no_git::skip_or_fail(crate::no_git::on_ci(), "the personal-data scan");
         return;
     };
     let allow = allowlist();

@@ -213,7 +213,7 @@ fn lint_config_gaps(m: &Value) -> Vec<String> {
                 }
             }
         }
-        _ => eprintln!("skipped the members check: no git checkout"),
+        _ => crate::no_git::skip_or_fail(crate::no_git::on_ci(), "the workspace members check"),
     }
     bad
 }
