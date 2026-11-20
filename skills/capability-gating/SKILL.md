@@ -36,4 +36,4 @@ So a version check can say "yes" for a feature that isn't there.
 
 Gate in `blyg-core` where the call is made, and let the UI hide what isn't
 offered. A remembered "not offered" answer lives in the store's meta (as the
-lineage-glyph extension's 404 does), not in `state.json`.
+lineage-glyph extension's 404 does), not in `<data dir>/state.json`.

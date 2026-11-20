@@ -14,9 +14,9 @@ first and the studio second; where they differ, file it upstream, don't guess.
 
 1. The spec repo's `README.md` (the objects: fragment, thread, hopper, TK, stub).
 2. `docs/protocol-v0.4.md` (other repo: blygger-spec), or the newest `protocol-v*.md`:
-   the static files a blyg serves, and every MUST/SHOULD. The files, as the spec
-   names them: `blyg.json`, `feed.xml`, `items/{id}.json`, pinned `v{n}.json`,
-   `items/index.json` (other repo: blygger-spec, paths on a blyg).
+   the static files a blyg serves, and every MUST/SHOULD. Those files are paths on
+   a blyg, not in any repo: `/blyg.json`, `/feed.xml`,
+   `/items/{id}.json`, pinned `/v{n}.json`, `/items/index.json`.
 3. `conformance/README.md` (other repo: blygger-spec): the tools that will
    judge your client (see the `conformance-run` skill).
 4. The studio's private owner API, if your client writes: its contract version
