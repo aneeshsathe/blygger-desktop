@@ -82,6 +82,9 @@
 | Key | What it does | Menu |
 |---|---|---|
 | ⌘⏎ | Publish… | Post › Publish… |
+| ⌃⌘B | Bold: **the selection** (again: plain) | Edit › Format › Bold |
+| ⌃⌘I | Italic: *the selection* (again: plain) | Edit › Format › Italic |
+| ⌃⌘M | Formula: LaTeX between dollars, $x^2$ inline, $$…$$ on its own lines | Edit › Format › Formula |
 | ⌥↑ | Nearby thoughts: the row above (typing in the editor) |  |
 | ⌥↓ | Nearby thoughts: the row below (typing in the editor) |  |
 | ⌥⏎ | Nearby thoughts: link the chosen post over the phrase it shares ([[id \| phrase]]) |  |

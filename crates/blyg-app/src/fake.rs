@@ -39,6 +39,9 @@ pub mod tangle_seed;
 // --- background --- (studio 0.64's rules and "+N parts")
 #[path = "fake_background.rs"]
 pub mod background_seed;
+// --- maths ---
+#[path = "fake_maths.rs"]
+pub mod maths_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -330,6 +333,7 @@ impl FakeBackend {
         ];
         let mut rd = reading_seed::seed(now);
         rd.reading.extend(background_seed::rows(now)); // --- background ---
+        maths_seed::add(&mut rd, now); // --- maths ---
         let mut items = Vec::new();
         let mut versions = HashMap::new();
         for (id, kind, status, version, age, body) in seed {

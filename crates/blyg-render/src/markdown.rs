@@ -54,6 +54,8 @@ pub(crate) struct MdStats {
     pub videos: usize,
     /// Source line (as mapped by the caller) of each top-level block, in order.
     pub block_lines: Vec<usize>,
+    /// Formulas that don't draw (publish refuses them).
+    pub math_errors: Vec<crate::math::MathError>,
 }
 
 fn engine() -> &'static MarkdownIt {
@@ -88,6 +90,8 @@ fn engine() -> &'static MarkdownIt {
         markdown_it::plugins::extra::tables::add(&mut md);
         md.link_formatter = Box::new(JsLinkFormatter);
         md.inline.add_rule::<LinkifyInline>();
+        // `$…$` / `$$…$$` (studio 0.62, decision #105).
+        md.inline.add_rule::<crate::math::MathInline>();
         md
     })
 }
@@ -101,6 +105,7 @@ pub(crate) fn render(src: &str, line_of: Option<&dyn Fn(usize) -> usize>) -> (St
     let mut stats = MdStats::default();
     linkify_core(&mut root);
     stats.videos = count_videos(&root);
+    stats.math_errors = crate::math::math_errors(&root);
     rewrite_images(&mut root, &mut stats);
     rewrite_code(&mut root, src);
     rewrite_containers(&mut root);

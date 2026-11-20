@@ -517,6 +517,7 @@ fn a_passage_selected_in_the_preview_goes_under_its_quote(cx: &mut TestAppContex
         gen_,
         index,
         text: " twice a day,  that it  belongs\n".into(),
+        across_formula: false,
     };
     send(
         &view,

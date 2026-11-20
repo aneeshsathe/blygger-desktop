@@ -13,30 +13,10 @@ use serde_json::Value;
 const KNOWN_DIVERGENCES: &[(&str, &str)] = &[];
 
 /// Cases that wait for a work package being built alongside this re-sync
-/// (studio 0.64.1 parity): WP1 tangling, WP2 maths. Each is expected to
+/// (studio 0.64.1 parity): WP1 tangling. Each is expected to
 /// fail until its package lands; once it passes, the test says so and the
-/// entry must go. Empty this list after merging WP1 and WP2.
+/// entry must go. Empty this list after merging WP1.
 const PENDING: &[(&str, &str)] = &[
-    // WP2: `$…$` / `$$…$$` are formulas outside code (studio `math.ts`,
-    // pandoc's rule), drawn as MathML or refused as `code.math-error`.
-    ("tk_inline_dollar", "WP2: maths"),
-    ("math_inline", "WP2: maths"),
-    ("math_display", "WP2: maths"),
-    ("math_display_in_text", "WP2: maths"),
-    ("math_money_spaces", "WP2: maths"),
-    ("math_escaped_dollar", "WP2: maths"),
-    ("math_bad_tex", "WP2: maths"),
-    ("math_refused", "WP2: maths"),
-    ("math_emphasis", "WP2: maths"),
-    ("math_in_tk", "WP2: maths"),
-    ("math_with_link", "WP2: maths"),
-    ("math_thread_own", "WP2: maths"),
-    // WP2: the sanitizer redraws a quoted `<math>` from its x-tex
-    // annotation, or shows the TeX as `code.math-source`; one without it goes.
-    ("math_sanitize_redraw", "WP2: sanitizer maths"),
-    ("math_sanitize_display_and_bare", "WP2: sanitizer maths"),
-    ("math_sanitize_hostile", "WP2: sanitizer maths"),
-    ("math_sanitize_bad_tex", "WP2: sanitizer maths"),
     // WP1: `![[+ …]]` spans preview as a "new item" quote and `[[+ …]]`
     // placeholders as a linked span (studio `read-api.ts` previewTangles).
 ];

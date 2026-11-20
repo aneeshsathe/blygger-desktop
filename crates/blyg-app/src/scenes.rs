@@ -171,6 +171,9 @@ scenes! {
         RdBrowsePeek = "rd-browse-peek",
         RdStreamNested = "rd-stream-nested",
         RdBurst = "rd-burst",
+        // --- maths --- a post with formulas in the reader; a draft's preview
+        RdMaths = "rd-maths",
+        RdMathsPreview = "rd-maths-preview",
     }
     /// profiles/demo.rs
     Profiles {
