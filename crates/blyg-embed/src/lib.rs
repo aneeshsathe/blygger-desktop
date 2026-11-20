@@ -18,6 +18,8 @@
 //!
 //! No C, no ONNX: it builds wherever the rest of Burrow does.
 
+#![forbid(unsafe_code)]
+
 pub mod chunk;
 pub mod download;
 pub mod model;

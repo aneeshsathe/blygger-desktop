@@ -11,6 +11,8 @@
 //!
 //! - [`shape`]: elision and the summary, pure.
 
+#![forbid(unsafe_code)]
+
 pub mod shape;
 
 use std::path::PathBuf;

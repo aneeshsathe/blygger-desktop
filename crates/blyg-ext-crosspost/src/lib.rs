@@ -19,6 +19,8 @@
 //! composers' markup as published, not yet from a run against the live
 //! sites.
 
+#![forbid(unsafe_code)]
+
 pub mod copy; // --- syndication --- the copy a cross-post made
 pub mod run;
 pub mod text;

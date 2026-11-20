@@ -15,6 +15,8 @@
 //! Burrow's to give or withhold (an extension runs as the user), so `fs:`
 //! and `net` are declarations shown at consent, not enforcement.
 
+#![forbid(unsafe_code)]
+
 pub mod api;
 pub mod capability;
 pub mod ext;

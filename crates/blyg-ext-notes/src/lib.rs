@@ -24,6 +24,8 @@
 //! - [`frontmatter`]: the bit of YAML frontmatter it reads (never writes).
 //! - [`run`]: the BXP extension around it (`blygger +ext markdown-notes`).
 
+#![forbid(unsafe_code)]
+
 pub mod frontmatter;
 pub mod run;
 pub mod vault;

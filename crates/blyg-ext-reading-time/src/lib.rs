@@ -11,6 +11,8 @@
 //! - [`count`]: the counting, pure.
 //! - [`run`]: the BXP extension around it (`blygger +ext reading-time`).
 
+#![forbid(unsafe_code)]
+
 pub mod count;
 
 use std::path::PathBuf;
