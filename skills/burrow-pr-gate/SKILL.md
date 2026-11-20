@@ -32,6 +32,11 @@ Server-facing changes also run the real-studio e2e
 (`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
 changes run `scripts/browser-*-check.sh`.
 
+When the maintainer turns on branch protection for `main`, the required
+checks must include CI's `what changed` job (`changes`) as well as the Rust
+jobs. If it fails, the Rust jobs are skipped, and GitHub counts a skipped
+job as passing.
+
 ## Judgement: the PR body
 
 Fill in `.github/pull_request_template.md` (GitHub puts it in every new PR):

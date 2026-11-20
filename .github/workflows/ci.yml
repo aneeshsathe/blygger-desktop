@@ -31,6 +31,9 @@ jobs:
   # Skipped jobs show as skipped, which counts as passing. Pushes to main
   # always run everything. The check step fails if code reads a
   # SKIP path, so the list can't outgrow what's safe.
+  # Branch protection: if this job fails, the Rust jobs are skipped, and a
+  # skipped job counts as passing. "what changed" must be a required check
+  # alongside them, or a broken decision lets a PR through untested.
   changes:
     name: what changed
     runs-on: ubuntu-latest
