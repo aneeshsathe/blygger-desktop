@@ -1,0 +1,39 @@
+# The files that lift a reviewed ban (tests/it/lint_exceptions.rs):
+#   unsafe_code       `#[expect(unsafe_code, …)]` (blyg-app only: every other
+#                     crate root forbids it)
+#   disallowed_types  `#[expect(clippy::disallowed_types, …)]`, i.e. it
+#                     builds a std::process::Command
+#
+#   <path under crates/> <bans> | <reason>
+#
+# A new line here is a review item: say what the file needs the exception for.
+
+# The AI providers that are CLIs, and the system browser for sign-in.
+blyg-ai/src/claude_code.rs disallowed_types | runs the claude CLI
+blyg-ai/src/codex.rs disallowed_types | runs the codex CLI
+blyg-ai/src/cli.rs disallowed_types | the CLI providers' shared runner
+blyg-ai/src/lib.rs disallowed_types | open_in_browser: the system opener shows the sign-in page
+
+# blyg-app: Cocoa, WebKit, Win32 and WebView2 glue, and the processes it starts.
+blyg-app/build.rs disallowed_types | asks git for the commit the About window shows
+blyg-app/src/about/mod.rs unsafe_code,disallowed_types | NSProcessInfo's version; reveal in Finder or Explorer
+blyg-app/src/browser/driver.rs unsafe_code,disallowed_types | libmalloc pressure relief; block lists compile in a child process
+blyg-app/src/browser/rules.rs unsafe_code | WebKit content rule lists (macOS)
+blyg-app/src/browser/surface.rs unsafe_code | the browser pane's WKWebView and WebView2
+blyg-app/src/capture_service.rs unsafe_code | the NSServices capture provider (macOS)
+blyg-app/src/cli.rs unsafe_code | AttachConsole for `blygger +action` on Windows
+blyg-app/src/composer/spell_mac.rs unsafe_code | NSSpellChecker (macOS)
+blyg-app/src/delight.rs unsafe_code | NSSound and the reduce-motion setting (macOS)
+blyg-app/src/dev_flags.rs unsafe_code | set_var before GPUI starts (Windows)
+blyg-app/src/main.rs unsafe_code | the crash dialog (Windows), orderFrontRegardless (macOS)
+blyg-app/src/platform.rs unsafe_code | the Dock icon (macOS), held modifier keys (Windows)
+blyg-app/src/settings.rs disallowed_types | opens the config file in the text editor
+blyg-app/src/studio/webview.rs unsafe_code | the preview's WKWebView (macOS)
+blyg-app/src/update/install.rs disallowed_types | the updater runs plutil, codesign, ditto and the relauncher
+blyg-app/src/update/tests.rs disallowed_types | tests build, sign and zip real bundles
+blyg-app/src/webview2_host.rs unsafe_code | Win32 timers and window handles for WebView2
+blyg-app/tests/cli.rs disallowed_types | tests run the real blygger binary
+blyg-app/tests/verify_script.rs disallowed_types | tests run the verification script
+
+# Test crates that drive git, cargo, scripts and the e2e studio.
+blyg-core/tests/it/main.rs disallowed_types | the whole integration-test crate (git, cargo, scripts, e2e)
