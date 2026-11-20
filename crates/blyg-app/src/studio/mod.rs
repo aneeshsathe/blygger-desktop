@@ -498,7 +498,9 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
 /// echoing a directive).
 /// --- tangle --- A new-item span in a fragment (the studio refuses it:
 /// "tangling makes a thread; switch this draft to a thread").
-pub const TANGLE_IN_FRAGMENT: &str = "⚠ ![[+ …]] and [[+ …]] make new items only in a thread. Press ⌘T to switch this draft to a thread.";
+pub const TANGLE_IN_FRAGMENT: crate::platform_text::Text = crate::platform_text::ui_text(
+    "⚠ ![[+ …]] and [[+ …]] make new items only in a thread. Press ⌘T to switch this draft to a thread.",
+);
 
 /// --- maths --- Formulas that don't parse, each with why: publish would
 /// refuse them, so the publish step names them and waits.
@@ -1078,7 +1080,7 @@ impl MainView {
     fn publish_checks(&self, item: &Item, md: &str) -> (Option<String>, Option<String>) {
         let fragment_span = (item.kind == blyg_core::Kind::Fragment
             && !blyg_render::tangle::parse_tangles(md).spans.is_empty())
-        .then(|| crate::keymap::hint(TANGLE_IN_FRAGMENT).to_string());
+        .then(|| TANGLE_IN_FRAGMENT.get().to_string());
         if !md.contains("[[") && !md.contains('$') {
             return (fragment_span, None);
         }
