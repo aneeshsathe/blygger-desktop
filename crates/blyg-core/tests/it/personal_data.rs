@@ -240,6 +240,24 @@ fn scan(path: &str, text: &str, allow: &Allow) -> Vec<(Kind, String)> {
 /// content only).
 const NOT_SCANNED: &[&str] = &["docs/screenshots/", "docs/prototype/"];
 
+/// The files git lists under `root`; `None` without git or a checkout.
+fn files_to_scan(root: &Path) -> Option<Vec<String>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -250,19 +268,15 @@ fn allowlist() -> Allow {
 
 #[test]
 fn no_personal_data_in_tracked_files() {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root())
-        .args(["ls-files", "-z"])
-        .output();
-    let Some(out) = out.ok().filter(|o| o.status.success()) else {
+    let Some(files) = files_to_scan(&root()) else {
         eprintln!("skipped: no git checkout");
         return;
     };
     let allow = allowlist();
     let mut bad = Vec::new();
-    for path in String::from_utf8_lossy(&out.stdout).split('\0') {
-        if path.is_empty() || NOT_SCANNED.iter().any(|d| path.starts_with(d)) {
+    for path in &files {
+        let path = path.as_str();
+        if NOT_SCANNED.iter().any(|d| path.starts_with(d)) {
             continue;
         }
         // Binary files (images, fonts, the model) and deleted files are skipped.
@@ -352,4 +366,31 @@ fn near_misses_still_fail() {
     // And what's meant to pass does.
     assert!(found("https://ada.blyg.example.com/p and someone@example.com").is_empty());
     assert!(found("12345+someone@users.noreply.github.com").is_empty());
+}
+
+/// A file not yet `git add`ed is scanned too (so the local gate catches it
+/// before it's ever committed); one git ignores is not.
+#[test]
+fn untracked_files_are_scanned_and_ignored_ones_are_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let ok = Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(dir.path().join("tracked.txt"), "x").unwrap();
+    git(&["add", ".gitignore", "tracked.txt"]);
+    std::fs::write(dir.path().join("untracked.txt"), "x").unwrap();
+    std::fs::write(dir.path().join("ignored.txt"), "x").unwrap();
+    let mut files = files_to_scan(dir.path()).unwrap();
+    files.sort();
+    assert_eq!(files, [".gitignore", "tracked.txt", "untracked.txt"]);
 }
