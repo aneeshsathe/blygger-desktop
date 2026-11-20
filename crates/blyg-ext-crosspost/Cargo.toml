@@ -1,5 +1,6 @@
 [package]
 name = "blyg-ext-crosspost"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
