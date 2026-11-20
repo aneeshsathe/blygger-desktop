@@ -32,17 +32,17 @@ import subprocess
 import sys
 
 # Directories (with a trailing /) whose changes alone don't need the Rust
-# jobs. Screenshots and the HTML mocks are for people; no code reads them.
+# jobs. Screenshots are for people; no code reads them. (docs/prototype/ is
+# not here: the personal-data scan reads the HTML mocks.)
 SKIP = [
     "docs/screenshots/",
-    "docs/prototype/",
 ]
 
 # Files allowed to call `git ls-files`, and why that doesn't read SKIP.
 LS_FILES_OK = {
     "crates/blyg-app/build.rs": "asks only whether build.rs itself is tracked",
-    # Lands with the doc-path check; it reads names, not contents, and a
-    # name only changes by a deletion or rename, which `decide` never skips.
+    # It reads names, not contents, and a name only changes by a deletion
+    # or rename, which `decide` never skips.
     "crates/blyg-core/tests/it/doc_paths.rs": "checks that named paths exist; decide runs all on D/R",
     "crates/blyg-core/tests/it/crate_graph.rs": "lists only crates/*/Cargo.toml",
     "crates/blyg-core/tests/it/personal_data.rs": "leaves SKIP out (NOT_SCANNED)",

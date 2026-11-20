@@ -26,8 +26,8 @@ env:
 
 jobs:
   # Whether the Rust jobs run. A pull request that only adds or modifies
-  # files in scripts/ci-skip.py's SKIP list (screenshots, HTML mocks: nothing
-  # a test reads) skips them; a deletion or rename there runs everything.
+  # files in scripts/ci-skip.py's SKIP list (screenshots: nothing a test
+  # reads) skips them; a deletion or rename there runs everything.
   # Skipped jobs show as skipped, which counts as passing. Pushes to main
   # always run everything. The check step fails if code reads a
   # SKIP path, so the list can't outgrow what's safe.
