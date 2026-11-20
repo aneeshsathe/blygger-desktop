@@ -32,6 +32,9 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
    `skills/verify-burrow/features/README.md`, run
    `scripts/verify/burrow-verify.sh run <scene>` with its starting scene and
    look at the screenshot. The user-testing pass covers only what the update
-   touched, so this catches a feature the update broke from the side.
+   touched, so this catches a feature the update broke from the side. List
+   each feature's run directory and screenshot path in the release PR's
+   Verification section (add the heading if the body has none), so the check
+   leaves a record.
 9. After merge: watch the Release run; confirm the release has the macOS,
    Windows assets, plus signed sums.
