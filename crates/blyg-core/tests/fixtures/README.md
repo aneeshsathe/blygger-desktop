@@ -15,6 +15,11 @@ commit dc632c5 (branch ext/lineage-glyph, PR #53, studio 0.39.0; same
 license). The Rust types are in `src/lineage.rs`; its tests check them
 against this file, and the e2e checks a real studio's answers against it.
 
-To update the contract, copy `openapi.json` from a newer upstream checkout,
-then run `cargo test -p blyg-core`. Any contract violation fails the test that
-caused it.
+`openapi-current.json` is the newest studio's contract (5.14.0, studio v0.65.0,
+same license). The e2e (`tests/it/e2e`) checks a real studio's answers against it
+(`contract::current()`); the mock keeps to `openapi.json`, the oldest contract
+Burrow supports, so it isn't taught every new field.
+
+To follow a new studio, copy its `openapi.json` over `openapi-current.json` and
+run the e2e (`scripts/e2e-local.sh`). Replace `openapi.json` only when
+Burrow's oldest supported studio (`MIN_STUDIO`) moves.

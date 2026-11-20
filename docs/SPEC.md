@@ -330,9 +330,10 @@ pulled; a newer major stops with "update Burrow". The connect check does the sam
 (`ConnectError::Outdated` / `TooNew`).
 
 The authoritative contract is upstream blygger-studio's OpenAPI document
-(`openapi.json`, contract 5.0.0 from studio v0.49.12; vendored as
+(`openapi.json`, contract 5.0.0 from studio v0.49.12, vendored as
 `crates/blyg-core/tests/fixtures/openapi.json`, and the test mock checks all traffic
-against it). Its route guide is `docs/api.md` in https://github.com/blygger/blygger-studio.
+against it). The newest studio's contract (5.14.0, studio v0.65.0) is vendored as
+`openapi-current.json` beside it, and the e2e checks a real studio's answers against that. Its route guide is `docs/api.md` in https://github.com/blygger/blygger-studio.
 The key points:
 
 - **Cursor pages.** Every collection → `{items, page: {limit, nextCursor}}`; `limit`

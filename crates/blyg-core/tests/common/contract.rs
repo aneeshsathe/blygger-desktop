@@ -26,6 +26,15 @@ pub fn contract() -> &'static Contract {
     C.get_or_init(|| Contract::load(include_str!("../fixtures/openapi.json")))
 }
 
+/// The newest studio's contract (`tests/fixtures/openapi-current.json`,
+/// 5.14.0 from studio v0.65.0). The e2e checks a real studio's answers
+/// against it; the mock keeps to 5.0.0 (`contract()`), the oldest studio
+/// Burrow supports, so it isn't taught every new field.
+pub fn current() -> &'static Contract {
+    static C: OnceLock<Contract> = OnceLock::new();
+    C.get_or_init(|| Contract::load(include_str!("../fixtures/openapi-current.json")))
+}
+
 /// The `lineage-glyph` studio extension's owner reads (studio dc632c5).
 pub fn lineage_glyph() -> &'static Contract {
     static C: OnceLock<Contract> = OnceLock::new();
