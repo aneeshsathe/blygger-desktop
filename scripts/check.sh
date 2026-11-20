@@ -6,7 +6,7 @@
 #                                 then fmt, clippy, test and wording
 #   scripts/check.sh              the same, failing on unformatted code
 #   scripts/check.sh STEP...      only those steps, in that order
-#   scripts/check.sh all          every step, docs included
+#   scripts/check.sh all          every step, docs and deny included
 #
 # Steps:
 #   fmt         cargo fmt --check (with --fix, formats first)
@@ -18,10 +18,14 @@
 #               Skipped by default on Windows, where it is the normal spelling.
 #   extensions  format check of extensions/community.toml (no network)
 #   docs        the docs site with the pinned mdBook (scripts/build-site.sh)
+#   deny        cargo deny --locked check (deny.toml): advisories, licences, sources;
+#               needs cargo-deny (`cargo install cargo-deny --locked`)
 #
-# docs isn't in the default run: it downloads mdBook on first use and checks
-# only site/. CI runs it in its own job. Run `scripts/check.sh docs` when you
-# change site/.
+# docs and deny aren't in the default run: docs downloads mdBook on first use
+# and checks only site/; deny needs a tool most machines lack and fetches the
+# RustSec advisory database. CI runs both, in their own jobs. Run
+# `scripts/check.sh docs` when you change site/, and `deny` when you change
+# dependencies.
 #
 # On Windows, run it from Git Bash (`bash scripts/check.sh`); CI does the same.
 # Cargo runs with --locked, so a stale Cargo.lock fails here as it does in CI.
@@ -34,8 +38,8 @@ for arg in "$@"; do
   case "$arg" in
     --fix) fix=1 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-    all) steps+=(fmt clippy test wording extensions docs) ;;
-    fmt|clippy|test|wording|extensions|docs) steps+=("$arg") ;;
+    all) steps+=(fmt clippy test wording extensions docs deny) ;;
+    fmt|clippy|test|wording|extensions|docs|deny) steps+=("$arg") ;;
     *) echo "check.sh: unknown step '$arg' (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -62,6 +66,7 @@ for step in "${steps[@]}"; do
     wording) run env BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app --locked ;;
     extensions) run python3 scripts/community-extensions.py check ;;
     docs) run scripts/build-site.sh ;;
+    deny) run cargo deny --locked check ;;
   esac
 done
 echo "check.sh: passed (${steps[*]})" >&2

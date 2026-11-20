@@ -49,6 +49,14 @@ for duplicated or dropped lines.
 
 ## Outside contributions
 
-Read the whole diff before merging: new network calls, `unsafe`, process
-spawning, CI workflow or build-script changes, new dependencies. Merging a
-version bump releases (`burrow-release`).
+Read the whole diff before merging. CI checks new dependencies: the `deny`
+job (`scripts/check.sh deny`, policy in `deny.toml`) fails on a RustSec
+advisory, a licence outside the allowed list, or a source other than
+crates.io. A change to `deny.toml` is a policy change; it needs its reason.
+
+No check can judge a change to `.github/workflows/`, a `build.rs`, or a
+script CI runs (`scripts/`). Reviewing those stays with the maintainer:
+an outside contribution that touches them waits for the maintainer's own
+read. Also read for new network calls, `unsafe` and process spawning
+until a check covers them. Merging a version bump releases
+(`burrow-release`).
