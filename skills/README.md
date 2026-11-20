@@ -48,5 +48,10 @@ what earlier ones learned.
 - Base every rule on a real failure, and say why in a sentence.
 - Before writing a rule, try to make it a check instead (`burrow-code-shape`);
   once a check enforces it, delete the rule.
-- Name real files and commands. Update the skill in the same change that renames them.
+- Name real files and commands. `doc_paths.rs` (in `blyg-core`'s tests) fails
+  on a backticked path the repo doesn't have; mark a path in another repo on
+  its line with `(other repo: <name>)`.
+- A change to what a skill says ships in its own PR, so a reviewer sees the
+  new instruction on its own. A rename still updates the skill in the same
+  change that renames the file or command.
 - This repo is public: no personal data, no real blyg URLs, no tokens.
