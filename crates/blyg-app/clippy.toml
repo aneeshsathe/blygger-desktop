@@ -14,3 +14,9 @@ disallowed-methods = [
     { path = "std::env::vars", reason = "read the environment through crate::dev_flags::get() (src/dev_flags.rs)" },
     { path = "std::env::vars_os", reason = "read the environment through crate::dev_flags::get() (src/dev_flags.rs)" },
 ]
+
+disallowed-types = [
+    # Spawning a process is a review item for outside contributions: a new
+    # spawn site fails here until its module says why it needs one.
+    { path = "std::process::Command", reason = "process spawning is reviewed: put it in a module that already spawns (or add #[expect(clippy::disallowed_types, reason = \"…\")] on the item that needs it)" },
+]

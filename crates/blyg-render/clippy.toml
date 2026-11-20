@@ -8,3 +8,9 @@ disallowed-methods = [
     # waits) and can't reach blyg_core::wait.
     { path = "std::thread::sleep", reason = "rendering never waits; a test checks a result, not a moment (if a wait is ever needed, poll a condition with a deadline, as blyg_core::wait::until does)" },
 ]
+
+disallowed-types = [
+    # Spawning a process is a review item for outside contributions: a new
+    # spawn site fails here until its module says why it needs one.
+    { path = "std::process::Command", reason = "process spawning is reviewed: put it in a module that already spawns (or add #[expect(clippy::disallowed_types, reason = \"…\")] on the item that needs it)" },
+]
