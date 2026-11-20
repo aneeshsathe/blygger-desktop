@@ -399,7 +399,7 @@ impl MainView {
                 // Pick up whatever the prefs make of it (the toolbar), keeping
                 // an unsaved dev theme override.
                 let mut fresh = crate::settings::prefs(cx);
-                self.persisted = fresh.clone();
+                self.config.persisted = fresh.clone();
                 fresh.theme = self.prefs.theme.clone();
                 fresh.theme_dark = self.prefs.theme_dark.clone();
                 self.prefs = fresh;

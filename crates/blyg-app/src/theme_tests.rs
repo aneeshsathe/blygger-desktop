@@ -161,7 +161,7 @@ fn a_user_theme_with_svg_ornaments_renders(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         assert_eq!(v.theme.id, "mine");
         assert!(!v.theme.builtin);
-        assert!(v.config_problems.is_empty(), "{:?}", v.config_problems);
+        assert!(v.config.problems.is_empty(), "{:?}", v.config.problems);
     });
     frame(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));

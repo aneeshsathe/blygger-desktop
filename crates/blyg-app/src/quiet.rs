@@ -113,8 +113,7 @@ impl MainView {
                 self.show_toast(e, None, cx);
                 return false;
             }
-            // Our own write isn't an edit to reload.
-            self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
+            self.config.restamp(cx);
         }
         self.quiet_reload(cx);
         true

@@ -84,6 +84,16 @@ what can change it in under 30 seconds.
   `take::<T>()`, `open(..)`, `inputs()`). The enum is private to `sheet/`,
   so a variant match anywhere else doesn't compile. A new sheet is a
   struct, a `SheetView` impl and one registry row.
+- **Give each feature of the main window its own file.** `MainView` is
+  the hotspot: every feature extends it, and `app.rs` grew to 3,600 lines
+  of connect flow, config reloads, status bar and list code side by side,
+  so every change read (and conflicted over) all of it. A feature lives in
+  `crates/blyg-app/src/app/<feature>.rs` (or its own module beside
+  `app.rs`) as an `impl MainView` block, with `pub(super)` methods; a child
+  module sees `MainView`'s private fields. Group the feature's fields into
+  one struct there (`looks::ConfigFile`) rather than adding flat fields.
+  `app.rs` keeps construction, `render`'s top-level layout and the event
+  wiring; `app/size_cap.rs` fails `cargo test` if it grows.
 - **Let types carry knowledge.** Parse config, env vars, CLI args and wire
   JSON into typed values where they enter (`cli::route`, `Prefs::from_config`,
   `model.rs`), then trust them. Environment variables are parsed once into
