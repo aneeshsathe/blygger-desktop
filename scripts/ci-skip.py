@@ -44,6 +44,13 @@ LS_FILES_OK = {
     # Lands with the doc-path check; it reads names, not contents, and a
     # name only changes by a deletion or rename, which `decide` never skips.
     "crates/blyg-core/tests/it/doc_paths.rs": "checks that named paths exist; decide runs all on D/R",
+    "crates/blyg-core/tests/it/crate_graph.rs": "lists only crates/*/Cargo.toml",
+    "crates/blyg-core/tests/it/personal_data.rs": "leaves SKIP out (NOT_SCANNED)",
+}
+
+# Files that quote a SKIP directory only to leave it out of what they read.
+EXCLUDES_SKIP = {
+    "crates/blyg-core/tests/it/personal_data.rs": "NOT_SCANNED names the SKIP dirs to skip them",
 }
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -116,7 +123,7 @@ def check():
         except (UnicodeDecodeError, IsADirectoryError):
             continue
         for n, line in enumerate(lines, 1):
-            for lit in QUOTED.findall(line):
+            for lit in ([] if path in EXCLUDES_SKIP else QUOTED.findall(line)):
                 hit = names_skip_path(lit)
                 if hit:
                     problems.append(f"{path}:{n}: reads {hit} (\"{lit}\")")
