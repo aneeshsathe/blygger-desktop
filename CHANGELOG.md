@@ -22,6 +22,18 @@ teaches something new in the tour, set the newest entry's `version` in
 Pending changes are fragments in `changes/unreleased/`; the release stitches
 them in here.
 
+## [0.27.1] - 2026-11-20
+
+A security update: the library that cleans HTML from blygs you follow is updated past four advisories. The rest is development process.
+
+### Security
+- **Desktop: safer cleaning of HTML from other blygs.** Burrow cleans the HTML of posts it shows from blygs you follow before displaying them. The library that does it, ammonia, is updated from 4.2.0 to 4.2.5, which fixes four advisories, one of them a way to slip script past the cleaning (RUSTSEC-2026-0533, RUSTSEC-2021-0157, RUSTSEC-2021-0158). rustls, rustls-webpki and webpki-roots, used for HTTPS, are updated past their advisories too.
+
+### Development
+- **Changelog fragments.** A change adds `changes/unreleased/<slug>.md` instead of editing `CHANGELOG.md`, so parallel branches no longer conflict over it; `scripts/changelog-stitch.py stitch <version>` writes them into the release's section and deletes them. The workspace tests check the fragments' format.
+- **One gate, run by CI and by hand.** `scripts/check.sh` runs what CI runs; every CI step calls it. A `cargo deny` job checks licences and sources on every PR, and RustSec advisories when dependencies change, weekly and on main. A PR that only adds or changes screenshots skips the Rust jobs. There's a PR template.
+- **New checks.** Unsafe code is forbidden outside `blyg-app`; `std::process::Command` only in modules that say why; one reviewed list of the files with those exceptions; every silenced lint gives a reason; every crate takes the lint config; a personal-data scan; a test pinning the names existing installs depend on; backticked paths in the developer docs must exist; e2e signs in and waits out a 429 in one place.
+
 ## [0.27.0] - 2026-11-19
 
 Studio parity with blygger-studio 0.64.1 and 0.65.0 (contract 5.14.0). The floor stays 0.49.12 (`MIN_STUDIO`); each feature below is asked for only where the blyg offers it.

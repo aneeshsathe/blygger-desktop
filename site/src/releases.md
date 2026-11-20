@@ -5,6 +5,14 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.27.1
+
+A security update. Burrow cleans the HTML of posts from blygs you follow
+before it shows them, so a post can't run script in the app. The library
+that does the cleaning had a flaw that could let script through; this
+release updates it, along with the libraries Burrow uses for HTTPS. Nothing
+else changes in how Burrow looks or works.
+
 ## Burrow 0.27.0
 
 Burrow catches up with blygger-studio 0.64 and 0.65: new posts made from a
