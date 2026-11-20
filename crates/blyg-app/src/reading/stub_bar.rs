@@ -48,11 +48,16 @@ pub(crate) enum StubLine {
 }
 
 /// How the formula note reads.
-pub(crate) const ACROSS_FORMULA_LINE: StubLine = StubLine::Action;
+pub(crate) const ACROSS_FORMULA_LINE: StubLine = StubLine::Refusal;
 
-/// A stub-bar line's colour.
-pub(crate) fn stub_line_color(_line: StubLine, p: &crate::theme::Palette) -> Hsla {
-    p.accent
+/// A stub-bar line's colour: an action is the accent, like a link; a
+/// refusal is the theme's warning text, set apart (user testing, W8: the
+/// two in one colour read as two errors).
+pub(crate) fn stub_line_color(line: StubLine, p: &crate::theme::Palette) -> Hsla {
+    match line {
+        StubLine::Action => p.accent,
+        StubLine::Refusal => p.warn_text(),
+    }
 }
 
 /// A passage selected in the editor preview, as the page reported it.
@@ -325,6 +330,8 @@ impl MainView {
                     .id("stub-formula")
                     .debug_selector(|| "stub-formula".into())
                     .w_full()
+                    .mt(px(4.))
+                    .italic()
                     .text_color(stub_line_color(ACROSS_FORMULA_LINE, &p))
                     .child(ACROSS_FORMULA),
             );
