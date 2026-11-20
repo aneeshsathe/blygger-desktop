@@ -458,6 +458,11 @@ pub struct ReadingPage {
     /// --- syndication --- each row's served copies elsewhere (empty when
     /// the row carries none, or is withdrawn).
     pub syndication: Vec<crate::store::ReadingSyndication>,
+    /// The rows are all as last read at the same URL: the blyg answered
+    /// 304 (studio 0.65+), or a 200 whose rows are the same (only the
+    /// cursor's generation moved: a feed poll, a thumb, a hopper). Only a
+    /// first page is compared.
+    pub unchanged: bool,
 }
 
 /// `GET /api/reading/imported` serves at most this many rows a page.

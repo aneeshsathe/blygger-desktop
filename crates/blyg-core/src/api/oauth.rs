@@ -150,6 +150,41 @@ pub fn jwt_claim_u64(token: &str, claim: &str) -> Option<u64> {
     v.get(claim)?.as_u64()
 }
 
+/// The audiences a JWT says it's for (`aud`: a string or a list;
+/// unverified, like `jwt_claim_u64`). Empty when it isn't a JWT or says
+/// none.
+pub fn jwt_audiences(token: &str) -> Vec<String> {
+    let Some(payload) = token.split('.').nth(1) else {
+        return vec![];
+    };
+    let Ok(bytes) = URL_SAFE_NO_PAD.decode(payload.trim_end_matches('=')) else {
+        return vec![];
+    };
+    let Ok(v) = serde_json::from_slice::<Value>(&bytes) else {
+        return vec![];
+    };
+    match v.get("aud") {
+        Some(Value::String(s)) => vec![s.clone()],
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Whether `token` says it was made for an API address other than
+/// `api_url` (`{blyg}/api`): the host-root `{origin}/api` audience a
+/// blyg mounted under a path gave tokens before studio 0.49.7, which
+/// studio 0.65 no longer takes (studio#151). A token that says no
+/// audience: false (it can't be told).
+pub fn audience_moved(token: &str, api_url: &str) -> bool {
+    let aud = jwt_audiences(token);
+    let trim = |s: &str| s.trim_end_matches('/').to_string();
+    !aud.is_empty() && !aud.iter().any(|a| trim(a) == trim(api_url))
+}
+
 /// The scopes a 403's `WWW-Authenticate` asks for, when it says
 /// `error="insufficient_scope"` (upstream `bearerChallenge`).
 pub fn insufficient_scope(www_authenticate: &str) -> Option<Vec<String>> {
@@ -223,7 +258,7 @@ pub struct Discovery {
     pub registration_endpoint: String,
     pub revocation_endpoint: Option<String>,
     /// The REST API's resource identifier (`{blyg}/api`; `{origin}/api` on a
-    /// grant made before studio 0.49.7, which still refreshes).
+    /// grant made before studio 0.49.7, which refreshes until studio 0.65).
     pub resource: String,
     /// The `scope` Burrow asks this server for: [`SCOPE`], less any scope its
     /// `scopes_supported` leaves out (an unknown one is `invalid_scope`).
@@ -283,8 +318,9 @@ pub fn discover(base_url: &str) -> Result<Option<Discovery>> {
     }
     // The API resource the server advertises (studio 0.49.7+: `{blyg}/api`,
     // under the mount); else that address. A grant made for the old
-    // `{origin}/api` audience keeps working and refreshing with its own
-    // `resource` (studio 0.49.12 accepts both), so nothing is migrated.
+    // `{origin}/api` audience of a mounted blyg works with studios 0.49.12
+    // to 0.64; 0.65 refuses it (401), and the new sign-in that asks for
+    // finds the mounted resource here (`Api::audience_moved`).
     let metadata = format!("{}/resources/api", issuer.trim_end_matches('/'));
     let resource = get_json(&metadata)?
         .and_then(|v| {
@@ -933,6 +969,34 @@ impl BrowserSignIn {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An unsigned JWT with these claims (only the payload is read).
+    fn jwt(claims: Value) -> String {
+        format!(
+            "e30.{}.sig",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap())
+        )
+    }
+
+    #[test]
+    fn a_token_for_the_host_root_api_of_a_mounted_blyg_has_moved() {
+        let mounted = "https://blyg.example.com/blyg/api";
+        // Made before studio 0.49.7 for `{origin}/api`: refused by 0.65.
+        let legacy = jwt(json!({"aud": "https://blyg.example.com/api"}));
+        assert!(audience_moved(&legacy, mounted));
+        // Made for the mounted API (one audience, or with the MCP one).
+        let now = jwt(json!({"aud": ["https://blyg.example.com/blyg/api",
+                                      "https://blyg.example.com/blyg/mcp"]}));
+        assert!(!audience_moved(&now, mounted));
+        assert!(!audience_moved(&now, &format!("{mounted}/")));
+        // A blyg on its own host: the old and new audience are the same.
+        let root = jwt(json!({"aud": "https://blyg.example.com/api"}));
+        assert!(!audience_moved(&root, "https://blyg.example.com/api"));
+        // Not a JWT, or no audience: can't tell, so not "moved".
+        assert!(!audience_moved("opaque-token", mounted));
+        assert!(!audience_moved(&jwt(json!({"sub": "owner"})), mounted));
+        assert_eq!(jwt_audiences(&legacy), vec!["https://blyg.example.com/api"]);
+    }
 
     #[test]
     fn pkce_is_s256_of_the_verifier() {
