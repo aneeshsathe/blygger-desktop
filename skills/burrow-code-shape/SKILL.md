@@ -12,11 +12,9 @@ happened at least once and could happen again.
 ## When a mistake repeats, fix the class at the highest level that works
 
 1. **Make it impossible.** One owner per piece of state, one way to do each
-   thing, the old way deleted. Example: `SwitchBackend` used to forward
-   ~170 `Backend` methods by hand, and missing forwards shipped twice (the
-   shelf methods; `save_typing`). `crates/blyg-app/build.rs` now writes the
-   whole impl from the trait, so there's nothing to forget; it writes the
-   `Disconnected` stub the same way.
+   thing, the old way deleted. Example: `crates/blyg-app/build.rs` writes
+   `SwitchBackend`'s forwarding impl and the `Disconnected` stub from the
+   `Backend` trait, so there's no forward to forget.
 2. **Make the build fail**, with a message that names the replacement:
    types, `pub(crate)`, `#[must_use]`, clippy `disallowed-methods` with a
    `reason` (`crates/blyg-app/clippy.toml` bans `std::thread::sleep` and
@@ -73,26 +71,22 @@ what can change it in under 30 seconds.
 - **Put the domain in one structure.** One `enum` beats several booleans:
   one sheet slot means only one sheet can be open; `ReadMode` is Stream or
   Reader. If a feature needs one more `else if` on the same flags in several
-  files, make the states an enum (or a table) instead. Demo scenes were ~170
-  string names routed by `starts_with` prefixes across 18 files; now each is
-  a row in `scenes.rs` (a `Scene` variant and its area), and a typo is a
-  compile error or, in `BLYGGER_DEMO`, a startup error naming near matches.
+  files, make the states an enum (or a table) instead. Each demo scene is a
+  row in `crates/blyg-app/src/scenes.rs` (a `Scene` variant and its area), so
+  a typo is a compile error or, in `BLYGGER_DEMO`, a startup error naming
+  near matches.
 - **Keep an enum's matches with the enum.** When files all over match its
   variants, give each variant's behaviour one home and let callers ask
-  questions. Main-window sheets were a 20-variant `Sheet` enum matched about
-  170 times in 30 files (`if let Some(Sheet::X(s)) = &mut self.sheet`), each
-  sheet's render, keys and fields spread through `app.rs`. Now
-  `crates/blyg-app/src/sheet/mod.rs` holds the one list of kinds (`sheets!`)
-  and the one `match` (`view`); each kind is a struct implementing
+  questions. `crates/blyg-app/src/sheet/mod.rs` holds the one list of
+  kinds (`sheets!`) and the one `match` (`view`); each kind is a struct implementing
   `SheetView` (render with its esc/⏎ handlers, `inputs`, ⌘⏎ `submit`) beside
   its feature, and callers ask the slot (`sheet.is::<T>()`, `get::<T>()`,
   `take::<T>()`, `open(..)`, `inputs()`). The enum is private to `sheet/`,
   so a variant match anywhere else doesn't compile. A new sheet is a
   struct, a `SheetView` impl and one registry row.
 - **Give each feature of the main window its own file.** `MainView` is
-  the hotspot: every feature extends it, and `app.rs` grew to 3,600 lines
-  of connect flow, config reloads, status bar and list code side by side,
-  so every change read (and conflicted over) all of it. A feature lives in
+  the hotspot: every feature extends it, and when features share `app.rs`
+  every change reads (and conflicts over) all of them. A feature lives in
   `crates/blyg-app/src/app/<feature>.rs` (or its own module beside
   `app.rs`) as an `impl MainView` block, with `pub(super)` methods; a child
   module sees `MainView`'s private fields. Group the feature's fields into
@@ -105,15 +99,14 @@ what can change it in under 30 seconds.
   `DevFlags` (`crates/blyg-app/src/dev_flags.rs`); clippy refuses
   `std::env::var` anywhere else in blyg-app. Give ids their own type, not
   `&str`: your posts have `LocalId` and `ServerId`; a reading post is a
-  `SubId` and a `RemoteId` (`blyg-core/src/ids.rs`). Nine `Backend`
-  methods took that pair as two `&str`s (`mark_read`, `signal`,
-  `set_in_hopper`, …), so a swap compiled; now it's E0308 with "swap these
-  arguments". The types are `#[serde(transparent)]` and TEXT in SQLite,
-  so nothing on the wire or on disk changes; they deref to `str` for
-  reading, and an id enters typed where it's parsed (API rows, DB rows,
-  `From<String>`). Deref also lets a typed id into a `&str` parameter
-  unnoticed, so a new function taking a post's ids takes the types. Keep business rules in plain functions in `blyg-core` or the
-  `*_vm.rs` files, away from GPUI.
+  `SubId` and a `RemoteId` (`blyg-core/src/ids.rs`), so passing one for
+  the other is E0308 with "swap these arguments". The types are
+  `#[serde(transparent)]` and TEXT in SQLite, so nothing on the wire or on
+  disk changes; they deref to `str` for reading, and an id enters typed
+  where it's parsed (API rows, DB rows, `From<String>`). Deref also lets a
+  typed id into a `&str` parameter unnoticed, so a new function taking a
+  post's ids takes the types. Keep business rules in plain functions in
+  `blyg-core` or the `*_vm.rs` files, away from GPUI.
 - **Narrow state.** A return value over a field, a field over a global.
 
 Prefer the smallest change that does this. Don't force a structure on code
