@@ -206,11 +206,13 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   self; a span can't hold another span, a placeholder, a TK scope or an attached image;
   at most 10 (`TANGLE_MAX`) per publish. Typing `[[+` or `![[+` closes the picker
   (`composer/picker.rs`). **Preview:** a span is a dashed quote labelled "NEW ITEM", a
-  placeholder a dashed link (`previewTangles`); a quote inside a span gets no provenance
+  placeholder a dashed link with a "NEW ITEM" tag (`previewTangles`); a quote inside a span gets no provenance
   line. **Pre-check** (`blyg_core::grammar::tangle_error`): before sending, a span in a
   fragment ("tangling makes a thread; switch this draft to a thread"), more than 10
   ("one publish can make at most 10 new items; this has N") or a malformed span is
-  refused locally in the studio's words. **Publish:** the first publish answers 409
+  refused locally in the studio's words; the publish sheet says the fragment case first
+  and holds `⏎`: "⚠ ![[+ …]] and [[+ …]] make new items only in a thread. Press ⌘T to
+  switch this draft to a thread." (Ctrl+T on Windows). **Publish:** the first publish answers 409
   `tangle-confirmation-required` with the count and the parts' names
   (`CoreError::TangleConfirm`; nothing written); the confirm step opens with focus on it:
   "This will publish N new items and this thread", the names numbered (a placeholder's
@@ -221,7 +223,11 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   once, and the server's rewritten working copy (each span now `![[id | first words…]]`
   or `[[id | text]]`) becomes the copy's text and base, dropping any queued save of the
   old text, which would mint the parts again (`PublishOutcome::rewritten`,
-  `take_rewritten`). The toast adds "· and N new items". Each part is a thread of its
+  `take_rewritten`), and the editor's undo history is reset there, so ⌘Z stops at the
+  rewrite and can't bring the spans back to be minted twice. If the same spans come to
+  the confirm step again right after they were published, it warns: "⚠ You just
+  published these as new items. Publishing them again makes a second copy of each.
+  Press esc and check the text first." The toast adds "· and N new items". Each part is a thread of its
   own; to change one later, open it.
 - **Bold, italic and formulas** (`app/format.rs`, the studio's `format-shortcuts.ts`):
   Edit › Format › Bold ⌃⌘B, Italic ⌃⌘I and Formula ⌃⌘M (Alt+B, Alt+I, Alt+M on
@@ -229,16 +235,25 @@ disagree on *feel*, follow the mock. On *API behaviour*, this document wins.
   ⌃⌘; there is no Σ button. Each writes Markdown's markers into the text as if typed (one
   undo step): bold and italic wrap the selection, each line on its own, and pressing one
   again on marked text takes the markers off; Formula puts the selection between dollars
-  (`$…$` inline; a selection over a line break becomes `$$…$$`), or an empty pair with
-  the caret inside.
+  (`$…$` inline), or an empty pair with the caret inside. A selection over a line break
+  becomes displayed maths on lines of its own (`$$`, the formula, `$$`), the
+  selection's surrounding breaks and spaces kept outside it, so a line picked with ⇧↓
+  keeps the text after it (the studio writes `$$…$$` inline). The palette finds Formula
+  by maths, math, latex, tex or equation, Bold by strong and Italic by emphasis. On
+  Windows the first Ctrl+B while writing (the Shelf there) says once "Bold is Alt+B;
+  Ctrl+B opens the Shelf" (`state.json`).
 - **Maths** (studio 0.62, decision #105, spec §14; `blyg_render::math`). LaTeX between
   dollars: `$x^2$` inline, `$$…$$` on its own lines. Pandoc's rule keeps money prose: no
   formula opens at a dollar followed by a space, or closes at a dollar followed by a
   digit, so `$5 and $10` is text; `\$` is a dollar; dollars in code are code. The
   preview draws each formula as MathML (`math-core`, as the studio's `math-render.ts`),
   within the studio's budgets (TeX length, formulas and characters per document); one
-  that doesn't parse shows red with the reason, and publish waits for it: the studio
-  refuses it with a 400 naming the formula. A stub's passage can't cut through a formula
+  that doesn't parse shows red with the reason. The publish sheet says it too, from the
+  preview's `math_errors` ("⚠ This formula doesn't parse: $\frac{1}{$ (‹reason›)", then
+  "Fix it to publish.") and holds `⏎` until it parses: the studio would refuse it with a
+  400 naming the formula. A publish failure too long to read in a toast's time stays
+  until clicked. List row titles show a formula as its TeX without the dollars
+  (`blyg_core::plain_title`), and in Reading a post of only quotes is titled "Quotes: ‹its quote's first words›" (`reading/vm.rs` `post_title`) rather than "…". A stub's passage can't cut through a formula
   ("A passage can’t include a formula. Quote the whole post, or the prose either side of
   it.", `stub_bar.rs`).
 - **Comments to self** (studio 0.60's `comments.ts`; `blyg_render::comments`): `/* … */`
@@ -531,7 +546,7 @@ valid in threads. See upstream `worker/src/transclusion.ts` for which ids resolv
 
 **Compose while reading** (`reading/compose.rs`). A post box runs along the foot of the reading screen, under the Stream and under the Reader's three panes alike: a layout row, never over the post, one line until you type more, up to eight lines. `c` (with the list focused) or ⇧⌘K (Blyg › Compose While Reading, from anywhere in the window) puts the caret in it; esc returns the keys to the list and keeps the text; while it has the keys the list's single keys don't fire. **Post** (⌘⏎) first holds the text for `HOLD_SECS` (3 s): the footer counts down ("Posting in 3 s · esc cancels · ⌘⏎ posts now"), esc, **Cancel** or any edit cancels with nothing sent, ⌘⏎ again posts at once; a hold rather than an Undo on the toast, because nothing leaves the Mac until it ends, while a withdraw after the fact leaves a tombstone feeds may already have. Then it publishes through quick capture's path (a scratch note promoted with `Promote::Publish`, the same floor rules); **Draft** (⌘D) saves a draft on the blyg; **⤢** moves the text into the editor as a draft. It posts a fragment, or a thread when it quotes a post or runs past 1000 characters; the footer says which. A failed post keeps the text with the error, and the retry reuses the draft it left. @-mentions, spelling and the `[[` / `![[` pickers work as in quick capture; with a blyg post open, **❝ Quote** puts its `![[id]]` in the box. Unsent text is kept in `state.json` (`compose_draft`), across screens and restarts (not in `BLYGGER_FAKE`). **Burrow opens on Reading** (`launch_into_reading`), and the tour ends there unless it was started from a post being written; it stays on Posts during onboarding or the tour, over the Connect sheet, or with no blyg to read from.
 
-**Background rules and parts** (studio 0.64; `blyg_core::background` `RULES`, `burst_parts`, `parts_label`; `reading/background.rs`, `fake_background.rs`). Besides withdrawn (always on), the studio's rules are `burst` (**Parts published with a thread**: items a thread names that were published with it, within 15 minutes; the thread lists them as “+N parts”), `wordless` (**Posts with no words of their own**: only quotes of other posts), `maintenance` (**Republished unchanged**: a new version with the same text and the same quotes) and `minor` (**Your own minor changes**). Settings shows only the rules the blyg's `GET /api/settings` lists in `backgroundRules` (`BackgroundRules::from_settings`, in `RULES` order; a 0.61 studio: `minor` only), because the studio refuses a rule it doesn't know with a 400; one it didn't send reads as on, as the studio's defaults do. A Background entry's reasons give its **why** badge: "published with ‘<thread title>’" (`burst`; "published with a thread", `BURST_WHY`, when the thread's title isn't known), "no words of its own", "republished unchanged". **Settings by keys** (`pref_preview.rs` `Row::Background`): ⇥ past THEME reaches the rules (only while the blyg offers any), ←/→ pick one, space or ⏎ turns it off or on (never previewed); a chip reads "✓ label" when on and "○ label off" when off, and withdrawn is a fixed chip ("always in Background; this one can't be turned off"). A change confirms with a toast: "<posts> are back in your lists" (off) or "<posts> go to Background again" (on), e.g. "Parts published with a thread are back in your lists". **Parts** (spec §13.7's fold, studio 0.64's `ReadingEntry.parts`): a thread's parts are the current rows of its own blyg (`~own` for yours) in Background as `burst` whose `detail.thread` names it, oldest first (in the thread's quote order within a second); withdrawn parts aren't listed, and none are while the rule is off. The thread says "+N parts" on its list row, under its stream card (unfolds the list) and under the open thread ("−N parts" folds it); a part opens like any post. **Keys:** `p` folds or unfolds the parts of the open thread, else of the selected stream card, and 1–9 open a listed part; the hint beside the count says so ("p unfolds", "p folds · 1–2 opens"). Turning the rule off brings the parts back into the lists.
+**Background rules and parts** (studio 0.64; `blyg_core::background` `RULES`, `burst_parts`, `parts_label`; `reading/background.rs`, `fake_background.rs`). Besides withdrawn (always on), the studio's rules are `burst` (**Parts published with a thread**: items a thread names that were published with it, within 15 minutes; the thread lists them as “+N parts”), `wordless` (**Posts with no words of their own**: only quotes of other posts), `maintenance` (**Republished unchanged**: a new version with the same text and the same quotes) and `minor` (**Your own minor changes**). Settings shows only the rules the blyg's `GET /api/settings` lists in `backgroundRules` (`BackgroundRules::from_settings`, in `RULES` order; a 0.61 studio: `minor` only), because the studio refuses a rule it doesn't know with a 400; one it didn't send reads as on, as the studio's defaults do. A Background entry's reasons give its **why** badge: "published with ‘‹thread title›’" (`burst`; "published with a thread", `BURST_WHY`, when the thread's title isn't known), "no words of its own", "republished unchanged". **Settings by keys** (`pref_preview.rs` `Row::Background`): ⇥ past THEME reaches the rules (only while the blyg offers any), ←/→ pick one, space or ⏎ turns it off or on (never previewed); a chip reads "✓ label" when on and "○ label off" when off, and withdrawn is a fixed chip ("always in Background; this one can't be turned off"). A change confirms with a toast: "‹posts› are back in your lists" (off) or "‹posts› go to Background again" (on), e.g. "Parts published with a thread are back in your lists". **Parts** (spec §13.7's fold, studio 0.64's `ReadingEntry.parts`): a thread's parts are the current rows of its own blyg (`~own` for yours) in Background as `burst` whose `detail.thread` names it, oldest first (in the thread's quote order within a second); withdrawn parts aren't listed, and none are while the rule is off. The thread says "+N parts" on its list row, under its stream card (unfolds the list) and under the open thread ("−N parts" folds it); a part opens like any post. **Keys:** `p` folds or unfolds the parts of the open thread, else of the selected stream card, and 1–9 open a listed part; the hint beside the count says so ("p unfolds", "p folds · 1–2 opens"). Turning the rule off brings the parts back into the lists.
 
 **Responses: who quoted, stubbed or forked a post** (`reading/responses.rs`, issue #7). A list, never a count: who · "quoted this" / "replied to this" / "forked this" · when (user-visible text says "reply", never "stub": the protocol word stays in field names, ids and the API), each opening that post. Two sources: for your own posts, the verified, unhidden mentions (`GET /api/mentions`), listed under the post in ⌘Y and in the reading pane when your own post is open there; for anyone's post, "seen in your network": reading rows, and your own published posts, whose `transclusions`, `stub_of` or `forked_from` point at it (`Backend::responses`, an index lookup on the derived `reading_refs` table, schema v6, rewritten on every upsert; a quote without an origin is from the quoting post's own blyg). One response per post: a stub thread both stubs and quotes its target, which is one act, so the strongest relation wins (fork > stub > quote), and a quote with a `selector` marks it partial ("stubbed a passage of this"; `reading_refs.partial`, schema v9). This is the one-hop lineage blygger-studio's lineage view computes server-side (studio PR #35, `GET /api/lineage`), with the same rules, from what this Mac holds. The list sits at the bottom of the reading pane, and stays a list without a count; in the stream the lineage glyph (below) marks a post that has any.
 

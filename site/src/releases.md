@@ -19,15 +19,19 @@ makes the passage a post of its own, which the thread then quotes. Write
 The preview marks each one as a **new item**. Before anything goes out,
 Burrow lists the new items and asks: ⏎ publishes them all, the new items
 first, and esc goes back to your text. Afterwards your text shows the links
-your blyg made. See [New items from a thread](writing.md#new-items-from-a-thread-tangling).
+your blyg made, and ⌘Z stops there, so nothing is published twice. In a
+fragment, the publish sheet says to press ⌘T for a thread first. See [New items from a thread](writing.md#new-items-from-a-thread-tangling).
 
 ### Formulas
 
 Write LaTeX between dollars: `$x^2$` in a sentence, `$$…$$` on lines of
 their own. The preview draws them, and shows one that doesn't parse in red;
-publishing waits until it's fixed. `$5 and $10` stays money. Select some text
+the publish sheet names it and waits until it's fixed. `$5 and $10` stays money. Select some text
 and press **⌃⌘M** to make it a formula, and **⌃⌘B** or **⌃⌘I** for bold or
-italic (Edit › Format; Alt+M, Alt+B and Alt+I on Windows). Formulas in posts
+italic (Edit › Format, or “maths” in the palette; Alt+M, Alt+B and Alt+I on
+Windows, where Ctrl+B is still the Shelf and Burrow says so the first time).
+In lists, a title with a formula shows its TeX, and in Reading a post of
+only quotes is titled “Quotes: …” after what it quotes. Formulas in posts
 you read are drawn too. Everything your blyg understands beyond plain
 Markdown is now on one page: [Writing syntax](syntax.md).
 

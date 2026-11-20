@@ -1357,7 +1357,7 @@ pub const STEPS: &[Step] = &[
         title: ui_text("A thread and its parts"),
         caption: ui_text(
             "Lin published this thread together with the posts it quotes. The parts go to \
-                  Background, each saying why (“published with ‘…’”), and the thread says \
+                  Background, each with a badge saying why, “published with ‘…’”, and the thread says \
                   “+2 parts”. Press p (or click it) to unfold them under the card, then 1 or 2 \
                   to open one. Settings › BACKGROUND has the rules, and turning “Parts \
                   published with a thread” off puts the parts back in your lists.",

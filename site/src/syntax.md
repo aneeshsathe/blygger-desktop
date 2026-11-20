@@ -37,11 +37,13 @@ To write a dollar where it would start a formula, put a backslash before it:
 
 **In the preview,** each formula is drawn as readers will see it. One that
 doesn't parse shows in red; rest the pointer on it for the reason. Your blyg
-won't publish a post with a broken formula, so fix it first.
+won't publish a post with a broken formula, so the publish sheet names it
+(“This formula doesn't parse: …”) and ⏎ waits until you've fixed it. In the
+post list, a title shows a formula as its TeX.
 
 **Keys:** select some text and press ⌃⌘M (Alt+M on Windows, or
-**Edit › Format › Formula**) to put it between dollars. A selection over more
-than one line becomes `$$…$$`.
+**Edit › Format › Formula**) to put it between dollars. A selection over whole
+lines goes between `$$` lines of their own.
 
 **Readers** see formulas drawn from their TeX, in Burrow's reader and on
 your blyg's pages. In the Stream's cards a formula shows as its TeX.
@@ -81,8 +83,8 @@ idea, as its heading. The thread links to it.
 
 **Rules:**
 
-- Threads only. In a fragment, publishing is refused with "tangling makes a
-  thread; switch this draft to a thread".
+- Threads only. In a fragment the publish sheet says so and waits; ⌘T makes
+  the draft a thread.
 - At most 10 new items per publish ("one publish can make at most 10 new
   items; this has 11").
 - A passage can't hold another `![[+ …]]`, a `[[+ …]]`, a TK gap or an
@@ -92,8 +94,8 @@ idea, as its heading. The thread links to it.
 **When you publish,** Burrow lists the new items and asks first. ⏎ publishes
 them, then the thread; esc goes back to your text. Your blyg then rewrites
 each one as a reference to the item it made, `![[id | first words…]]` or
-`[[id | text]]`, and that's what the editor shows from then on. Each new item
-is a thread of its own: to change one, open it.
+`[[id | text]]`, and that's what the editor shows from then on (undo stops
+there). Each new item is a thread of its own: to change one, open it.
 
 ## Comments to self
 
