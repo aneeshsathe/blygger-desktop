@@ -210,6 +210,20 @@ pub(crate) struct WriterGuards {
     pub(crate) last_tangle: Option<(blyg_core::LocalId, String)>,
     /// The toast that stays until it's clicked (a long publish failure).
     pub(crate) sticky_toast: Option<usize>,
+    /// --- format --- Windows' one-time Ctrl+B hint was shown
+    /// (`state.json`'s `bold_key_hint_shown`).
+    pub(crate) bold_hint_shown: bool,
+}
+
+impl WriterGuards {
+    fn load(data_dir: Option<&std::path::Path>) -> WriterGuards {
+        WriterGuards {
+            bold_hint_shown: data_dir
+                .map(blyg_core::state::AppState::load)
+                .is_some_and(|s| s.bold_key_hint_shown),
+            ..Default::default()
+        }
+    }
 }
 
 pub struct Studio {
@@ -277,6 +291,7 @@ impl Studio {
 
     pub fn new(data_dir: Option<PathBuf>) -> Studio {
         let (tx, rx) = async_channel::unbounded();
+        let guards = WriterGuards::load(data_dir.as_deref());
         Studio {
             view: load_view(data_dir.as_deref()),
             data_dir,
@@ -304,7 +319,7 @@ impl Studio {
             shown_src: None,
             stub_sent: None,
             stub_gen: 0,
-            guards: WriterGuards::default(),
+            guards,
             #[cfg(test)]
             loads: 0,
         }

@@ -8,6 +8,9 @@ use super::*;
 
 gpui_kit::actions!(blygger, [FormatBold, FormatItalic, InsertFormula]);
 
+/// Windows' one-time hint (`bold_key_hint`).
+pub(crate) const BOLD_KEY_HINT: &str = "Bold is Alt+B; Ctrl+B opens the Shelf";
+
 /// Replace `from..to` with `insert`, then select `start..end` (byte offsets).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FormatEdit {
@@ -177,6 +180,25 @@ impl MainView {
         .on_action(cx.listener(|this, _: &InsertFormula, window, cx| {
             this.format_edit(formula_edit, window, cx)
         }))
+    }
+
+    /// Windows writers press Ctrl+B for bold, but Ctrl+B is the Shelf there
+    /// (bold is Alt+B). The first time it's pressed while writing, say so;
+    /// once ever (`state.json`). User testing, R9.
+    pub(crate) fn bold_key_hint(&mut self, window: &Window, cx: &mut Context<Self>) {
+        use crate::platform_text::Platform;
+        if Platform::spelling() != Platform::Windows
+            || self.studio.guards.bold_hint_shown
+            || self.current.is_none()
+            || !self.editor.read(cx).focus_handle(cx).is_focused(window)
+        {
+            return;
+        }
+        self.studio.guards.bold_hint_shown = true;
+        if let Some(dir) = super::command_palette::data_dir(cx) {
+            let _ = blyg_core::state::AppState::update(&dir, |s| s.bold_key_hint_shown = true);
+        }
+        self.show_toast(BOLD_KEY_HINT, None, cx);
     }
 
     /// Apply an edit to the editor's selection, if the editor has the
