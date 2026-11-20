@@ -1343,8 +1343,19 @@ fn plain_line(line: &str) -> String {
     let t =
         crate::grammar::replace_links(t, |r| Some(r.label.clone().unwrap_or_else(|| "↗".into())));
     let c: Vec<char> = t.chars().collect();
+    // A formula reads as its TeX, dollars dropped, its marks kept (user
+    // testing, W7/R5); money stays money. (char start, char end, TeX).
+    let formulas: Vec<(usize, usize, String)> = blyg_render::math::formula_spans(&t)
+        .into_iter()
+        .map(|(a, b, tex)| (t[..a].chars().count(), t[..b].chars().count(), tex))
+        .collect();
     let mut i = 0;
     while i < c.len() {
+        if let Some((_, end, tex)) = formulas.iter().find(|f| f.0 == i) {
+            out.push_str(tex);
+            i = *end;
+            continue;
+        }
         // ![[id]] (a transclusion): dropped.
         if c[i] == '!'
             && c.get(i + 1) == Some(&'[')
