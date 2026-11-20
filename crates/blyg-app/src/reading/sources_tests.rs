@@ -561,13 +561,19 @@ fn withdrawn_posts_are_listed_under_background_only(cx: &mut TestAppContext) {
     settle(cx);
     let mine = "01J9E8BABCDEFGHJKMNPQRS".to_string();
     let withdrawn = [ADA_GONE.to_string(), RUE_KEPT.to_string(), mine.clone()];
+    // The posts studio 0.64's rules put there (`fake_background.rs`).
+    let ruled = crate::fake::background_seed::entries(&[]).len();
 
     select(&view, Source::Smart(Smart::Background), cx);
     let bg = shown(&view, cx);
     for id in &withdrawn {
         assert!(bg.contains(id), "{id} in {bg:?}");
     }
-    assert_eq!(bg.len(), withdrawn.len(), "nothing live: {bg:?}");
+    assert_eq!(
+        bg.len(),
+        withdrawn.len() + ruled,
+        "nothing else live: {bg:?}"
+    );
     view.read_with(cx, |v, _| {
         let rows: Vec<_> = v.reading.shown_rows().cloned().collect();
         assert!(

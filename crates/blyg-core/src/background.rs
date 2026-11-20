@@ -1,10 +1,16 @@
 //! --- background --- Background and Foreground in the reader (blygger-studio
-//! 0.61.0, contract 5.10.0; blygger-spec docs/background-plan.md, phase 1).
+//! 0.61.0, contract 5.10.0; blygger-spec docs/background-plan.md, phase 1;
+//! the `burst`, `wordless` and `maintenance` rules from studio 0.64).
 //!
 //! An entry is in Background when the owner placed it there, or, with no
 //! choice on the entry, when its whole blyg is placed there or a reason that
-//! counts applies (withdrawn always; your own minor changes unless the rule
-//! is off). A choice of Foreground on the entry beats everything else.
+//! counts applies (withdrawn always; each rule of [`RULES`] the blyg offers,
+//! unless it's off). A choice of Foreground on the entry beats everything
+//! else.
+//!
+//! A thread published with its parts (spec §13.7's fold) lists them as
+//! "+N parts": the parts are the Background entries whose reason is `burst`
+//! and whose `detail.thread` names it ([`burst_parts`]).
 //!
 //! Burrow doesn't work this out itself: own minor changes come from the
 //! studio's private change classifier, and placements have no read route of
@@ -39,8 +45,15 @@ pub const SET_META: &str = "background.set";
 pub const NOT_SERVED: &str = "Your blyg needs blygger-studio 0.61 or later for Background";
 
 /// The rules an owner can turn off, in the order Settings lists them
-/// (studio `BACKGROUND_RULES`). Withdrawn isn't one: it's always on.
-pub const RULES: [&str; 1] = ["minor"];
+/// (studio `BACKGROUND_RULES`). Withdrawn isn't one: it's always on. A
+/// studio offers only some of them (0.61: `minor`); Settings shows the ones
+/// its `GET /api/settings` lists ([`BackgroundRules::from_settings`]),
+/// because it refuses a rule it doesn't know with a 400.
+pub const RULES: [&str; 4] = [BURST, "wordless", "maintenance", "minor"];
+
+/// The reason a thread's part is in Background (studio 0.64); its
+/// `detail.thread` names the thread.
+pub const BURST: &str = "burst";
 
 /// The owner's choice on one entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -99,6 +112,9 @@ impl EntryBackground {
             return Some("blyg in Background".into());
         }
         match self.reasons.first().map(String::as_str) {
+            Some(BURST) => Some("part of a burst".into()),
+            Some("wordless") => Some("no words of its own".into()),
+            Some("maintenance") => Some("republished unchanged".into()),
             Some("minor") => Some(
                 match self
                     .detail
@@ -113,6 +129,69 @@ impl EntryBackground {
             _ => None,
         }
     }
+}
+
+impl EntryBackground {
+    /// The thread this entry is a part of: its `detail.thread`, when
+    /// `burst` is among the reasons that count (so not while the rule is
+    /// off). A remote id of the same blyg, or your own item's id.
+    pub fn burst_thread(&self) -> Option<&str> {
+        if !self.on || !self.reasons.iter().any(|r| r == BURST) {
+            return None;
+        }
+        self.detail.as_ref()?.get("thread")?.as_str()
+    }
+}
+
+/// Each thread's parts ("+N parts", studio 0.64's `ReadingEntry.parts`),
+/// from annotated rows ([`BackgroundSet::annotate`]): thread key → part
+/// keys, oldest first (the studio orders them by creation), and where two
+/// were made in the same second, in the order the thread quotes them. A
+/// part is a current row of the thread's own blyg (`~own` for yours) that
+/// is in Background as `burst` and names the thread. Withdrawn parts
+/// aren't listed.
+pub fn burst_parts(rows: &[ReadingItem]) -> HashMap<Key, Vec<Key>> {
+    let at = |r: &ReadingItem| r.created.clone().unwrap_or_else(|| r.observed_at.clone());
+    let mut out: HashMap<Key, Vec<(String, Key)>> = HashMap::new();
+    for r in rows.iter().filter(|r| r.state != "tombstone") {
+        let Some(thread) = r.background.as_ref().and_then(|b| b.burst_thread()) else {
+            continue;
+        };
+        let part = (r.subscription_id.clone(), r.remote_id.clone());
+        let list = out
+            .entry((r.subscription_id.clone(), RemoteId::from(thread)))
+            .or_default();
+        if !list.iter().any(|(_, k)| *k == part) {
+            list.push((at(r), part));
+        }
+    }
+    out.into_iter()
+        .map(|(thread, mut parts)| {
+            let quoted: Vec<&str> = rows
+                .iter()
+                .find(|r| r.subscription_id == thread.0 && r.remote_id == thread.1)
+                .map(|t| t.transclusions.iter().map(|q| q.id.as_str()).collect())
+                .unwrap_or_default();
+            let place = |k: &Key| {
+                quoted
+                    .iter()
+                    .position(|q| *q == &*k.1)
+                    .unwrap_or(usize::MAX)
+            };
+            parts.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| place(&a.1).cmp(&place(&b.1))));
+            (thread, parts.into_iter().map(|(_, k)| k).collect())
+        })
+        .collect()
+}
+
+/// What a thread says of its parts: "+2 parts" folded, "−2 parts" listed
+/// (the studio's toggle).
+pub fn parts_label(n: usize, listed: bool) -> String {
+    format!(
+        "{}{n} {}",
+        if listed { "−" } else { "+" },
+        if n == 1 { "part" } else { "parts" }
+    )
 }
 
 /// A reading row's key: `(subscription id, remote id)`, your own posts as
@@ -353,21 +432,24 @@ impl BackgroundSet {
     }
 }
 
-/// The owner's Background rules (`Settings.backgroundRules`): rule → on.
-/// A rule the blyg didn't send reads as on, as the studio's defaults do.
+/// The owner's Background rules (`Settings.backgroundRules`): rule → on,
+/// for the rules the blyg offers. [`Self::on`] reads a rule it didn't send
+/// as on, as the studio's defaults do.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BackgroundRules {
     pub rules: Vec<(String, bool)>,
 }
 
 impl BackgroundRules {
-    /// From `GET /api/settings`; `None` when it has no `backgroundRules`
-    /// (a studio before 0.61).
+    /// From `GET /api/settings`, which sends every rule the studio has:
+    /// the rules of [`RULES`] it lists, in that order (a 0.61 studio:
+    /// `minor` only). `None` when it has no `backgroundRules` (before 0.61).
     pub fn from_settings(v: &Value) -> Option<BackgroundRules> {
         let o = v.get("backgroundRules")?.as_object()?;
         Some(BackgroundRules {
             rules: RULES
                 .iter()
+                .filter(|r| o.contains_key(**r))
                 .map(|r| {
                     (
                         r.to_string(),
@@ -376,6 +458,11 @@ impl BackgroundRules {
                 })
                 .collect(),
         })
+    }
+
+    /// Whether the blyg offers `rule` (its settings list it).
+    pub fn offers(&self, rule: &str) -> bool {
+        self.rules.iter().any(|(r, _)| r == rule)
     }
 
     /// Whether `rule` counts.
@@ -394,9 +481,22 @@ impl BackgroundRules {
     }
 }
 
-/// What Settings says of each rule.
+/// What Settings says of each rule (the studio's Settings › Background).
 pub fn rule_label(rule: &str) -> (&'static str, &'static str) {
     match rule {
+        BURST => (
+            "Parts published with a thread",
+            "Items a thread names that were published with it, within 15 minutes; \
+             the thread lists them as “+N parts”.",
+        ),
+        "wordless" => (
+            "Posts with no words of their own",
+            "Only quotes of other posts, nothing the author wrote.",
+        ),
+        "maintenance" => (
+            "Republished unchanged",
+            "A new version with the same text and the same quotes.",
+        ),
         "minor" => (
             "Your own minor changes",
             "A version of yours the change classifier calls a typo, minor or refresh.",

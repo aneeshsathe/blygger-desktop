@@ -6,12 +6,24 @@
 //! Under an open post, when the blyg serves it (`setReadingPlacement`):
 //! **↓ Background** / **↑ Foreground** (`b`), **↺ Clear my choice** when
 //! there is one, and, for someone's post, **⇊ Blyg to Background** / **⇈ Blyg
-//! to Foreground**. Settings › Reading has the rules. None of it marks
-//! anything read or changes anything published. An older studio gets none
-//! of it: its Background lens holds withdrawn posts, as before.
+//! to Foreground**. Settings › Reading has the rules the blyg offers
+//! (studio 0.64: parts published with a thread, posts with no words of
+//! their own, republished unchanged, your own minor changes). None of it
+//! marks anything read or changes anything published. An older studio gets
+//! none of it: its Background lens holds withdrawn posts, as before.
+//!
+//! In the Background list each post says why it's there ("part of a
+//! burst", …; `EntryBackground::why`). A thread published with its parts
+//! (studio 0.64) says "+N parts": on its row, as a fold under its card in
+//! the stream, and listed under it when open (`render_burst_parts`); a
+//! part opens like any post.
+
+use std::collections::{HashMap, HashSet};
 
 use blyg_core::ReadingItem;
-use blyg_core::background::{BackgroundRules, Placement, RULES, rule_label};
+use blyg_core::background::{
+    BackgroundRules, Placement, RULES, burst_parts, parts_label, rule_label,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -28,6 +40,55 @@ pub struct Background {
     pub rules: Load<BackgroundRules>,
     /// A rule is being saved.
     pub saving: bool,
+    /// Each thread's parts (`blyg_core::background::burst_parts`), from
+    /// the rows as last listed ([`Background::set_rows`]).
+    parts: HashMap<Key, Vec<Key>>,
+    /// Threads whose parts are unfolded under their stream card.
+    unfolded: HashSet<Key>,
+    /// Open threads whose parts were folded away (listed by default).
+    folded: HashSet<Key>,
+}
+
+impl Background {
+    /// The rows changed: work out each thread's parts again.
+    pub fn set_rows(&mut self, rows: &[ReadingItem]) {
+        self.parts = burst_parts(rows);
+    }
+
+    /// The parts of the thread `key` (none for anything else).
+    pub fn parts_of(&self, key: &Key) -> &[Key] {
+        self.parts.get(key).map_or(&[], Vec::as_slice)
+    }
+
+    /// Whether the thread's parts are listed: under an open post unless
+    /// folded away, under a stream card once unfolded.
+    pub fn parts_listed(&self, key: &Key, open: bool) -> bool {
+        if open {
+            !self.folded.contains(key)
+        } else {
+            self.unfolded.contains(key)
+        }
+    }
+
+    fn toggle_parts(&mut self, key: &Key, open: bool) {
+        let set = if open {
+            &mut self.folded
+        } else {
+            &mut self.unfolded
+        };
+        if !set.remove(key) {
+            set.insert(key.clone());
+        }
+    }
+}
+
+/// Why a Background post is there, for its row and its open view; `None`
+/// for a post in the foreground (or one that says so itself: withdrawn).
+pub fn why(r: &ReadingItem) -> Option<String> {
+    if !r.is_background() {
+        return None;
+    }
+    r.background.as_ref()?.why()
 }
 
 /// Move the post to Background, or back to Foreground (`b`).
@@ -256,7 +317,7 @@ impl MainView {
         let Load::Ready(cur) = &mut self.reading.background.rules else {
             return;
         };
-        if cur.on(rule) == on {
+        if cur.on(rule) == on || !cur.offers(rule) {
             return;
         }
         match cur.rules.iter_mut().find(|(r, _)| r == rule) {
@@ -266,13 +327,22 @@ impl MainView {
         self.reading.background.saving = true;
         cx.notify();
         let backend = self.backend.clone();
-        let task = cx.background_spawn(async move { backend.save_background_rule(rule, on) });
+        let task = cx.background_spawn(async move {
+            let saved = backend.save_background_rule(rule, on)?;
+            // The studio moves the rule's posts at once: read its lens now
+            // (the write moved `settings`), not at the next pull.
+            let _ = backend.sync_now();
+            Ok::<_, blyg_core::CoreError>(saved)
+        });
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
                 v.reading.background.saving = false;
                 match r {
-                    Ok(s) => v.reading.background.rules = Load::Ready(s),
+                    Ok(s) => {
+                        v.reading.background.rules = Load::Ready(s);
+                        v.reading_changed(cx);
+                    }
                     Err(e) => {
                         v.show_toast(format!("Couldn't save the Background rule: {e}"), None, cx);
                         v.background_rules_refresh(cx);
@@ -332,7 +402,8 @@ impl MainView {
                     "always in Background",
                 )),
         );
-        for rule in RULES {
+        // Only the rules this blyg offers: a 0.61 studio refuses the others.
+        for rule in RULES.into_iter().filter(|r| rules.offers(r)) {
             let on = rules.on(rule);
             let (label, hint) = rule_label(rule);
             col = col.child(
@@ -359,5 +430,173 @@ impl MainView {
             .when(self.reading.background.saving, |d| d.opacity(0.6))
             .into_any_element(),
         )
+    }
+
+    /// "+N parts" under a thread published with its parts (studio 0.64's
+    /// `BurstParts`): a toggle, and the parts by their link labels, each
+    /// opening that post. `open`: the open post, listed until folded; else
+    /// a stream card, folded until unfolded. `None` for a post with none.
+    pub(crate) fn render_burst_parts(
+        &self,
+        r: &ReadingItem,
+        open: bool,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
+        let key = vm::key(r);
+        let parts = self.reading.background.parts_of(&key);
+        if parts.is_empty() {
+            return None;
+        }
+        let p = self.palette.on_page();
+        let listed = self.reading.background.parts_listed(&key, open);
+        let label = parts_label(parts.len(), listed);
+        let named: Vec<(Key, String)> = if listed {
+            parts
+                .iter()
+                .map(|k| {
+                    let held = self.reading.rows.iter().find(|r| vm::key(r) == *k);
+                    let name = match held {
+                        Some(h) => super::stream_vm::link_label(Some(h)),
+                        None => k.1.chars().take(8).collect(),
+                    };
+                    (k.clone(), name)
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+        let toggle_key = key.clone();
+        let toggle = div()
+            .id(if open {
+                "burst-toggle-open"
+            } else {
+                "burst-toggle"
+            })
+            .debug_selector(move || {
+                if open {
+                    "burst-toggle-open".into()
+                } else {
+                    "burst-toggle".into()
+                }
+            })
+            .cursor_pointer()
+            .font_weight(FontWeight::MEDIUM)
+            .text_color(p.accent)
+            .hover(|s| s.underline())
+            .tooltip(move |_, cx| {
+                cx.new(|_| {
+                    super::Tip(
+                        if listed {
+                            "Fold the parts away"
+                        } else {
+                            "Posts published with this thread; they wait in Background"
+                        }
+                        .into(),
+                    )
+                })
+                .into()
+            })
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.reading.background.toggle_parts(&toggle_key, open);
+                if !open && let Some(ix) = this.reading.shown_pos(&toggle_key) {
+                    this.reading.stream.list.remeasure_items(ix..ix + 1);
+                }
+                cx.notify();
+            }))
+            .child(label);
+        Some(
+            div()
+                .id(if open {
+                    "burst-parts-open"
+                } else {
+                    "burst-parts"
+                })
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .font_family(self.chrome())
+                .text_size(px(12.))
+                .text_color(p.muted)
+                .child(div().flex().child(toggle))
+                .children(named.into_iter().enumerate().map(|(i, (k, name))| {
+                    div()
+                        .id(("burst-part", i))
+                        .debug_selector(move || format!("burst-part-{i}"))
+                        .pl(px(14.))
+                        .min_w_0()
+                        .truncate()
+                        .cursor_pointer()
+                        .text_color(p.ink)
+                        .hover(|s| s.text_color(p.accent))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.open_reading(k.clone(), window, cx)
+                        }))
+                        .child(format!("{}. {name}", i + 1))
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// Why the post is in Background, as a quiet badge (its row in the
+    /// Background list, and its open view); `None` in the foreground.
+    pub(crate) fn render_background_why(&self, r: &ReadingItem) -> Option<AnyElement> {
+        let why = why(r)?;
+        let (fg, bg) = self.palette.on_page().quiet_badge();
+        Some(
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .px(px(6.))
+                .rounded_full()
+                .text_size(px(10.5))
+                .text_color(fg)
+                .bg(bg)
+                .child(why)
+                .into_any_element(),
+        )
+    }
+
+    /// A thread's "+N parts" on its row in the list (opening the thread
+    /// lists them); `None` without parts.
+    pub(crate) fn render_parts_count(&self, key: &Key) -> Option<AnyElement> {
+        let n = self.reading.background.parts_of(key).len();
+        if n == 0 {
+            return None;
+        }
+        let (fg, bg) = self.palette.on_page().quiet_badge();
+        Some(
+            div()
+                .flex_none()
+                .whitespace_nowrap()
+                .px(px(6.))
+                .rounded_full()
+                .text_size(px(10.5))
+                .text_color(fg)
+                .bg(bg)
+                .child(parts_label(n, false))
+                .into_any_element(),
+        )
+    }
+
+    /// The `rd-burst` scene: the stream at the sample burst thread, its
+    /// parts unfolded under the card and listed in the open pane.
+    pub(crate) fn burst_demo(&mut self, step: usize, window: &mut Window, cx: &mut Context<Self>) {
+        use super::View;
+        match step {
+            0 => self.show_view(View::Reading, window, cx),
+            1 => {
+                let thread = crate::fake::background_seed::thread_key();
+                if let Some(ix) = self.reading.shown_pos(&thread) {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+                self.reading.background.toggle_parts(&thread, false);
+                self.open_reading(thread, window, cx);
+            }
+            _ => {}
+        }
     }
 }
