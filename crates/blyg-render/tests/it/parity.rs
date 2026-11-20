@@ -39,12 +39,6 @@ const PENDING: &[(&str, &str)] = &[
     ("math_sanitize_bad_tex", "WP2: sanitizer maths"),
     // WP1: `![[+ …]]` spans preview as a "new item" quote and `[[+ …]]`
     // placeholders as a linked span (studio `read-api.ts` previewTangles).
-    ("tangle_span", "WP1: tangle preview"),
-    ("tangle_span_with_quote", "WP1: tangle preview"),
-    ("tangle_span_with_link", "WP1: tangle preview"),
-    ("tangle_placeholder", "WP1: tangle preview"),
-    ("tangle_placeholder_escape", "WP1: tangle preview"),
-    ("tangle_after_quote", "WP1: tangle preview"),
 ];
 
 /// Studio changes since 0.49.1 that this crate has not followed yet and no
@@ -453,8 +447,7 @@ fn parity_with_worker() {
 
 /// The stub chooser's `![[+ …]]` vectors (`withStubQuote`), expected to
 /// fail until WP1 lands; then set this to `None`.
-const STUB_SPANS_PENDING: Option<&str> =
-    Some("WP1: tangle spans are out of bounds for a stub's quote");
+const STUB_SPANS_PENDING: Option<&str> = None;
 
 /// Attachments: `mediaHtml`, which public pages put after the content. The
 /// desktop preview's strip wraps exactly that (the Worker's own strip,

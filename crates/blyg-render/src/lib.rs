@@ -28,6 +28,7 @@ mod punycode;
 mod sanitize;
 mod shell;
 pub mod stub_quote;
+pub mod tangle; // --- tangle --- `![[+ …]]` / `[[+ …]]` (studio 0.63)
 mod tk;
 mod transclusion;
 mod util;
@@ -169,6 +170,13 @@ pub fn render_preview(
     } else {
         md
     };
+    // --- tangle --- a thread's `![[+ …]]` spans and `[[+ …]]` placeholders
+    // become tokens first, drawn as the new items they'll be at the end
+    // (`previewTangles`, studio 0.63).
+    let tangles = (kind == Kind::Thread)
+        .then(|| tangle::preview(md))
+        .flatten();
+    let md = tangles.as_ref().map_or(md, |t| t.doc.text.as_str());
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
     // h-cards with the `[[id]]` tokens below (`withMentionCards`).
@@ -176,7 +184,12 @@ pub fn render_preview(
     let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);
-    let src = linemap::Mapped::identity(md);
+    let src = match &tangles {
+        Some(t) if t.doc.lines.len() == markdown::line_starts(md).len() => {
+            t.doc.with_text(md.to_string())
+        }
+        _ => linemap::Mapped::identity(md),
+    };
     let (stripped, spans) = tk::preview_strip(&src, &scopes);
     let annotated = tk::annotate(&stripped, &spans, kind == Kind::Thread);
 
@@ -269,7 +282,10 @@ pub fn render_preview(
                     .collect();
                 html = transclusion::inject_provenance(&html, &lines);
             }
-            let html = util::absolutize_html(&html, &our_origin(&opts.mount));
+            let mut html = util::absolutize_html(&html, &our_origin(&opts.mount));
+            if let Some(t) = &tangles {
+                html = tangle_finish(&html, t, resolver, opts);
+            }
             let line_map = w
                 .block_lines
                 .into_iter()
@@ -299,6 +315,33 @@ pub fn render_preview(
         line_map,
         stats,
     }
+}
+
+/// --- tangle --- Each quoted span rendered on its own, as the new item it
+/// will be (links and quotes resolved, no line attributes), then every
+/// token drawn in place.
+fn tangle_finish(
+    html: &str,
+    t: &tangle::Preview,
+    resolver: &dyn Resolver,
+    opts: &RenderOpts,
+) -> String {
+    // As the studio's preview: no provenance line on a quote inside a
+    // span, and it isn't one of the thread's `transclusions`.
+    let inner = RenderOpts {
+        data_line: false,
+        provenance: false,
+        ..opts.clone()
+    };
+    let quotes: Vec<String> = t
+        .spans
+        .iter()
+        .map(|s| match s.kind {
+            tangle::SpanKind::Quote => render_preview(&s.text, Kind::Thread, resolver, &inner).html,
+            tangle::SpanKind::Link => String::new(),
+        })
+        .collect();
+    tangle::finish(html, &t.spans, &quotes)
 }
 
 /// The identity origin a mount names (`https://blyg.example.com/blyg` →

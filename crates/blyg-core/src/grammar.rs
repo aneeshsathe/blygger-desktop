@@ -84,6 +84,9 @@ pub fn with_link_labels(text: &str) -> String {
 /// not, is reserved in either kind. Checked before anything is sent.
 pub fn publish_error(kind: crate::Kind, md: &str) -> Option<String> {
     use blyg_render::UnresolvedReason as R;
+    if let Some(e) = tangle_error(kind, md) {
+        return Some(e);
+    }
     let k = match kind {
         crate::Kind::Fragment => blyg_render::Kind::Fragment,
         crate::Kind::Thread => blyg_render::Kind::Thread,
@@ -108,6 +111,27 @@ pub fn publish_error(kind: crate::Kind, md: &str) -> Option<String> {
             first.directive,
             first.line + 1
         ),
+    })
+}
+
+/// --- tangle --- Why the server would refuse `md`'s `![[+ …]]` spans and
+/// `[[+ …]]` placeholders before minting anything (studio 0.63's
+/// `publishItem`), in its words: any span in a fragment, or the span
+/// grammar's issues (`parseTangles`, at most `TANGLE_MAX` per publish).
+pub fn tangle_error(kind: crate::Kind, md: &str) -> Option<String> {
+    let t = blyg_render::tangle::parse_tangles(md);
+    if t.spans.is_empty() && t.issues.is_empty() {
+        return None;
+    }
+    if kind == crate::Kind::Fragment {
+        return Some("tangling makes a thread; switch this draft to a thread".into());
+    }
+    (!t.issues.is_empty()).then(|| {
+        t.issues
+            .iter()
+            .map(|i| i.reason.as_str())
+            .collect::<Vec<_>>()
+            .join("; ")
     })
 }
 
@@ -143,6 +167,27 @@ mod tests {
             e.contains("(and 1 more line)") && e.contains("reserved"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn tangle_spans_are_checked_before_publish() {
+        use crate::Kind;
+        let ok = "Intro.\n\n![[+ A part.]]\n\nAn [[+ idea]].";
+        assert_eq!(publish_error(Kind::Thread, ok), None);
+        assert_eq!(
+            publish_error(Kind::Fragment, ok).as_deref(),
+            Some("tangling makes a thread; switch this draft to a thread")
+        );
+        assert_eq!(
+            publish_error(Kind::Thread, "x ![[+ a]]\n\n![[+ ]]").as_deref(),
+            Some("a new-item span must start its own line; this new-item span is empty")
+        );
+        let eleven: String = (0..11).map(|i| format!("[[+ idea {i}]] ")).collect();
+        assert_eq!(
+            publish_error(Kind::Thread, &eleven).as_deref(),
+            Some("one publish can make at most 10 new items; this has 11")
+        );
+        assert_eq!(publish_error(Kind::Fragment, "`[[+ code]]`"), None);
     }
 
     #[test]

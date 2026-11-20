@@ -94,6 +94,7 @@ impl NoteAi {
                 .as_ref()
                 .filter(|c| !c.loading)
                 .map(|c| c.category),
+            ..Default::default()
         }
     }
 }

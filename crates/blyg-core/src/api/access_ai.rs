@@ -211,6 +211,9 @@ impl Api {
         if let Some(c) = extras.change_category {
             body["changeCategory"] = json!(c.map(ChangeCategory::as_str));
         }
+        if extras.tangle {
+            body["tangle"] = json!(true); // --- tangle ---
+        }
         self.call_as(
             "POST",
             &format!("/api/items/{}/publish", enc(id)),

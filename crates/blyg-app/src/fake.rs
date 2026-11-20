@@ -33,6 +33,9 @@ pub mod upkeep_seed;
 // --- discover --- the sample blygger.com directory
 #[path = "fake_discover.rs"]
 pub mod discover_seed;
+// --- tangle --- `![[+ …]]` answered as studio 0.63 does
+#[path = "fake_tangle.rs"]
+pub mod tangle_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -1499,6 +1502,9 @@ impl Backend for FakeBackend {
                     details: vec![],
                 });
             }
+            if let Some(e) = tangle_seed::confirm(it.kind, &it.content_md) {
+                return Err(e); // --- tangle ---
+            }
             let sid = it
                 .server_id
                 .get_or_insert_with(|| ServerId(format!("01J9R{n:021}")))
@@ -1523,7 +1529,7 @@ impl Backend for FakeBackend {
                 PublishOutcome {
                     version,
                     permalink: link,
-                    warning: None,
+                    ..Default::default()
                 },
                 st.sink.clone(),
             )
@@ -3156,8 +3162,16 @@ impl Backend for FakeBackend {
         note: Option<&str>,
         extras: &blyg_core::access_ai::PublishExtras,
     ) -> Result<PublishOutcome> {
-        let out = self.publish(id, note)?;
+        let tangled = match extras.tangle {
+            true => tangle_seed::tangle(self, id)?, // --- tangle ---
+            false => None,
+        };
+        let mut out = self.publish(id, note)?;
         self.lock().access_ai.last_extras = Some(*extras);
+        if let Some((text, parts)) = tangled {
+            out.rewritten = Some(text);
+            out.parts = parts;
+        }
         Ok(out)
     }
     // --- end access-ai ---

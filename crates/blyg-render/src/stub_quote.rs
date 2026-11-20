@@ -62,13 +62,17 @@ fn directive_of(line: &str, id: &str) -> bool {
             .is_some_and(|b| &line[b.id] == id)
 }
 
-/// Every own-line directive of `id` outside code: (line, attached quote?, next line).
+/// Every own-line directive of `id` outside code and outside a `![[+ …]]`
+/// span (studio 0.64's `outOfBounds`: a quote inside a span belongs to the
+/// new item the span becomes): (line, attached quote?, next line).
 fn quotes_of(md: &str, id: &str) -> Vec<(usize, bool, usize)> {
     let lines: Vec<&str> = md.split('\n').collect();
     let literal = literal_lines(md, &lines);
+    let spans = crate::tangle::quote_span_ranges(md);
+    let starts = line_offsets(&lines);
     let mut out = Vec::new();
     for (i, line) in lines.iter().enumerate() {
-        if literal[i] || !directive_of(line, id) {
+        if literal[i] || crate::markdown::in_ranges(&spans, starts[i]) || !directive_of(line, id) {
             continue;
         }
         let (quote, next) = attached_quote(&lines, i);
@@ -127,6 +131,15 @@ fn insert_quote(md: &str, block: &str, at: usize) -> String {
             .find(|&i| i == last || starts[i + 1] > at)
             .unwrap_or(last)
     };
+    // Step past a `![[+ …]]` span the caret sits in, to its closer's line
+    // (studio 0.64: the quote belongs after the span, not in its new item).
+    for (start, end) in crate::tangle::quote_span_ranges(md) {
+        if starts[line] >= start && starts[line] <= end {
+            line = (0..lines.len())
+                .find(|&i| i == last || starts[i + 1] > end)
+                .unwrap_or(last);
+        }
+    }
     // Step past a quote the caret sits in (its `>` lines or its directive).
     while line + 1 < lines.len() && is_quote_line(lines[line + 1]) {
         line += 1;
@@ -215,6 +228,33 @@ mod tests {
     // stub-quote.test.ts, case for case.
     const ID: &str = "7c9wk2mhq0v3xj8tn5rzfd41bg";
     const OTHER: &str = "1vgtgz0gq5b2c9k7d3m8r4n6xy";
+
+    #[test]
+    fn a_quote_inside_a_tangle_span_is_the_new_items_and_a_caret_in_one_adds_after_it() {
+        let span =
+            format!("![[+ A passage of my own that quotes it:\n\n![[{ID}]]\n> inside the span\n]]");
+        // Only a span quotes the target: the stub has no quote of its own,
+        // and the chooser adds one at the top.
+        assert_eq!(stub_quote_form(&span, ID), None);
+        assert_eq!(quote_count(&span, ID), 0);
+        assert_eq!(
+            with_stub_quote(&span, ID, None),
+            format!("![[{ID}]]\n\n{span}")
+        );
+        // With the stub's own quote above it, the chooser edits that one.
+        let md = format!("![[{ID}]]\n\nMine.\n\n{span}\n\nAfter.");
+        assert_eq!(quote_count(&md, ID), 1);
+        assert_eq!(passage_count(&md, ID), 0);
+        assert_eq!(
+            with_stub_quote(&md, ID, Some("chosen")),
+            format!("![[{ID}]]\n> chosen\n\nMine.\n\n{span}\n\nAfter.")
+        );
+        // A caret inside the span puts the new quote after its closer.
+        assert_eq!(
+            add_stub_quote(&md, ID, "x", md.find("inside the span").unwrap()),
+            format!("![[{ID}]]\n\nMine.\n\n{span}\n\n![[{ID}]]\n> x\n\nAfter.")
+        );
+    }
 
     #[test]
     fn a_passage_goes_under_the_directive_and_back_out_again() {
