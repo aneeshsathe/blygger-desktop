@@ -27,6 +27,11 @@ description: Run several AI coding agents on Burrow at once without them clobber
 ## Hand-off
 
 - Agents commit on their own branch; they never push, merge or deploy.
+- Agents commit the feature's tests first, failing (red), then the code
+  (green). Before merging a branch the orchestrator runs
+  `scripts/test-first.sh --run <base> <branch>`: it fails when code comes
+  before tests, or when the first test commit's tests pass without the
+  feature.
 - The orchestrator merges into an integration branch, runs the full gate there
   (in its own target dir), then removes merged worktrees and their target dirs.
 - Briefs state: the goal, what's already ruled out, the files, the boundaries,
