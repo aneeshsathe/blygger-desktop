@@ -61,3 +61,5 @@ goes once its mistake is a compile error):
 | no personal data that a pattern can find (home paths, emails, blyg-named hosts, GitHub owners) in tracked or new files; names and account ids still need the rule above | `blyg-core/tests/it/personal_data.rs` + `tests/fixtures/personal-data-allow.txt` |
 | checks that read git don't skip on CI | `blyg-core/tests/it/no_git.rs` |
 | names existing installs depend on never change (bundle ID, Keychain, data dir, db, config path, binary, key contexts, action namespaces, `BLYGGER_*` names DevFlags reads) | `crates/blyg-app/src/never_rename_tests.rs` |
+| e2e signs in only through `studio_login` and waits out a 429 only through `retry_429` | `crates/blyg-core/tests/it/e2e/sign_in_path.rs` (`one_sign_in_path`, runs in the normal `cargo test`) |
+| no entries are written into `CHANGELOG.md` between releases (a change adds a fragment in `changes/unreleased/`) | `scripts/changelog-stitch.py check`, run by `blyg-core/tests/it/changelog_stitch.rs` (`the_repos_fragments_pass_check`) |
