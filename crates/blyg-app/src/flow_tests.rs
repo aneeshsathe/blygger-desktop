@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, Kind, LocalId};
-use gpui_kit::{Entity, TestAppContext, VisualTestContext};
+use gpui_kit::{Entity, Focusable as _, TestAppContext, VisualTestContext};
 
 use crate::app::MainView;
 use crate::app::command_palette::Cmd;
@@ -480,4 +480,126 @@ fn the_list_crossfades_when_the_blyg_changes(cx: &mut TestAppContext) {
     cx.update(|window, _| window.refresh());
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.delight_list_gen()), before + 1);
+}
+
+// ------------------------------------------------------------ 0.27.0 user test (keyboard-only)
+
+fn editor_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
+    view.update_in(cx, |v, window, cx| {
+        v.editor.read(cx).focus_handle(cx).is_focused(window)
+    })
+}
+
+fn focus_editor(view: &Entity<MainView>, cx: &mut VisualTestContext) {
+    view.update_in(cx, |v, window, cx| {
+        let f = v.editor.read(cx).focus_handle(cx);
+        window.focus(&f, cx);
+    });
+    cx.run_until_parked();
+}
+
+fn toast_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
+    view.read_with(cx, |v, _| {
+        v.toast
+            .as_ref()
+            .map(|t| t.text.to_string())
+            .unwrap_or_default()
+    })
+}
+
+/// Tangling by keys alone: ⌘⏎ ⏎ reaches the confirm step with the keyboard
+/// on it; esc goes back to the text with the caret there; ⌘⏎ ⏎ ⏎ publishes
+/// all, and the spans become ids.
+#[gpui_kit::test]
+fn the_tangle_confirm_step_answers_enter_and_esc(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    view.update_in(cx, |v, window, cx| v.tangle_demo(0, false, window, cx));
+    cx.run_until_parked();
+    focus_editor(&view, cx);
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    cx.run_until_parked();
+    assert!(
+        cx.debug_bounds("tangle-confirm").is_some(),
+        "the confirm step"
+    );
+    keys(cx, "escape");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()), "esc cancels");
+    assert!(editor_text(&view, cx).contains("![[+"), "nothing published");
+    assert!(editor_focused(&view, cx), "the caret is back in the text");
+    keys(cx, "cmd-enter");
+    keys(cx, "enter");
+    keys(cx, "enter");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
+    let text = editor_text(&view, cx);
+    assert!(!text.contains("[[+"), "the spans became ids: {text}");
+    assert!(text.contains("![[") && text.contains(" | "), "{text}");
+    assert!(
+        toast_text(&view, cx).ends_with("and 2 new items"),
+        "{}",
+        toast_text(&view, cx)
+    );
+    assert!(editor_focused(&view, cx), "still writing after publish");
+}
+
+/// ⌃⌘B / ⌃⌘I / ⌃⌘M on a keyboard selection.
+#[gpui_kit::test]
+fn bold_italic_and_formula_keys_wrap_the_selection(cx: &mut TestAppContext) {
+    let (view, _, cx) = setup(cx);
+    open(&view, cx, DRAFT);
+    assert!(
+        editor_focused(&view, cx),
+        "opening a draft puts the caret in it"
+    );
+    keys(cx, "cmd-a");
+    cx.simulate_input("x^2");
+    cx.run_until_parked();
+    keys(cx, "cmd-a");
+    keys(cx, "ctrl-cmd-m");
+    assert_eq!(editor_text(&view, cx), "$x^2$");
+    keys(cx, "cmd-a");
+    cx.simulate_input("word");
+    cx.run_until_parked();
+    keys(cx, "cmd-a");
+    keys(cx, "ctrl-cmd-b");
+    assert_eq!(editor_text(&view, cx), "**word**");
+    keys(cx, "ctrl-cmd-b");
+    assert_eq!(editor_text(&view, cx), "word", "again: plain");
+    keys(cx, "ctrl-cmd-i");
+    assert_eq!(editor_text(&view, cx), "*word*");
+    // No selection: an empty pair with the caret inside.
+    keys(cx, "cmd-a");
+    cx.simulate_input("Let ");
+    cx.run_until_parked();
+    keys(cx, "ctrl-cmd-m");
+    cx.simulate_input("y");
+    cx.run_until_parked();
+    assert_eq!(editor_text(&view, cx), "Let $y$");
+}
+
+/// Settings' "Parts published with a thread" turned off: Lin's parts are
+/// back in the reading list, and the thread no longer counts them.
+#[gpui_kit::test]
+fn turning_the_burst_rule_off_brings_the_parts_back(cx: &mut TestAppContext) {
+    use crate::fake::background_seed::{LIN_PART_1, thread_key};
+    let (view, _, cx) = setup(cx);
+    let shown = |view: &Entity<MainView>, cx: &mut VisualTestContext| {
+        view.read_with(cx, |v, _| {
+            let part = v
+                .reading
+                .shown_rows()
+                .any(|r| r.remote_id.as_ref() == LIN_PART_1);
+            (part, v.reading.background.parts_of(&thread_key()).len())
+        })
+    };
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBackgroundRuleOff, 0, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    assert_eq!(shown(&view, cx), (false, 2), "a part waits in Background");
+    view.update_in(cx, |v, window, cx| {
+        v.reading_demo(crate::scenes::Scene::RdBackgroundRuleOff, 1, window, cx)
+    });
+    crate::test_wait::settle_drawn(cx);
+    assert_eq!(shown(&view, cx), (true, 0), "the part is back");
 }
