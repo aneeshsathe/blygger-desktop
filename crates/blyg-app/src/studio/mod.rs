@@ -202,6 +202,14 @@ impl Slot {
     }
 }
 
+/// What the writer's guards remember for this window.
+#[derive(Default)]
+pub(crate) struct WriterGuards {
+    /// --- tangle --- The post last tangled and the text that was sent: the
+    /// same text again would make its new items twice.
+    pub(crate) last_tangle: Option<(blyg_core::LocalId, String)>,
+}
+
 pub struct Studio {
     pub view: ViewMode,
     data_dir: Option<PathBuf>,
@@ -243,6 +251,8 @@ pub struct Studio {
     /// the page reports counts only for that number and that text.
     stub_sent: Option<(bool, Option<String>)>,
     stub_gen: u64,
+    /// The writer's guards the user tests asked for (publish and format).
+    pub(crate) guards: WriterGuards,
     /// Loads and patches sent (tests).
     #[cfg(test)]
     pub(crate) loads: usize,
@@ -292,6 +302,7 @@ impl Studio {
             shown_src: None,
             stub_sent: None,
             stub_gen: 0,
+            guards: WriterGuards::default(),
             #[cfg(test)]
             loads: 0,
         }

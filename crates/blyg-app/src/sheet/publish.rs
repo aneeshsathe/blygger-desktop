@@ -122,6 +122,9 @@ pub(crate) fn part_line(i: usize, label: &str) -> String {
     format!("{}. {label}", i + 1)
 }
 
+/// The confirm step's warning when the text is the one just tangled.
+pub(crate) const TANGLE_REPEAT: &str = "⚠ You just published these as new items. Publishing them again makes a second copy of each. Press esc and check the text first.";
+
 /// The studio's hint under the list.
 pub(crate) const TANGLE_HINT: &str = "Each new item is a thread of its own, published first: this thread quotes each ![[+ …]] and links each [[+ …]]. To change one later, open that item.";
 
@@ -131,6 +134,7 @@ impl SheetView for TangleSheet {
         let TangleSheet {
             count,
             parts,
+            repeat,
             focus,
             ..
         } = self;
@@ -149,6 +153,18 @@ impl SheetView for TangleSheet {
                     cx.stop_propagation();
                 }))
                 .child(kit.heading(tangle_heading(*count)))
+                .when(*repeat, |d| {
+                    d.child(
+                        div()
+                            .id("tangle-repeat")
+                            .debug_selector(|| "tangle-repeat".into())
+                            .mb(px(8.))
+                            .text_size(px(12.5))
+                            .text_color(p.warn_text())
+                            .line_height(relative(1.45))
+                            .child(TANGLE_REPEAT),
+                    )
+                })
                 .child(
                     div()
                         .mb(px(8.))

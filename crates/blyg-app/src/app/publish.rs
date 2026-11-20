@@ -131,6 +131,12 @@ impl MainView {
     ) {
         self.publishing = true;
         cx.notify();
+        // --- tangle --- what a confirmed tangle sends, so the same text
+        // again can be caught in the confirm step.
+        let tangled = extras
+            .tangle
+            .then(|| self.backend.item(&id).map(|i| i.content_md))
+            .flatten();
         let backend = self.backend.clone();
         let task = cx.background_spawn({
             let id = id.clone();
@@ -159,6 +165,7 @@ impl MainView {
                         // or its next save would bring the spans back.
                         if let Some(text) = &out.rewritten {
                             v.take_rewritten(&id, text, window, cx);
+                            v.studio.guards.last_tangle = tangled.map(|t| (id.clone(), t));
                         }
                         v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
                         v.delight_published(&id, cx); // --- delight ---
@@ -191,13 +198,14 @@ impl MainView {
                     Err(CoreError::TangleConfirm { count, parts }) => {
                         let focus = cx.focus_handle();
                         window.focus(&focus, cx);
+                        let repeat = v.is_repeat_tangle(&id);
                         v.sheet.open(TangleSheet {
                             id: id.clone(),
                             note: note_opt.clone(),
                             extras,
                             count,
                             parts,
-                            repeat: false,
+                            repeat,
                             focus,
                         });
                     }
@@ -239,8 +247,19 @@ impl MainView {
         self.start_publish_with(id, note, extras, window, cx);
     }
 
+    /// --- tangle --- The post's text is the one last tangled: publishing
+    /// it again would make its new items twice.
+    fn is_repeat_tangle(&self, id: &LocalId) -> bool {
+        let Some((last, text)) = &self.studio.guards.last_tangle else {
+            return false;
+        };
+        last == id && self.backend.item(id).is_some_and(|i| &i.content_md == text)
+    }
+
     /// --- tangle --- After a tangle the open post's text is the server's
     /// rewrite (each span now `![[id | label]]`); put it in the editor.
+    /// The undo history goes with it: the rewrite is a save point, so ⌘Z
+    /// can't bring the spans back to publish them twice.
     fn take_rewritten(
         &mut self,
         id: &LocalId,
@@ -253,9 +272,13 @@ impl MainView {
         }
         let old = self.editor.read(cx).value().to_string();
         if old != text {
-            self.loading_editor = true;
-            self.splice_editor(&old, text, None, window, cx);
-            self.loading_editor = false;
+            let (range, insert) = vm::splice(&old, text);
+            let caret = vm::shift_cursor(self.editor.read(cx).cursor(), &range, insert.len());
+            self.set_editor_text(text, window, cx);
+            self.editor.update(cx, |s, cx| {
+                let c = caret.min(s.text().len());
+                s.set_selected_range(c..c, cx);
+            });
         }
         self.current = self.backend.item(id);
         self.refresh_preview(true, cx);
