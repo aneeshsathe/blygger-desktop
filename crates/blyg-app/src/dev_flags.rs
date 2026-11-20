@@ -149,6 +149,9 @@ pub struct TestEnv {
     /// test thread starts with (`platform_text::spelled_as` still picks one
     /// for a test). Unset: this machine's.
     pub spelling: Option<crate::platform_text::Platform>,
+    /// `BLYGGER_UPDATE_DOCS`: the generated-docs tests rewrite their file
+    /// instead of comparing (`scripts/gen-docs.sh`).
+    pub update_docs: bool,
 }
 
 type Lookup<'a> = &'a dyn Fn(&str) -> Option<OsString>;
@@ -252,6 +255,7 @@ impl TestEnv {
                     other => panic!("BLYGGER_TEST_SPELLING={other}: say windows or mac"),
                 }
             }),
+            update_docs: std::env::var_os("BLYGGER_UPDATE_DOCS").is_some(),
         }
     }
 }

@@ -29,9 +29,7 @@ mod fake;
 mod fonts;
 mod images;
 mod keymap;
-// Its `BLYGGER_UPDATE_DOCS` read predates `dev_flags` (another change owns the file).
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod keymap_docs;
 mod ornament; // --- themes ---
 mod platform;
