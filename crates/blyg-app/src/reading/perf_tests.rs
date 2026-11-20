@@ -213,17 +213,18 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     let before = view.read_with(cx, |v, _| v.reading.refreshes);
     meter.step(
         cx,
-        "open a post (mark read, refresh)",
-        // An estimate until CI prints this measurement: locally, opening
-        // is about twice a refresh with a post open (84 ms to 43), and
-        // that refresh was 218 ms at worst on CI.
+        "open a post (mark read)",
+        // An estimate until CI prints this measurement: it was set when
+        // opening also refreshed the whole list (about twice a refresh
+        // with a post open, 218 ms at worst on CI). The read mark now
+        // updates its row in place, so this is generous.
         cost(650.0, 4.0),
         |cx| {
             let t = Instant::now();
             view.update_in(cx, |v, window, cx| v.open_reading(key.clone(), window, cx));
             let mut awake = t.elapsed();
-            // Until the post's versions are in and the list has caught up
-            // with its read mark; not `settle`, whose twenty fixed pauses
+            // Until the post's versions are in and its row shows the read
+            // mark (in place: no list refresh); not `settle`, whose twenty fixed pauses
             // (60 ms here, several hundred on a CI runner) would be timed.
             // Polling still pauses 2 ms (plus the timer's overshoot) after
             // each round that finds it unfinished, so the rounds and the
@@ -245,7 +246,7 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
                         .opened
                         .as_ref()
                         .is_some_and(|o| !matches!(o.changelog, super::Load::Loading));
-                    r.refreshes > before && read && loaded
+                    read && loaded
                 });
                 awake += t.elapsed();
                 done
@@ -253,6 +254,11 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
             eprintln!(
                 "  {rounds} poll rounds; {:.2} ms on this thread outside the pauses",
                 awake.as_secs_f64() * 1e3
+            );
+            assert_eq!(
+                view.read_with(cx, |v, _| v.reading.refreshes),
+                before,
+                "opening a post refreshed the whole list"
             );
         },
     );
