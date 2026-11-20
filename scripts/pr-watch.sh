@@ -16,6 +16,9 @@
 #   swallowed in a loop that never ends.
 # - It refuses to merge if the PR's head moved since CI started, and merges with
 #   --match-head-commit so GitHub refuses too.
+# - A job with `continue-on-error: true` in .github/workflows/*.yml (the timing
+#   reports) is reported when it fails but doesn't fail the watch, as GitHub
+#   doesn't fail the run for it.
 set -euo pipefail
 
 usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; exit 4; }
@@ -58,6 +61,38 @@ check_deadline() {
   if [ "$(date +%s)" -ge "$deadline" ]; then log "timed out after ${timeout_min} min: $1" >&2; exit 2; fi
 }
 
+# Names of jobs that never fail their run (`continue-on-error: true`), one a line.
+nonblocking_jobs() {
+  python3 - "$(git rev-parse --show-toplevel)/.github/workflows" <<'PY'
+import os, re, sys
+d = sys.argv[1]
+for f in sorted(os.listdir(d)):
+    if not f.endswith((".yml", ".yaml")):
+        continue
+    name, coe, injobs = None, False, False
+    def emit():
+        if name and coe:
+            print(name)
+    for line in open(os.path.join(d, f), encoding="utf-8"):
+        if re.match(r"^jobs:\s*$", line):
+            injobs = True; continue
+        if not injobs:
+            continue
+        if re.match(r"^\S", line):
+            emit(); injobs = False; name = None; coe = False; continue
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+        if m:
+            emit(); name, coe = m.group(1), False; continue
+        m = re.match(r"^    name:\s*(.+?)\s*$", line)
+        if m:
+            name = m.group(1).strip("'\""); continue
+        if re.match(r"^    continue-on-error:\s*true\b", line):
+            coe = True
+    emit()
+PY
+}
+NONBLOCKING=$(nonblocking_jobs 2>/dev/null | jq -R . | jq -s . 2>/dev/null || echo '[]')
+
 # Wait for every job of every workflow run on <sha> (optionally one workflow file).
 # Prints a line whenever a job's state changes. Returns 0 green, exits 1 on failure.
 wait_runs() {
@@ -81,11 +116,16 @@ wait_runs() {
     if [ "$cur" != "$prev" ]; then
       log "jobs on ${sha:0:7}:"; sed 's/^/    /' <<<"$cur"; prev="$cur"
     fi
-    if jq -e 'any(.[]; .conclusion != null and (.conclusion | IN("success","skipped","neutral") | not))' <<<"$jobs" >/dev/null; then
-      log "FAILED:"; jq -r '.[] | select(.conclusion != null and (.conclusion | IN("success","skipped","neutral") | not)) | "    \(.name): \(.conclusion)  \(.html_url)"' <<<"$jobs"
+    local bad='.conclusion != null and (.conclusion | IN("success","skipped","neutral") | not)'
+    if jq -e --argjson nb "$NONBLOCKING" "any(.[]; $bad and (.name | IN(\$nb[]) | not))" <<<"$jobs" >/dev/null; then
+      log "FAILED:"; jq -r --argjson nb "$NONBLOCKING" ".[] | select($bad and (.name | IN(\$nb[]) | not)) | \"    \\(.name): \\(.conclusion)  \\(.html_url)\"" <<<"$jobs"
       exit 1
     fi
     if [ "$(jq length <<<"$jobs")" -gt 0 ] && jq -e 'all(.[]; .conclusion != null)' <<<"$jobs" >/dev/null; then
+      if jq -e --argjson nb "$NONBLOCKING" "any(.[]; $bad)" <<<"$jobs" >/dev/null; then
+        log "non-blocking job(s) failed (read them; they don't stop the merge):"
+        jq -r ".[] | select($bad) | \"    \\(.name): \\(.conclusion)  \\(.html_url)\"" <<<"$jobs"
+      fi
       return 0
     fi
     sleep "$poll"
