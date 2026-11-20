@@ -88,8 +88,16 @@ what can change it in under 30 seconds.
   JSON into typed values where they enter (`cli::route`, `Prefs::from_config`,
   `model.rs`), then trust them. Environment variables are parsed once into
   `DevFlags` (`crates/blyg-app/src/dev_flags.rs`); clippy refuses
-  `std::env::var` anywhere else in blyg-app. Give ids their own type (`LocalId`), not
-  `&str`. Keep business rules in plain functions in `blyg-core` or the
+  `std::env::var` anywhere else in blyg-app. Give ids their own type, not
+  `&str`: your posts have `LocalId` and `ServerId`; a reading post is a
+  `SubId` and a `RemoteId` (`blyg-core/src/ids.rs`). Nine `Backend`
+  methods took that pair as two `&str`s (`mark_read`, `signal`,
+  `set_in_hopper`, …), so a swap compiled; now it's E0308 with "swap these
+  arguments". The types are `#[serde(transparent)]` and TEXT in SQLite,
+  so nothing on the wire or on disk changes; they deref to `str` for
+  reading, and an id enters typed where it's parsed (API rows, DB rows,
+  `From<String>`). Deref also lets a typed id into a `&str` parameter
+  unnoticed, so a new function taking a post's ids takes the types. Keep business rules in plain functions in `blyg-core` or the
   `*_vm.rs` files, away from GPUI.
 - **Narrow state.** A return value over a field, a field over a global.
 

@@ -2,10 +2,10 @@
 //! expected doesn't compile.
 //!
 //! A reading post is named by two ids: the subscription it came through
-//! ([`SubId`]) and the post's id on its blyg ([`RemoteId`]). Thirteen
+//! ([`SubId`]) and the post's id on its blyg ([`RemoteId`]). Nine
 //! `Backend` methods took both as `&str` (`mark_read`, `signal`,
-//! `remote_versions`, `set_in_hopper`, …), so swapping them compiled and
-//! read, pinned or filed the wrong post. Your own posts already have
+//! `remote_versions`, `set_in_hopper`, …), so a swap compiled and would
+//! have marked, signalled or filed the wrong post. Your own posts have
 //! [`LocalId`](crate::LocalId) and [`ServerId`](crate::ServerId).
 //!
 //! The wire and the database keep the bare string: each type is
