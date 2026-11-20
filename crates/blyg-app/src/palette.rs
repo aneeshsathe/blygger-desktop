@@ -129,6 +129,10 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "ToggleQuietWriting" => &["minimal", "calm", "hide lineage", "hide nearby"], // --- quiet ---
         "FontBigger" => &["zoom in", "larger"],
         "FontSmaller" => &["zoom out"],
+        // --- format --- (user testing, W4: "maths" found nothing)
+        "InsertFormula" => &["maths", "math", "latex", "tex", "equation", "sigma"],
+        "FormatBold" => &["bold", "strong", "heavy"],
+        "FormatItalic" => &["italic", "emphasis", "emphasise", "emphasize", "slanted"],
         "Quit" => &["exit", "close"],
         _ => &[],
     }
