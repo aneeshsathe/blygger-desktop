@@ -282,6 +282,11 @@ scenes! {
     Reading {
         RdLinkedFrom = "rd-linked-from",
     }
+    /// reading/demo.rs (--- render ---): studio 0.64.1's labelled and nested
+    /// provenance, lazy quote lines and comments to self, in the preview
+    Reading {
+        RdProvenance = "rd-provenance",
+    }
 }
 
 impl Scene {

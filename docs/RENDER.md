@@ -400,13 +400,13 @@ Of the 257 existing cases 15 changed, all from studio changes:
 - #81's label bake (`data-blyg-label`) is the studio's own now, so the r15
   label rewrite (`SPEC_LABELS`) is gone. The provenance line of a labelled
   quote now anchors on the label: `<a>label ↗</a> · fragment · snapshot of
-  vN` (`labelledProvenance`). Six `label_*` cases; not followed yet.
+  vN` (`labelledProvenance`). Six `label_*` cases; adopted (below).
 - A quote nested in a quote gets its own `p.provenance.nested` line
-  (`tr_found_local_thread`, `tr_provenance_order`); not followed yet.
+  (`tr_found_local_thread`, `tr_provenance_order`); adopted.
 - A partial quote's `>` run takes lazy continuation lines
-  (`tr_partial_unknown_consumes`); not followed yet.
+  (`tr_partial_unknown_consumes`); adopted.
 - A generated block's HTML in a thread preview is sanitized
-  (`tr_sanitize_tk_block` loses `style`); not followed yet.
+  (`tr_sanitize_tk_block` loses `style`); adopted.
 - An own-line `![[id]]` in a generated block is baked as a quote, inside
   the block's `div.blyg-tk-gen` (the four decision-#60 cases). This crate
   already baked them, between two wrappers, as #102 (9) says; the parity
@@ -426,6 +426,43 @@ escaping, code, mid-line and unclosed openers, a span between quotes, a
 placeholder in a fragment) and `comment_to_self`. Three `withStubQuote`
 vectors put the directive inside a `![[+ …]]` span.
 
+**Adopted from 0.64.1** (the eleven former `TO_ADOPT` cases):
+
+- *Labelled provenance* (`transclusion::inject_provenance`, pages.ts
+  `bakedLabel` + `labelledProvenance`): a quote whose tag carries
+  `data-blyg-label` gets the label (decoded, whitespace flattened, cut to
+  120 UTF-16 units) as its line's anchor, and the old anchor text follows
+  as plain text: `<a>label ↗</a> · from <em>Blyg</em> · snapshot of v5`.
+  The cut is at a character, where the studio cuts at a grapheme.
+- *Nested provenance* (`inject_nested_provenance`, pages.ts
+  `injectNestedProvenance`): every baked quote inside a baked quote, at any
+  depth, gets `p.provenance.nested`, read from its own `data-blyg-*`
+  attributes, the origin carried down from the layer that baked it. Its
+  link comes from `Resolver::nested_source` (default: `resolve`; the app's
+  `StoreResolver` answers from the store without rendering). Labelled
+  nested quotes anchor on the label too. The app now renders a quoted own
+  thread with `provenance: false`, as publish bakes it, so a nested quote
+  has one line, not two.
+- *Lazy continuation* (`attached_quote`, directives.ts `attachedQuote` /
+  `quoteExtent`, decision #76): a partial quote's run is the blockquote's
+  CommonMark extent, measured by its own markdown-it block parser as the
+  studio's is. An unmarked line continuing the quote's paragraph belongs to
+  it (kept as written); not after an empty `>` line, not a line opening a
+  block, and never a directive or reserved line. The walker, TK block
+  splitting, the stub chooser (`with_stub_quote`, and `add_stub_quote`'s
+  step past the quote the caret is in) all share it.
+- *Generated blocks sanitized* in the thread preview, as the walked HTML is
+  (`previewTransclusions` sanitizes `blockReplacements`).
+- *Comments to self* (`comments.rs`, `comments.ts` `parseComments` /
+  `previewComments`): `/* … */` is dropped from the preview in both kinds,
+  after tangle spans and before handles, with the studio's whitespace
+  tidying (`closeUp`), its line map kept for `data-line`. What would stop a
+  publish (unclosed, a stray `*/`, a `/*` attached to a word) is appended as
+  `⚠ …` paragraphs, in the studio's words. `tangle.rs` reads comment ranges
+  from it. Code is found once per comment, as in the studio; a text that
+  can hold no code (no backtick, tilde, tab or four spaces) skips the parse.
+  A long draft with code and hundreds of comments is still quadratic.
+
 **Formulas are compared by shape** (`tests/it/math_shape.rs`). The studio
 draws with temml 0.14; no Rust crate matches it byte for byte. Each
 top-level `<math>` on both sides becomes a stand-in holding only inline or
@@ -444,9 +481,8 @@ from its list", so every list only shrinks:
 - `PENDING`: cases waiting for the 0.64.1 cohort's WP1 (tangle preview) and
   WP2 (maths, sanitizer maths); `STUB_SPANS_PENDING` holds the stub-chooser
   span vectors for WP1. Empty both once WP1 and WP2 are merged.
-- `TO_ADOPT`: studio changes no package owns yet (labelled and nested
-  provenance, lazy continuation, sanitized generated blocks, comments to
-  self).
+- `TO_ADOPT`: studio changes not followed yet; empty since the 0.64.1
+  adoption below.
 - `KNOWN_DIVERGENCES`: deliberate differences; empty since 0.64.1.
 
 Bug emulation: none. The patched-Worker bugs (patch 9) and the 0.47.0
@@ -526,7 +562,7 @@ rewrite; `tests/it/preview.rs` still pins this crate's output for them.
 
 | suite | cases | match | expected to fail |
 |---|---|---|---|
-| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 252 (238 byte-identical; 15 rewritten to r15) | 22 `PENDING` (WP1, WP2) + 11 `TO_ADOPT` |
+| corpus (paragraphs, emphasis, links, linkify edges, headings, lists, code, quotes, images, raw HTML, YouTube, TK, `impyrt`, transclusion, partial quotes, `[[id]]` links, labels, sanitizing, maths, tangling, comments) | 285 | 285 (258 byte-identical; 15 rewritten to r15; 11 with formulas compared by shape) | 0 |
 | CommonMark 0.31.2 spec examples | 652 | 652 | 0 |
 | linkify-it + markdown-it linkify test vectors | 206 | 206 | 0 |
 | attachments (`mediaHtml`) | 4 | 4 | 0 |

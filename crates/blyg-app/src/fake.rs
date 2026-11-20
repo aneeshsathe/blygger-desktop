@@ -42,6 +42,9 @@ pub mod background_seed;
 // --- maths ---
 #[path = "fake_maths.rs"]
 pub mod maths_seed;
+// --- render --- studio 0.64.1 provenance, lazy quotes, comments
+#[path = "fake_render.rs"]
+pub mod render_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -334,6 +337,7 @@ impl FakeBackend {
         let mut rd = reading_seed::seed(now);
         rd.reading.extend(background_seed::rows(now)); // --- background ---
         maths_seed::add(&mut rd, now); // --- maths ---
+        render_seed::add(&mut rd, now); // --- render ---
         let mut items = Vec::new();
         let mut versions = HashMap::new();
         for (id, kind, status, version, age, body) in seed {
