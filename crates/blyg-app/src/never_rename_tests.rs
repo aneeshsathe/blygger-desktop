@@ -101,6 +101,9 @@ fn key_contexts() {
     assert_eq!(crate::keymap::MACRO_SHEET, "MacroSheet");
     assert_eq!(crate::keymap::MACRO_SHEET_INPUT, "MacroSheet > Input");
     assert_eq!(crate::app::notes::CONTEXT, "Notes");
+    assert_eq!(crate::app::browser::CONTEXT, "Browser");
+    assert_eq!(crate::app::profiles::CONTEXT, "Profile");
+    assert_eq!(crate::app::reading::CONTEXT, "Reading");
 }
 
 /// Every action a key is bound to keeps its namespace (user keybinding
