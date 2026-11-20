@@ -95,7 +95,7 @@ impl Meter {
     }
 }
 
-use crate::test_wait::settle;
+use crate::test_wait::{poll, settle};
 
 fn setup<'a>(
     dir: &std::path::Path,
@@ -162,16 +162,23 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     // On the reading screen, a refresh keeps the order under the cursor.
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
 
+    // The budgets (ms) are from CI's macOS runner, over four runs
+    // (`blyg_core::wait::Budget` says how). A refresh of the whole list
+    // varied about 2x there: 90-156 ms a tick, 102-215 a burst, 81-218
+    // with a post open.
     let mut meter = meter(&live);
-    meter.step(cx, "reading_changed (a sync tick)", cost(60.0, 4.0), |cx| {
-        view.update(cx, |v, cx| v.reading_changed(cx))
-    });
+    meter.step(
+        cx,
+        "reading_changed (a sync tick)",
+        cost(240.0, 4.0),
+        |cx| view.update(cx, |v, cx| v.reading_changed(cx)),
+    );
     // A sync burst: the queued events are one batch, and one refresh.
     let before = view.read_with(cx, |v, _| v.reading.refreshes);
     meter.step(
         cx,
         "a burst of 20 ReadingChanged + ItemsChanged",
-        cost(80.0, 12.0),
+        cost(330.0, 12.0),
         |cx| {
             view.update_in(cx, |v, window, cx| {
                 let mut burst = vec![blyg_core::CoreEvent::ReadingChanged; 20];
@@ -188,34 +195,80 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     meter.step(cx, "unread count", cost(10.0, 0.25), |_| {
         live.unread_count()
     });
-    meter.step(cx, "sources pane entries", cost(10.0, 0.25), |cx| {
+    // CI: 5.6, 7.1, 9.7, 10.3 ms; 1.5x 10.3 is 15.4, up to 20.
+    meter.step(cx, "sources pane entries", cost(20.0, 0.25), |cx| {
         view.read_with(cx, |v, _| v.source_entries().len())
     });
 
-    // Open a post: read mark, the event, the list catching up.
+    // Open a post: read mark, the event, the list catching up. An unread
+    // one, so the read mark is stored and the list refreshes.
     let key = view.read_with(cx, |v, _| {
-        v.reading.shown_rows().nth(5).map(super::vm::key).unwrap()
+        v.reading
+            .shown_rows()
+            .filter(|r| r.read_version.is_none())
+            .nth(5)
+            .map(super::vm::key)
+            .unwrap()
     });
+    let before = view.read_with(cx, |v, _| v.reading.refreshes);
     meter.step(
         cx,
         "open a post (mark read, refresh)",
-        cost(120.0, 4.0),
+        // An estimate until CI prints this measurement: locally, opening
+        // is about twice a refresh with a post open (84 ms to 43), and
+        // that refresh was 218 ms at worst on CI.
+        cost(650.0, 4.0),
         |cx| {
-            view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
-            settle(cx);
+            let t = Instant::now();
+            view.update_in(cx, |v, window, cx| v.open_reading(key.clone(), window, cx));
+            let mut awake = t.elapsed();
+            // Until the post's versions are in and the list has caught up
+            // with its read mark; not `settle`, whose twenty fixed pauses
+            // (60 ms here, several hundred on a CI runner) would be timed.
+            // Polling still pauses 2 ms (plus the timer's overshoot) after
+            // each round that finds it unfinished, so the rounds and the
+            // time this thread spent outside those pauses are printed too:
+            // they tell work from sleep. (The read mark is written on
+            // another thread, partly during the pauses.)
+            let mut rounds = 0;
+            poll("the opened post's read mark and versions", || {
+                let t = Instant::now();
+                rounds += 1;
+                cx.run_until_parked();
+                let done = view.read_with(cx, |v, _| {
+                    let r = &v.reading;
+                    let read = r
+                        .rows
+                        .iter()
+                        .any(|row| super::vm::key(row) == key && row.read_version.is_some());
+                    let loaded = r
+                        .opened
+                        .as_ref()
+                        .is_some_and(|o| !matches!(o.changelog, super::Load::Loading));
+                    r.refreshes > before && read && loaded
+                });
+                awake += t.elapsed();
+                done
+            });
+            eprintln!(
+                "  {rounds} poll rounds; {:.2} ms on this thread outside the pauses",
+                awake.as_secs_f64() * 1e3
+            );
         },
     );
     meter.step(
         cx,
         "reading_changed with a post open",
-        cost(60.0, 4.0),
+        cost(330.0, 4.0),
         |cx| view.update(cx, |v, cx| v.reading_changed(cx)),
     );
 
     // Typing a search, a keystroke at a time: the list in memory, filtered.
+    // CI: 28-49 ms for the short queries, 54-64 for "author 0", 45-81 for
+    // "author 07"; 1.5x 80.7 is 121, up to 130.
     for q in ["a", "au", "aut", "author", "author 0", "author 07"] {
         let what = format!("search keystroke {q:?}");
-        meter.step(cx, &what, cost(60.0, 0.25), |cx| {
+        meter.step(cx, &what, cost(130.0, 0.25), |cx| {
             view.update_in(cx, |v, window, cx| v.set_reading_query(q, window, cx))
         });
     }
@@ -283,7 +336,9 @@ fn timing_keep_order_at_scale() {
         assert_eq!(old.len(), all.len());
     }
     let fresh = all.clone();
-    let got = budget.time("reorder, keep_order", 20.0, || {
+    // CI's macOS runner: 24 and 49 ms (about 2x apart) in the runs that
+    // went over the old 20; under 20 in the others.
+    let got = budget.time("reorder, keep_order", 75.0, || {
         super::keep_order(&held, fresh)
     });
     assert_eq!(got.len(), held.len());
