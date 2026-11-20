@@ -2,17 +2,23 @@
 
 ## The changelog
 
-Every user-visible change gets a line in `CHANGELOG.md` under
-`## [Unreleased]`, in the section that fits (`### Added`, `### Changed`,
-`### Fixed`, …). The format follows
+Every user-visible change gets an entry, as a fragment: a file
+`changes/unreleased/<slug>.md` that names its section (`section: Added`,
+`Changed`, `Fixed`, …) on its first line, then a blank line, then `- `
+entries. Changes don't edit `CHANGELOG.md` itself, so branches don't
+conflict over it; `changes/unreleased/README.md` has the format. The format
+of `CHANGELOG.md` follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/). Before 1.0, minor versions may
 break things.
 
 ## Cutting a release
 
-1. Rename `[Unreleased]` in `CHANGELOG.md` to `[x.y.z] - YYYY-MM-DD`, and add
-   a fresh, empty `[Unreleased]` above it.
+1. Run `scripts/changelog-stitch.py stitch x.y.z`: it writes the fragments
+   into a new `[x.y.z] - YYYY-MM-DD` section of `CHANGELOG.md`, below
+   `[Unreleased]`, and deletes them (`--dry-run` prints the section only).
+   Edit the section by hand if it needs an opening paragraph or a different
+   order.
 2. Bump `version` in the root `Cargo.toml`.
 3. Add a `## Burrow x.y.z` section at the top of `site/src/releases.md`: what
    the release brings, for someone using Burrow, newest first. After an

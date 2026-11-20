@@ -16,8 +16,13 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
 
 ## Checklist
 
-1. `CHANGELOG.md`: rename `[Unreleased]` to `[0.N.0] - YYYY-MM-DD`, add a fresh
-   empty `[Unreleased]`. Untested things go under a "Not verified" note.
+1. `CHANGELOG.md`: run `scripts/changelog-stitch.py stitch 0.N.0`. It writes
+   every fragment in `changes/unreleased/` into a new `[0.N.0] - YYYY-MM-DD`
+   section below `[Unreleased]` and deletes them (`--dry-run` shows the
+   section first). It refuses on a malformed fragment or none at all. Then
+   edit the section by hand: an opening paragraph, the most important entries
+   first. Untested things go in a `Not verified` fragment (or under that
+   heading after stitching). Commit the deleted fragments with it.
 2. Root `Cargo.toml` `version` bumped; `Cargo.lock` updated.
 3. `site/src/releases.md` gets a `## Burrow 0.N.0` section. The app's "What's
    new" opens it, and a test fails if the running version has no heading.

@@ -28,6 +28,12 @@ order (`--run` also runs those tests without the feature and wants a
 failure). CI's `test-first` job fails a PR that changes product code but no
 test, unless a commit has a `No-test: <reason>` trailer.
 
+A user-visible change adds a changelog fragment,
+`changes/unreleased/<slug>.md` (`section: Added`, a blank line, `- ` entries;
+format in `changes/unreleased/README.md`). Don't edit `CHANGELOG.md`: the
+release stitches the fragments into it (`burrow-release`), and the workspace
+tests check their format (`scripts/changelog-stitch.py check`).
+
 Server-facing changes also run the real-studio e2e
 (`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
 changes run `scripts/browser-*-check.sh`.
