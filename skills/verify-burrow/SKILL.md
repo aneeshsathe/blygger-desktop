@@ -95,3 +95,7 @@ under the feature's Gotchas; never weaken the journey to make it pass.
   (the scene list and the refusals) in `cargo test` on macOS.
 - `scenes.rs`'s tests fail on a feature file naming a scene that doesn't
   exist, so renaming a scene means updating the feature files with it.
+- Those checks prove the names, not that each feature still renders.
+  `user-testing-pass` walks only the features an update touched (plus one
+  everyday journey), so `burrow-release` runs every mapped feature's
+  starting scene live before each release.

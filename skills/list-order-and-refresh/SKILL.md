@@ -19,7 +19,7 @@ while its tab was open. Both bugs were invisible in unit tests.
   milliseconds, all appear. Parse RFC 3339 first.
 - **Always tie-break** (e.g. source then id, descending). Second-granularity
   timestamps tie constantly after quick actions.
-- **Check the spec's order fixtures** (`conformance/feeds/`, the pace-layered
+- **Check the spec's order fixtures** (`conformance/feeds/` (other repo: blygger-spec), the pace-layered
   order) and say in your docs which rule you follow and where it differs.
 - **First page in final order.** When paging in, the first screen must already
   be ordered; later pages may only insert newer rows above, never reshuffle.

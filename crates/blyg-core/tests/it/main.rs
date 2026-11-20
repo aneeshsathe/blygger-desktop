@@ -10,6 +10,7 @@ mod config_docs;
 mod contacts;
 mod contract_coverage;
 mod crate_graph;
+mod doc_paths;
 mod e2e;
 mod profiles;
 mod read_sync;
