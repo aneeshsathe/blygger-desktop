@@ -63,7 +63,7 @@ pub fn rows(now: DateTime<Utc>) -> Vec<ReadingItem> {
     let lin = |id, kind, at, md: &str, quotes: &[&str]| {
         row("sub-lin", "Lin", LIN, id, kind, 1, at, md, quotes)
     };
-    vec![
+    let mut rows = vec![
         lin(
             LIN_PART_1,
             Kind::Fragment,
@@ -111,7 +111,38 @@ pub fn rows(now: DateTime<Utc>) -> Vec<ReadingItem> {
             "Reading lists are promises we make to a later self.",
             &[],
         ),
-    ]
+    ];
+    bake_quotes(&mut rows);
+    rows
+}
+
+/// Each `![[id]]` line's quote baked into the HTML as a blyg publishes it
+/// (a `blyg-transclusion` snapshot of the quoted post), so the Reader pane
+/// shows the quoted words (user testing, R7).
+fn bake_quotes(rows: &mut [ReadingItem]) {
+    let texts: Vec<(String, String, String)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.remote_id.to_string(),
+                r.origin.clone(),
+                r.content_md.clone(),
+            )
+        })
+        .collect();
+    for r in rows.iter_mut() {
+        for (id, origin, md) in &texts {
+            let line = format!("<p>![[{id}]]</p>");
+            if r.content_html.contains(&line) {
+                let quote = format!(
+                    "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"{id}\" \
+                     data-blyg-version=\"1\" data-blyg-origin=\"{origin}\">\n{}</blockquote>",
+                    blyg_render::render_markdown(md)
+                );
+                r.content_html = r.content_html.replace(&line, &quote);
+            }
+        }
+    }
 }
 
 /// The sample posts' Background entries, as the studio's lens would list
