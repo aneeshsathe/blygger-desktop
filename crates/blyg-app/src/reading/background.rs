@@ -12,11 +12,17 @@
 //! marks anything read or changes anything published. An older studio gets
 //! none of it: its Background lens holds withdrawn posts, as before.
 //!
-//! In the Background list each post says why it's there ("part of a
-//! burst", …; `EntryBackground::why`). A thread published with its parts
+//! In the Background list each post says why it's there ("published with
+//! ‘<thread>’", …; `MainView::background_why`). A thread published with its parts
 //! (studio 0.64) says "+N parts": on its row, as a fold under its card in
 //! the stream, and listed under it when open (`render_burst_parts`); a
-//! part opens like any post.
+//! part opens like any post. By keys: `p` folds or unfolds the parts of the
+//! open thread (else the selected card), and 1–9 open a listed part; the
+//! hint beside "+N parts" says so.
+//!
+//! Settings › BACKGROUND: ⇥ past THEME reaches the rules (a focus ring),
+//! the arrows move between them, and space or ⏎ turns one off or on, with a
+//! toast saying where its posts go.
 
 use std::collections::{HashMap, HashSet};
 
@@ -159,6 +165,23 @@ pub fn chips(r: &ReadingItem, served: bool) -> Vec<ActionChip> {
     out
 }
 
+/// What turning a rule off (`on: false`) or back on says: where its posts
+/// go now.
+pub fn rule_toast(rule: &str, on: bool) -> String {
+    let posts = match rule {
+        blyg_core::background::BURST => "Parts published with a thread",
+        "wordless" => "Posts with no words of their own",
+        "maintenance" => "Posts republished unchanged",
+        "minor" => "Your own minor changes",
+        _ => "Those posts",
+    };
+    if on {
+        format!("{posts} go to Background again")
+    } else {
+        format!("{posts} are back in your lists")
+    }
+}
+
 /// What a placement says when it's done.
 pub fn placed_toast(placement: Option<Placement>) -> &'static str {
     match placement {
@@ -169,6 +192,30 @@ pub fn placed_toast(placement: Option<Placement>) -> &'static str {
 }
 
 impl MainView {
+    /// Why `r` is in Background, as its badge says it. A thread's part
+    /// names the thread ("published with ‘A morning on the harbour wall’")
+    /// when its title is known.
+    pub(crate) fn background_why(&self, r: &ReadingItem) -> Option<String> {
+        let why = why(r)?;
+        if why != blyg_core::background::BURST_WHY {
+            return Some(why);
+        }
+        let thread = r.background.as_ref().and_then(|b| b.burst_thread());
+        let title = thread
+            .and_then(|t| {
+                self.reading
+                    .rows
+                    .iter()
+                    .find(|x| x.subscription_id == r.subscription_id && x.remote_id.as_ref() == t)
+            })
+            .map(vm::post_title)
+            .filter(|t| t != "…" && !t.trim().is_empty());
+        Some(match title {
+            Some(t) => format!("published with ‘{t}’"),
+            None => why,
+        })
+    }
+
     /// The reading pane's Background chips for the open post.
     pub(crate) fn background_chips(&self, r: &ReadingItem) -> Vec<ActionChip> {
         chips(r, self.reading.background.served)
@@ -307,6 +354,30 @@ impl MainView {
         .detach();
     }
 
+    /// Settings' keyboard stops on BACKGROUND: the rules this blyg offers,
+    /// in the page's order (none until they're read).
+    pub(crate) fn background_rule_picks(&self) -> Vec<crate::app::pref_preview::Pick> {
+        let Load::Ready(rules) = &self.reading.background.rules else {
+            return vec![];
+        };
+        RULES
+            .into_iter()
+            .filter(|r| rules.offers(r))
+            .map(crate::app::pref_preview::Pick::Rule)
+            .collect()
+    }
+
+    /// Space or ⏎ on a rule in Settings: turn it off, or back on.
+    pub(crate) fn toggle_background_rule(&mut self, rule: &'static str, cx: &mut Context<Self>) {
+        if self.reading.background.saving {
+            return;
+        }
+        if let Load::Ready(r) = &self.reading.background.rules {
+            let on = r.on(rule);
+            self.save_background_rule(rule, !on, cx);
+        }
+    }
+
     /// Settings: turn one rule on or off (only that key is written).
     pub(crate) fn save_background_rule(
         &mut self,
@@ -341,6 +412,7 @@ impl MainView {
                 match r {
                     Ok(s) => {
                         v.reading.background.rules = Load::Ready(s);
+                        v.show_toast(rule_toast(rule, on), None, cx);
                         v.reading_changed(cx);
                     }
                     Err(e) => {
@@ -380,44 +452,110 @@ impl MainView {
                 );
             }
         };
-        let chip = |id: SharedString, label: &'static str, on: bool| {
+        // Settings' keyboard cursor on a rule (⇥ past THEME; `pref_preview`).
+        let focused = match &self.preview.cursor {
+            Some((
+                crate::app::pref_preview::Row::Background,
+                crate::app::pref_preview::Pick::Rule(r),
+            )) => Some(*r),
+            _ => None,
+        };
+        // On: the accent edge and a check; off: a plain edge and "off".
+        let chip = |id: SharedString, label: &'static str, on: bool, ring: bool| {
             div()
                 .id(id.clone())
                 .debug_selector(move || id.to_string())
                 .px(px(10.))
                 .py(px(3.))
+                .flex()
+                .items_center()
+                .gap(px(5.))
                 .map(|d| crate::theme_ext::chip(d, theme, on))
+                .when(ring, |d| {
+                    d.bg(p.bg).shadow(crate::app::settings_page::focus_ring(&p))
+                })
                 .cursor_pointer()
                 .hover(|s| s.border_color(p.accent).bg(p.hover()))
+                .child(if on { "✓" } else { "○" })
                 .child(label)
+                .when(!on, |d| d.child(div().text_color(p.muted).child("off")))
         };
+        // Withdrawn posts can't be turned off: said as a fact, not a chip.
         let mut col = div().flex().flex_col().gap(px(6.)).child(
             div()
+                .id("bg-withdrawn-fixed")
+                .debug_selector(|| "bg-withdrawn-fixed".into())
                 .flex()
                 .items_center()
                 .gap(px(6.))
-                .child(chip("bg-rule-withdrawn".into(), "Withdrawn posts", true).flex_none())
+                .child(
+                    div()
+                        .flex_none()
+                        .px(px(10.))
+                        .py(px(3.))
+                        .rounded(px(theme.chip_radius))
+                        .border_1()
+                        .border_dashed()
+                        .border_color(p.edge())
+                        .text_color(p.muted)
+                        .child("Withdrawn posts"),
+                )
                 .child(crate::app::settings_page::side_note(
                     &p,
-                    "always in Background",
+                    "always in Background; this one can't be turned off",
                 )),
         );
         // Only the rules this blyg offers: a 0.61 studio refuses the others.
         for rule in RULES.into_iter().filter(|r| rules.offers(r)) {
             let on = rules.on(rule);
+            let ring = focused == Some(rule);
             let (label, hint) = rule_label(rule);
+            let c = chip(format!("bg-rule-{rule}").into(), label, on, ring)
+                .flex_none()
+                .on_click(
+                    cx.listener(move |this, _, _, cx| this.save_background_rule(rule, !on, cx)),
+                );
+            // The ring's own selector (tests), and the scroll to it after ⇥.
+            let c: AnyElement = if ring {
+                let reveal = self.preview.reveal.clone();
+                let scroll = self
+                    .sheet
+                    .get::<crate::app::settings_page::SettingsSheet>()
+                    .map(|s| s.scroll.clone());
+                div()
+                    .flex_none()
+                    .debug_selector(|| "bg-rule-focused".into())
+                    .on_children_prepainted(move |b, window, _| {
+                        let (Some(b), Some(scroll)) = (b.first(), scroll.as_ref()) else {
+                            return;
+                        };
+                        if !reveal.replace(false) {
+                            return;
+                        }
+                        let view = scroll.bounds();
+                        let margin = px(48.);
+                        let off = scroll.offset();
+                        let dy = if b.bottom() + margin > view.bottom() {
+                            view.bottom() - (b.bottom() + margin)
+                        } else if b.top() - margin < view.top() {
+                            view.top() - (b.top() - margin)
+                        } else {
+                            return;
+                        };
+                        scroll.set_offset(point(off.x, off.y + dy));
+                        window.refresh();
+                    })
+                    .child(c)
+                    .into_any_element()
+            } else {
+                c.into_any_element()
+            };
             col = col.child(
                 div()
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .child(
-                        chip(format!("bg-rule-{rule}").into(), label, on)
-                            .flex_none()
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                this.save_background_rule(rule, !on, cx)
-                            })),
-                    )
+                    .child(c)
                     .child(crate::app::settings_page::side_note(&p, hint)),
             );
         }
@@ -430,6 +568,65 @@ impl MainView {
             .when(self.reading.background.saving, |d| d.opacity(0.6))
             .into_any_element(),
         )
+    }
+
+    /// Where `p` and the part numbers act: the open thread (`true`), else
+    /// the stream's selected card (`false`); `None` when neither has parts.
+    fn parts_key_target(&self) -> Option<(Key, bool)> {
+        let bg = &self.reading.background;
+        if let Some(o) = &self.reading.opened {
+            if !bg.parts_of(&o.key).is_empty() {
+                return Some((o.key.clone(), true));
+            }
+            return None;
+        }
+        let sel = self.reading.sel.as_ref()?;
+        (self.reading.mode == super::stream_vm::ReadMode::Stream && !bg.parts_of(sel).is_empty())
+            .then(|| (sel.clone(), false))
+    }
+
+    /// Fold or unfold a thread's parts (a click on "+N parts", or `p`).
+    fn toggle_burst_parts(&mut self, key: &Key, open: bool, cx: &mut Context<Self>) {
+        self.reading.background.toggle_parts(key, open);
+        if !open && let Some(ix) = self.reading.shown_pos(key) {
+            self.reading.stream.list.remeasure_items(ix..ix + 1);
+        }
+        cx.notify();
+    }
+
+    /// The reading screen's parts keys: `p` folds or unfolds the parts of
+    /// the open thread (else the selected stream card), and 1–9 open a
+    /// listed part. Returns whether the key was taken.
+    pub(crate) fn burst_parts_key(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some((thread, open)) = self.parts_key_target() else {
+            return false;
+        };
+        if key == "p" {
+            self.toggle_burst_parts(&thread, open, cx);
+            return true;
+        }
+        let Some(n) = key.parse::<usize>().ok().filter(|n| (1..=9).contains(n)) else {
+            return false;
+        };
+        if !self.reading.background.parts_listed(&thread, open) {
+            return false;
+        }
+        match self
+            .reading
+            .background
+            .parts_of(&thread)
+            .get(n - 1)
+            .cloned()
+        {
+            Some(part) => self.open_reading(part, window, cx),
+            None => return false,
+        }
+        true
     }
 
     /// "+N parts" under a thread published with its parts (studio 0.64's
@@ -498,13 +695,26 @@ impl MainView {
             })
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.reading.background.toggle_parts(&toggle_key, open);
-                if !open && let Some(ix) = this.reading.shown_pos(&toggle_key) {
-                    this.reading.stream.list.remeasure_items(ix..ix + 1);
-                }
-                cx.notify();
+                this.toggle_burst_parts(&toggle_key, open, cx);
             }))
             .child(label);
+        // The keys, where they act: the open thread, else the selected card
+        // (as "Read more ⏎" shows its key).
+        let keyed = self
+            .parts_key_target()
+            .is_some_and(|(k, o)| k == key && o == open);
+        let hint = keyed.then(|| {
+            let n = parts.len();
+            div()
+                .debug_selector(|| "burst-key-hint".into())
+                .text_size(px(11.))
+                .text_color(p.muted)
+                .child(match (listed, n) {
+                    (false, _) => "p unfolds".to_string(),
+                    (true, 1) => "p folds · 1 opens".to_string(),
+                    (true, n) => format!("p folds · 1–{} opens", n.min(9)),
+                })
+        });
         Some(
             div()
                 .id(if open {
@@ -518,7 +728,14 @@ impl MainView {
                 .font_family(self.chrome())
                 .text_size(px(12.))
                 .text_color(p.muted)
-                .child(div().flex().child(toggle))
+                .child(
+                    div()
+                        .flex()
+                        .items_baseline()
+                        .gap(px(8.))
+                        .child(toggle)
+                        .children(hint),
+                )
                 .children(named.into_iter().enumerate().map(|(i, (k, name))| {
                     div()
                         .id(("burst-part", i))
@@ -542,7 +759,7 @@ impl MainView {
     /// Why the post is in Background, as a quiet badge (its row in the
     /// Background list, and its open view); `None` in the foreground.
     pub(crate) fn render_background_why(&self, r: &ReadingItem) -> Option<AnyElement> {
-        let why = why(r)?;
+        let why = self.background_why(r)?;
         let (fg, bg) = self.palette.on_page().quiet_badge();
         Some(
             div()

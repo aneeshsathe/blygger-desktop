@@ -33,12 +33,17 @@ Reader are the toggle at the top right. j/k move, ⏎ reads more, / searches.
 | `rd-background-rule-off` | "Parts published with a thread" turned off: a part back in All, open |
 | `rd-linked-from` | Responses with a post's link notices under "Linked from" |
 | `rd-maths` | a post with formulas in the reader |
+| `rd-responses-keys` | Responses with the row cursor on the link notice (j ×3); the header lists j/k, h, r, o |
 
 Journeys (0.27.0):
 - Why is this in Background? Reader › Background: each row carries a badge
-  ("part of a burst", "no words of its own", "republished unchanged").
-- Background rules: Settings (⌘,), the BACKGROUND row near CHANGELOG; turn a
-  chip off, close Settings, and the rule's posts are back in the stream.
+  ("published with ‘<thread title>’", "no words of its own", "republished unchanged").
+- Background rules: Settings (⌘,), the BACKGROUND row under CHANGELOG; turn a
+  chip off (a click, or ⇥ past THEME then space), a toast says where its
+  posts went, and they're back in the stream.
+- A thread's parts by keys: `p` folds or unfolds them (open thread, else the
+  selected stream card), 1–9 open one.
+- Responses by keys: j/k move, h hide, r reply, o open ↗.
 - "+N parts": click it under a stream card to unfold; the open thread lists
   them ("−N parts" folds); click a part to open it. There is no key.
 - Link notices: Responses (⇧⌘M), under a post's responses, "Linked from".

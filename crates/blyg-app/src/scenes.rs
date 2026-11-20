@@ -294,6 +294,16 @@ scenes! {
     Reading {
         RdProvenance = "rd-provenance",
     }
+    /// app/demo.rs (--- FX1 ---): Settings with the keyboard on BACKGROUND's
+    /// second rule (⇥ ×5, →), scrolled to it
+    Main {
+        SettingsBackgroundKeys = "settings-background-keys",
+    }
+    /// reading/demo.rs (--- FX1 ---): Responses with the row cursor on the
+    /// link notice (j ×3)
+    Reading {
+        RdResponsesKeys = "rd-responses-keys",
+    }
 }
 
 impl Scene {
