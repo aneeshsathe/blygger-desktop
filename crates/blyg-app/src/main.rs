@@ -31,6 +31,8 @@ mod images;
 mod keymap;
 #[cfg(test)]
 mod keymap_docs;
+#[cfg(test)]
+mod never_rename_tests;
 mod ornament; // --- themes ---
 mod platform;
 mod platform_text;

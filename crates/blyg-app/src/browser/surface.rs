@@ -283,8 +283,11 @@ pub fn default_factory() -> Factory {
 /// (cookies, local storage): "blygger-browser" padded, as a UUID.
 // macOS only (WebKit's data store); Windows names a folder instead.
 #[cfg_attr(
-    not(all(target_os = "macos", not(test))),
-    expect(dead_code, reason = "the WebKit data store: macOS app builds only")
+    all(not(target_os = "macos"), not(test)),
+    expect(
+        dead_code,
+        reason = "the WebKit data store: macOS app builds (and tests) only"
+    )
 )]
 pub const DATA_STORE_ID: [u8; 16] = *b"blygger-browser\0";
 
