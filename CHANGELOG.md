@@ -55,6 +55,8 @@ teaches something new in the tour, set the newest entry's `version` in
 - **The sleep ban covers blyg-core, blyg-ai and `blyg-ext*`**, through one reviewed `blyg_core::wait` module.
 - **Sheets are one module** (`sheet/`): each of the 20 sheets owns its state, keys and render behind one dispatch; the enum is private, so matching a sheet kind elsewhere doesn't compile (236 scattered matches removed).
 - **The disconnected backend is generated** from the `Backend` trait, like `SwitchBackend`; 18 defaults that could hide a missing implementation (writes, read marks, sync flags, shelf reads) are now required.
+- **A post's subscription id and remote id are separate types** (`SubId`, `RemoteId` in `blyg-core/src/ids.rs`) through the `Backend` trait, the store and the reading UI, so swapping them doesn't compile; wire and database forms are unchanged (tested byte for byte).
+- **`app.rs` is split by feature** (3,617 → 1,160 lines): connect, looks (config, theme, fonts), chrome (title bar, status bar, toasts), writing, publish, upload, and the Posts list live in `app/<feature>.rs`; a test caps `app.rs` at 1,170 lines.
 - **Crate boundaries are a test** (`crate_graph.rs`): GPUI and blyg-app only in blyg-app; each crate depends only on what its runtime allows.
 - **Platform wording is checked:** UI text is built through `keymap::hint` / `platform_text::Text`; a scan fails on bare ⌘ ⌥ ⇧ ⌃ (it found about 70 that Windows showed as Mac glyphs, now fixed). Windows key tables are tested for AltGr characters and clashes, and tour captions for real keys, menu items and labels.
 
