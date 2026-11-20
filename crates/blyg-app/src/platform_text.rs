@@ -593,4 +593,76 @@ mod tests {
             win
         );
     }
+
+    /// Whether `k` (one keystroke, `cmd-shift-left` style) is a macOS caret
+    /// move: ⌘ with an arrow, or ⌥ with ← or →. Windows' text field binds
+    /// Ctrl+End, Ctrl+Shift+← and so on for these, so the same keystroke
+    /// does something else there.
+    fn macos_caret_key(k: &str) -> bool {
+        let parts: Vec<&str> = k.split('-').collect();
+        let (Some(last), mods) = (parts.last(), &parts[..parts.len().saturating_sub(1)]) else {
+            return false;
+        };
+        let arrow = matches!(*last, "left" | "right" | "up" | "down");
+        let sideways = matches!(*last, "left" | "right");
+        // ⌥⌘ chords (the tour's ⌥⌘← ⌥⌘→) are app bindings, not caret moves.
+        let chord = mods.contains(&"cmd") && mods.contains(&"alt");
+        arrow && !chord && (mods.contains(&"cmd") || (mods.contains(&"alt") && sideways))
+    }
+
+    /// A test that drives the editor's caret with macOS keys (⌘↓ for end of
+    /// text, ⌥⇧← to select a word) does something else on Windows: 0.26.0's
+    /// Windows CI caught tests with Mac glyphs, then 0.27.0's
+    /// `the_format_keys_bold_italic_and_formula` bolded one letter there. App
+    /// keys go through `keymap::keys` and are fine; caret keys aren't app
+    /// bindings, so a test moves the caret another way.
+    #[test]
+    fn tests_dont_send_macos_only_caret_keys() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut bad = Vec::new();
+        let mut dirs = vec![root.clone()];
+        while let Some(d) = dirs.pop() {
+            for e in std::fs::read_dir(&d).expect("read src") {
+                let p = e.expect("entry").path();
+                if p.is_dir() {
+                    dirs.push(p);
+                    continue;
+                }
+                if p.extension().and_then(|x| x.to_str()) != Some("rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&p).expect("read");
+                for (n, line) in text.lines().enumerate() {
+                    for call in ["keys(cx, \"", "simulate_keystrokes(\""] {
+                        let Some(at) = line.find(call) else { continue };
+                        let lit = line[at + call.len()..].split('"').next().unwrap_or("");
+                        if lit.split(' ').any(macos_caret_key) {
+                            let rel = p.strip_prefix(&root).expect("under src");
+                            bad.push(format!("  {}:{}: {}", rel.display(), n + 1, line.trim()));
+                        }
+                    }
+                }
+            }
+        }
+        bad.sort();
+        assert!(
+            bad.is_empty(),
+            "tests sending macOS-only caret keys (⌘+arrow, ⌥+←/→), which Windows' text \
+             field reads differently:\n{}\nMove the caret another way: shift-left \
+             repeated, type_over the text, or set the selection directly.",
+            bad.join("\n")
+        );
+    }
+
+    #[test]
+    fn the_caret_key_rule_spares_app_keys() {
+        assert!(macos_caret_key("alt-shift-left"));
+        assert!(macos_caret_key("cmd-down"));
+        assert!(macos_caret_key("cmd-shift-up"));
+        // App bindings and plain moves pass.
+        assert!(!macos_caret_key("alt-up"));
+        assert!(!macos_caret_key("shift-left"));
+        assert!(!macos_caret_key("cmd-enter"));
+        assert!(!macos_caret_key("alt-cmd-left"));
+    }
 }
