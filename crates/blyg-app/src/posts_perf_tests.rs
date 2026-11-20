@@ -269,13 +269,15 @@ fn timing_typing_at_scale(cx: &mut TestAppContext) {
 }
 
 /// What typing an omnibar search, and the list's refresh after a sync
-/// tick, cost: their times, and the store's work a keystroke (with the
-/// rows held, then with twice as many) and a tick.
+/// tick, cost: their times, and the store's work and trigram hits a
+/// keystroke (with the rows held, then with twice as many) and a tick.
 struct Omnibar {
     typing: Keys,
     ticks: Keys,
     steps_a_key: u64,
+    hits_a_key: u64,
     steps_a_key_doubled: u64,
+    hits_a_key_doubled: u64,
     steps_a_tick: u64,
 }
 
@@ -284,14 +286,15 @@ const QUERY: &str = "garden notes";
 /// Type `QUERY` into the empty omnibar, a key at a time, each key's
 /// search landing before the next key (a typist's pace: a search takes
 /// milliseconds, a keystroke a tenth of a second). Returns the
-/// keystrokes' times and the store's work a keystroke, and checks that
-/// what's listed is exactly what the backend finds for the query.
+/// keystrokes' times, the store's work a keystroke and the trigram hits a
+/// keystroke, and checks that what's listed is exactly what the backend
+/// finds for the query.
 fn type_query(
     view: &Entity<MainView>,
     live: &LiveBackend,
     cx: &mut VisualTestContext,
     label: &str,
-) -> (Keys, u64) {
+) -> (Keys, u64, u64) {
     let mut typing = Keys::default();
     let mut steps = Steps::start(live);
     for (i, c) in QUERY.chars().enumerate() {
@@ -314,7 +317,16 @@ fn type_query(
     });
     assert!(!want.is_empty(), "the query finds posts");
     assert_eq!(shown, want);
-    (typing, per_key)
+    // The trigram index's hits a keystroke (the keys of three or more
+    // characters search it; shorter ones read the snapshot).
+    let trigram_hits: usize = (1..=QUERY.chars().count())
+        .map(|n| QUERY.chars().take(n).collect::<String>())
+        .filter(|q| q.trim().chars().count() >= 3)
+        .map(|q| live.search(&q).len())
+        .sum();
+    let hits_a_key = trigram_hits as u64 / QUERY.chars().count() as u64;
+    eprintln!("{label:<40} {hits_a_key} trigram hits a key");
+    (typing, per_key, hits_a_key)
 }
 
 /// Typing an omnibar search over thousands of posts, and the list's
@@ -323,7 +335,7 @@ fn type_query(
 fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     let dir = tempfile::tempdir().unwrap();
     let (view, live, thread, cx) = setup(dir.path(), cx);
-    let (typing, steps_a_key) = type_query(&view, &live, cx, "omnibar typing");
+    let (typing, steps_a_key, hits_a_key) = type_query(&view, &live, cx, "omnibar typing");
 
     // A sync tick after a save: the list is refreshed for the query.
     view.update_in(cx, |v, window, cx| v.set_query_text("", window, cx));
@@ -386,12 +398,15 @@ fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     settle(cx);
     assert_eq!(live.items().len(), own + posts());
     assert!(live.reading().len() >= held * 2 - held / 50);
-    let (_, steps_a_key_doubled) = type_query(&view, &live, cx, "omnibar typing (twice the rows)");
+    let (_, steps_a_key_doubled, hits_a_key_doubled) =
+        type_query(&view, &live, cx, "omnibar typing (twice the rows)");
     Omnibar {
         typing,
         ticks,
         steps_a_key,
+        hits_a_key,
         steps_a_key_doubled,
+        hits_a_key_doubled,
         steps_a_tick,
     }
 }
@@ -401,7 +416,7 @@ fn omnibar_search_at_scale_does_bounded_work(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
     // A tick after a save reads the posts again (about 60 steps a post);
     // it's held to about twice that. (A keystroke's work:
-    // `an_omnibar_keystroke_does_the_same_work_however_much_is_held`.)
+    // `an_omnibar_keystroke_reads_row_ids_not_every_matching_post`.)
     let posts = posts() as u64;
     assert!(
         o.steps_a_tick < posts * PER_POST_ON_A_TICK,
@@ -413,35 +428,42 @@ fn omnibar_search_at_scale_does_bounded_work(cx: &mut TestAppContext) {
 /// VM steps a refresh after a save may spend on each post it lists.
 const PER_POST_ON_A_TICK: u64 = 120;
 
-/// The most VM steps an omnibar keystroke may cost, whatever is held: a
-/// check that nothing was committed since the last search, and the
-/// selected post's reads (a few dozen steps today).
-const MAX_STEPS_A_KEY: u64 = 1_000;
+/// VM steps a keystroke may spend on each post the trigram index finds:
+/// reading its row id (the index yields it, the stale-row check probes
+/// it). Decoding the matching row instead (21 columns and an outbox
+/// lookup) costs about 80.
+const PER_HIT_A_KEY: u64 = 20;
 
-/// What a keystroke's work may differ by between the two runs without
-/// scaling (the selected post differs).
-const SLACK_A_KEY: u64 = 50;
+/// VM steps a keystroke may spend whatever it finds: the stamp check,
+/// the stale rows, the selected post's reads.
+const FIXED_A_KEY: u64 = 500;
 
-/// A keystroke's SQLite work stays flat however much is held. That is the
-/// store's work, not the whole keystroke's: a narrowed search still scans
-/// the last key's hits' text in Rust and copies the ones that match, which
-/// no VM step counts (`timing_omnibar_search_at_scale` reports the time).
+/// What a keystroke's SQLite work may grow with. The gate is VM steps:
+/// a keystroke reads the trigram index's row ids and resolves them
+/// against the `items()` snapshot, so its work grows only with the posts
+/// the index finds (a few steps each, `PER_HIT_A_KEY`), not with the rows
+/// held and not by decoding each matching post. Checked with the rows
+/// held and with twice as many. The Rust side (resolving and copying the
+/// hits) is no VM step: `timing_omnibar_search_at_scale` reports its
+/// time, and is the measure of it.
 #[gpui_kit::test]
-fn an_omnibar_keystroke_does_the_same_work_however_much_is_held(cx: &mut TestAppContext) {
+fn an_omnibar_keystroke_reads_row_ids_not_every_matching_post(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
-    // A keystroke narrows what's listed: its store work is a check that
-    // nothing changed and the selected post's reads, the same however
-    // many rows are held. Doubling the rows held may add only a sliver.
-    let (one, two) = (o.steps_a_key, o.steps_a_key_doubled);
-    assert!(
-        two * 10 <= one * 13 + 10 * SLACK_A_KEY,
-        "{one} VM steps an omnibar keystroke, {two} with twice the rows held: \
-         a keystroke's work grows with what's held"
-    );
-    assert!(
-        one.max(two) <= MAX_STEPS_A_KEY,
-        "{one} / {two} VM steps an omnibar keystroke (limit {MAX_STEPS_A_KEY})"
-    );
+    for (label, steps, hits) in [
+        ("the rows held", o.steps_a_key, o.hits_a_key),
+        (
+            "twice the rows",
+            o.steps_a_key_doubled,
+            o.hits_a_key_doubled,
+        ),
+    ] {
+        let limit = hits * PER_HIT_A_KEY + FIXED_A_KEY;
+        assert!(
+            steps <= limit,
+            "{steps} VM steps an omnibar keystroke over {label}, for {hits} trigram hits a \
+             key (limit {limit}): a keystroke decodes every matching post"
+        );
+    }
 }
 
 #[gpui_kit::test]
