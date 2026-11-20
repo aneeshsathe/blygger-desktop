@@ -16,7 +16,8 @@
 //!   smaller side is measured (`t.elapsed() < d`, `per.as_micros() < 5000`,
 //!   where `per` came from `.elapsed()` or `Instant::now()`), or whose
 //!   larger side is a budget (`median < BUDGET * 4`), or a remaining time
-//!   (`deadline - Instant::now() > d`).
+//!   (`deadline - Instant::now() > d`);
+//! - a timing test not named `timing_…`, which the CI job's filter misses.
 //!
 //! A lower bound (`started.elapsed() >= d`: the code under test waited, as
 //! a pacing test checks) can't fail on a slow machine, and is allowed. So is
@@ -192,14 +193,20 @@ fn close_of(code: &[u8], open: usize) -> usize {
     code.len()
 }
 
+/// Where each `#[ignore = "timing: …"]` attribute starts: in code, not a
+/// comment or a string (`code` is `src` through [`code_only`]).
+fn timing_attributes(src: &str, code: &str) -> Vec<usize> {
+    src.match_indices(TIMING_IGNORE)
+        .map(|(at, _)| at)
+        .filter(|&at| code.as_bytes()[at] == b'#')
+        .collect()
+}
+
 /// `code` with each timing test's function blanked (an attribute
 /// `#[ignore = "timing: …"]`, read from the original `src`).
 fn without_timing_tests(src: &str, code: &str) -> String {
     let mut out = code.as_bytes().to_vec();
-    let mut from = 0;
-    while let Some(p) = src[from..].find(TIMING_IGNORE) {
-        let at = from + p;
-        from = at + TIMING_IGNORE.len();
+    for at in timing_attributes(src, code) {
         let Some(f) = code[at..].find("fn ") else {
             continue;
         };
@@ -461,10 +468,34 @@ fn line_of(code: &str, at: usize) -> usize {
     code[..at].matches('\n').count() + 1
 }
 
+/// Each timing test whose name the CI job's filter (`timing_`) misses.
+fn misnamed_timing_tests(src: &str, code: &str) -> Vec<(usize, String)> {
+    let mut out = vec![];
+    for at in timing_attributes(src, code) {
+        let Some(f) = code[at..].find("fn ") else {
+            continue;
+        };
+        let name: String = code[at + f + 3..]
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_')
+            .collect();
+        if !name.starts_with("timing_") {
+            out.push((
+                line_of(code, at),
+                format!(
+                    "a timing test not named timing_… (`{name}`): CI's timing job won't run it"
+                ),
+            ));
+        }
+    }
+    out
+}
+
 /// Each offence in one file's source: `line: what`.
 fn offences(src: &str) -> Vec<(usize, String)> {
-    let code = without_timing_tests(src, &code_only(src));
-    let mut out = vec![];
+    let stripped = code_only(src);
+    let mut out = misnamed_timing_tests(src, &stripped);
+    let code = without_timing_tests(src, &stripped);
     for (i, _) in code.match_indices("fn budget(") {
         if i == 0 || !is_ident(code.as_bytes()[i - 1]) {
             out.push((line_of(&code, i), "a local `fn budget(`".to_string()));
@@ -559,11 +590,13 @@ fn d() {
 }
 #[test]
 #[ignore = "timing: run by the CI timing job"]
-fn report() {
+fn timing_report() {
     let t = Instant::now();
     assert!(t.elapsed() < Duration::from_millis(10));
 }
+#[ignore = "timing: run by the CI timing job"]
+fn slow_report() {}
 "#;
     let found: Vec<usize> = offences(src).into_iter().map(|(l, _)| l).collect();
-    assert_eq!(found, [2, 6, 10, 19, 20, 21, 42], "{:?}", offences(src));
+    assert_eq!(found, [2, 6, 10, 19, 20, 21, 42, 50], "{:?}", offences(src));
 }
