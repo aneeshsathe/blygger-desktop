@@ -2803,18 +2803,25 @@ fn no_redirects() -> ureq::Agent {
         .build()
 }
 
-/// `auth::login`, waiting out the studio's sign-in budget (429): other
-/// tests sign in with the password too and can spend it.
+/// The suite's one studio sign-in (`auth::login`), waiting out the studio's
+/// sign-in budget: other tests sign in with the password too and can spend it.
 fn studio_login(base: &str, password: &str) -> String {
+    retry_429("studio sign-in", || auth::login(base, password))
+}
+
+/// Runs `call` until the studio stops answering 429 (its sign-in budget,
+/// shared by every password sign-in in the run), for up to 90 s, and
+/// expects the answer then. The suite's one 429 wait-out.
+fn retry_429<T>(what: &str, mut call: impl FnMut() -> Result<T>) -> T {
     let t0 = Instant::now();
     loop {
-        match auth::login(base, password) {
+        match call() {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
             {
                 wait::wall_clock(Duration::from_secs(5))
             }
-            r => break r.expect("studio sign-in"),
+            r => break r.expect(what),
         }
     }
 }
@@ -5981,18 +5988,8 @@ fn client_access_lists_makes_and_revokes_a_token() {
         assert_eq!(b.access_gate(), AccessGate::Ready);
     }
     // With the password, several sign-ins in a second can spend the
-    // studio's sign-in budget (429): wait it out.
-    let t0 = Instant::now();
-    let before = loop {
-        match b.authorizations() {
-            Err(CoreError::Rejected { status: 429, .. })
-                if t0.elapsed() < Duration::from_secs(90) =>
-            {
-                wait::wall_clock(Duration::from_secs(5))
-            }
-            r => break r.expect("list"),
-        }
-    };
+    // studio's sign-in budget.
+    let before = retry_429("list", || b.authorizations());
     assert!(
         before.iter().any(|a| a.manual),
         "the suite's own minted token is listed: {before:?}"
