@@ -117,8 +117,14 @@ pub(crate) fn tangle_heading(count: usize) -> String {
     )
 }
 
-/// Item `i` of the confirm step's list.
+/// Item `i` of the confirm step's list. The blyg's label for a passage cut
+/// at eight words ends "…" even after a full stop; shown, a sentence's own
+/// end needs none (user testing, W5). The label itself stays the blyg's.
 pub(crate) fn part_line(i: usize, label: &str) -> String {
+    let label = match label.strip_suffix('…') {
+        Some(cut) if cut.ends_with(['.', '!', '?']) => cut,
+        _ => label,
+    };
     format!("{}. {label}", i + 1)
 }
 
