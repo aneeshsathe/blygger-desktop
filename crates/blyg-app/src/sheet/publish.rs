@@ -148,9 +148,12 @@ impl SheetView for TangleSheet {
                         .flex()
                         .flex_col()
                         .gap(px(2.))
-                        .children(parts.iter().enumerate().map(|(i, label)| {
-                            div().child(format!("{}. {label}", i + 1))
-                        })),
+                        .children(
+                            parts
+                                .iter()
+                                .enumerate()
+                                .map(|(i, label)| div().child(format!("{}. {label}", i + 1))),
+                        ),
                 )
                 .child(
                     div()

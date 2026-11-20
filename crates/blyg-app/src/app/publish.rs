@@ -235,7 +235,13 @@ impl MainView {
 
     /// --- tangle --- After a tangle the open post's text is the server's
     /// rewrite (each span now `![[id | label]]`); put it in the editor.
-    fn take_rewritten(&mut self, id: &LocalId, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+    fn take_rewritten(
+        &mut self,
+        id: &LocalId,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.current.as_ref().map(|c| &c.local_id) != Some(id) {
             return;
         }
@@ -251,18 +257,29 @@ impl MainView {
 
     /// --- tangle --- The `rd-tangle` scene: a thread with a passage and a
     /// placeholder, its preview beside it, then publish up to the confirm
-    /// step (the sample backend answers as studio 0.63 does).
-    pub(crate) fn tangle_demo(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+    /// step (the sample backend answers as studio 0.63 does), or not
+    /// (`rd-tangle-preview`: the sheet would cover the preview).
+    pub(crate) fn tangle_demo(
+        &mut self,
+        n: usize,
+        confirm: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match n {
             0 => {
-                self.open(&LocalId(crate::fake::tangle_seed::DEMO_THREAD.into()), window, cx);
+                self.open(
+                    &LocalId(crate::fake::tangle_seed::DEMO_THREAD.into()),
+                    window,
+                    cx,
+                );
                 let old = self.editor.read(cx).value().to_string();
                 self.splice_editor(&old, crate::fake::tangle_seed::SAMPLE, None, window, cx);
                 self.after_edit(cx);
                 self.studio_set_view(studio::ViewMode::Split, cx);
             }
-            1 => self.publish(window, cx),
-            2 => self.do_publish(String::new(), window, cx),
+            1 if confirm => self.publish(window, cx),
+            2 if confirm => self.do_publish(String::new(), window, cx),
             _ => {}
         }
         cx.notify();

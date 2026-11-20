@@ -272,6 +272,7 @@ scenes! {
     /// app/publish.rs (--- tangle ---)
     Main {
         RdTangle = "rd-tangle",
+        RdTanglePreview = "rd-tangle-preview",
     }
 }
 

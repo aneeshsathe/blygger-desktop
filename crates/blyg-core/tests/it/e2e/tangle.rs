@@ -40,26 +40,44 @@ fn a_tangled_thread_asks_then_publishes_its_parts_first() {
                 ]
             );
         }
-        other => panic!("expected the tangle gate, got {:?}", other.map(|o| o.version)),
+        other => panic!(
+            "expected the tangle gate, got {:?}",
+            other.map(|o| o.version)
+        ),
     }
-    assert_eq!(server_items().len(), before, "a refused tangle mints nothing");
+    assert_eq!(
+        server_items().len(),
+        before,
+        "a refused tangle mints nothing"
+    );
     assert_eq!(server_item(&sid)["status"], "draft");
 
     // 2. Confirmed: the parts first, then the thread.
     let out = b.publish_with(&id, None, &tangle_yes()).expect("tangle");
     assert_eq!(out.version, 1);
     assert_eq!(out.parts.len(), 2, "{:?}", out.parts);
-    let rewritten = out.rewritten.clone().expect("the server's rewrite");
     let server_md = server_item(&sid)["contentMd"].as_str().unwrap().to_string();
-    assert_eq!(rewritten, server_md);
-    assert!(!rewritten.contains("[[+"), "{rewritten}");
-    assert!(rewritten.contains(&format!("![[{}", out.parts[0])), "{rewritten}");
-    assert!(rewritten.contains(&format!("[[{} | an idea {t}]]", out.parts[1])), "{rewritten}");
+    assert!(!server_md.contains("[[+"), "{server_md}");
+    assert!(
+        server_md.contains(&format!("![[{}", out.parts[0])),
+        "{server_md}"
+    );
+    assert!(
+        server_md.contains(&format!("[[{} | an idea {t}]]", out.parts[1])),
+        "{server_md}"
+    );
     let local = b.item(&id).unwrap();
-    assert_eq!(local.content_md, server_md, "the working copy is the server's");
+    assert_eq!(
+        local.content_md, server_md,
+        "the working copy is the server's"
+    );
     assert!(!local.pending_sync && !local.conflict);
     let doc = public_json(&format!("{}/items/{sid}.json", e.url));
-    assert_eq!(doc["transclusions"][0]["id"], out.parts[0].as_str(), "{doc}");
+    assert_eq!(
+        doc["transclusions"][0]["id"],
+        out.parts[0].as_str(),
+        "{doc}"
+    );
     let links: Vec<&str> = doc["links"]
         .as_array()
         .map(|a| a.iter().filter_map(|l| l["id"].as_str()).collect())
@@ -77,13 +95,16 @@ fn a_tangled_thread_asks_then_publishes_its_parts_first() {
         assert_eq!(w["kind"], "thread", "{w}");
         assert!(held.contains(p), "part {p} is held locally");
     }
-    assert!(server_item(&out.parts[1])["contentMd"]
-        .as_str()
-        .unwrap()
-        .starts_with(&format!("# an idea {t}")));
+    assert!(
+        server_item(&out.parts[1])["contentMd"]
+            .as_str()
+            .unwrap()
+            .starts_with(&format!("# an idea {t}"))
+    );
 
     // 3. An edit on the text the editor now shows, then a republish: no new
     // items. (An editor that kept its own text would save the spans back.)
+    let rewritten = out.rewritten.clone();
     let editor = out.rewritten.unwrap_or(text);
     b.save(&id, &format!("{editor}\nOne more line.\n")).unwrap();
     b.sync_now().unwrap();
@@ -92,6 +113,7 @@ fn a_tangled_thread_asks_then_publishes_its_parts_first() {
     assert_eq!(again.version, 2);
     assert!(again.parts.is_empty() && again.rewritten.is_none());
     assert_eq!(server_items().len(), count, "a republish mints nothing");
+    assert_eq!(rewritten.as_deref(), Some(server_md.as_str()));
 }
 
 /// Refusals: a span in a fragment, and more than ten spans. Burrow says the
@@ -112,11 +134,19 @@ fn tangle_refusals_match_the_studio() {
     b.sync_now().unwrap();
     let before = server_items().len();
     for (id, want) in [
-        (&frag, "tangling makes a thread; switch this draft to a thread"),
-        (&thread, "one publish can make at most 10 new items; this has 11"),
+        (
+            &frag,
+            "tangling makes a thread; switch this draft to a thread",
+        ),
+        (
+            &thread,
+            "one publish can make at most 10 new items; this has 11",
+        ),
     ] {
         match b.publish_with(id, None, &tangle_yes()) {
-            Err(CoreError::Rejected { status, message, .. }) => {
+            Err(CoreError::Rejected {
+                status, message, ..
+            }) => {
                 assert_eq!((status, message.as_str()), (400, want));
             }
             other => panic!("expected a refusal, got {:?}", other.map(|o| o.version)),

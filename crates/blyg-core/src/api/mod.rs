@@ -1600,7 +1600,12 @@ fn tangle_confirm(body: &Value) -> CoreError {
     let parts: Vec<String> = d
         .and_then(|d| d.get("parts"))
         .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default();
     let count = d
         .and_then(|d| d.get("count"))
@@ -1782,7 +1787,28 @@ mod tests {
             json!({ "expectedRevision": 4, "note": "fixed a typo" })
         );
     }
-}
 
-#[cfg(test)]
-mod compress_tests;
+    #[test]
+    fn the_tangle_gate_reads_its_count_and_parts() {
+        let body = serde_json::json!({
+            "code": "tangle-confirmation-required",
+            "message": "publishing this thread also publishes 2 new items; send tangle: true to confirm",
+            "details": {"count": 2, "parts": ["A passage…", "an idea (linked)"]}
+        });
+        match tangle_confirm(&body) {
+            CoreError::TangleConfirm { count, parts } => {
+                assert_eq!(count, 2);
+                assert_eq!(parts, ["A passage…", "an idea (linked)"]);
+            }
+            e => panic!("{e}"),
+        }
+        let e = CoreError::TangleConfirm {
+            count: 1,
+            parts: vec![],
+        };
+        assert_eq!(
+            e.to_string(),
+            "publishing this thread also publishes 1 new item"
+        );
+    }
+}

@@ -231,14 +231,16 @@ mod tests {
 
     #[test]
     fn a_quote_inside_a_tangle_span_is_the_new_items_and_a_caret_in_one_adds_after_it() {
-        let span = format!(
-            "![[+ A passage of my own that quotes it:\n\n![[{ID}]]\n> inside the span\n]]"
-        );
+        let span =
+            format!("![[+ A passage of my own that quotes it:\n\n![[{ID}]]\n> inside the span\n]]");
         // Only a span quotes the target: the stub has no quote of its own,
         // and the chooser adds one at the top.
         assert_eq!(stub_quote_form(&span, ID), None);
         assert_eq!(quote_count(&span, ID), 0);
-        assert_eq!(with_stub_quote(&span, ID, None), format!("![[{ID}]]\n\n{span}"));
+        assert_eq!(
+            with_stub_quote(&span, ID, None),
+            format!("![[{ID}]]\n\n{span}")
+        );
         // With the stub's own quote above it, the chooser edits that one.
         let md = format!("![[{ID}]]\n\nMine.\n\n{span}\n\nAfter.");
         assert_eq!(quote_count(&md, ID), 1);

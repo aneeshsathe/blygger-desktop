@@ -117,7 +117,7 @@ fn has_own_media(text: &str) -> bool {
         let run_end = text[from..]
             .find(|c: char| c == ')' || is_js_ws(c))
             .map_or(text.len(), |n| from + n);
-        let run = text[from..run_end].as_bytes();
+        let run = &text.as_bytes()[from..run_end];
         let mut k = 0;
         while let Some(m) = find_bytes(&run[k..], b"media/") {
             let s = k + m + 6;
@@ -164,7 +164,11 @@ fn comment_ranges(md: &str) -> Vec<(usize, usize)> {
     }
     let code = markdown::code_ranges(md);
     let opens = |at: usize| {
-        let before_ok = at == 0 || md[..at].chars().next_back().is_some_and(char::is_whitespace);
+        let before_ok = at == 0
+            || md[..at]
+                .chars()
+                .next_back()
+                .is_some_and(char::is_whitespace);
         before_ok && md.as_bytes().get(at + 2) != Some(&b'*')
     };
     let mut from = 0;
@@ -535,7 +539,10 @@ mod tests {
         let q = &t.spans[0];
         assert_eq!(q.kind, SpanKind::Quote);
         assert_eq!(q.text, "First part.\n\nSecond paragraph of it.");
-        assert_eq!(&md[q.start..q.end], "![[+ First part.\n\nSecond paragraph of it.]]");
+        assert_eq!(
+            &md[q.start..q.end],
+            "![[+ First part.\n\nSecond paragraph of it.]]"
+        );
         let l = &t.spans[1];
         assert_eq!(l.kind, SpanKind::Link);
         assert_eq!(l.text, "an idea");
@@ -574,9 +581,15 @@ mod tests {
 
     #[test]
     fn the_studios_refusals() {
-        assert_eq!(reasons("text ![[+ x]]"), ["a new-item span must start its own line"]);
+        assert_eq!(
+            reasons("text ![[+ x]]"),
+            ["a new-item span must start its own line"]
+        );
         assert_eq!(reasons("![[+x]]"), ["write a space after ![[+"]);
-        assert_eq!(reasons("![[+ x\n\nmore"), ["this new-item span has no closing ]]"]);
+        assert_eq!(
+            reasons("![[+ x\n\nmore"),
+            ["this new-item span has no closing ]]"]
+        );
         assert_eq!(
             reasons("![[+ x]] trailing"),
             ["a new-item span's closing ]] must end its line"]
@@ -584,22 +597,33 @@ mod tests {
         assert_eq!(reasons("![[+ ]]"), ["this new-item span is empty"]);
         assert_eq!(
             reasons("![[+ a\n![[+ b]]"),
-            ["a new-item span cannot contain another; tangle again inside the new item once it exists"]
+            [
+                "a new-item span cannot contain another; tangle again inside the new item once it exists"
+            ]
         );
         assert_eq!(
             reasons("![[+ a [TK]x[/TK] b]]"),
-            ["a new-item span cannot contain a TK scope; generate first, or move the scope out of the span"]
+            [
+                "a new-item span cannot contain a TK scope; generate first, or move the scope out of the span"
+            ]
         );
         let media = "![[+ ![alt](media/0123456789abcdefghjkmnpqrs.webp)]]";
         assert_eq!(
             reasons(media),
-            ["a new-item span cannot contain an attached image yet; attach it to the new item after it is published"]
+            [
+                "a new-item span cannot contain an attached image yet; attach it to the new item after it is published"
+            ]
         );
         assert_eq!(
             reasons("![[+ a [[+ b]] c]]"),
-            ["a [[+ …]] placeholder cannot sit inside a ![[+ …]] span; add it to the new item once it exists"]
+            [
+                "a [[+ …]] placeholder cannot sit inside a ![[+ …]] span; add it to the new item once it exists"
+            ]
         );
-        assert_eq!(reasons("x [[+  ]] y"), ["this [[+ …]] placeholder is empty"]);
+        assert_eq!(
+            reasons("x [[+  ]] y"),
+            ["this [[+ …]] placeholder is empty"]
+        );
     }
 
     #[test]
@@ -623,7 +647,10 @@ mod tests {
     #[test]
     fn long_spans_are_labelled_by_their_first_eight_words() {
         let t = parse_tangles("![[+ one two three four five six seven eight nine ten]]");
-        assert_eq!(tangle_label(&t.spans[0]), "one two three four five six seven eight…");
+        assert_eq!(
+            tangle_label(&t.spans[0]),
+            "one two three four five six seven eight…"
+        );
     }
 
     #[test]
@@ -642,7 +669,11 @@ mod tests {
             token(1)
         );
         assert_eq!(
-            finish(&html, &p.spans, &["<p>The part.</p>\n".into(), String::new()]),
+            finish(
+                &html,
+                &p.spans,
+                &["<p>The part.</p>\n".into(), String::new()]
+            ),
             "<p data-line=\"0\">Intro.</p>\n\
              <blockquote class=\"blyg-tangle-new\" data-line=\"1\"><p class=\"blyg-tangle-label\">new item</p><p>The part.</p>\n</blockquote>\n\
              <p data-line=\"2\">Outro <span class=\"blyg-tangle-link\" title=\"new item, linked\">idea &lt;b&gt;</span>.</p>\n"

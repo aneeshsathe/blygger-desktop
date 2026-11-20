@@ -173,7 +173,9 @@ pub fn render_preview(
     // --- tangle --- a thread's `![[+ …]]` spans and `[[+ …]]` placeholders
     // become tokens first, drawn as the new items they'll be at the end
     // (`previewTangles`, studio 0.63).
-    let tangles = (kind == Kind::Thread).then(|| tangle::preview(md)).flatten();
+    let tangles = (kind == Kind::Thread)
+        .then(|| tangle::preview(md))
+        .flatten();
     let md = tangles.as_ref().map_or(md, |t| t.doc.text.as_str());
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
@@ -324,8 +326,11 @@ fn tangle_finish(
     resolver: &dyn Resolver,
     opts: &RenderOpts,
 ) -> String {
+    // As the studio's preview: no provenance line on a quote inside a
+    // span, and it isn't one of the thread's `transclusions`.
     let inner = RenderOpts {
         data_line: false,
+        provenance: false,
         ..opts.clone()
     };
     let quotes: Vec<String> = t

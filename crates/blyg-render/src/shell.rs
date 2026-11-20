@@ -34,8 +34,8 @@ blockquote.blyg-transclusion.unresolved {
   blockquote.blyg-transclusion.unresolved { --alert: #f0a19a; --alert-wash: rgba(240,161,154,0.12); }
 }
 .item-content img { max-width: 100%; }
-/* --- tangle --- a `![[+ …]]` span as the new item it will be, and a
-   `[[+ …]]` placeholder (studio 0.63's authoring.css). */
+/* --- tangle --- a new-item span as the item it will be, and a
+   placeholder (studio 0.63's authoring.css). */
 blockquote.blyg-tangle-new { margin: 1.5rem 0; padding: .25rem 0 .25rem 1.1rem; border-left: 2px dashed var(--pencil, #23608c); background: none; }
 blockquote.blyg-tangle-new > .blyg-tangle-label { margin: 0 0 .35rem; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--pencil, #23608c); }
 .blyg-tangle-link { color: var(--pencil, #23608c); text-decoration: underline dashed; text-underline-offset: .2em; }
