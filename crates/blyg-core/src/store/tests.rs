@@ -214,6 +214,68 @@ fn a_search_against_a_snapshot_older_than_the_store_finds_what_a_fresh_store_doe
     assert_eq!(ids_of(m.fts_in("garden", &snap).unwrap()), vec![y]);
 }
 
+/// What deleting, withdrawing, a sync dropping a post and an edit leave in
+/// the trigram tables never sends a search to the slow path (reading
+/// each matching row, about 80 VM steps a hit): once the snapshot is
+/// current, a search still costs a few steps a hit. A delete takes the
+/// row out of `items_fts` and `items_fts_stale` in the same statement
+/// (`items_ad`); a withdrawal and an edit keep the row (an edit notes it
+/// in `items_fts_stale`, and the snapshot holds it).
+#[test]
+fn a_search_after_deletes_withdrawals_syncs_and_edits_stays_on_the_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let wire = |i: usize, status: &str, md: String| WireItem {
+        id: format!("S{i}"),
+        kind: "fragment".into(),
+        status: status.into(),
+        version: 1,
+        created: "2030-01-01T00:00:00Z".into(),
+        updated: format!("2030-01-01T00:{:02}:{:02}Z", i / 60, i % 60),
+        content_md: md,
+        ..Default::default()
+    };
+    let n = 200;
+    let all: Vec<WireItem> = (0..n)
+        .map(|i| wire(i, "public", format!("a garden post, number {i}")))
+        .collect();
+    s.merge_all(&all).unwrap();
+    let draft = s.create_draft(Kind::Fragment, "a garden draft", 0).unwrap();
+    let sid = |i: usize| s.local_id_for_server(&format!("S{i}")).unwrap();
+
+    // Deleted here: a draft, and a synced post.
+    s.delete_item(&draft).unwrap();
+    s.delete_item(&sid(4)).unwrap();
+    // Edited (noted in items_fts_stale), then deleted while still noted.
+    s.save(&sid(5), "a garden, edited", 0).unwrap();
+    s.save(&sid(6), "a garden, edited then deleted", 0).unwrap();
+    s.delete_item(&sid(6)).unwrap();
+    // A pull: S2 withdrawn, S3 gone from the server (dropped here).
+    let pulled: Vec<WireItem> = all
+        .iter()
+        .filter(|w| w.id != "S3" && w.id != "S4" && w.id != "S6")
+        .map(|w| match w.id.as_str() {
+            "S2" => wire(2, "withdrawn", String::new()),
+            _ => w.clone(),
+        })
+        .collect();
+    s.merge_all(&pulled).unwrap();
+    assert!(s.local_id_for_server("S3").is_none(), "the pull dropped S3");
+
+    s.items();
+    let work = s.count_work();
+    let found = s.search("garden");
+    let steps = work.take();
+    let hits = found.len() as u64;
+    assert_eq!(hits, n as u64 - 4, "S2 withdrawn, S3, S4 and S6 gone");
+    assert_eq!(ids_of(found), ids_of(s.fts_rows("garden").unwrap()));
+    let limit = hits * 20 + 500;
+    assert!(
+        steps <= limit,
+        "{steps} VM steps for {hits} hits (limit {limit}): the search read every row"
+    );
+}
+
 /// Resolving the trigram hits against the snapshot gives exactly what
 /// reading the matching rows gives, in the same order: posts edited since
 /// they were indexed, and posts whose dates tie.
