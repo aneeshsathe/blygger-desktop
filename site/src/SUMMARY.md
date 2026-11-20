@@ -8,6 +8,7 @@
 - [Getting started](getting-started.md)
 - [Writing and publishing](writing.md)
   - [Writing syntax](syntax.md)
+  - [How to tangle](tangling.md)
 - [Reading, quoting and responses](reading.md)
 - [Notes and the browser](notes-and-browser.md)
 - [AI helpers](ai.md)

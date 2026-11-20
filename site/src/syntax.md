@@ -58,7 +58,7 @@ many in one post, are shown as written instead of drawn, as your blyg does.
 
 In a thread, these turn part of what you're writing into posts of their own
 when you publish (blygger-studio 0.63 or later). This is called
-**tangling**.
+**tangling**. For a walkthrough, see [How to tangle](tangling.md).
 
 ```markdown
 Notes from the harbour walk.
