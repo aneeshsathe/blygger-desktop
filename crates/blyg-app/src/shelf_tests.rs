@@ -95,7 +95,7 @@ fn shelving_puts_the_post_on_top_and_the_shelf_opens_it(cx: &mut TestAppContext)
         assert_eq!(v.list.selected(), Some(&id(PUBLIC)), "still selected");
         assert_eq!(
             v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
-            Some("On your shelf · ⌘B")
+            Some(crate::keymap::hint("On your shelf · ⌘B"))
         );
     });
 

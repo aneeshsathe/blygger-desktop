@@ -536,7 +536,9 @@ fn the_still_unpublished_line_has_no_runs_of_spaces() {
     let line = super::still_unpublished(1, 2);
     assert_eq!(
         line,
-        "Still marked unpublished: v1 has generated text. ⌘⏎ publishes it as v2"
+        crate::keymap::hint(
+            "Still marked unpublished: v1 has generated text. ⌘⏎ publishes it as v2"
+        )
     );
     assert!(!line.contains("  "), "{line}");
     assert!(!crate::keymap::hint_owned(line).contains("  "));

@@ -351,7 +351,10 @@ mod tests {
 
     #[test]
     fn the_toast_says_where_it_went() {
-        assert_eq!(toggled_toast(true), "On your shelf · ⌘B");
+        assert_eq!(
+            toggled_toast(true),
+            crate::keymap::hint("On your shelf · ⌘B")
+        );
         assert_eq!(toggled_toast(false), "Taken off your shelf");
     }
 }

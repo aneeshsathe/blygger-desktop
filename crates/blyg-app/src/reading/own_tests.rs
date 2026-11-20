@@ -260,7 +260,7 @@ fn cmd_y_forks_your_pin_and_greys_fork_on_an_unpinned_version(cx: &mut TestAppCo
     assert!(unpinned.contains(&super::vm::OwnAction::ForkNeedsPin));
     assert_eq!(
         super::vm::OwnAction::ForkNeedsPin.tip(1),
-        "Pin one in ⌘Y to fork it"
+        crate::keymap::hint("Pin one in ⌘Y to fork it")
     );
     let before = fake.items();
     view.update_in(cx, |v, window, cx| v.fork_own_pin(2, window, cx));

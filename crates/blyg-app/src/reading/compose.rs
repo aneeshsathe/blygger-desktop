@@ -899,7 +899,10 @@ mod tests {
 
     #[test]
     fn the_hold_says_how_to_stop_it() {
-        assert_eq!(hold_line(3), "Posting in 3 s · esc cancels · ⌘⏎ posts now");
+        assert_eq!(
+            hold_line(3),
+            crate::keymap::hint("Posting in 3 s · esc cancels · ⌘⏎ posts now")
+        );
     }
 
     #[test]

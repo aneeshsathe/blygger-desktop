@@ -865,7 +865,9 @@ mod tests {
         assert_eq!(g.label(), "0 · 6");
         assert_eq!(
             g.tip(),
-            "6 known here draw on it: 2 replies, 4 quotes (of passages)\n⌘J or a click: see who"
+            crate::keymap::hint(
+                "6 known here draw on it: 2 replies, 4 quotes (of passages)\n⌘J or a click: see who"
+            )
         );
     }
 
