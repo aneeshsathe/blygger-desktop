@@ -167,6 +167,9 @@ pub enum Key {
     Tangle,
     /// Edit › Format › Formula (⌃⌘M) ran.
     Formula,
+    /// The sample burst thread's "+N parts" are listed: unfolded under
+    /// its stream card (`p` or a click), or a part of it is open.
+    Parts,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -319,6 +322,9 @@ pub enum Setup {
     /// A new draft with a formula in it, its preview beside it, and this
     /// TeX selected.
     Maths(&'static str),
+    /// Reading, in the Stream, Lin's thread published with two parts
+    /// selected ("+2 parts"), the side pane closed.
+    Parts,
 }
 
 /// One step of the tour.
@@ -1344,6 +1350,27 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.27.0 --- Background says why; a thread's parts (studio 0.64).
+    Step {
+        id: "parts",
+        since: "0.27.0",
+        title: ui_text("A thread and its parts"),
+        caption: ui_text(
+            "Lin published this thread together with the posts it quotes. The parts go to \
+                  Background, each saying why (“published with ‘…’”), and the thread says \
+                  “+2 parts”. Press p (or click it) to unfold them under the card, then 1 or 2 \
+                  to open one. Settings › BACKGROUND has the rules, and turning “Parts \
+                  published with a thread” off puts the parts back in your lists.",
+        ),
+        keys: &[Key::Parts],
+        key_label: ui_text("p"),
+        region: Region::Stream,
+        button: None,
+        setup: Setup::Parts,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "shelf-add",
         since: "0.24.0",
@@ -1967,6 +1994,7 @@ pub const TOURS: &[Tour] = &[
             "more-menu",
             "reader",
             "background",
+            "parts",
             "shelf-add",
             "shelf-lens",
             "mentions-feed",
@@ -2182,6 +2210,7 @@ mod tests {
             Key::MoreMenu, // --- 0.26.0 ---
             Key::Tangle,   // --- 0.27.0 ---
             Key::Formula,
+            Key::Parts,
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
@@ -2268,7 +2297,10 @@ mod tests {
             ids(news_run(&["0.26.0"])),
             ["quiet-writing", "more-menu", END]
         );
-        assert_eq!(ids(news_run(&["0.27.0"])), ["tangle", "maths", END]);
+        assert_eq!(
+            ids(news_run(&["0.27.0"])),
+            ["tangle", "maths", "parts", END]
+        );
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);
         assert_eq!(tour_of("author-site"), Some(3));

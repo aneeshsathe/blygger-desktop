@@ -736,11 +736,22 @@ impl MainView {
             (Key::Focus, self.focus_on()),
             (Key::Serendipity, self.serendipity_shown(cx)),
             (Key::QuietWriting, crate::app::quiet::on(cx)), // --- 0.26.0 ---
-            // --- 0.27.0 --- the tangle confirm step.
+            // --- 0.27.0 --- the sample thread's parts listed, or one open.
             (
-                Key::Tangle,
-                self.sheet.is::<crate::app::TangleSheet>(),
+                Key::Parts,
+                reading && {
+                    let thread = crate::fake::background_seed::thread_key();
+                    let bg = &self.reading.background;
+                    bg.parts_listed(&thread, false)
+                        || self
+                            .reading
+                            .opened
+                            .as_ref()
+                            .is_some_and(|o| bg.parts_of(&thread).contains(&o.key))
+                },
             ),
+            // --- 0.27.0 --- the tangle confirm step.
+            (Key::Tangle, self.sheet.is::<crate::app::TangleSheet>()),
             (
                 Key::MoreMenu,
                 reading
@@ -1310,6 +1321,14 @@ impl MainView {
                     self.open(&id, window, cx);
                 }
                 self.studio_set_view(ViewMode::Split, cx);
+            }
+            Setup::Parts => {
+                self.tutorial_reading(ReadMode::Stream, window, cx);
+                let thread = crate::fake::background_seed::thread_key();
+                match self.reading.shown_pos(&thread) {
+                    Some(ix) => self.stream_select(ix, window, cx),
+                    None => self.stream_move(1, window, cx),
+                }
             }
             Setup::Maths(tex) => {
                 self.tutorial_tidy(window, cx);
