@@ -146,23 +146,27 @@ fn timing_reading_list_at_scale() {
     let mut budget = Budget::default();
 
     // Warm (statement cache, first parse).
+    // Budgets from CI's macOS runner, three runs (`Budget` says how): warm
+    // 75-126 ms, after a mark 20-23, after the pull 16-28, the merge
+    // 195-273. mark_read (3-8, varying 3x) and responses_to (under 1) keep
+    // theirs: 1.5x is under the 5 ms floor or at what they had.
     let (all, _) = time("reading() cold", || store.reading());
-    budget.time("reading() warm", 60.0, || store.reading());
+    budget.time("reading() warm", 190.0, || store.reading());
     let first = &all[10];
     budget.time("mark_read one post", 15.0, || {
         store
             .mark_read(&first.subscription_id, &first.remote_id)
             .unwrap()
     });
-    budget.time("reading() after a mark", 60.0, || store.reading());
+    budget.time("reading() after a mark", 40.0, || store.reading());
     budget.time("responses_to", 5.0, || {
         store.responses_to(&first.origin, &first.remote_id)
     });
     let pull = unchanged_pull();
-    budget.time("merge an unchanged pull of 2k", 400.0, || {
+    budget.time("merge an unchanged pull of 2k", 410.0, || {
         store.merge_reading(&pull, false, &kinds).unwrap()
     });
-    budget.time("reading() after the pull", 60.0, || store.reading());
+    budget.time("reading() after the pull", 45.0, || store.reading());
     budget.done();
 }
 
@@ -191,8 +195,9 @@ A closing paragraph with a trailing link https://example.org/end.\n\n";
     doc
 }
 
-/// blyg-render's preview of a 20,000-character thread, against a 10 ms
-/// budget (the studio re-renders ~100 ms after typing pauses). Here, not
+/// blyg-render's preview of a 20,000-character thread, against a 30 ms
+/// budget (the studio re-renders ~100 ms after typing pauses): its median
+/// on CI's macOS runner was 12-17 ms (`Budget` says how). Here, not
 /// in blyg-render, because the one budget helper is blyg-core's and
 /// blyg-render is a leaf crate.
 #[test]
@@ -221,7 +226,7 @@ fn timing_render_20k_chars() {
         times[runs - 1]
     );
     let mut budget = Budget::default();
-    budget.check("render_preview of 20k chars (median)", median, 10.0);
+    budget.check("render_preview of 20k chars (median)", median, 30.0);
     budget.done();
 }
 
