@@ -177,6 +177,14 @@ impl MainView {
             (Scene::Offline, 1) => self.demo_type(" Written on a plane.", window, cx),
             (Scene::Settings, 0) => self.open_settings(&super::OpenSettings, window, cx),
             (Scene::SettingsFull, n) => self.settings_demo(n, window, cx),
+            // --- FX1 --- the keys Settings › BACKGROUND takes.
+            (Scene::SettingsBackgroundKeys, 2) => {
+                for _ in 0..5 {
+                    self.settings_preview_key("tab", false, window, cx);
+                }
+                self.settings_preview_key("right", false, window, cx);
+            }
+            (Scene::SettingsBackgroundKeys, n) => self.settings_demo(n, window, cx),
             (Scene::SettingsPreview, n) => self.settings_preview_demo(n, window, cx), // --- preview ---
             // --- themes --- chrome surfaces, for the theme audit's captures.
             // A toast with a second line (shown late, so it's up at capture).

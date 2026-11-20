@@ -17,6 +17,7 @@ Burrow › Settings… (⌘,), or the toolbar's settings button.
 | `settings` | Settings opened as a user does |
 | `settings-full` | the page at a fixed size with the blyg's changelog loaded |
 | `settings-full` + `BLYGGER_DEMO_SCROLL=bottom` | the end of the page |
+| `settings-background-keys` | the keyboard on BACKGROUND's second rule (⇥ ×5, →): focus ring, ✓ / ○ off states, Withdrawn shown as fixed |
 | `tb-settings` | the toolbar's way in |
 
 ```sh
