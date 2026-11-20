@@ -16,6 +16,8 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-19
+
 Studio parity with blygger-studio 0.64.1 and 0.65.0 (contract 5.14.0). The floor stays 0.49.12 (`MIN_STUDIO`); each feature below is asked for only where the blyg offers it.
 
 ### Added
