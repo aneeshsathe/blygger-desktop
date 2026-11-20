@@ -2,7 +2,7 @@
 //! back): every file git tracks, or would add (untracked, not ignored), is
 //! scanned for
 //!
-//! - home folders: `/Users/<name>`, `C:\Users\<name>`;
+//! - home folders: `/Users/<name>`, `/home/<name>`, `C:\Users\<name>`;
 //! - email addresses, other than at reserved example domains and GitHub's
 //!   noreply addresses;
 //! - blyg hosts: a URL whose host names a blyg must be an example host
@@ -97,7 +97,8 @@ fn name_at(text: &str, at: usize) -> &str {
     &rest[..end]
 }
 
-/// `/Users/<name>` and `C:\Users\<name>` (backslashes doubled or not).
+/// `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` (backslashes
+/// doubled or not).
 fn home_paths(text: &str, out: &mut Vec<String>) {
     for (i, _) in text.match_indices("Users") {
         let before = &text[..i];
@@ -122,6 +123,17 @@ fn home_paths(text: &str, out: &mut Vec<String>) {
             continue;
         }
         out.push(format!("{prefix}Users{sep}{name}"));
+    }
+    // `/home/` starts a path: at the start, after a quote, space or `=`, or
+    // in a `file://` URL; not inside a web path (`…example.com/home/`).
+    for (i, _) in text.match_indices("/home/") {
+        let before = &text[..i];
+        let starts_path = before.ends_with("file://")
+            || !before.ends_with(|c: char| is_name_char(c) || c == '/' || c == ':');
+        let name = name_at(text, i + "/home/".len());
+        if starts_path && !name.is_empty() {
+            out.push(format!("/home/{name}"));
+        }
     }
 }
 
