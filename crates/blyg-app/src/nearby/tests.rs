@@ -14,8 +14,8 @@ use blyg_core::config::MemoryTokenStore;
 use blyg_core::nearby::{own_key, reading_key};
 use blyg_core::store::Store;
 use blyg_core::{
-    Backend, ConfigStore, Kind, LiveBackend, LocalId, ReadingItem, Subscription, SubscriptionKind,
-    SyncOptions, synth,
+    Backend, ConfigStore, Kind, LiveBackend, LocalId, ReadingItem, RemoteId, SubId, Subscription,
+    SubscriptionKind, SyncOptions, synth,
 };
 use blyg_embed::Embedder;
 use blyg_embed::testing::ConceptEmbedder;
@@ -111,8 +111,8 @@ fn seed(dir: &std::path::Path) -> (LocalId, LocalId) {
     ])
     .unwrap();
     let kinds = [
-        ("lin".to_string(), SubscriptionKind::Blyg),
-        ("feed".to_string(), SubscriptionKind::Rss),
+        ("lin".into(), SubscriptionKind::Blyg),
+        ("feed".into(), SubscriptionKind::Rss),
     ]
     .into_iter()
     .collect();
@@ -298,7 +298,7 @@ fn the_index_is_kept_in_the_store_and_updated_post_by_post() {
 
     // Lin edits her post: only its changed pieces are embedded again.
     let s = Store::open(&dir.path().join("blygger.db")).unwrap();
-    let kinds = [("lin".to_string(), SubscriptionKind::Blyg)]
+    let kinds = [("lin".into(), SubscriptionKind::Blyg)]
         .into_iter()
         .collect();
     s.merge_reading(
@@ -327,12 +327,16 @@ fn the_index_is_kept_in_the_store_and_updated_post_by_post() {
     assert!(
         b.nearby_vectors(&e.id())
             .iter()
-            .all(|v| v.doc != reading_key("lin", R1)),
+            .all(|v| v.doc != reading_key(&SubId::from("lin"), &RemoteId::from(R1))),
         "the store's trigger"
     );
     let c3 = corpus_of(&*b);
     let (idx5, _) = engine::build_index(&*b, &e, &c3, Some(&idx4), &p, &|| false).unwrap();
-    assert!(!idx5.keys.contains(&reading_key("lin", R1)));
+    assert!(
+        !idx5
+            .keys
+            .contains(&reading_key(&SubId::from("lin"), &RemoteId::from(R1)))
+    );
     let posts: std::collections::HashSet<String> = b
         .nearby_vectors(&e.id())
         .into_iter()

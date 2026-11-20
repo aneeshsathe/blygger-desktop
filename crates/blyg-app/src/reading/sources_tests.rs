@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::{Backend, ConfigStore};
+use blyg_core::{Backend, ConfigStore, RemoteId, SubId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::sources::{MenuCmd, MenuTarget, NewFolder};
@@ -61,7 +61,7 @@ fn subs_of(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<String> {
     view.read_with(cx, |v, _| {
         v.reading
             .shown_rows()
-            .map(|r| r.subscription_id.clone())
+            .map(|r| r.subscription_id.to_string())
             .collect()
     })
 }
@@ -72,7 +72,10 @@ fn pane(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Pane {
 
 fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
     view.read_with(cx, |v, _| {
-        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+        v.reading
+            .opened
+            .as_ref()
+            .map(|o| o.item.remote_id.to_string())
     })
 }
 
@@ -231,7 +234,9 @@ fn moving_a_subscription_between_folders(cx: &mut TestAppContext) {
     assert!(subs_of(&view, cx).contains(&"sub-omar".to_string()));
 
     // Dropping it back under "Subscriptions" (no folder) is the same call.
-    view.update(cx, |v, cx| v.file_subscription("sub-omar", None, cx));
+    view.update(cx, |v, cx| {
+        v.file_subscription(&SubId::from("sub-omar"), None, cx)
+    });
     settle(cx);
     assert!(!fake.subscription_folders().contains_key("sub-omar"));
     assert!(!subs_of(&view, cx).contains(&"sub-omar".to_string()));
@@ -308,7 +313,7 @@ fn folders_are_made_renamed_reordered_and_deleted(cx: &mut TestAppContext) {
             .filter_map(|e| match e {
                 super::sources_vm::Entry::Sub {
                     sub, filed: false, ..
-                } => Some(sub.id),
+                } => Some(sub.id.into_string()),
                 _ => None,
             })
             .collect();
@@ -706,7 +711,7 @@ fn mentions_shows_the_lens_and_the_local_feed_tagged(cx: &mut TestAppContext) {
             let mut t: Vec<(String, Vec<&'static str>)> = v
                 .shown_keys()
                 .into_iter()
-                .map(|k| (k.1.clone(), v.mention_tags(&k)))
+                .map(|k| (k.1.to_string(), v.mention_tags(&k)))
                 .collect();
             t.sort();
             t
@@ -724,8 +729,8 @@ fn mentions_shows_the_lens_and_the_local_feed_tagged(cx: &mut TestAppContext) {
     // The lens answers: Rue's trust note joins (an @-mention only the
     // studio sees), Ada's quote gains "named you", nothing leaves.
     fake.set_mentions_lens(Some(vec![
-        (s("sub-rue"), s(RUE_TRUST)),
-        (s("sub-ada"), s(MENTION_QUOTE)),
+        (SubId::from(s("sub-rue")), RemoteId::from(s(RUE_TRUST))),
+        (SubId::from(s("sub-ada")), RemoteId::from(s(MENTION_QUOTE))),
     ]));
     select(&view, Source::Smart(Smart::All), cx);
     select(&view, Source::Mentions, cx);

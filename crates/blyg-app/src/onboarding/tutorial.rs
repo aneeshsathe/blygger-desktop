@@ -907,7 +907,7 @@ impl MainView {
     }
 
     /// The sample reading post `remote_id`'s key.
-    fn tutorial_reading_key(&self, remote_id: &str) -> Option<(String, String)> {
+    fn tutorial_reading_key(&self, remote_id: &str) -> Option<crate::app::reading::vm::Key> {
         self.reading
             .rows
             .iter()

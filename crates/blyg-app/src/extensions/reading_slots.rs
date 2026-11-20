@@ -19,7 +19,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
-use blyg_core::ReadingItem;
+use blyg_core::{ReadingItem, RemoteId, SubId};
 use blyg_ext::reading::{EntryActionSpec, EntryByline, EntrySheet, ReadingEntry};
 use blyg_ext::{ExtError, Installed};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -49,8 +49,8 @@ pub(crate) type MarkerKey = (String, String, String, u32);
 fn marker_key(ext: &str, r: &ReadingItem) -> MarkerKey {
     (
         ext.to_string(),
-        r.subscription_id.clone(),
-        r.remote_id.clone(),
+        r.subscription_id.to_string(),
+        r.remote_id.to_string(),
         r.version,
     )
 }
@@ -211,7 +211,9 @@ impl MainView {
                     // A marker can wrap the byline: the stream measures
                     // that post again.
                     if m.is_some()
-                        && let Some(ix) = v.reading.shown_pos(&(key.1.clone(), key.2.clone()))
+                        && let Some(ix) = v
+                            .reading
+                            .shown_pos(&(SubId::from(&key.1), RemoteId::from(&key.2)))
                     {
                         v.reading.stream.list.remeasure_items(ix..ix + 1);
                     }

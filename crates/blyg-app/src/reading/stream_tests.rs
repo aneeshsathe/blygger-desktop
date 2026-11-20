@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::{Backend, ConfigStore};
+use blyg_core::{Backend, ConfigStore, RemoteId};
 use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
 use super::View;
@@ -56,12 +56,15 @@ fn read_version(fake: &FakeBackend, id: &str) -> Option<u32> {
 }
 
 fn selected(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
-    view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.clone()))
+    view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.to_string()))
 }
 
 fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
     view.read_with(cx, |v, _| {
-        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+        v.reading
+            .opened
+            .as_ref()
+            .map(|o| o.item.remote_id.to_string())
     })
 }
 
@@ -281,7 +284,7 @@ fn the_selected_posts_actions_work_without_opening_it(cx: &mut TestAppContext) {
 
 // --- quote targets --- (issue #3)
 
-fn opened_key(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<(String, String)> {
+fn opened_key(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<super::vm::Key> {
     view.read_with(cx, |v, _| v.reading.opened.as_ref().map(|o| o.key.clone()))
 }
 
@@ -415,7 +418,7 @@ fn responses_seen_in_the_network_are_listed_in_the_pane(cx: &mut TestAppContext)
             .unwrap()
             .responses
             .iter()
-            .map(|r| (r.item.remote_id.clone(), r.relation))
+            .map(|r| (r.item.remote_id.to_string(), r.relation))
             .collect()
     });
     use blyg_core::profile::Relation;
@@ -602,9 +605,10 @@ fn the_glyph_shows_how_many_next_to_the_kinds(cx: &mut TestAppContext) {
         let mut s = blyg_core::lineage::LineageSummary::default();
         s.down.stub = 4;
         s.down.transclusion = 3;
-        v.reading
-            .served
-            .insert(blyg_core::lineage::imported_key(&sub, LIN_BENCH), s);
+        v.reading.served.insert(
+            blyg_core::lineage::imported_key(&sub, &RemoteId::from(LIN_BENCH)),
+            s,
+        );
         cx.notify();
     });
     settle(cx);

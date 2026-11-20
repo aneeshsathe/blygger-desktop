@@ -76,9 +76,9 @@ pub struct Seed {
     pub reading: Vec<ReadingItem>,
     pub subs: Vec<Subscription>,
     /// (sub id, remote id) → public changelog, oldest first.
-    pub changelogs: HashMap<(String, String), Vec<RemoteVersion>>,
+    pub changelogs: HashMap<(SubId, RemoteId), Vec<RemoteVersion>>,
     /// (sub id, remote id, version) → pinned version document.
-    pub pins: HashMap<(String, String, u32), PinnedVersion>,
+    pub pins: HashMap<(SubId, RemoteId, u32), PinnedVersion>,
     pub mentions: Vec<Mention>,
     pub settings: Settings,
     /// Own posts: local id → per-version text (the fake's private history).
@@ -91,11 +91,11 @@ pub struct Seed {
     // --- reader folders --- local folders of subscriptions.
     pub folders: Vec<Folder>,
     /// Subscription id → folder id.
-    pub filed: HashMap<String, String>,
+    pub filed: HashMap<SubId, String>,
     // --- hoppers --- the blyg's hoppers, and who's in them
     // (hopper id, subscription id or `~own`, remote id).
     pub hoppers: Vec<Hopper>,
-    pub hopper_items: Vec<(String, String, String)>,
+    pub hopper_items: Vec<(String, SubId, RemoteId)>,
 }
 
 fn sub(
@@ -512,7 +512,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         TALK_C,
     ));
 
-    let key = |s: &Subscription, id: &str| (s.id.clone(), id.to_string());
+    let key = |s: &Subscription, id: &str| (s.id.clone(), RemoteId::from(id));
     let mut changelogs = HashMap::new();
     changelogs.insert(
         key(&rue, RUE_TRUST),
@@ -574,7 +574,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         ],
     );
     let mut pins = HashMap::new();
-    let pk = |s: &Subscription, id: &str, v: u32| (s.id.clone(), id.to_string(), v);
+    let pk = |s: &Subscription, id: &str, v: u32| (s.id.clone(), RemoteId::from(id), v);
     pins.insert(
         pk(&rue, RUE_TRUST, 1),
         pin(
@@ -708,7 +708,7 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
     // Kit's post, as its public item document would give it.
     let kit_text = "The tide keeps its own calendar, and we keep borrowing it.";
     let kit_item = ReadingItem {
-        subscription_id: String::new(),
+        subscription_id: SubId::default(),
         remote_id: KIT_TIDES.into(),
         subscription_title: "Kit".into(),
         origin: KIT.into(),
@@ -828,7 +828,7 @@ pub const MENTION_LINK: &str = "01k2rve01ink0y0u0000000001";
 /// Three held posts that point at your blyg (Ada quotes your gardens post,
 /// Lin replies to "On friction", Rue links to you), and the blyg's lens:
 /// Rue's trust note (an @-mention only the studio sees) and Ada's quote.
-pub fn mentions_sample(now: DateTime<Utc>) -> (Vec<ReadingItem>, Vec<(String, String)>) {
+pub fn mentions_sample(now: DateTime<Utc>) -> (Vec<ReadingItem>, Vec<(SubId, RemoteId)>) {
     let h = Duration::hours;
     let own = super::ORIGIN;
     let rue = sub("sub-rue", SubscriptionKind::Blyg, RUE, "Rue", true);
@@ -879,8 +879,8 @@ pub fn mentions_sample(now: DateTime<Utc>) -> (Vec<ReadingItem>, Vec<(String, St
         &format!("A garden blyg worth following: {own}/"),
     );
     let lens = vec![
-        (rue.id.clone(), RUE_TRUST.to_string()),
-        (ada.id.clone(), MENTION_QUOTE.to_string()),
+        (rue.id.clone(), RemoteId::from(RUE_TRUST)),
+        (ada.id.clone(), RemoteId::from(MENTION_QUOTE)),
     ];
     (vec![quote, reply, link], lens)
 }

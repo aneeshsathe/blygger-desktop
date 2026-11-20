@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::{Backend, ConfigStore, Kind, LocalId};
+use blyg_core::{Backend, ConfigStore, Kind, LocalId, SubId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::list::EditedBlock;
@@ -532,7 +532,8 @@ fn subscribe_previews_first(cx: &mut TestAppContext) {
     settle(cx);
     assert_eq!(fake.subscriptions().len(), before + 1);
     // Pause, blogroll and unsubscribe go through the backend.
-    fake.pause_subscription("sub-rue", true).unwrap();
+    fake.pause_subscription(&SubId::from("sub-rue"), true)
+        .unwrap();
     cx.run_until_parked();
     assert_eq!(
         view.read_with(cx, |v, _| {
@@ -637,7 +638,10 @@ fn search_focused(view: &Entity<MainView>, cx: &mut VisualTestContext) -> bool {
 
 fn opened(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
     view.read_with(cx, |v, _| {
-        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+        v.reading
+            .opened
+            .as_ref()
+            .map(|o| o.item.remote_id.to_string())
     })
 }
 

@@ -66,10 +66,10 @@ impl Backend for Recording {
     fn rewrites_handles(&self) -> bool {
         self.inner.rewrites_handles()
     }
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.inner.reading_mentions()
     }
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.inner.reading_mentions_cached()
     }
     fn page_title(&self, url: &str) -> Option<String> {
@@ -193,19 +193,19 @@ impl Backend for Recording {
         self.rec("subscribe");
         self.inner.subscribe(url, title)
     }
-    fn unsubscribe(&self, sub: &str) -> Result<()> {
+    fn unsubscribe(&self, sub: &SubId) -> Result<()> {
         self.rec("unsubscribe");
         self.inner.unsubscribe(sub)
     }
-    fn set_subscription(&self, sub: &str, b: Option<bool>, t: Option<&str>) -> Result<()> {
+    fn set_subscription(&self, sub: &SubId, b: Option<bool>, t: Option<&str>) -> Result<()> {
         self.rec("set_subscription");
         self.inner.set_subscription(sub, b, t)
     }
-    fn pause_subscription(&self, sub: &str, paused: bool) -> Result<()> {
+    fn pause_subscription(&self, sub: &SubId, paused: bool) -> Result<()> {
         self.rec("pause_subscription");
         self.inner.pause_subscription(sub, paused)
     }
-    fn signal(&self, sub: &str, id: &str, thumb: Option<i8>) -> Result<()> {
+    fn signal(&self, sub: &SubId, id: &RemoteId, thumb: Option<i8>) -> Result<()> {
         self.rec("signal");
         self.inner.signal(sub, id, thumb)
     }
@@ -244,11 +244,11 @@ impl Backend for Recording {
         self.rec("refresh_subscriptions");
         self.inner.refresh_subscriptions()
     }
-    fn mark_read(&self, sub: &str, id: &str) -> Result<()> {
+    fn mark_read(&self, sub: &SubId, id: &RemoteId) -> Result<()> {
         self.rec("mark_read");
         self.inner.mark_read(sub, id)
     }
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
         self.rec("set_read");
         self.inner.set_read(rows, read)
     }

@@ -30,7 +30,7 @@ use std::rc::Rc;
 
 use blyg_core::lineage::{Local, Peer, Via};
 use blyg_core::profile::{Relation, same_origin};
-use blyg_core::{Mention, ReadingItem, Status};
+use blyg_core::{Mention, ReadingItem, RemoteId, Status, SubId};
 
 use super::reading::lineage_vm::{self, Glyph, Kinds};
 use super::reading::neighbourhood::Index;
@@ -557,9 +557,12 @@ impl MainView {
                         id: e.id.clone(),
                         title: e.title.clone(),
                         label: None,
-                        key: e
-                            .own
-                            .then(|| (blyg_core::OWN_SUBSCRIPTION.to_string(), e.id.clone())),
+                        key: e.own.then(|| {
+                            (
+                                SubId::from(blyg_core::OWN_SUBSCRIPTION),
+                                RemoteId::from(&e.id),
+                            )
+                        }),
                         from_tray: false,
                     };
                     div()

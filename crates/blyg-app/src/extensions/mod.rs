@@ -806,8 +806,8 @@ impl MainView {
                 .map(ItemRef::of),
             selection: None,
             reading: self.reading.opened.as_ref().map(|o| ReadingRef {
-                subscription_id: o.item.subscription_id.clone(),
-                remote_id: o.item.remote_id.clone(),
+                subscription_id: o.item.subscription_id.to_string(),
+                remote_id: o.item.remote_id.to_string(),
             }),
             screen,
         }

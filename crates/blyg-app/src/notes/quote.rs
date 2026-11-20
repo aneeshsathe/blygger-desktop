@@ -78,7 +78,7 @@ impl MainView {
                     .and_then(|u| vm::blyg_item_for_url(u, &self.reading.rows, &self.reading.subs));
                 let source = match held {
                     Some(r) => QuoteSource::Blyg {
-                        id: r.remote_id.clone(),
+                        id: r.remote_id.to_string(),
                         html: r.content_html.clone(),
                         title: page.title.clone(),
                         url: url.clone(),
@@ -103,7 +103,7 @@ impl MainView {
                         let (title, url) = (vm::post_title(r), vm::web_url(r));
                         let source = if blyg {
                             QuoteSource::Blyg {
-                                id: r.remote_id.clone(),
+                                id: r.remote_id.to_string(),
                                 html: r.content_html.clone(),
                                 title,
                                 url,

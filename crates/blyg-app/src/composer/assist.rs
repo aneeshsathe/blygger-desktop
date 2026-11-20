@@ -68,7 +68,7 @@ struct PickerPopup {
     searched: bool,
     sel: usize,
     /// Blyg subscriptions for the "from" chip: (id, title).
-    subs: Vec<(String, String)>,
+    subs: Vec<(blyg_core::SubId, String)>,
     scroll: ScrollHandle,
 }
 

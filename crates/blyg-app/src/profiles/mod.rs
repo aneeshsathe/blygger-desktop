@@ -28,7 +28,7 @@ mod tests;
 
 use std::collections::HashSet;
 
-use blyg_core::Profile;
+use blyg_core::{Profile, SubId};
 use gpui_kit::base::input::{InputEvent, InputState};
 use gpui_kit::*;
 
@@ -409,8 +409,8 @@ impl MainView {
     }
 
     /// Your own profile's blogroll toggles.
-    pub(crate) fn toggle_own_blogroll(&mut self, sub_id: String, on: bool, cx: &mut Context<Self>) {
-        if !self.profiles.busy.insert(sub_id.clone()) {
+    pub(crate) fn toggle_own_blogroll(&mut self, sub_id: SubId, on: bool, cx: &mut Context<Self>) {
+        if !self.profiles.busy.insert(sub_id.to_string()) {
             return;
         }
         let backend = self.backend.clone();
@@ -420,7 +420,7 @@ impl MainView {
         cx.spawn(async move |this, cx| {
             let r = task.await;
             let _ = this.update(cx, |v, cx| {
-                v.profiles.busy.remove(&sub_id);
+                v.profiles.busy.remove(sub_id.as_str());
                 v.reading.subs = v.backend.subscriptions();
                 if let Err(e) = r {
                     v.show_toast(format!("Couldn't change your blogroll: {e}"), None, cx);

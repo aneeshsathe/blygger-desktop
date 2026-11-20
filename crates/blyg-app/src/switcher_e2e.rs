@@ -19,7 +19,7 @@ use blyg_core::api::Api;
 use blyg_core::api::auth::Credential;
 use blyg_core::config::blygs::{self, DB_OWNER_FILE};
 use blyg_core::config::{MemoryTokenStore, TokenStore};
-use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LocalId, SyncStatus};
+use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LocalId, SubId, SyncStatus};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::super::MainView;
@@ -333,7 +333,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
         b.subscriptions().iter().all(|x| x.id != sub_s.id),
         "s's subscription isn't a's"
     );
-    let subs_a: Vec<String> = b.subscriptions().into_iter().map(|x| x.id).collect();
+    let subs_a: Vec<SubId> = b.subscriptions().into_iter().map(|x| x.id).collect();
     assert!(
         b.reading()
             .iter()

@@ -103,7 +103,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
         v.reading_rows()
             .iter()
             .filter(|r| r.subscription_id == OWN)
-            .map(|r| r.remote_id.clone())
+            .map(|r| r.remote_id.to_string())
             .collect()
     });
     // Your four published sample posts; drafts aren't reading rows.
@@ -128,7 +128,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
         view.read_with(cx, |v, _| {
             v.reading
                 .shown_rows()
-                .map(|r| r.subscription_id.clone())
+                .map(|r| r.subscription_id.to_string())
                 .collect()
         })
     };

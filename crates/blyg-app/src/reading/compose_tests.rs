@@ -134,7 +134,7 @@ fn c_focuses_the_box_and_typing_never_fires_the_lists_keys(cx: &mut TestAppConte
     let reads = |fake: &FakeBackend| -> Vec<(String, Option<u32>)> {
         fake.reading()
             .into_iter()
-            .map(|r| (r.remote_id, r.read_version))
+            .map(|r| (r.remote_id.into_string(), r.read_version))
             .collect()
     };
     let read_before = reads(&fake);
@@ -161,7 +161,7 @@ fn c_focuses_the_box_and_typing_never_fires_the_lists_keys(cx: &mut TestAppConte
     cx.simulate_keystrokes("j");
     settle(cx);
     assert_eq!(
-        view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.clone())),
+        view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.to_string())),
         Some(RUE_TRUST.to_string())
     );
 }

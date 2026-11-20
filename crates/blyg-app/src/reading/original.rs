@@ -12,13 +12,17 @@ use gpui_kit::*;
 use super::vm::{self, Key};
 use super::{Load, Opened, View};
 use crate::app::MainView;
+use blyg_core::{RemoteId, SubId};
 
 /// The key prefix of a post shown without a subscription (fetched on
 /// demand): `("ext:<origin>", id)`. Never a real subscription id.
 pub const EXTERNAL: &str = "ext:";
 
 pub fn external_key(origin: &str, id: &str) -> Key {
-    (format!("{EXTERNAL}{origin}"), id.to_string())
+    (
+        SubId::from(format!("{EXTERNAL}{origin}")),
+        RemoteId::from(id),
+    )
 }
 
 pub fn is_external(key: &Key) -> bool {

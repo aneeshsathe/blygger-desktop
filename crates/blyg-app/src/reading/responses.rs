@@ -120,7 +120,7 @@ pub fn response_rows(
             what: what_of(r.relation, r.partial),
             when: crate::vm::relative_time(&at, now),
             origin: it.origin.clone(),
-            id: Some(it.remote_id.clone()),
+            id: Some(it.remote_id.to_string()),
             version: Some(it.version),
             url: None,
             at: ts(&at),
@@ -316,7 +316,7 @@ mod tests {
         // of a passage ("quote selection"): one row, the stub.
         let mut m = mention("m1", "01OWN", "transclusion", "verified", false, 1);
         m.source_origin = Some(lin.origin.clone());
-        m.source_id = Some(lin.remote_id.clone());
+        m.source_id = Some(lin.remote_id.to_string());
         lin.author = None;
         lin.subscription_title = "Lin".into();
         let network = vec![Response {

@@ -14,8 +14,8 @@
 //!   subscribed but hasn't fetched it, or not subscribed (Subscribe opens,
 //!   filled in).
 
-use blyg_core::Mention;
 use blyg_core::outbound::{MentionSource, OutboundMention};
+use blyg_core::{Mention, RemoteId};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -366,7 +366,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let held = self.backend.reading_with_id(source_id);
+        let held = self.backend.reading_with_id(&RemoteId::from(source_id));
         let row = match src.as_ref().and_then(|s| s.holder.as_deref()) {
             Some(h) => held.into_iter().find(|r| r.subscription_id == h),
             // An older blyg without the source route: what's held here.

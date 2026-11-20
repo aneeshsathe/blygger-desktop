@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use blyg_core::{Folder, Hopper, ReadingItem, Subscription};
+use blyg_core::{Folder, Hopper, ReadingItem, SubId, Subscription};
 use chrono::{DateTime, Local, Utc};
 
 use super::vm::Key;
@@ -76,7 +76,7 @@ pub enum Source {
     /// A folder id: the posts of every subscription filed in it.
     Folder(String),
     /// A subscription id.
-    Sub(String),
+    Sub(SubId),
     /// --- own posts --- your own published posts ("Your blyg").
     Own,
     /// --- hoppers --- a hopper id: the posts in it, theirs and yours.
@@ -172,7 +172,7 @@ pub fn is_today(r: &ReadingItem, now: DateTime<Utc>) -> bool {
 pub fn in_source(
     r: &ReadingItem,
     source: &Source,
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     now: DateTime<Utc>,
 ) -> bool {
     // --- background --- Background posts are there and nowhere else.
@@ -208,7 +208,7 @@ pub fn filter_source(
     rows: &[ReadingItem],
     searched: &[usize],
     source: &Source,
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     sticky: &HashSet<Key>,
     now: DateTime<Utc>,
 ) -> Vec<usize> {
@@ -284,7 +284,7 @@ impl Entry {
 pub fn entries(
     hoppers: &[Hopper],
     folders: &[Folder],
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     subs: &[Subscription],
     rows: &[ReadingItem],
     collapsed: &HashSet<String>,
@@ -308,7 +308,7 @@ pub fn entries(
 pub fn entries_skipping(
     hoppers: &[Hopper],
     folders: &[Folder],
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     subs: &[Subscription],
     rows: &[ReadingItem],
     collapsed: &HashSet<String>,
@@ -633,7 +633,7 @@ mod tests {
         let ids = |src: Source, sticky: &HashSet<Key>| -> Vec<String> {
             filter_source(&rows, &all, &src, &sd.filed, sticky, now)
                 .into_iter()
-                .map(|i| rows[i].remote_id.clone())
+                .map(|i| rows[i].remote_id.to_string())
                 .collect()
         };
         let none = HashSet::new();
@@ -651,7 +651,7 @@ mod tests {
         assert!(unread.contains(&RUE_TRUST.to_string()), "edited since read");
         assert!(!unread.contains(&ADA_TIDES.to_string()), "read");
         // A read post stays while it's sticky.
-        let sticky = HashSet::from([("sub-ada".to_string(), ADA_TIDES.to_string())]);
+        let sticky = HashSet::from([("sub-ada".into(), ADA_TIDES.into())]);
         assert!(ids(Source::Smart(Smart::Unread), &sticky).contains(&ADA_TIDES.to_string()));
         assert_eq!(ids(Source::Smart(Smart::All), &none).len(), rows.len() - 1);
         assert!(!ids(Source::Smart(Smart::All), &none).contains(&RUE_KEPT.to_string()));

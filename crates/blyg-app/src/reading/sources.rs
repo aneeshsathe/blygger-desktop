@@ -17,7 +17,7 @@
 //! to the list. [ / ] step through the versions (←/→ did that before the
 //! panes). ⌥⌘S shows or hides the pane; its right edge drags to resize.
 
-use blyg_core::Backend;
+use blyg_core::{Backend, SubId};
 use gpui_kit::base::input::{Escape, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -78,7 +78,7 @@ pub enum MenuTarget {
     /// The pane's background or a heading.
     Pane,
     Folder(String),
-    Sub(String),
+    Sub(SubId),
     /// --- read/unread --- a post in the list (and the picks, when it's
     /// among them).
     Posts(super::vm::Key),
@@ -111,17 +111,17 @@ pub enum MenuCmd {
     /// Show the folder list of a subscription's menu.
     MoveToFolder,
     /// File a subscription (`None` = no folder).
-    File(String, Option<String>),
+    File(SubId, Option<String>),
     /// A new folder, then file the subscription in it.
-    NewFolderFor(String),
+    NewFolderFor(SubId),
     Profile(String),
     // --- subscription names & checks --- (studio 0.30)
     /// Rename… a subscription (a name of your own).
-    RenameSub(String),
+    RenameSub(SubId),
     /// "Use the blyg's own name": the name follows the source again.
-    FollowSource(String),
+    FollowSource(SubId),
     /// Check one subscription now.
-    CheckNow(String),
+    CheckNow(SubId),
     /// Check all feeds now (⇧⌘R).
     CheckAll,
     // --- read/unread ---
@@ -144,7 +144,7 @@ pub enum MenuCmd {
     DeleteHopper(String),
     /// --- reader view --- A subscription's posts open on the author's
     /// site always (`Some(true)`), never, or as Settings says (`None`).
-    SiteFor(String, Option<bool>),
+    SiteFor(SubId, Option<bool>),
     /// "⋯ More": one of the open post's actions (`reading_action`'s id).
     PostAction(&'static str),
     /// "⋯ More": the open post onto the current trail (`t`).
@@ -170,7 +170,7 @@ fn mark_all_item(source: Source) -> (String, Option<MenuCmd>, bool) {
 /// A subscription being dragged onto a folder.
 #[derive(Debug, Clone)]
 pub struct DraggedSub {
-    pub id: String,
+    pub id: SubId,
     pub name: String,
 }
 
@@ -360,7 +360,7 @@ impl MainView {
     /// File a subscription in a folder (`None`: no folder).
     pub(crate) fn file_subscription(
         &mut self,
-        sub_id: &str,
+        sub_id: &SubId,
         folder: Option<&str>,
         cx: &mut Context<Self>,
     ) {
@@ -373,7 +373,7 @@ impl MainView {
                     .reading
                     .subs
                     .iter()
-                    .find(|s| s.id == sub_id)
+                    .find(|s| s.id == *sub_id)
                     .map(sources_vm::sub_name)
                     .unwrap_or_default();
                 let msg = match folder.and_then(|f| self.reading.folders.iter().find(|x| x.id == f))
@@ -672,7 +672,7 @@ impl MainView {
     /// what the background poll brings.
     pub(crate) fn check_feeds(
         &mut self,
-        sub: Option<String>,
+        sub: Option<SubId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -734,7 +734,7 @@ impl MainView {
     /// poll.
     pub(crate) fn follow_source_name(
         &mut self,
-        sub: String,
+        sub: SubId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -766,7 +766,7 @@ impl MainView {
     /// Rename… a subscription: a sheet like the folders' (⏎ renames).
     pub(crate) fn open_sub_name_sheet(
         &mut self,
-        sub: String,
+        sub: SubId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -930,7 +930,7 @@ impl MainView {
     pub(crate) fn open_folder_sheet(
         &mut self,
         rename: Option<String>,
-        then_file: Option<String>,
+        then_file: Option<SubId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

@@ -291,7 +291,10 @@ fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
 
 fn opened_id(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
     view.read_with(cx, |v, _| {
-        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+        v.reading
+            .opened
+            .as_ref()
+            .map(|o| o.item.remote_id.to_string())
     })
 }
 

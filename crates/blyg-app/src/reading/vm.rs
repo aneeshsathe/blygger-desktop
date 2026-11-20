@@ -4,11 +4,12 @@
 //! here and in `tests.rs` without pixels.
 
 use blyg_core::{
-    Item, Kind, Mention, ReadingItem, RemoteVersion, Subscription, SubscriptionKind, Version,
+    Item, Kind, Mention, ReadingItem, RemoteId, RemoteVersion, SubId, Subscription,
+    SubscriptionKind, Version,
 };
 
 /// (subscription id, remote id): one reading row.
-pub type Key = (String, String);
+pub type Key = (SubId, RemoteId);
 
 pub fn key(r: &ReadingItem) -> Key {
     (r.subscription_id.clone(), r.remote_id.clone())

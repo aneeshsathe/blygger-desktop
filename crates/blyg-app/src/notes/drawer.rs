@@ -1295,7 +1295,7 @@ pub(crate) fn post_ref(r: &ReadingItem, blyg: bool) -> PostRef {
         Kind::Fragment => lines.first().cloned().unwrap_or_default(),
     };
     PostRef {
-        blyg_id: blyg.then(|| r.remote_id.clone()),
+        blyg_id: blyg.then(|| r.remote_id.to_string()),
         title: post_title(r),
         first_line,
         url: crate::app::reading::vm::web_url(r),
