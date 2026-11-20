@@ -39,6 +39,27 @@ pub(crate) fn reply_hint(md: &str, id: &str) -> String {
 pub(crate) const ACROSS_FORMULA: &str =
     "A passage can’t include a formula. Quote the whole post, or the prose either side of it.";
 
+/// A line of the stub bar: something to do, or a refusal of what was
+/// selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StubLine {
+    Action,
+    Refusal,
+}
+
+/// How the formula note reads.
+pub(crate) const ACROSS_FORMULA_LINE: StubLine = StubLine::Refusal;
+
+/// A stub-bar line's colour: an action is the accent, like a link; a
+/// refusal is the theme's warning text, set apart (user testing, W8: the
+/// two in one colour read as two errors).
+pub(crate) fn stub_line_color(line: StubLine, p: &crate::theme::Palette) -> Hsla {
+    match line {
+        StubLine::Action => p.accent,
+        StubLine::Refusal => p.warn_text(),
+    }
+}
+
 /// A passage selected in the editor preview, as the page reported it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pick {
@@ -260,7 +281,7 @@ impl MainView {
                 .id(id)
                 .debug_selector(move || id.into())
                 .cursor_pointer()
-                .text_color(p.accent)
+                .text_color(stub_line_color(StubLine::Action, &p))
                 .hover(|s| s.underline())
                 .child(label)
         };
@@ -309,7 +330,9 @@ impl MainView {
                     .id("stub-formula")
                     .debug_selector(|| "stub-formula".into())
                     .w_full()
-                    .text_color(p.accent)
+                    .mt(px(4.))
+                    .italic()
+                    .text_color(stub_line_color(ACROSS_FORMULA_LINE, &p))
                     .child(ACROSS_FORMULA),
             );
         }
@@ -361,6 +384,24 @@ impl MainView {
 #[cfg(test)]
 mod tests {
     use super::{StubPage, StubPick, caret_at_new_quote, pick_passage, quote_boxes, reply_hint};
+
+    /// User testing (W8): the formula refusal sat under "select a passage in
+    /// the preview" in the same accent, so the two lines read as two errors.
+    #[test]
+    fn the_formula_refusal_reads_apart_from_the_passage_link() {
+        use super::{ACROSS_FORMULA_LINE, StubLine, stub_line_color};
+        assert_eq!(ACROSS_FORMULA_LINE, StubLine::Refusal);
+        for p in [
+            crate::theme::Palette::light(),
+            crate::theme::Palette::dark(),
+        ] {
+            let p = p.on_page();
+            assert_ne!(
+                stub_line_color(StubLine::Refusal, &p),
+                stub_line_color(StubLine::Action, &p)
+            );
+        }
+    }
 
     const ID: &str = "7c9wk2mhq0v3xj8tn5rzfd41bg";
 

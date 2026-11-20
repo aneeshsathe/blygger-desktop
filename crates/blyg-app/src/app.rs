@@ -1114,7 +1114,7 @@ impl Render for MainView {
             .children(self.render_trail_publish(cx)) // --- trails ---
             .children(self.render_site_overlay(window, cx)) // --- site ---
             .children(profile_overlay) // --- profiles ---
-            .children(self.render_toast())
+            .children(self.render_toast(cx))
             .children(onboarding) // --- onboarding ---
             .children(crate::platform::menu_panel(p, window, cx)) // Windows menu
     }

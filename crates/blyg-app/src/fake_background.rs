@@ -63,7 +63,7 @@ pub fn rows(now: DateTime<Utc>) -> Vec<ReadingItem> {
     let lin = |id, kind, at, md: &str, quotes: &[&str]| {
         row("sub-lin", "Lin", LIN, id, kind, 1, at, md, quotes)
     };
-    vec![
+    let mut rows = vec![
         lin(
             LIN_PART_1,
             Kind::Fragment,
@@ -111,7 +111,38 @@ pub fn rows(now: DateTime<Utc>) -> Vec<ReadingItem> {
             "Reading lists are promises we make to a later self.",
             &[],
         ),
-    ]
+    ];
+    bake_quotes(&mut rows);
+    rows
+}
+
+/// Each `![[id]]` line's quote baked into the HTML as a blyg publishes it
+/// (a `blyg-transclusion` snapshot of the quoted post), so the Reader pane
+/// shows the quoted words (user testing, R7).
+fn bake_quotes(rows: &mut [ReadingItem]) {
+    let texts: Vec<(String, String, String)> = rows
+        .iter()
+        .map(|r| {
+            (
+                r.remote_id.to_string(),
+                r.origin.clone(),
+                r.content_md.clone(),
+            )
+        })
+        .collect();
+    for r in rows.iter_mut() {
+        for (id, origin, md) in &texts {
+            let line = format!("<p>![[{id}]]</p>");
+            if r.content_html.contains(&line) {
+                let quote = format!(
+                    "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"{id}\" \
+                     data-blyg-version=\"1\" data-blyg-origin=\"{origin}\">\n{}</blockquote>",
+                    blyg_render::render_markdown(md)
+                );
+                r.content_html = r.content_html.replace(&line, &quote);
+            }
+        }
+    }
 }
 
 /// The sample posts' Background entries, as the studio's lens would list
@@ -148,4 +179,55 @@ pub fn entries(rules: &[(String, bool)]) -> Vec<(Key, EntryBackground)> {
 /// Every rule on, as a new studio 0.64 starts.
 pub fn rules() -> Vec<(String, bool)> {
     RULES.iter().map(|r| (r.to_string(), true)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// User testing (R7): the burst thread's quotes show as the quoted
+    /// words, as a blyg bakes them, never as raw `![[id]]` text.
+    #[test]
+    fn the_burst_thread_bakes_its_quotes() {
+        let rows = rows(Utc::now());
+        let thread = rows
+            .iter()
+            .find(|r| &*r.remote_id == LIN_BURST)
+            .expect("the thread");
+        assert!(
+            !thread.content_html.contains("![["),
+            "{}",
+            thread.content_html
+        );
+        assert!(
+            thread
+                .content_html
+                .contains(&format!("data-blyg-id=\"{LIN_PART_2}\"")),
+            "{}",
+            thread.content_html
+        );
+        assert!(
+            thread
+                .content_html
+                .contains("Low water uncovers the old slipway")
+        );
+        let wordless = rows
+            .iter()
+            .find(|r| &*r.remote_id == ADA_WORDLESS)
+            .expect("Ada's quote");
+        assert!(!wordless.content_html.contains("![["));
+    }
+
+    /// User testing (R6): a post of only a quote is titled from what it
+    /// quotes, not "…".
+    #[test]
+    fn a_post_of_only_a_quote_is_titled_from_the_quote() {
+        let rows = rows(Utc::now());
+        let wordless = rows
+            .iter()
+            .find(|r| &*r.remote_id == ADA_WORDLESS)
+            .expect("Ada's quote");
+        let title = crate::app::reading::vm::post_title(wordless);
+        assert!(title.starts_with("Quotes: Low water uncovers"), "{title}");
+    }
 }

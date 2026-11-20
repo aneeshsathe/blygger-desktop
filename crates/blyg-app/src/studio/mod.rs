@@ -202,6 +202,30 @@ impl Slot {
     }
 }
 
+/// What the writer's guards remember for this window.
+#[derive(Default)]
+pub(crate) struct WriterGuards {
+    /// --- tangle --- The post last tangled and the text that was sent: the
+    /// same text again would make its new items twice.
+    pub(crate) last_tangle: Option<(blyg_core::LocalId, String)>,
+    /// The toast that stays until it's clicked (a long publish failure).
+    pub(crate) sticky_toast: Option<usize>,
+    /// --- format --- Windows' one-time Ctrl+B hint was shown
+    /// (`state.json`'s `bold_key_hint_shown`).
+    pub(crate) bold_hint_shown: bool,
+}
+
+impl WriterGuards {
+    fn load(data_dir: Option<&std::path::Path>) -> WriterGuards {
+        WriterGuards {
+            bold_hint_shown: data_dir
+                .map(blyg_core::state::AppState::load)
+                .is_some_and(|s| s.bold_key_hint_shown),
+            ..Default::default()
+        }
+    }
+}
+
 pub struct Studio {
     pub view: ViewMode,
     data_dir: Option<PathBuf>,
@@ -243,6 +267,8 @@ pub struct Studio {
     /// the page reports counts only for that number and that text.
     stub_sent: Option<(bool, Option<String>)>,
     stub_gen: u64,
+    /// The writer's guards the user tests asked for (publish and format).
+    pub(crate) guards: WriterGuards,
     /// Loads and patches sent (tests).
     #[cfg(test)]
     pub(crate) loads: usize,
@@ -265,6 +291,7 @@ impl Studio {
 
     pub fn new(data_dir: Option<PathBuf>) -> Studio {
         let (tx, rx) = async_channel::unbounded();
+        let guards = WriterGuards::load(data_dir.as_deref());
         Studio {
             view: load_view(data_dir.as_deref()),
             data_dir,
@@ -292,6 +319,7 @@ impl Studio {
             shown_src: None,
             stub_sent: None,
             stub_gen: 0,
+            guards,
             #[cfg(test)]
             loads: 0,
         }
@@ -468,6 +496,22 @@ pub fn unresolved_warning(s: &Stats) -> Option<String> {
 /// quote once published, and notifies the quoted blyg. Say so before
 /// publishing when the scope's instruction never named it (usually a model
 /// echoing a directive).
+/// --- tangle --- A new-item span in a fragment (the studio refuses it:
+/// "tangling makes a thread; switch this draft to a thread").
+pub const TANGLE_IN_FRAGMENT: crate::platform_text::Text = crate::platform_text::ui_text(
+    "⚠ ![[+ …]] and [[+ …]] make new items only in a thread. Press ⌘T to switch this draft to a thread.",
+);
+
+/// --- maths --- Formulas that don't parse, each with why: publish would
+/// refuse them, so the publish step names them and waits.
+pub fn math_error_warning(errors: &[blyg_render::math::MathError]) -> Option<String> {
+    let lines: Vec<String> = errors
+        .iter()
+        .map(|e| format!("⚠ This formula doesn't parse: {} ({})", e.formula, e.reason))
+        .collect();
+    (!lines.is_empty()).then(|| format!("{}\nFix it to publish.", lines.join("\n")))
+}
+
 pub fn echoed_quote_warning(md: &str) -> Option<String> {
     let ids = blyg_render::unrequested_output_directives(md);
     let n = ids.len();
@@ -1010,20 +1054,51 @@ impl MainView {
 
     /// The publish sheet's warning about quotes and links publish would
     /// refuse, and about quotes generated text would add (decision #60).
+    /// What [`Self::studio_publish_block`] holds comes first.
     pub(super) fn studio_publish_warning(&self, cx: &App) -> Option<String> {
         let item = self.current.as_ref()?;
         let md = self.editor.read(cx).value();
-        if !md.contains("[[") {
-            return None;
-        }
-        let unresolved = unresolved_warning(&render_doc(&*self.backend, Some(item), &md).stats);
-        let echoed = (item.kind == blyg_core::Kind::Thread)
+        let (block, unresolved) = self.publish_checks(item, &md);
+        let echoed = (item.kind == blyg_core::Kind::Thread && md.contains("[["))
             .then(|| echoed_quote_warning(&md))
             .flatten();
-        match (unresolved, echoed) {
-            (Some(a), Some(b)) => Some(format!("{a}\n{b}")),
-            (a, b) => a.or(b),
+        let lines: Vec<String> = [block, unresolved, echoed].into_iter().flatten().collect();
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
+    /// Why ⏎ in the publish sheet waits (user testing, W2 and W3): a
+    /// formula that doesn't parse, or a new-item span in a fragment. The
+    /// blyg would refuse either; here it's said before anything is sent.
+    pub(crate) fn studio_publish_block(&self, cx: &App) -> Option<String> {
+        let item = self.current.as_ref()?;
+        let md = self.editor.read(cx).value();
+        self.publish_checks(item, &md).0
+    }
+
+    /// (what holds publish, the unresolved quotes and links), from the
+    /// preview's render when it is of this text, else a render now.
+    fn publish_checks(&self, item: &Item, md: &str) -> (Option<String>, Option<String>) {
+        let fragment_span = (item.kind == blyg_core::Kind::Fragment
+            && !blyg_render::tangle::parse_tangles(md).spans.is_empty())
+        .then(|| TANGLE_IN_FRAGMENT.get().to_string());
+        if !md.contains("[[") && !md.contains('$') {
+            return (fragment_span, None);
         }
+        let fresh;
+        let stats = match &self.studio.latest {
+            Some((_, out)) if self.studio.latest_src.as_deref() == Some(md) => &out.stats,
+            _ => {
+                fresh = render_doc(&*self.backend, Some(item), md);
+                &fresh.stats
+            }
+        };
+        let maths = math_error_warning(&stats.math_errors);
+        let block: Vec<String> = [fragment_span, maths].into_iter().flatten().collect();
+        let unresolved = md
+            .contains("[[")
+            .then(|| unresolved_warning(stats))
+            .flatten();
+        ((!block.is_empty()).then(|| block.join("\n")), unresolved)
     }
 
     /// `BLYGGER_DEMO=studio`: the sample thread in the full editor.

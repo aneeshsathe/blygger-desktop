@@ -84,6 +84,7 @@ impl MainView {
 
     /// ⌘B: open the shelf, or close it.
     pub(crate) fn toggle_shelf_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.bold_key_hint(window, cx); // --- format --- (Windows, once)
         if self.sheet.is::<ShelfSheet>() {
             return self.close_sheet(window, cx);
         }

@@ -703,6 +703,34 @@ impl Closers {
 
 impl markdown_it::parser::extset::InlineRootExt for Closers {}
 
+/// The formulas in one line of Markdown by the rule above (money stays
+/// prose, `\$` is a dollar): `(start, end, tex)` in bytes, TeX trimmed.
+/// For plain-text titles (`blyg_core::plain_title`).
+pub fn formula_spans(src: &str) -> Vec<(usize, usize, String)> {
+    if !src.contains('$') {
+        return Vec::new();
+    }
+    let closers = Closers::of(src);
+    let b = src.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' {
+            i += 2;
+            continue;
+        }
+        if b[i] == b'$'
+            && let Some(span) = closers.math_at(src, i)
+        {
+            out.push((i, span.end, crate::util::js_trim(&span.tex).to_string()));
+            i = span.end;
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
 /// A formula in the Markdown tree. The HTML render draws it (or refuses
 /// it); the native stream shows it as code.
 #[derive(Debug)]

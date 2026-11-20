@@ -43,6 +43,10 @@ blockquote.blyg-transclusion.unresolved {
 blockquote.blyg-tangle-new { margin: 1.5rem 0; padding: .25rem 0 .25rem 1.1rem; border-left: 2px dashed var(--pencil, #23608c); background: none; }
 blockquote.blyg-tangle-new > .blyg-tangle-label { margin: 0 0 .35rem; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--pencil, #23608c); }
 .blyg-tangle-link { color: var(--pencil, #23608c); text-decoration: underline dashed; text-underline-offset: .2em; }
+/* Burrow's own: the placeholder says what it will be, as the passage's
+   label does (the studio's HTML has no label for it; CSS only, so the
+   rendered HTML stays the studio's). */
+.blyg-tangle-link::after { content: "new item"; display: inline-block; margin-left: .3em; padding: 0 .3em; font-size: .62rem; line-height: 1.4; letter-spacing: .04em; text-transform: uppercase; vertical-align: .15em; text-decoration: none; border: 1px dashed currentColor; border-radius: 3px; }
 /* Protocol §14 (decision #103): what another publisher wrote cannot
    reorder what stands next to it. Every baked quote and every attributed
    string (a source's name, a citation, a label) is isolated directionally. */
@@ -371,6 +375,19 @@ mod tests {
         let n1 = nonce();
         assert_eq!(n1.len(), 32);
         assert_ne!(n1, nonce());
+    }
+
+    /// User testing (W6): a `[[+ …]]` placeholder is labelled "new item" in
+    /// the preview, like a passage. The studio's HTML has no label for it,
+    /// so the preview's CSS adds one and the HTML stays as the studio's.
+    #[test]
+    fn a_placeholder_is_labelled_a_new_item() {
+        let css = studio_css();
+        let rule = css
+            .lines()
+            .find(|l| l.starts_with(".blyg-tangle-link::after"))
+            .expect("a label after the placeholder");
+        assert!(rule.contains("content: \"new item\""), "{rule}");
     }
 
     #[test]
