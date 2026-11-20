@@ -254,3 +254,63 @@ fn a_read_mark_from_sync_still_refreshes(cx: &mut TestAppContext) {
         assert!(!row(v, &key).to_read());
     });
 }
+
+/// The Stream lists every post that isn't Background, whatever source the
+/// Reader last had (All unread included): a card seen and marked read
+/// stays where it is, before and after the next refresh. (The source only
+/// filters the Reader's list, as it did before marks were in place.)
+#[gpui_kit::test]
+fn a_seen_stream_card_stays_listed_in_the_stream(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, live, cx) = setup(dir.path(), cx, ReadMode::Stream);
+    view.update(cx, |v, cx| {
+        v.reading.source = Source::Smart(Smart::Unread);
+        v.reading.refilter();
+        cx.notify();
+    });
+    let key = view.read_with(cx, |v, _| unread_post(v));
+    let shown = view.read_with(cx, |v, _| v.reading.shown.len());
+    // As the stream's seen-tracker marks a card.
+    live.mark_read(&key.0, &key.1).unwrap();
+    settle(cx);
+    let marked = |v: &MainView| {
+        assert!(!row(v, &key).to_read(), "marked read");
+        assert!(v.reading.shown_pos(&key).is_some(), "still listed");
+        assert_eq!(v.reading.shown.len(), shown);
+    };
+    view.read_with(cx, |v, _| marked(v));
+    view.update(cx, |v, cx| v.reading_changed(cx));
+    view.read_with(cx, |v, _| marked(v));
+}
+
+/// A `ReadMarked` the current backend's store doesn't bear out changes
+/// nothing: one queued by a blyg just switched away from can name a
+/// subscription and post id this blyg also holds (subscription ids are
+/// each studio's own strings; two blygs can follow the same post).
+#[gpui_kit::test]
+fn a_read_mark_the_store_does_not_hold_changes_nothing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, _live, cx) = setup(dir.path(), cx, ReadMode::Reader);
+    let key = view.read_with(cx, |v, _| unread_post(v));
+    let sub = key.0.to_string();
+    let before = view.read_with(cx, |v, _| counts(v, &sub));
+    let version = view.read_with(cx, |v, _| row(v, &key).version);
+    // Never written to this store: as if from the previous blyg's.
+    let stale = blyg_core::ReadMarked {
+        sub: key.0.clone(),
+        remote_id: key.1.clone(),
+        version,
+    };
+    view.update_in(cx, |v, window, cx| {
+        v.on_core_events(
+            vec![blyg_core::CoreEvent::ReadMarked(vec![stale])],
+            window,
+            cx,
+        )
+    });
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert!(row(v, &key).is_unread(), "a mark this store never made");
+        assert_eq!(counts(v, &sub), before);
+    });
+}
