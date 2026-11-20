@@ -22,7 +22,7 @@ Rules
 - The app was renamed from Blygger to Burrow in display only (see "Naming" in `docs/SPEC.md`).
   Never rename the bundle ID, Keychain service/accounts, data dir or db names, config path,
   `BLYGGER_*` env vars, the `blygger` binary, key contexts or action namespaces, or crates.
-- `cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` must pass before any commit.
+- `scripts/check.sh --fix` must pass before any commit: it formats, then runs what CI runs (fmt, the extension-list and CI-skip checks, clippy `-D warnings`, tests, and the Windows-wording tests; cargo `--locked`). Add `docs` after changing `site/`.
 - Personal and orchestration notes go in `CLAUDE.local.md` and `docs/private/` (both gitignored).
 - A mistake that happens twice gets a check, not another sentence here; code is shaped so a
   correct change needs little context. How: `skills/burrow-code-shape`.
