@@ -173,6 +173,7 @@ pub fn macos_version() -> &'static str {
 
 /// `15.6.1 (Build 24G90)`, from NSProcessInfo.
 #[cfg(target_os = "macos")]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSProcessInfo's version string")]
 pub fn macos_version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {

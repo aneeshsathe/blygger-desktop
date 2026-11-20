@@ -7,6 +7,11 @@
 //! calls the completion handlers there too, and they hand their result to
 //! an `async_channel` that the foreground task awaits.
 
+#![expect(
+    unsafe_code,
+    reason = "WebKit content rule lists through objc2: every call here (macOS only)"
+)]
+
 use std::path::Path;
 
 use block2::RcBlock;

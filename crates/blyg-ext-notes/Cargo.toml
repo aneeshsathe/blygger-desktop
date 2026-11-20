@@ -21,3 +21,6 @@ name = "burrow-markdown-notes"
 path = "src/bin/burrow-markdown-notes.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true

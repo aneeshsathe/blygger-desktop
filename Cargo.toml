@@ -20,6 +20,14 @@ unicode-normalization = "0.1"
 unicode-segmentation = "1"
 idna = "1"
 
+# Lints every crate takes (`[lints] workspace = true` in each crate's
+# Cargo.toml; `blyg-core/tests/it/crate_graph.rs` checks each one opts in).
+[workspace.lints.rust]
+# Unsafe code is reviewed where it lives: only blyg-app's platform glue
+# (Cocoa, WebKit, Win32) needs it, and each item that does says why with
+# `#[expect(unsafe_code, reason = "…")]`. Anywhere else it fails the build.
+unsafe_code = "deny"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

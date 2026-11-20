@@ -29,3 +29,6 @@ name = "bxp-slots-ext"
 path = "src/bin/bxp-slots-ext.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true

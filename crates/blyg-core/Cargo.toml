@@ -35,3 +35,6 @@ flate2 = "1"
 # Model-based tests of the reading walk (sync/walk_model_tests.rs); the
 # workspace already links it through gpui.
 proptest = "1.11"
+
+[lints]
+workspace = true

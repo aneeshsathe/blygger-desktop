@@ -19,3 +19,6 @@ name = "burrow-cross-post"
 path = "src/bin/burrow-cross-post.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true

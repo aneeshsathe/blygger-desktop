@@ -282,6 +282,7 @@ fn open_main(
 /// a window callback ends the process at once. Write what happened to
 /// `%LOCALAPPDATA%\Blygger\crash.log` (the latest crash only) and say so.
 #[cfg(target_os = "windows")]
+#[expect(unsafe_code, reason = "Win32 FFI: MessageBoxW from the panic hook")]
 fn install_crash_log() {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -337,6 +338,10 @@ pub fn order_front_regardless(_window: &Window) {}
 /// Show a window without activating the app (automation only): an app that
 /// never activates doesn't get its windows ordered in otherwise.
 #[cfg(target_os = "macos")]
+#[expect(
+    unsafe_code,
+    reason = "Cocoa FFI: orderFrontRegardless on the window's NSWindow"
+)]
 pub fn order_front_regardless(window: &Window) {
     use raw_window_handle::{HasWindowHandle, RawWindowHandle};
     let Ok(handle) = HasWindowHandle::window_handle(window) else {

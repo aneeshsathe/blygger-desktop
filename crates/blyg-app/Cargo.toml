@@ -117,3 +117,6 @@ proc-macro2 = "1"
 # --- full editor ---
 tempfile = "3"
 gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }
+
+[lints]
+workspace = true

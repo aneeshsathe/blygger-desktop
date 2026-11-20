@@ -13,3 +13,6 @@ blyg-render = { path = "../blyg-render" }
 serde_json = "1"
 # Unicode classes and scripts, as the Studio's regular expressions use them.
 regex = "1"
+
+[lints]
+workspace = true

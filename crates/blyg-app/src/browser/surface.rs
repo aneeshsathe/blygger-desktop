@@ -271,6 +271,10 @@ pub fn default_factory() -> Factory {
 pub const DATA_STORE_ID: [u8; 16] = *b"blygger-browser\0";
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(
+    unsafe_code,
+    reason = "WebKit through objc2: the browser pane's WKWebView"
+)]
 mod wry_browser {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -765,6 +769,10 @@ mod wry_browser {
 /// the scripts `eval_json` runs are each one function expression that
 /// leaves no globals behind (`automation/js.rs`, `capture.rs`).
 #[cfg(all(target_os = "windows", not(test)))]
+#[expect(
+    unsafe_code,
+    reason = "WebView2 COM calls: the browser pane's web view"
+)]
 mod wry_browser_windows {
     use std::cell::{Cell, RefCell};
     use std::path::PathBuf;

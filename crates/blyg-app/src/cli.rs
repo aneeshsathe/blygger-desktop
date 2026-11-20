@@ -83,6 +83,7 @@ pub fn run(args: &[String]) -> Option<ExitCode> {
 /// print to the terminal that ran `blygger +action`, if there is one.
 fn attach_parent_console() {
     #[cfg(target_os = "windows")]
+    #[expect(unsafe_code, reason = "Win32 FFI: AttachConsole")]
     {
         const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
         unsafe extern "system" {

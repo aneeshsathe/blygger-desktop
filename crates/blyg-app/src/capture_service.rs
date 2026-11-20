@@ -128,6 +128,10 @@ pub fn init(cx: &mut App) {
 }
 
 #[cfg(target_os = "macos")]
+#[expect(
+    unsafe_code,
+    reason = "Cocoa FFI: the NSServices provider reads the sender's pasteboard"
+)]
 mod mac {
     //! The `NSServices` provider: AppKit calls `captureInBurrow:userData:
     //! error:` on the main thread with the sender's pasteboard.

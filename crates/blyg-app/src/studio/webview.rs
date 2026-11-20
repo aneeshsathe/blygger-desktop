@@ -589,6 +589,7 @@ pub fn peek_click_modifiers() -> Option<(bool, bool)> {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSEvent.modifierFlags")]
 fn note_click_modifiers() {
     // SAFETY: `+[NSEvent modifierFlags]` is a plain class getter of the
     // keys held right now; main thread (WebKit's delegate callbacks).
@@ -603,6 +604,7 @@ fn note_click_modifiers() {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(unsafe_code, reason = "WebKit through objc2: the preview's WKWebView")]
 mod wry_surface {
     use super::*;
     use wry::{NewWindowResponse, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};

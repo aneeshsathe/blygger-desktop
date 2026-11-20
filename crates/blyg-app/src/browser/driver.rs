@@ -68,6 +68,7 @@ fn convert_in_child(
 /// WebKit compiles rule lists in this process and its DFAs take a few
 /// hundred MB for the full lists; hand the freed pages back to the system
 /// afterwards instead of keeping them in malloc's free lists.
+#[expect(unsafe_code, reason = "libmalloc FFI: malloc_zone_pressure_relief")]
 fn release_memory() {
     unsafe extern "C" {
         fn malloc_zone_pressure_relief(zone: *mut std::ffi::c_void, goal: usize) -> usize;

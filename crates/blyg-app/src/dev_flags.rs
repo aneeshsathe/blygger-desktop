@@ -278,6 +278,10 @@ pub fn get() -> &'static DevFlags {
 /// swap-chain path leaves child windows visible above the app.
 #[cfg(target_os = "windows")]
 #[allow(clippy::disallowed_methods)]
+#[expect(
+    unsafe_code,
+    reason = "std::env::set_var is unsafe in edition 2024; called first thing in main, before other threads"
+)]
 pub fn prefer_swap_chain() {
     if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_none() {
         // SAFETY: first thing in main, before any other thread exists.
