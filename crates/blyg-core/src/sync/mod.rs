@@ -159,6 +159,10 @@ pub struct SyncOptions {
     /// Doubles on each one, up to `server_backoff_max`.
     pub server_backoff_initial: Duration,
     pub server_backoff_max: Duration,
+    /// Ask reads conditionally (`If-None-Match`; studio 0.65+ answers 304
+    /// with no body when nothing changed). On by default; off asks every
+    /// read whole, as Burrow did before, to measure the difference.
+    pub conditional_reads: bool,
 }
 
 impl SyncOptions {
@@ -195,9 +199,15 @@ impl Default for SyncOptions {
             reading_gap: Duration::from_secs(60),
             server_backoff_initial: Duration::from_secs(30),
             server_backoff_max: Duration::from_secs(30 * 60),
+            conditional_reads: true,
         }
     }
 }
+
+/// After `GET /api/changes` answers 404 (studio 0.67 removes it, with
+/// contract 6), it isn't asked again for this long: sync goes by
+/// conditional reads instead (`Engine::validating`).
+pub const CHANGES_RECHECK: Duration = Duration::from_secs(3 * 60 * 60);
 
 pub(crate) type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -231,6 +241,9 @@ struct NetState {
     reading_served: bool,
     /// The server answers `GET /api/changes` (`None` before a pull).
     changes: Option<bool>,
+    /// When `GET /api/changes` last answered 404: not asked again until
+    /// `CHANGES_RECHECK` has passed.
+    changes_gone_at: Option<Instant>,
     /// When everything was last read whole.
     full_at: Option<Instant>,
     /// The safety net's current interval (`full_pull_every`, doubling while
@@ -274,6 +287,16 @@ struct NetState {
     /// The blyg refused the stored credential (401): nothing is sent or
     /// pulled on its own until a new sign-in, or a manual sync.
     signed_out: bool,
+}
+
+/// What to say when the blyg refused a sign-in made for its old API
+/// address (`Api::audience_moved`).
+pub fn audience_moved_message(api_url: &str) -> String {
+    format!(
+        "Your blyg now serves its API only at {api_url}, and Burrow's sign-in \
+         was made for its old address, which this studio no longer takes. \
+         Sign in again to carry on syncing; your changes are kept."
+    )
 }
 
 /// What to say, once a session, when the blyg refuses a read-state write.
@@ -359,6 +382,7 @@ pub(crate) struct Engine {
 
 impl Engine {
     pub fn new(store: Store, api: Api, opts: SyncOptions) -> Engine {
+        api.set_conditional(opts.conditional_reads);
         Engine {
             store,
             api,
@@ -379,6 +403,7 @@ impl Engine {
                 outdated: false,
                 reading_served: false,
                 changes: None,
+                changes_gone_at: None,
                 full_at: None,
                 full_every: opts.full_pull_every,
                 reading_at: None,
@@ -583,6 +608,15 @@ impl Engine {
         drop(st);
         if newly_signed_out {
             self.emit(CoreEvent::SignedOut);
+            // A sign-in made for the host-root `/api` of a mounted blyg:
+            // studio 0.65 dropped that address (studio#151). Say why, so
+            // the new sign-in (which finds the API under the mount) makes
+            // sense.
+            if self.api.audience_moved() {
+                self.emit(CoreEvent::Error(audience_moved_message(
+                    &self.api.api_url(),
+                )));
+            }
         }
     }
 
@@ -1299,15 +1333,24 @@ impl Engine {
     fn pull_locked(&self, background: bool) -> Result<()> {
         self.check_server(false)?;
         let rev = self.revisions()?;
-        let full = rev.is_none() || {
+        // No change counters (studio 0.67+), but the blyg answers reads
+        // conditionally: every list is asked each pull, and one that hasn't
+        // changed comes back 304, as held (`api::conditional`). The safety
+        // net then paces only the whole walks of the reading list.
+        let validating = self.validating(&rev);
+        let net_due = {
             let st = self.state();
             st.full_at.is_none_or(|t| t.elapsed() >= st.full_every)
         };
+        let full = (rev.is_none() && !validating) || net_due;
         let stale = |consumer: &str, deps: &[&str]| full || !self.unchanged(&rev, consumer, deps);
         // Read only because the safety net is due: what such a read finds
         // is what the counters missed (`surprise`), which resets the net's
-        // backoff.
-        let forced = |consumer: &str, deps: &[&str]| full && self.unchanged(&rev, consumer, deps);
+        // backoff. Without counters, every list but the reading list's
+        // whole walk is read each pull anyway.
+        let forced = |consumer: &str, deps: &[&str]| {
+            full && !validating && self.unchanged(&rev, consumer, deps)
+        };
         let mut surprise = false;
 
         // Each list is one coherent acquisition (`Api::collect`): read to
@@ -1365,7 +1408,8 @@ impl Engine {
                 .state()
                 .reading_at
                 .is_none_or(|t| t.elapsed() >= self.opts.reading_gap);
-        let moved = !self.unchanged(&rev, "reading", READING_DEPS);
+        // Validating, the head's first page says whether it moved (304).
+        let moved = validating || !self.unchanged(&rev, "reading", READING_DEPS);
         let has_mark = self.store.meta(walk::HEAD_MARK).is_some();
         let start = {
             let st = self.state();
@@ -1382,7 +1426,12 @@ impl Engine {
                 has_mark,
             })
         };
-        let read = self.read_reading(&rev, start, forced("reading", READING_DEPS))?;
+        let forced_reading = if validating {
+            full
+        } else {
+            forced("reading", READING_DEPS)
+        };
+        let read = self.read_reading(&rev, start, forced_reading)?;
         surprise |= read.surprise;
         reading_changed |= read.changed;
         let reading_err = read.read_err;
@@ -1485,7 +1534,7 @@ impl Engine {
         if reading_changed {
             self.emit(CoreEvent::ReadingChanged);
         }
-        if full && rev.is_some() {
+        if full && (rev.is_some() || validating) {
             let mut st = self.state();
             st.full_at = Some(Instant::now());
             // Found what the counters missed: back to the first interval.
@@ -1504,14 +1553,29 @@ impl Engine {
     /// `GET /api/changes`, captured before anything is loaded. `None` when
     /// it's refused or unreadable, and everything is pulled whole. A new epoch (the database was restored or replaced)
     /// forgets every stored revision, so everything is read again.
+    ///
+    /// Deprecated in studio 0.65 and gone in 0.67 (contract 6): a 404 isn't
+    /// asked again for `CHANGES_RECHECK`, and sync goes by conditional
+    /// reads meanwhile (`validating`).
     fn revisions(&self) -> Result<Option<ChangeState>> {
+        let gone = self
+            .state()
+            .changes_gone_at
+            .is_some_and(|t| t.elapsed() < CHANGES_RECHECK);
+        if gone {
+            return Ok(None);
+        }
         let c = match self.api.changes() {
             Ok(c) => c,
             Err(e) if is_transient(&e) || matches!(e, CoreError::Unauthorized) => return Err(e),
             // Refused or unreadable: pull the old way.
             Err(_) => None,
         };
-        self.state().changes = Some(c.is_some());
+        {
+            let mut st = self.state();
+            st.changes = Some(c.is_some());
+            st.changes_gone_at = c.is_none().then(Instant::now);
+        }
         let Some(c) = c else {
             return Ok(None);
         };
@@ -1540,6 +1604,14 @@ impl Engine {
             st.walk = None;
         }
         Ok(Some(c))
+    }
+
+    /// Sync goes by conditional reads: the blyg has no change counters
+    /// (`rev` is `None`: studio 0.67+), and its answers carry an `ETag`.
+    /// With counters, they stay the cheapest idle check (one small `GET`),
+    /// and conditional reads only make the re-reads they call for cheaper.
+    fn validating(&self, rev: &Option<ChangeState>) -> bool {
+        rev.is_none() && self.opts.conditional_reads && self.api.conditional_reads()
     }
 
     /// The revisions `consumer`'s last accepted fetch was loaded under.
@@ -1991,6 +2063,14 @@ impl Engine {
             start: Instant::now(),
             failed: HashSet::new(),
         };
+        // Without change counters a head read is how a pull learns whether
+        // the list moved: a first page whose rows are as they were (a 304,
+        // or only its cursor moved: a feed poll, a thumb) says it didn't.
+        // What's deeper (a read mark on an old post from another device)
+        // waits for the safety net's whole walk, which backs off while it
+        // finds nothing; a deep walk on every feed poll would cost the
+        // owner a walk of the whole list each time.
+        let mut probe = start == Start::Head && self.validating(rev);
         loop {
             let page = match self.api.reading(
                 crate::api::wire::IMPORTED_READING_MAX,
@@ -2024,6 +2104,12 @@ impl Engine {
                 let mut st = self.state();
                 st.reading_unavailable = false;
                 st.reading_served = true;
+            }
+            if std::mem::take(&mut probe) && page.unchanged {
+                // The head is as it was: nothing to merge, and no reason
+                // for a deep walk (that's for a move the head can't show).
+                self.state().reading_at = Some(Instant::now());
+                return Ok(out);
             }
             // Only a server that advertises read state means it.
             let keep = self.read_sync_on();

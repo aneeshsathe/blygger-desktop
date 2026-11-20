@@ -51,3 +51,5 @@ Rules with an enforcer (a new row needs a check shown failing on a real past ins
 | tour steps quote real keys (bound to what the step waits for), menu items and “labels” | `onboarding/caption_tests.rs` (both platforms' wording) |
 | the reading list converges, prunes only after a whole walk, and stays cheap | `blyg-core/src/sync/walk_model_tests.rs` (proptest model driving `walk::Read`) |
 | crates depend only on what their runtime allows (GPUI in `blyg-app` only) | `blyg-core/tests/it/crate_graph.rs` (`cargo metadata`) |
+| each new thing in the target studio's contract gets a test before it's built (or an exemption with a reason); a sync starts at `[target]` | `blyg-core/tests/it/contract_coverage.rs` over `openapi-current.json` and `tests/fixtures/contract-coverage.toml` |
+| tests are committed before the code they test, and fail without it | `scripts/test-first.sh` (`--run` before each merge); CI's `test-first` job fails a PR changing product code with no test, unless a commit has `No-test: <reason>` |

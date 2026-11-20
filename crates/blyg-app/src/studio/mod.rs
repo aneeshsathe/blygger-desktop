@@ -725,6 +725,21 @@ impl MainView {
         self.studio.slot.borrow_mut().with(|s| s.eval(JS));
     }
 
+    /// `rd-maths-quote`: select the quote box's whole first paragraph,
+    /// formula and all.
+    pub(crate) fn studio_demo_select_paragraph(&mut self) {
+        const JS: &str = r#"(function () {
+  var p = document.querySelector(".item-content blockquote.blyg-transclusion p:not(.provenance)");
+  if (!p) return;
+  var r = document.createRange();
+  r.selectNodeContents(p);
+  var s = window.getSelection();
+  s.removeAllRanges();
+  s.addRange(r);
+})();"#;
+        self.studio.slot.borrow_mut().with(|s| s.eval(JS));
+    }
+
     /// --- stub quotes --- Drop the preview's selection (it was quoted).
     pub(crate) fn studio_stub_clear(&mut self) {
         self.studio

@@ -860,3 +860,7 @@ fn linked_from_says_only_you_see_these(cx: &mut TestAppContext) {
     );
     assert!(!strings.iter().any(|s| s.contains("notices")));
 }
+
+// --- user testing --- the writer's studio 0.64 journeys.
+#[path = "writer_flow_tests.rs"]
+mod writer;
