@@ -59,6 +59,7 @@ teaches something new in the tour, set the newest entry's `version` in
 - **`app.rs` is split by feature** (3,617 → 1,160 lines): connect, looks (config, theme, fonts), chrome (title bar, status bar, toasts), writing, publish, upload, and the Posts list live in `app/<feature>.rs`; a test caps `app.rs` at 1,170 lines.
 - **Crate boundaries are a test** (`crate_graph.rs`): GPUI and blyg-app only in blyg-app; each crate depends only on what its runtime allows.
 - **Platform wording is checked:** UI text is built through `keymap::hint` / `platform_text::Text`; a scan fails on bare ⌘ ⌥ ⇧ ⌃ (it found about 70 that Windows showed as Mac glyphs, now fixed). Windows key tables are tested for AltGr characters and clashes, and tour captions for real keys, menu items and labels.
+- **Tests check both platforms' wording on any machine:** `platform_text::spelled_as(Platform::Windows, …)` spells one test's text as Windows does, and CI's macOS job runs blyg-app's suite again with `BLYGGER_TEST_SPELLING=windows`, so a test that expects Mac glyphs fails before Windows CI does.
 
 ### Removed
 - **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.

@@ -47,6 +47,15 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      # blyg-app's tests again with every UI string spelled as Windows shows
+      # it (Ctrl+B, not ⌘B): a test that expects Mac glyphs fails here, not
+      # only on Windows CI. Key bindings stay macOS's. See
+      # skills/burrow-cross-platform ("Testing wording").
+      - name: Test (Windows wording)
+        env:
+          BLYGGER_TEST_SPELLING: windows
+        run: cargo test -p blyg-app --locked
+
   # Windows is a supported platform: the same checks (and, in the
   # windows-package job, a release build). Tests that need macOS are
   # cfg(target_os = "macos"); see "Keeping Windows building" in

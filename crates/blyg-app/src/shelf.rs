@@ -356,6 +356,13 @@ mod tests {
             crate::keymap::hint("On your shelf · ⌘B")
         );
         assert_eq!(toggled_toast(false), "Taken off your shelf");
+        use crate::platform_text::{Platform, spelled_as};
+        spelled_as(Platform::Windows, || {
+            assert_eq!(toggled_toast(true), "On your shelf · Ctrl+B");
+        });
+        spelled_as(Platform::Mac, || {
+            assert_eq!(toggled_toast(true), "On your shelf · ⌘B");
+        });
     }
 }
 

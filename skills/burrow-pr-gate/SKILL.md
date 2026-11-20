@@ -11,7 +11,12 @@ These are the checks reviewers used to catch in PRs. Run them while writing.
 
 ```sh
 cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app
 ```
+
+The second run spells every UI string as Windows does (`Ctrl+B`, not `⌘B`),
+so a test that expects Mac glyphs fails on your Mac instead of on Windows CI
+(CI's macOS job runs it too).
 
 Server-facing changes also run the real-studio e2e
 (`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane

@@ -903,6 +903,11 @@ mod tests {
             hold_line(3),
             crate::keymap::hint("Posting in 3 s · esc cancels · ⌘⏎ posts now")
         );
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Windows, || hold_line(3)),
+            "Posting in 3 s · esc cancels · Ctrl+Enter posts now"
+        );
     }
 
     #[test]
