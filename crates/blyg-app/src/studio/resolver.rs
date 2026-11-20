@@ -438,8 +438,16 @@ mod tests {
             &opts,
         )
         .html;
-        assert_eq!(html.matches("<p class=\"provenance\">").count(), 1, "{html}");
-        assert_eq!(html.matches("<p class=\"provenance nested\">").count(), 2, "{html}");
+        assert_eq!(
+            html.matches("<p class=\"provenance\">").count(),
+            1,
+            "{html}"
+        );
+        assert_eq!(
+            html.matches("<p class=\"provenance nested\">").count(),
+            2,
+            "{html}"
+        );
         assert!(html.contains(&format!(
             "<a href=\"/blyg/f/{OWN}/\">fragment ↗</a> · snapshot of v2"
         )));

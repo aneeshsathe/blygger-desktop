@@ -358,6 +358,16 @@ impl MainView {
                 }
                 self.studio_set_view(crate::app::studio::ViewMode::Studio, cx);
             }
+            // --- render --- a thread with labelled, nested and partial
+            // quotes and comments to self, source beside its preview.
+            (Scene::RdProvenance, 0) => {
+                if let Some(id) = crate::fake::render_seed::seed(self.backend.as_ref()) {
+                    let results = self.backend.search("");
+                    self.list.refresh(results);
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(crate::app::studio::ViewMode::Split, cx);
+            }
             // The list with an edited post open: notes + pinned diff.
             (Scene::RdReading, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdReading, 1) => open(self, RUE_TRUST, window, cx),

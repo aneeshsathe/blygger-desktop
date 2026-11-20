@@ -353,7 +353,10 @@ pub(crate) fn preview(md: &str, doc: Option<&Mapped>) -> Option<Mapped> {
     let mut lines = Vec::new();
     let mut line = doc.lines.first().copied().unwrap_or(0);
     for start in std::iter::once(0).chain(p.text.match_indices('\n').map(|(i, _)| i + 1)) {
-        line = match (p.src.get(start), start.checked_sub(1).and_then(|i| p.src[i])) {
+        line = match (
+            p.src.get(start),
+            start.checked_sub(1).and_then(|i| p.src[i]),
+        ) {
             (Some(Some(s)), _) => doc.line_at(*s),
             (None, Some(s)) => doc.line_at((s + 1).min(md.len())),
             _ => line,
@@ -370,7 +373,12 @@ pub(crate) fn preview(md: &str, doc: Option<&Mapped>) -> Option<Mapped> {
                 let escaped: String = e
                     .reason
                     .chars()
-                    .flat_map(|c| (c == '*' || c == '\\').then_some('\\').into_iter().chain([c]))
+                    .flat_map(|c| {
+                        (c == '*' || c == '\\')
+                            .then_some('\\')
+                            .into_iter()
+                            .chain([c])
+                    })
                     .collect();
                 format!("⚠ {escaped}.")
             })
@@ -421,7 +429,10 @@ mod tests {
             "a\n\n⚠ a comment opened on line 3 is never closed with \\*/. Close it, or write \\\\/\\* if you meant it literally."
         );
         let t = text("one */ two");
-        assert!(t.starts_with("one */ two\n\n⚠ a \\*/ with no comment to close, after \"one\""), "{t}");
+        assert!(
+            t.starts_with("one */ two\n\n⚠ a \\*/ with no comment to close, after \"one\""),
+            "{t}"
+        );
         let t = text("word/*note*/");
         assert!(t.contains("⚠ a /\\* attached to \"word\""), "{t}");
     }

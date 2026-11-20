@@ -326,10 +326,7 @@ mod tests {
         // Decision #76: an unmarked line continuing the quote's paragraph
         // belongs to the quote, so choosing again replaces it too.
         let md = format!("![[{ID}]]\n> old\nlazy words\n\nmine");
-        assert_eq!(
-            with_stub_quote(&md, ID, None),
-            format!("![[{ID}]]\n\nmine")
-        );
+        assert_eq!(with_stub_quote(&md, ID, None), format!("![[{ID}]]\n\nmine"));
         let md = format!("![[{ID}]]\n> old\n# My heading");
         assert_eq!(
             with_stub_quote(&md, ID, None),

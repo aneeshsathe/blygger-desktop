@@ -140,7 +140,6 @@ fn find_bytes(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-
 /// `parseTangles`: every span in a working copy, and every reason it can't
 /// publish (tangling plan §1.4), in the studio's words.
 pub fn parse_tangles(md: &str) -> Tangles {

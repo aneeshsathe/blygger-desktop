@@ -52,8 +52,8 @@ pub use shell::{
 };
 pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
-    Found, NestedSource, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
-    Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
+    Found, NestedSource, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT,
+    TextQuoteSelector, Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
 pub use util::{absolutize_html, escape_html, is_js_ws, item_document_url};
 

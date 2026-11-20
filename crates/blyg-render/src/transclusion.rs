@@ -762,8 +762,7 @@ fn baked_label(tag: &str) -> Option<String> {
 /// kind) stays beside it as plain text: `<a>label ↗</a> · fragment · …`.
 fn labelled_provenance(line: &str, label: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re =
-        RE.get_or_init(|| Regex::new(r"(?s)(<a\b[^>]*>)(.*?)(?: ↗)?</a>").expect("anchor re"));
+    let re = RE.get_or_init(|| Regex::new(r"(?s)(<a\b[^>]*>)(.*?)(?: ↗)?</a>").expect("anchor re"));
     re.replace(line, |c: &regex::Captures| {
         format!("{}{} ↗</a> · {}", &c[1], escape_html(label), &c[2])
     })
@@ -835,7 +834,10 @@ fn nested_link(layer_origin: Option<&str>, id: &str, src: NestedSource, mount: &
         ),
         None => {
             let seg = if kind == ItemKind::Thread { "t" } else { "f" };
-            (format!("{mount}/{seg}/{id}/"), format!("{} ↗", kind.as_str()))
+            (
+                format!("{mount}/{seg}/{id}/"),
+                format!("{} ↗", kind.as_str()),
+            )
         }
     };
     format!(
@@ -855,8 +857,13 @@ pub(crate) fn inject_nested_provenance(html: &str, resolver: &dyn Resolver, moun
     }
     static ATTRS: OnceLock<[Regex; 4]> = OnceLock::new();
     let attrs = ATTRS.get_or_init(|| {
-        ["class", "data-blyg-id", "data-blyg-version", "data-blyg-origin"]
-            .map(|n| Regex::new(&format!(r#"\b{n}="([^"]*)""#)).expect("attr re"))
+        [
+            "class",
+            "data-blyg-id",
+            "data-blyg-version",
+            "data-blyg-origin",
+        ]
+        .map(|n| Regex::new(&format!(r#"\b{n}="([^"]*)""#)).expect("attr re"))
     });
     let attr = |tag: &str, k: usize| attrs[k].captures(tag).map(|c| c[1].to_string());
     let mut stack: Vec<Layer> = Vec::new();
@@ -904,7 +911,11 @@ pub(crate) fn inject_nested_provenance(html: &str, resolver: &dyn Resolver, moun
             .or_insert_with(|| nested_link(origin, id, resolver.nested_source(origin, id), mount));
         let line = format!(
             "<p class=\"provenance nested\">{link} · {} v{}</p>",
-            if layer.partial { "excerpt of" } else { "snapshot of" },
+            if layer.partial {
+                "excerpt of"
+            } else {
+                "snapshot of"
+            },
             escape_html(layer.version.as_deref().unwrap_or("?"))
         );
         out.push_str(&html[last..*at]);
@@ -996,7 +1007,13 @@ mod tests {
         );
         // Not after an empty `>` line, and not a line opening a block of
         // its own, or a directive.
-        for stop in ["# h", "- item", "---", "```", "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]"] {
+        for stop in [
+            "# h",
+            "- item",
+            "---",
+            "```",
+            "![[01j9zq3k4m5n6p7q8r9s0t1v2w]]",
+        ] {
             assert_eq!(attached_quote(&["d", "> a", stop], 0).1, 2, "{stop}");
         }
         assert_eq!(attached_quote(&["d", "> a", ">", "text"], 0).1, 3);
