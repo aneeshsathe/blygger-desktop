@@ -422,6 +422,10 @@ const MAX_STEPS_A_KEY: u64 = 1_000;
 /// scaling (the selected post differs).
 const SLACK_A_KEY: u64 = 50;
 
+/// A keystroke's SQLite work stays flat however much is held. That is the
+/// store's work, not the whole keystroke's: a narrowed search still scans
+/// the last key's hits' text in Rust and copies the ones that match, which
+/// no VM step counts (`timing_omnibar_search_at_scale` reports the time).
 #[gpui_kit::test]
 fn an_omnibar_keystroke_does_the_same_work_however_much_is_held(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
