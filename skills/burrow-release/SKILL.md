@@ -36,5 +36,8 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
    each feature's run directory and screenshot path in the release PR's
    Verification section (add the heading if the body has none), so the check
    leaves a record.
-9. After merge: watch the Release run; confirm the release has the macOS,
-   Windows assets, plus signed sums.
+9. Before merging (merging tags the release): the latest weekly CI run (the
+   scheduled deny advisories job) is green. The weekly run blocks nothing,
+   so this is where it gets looked at.
+10. After merge: watch the Release run; confirm the release has the macOS,
+    Windows assets, plus signed sums.
