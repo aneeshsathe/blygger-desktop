@@ -269,62 +269,79 @@ fn timing_typing_at_scale(cx: &mut TestAppContext) {
 }
 
 /// What typing an omnibar search, and the list's refresh after a sync
-/// tick, cost: their times, and the store's work a keystroke and a tick.
+/// tick, cost: their times, and the store's work a keystroke (with the
+/// rows held, then with twice as many) and a tick.
 struct Omnibar {
     typing: Keys,
     ticks: Keys,
     steps_a_key: u64,
+    steps_a_key_doubled: u64,
     steps_a_tick: u64,
 }
 
-/// Typing an omnibar search over thousands of posts, and the list's
-/// refresh after a sync tick.
-fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
-    let dir = tempfile::tempdir().unwrap();
-    let (view, live, thread, cx) = setup(dir.path(), cx);
+const QUERY: &str = "garden notes";
+
+/// Type `QUERY` into the empty omnibar, a key at a time, each key's
+/// search landing before the next key (a typist's pace: a search takes
+/// milliseconds, a keystroke a tenth of a second). Returns the
+/// keystrokes' times and the store's work a keystroke, and checks that
+/// what's listed is exactly what the backend finds for the query.
+fn type_query(
+    view: &Entity<MainView>,
+    live: &LiveBackend,
+    cx: &mut VisualTestContext,
+    label: &str,
+) -> (Keys, u64) {
     let mut typing = Keys::default();
-    let mut steps = Steps::start(&live);
-    for (i, c) in "garden notes".chars().enumerate() {
+    let mut steps = Steps::start(live);
+    for (i, c) in QUERY.chars().enumerate() {
         let t = key(cx, &key_name(c));
         steps.keys += 1;
-        let q: String = "garden notes".chars().take(i + 1).collect();
+        let q: String = QUERY.chars().take(i + 1).collect();
         eprintln!("  omnibar keystroke {q:<14?} {:>7.3} ms", ms(t));
         typing.0.push(t);
+        settle(cx);
     }
-    settle(cx);
-    let steps_a_key = steps.per_key("omnibar typing");
-    // What's listed is exactly what the backend finds for the query.
-    let want: Vec<LocalId> = live
-        .search("garden notes")
-        .into_iter()
-        .map(|i| i.local_id)
-        .collect();
+    let per_key = steps.per_key(label);
+    let want: Vec<LocalId> = live.search(QUERY).into_iter().map(|i| i.local_id).collect();
     let shown: Vec<LocalId> = view.read_with(cx, |v, _| {
-        assert_eq!(v.list.query(), "garden notes");
+        assert_eq!(v.list.query(), QUERY);
         v.list
             .results()
             .iter()
             .map(|i| i.local_id.clone())
             .collect()
     });
+    assert!(!want.is_empty(), "the query finds posts");
     assert_eq!(shown, want);
+    (typing, per_key)
+}
+
+/// Typing an omnibar search over thousands of posts, and the list's
+/// refresh after a sync tick; then typing it again over twice as many
+/// held rows.
+fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
+    let dir = tempfile::tempdir().unwrap();
+    let (view, live, thread, cx) = setup(dir.path(), cx);
+    let (typing, steps_a_key) = type_query(&view, &live, cx, "omnibar typing");
 
     // A sync tick after a save: the list is refreshed for the query.
     view.update_in(cx, |v, window, cx| v.set_query_text("", window, cx));
     settle(cx);
+    let work = live.count_store_work();
     let mut ticks = Keys::default();
     let mut tick_steps = 0;
     for i in 0..5 {
         live.save(&thread, &format!("{} {i}", long_thread()))
             .unwrap();
-        steps.work.take();
+        work.take();
         let t = Instant::now();
         view.update_in(cx, |v, window, cx| {
             v.on_core_event(CoreEvent::ItemsChanged, window, cx)
         });
         ticks.0.push(t.elapsed());
         settle(cx);
-        tick_steps += steps.work.take();
+        tick_steps += work.take();
     }
     let steps_a_tick = tick_steps / 5;
     eprintln!(
@@ -334,7 +351,7 @@ fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
     let n = view.read_with(cx, |v, _| v.list.results().len());
     assert_eq!(n, live.items().len());
     // The background search itself, for the record (not on the UI thread).
-    for q in ["", "g", "ga", "gar", "garden", "garden notes"] {
+    for q in ["", "g", "ga", "gar", "garden", QUERY] {
         live.save(&thread, &format!("{} {q}", long_thread()))
             .unwrap();
         let t = Instant::now();
@@ -344,10 +361,37 @@ fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
             ms(t.elapsed())
         );
     }
+
+    // Twice the rows held (as a sync would bring them), then the same
+    // search typed again.
+    let (own, held) = (live.items().len(), live.reading().len());
+    {
+        let store = Store::open(&dir.path().join("blygger.db")).unwrap();
+        store
+            .merge_reading(
+                &synth::reading(reading_rows() * 2, 3),
+                true,
+                &synth::kinds(),
+            )
+            .unwrap();
+        for r in synth::reading(posts(), 12) {
+            let md = format!("{} (more)", r.content_md);
+            store.create_draft(Kind::Fragment, &md, 0).unwrap();
+        }
+    }
+    view.update_in(cx, |v, window, cx| {
+        v.on_core_event(CoreEvent::ItemsChanged, window, cx);
+        v.set_query_text("", window, cx);
+    });
+    settle(cx);
+    assert_eq!(live.items().len(), own + posts());
+    assert!(live.reading().len() >= held * 2 - held / 50);
+    let (_, steps_a_key_doubled) = type_query(&view, &live, cx, "omnibar typing (twice the rows)");
     Omnibar {
         typing,
         ticks,
         steps_a_key,
+        steps_a_key_doubled,
         steps_a_tick,
     }
 }
@@ -355,16 +399,10 @@ fn omnibar_search(cx: &mut TestAppContext) -> Omnibar {
 #[gpui_kit::test]
 fn omnibar_search_at_scale_does_bounded_work(cx: &mut TestAppContext) {
     let o = omnibar_search(cx);
-    // Both read what's held (a keystroke about 17 steps a held row today; a
-    // tick after a save, the posts again, about 60 a post): each is held
-    // to about twice that, so a step that starts reading more goes over.
+    // A tick after a save reads the posts again (about 60 steps a post);
+    // it's held to about twice that. (A keystroke's work:
+    // `an_omnibar_keystroke_does_the_same_work_however_much_is_held`.)
     let posts = posts() as u64;
-    let held = posts + reading_rows() as u64;
-    assert!(
-        o.steps_a_key < held * PER_HELD_ROW_A_KEY,
-        "{} VM steps an omnibar keystroke over {held} held rows",
-        o.steps_a_key
-    );
     assert!(
         o.steps_a_tick < posts * PER_POST_ON_A_TICK,
         "{} VM steps a refresh over {posts} posts",
@@ -375,8 +413,32 @@ fn omnibar_search_at_scale_does_bounded_work(cx: &mut TestAppContext) {
 /// VM steps a refresh after a save may spend on each post it lists.
 const PER_POST_ON_A_TICK: u64 = 120;
 
-/// VM steps an omnibar keystroke may spend on each held row.
-const PER_HELD_ROW_A_KEY: u64 = 35;
+/// The most VM steps an omnibar keystroke may cost, whatever is held: a
+/// check that nothing was committed since the last search, and the
+/// selected post's reads (a few dozen steps today).
+const MAX_STEPS_A_KEY: u64 = 1_000;
+
+/// What a keystroke's work may differ by between the two runs without
+/// scaling (the selected post differs).
+const SLACK_A_KEY: u64 = 50;
+
+#[gpui_kit::test]
+fn an_omnibar_keystroke_does_the_same_work_however_much_is_held(cx: &mut TestAppContext) {
+    let o = omnibar_search(cx);
+    // A keystroke narrows what's listed: its store work is a check that
+    // nothing changed and the selected post's reads, the same however
+    // many rows are held. Doubling the rows held may add only a sliver.
+    let (one, two) = (o.steps_a_key, o.steps_a_key_doubled);
+    assert!(
+        two * 10 <= one * 13 + 10 * SLACK_A_KEY,
+        "{one} VM steps an omnibar keystroke, {two} with twice the rows held: \
+         a keystroke's work grows with what's held"
+    );
+    assert!(
+        one.max(two) <= MAX_STEPS_A_KEY,
+        "{one} / {two} VM steps an omnibar keystroke (limit {MAX_STEPS_A_KEY})"
+    );
+}
 
 #[gpui_kit::test]
 #[ignore = "timing: run by the CI timing job"]
