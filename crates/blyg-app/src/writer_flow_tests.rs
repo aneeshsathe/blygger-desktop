@@ -30,6 +30,18 @@ fn settle(cx: &mut VisualTestContext, what: &str, done: impl Fn(&mut VisualTestC
 }
 
 /// Replace the open post's text by typing over a select-all.
+/// The caret to the end of the text, by the key each platform's text field
+/// binds: ⌘↓ on macOS, Ctrl+End on Windows (where ⌘↓ would be Ctrl+↓).
+fn caret_to_end(cx: &mut VisualTestContext) {
+    let end = if cfg!(target_os = "windows") {
+        "ctrl-end"
+    } else {
+        "cmd-down"
+    };
+    cx.simulate_keystrokes(end);
+    cx.run_until_parked();
+}
+
 fn type_over(cx: &mut VisualTestContext, text: &str) {
     keys(cx, "cmd-a");
     cx.simulate_input(text);
@@ -102,7 +114,7 @@ fn writer_tangles_a_passage_and_a_placeholder_confirms_publishes_and_revises(
     assert!(toast(&view, cx).contains("and 2 new items"));
 
     // Revise after publishing: type, publish again; no confirm step.
-    keys(cx, "cmd-down");
+    caret_to_end(cx);
     cx.simulate_input("Edited later.\n");
     cx.run_until_parked();
     keys(cx, "cmd-enter");
@@ -156,17 +168,21 @@ fn the_format_keys_bold_italic_and_formula(cx: &mut TestAppContext) {
     let (view, _, cx) = setup(cx);
     open(&view, cx, DRAFT);
     type_over(cx, "Make this loud");
-    // Select the last word, ⌃⌘B, then again (plain).
-    keys(cx, "alt-shift-left");
+    // Select the last word, ⌃⌘B, then again (plain). Four ⇧← rather than a
+    // word-select key: that key differs by platform (⌥⇧← on macOS, Ctrl+Shift+←
+    // on Windows, where ⌥⇧← selected one character).
+    for _ in 0.."loud".len() {
+        keys(cx, "shift-left");
+    }
     keys(cx, "ctrl-cmd-b");
     assert_eq!(editor_text(&view, cx), "Make this **loud**");
     keys(cx, "ctrl-cmd-b");
     assert_eq!(editor_text(&view, cx), "Make this loud");
     keys(cx, "ctrl-cmd-i");
     assert_eq!(editor_text(&view, cx), "Make this *loud*");
-    // A formula with nothing selected: an empty pair, the caret inside.
-    keys(cx, "cmd-down");
-    cx.simulate_input(" and ");
+    // A formula with nothing selected: an empty pair, the caret inside. Typed
+    // afresh rather than moved to with ⌘↓, which isn't end-of-text on Windows.
+    type_over(cx, "Make this *loud* and ");
     keys(cx, "ctrl-cmd-m");
     cx.simulate_input("x^2");
     cx.run_until_parked();
@@ -290,7 +306,7 @@ fn undo_never_brings_the_tangle_spans_back(cx: &mut TestAppContext) {
     type_over(cx, crate::fake::tangle_seed::SAMPLE);
     publish_the_tangle(&view, &fake, cx);
     assert!(!editor_text(&view, cx).contains("[[+"));
-    keys(cx, "cmd-down");
+    caret_to_end(cx);
     cx.simulate_input("A line after publishing.\n");
     cx.run_until_parked();
     // ⌘Z twice is the tester's steps; the line's break is an undo step of
