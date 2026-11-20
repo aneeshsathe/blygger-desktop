@@ -753,6 +753,7 @@ impl MainView {
                 self.reading_changed(cx);
                 cx.notify();
             }
+            CoreEvent::ReadMarked(rows) => self.read_marked(&rows, reading_follows, cx),
             CoreEvent::Error(msg) => self.show_toast(msg, None, cx),
             CoreEvent::ServerOutdated => self.server_outdated(cx),
             // The "older than 0.40" sheet is gone: below the 0.47 floor the
