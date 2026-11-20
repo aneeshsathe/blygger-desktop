@@ -6,13 +6,14 @@
 //! looking for it. This test reads each inline code span and, if it looks
 //! like a path, checks that the repo has it.
 //!
-//! - A span is a path when it has a `/`, no spaces or placeholder
-//!   characters (`<>*{}$~?`), isn't absolute or a URL, and either ends in a
-//!   file extension or starts at one of the repo's top-level folders.
+//! - A span is a path when it has no spaces or placeholder characters
+//!   (`<>*{}$~?`), isn't absolute or a URL, and either has a `/` and ends in
+//!   a file extension or starts at one of the repo's top-level folders, or
+//!   is a bare file name with a known extension (`keymap_docs.rs`).
 //!   Fenced code blocks are skipped: they hold commands, not references.
 //! - It matches when the path exists from the repo root, from the doc's own
 //!   folder, or as the tail of a repo path (`blyg-core/src/order.rs` for
-//!   `crates/blyg-core/src/order.rs`).
+//!   `crates/blyg-core/src/order.rs`; a bare name matches a file's name).
 //! - A path git ignores (local-only, such as `docs/private/`) is skipped.
 //! - A path in another repo is followed by `(other repo: <name>)`, which
 //!   exempts that span only (spaces and closing punctuation may come between).
@@ -119,10 +120,9 @@ fn spans(text: &str) -> Vec<Span<'_>> {
 
 /// Whether a span reads as a repo path (see the module docs).
 fn is_path(span: &str, top_level: &BTreeSet<&str>) -> bool {
-    if !span.contains('/')
-        || span
-            .chars()
-            .any(|c| c.is_whitespace() || "<>*{}$~?".contains(c))
+    if span
+        .chars()
+        .any(|c| c.is_whitespace() || "<>*{}$~?".contains(c))
         || span.starts_with('/')
         || span.contains("://")
     {
@@ -134,6 +134,13 @@ fn is_path(span: &str, top_level: &BTreeSet<&str>) -> bool {
     let has_ext = last
         .rsplit_once('.')
         .is_some_and(|(stem, ext)| !stem.is_empty() && EXTENSIONS.contains(&ext));
+    if !span.contains('/') {
+        // A bare file name (`keymap_docs.rs`) must be some repo file's name.
+        return has_ext
+            && span
+                .chars()
+                .all(|c| c.is_alphanumeric() || "._-".contains(c));
+    }
     has_ext || top_level.contains(first)
 }
 
@@ -213,6 +220,12 @@ fn the_path_heuristic_skips_code_and_keeps_paths() {
         "~/.config/blygger/config",
         "https://blyg.example.com/a.md",
         "a/b",
+        "blyg.example.com",
+        "0.27.0",
+        "ReadingItem::is_unread",
+        "self.sheet",
+        "*_vm.rs",
+        "protocol-v*.md",
     ] {
         assert!(!is_path(code, &top), "{code} isn't a path");
     }
@@ -222,6 +235,9 @@ fn the_path_heuristic_skips_code_and_keeps_paths() {
         "blyg-core/src/order.rs",
         "../SKILL.md",
         ".github/workflows/ci.yml",
+        "keymap_docs.rs",
+        "openapi-current.json",
+        "releases.md",
     ] {
         assert!(is_path(path, &top), "{path} is a path");
     }
