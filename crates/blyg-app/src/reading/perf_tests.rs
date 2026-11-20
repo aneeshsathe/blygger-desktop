@@ -1,18 +1,23 @@
 //! The reading screens at scale: thousands of posts (`blyg_core::synth`,
 //! invented content) on the real store, through a `LiveBackend` that
 //! never syncs (no worker, a base URL nothing answers on). Each step is
-//! something the UI thread does on a keystroke, an open or a sync tick,
-//! so each has a budget.
+//! something the UI thread does on a keystroke, an open or a sync tick.
 //!
-//!     cargo test -p blyg-app --release reading::perf_tests -- --nocapture
+//! What gates a merge is the work: refreshes, and the store's VM steps
+//! (`LiveBackend::count_store_work`), which stay under a share of the rows
+//! held however many there are. The same steps against the clock are a
+//! report (`timing_…`, run by CI's timing job):
 //!
-//! Debug builds hold fewer posts and get looser budgets.
+//!     cargo test -p blyg-app --release reading::perf_tests -- --ignored --nocapture
+//!
+//! Debug builds hold fewer posts.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::store::Store;
+use blyg_core::store::{Store, Work};
+use blyg_core::wait::Budget;
 use blyg_core::{Backend, ConfigStore, LiveBackend, SyncOptions, synth};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
@@ -30,34 +35,63 @@ fn rows() -> usize {
     }
 }
 
-/// Budget in a release build; debug builds get 15x. Windows gets 4x on
-/// top: its CI runners sync SQLite writes to disk several times slower
-/// (opening a post, which marks it read, took 4.3 s there against 1.8 s),
-/// and the budgets are there to catch a regression of an order of
-/// magnitude, not the runner's disk.
-fn budget(ms: u64) -> Duration {
-    let debug = if cfg!(debug_assertions) { 15 } else { 1 };
-    let os = if cfg!(windows) { 4 } else { 1 };
-    Duration::from_millis(ms * debug * os)
+/// How a step is measured: the store's work (the gate), or the clock (a
+/// report).
+enum Meter {
+    Work { work: Work, over: Vec<String> },
+    Clock(Budget),
 }
 
-#[derive(Default)]
-struct Over(Vec<String>);
+/// What a step may cost: its UI-thread budget in a release build (ms),
+/// and the store's VM steps per row held (all it starts, settled). The
+/// step counts are what this data and these queries take, the same on
+/// every machine, with room to spare; a step that starts reading more
+/// than it did goes over.
+struct Cost {
+    ms: f64,
+    steps_a_row: f64,
+}
 
-impl Over {
-    fn time<T>(&mut self, label: &str, ms: u64, f: impl FnOnce() -> T) -> T {
-        let t = Instant::now();
-        let out = f();
-        let e = t.elapsed();
-        eprintln!("{label:<44} {:>9.2} ms", e.as_secs_f64() * 1e3);
-        if e >= budget(ms) {
-            self.0
-                .push(format!("{label}: {e:?} (budget {:?})", budget(ms)));
+const fn cost(ms: f64, steps_a_row: f64) -> Cost {
+    Cost { ms, steps_a_row }
+}
+
+impl Meter {
+    /// Run `f`, a step, and measure it.
+    fn step<T>(
+        &mut self,
+        cx: &mut VisualTestContext,
+        what: &str,
+        cost: Cost,
+        f: impl FnOnce(&mut VisualTestContext) -> T,
+    ) -> T {
+        match self {
+            Meter::Work { work, over } => {
+                work.take();
+                let out = f(cx);
+                settle(cx);
+                let n = work.take();
+                let limit = (rows() as f64 * cost.steps_a_row) as u64;
+                eprintln!("{what:<44} {n:>9} VM steps (limit {limit})");
+                if n >= limit {
+                    over.push(format!("{what}: {n} VM steps (limit {limit})"));
+                }
+                out
+            }
+            Meter::Clock(budget) => budget.time(what, cost.ms, || f(cx)),
         }
-        out
     }
+
     fn done(self) {
-        assert!(self.0.is_empty(), "over budget:\n{}", self.0.join("\n"));
+        match self {
+            Meter::Work { over, .. } => assert!(
+                over.is_empty(),
+                "{} rows held; work grew with the list:\n{}",
+                rows(),
+                over.join("\n")
+            ),
+            Meter::Clock(budget) => budget.done(),
+        }
     }
 }
 
@@ -112,11 +146,10 @@ fn setup<'a>(
     (view, live, cx)
 }
 
-#[gpui_kit::test]
-fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
+/// The reader at scale, a step at a time, each measured by `meter`.
+fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend) -> Meter) {
     let dir = tempfile::tempdir().unwrap();
     let (view, live, cx) = setup(dir.path(), cx);
-    let mut over = Over::default();
     let n = view.read_with(cx, |v, _| v.reading.rows.len());
     eprintln!("{n} rows held");
     assert!(n > rows() * 9 / 10);
@@ -129,25 +162,33 @@ fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
     // On the reading screen, a refresh keeps the order under the cursor.
     assert_eq!(view.read_with(cx, |v, _| v.reading.view), View::Reading);
 
-    over.time("reading_changed (a sync tick)", 60, || {
+    let mut meter = meter(&live);
+    meter.step(cx, "reading_changed (a sync tick)", cost(60.0, 4.0), |cx| {
         view.update(cx, |v, cx| v.reading_changed(cx))
     });
     // A sync burst: the queued events are one batch, and one refresh.
     let before = view.read_with(cx, |v, _| v.reading.refreshes);
-    over.time("a burst of 20 ReadingChanged + ItemsChanged", 80, || {
-        view.update_in(cx, |v, window, cx| {
-            let mut burst = vec![blyg_core::CoreEvent::ReadingChanged; 20];
-            burst.push(blyg_core::CoreEvent::ItemsChanged);
-            v.on_core_events(burst, window, cx)
-        })
-    });
+    meter.step(
+        cx,
+        "a burst of 20 ReadingChanged + ItemsChanged",
+        cost(80.0, 12.0),
+        |cx| {
+            view.update_in(cx, |v, window, cx| {
+                let mut burst = vec![blyg_core::CoreEvent::ReadingChanged; 20];
+                burst.push(blyg_core::CoreEvent::ItemsChanged);
+                v.on_core_events(burst, window, cx)
+            })
+        },
+    );
     let after = view.read_with(cx, |v, _| v.reading.refreshes);
     assert_eq!(after - before, 1, "one refresh for the burst");
     // Let the burst's follow-up work (ItemsChanged's requery) finish, so it
-    // isn't timed as part of opening a post below.
+    // isn't measured as part of opening a post below.
     settle(cx);
-    over.time("unread count", 10, || live.unread_count());
-    over.time("sources pane entries", 10, || {
+    meter.step(cx, "unread count", cost(10.0, 0.25), |_| {
+        live.unread_count()
+    });
+    meter.step(cx, "sources pane entries", cost(10.0, 0.25), |cx| {
         view.read_with(cx, |v, _| v.source_entries().len())
     });
 
@@ -155,17 +196,26 @@ fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
     let key = view.read_with(cx, |v, _| {
         v.reading.shown_rows().nth(5).map(super::vm::key).unwrap()
     });
-    over.time("open a post (mark read, refresh)", 120, || {
-        view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
-        settle(cx);
-    });
-    over.time("reading_changed with a post open", 60, || {
-        view.update(cx, |v, cx| v.reading_changed(cx))
-    });
+    meter.step(
+        cx,
+        "open a post (mark read, refresh)",
+        cost(120.0, 4.0),
+        |cx| {
+            view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
+            settle(cx);
+        },
+    );
+    meter.step(
+        cx,
+        "reading_changed with a post open",
+        cost(60.0, 4.0),
+        |cx| view.update(cx, |v, cx| v.reading_changed(cx)),
+    );
 
-    // Typing a search, a keystroke at a time.
+    // Typing a search, a keystroke at a time: the list in memory, filtered.
     for q in ["a", "au", "aut", "author", "author 0", "author 07"] {
-        over.time(&format!("search keystroke {q:?}"), 60, || {
+        let what = format!("search keystroke {q:?}");
+        meter.step(cx, &what, cost(60.0, 0.25), |cx| {
             view.update_in(cx, |v, window, cx| v.set_reading_query(q, window, cx))
         });
     }
@@ -177,7 +227,21 @@ fn reading_screen_at_scale_within_budget(cx: &mut TestAppContext) {
     let found = view.read_with(cx, |v, _| v.reading.shown.len());
     assert!(found > 0 && found < n, "{found} of {n}");
     view.update_in(cx, |v, window, cx| v.set_reading_query("", window, cx));
-    over.done();
+    meter.done();
+}
+
+#[gpui_kit::test]
+fn reading_screen_at_scale_does_bounded_work(cx: &mut TestAppContext) {
+    reading_screen_steps(cx, |live| Meter::Work {
+        work: live.count_store_work(),
+        over: vec![],
+    });
+}
+
+#[gpui_kit::test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_reading_screen_at_scale(cx: &mut TestAppContext) {
+    reading_screen_steps(cx, |_| Meter::Clock(Budget::default()));
 }
 
 /// The refresh's reorder as it was: a pairwise scan, copying every row.
@@ -202,10 +266,11 @@ fn pairwise(
 /// The reorder at scale, old against new (the old one only in release:
 /// it's quadratic).
 #[test]
-fn keep_order_at_scale() {
+#[ignore = "timing: run by the CI timing job"]
+fn timing_keep_order_at_scale() {
     let all = synth::reading(rows(), 5);
     let held = all.clone();
-    let mut over = Over::default();
+    let mut budget = Budget::default();
     if !cfg!(debug_assertions) {
         let fresh = all.clone();
         let t = Instant::now();
@@ -218,11 +283,11 @@ fn keep_order_at_scale() {
         assert_eq!(old.len(), all.len());
     }
     let fresh = all.clone();
-    let got = over.time("reorder, keep_order", 20, || {
+    let got = budget.time("reorder, keep_order", 20.0, || {
         super::keep_order(&held, fresh)
     });
     assert_eq!(got.len(), held.len());
-    over.done();
+    budget.done();
 }
 
 /// `keep_order` moves rows where the pairwise scan it replaced copied

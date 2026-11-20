@@ -4,7 +4,7 @@
 //! shell scripts on a custom PATH. No real CLI is ever run.
 
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use crate::common::*;
 use blyg_ai::claude_code::LocalClaudeCode;
@@ -169,26 +169,28 @@ fn missing_binaries() {
     assert!(claude(t.path()).binary().is_none());
 }
 
+/// The CLI would sleep for ten minutes: `generate` returning at all, inside
+/// the wait's deadline, means it was killed.
 #[test]
 fn cancel_kills_the_cli() {
     let t = tempfile::tempdir().unwrap();
-    script(t.path(), "claude", "cat >/dev/null\nexec sleep 10");
+    script(t.path(), "claude", "cat >/dev/null\nexec sleep 600");
     let c = CancelFlag::new();
-    let c2 = c.clone();
+    let p = claude(t.path());
+    let req = GenRequest::new("s", "u").with_cancel(c.clone());
+    let out = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let out2 = out.clone();
     std::thread::spawn(move || {
-        blyg_core::wait::wall_clock(Duration::from_millis(150));
-        c2.cancel();
+        let r = p.generate(req, &mut |_| {});
+        *out2.lock().unwrap() = Some(r);
     });
-    let start = Instant::now();
-    let e = claude(t.path())
-        .generate(GenRequest::new("s", "u").with_cancel(c), &mut |_| {})
-        .unwrap_err();
+    blyg_core::wait::wall_clock(Duration::from_millis(150));
+    c.cancel();
+    blyg_core::wait::until("generate to return after the cancel", || {
+        out.lock().unwrap().is_some()
+    });
+    let e = out.lock().unwrap().take().unwrap().unwrap_err();
     assert_eq!(e, AiError::Cancelled);
-    assert!(
-        start.elapsed() < Duration::from_secs(5),
-        "{:?}",
-        start.elapsed()
-    );
 }
 
 #[test]

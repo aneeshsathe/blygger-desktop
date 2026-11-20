@@ -761,17 +761,23 @@ The six label-grammar bugs pinned here for 0.47.0 are fixed upstream in
 
 ## Performance
 
-`tests/bench.rs` renders a 20,400-character mixed thread. It has quotes,
-unresolved quotes, TK, links, fuzzy links, lists, tables, code and videos.
+The timing reports live in `blyg-core/tests/perf.rs` (`timing_render_…`),
+where the one budget helper, `blyg_core::wait::Budget`, is; blyg-render is a
+leaf crate. They're ignored by the everyday run, and CI's `timing` job runs
+them without blocking a merge. One renders a 20,400-character mixed thread
+with unresolved quotes, TK, links, fuzzy links, lists, tables, code and
+videos.
 
-- Release: 4.2 ms median, 4.6 ms worst, against a 10 ms budget. Keeping
-  code lines from transcluding costs about 0.3 ms: a thread containing
-  `![[` gets one extra block-only parse (`markdown::code_lines`).
-- Debug: about 20 ms.
+- Release: 4.2 ms median when last measured with the quotes resolved,
+  against a 10 ms budget. Keeping code lines from transcluding costs about
+  0.3 ms: a thread containing `![[` gets one extra block-only parse
+  (`markdown::code_lines`).
+- Debug: about 25 ms.
 
-A second test runs 11 adversarial inputs aimed at the linkify regexes'
-backtracking. Each takes 1–10 ms in release.
+A second runs adversarial inputs aimed at the linkify regexes'
+backtracking, and 200,000 lone dollars at the formula finder, each against
+a budget of its own.
 
 ```sh
-cargo test -p blyg-render --release --test bench -- --nocapture
+cargo test -p blyg-core --release --test perf -- --ignored timing_render --nocapture
 ```

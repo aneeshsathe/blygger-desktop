@@ -101,11 +101,15 @@ fn a_5xx_backs_off_hard_and_quietly() {
     assert!(wait >= initial, "{wait:?}");
     // Each failure doubles the wait, up to the cap.
     assert_eq!(e.server_backoff(), initial * 2);
+    let storm = Instant::now();
     for _ in 0..20 {
         e.note_err(&status_err(503, "unavailable"));
     }
     assert_eq!(e.server_backoff(), e.opts.server_backoff_max);
-    assert!(e.retry_at().unwrap() - Instant::now() > initial * 8);
+    // The last failure set its retry a capped backoff after it, so after
+    // the storm began (a lower bound: a slow machine only adds to it).
+    let wait = e.retry_at().unwrap() - storm;
+    assert!(wait >= e.opts.server_backoff_max, "{wait:?}");
     // The ordinary (offline) backoff is untouched by it.
     assert_eq!(e.state().backoff, e.opts.backoff_initial);
     // A success ends it.

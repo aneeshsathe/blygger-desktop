@@ -294,7 +294,80 @@ fn integrity(s: &Store) {
 #[test]
 fn bloated_index_is_compacted_in_steps_and_finds_the_same() {
     let dir = tempfile::tempdir().unwrap();
-    let s = Store::open(&dir.path().join("blygger.db")).unwrap();
+    let (s, words, bloated) = bloated_store(dir.path());
+    let queries: Vec<String> = words[..60]
+        .iter()
+        .filter(|w| w.len() >= 3)
+        .cloned()
+        .collect();
+    let before = hits(&s, &queries);
+    let mine = s.search("kettle");
+    assert_eq!(mine.len(), 1);
+
+    let now = 1_900_000_000_000;
+    let first = s.fts_upkeep(now).unwrap();
+    assert_eq!(first.weighed.len(), 2);
+    assert_eq!(first.started, ["reading_fts"], "items_fts is lean");
+    let mut calls = 1;
+    let mut steps = first.steps;
+    while s.fts_compacting() {
+        let u = s.fts_upkeep(now + calls).unwrap();
+        assert!(u.weighed.is_empty(), "weighed once per interval");
+        steps += u.steps;
+        calls += 1;
+        assert!(calls < 10_000);
+    }
+    assert!(steps > 1, "in steps: {steps}");
+    let after = ratio(&s, "reading_fts");
+    assert!(after < bloated / 2.0, "{bloated:.2} → {after:.2}");
+    assert!(after < super::fts::FIRST_BLOAT, "{after:.2}");
+    integrity(&s);
+    assert_eq!(hits(&s, &queries), before);
+    assert_eq!(s.search("kettle"), mine);
+    // Lean now: the next weighing starts nothing.
+    let later = s.fts_upkeep(now + super::fts::WEIGH_EVERY_MS + 1).unwrap();
+    assert_eq!(later.weighed.len(), 2);
+    assert!(later.started.is_empty());
+    assert_eq!(later.steps, 0);
+}
+
+/// Each upkeep call hands the store back soon (a step may overrun the
+/// budget by one step's worth). Checked on the median: one disk stall on
+/// a shared runner is the runner, not the code. A report, not a gate.
+#[test]
+#[ignore = "timing: run by the CI timing job"]
+fn timing_compaction_calls_hand_the_store_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (s, _, _) = bloated_store(dir.path());
+    let now = 1_900_000_000_000;
+    s.fts_upkeep(now).unwrap();
+    let mut calls = 1;
+    let mut took = Vec::new();
+    while s.fts_compacting() {
+        let t = Instant::now();
+        s.fts_upkeep(now + calls).unwrap();
+        took.push(t.elapsed());
+        calls += 1;
+        assert!(calls < 10_000);
+    }
+    took.sort();
+    let median = took[took.len() / 2];
+    eprintln!(
+        "compaction: median call {median:?}, worst {:?} over {} calls",
+        took.last().unwrap(),
+        took.len()
+    );
+    let mut budget = crate::wait::Budget::default();
+    let ms = (super::fts::BUDGET * 4).as_secs_f64() * 1e3;
+    budget.check("median upkeep call", median, ms);
+    budget.done();
+}
+
+/// A store whose reading index churn has bloated (400 rows, each edited
+/// three times over), with one post of your own; its vocabulary, and the
+/// reading index's bloat ratio.
+fn bloated_store(dir: &std::path::Path) -> (Store, Vec<String>, f64) {
+    let s = Store::open(&dir.join("blygger.db")).unwrap();
     let k = kinds();
     let mut rng = Rng(42);
     let words = vocab(&mut rng);
@@ -318,56 +391,7 @@ fn bloated_index_is_compacted_in_steps_and_finds_the_same() {
         bloated > super::fts::FIRST_BLOAT,
         "{lean:.2} → {bloated:.2}"
     );
-    let queries: Vec<String> = words[..60]
-        .iter()
-        .filter(|w| w.len() >= 3)
-        .cloned()
-        .collect();
-    let before = hits(&s, &queries);
-    let mine = s.search("kettle");
-    assert_eq!(mine.len(), 1);
-
-    let now = 1_900_000_000_000;
-    let first = s.fts_upkeep(now).unwrap();
-    assert_eq!(first.weighed.len(), 2);
-    assert_eq!(first.started, ["reading_fts"], "items_fts is lean");
-    let mut calls = 1;
-    let mut steps = first.steps;
-    let mut took = Vec::new();
-    while s.fts_compacting() {
-        let t = Instant::now();
-        let u = s.fts_upkeep(now + calls).unwrap();
-        took.push(t.elapsed());
-        assert!(u.weighed.is_empty(), "weighed once per interval");
-        steps += u.steps;
-        calls += 1;
-        assert!(calls < 10_000);
-    }
-    assert!(steps > 1, "in steps: {steps}");
-    // Each call hands the store back soon (a step may overrun the budget by
-    // one step's worth). Checked on the median: one disk stall on a shared
-    // CI runner is the runner, not the code. Windows runners are several
-    // times slower at everything that touches the disk.
-    took.sort();
-    let median = took[took.len() / 2];
-    let slack = if cfg!(windows) { 4 } else { 1 };
-    assert!(
-        median < super::fts::BUDGET * 4 * slack,
-        "median {median:?}, worst {:?} over {} calls",
-        took.last().unwrap(),
-        took.len()
-    );
-    let after = ratio(&s, "reading_fts");
-    assert!(after < bloated / 2.0, "{bloated:.2} → {after:.2}");
-    assert!(after < super::fts::FIRST_BLOAT, "{after:.2}");
-    integrity(&s);
-    assert_eq!(hits(&s, &queries), before);
-    assert_eq!(s.search("kettle"), mine);
-    // Lean now: the next weighing starts nothing.
-    let later = s.fts_upkeep(now + super::fts::WEIGH_EVERY_MS + 1).unwrap();
-    assert_eq!(later.weighed.len(), 2);
-    assert!(later.started.is_empty());
-    assert_eq!(later.steps, 0);
+    (s, words, bloated)
 }
 
 /// The upkeep runs on the typing writer's thread when it's idle, not on

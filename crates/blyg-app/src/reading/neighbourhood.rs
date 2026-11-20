@@ -614,7 +614,8 @@ mod tests {
     }
 
     #[test]
-    fn building_a_map_among_thousands_of_posts_is_quick() {
+    #[ignore = "timing: run by the CI timing job"]
+    fn timing_building_a_map_among_thousands_of_posts() {
         let mut rows = chain();
         for i in 0..4000 {
             rows.push(row(B, &format!("bulk{i}"), "Bulk"));
@@ -628,10 +629,12 @@ mod tests {
             local: &local,
         };
         let model = lineage_vm::build(A, "mid", &src);
-        let t = std::time::Instant::now();
-        let m = build(&model, &local, &Index::new(&rows, &[], None));
+        let mut budget = blyg_core::wait::Budget::default();
+        // A release build is ~1 ms.
+        let m = budget.time("a map among 4,000 posts", 25.0, || {
+            build(&model, &local, &Index::new(&rows, &[], None))
+        });
         assert_eq!(m.nodes.len(), 5);
-        // Generous for an unoptimised test build; a release build is ~1 ms.
-        assert!(t.elapsed().as_millis() < 400, "{:?}", t.elapsed());
+        budget.done();
     }
 }
