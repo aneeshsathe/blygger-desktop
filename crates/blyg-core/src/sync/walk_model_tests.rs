@@ -83,7 +83,10 @@ impl Server {
         v
     }
 
-    #[allow(clippy::type_complexity)]
+    #[expect(
+        clippy::type_complexity,
+        reason = "proptest strategies spell out their value types"
+    )]
     fn page(&self, cursor: Option<&str>) -> Result<(Vec<(Key, Row)>, Option<String>), ()> {
         let from = match cursor {
             None => 0,
@@ -634,7 +637,10 @@ fn event() -> impl Strategy<Value = (Ev, u8)> {
 
 /// A history: the server's first rows (subscription, age in s), the page
 /// size, the page budget, and the events.
-#[allow(clippy::type_complexity)]
+#[expect(
+    clippy::type_complexity,
+    reason = "proptest strategies spell out their value types"
+)]
 fn history(
     max_rows: usize,
     max_events: usize,

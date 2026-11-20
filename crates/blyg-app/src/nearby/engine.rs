@@ -561,7 +561,7 @@ pub fn build_index(
         model: model.clone(),
         ..Default::default()
     };
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity, reason = "a work list local to this fn")]
     let mut todo: Vec<(&Doc, Vec<String>, Vec<Option<Vec<f32>>>)> = Vec::new();
     for d in corpus.docs() {
         let have = known.get(d.key.as_str());

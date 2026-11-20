@@ -365,7 +365,7 @@ pub(crate) fn refresh_menus(cx: &mut App) {
     cx.set_menus(menus_with(composer::spellcheck_enabled(cx), &blygs));
 }
 
-#[cfg_attr(not(test), allow(dead_code))]
+#[cfg_attr(not(test), expect(dead_code, reason = "tests use it"))]
 fn menus(spellcheck: bool) -> Vec<Menu> {
     menus_with(spellcheck, &[])
 }

@@ -261,7 +261,7 @@ impl MainView {
     /// The hook for a link clicked inside rendered post HTML (see the module
     /// docs): opens the profile when `url` is another blyg's origin we know
     /// of (a subscription or a post we hold); false = open it as a link.
-    #[allow(dead_code)] // wired up by the reading body's web view
+    #[expect(dead_code, reason = "wired up by the reading body's web view")]
     pub(crate) fn open_profile_from_link(
         &mut self,
         url: &str,

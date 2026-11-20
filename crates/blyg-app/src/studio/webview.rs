@@ -151,7 +151,10 @@ pub trait PreviewSurface {
 }
 
 /// Reports the page's geometry and what it rendered, as one JSON line.
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(
+    test,
+    expect(dead_code, reason = "the app web view uses it; tests build none")
+)]
 pub const PROBE_JS: &str = r#"JSON.stringify({
   w: window.innerWidth, h: window.innerHeight,
   quotes: document.querySelectorAll("blockquote.blyg-transclusion:not(.unresolved)").length,
@@ -328,7 +331,6 @@ pub fn nudge_js(down: bool) -> String {
 }
 
 /// Host-side helpers, injected at document start (main frame only).
-#[cfg_attr(test, allow(dead_code))]
 pub const HOST_SCRIPT: &str = r#"
 (function () {
   "use strict";

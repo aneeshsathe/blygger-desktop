@@ -2,7 +2,10 @@
 //! [`Resolver`] implementing the reference Worker's `resolveTarget` rules
 //! (the same store `gen_parity.mjs` serves to the Worker as a fake D1).
 
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "shared by tests/it and tests/bench.rs: each uses a different part, so an expect is unfulfilled in one of them"
+)]
 
 use blyg_render::{Found, ItemKind, Resolution, Resolver, UnresolvedReason};
 use serde_json::Value;

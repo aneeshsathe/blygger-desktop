@@ -1250,7 +1250,10 @@ pub fn keyless_on(action: &str, p: crate::platform_text::Platform) -> bool {
 }
 
 /// The `WINDOWS_KEYLESS` rows without their key: menu (and button) only.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "Windows key spelling (and its tests)")
+)]
 fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
     for k in &mut rows {
         if WINDOWS_KEYLESS.contains(&k.action) {
@@ -1334,7 +1337,6 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
 ];
 
 /// The pure part of `platform_key`.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub fn respell_for_windows(key: &str) -> String {
     if let Some((_, win)) = WINDOWS_OVERRIDES.iter().find(|(mac, _)| *mac == key) {
         return win.to_string();
@@ -1466,7 +1468,6 @@ fn glyph_parts(text: &str) -> Vec<GlyphPart> {
 
 /// The pure part of `hint`: rewrite each run of macOS modifier glyphs
 /// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub fn windows_hint(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for part in glyph_parts(text) {
@@ -1573,7 +1574,6 @@ const WINDOWS_WORDS: &[(&str, &str)] = &[
 
 /// The wording half of `windows_hint`: Keychain → Credential Manager,
 /// this Mac → this PC.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub fn windows_words(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut rest = text;
@@ -1690,7 +1690,6 @@ pub fn glyphs(key: &str) -> String {
 }
 
 /// A key as Windows menus and tooltips write it: `Ctrl+Shift+Enter`.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
 pub fn windows_label(key: &str) -> String {
     let (mods, last) = normalize(key);
     let mut parts: Vec<String> = [
@@ -1728,7 +1727,13 @@ pub fn glyphs(key: &str) -> String {
 
 /// `⌘⇧,` for `cmd-shift-,` on every platform (the documentation site's
 /// shortcut reference describes the macOS app).
-#[cfg_attr(all(target_os = "windows", not(test)), allow(dead_code))]
+#[cfg_attr(
+    all(target_os = "windows", not(test)),
+    expect(
+        dead_code,
+        reason = "the macOS spelling: Windows uses it in tests only"
+    )
+)]
 pub fn mac_glyphs(key: &str) -> String {
     if key.is_empty() {
         return "—".into();

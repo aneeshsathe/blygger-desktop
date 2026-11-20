@@ -217,7 +217,13 @@ impl chunked::Raw for CredentialManager {
 /// Secrets too long for one Credential Manager entry: the parts go in
 /// `account#1`, `account#2`…, and `account` itself holds a marker with
 /// the count. Short secrets are stored as they are.
-#[cfg_attr(not(all(feature = "keychain", windows)), allow(dead_code))]
+#[cfg_attr(
+    all(not(all(feature = "keychain", windows)), not(test)),
+    expect(
+        dead_code,
+        reason = "the Windows Credential Manager uses it, and tests"
+    )
+)]
 mod chunked {
     use crate::backend::{CoreError, Result};
 

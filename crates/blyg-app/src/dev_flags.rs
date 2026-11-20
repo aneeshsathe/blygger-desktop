@@ -229,7 +229,10 @@ impl DevFlags {
     }
 
     /// The process environment, parsed. The only reader of it in blyg-app.
-    #[allow(clippy::disallowed_methods)]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one reader of the environment"
+    )]
     fn from_env() -> Result<Self, String> {
         Self::parse(&|k| std::env::var_os(k))
     }
@@ -237,7 +240,10 @@ impl DevFlags {
 
 #[cfg(test)]
 impl TestEnv {
-    #[allow(clippy::disallowed_methods)]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one reader of the tests' environment"
+    )]
     pub fn from_env() -> Self {
         let get = |k: &str| std::env::var(k).ok();
         Self {
@@ -281,7 +287,10 @@ pub fn get() -> &'static DevFlags {
 /// would cover the WebView2 child window that shows posts. Its plain
 /// swap-chain path leaves child windows visible above the app.
 #[cfg(target_os = "windows")]
-#[allow(clippy::disallowed_methods)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "GPUI reads this variable, so it is set here, before GPUI starts"
+)]
 #[expect(
     unsafe_code,
     reason = "std::env::set_var is unsafe in edition 2024; called first thing in main, before other threads"

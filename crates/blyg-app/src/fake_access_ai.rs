@@ -23,7 +23,10 @@ pub struct Seed {
     pub seq: u64,
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 fn grant(
     id: &str,
     client: &str,

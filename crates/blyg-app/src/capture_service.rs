@@ -54,7 +54,13 @@ pub fn with_capture(existing: &str, quote: &str) -> String {
 
 /// The clipboard's text as last seen, and when it last changed (Windows).
 #[derive(Debug, Default)]
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "windows"), not(test)),
+    expect(
+        dead_code,
+        reason = "the clipboard chip is Windows only (and tested everywhere)"
+    )
+)]
 pub struct ClipWatch {
     seen: bool,
     last: Option<String>,
@@ -63,7 +69,13 @@ pub struct ClipWatch {
 
 impl Global for ClipWatch {}
 
-#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "windows"), not(test)),
+    expect(
+        dead_code,
+        reason = "the clipboard chip is Windows only (and tested everywhere)"
+    )
+)]
 impl ClipWatch {
     /// The clipboard reads `text` at `now`. The first reading is only the
     /// baseline: what was on the clipboard before is nothing new.

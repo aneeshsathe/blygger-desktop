@@ -39,13 +39,22 @@ use blyg_render::{RenderOpts, render_preview};
 use serde_json::{Value, json};
 
 // Top-level, so the resolver's `super::sanitize` is this crate's `sanitize`.
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the app's module, compiled for the parts this example calls"
+)]
 #[path = "../src/ai/generate.rs"]
 mod generate;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the app's module, compiled for the parts this example calls"
+)]
 #[path = "../src/studio/resolver.rs"]
 mod resolver;
-#[allow(dead_code)]
+#[expect(
+    dead_code,
+    reason = "the app's module, compiled for the parts this example calls"
+)]
 #[path = "../src/studio/sanitize.rs"]
 mod sanitize;
 

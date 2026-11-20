@@ -2,11 +2,17 @@
 //! Windows the icon comes from the executable's resources (`build.rs`).
 
 /// `packaging/icon.svg` rendered at 512 px (`scripts/make-icon.sh`).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "the macOS app uses it, and tests")
+)]
 static ICON_PNG: &[u8] = include_bytes!("../../../packaging/icon-512.png");
 
 /// Whether this process runs from inside an `.app` bundle.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "the macOS app uses it, and tests")
+)]
 pub fn is_bundled(exe: &std::path::Path) -> bool {
     exe.to_string_lossy().contains(".app/Contents/MacOS/")
 }
