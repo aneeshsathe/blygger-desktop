@@ -62,11 +62,15 @@ impl From<rusqlite::Error> for CoreError {
 const WAL_LIMIT: i64 = 16 * 1024 * 1024;
 
 /// A search's text (trimmed, lowercase) and what it found, stamped
-/// (`Store::stamp`) when it was asked.
+/// (`Store::stamp`) when it was asked. What it found is kept as indices
+/// into the rows it searched (the `items()` snapshot, or a trigram
+/// query's rows), shared rather than copied: narrowing it copies nothing
+/// but what it returns.
 struct LastSearch {
     stamp: u64,
     text: String,
-    hits: Vec<Item>,
+    rows: Arc<Vec<Item>>,
+    hits: Vec<usize>,
 }
 
 pub struct Store {
@@ -441,42 +445,51 @@ impl Store {
             let c = self.rconn();
             self.stamp(&c)
         };
-        let narrowed = {
+        let matching = |rows: &[Item], among: &mut dyn Iterator<Item = usize>| -> Vec<usize> {
+            among
+                .filter(|&i| lower_contains(&rows[i].content_md, &needle))
+                .collect()
+        };
+        // Taken out of the lock before scanning, so searches don't queue.
+        let last = {
             let last = self.last_search.lock().unwrap_or_else(|p| p.into_inner());
             match last.as_ref() {
-                Some(l) if l.stamp == stamp && needle.contains(l.text.as_str()) => Some(
-                    l.hits
-                        .iter()
-                        .filter(|i| lower_contains(&i.content_md, &needle))
-                        .cloned()
-                        .collect::<Vec<_>>(),
-                ),
+                Some(l) if l.stamp == stamp && needle.contains(l.text.as_str()) => {
+                    Some((l.rows.clone(), l.hits.clone()))
+                }
                 _ => None,
             }
         };
-        let hits = match narrowed {
-            Some(v) => v,
+        let narrowed = last.map(|(rows, hits)| {
+            let hits = matching(&rows, &mut hits.into_iter());
+            (rows, hits)
+        });
+        let (rows, hits) = match narrowed {
+            Some(found) => found,
             None if q.chars().count() < 3 => {
                 let all = self.items_snapshot().unwrap_or_default();
-                all.iter()
-                    .filter(|i| lower_contains(&i.content_md, &needle))
-                    .cloned()
-                    .collect()
+                let hits = matching(&all, &mut (0..all.len()));
+                (all, hits)
             }
             None => match self.try_fts(q) {
-                Ok(v) => v,
+                Ok(v) => {
+                    let hits = (0..v.len()).collect();
+                    (Arc::new(v), hits)
+                }
                 // Not remembered: the next search asks again.
                 Err(_) => return Vec::new(),
             },
         };
+        let found = hits.iter().map(|&i| rows[i].clone()).collect();
         // Read after the stamp: a commit in between only makes the stamp
         // stale, so the next search asks again.
         *self.last_search.lock().unwrap_or_else(|p| p.into_inner()) = Some(LastSearch {
             stamp,
             text: needle,
-            hits: hits.clone(),
+            rows,
+            hits,
         });
-        hits
+        found
     }
 
     fn try_fts(&self, q: &str) -> Result<Vec<Item>> {
