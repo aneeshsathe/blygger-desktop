@@ -700,6 +700,7 @@ fn p_folds_a_threads_parts_and_a_number_opens_one(cx: &mut TestAppContext) {
         v.reading_demo(crate::scenes::Scene::RdBurst, 0, window, cx)
     });
     crate::test_wait::settle_drawn(cx);
+    keys(cx, "alt-cmd-1"); // the stream (tests start in the Reader)
     let thread = thread_key();
     for _ in 0..40 {
         if view.read_with(cx, |v, _| v.reading.sel.as_ref() == Some(&thread)) {

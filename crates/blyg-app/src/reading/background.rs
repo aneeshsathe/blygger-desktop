@@ -570,6 +570,65 @@ impl MainView {
         )
     }
 
+    /// Where `p` and the part numbers act: the open thread (`true`), else
+    /// the stream's selected card (`false`); `None` when neither has parts.
+    fn parts_key_target(&self) -> Option<(Key, bool)> {
+        let bg = &self.reading.background;
+        if let Some(o) = &self.reading.opened {
+            if !bg.parts_of(&o.key).is_empty() {
+                return Some((o.key.clone(), true));
+            }
+            return None;
+        }
+        let sel = self.reading.sel.as_ref()?;
+        (self.reading.mode == super::stream_vm::ReadMode::Stream && !bg.parts_of(sel).is_empty())
+            .then(|| (sel.clone(), false))
+    }
+
+    /// Fold or unfold a thread's parts (a click on "+N parts", or `p`).
+    fn toggle_burst_parts(&mut self, key: &Key, open: bool, cx: &mut Context<Self>) {
+        self.reading.background.toggle_parts(key, open);
+        if !open && let Some(ix) = self.reading.shown_pos(key) {
+            self.reading.stream.list.remeasure_items(ix..ix + 1);
+        }
+        cx.notify();
+    }
+
+    /// The reading screen's parts keys: `p` folds or unfolds the parts of
+    /// the open thread (else the selected stream card), and 1–9 open a
+    /// listed part. Returns whether the key was taken.
+    pub(crate) fn burst_parts_key(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some((thread, open)) = self.parts_key_target() else {
+            return false;
+        };
+        if key == "p" {
+            self.toggle_burst_parts(&thread, open, cx);
+            return true;
+        }
+        let Some(n) = key.parse::<usize>().ok().filter(|n| (1..=9).contains(n)) else {
+            return false;
+        };
+        if !self.reading.background.parts_listed(&thread, open) {
+            return false;
+        }
+        match self
+            .reading
+            .background
+            .parts_of(&thread)
+            .get(n - 1)
+            .cloned()
+        {
+            Some(part) => self.open_reading(part, window, cx),
+            None => return false,
+        }
+        true
+    }
+
     /// "+N parts" under a thread published with its parts (studio 0.64's
     /// `BurstParts`): a toggle, and the parts by their link labels, each
     /// opening that post. `open`: the open post, listed until folded; else
@@ -636,13 +695,26 @@ impl MainView {
             })
             .on_click(cx.listener(move |this, _, _, cx| {
                 cx.stop_propagation();
-                this.reading.background.toggle_parts(&toggle_key, open);
-                if !open && let Some(ix) = this.reading.shown_pos(&toggle_key) {
-                    this.reading.stream.list.remeasure_items(ix..ix + 1);
-                }
-                cx.notify();
+                this.toggle_burst_parts(&toggle_key, open, cx);
             }))
             .child(label);
+        // The keys, where they act: the open thread, else the selected card
+        // (as "Read more ⏎" shows its key).
+        let keyed = self
+            .parts_key_target()
+            .is_some_and(|(k, o)| k == key && o == open);
+        let hint = keyed.then(|| {
+            let n = parts.len();
+            div()
+                .debug_selector(|| "burst-key-hint".into())
+                .text_size(px(11.))
+                .text_color(p.muted)
+                .child(match (listed, n) {
+                    (false, _) => "p unfolds".to_string(),
+                    (true, 1) => "p folds · 1 opens".to_string(),
+                    (true, n) => format!("p folds · 1–{} opens", n.min(9)),
+                })
+        });
         Some(
             div()
                 .id(if open {
@@ -656,7 +728,14 @@ impl MainView {
                 .font_family(self.chrome())
                 .text_size(px(12.))
                 .text_color(p.muted)
-                .child(div().flex().child(toggle))
+                .child(
+                    div()
+                        .flex()
+                        .items_baseline()
+                        .gap(px(8.))
+                        .child(toggle)
+                        .children(hint),
+                )
                 .children(named.into_iter().enumerate().map(|(i, (k, name))| {
                     div()
                         .id(("burst-part", i))
