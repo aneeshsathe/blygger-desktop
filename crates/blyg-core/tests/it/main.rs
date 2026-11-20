@@ -10,6 +10,7 @@
 mod common;
 
 mod auth;
+mod changelog_stitch;
 mod config;
 mod config_docs;
 mod contacts;
