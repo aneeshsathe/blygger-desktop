@@ -170,6 +170,7 @@ scenes! {
         RdBrowseHistory = "rd-browse-history",
         RdBrowsePeek = "rd-browse-peek",
         RdStreamNested = "rd-stream-nested",
+        RdBurst = "rd-burst",
     }
     /// profiles/demo.rs
     Profiles {

@@ -565,6 +565,8 @@ impl MainView {
                 | Scene::RdStreamNested),
                 n,
             ) => self.browse_demo(s, n, window, cx),
+            // --- background --- a thread's "+N parts" (studio 0.64).
+            (Scene::RdBurst, n) => self.burst_demo(n, window, cx),
             _ => {}
         }
         if n == 2 {
