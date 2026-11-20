@@ -94,6 +94,8 @@ mod own_tests; // --- own posts ---
 #[cfg(test)]
 mod perf_tests; // the reading screens at scale
 #[cfg(test)]
+mod read_mark_tests;
+#[cfg(test)]
 mod sources_tests; // --- reader folders ---
 #[cfg(test)]
 mod stream_tests;
