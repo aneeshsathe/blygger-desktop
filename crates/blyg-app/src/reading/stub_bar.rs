@@ -281,7 +281,7 @@ impl MainView {
                 .id(id)
                 .debug_selector(move || id.into())
                 .cursor_pointer()
-                .text_color(p.accent)
+                .text_color(stub_line_color(StubLine::Action, &p))
                 .hover(|s| s.underline())
                 .child(label)
         };
