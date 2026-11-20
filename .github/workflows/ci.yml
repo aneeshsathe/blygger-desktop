@@ -116,6 +116,28 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Tests come with the feature: a pull request that changes product code
+  # (crates/*/src, not test files) must change tests too, unless a commit
+  # has the trailer "No-test: <reason>". Cheap: git only, no build. The
+  # order of commits (red tests first) is checked by the orchestrator with
+  # scripts/test-first.sh --run before merging.
+  test-first:
+    name: tests with the change
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Product code changes come with tests
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: scripts/test-first.sh --pr "$BASE" "$HEAD"
+
   docs:
     name: docs site
     runs-on: ubuntu-latest
