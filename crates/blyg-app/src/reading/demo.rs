@@ -584,6 +584,33 @@ impl MainView {
             ) => self.browse_demo(s, n, window, cx),
             // --- background --- a thread's "+N parts" (studio 0.64).
             (Scene::RdBurst, n) => self.burst_demo(n, window, cx),
+            // The burst rule turned off (what Settings' chip calls), then
+            // Lin's first part opened from the main list.
+            (Scene::RdBackgroundRuleOff, 0) => {
+                self.show_view(View::Reading, window, cx);
+                self.background_rules_refresh(cx);
+            }
+            (Scene::RdBackgroundRuleOff, 1) => {
+                self.save_background_rule(blyg_core::background::BURST, false, cx)
+            }
+            (Scene::RdStreamBurst, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamBurst, 1) => {
+                let thread = crate::fake::background_seed::thread_key();
+                if let Some(ix) = self.reading.shown_pos(&thread) {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            (Scene::RdBackgroundRuleOff, 2) => {
+                let part = (
+                    blyg_core::SubId::from("sub-lin"),
+                    blyg_core::RemoteId::from(crate::fake::background_seed::LIN_PART_1),
+                );
+                if self.reading.shown_pos(&part).is_some() {
+                    self.open_reading(part, window, cx);
+                }
+            }
             _ => {}
         }
         if n == 2 {

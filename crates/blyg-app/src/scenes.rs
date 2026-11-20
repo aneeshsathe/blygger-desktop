@@ -281,6 +281,11 @@ scenes! {
     /// reading/demo.rs: studio 0.64 link notices on Responses
     Reading {
         RdLinkedFrom = "rd-linked-from",
+        // --- background --- "Parts published with a thread" turned off in
+        // Settings: Lin's first part open, back in the main lists.
+        RdBackgroundRuleOff = "rd-background-rule-off",
+        // The stream at Lin's burst thread, its "+2 parts" still folded.
+        RdStreamBurst = "rd-stream-burst",
     }
 }
 
