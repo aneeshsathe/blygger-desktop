@@ -17,6 +17,8 @@ mod contract_coverage;
 mod crate_graph;
 mod doc_paths;
 mod e2e;
+mod lint_exceptions;
+mod no_git;
 mod personal_data;
 mod profiles;
 mod read_sync;

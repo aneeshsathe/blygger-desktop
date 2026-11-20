@@ -12,6 +12,8 @@
 //! terms prohibit it for third-party apps. Use `LocalClaudeCode` instead.
 //! See docs/AI.md.
 
+#![forbid(unsafe_code)]
+
 pub mod accounts;
 pub mod anthropic;
 pub mod blyg_server;

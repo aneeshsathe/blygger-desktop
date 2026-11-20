@@ -1,7 +1,8 @@
 //! No personal data in the repo (it's public, and history can't be taken
-//! back): every file git tracks is scanned for
+//! back): every file git tracks, or would add (untracked, not ignored), is
+//! scanned for
 //!
-//! - home folders: `/Users/<name>`, `C:\Users\<name>`;
+//! - home folders: `/Users/<name>`, `/home/<name>`, `C:\Users\<name>`;
 //! - email addresses, other than at reserved example domains and GitHub's
 //!   noreply addresses;
 //! - blyg hosts: a URL whose host names a blyg must be an example host
@@ -96,7 +97,8 @@ fn name_at(text: &str, at: usize) -> &str {
     &rest[..end]
 }
 
-/// `/Users/<name>` and `C:\Users\<name>` (backslashes doubled or not).
+/// `/Users/<name>`, `/home/<name>` and `C:\Users\<name>` (backslashes
+/// doubled or not).
 fn home_paths(text: &str, out: &mut Vec<String>) {
     for (i, _) in text.match_indices("Users") {
         let before = &text[..i];
@@ -121,6 +123,17 @@ fn home_paths(text: &str, out: &mut Vec<String>) {
             continue;
         }
         out.push(format!("{prefix}Users{sep}{name}"));
+    }
+    // `/home/` starts a path: at the start, after a quote, space or `=`, or
+    // in a `file://` URL; not inside a web path (`…example.com/home/`).
+    for (i, _) in text.match_indices("/home/") {
+        let before = &text[..i];
+        let starts_path = before.ends_with("file://")
+            || !before.ends_with(|c: char| is_name_char(c) || c == '/' || c == ':');
+        let name = name_at(text, i + "/home/".len());
+        if starts_path && !name.is_empty() {
+            out.push(format!("/home/{name}"));
+        }
     }
 }
 
@@ -235,10 +248,33 @@ fn scan(path: &str, text: &str, allow: &Allow) -> Vec<(Kind, String)> {
     found
 }
 
-/// Folders not scanned: screenshots (binary images) and the clickable HTML
-/// mocks, which CI skips too (`docs/prototype/` holds invented sample
-/// content only).
-const NOT_SCANNED: &[&str] = &["docs/screenshots/", "docs/prototype/"];
+/// Folders not scanned: the screenshots (binary images, which CI skips too).
+const NOT_SCANNED: &[&str] = &["docs/screenshots/"];
+
+/// The files git lists under `root`, tracked or not yet added (but not
+/// ignored); `None` without git or a checkout.
+fn files_to_scan(root: &Path) -> Option<Vec<String>> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    Some(
+        String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|p| !p.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
+}
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -249,20 +285,16 @@ fn allowlist() -> Allow {
 }
 
 #[test]
-fn no_personal_data_in_tracked_files() {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(root())
-        .args(["ls-files", "-z"])
-        .output();
-    let Some(out) = out.ok().filter(|o| o.status.success()) else {
-        eprintln!("skipped: no git checkout");
+fn no_personal_data_in_the_repo() {
+    let Some(files) = files_to_scan(&root()) else {
+        crate::no_git::skip_or_fail(crate::no_git::on_ci(), "the personal-data scan");
         return;
     };
     let allow = allowlist();
     let mut bad = Vec::new();
-    for path in String::from_utf8_lossy(&out.stdout).split('\0') {
-        if path.is_empty() || NOT_SCANNED.iter().any(|d| path.starts_with(d)) {
+    for path in &files {
+        let path = path.as_str();
+        if NOT_SCANNED.iter().any(|d| path.starts_with(d)) {
             continue;
         }
         // Binary files (images, fonts, the model) and deleted files are skipped.
@@ -277,7 +309,7 @@ fn no_personal_data_in_tracked_files() {
     }
     assert!(
         bad.is_empty(),
-        "personal data in tracked files (tests/it/personal_data.rs). Use invented \
+        "personal data in the repo's files (tests/it/personal_data.rs). Use invented \
          values (blyg.example.com, someone@example.com); list an invented one that \
          has to stay in tests/fixtures/personal-data-allow.txt:\n  {}",
         bad.join("\n  ")
@@ -325,6 +357,10 @@ fn near_misses_still_fail() {
         [(Kind::Home, concat!("/Us", "ers/someone-else").to_string())]
     );
     assert_eq!(
+        found(concat!("cd /ho", "me/someone-else/src")),
+        [(Kind::Home, concat!("/ho", "me/someone-else").to_string())]
+    );
+    assert_eq!(
         found(concat!(r"vault = C:\Us", r"ers\someone-else\Notes")),
         [(
             Kind::Home,
@@ -352,4 +388,31 @@ fn near_misses_still_fail() {
     // And what's meant to pass does.
     assert!(found("https://ada.blyg.example.com/p and someone@example.com").is_empty());
     assert!(found("12345+someone@users.noreply.github.com").is_empty());
+}
+
+/// A file not yet `git add`ed is scanned too (so the local gate catches it
+/// before it's ever committed); one git ignores is not.
+#[test]
+fn untracked_files_are_scanned_and_ignored_ones_are_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let ok = Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .output()
+            .unwrap()
+            .status
+            .success();
+        assert!(ok, "git {args:?}");
+    };
+    git(&["init", "-q"]);
+    std::fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+    std::fs::write(dir.path().join("tracked.txt"), "x").unwrap();
+    git(&["add", ".gitignore", "tracked.txt"]);
+    std::fs::write(dir.path().join("untracked.txt"), "x").unwrap();
+    std::fs::write(dir.path().join("ignored.txt"), "x").unwrap();
+    let mut files = files_to_scan(dir.path()).unwrap();
+    files.sort();
+    assert_eq!(files, [".gitignore", "tracked.txt", "untracked.txt"]);
 }

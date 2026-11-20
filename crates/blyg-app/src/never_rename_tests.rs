@@ -101,6 +101,9 @@ fn key_contexts() {
     assert_eq!(crate::keymap::MACRO_SHEET, "MacroSheet");
     assert_eq!(crate::keymap::MACRO_SHEET_INPUT, "MacroSheet > Input");
     assert_eq!(crate::app::notes::CONTEXT, "Notes");
+    assert_eq!(crate::app::browser::CONTEXT, "Browser");
+    assert_eq!(crate::app::profiles::CONTEXT, "Profile");
+    assert_eq!(crate::app::reading::CONTEXT, "Reading");
 }
 
 /// Every action a key is bound to keeps its namespace (user keybinding
@@ -132,4 +135,77 @@ fn action_namespaces() {
         .and_then(|r| r.new_action)
         .expect("NewDraft is bound");
     assert_eq!(new_draft().name(), "blygger::NewDraft");
+}
+
+/// Every variable dev_flags.rs reads (DevFlags and the tests' TestEnv), as
+/// the string literals it names outside its own tests. Scripts, CI and
+/// people's shells set these; a renamed one is silently ignored.
+#[test]
+fn env_var_names() {
+    const NAMES: &[&str] = &[
+        "BLYGGER_REDUCE_MOTION",
+        "BLYGGER_BROWSER_EPHEMERAL",
+        "BLYGGER_BROWSER_TEARDOWN_MS",
+        "BLYGGER_DATA_DIR",
+        "BLYGGER_DEMO",
+        "BLYGGER_DEMO_FOLD",
+        "BLYGGER_DEMO_FROM",
+        "BLYGGER_DEMO_HOLD_MS",
+        "BLYGGER_DEMO_HOVER",
+        "BLYGGER_DEMO_NOTE",
+        "BLYGGER_DEMO_PREVIEW",
+        "BLYGGER_DEMO_SCROLL",
+        "BLYGGER_DEMO_SITE_URL",
+        "BLYGGER_DEMO_SLOT",
+        "BLYGGER_DEMO_URL",
+        "BLYGGER_DEMO_URL2",
+        "BLYGGER_FAKE",
+        "BLYGGER_FAKE_NO_PROVENANCE",
+        "BLYGGER_FAKE_NO_READ",
+        "BLYGGER_FAKE_STUDIO_LATEST",
+        "BLYGGER_LISTS_DIR",
+        "BLYGGER_MACRO_TRACE",
+        "BLYGGER_NO_ACTIVATE",
+        "BLYGGER_NO_BLOCKLIST_DOWNLOAD",
+        "BLYGGER_NO_UPDATE",
+        "BLYGGER_SNAPSHOT",
+        "BLYGGER_SNAPSHOT_DIR",
+        "BLYGGER_SNAPSHOT_HEIGHT",
+        "BLYGGER_SNAPSHOT_WIDTH",
+        "BLYGGER_TEST_SPELLING",
+        "BLYGGER_TEST_TOKEN",
+        "BLYGGER_THEME",
+        "BLYGGER_TIMING",
+        "BLYGGER_UPDATE_DOCS",
+        "BLYGGER_UPDATE_PUBKEY",
+        "BLYGGER_UPDATE_SMOKE",
+        "BLYGGER_UPDATE_URL",
+        "BLYGGER_VERSION_AS",
+        "BLYG_E2E_SWITCH_TOKEN",
+        "BLYG_E2E_SWITCH_URL",
+        "BLYG_E2E_TOKEN",
+        "BLYG_E2E_URL",
+        "BLYG_E2E_URL_B",
+    ];
+    let src = include_str!("dev_flags.rs");
+    let src = src.split("\n#[cfg(test)]\nmod tests {").next().unwrap();
+    let mut read: Vec<&str> = src
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .filter(|s| {
+            s.starts_with("BLYG")
+                && s.chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        })
+        .collect();
+    read.sort_unstable();
+    read.dedup();
+    let gone: Vec<&&str> = NAMES.iter().filter(|n| !read.contains(n)).collect();
+    let new: Vec<&&str> = read.iter().filter(|n| !NAMES.contains(n)).collect();
+    assert!(
+        gone.is_empty() && new.is_empty(),
+        "the environment variables dev_flags.rs reads changed (a name is never \
+         renamed: docs/SPEC.md, Naming; a new one is added here):\n  no longer read: {gone:?}\n  not pinned: {new:?}"
+    );
 }

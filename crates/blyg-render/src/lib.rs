@@ -15,6 +15,8 @@
 //! assert_eq!(out.html, "<p data-line=\"0\">Hello <em>world</em></p>\n");
 //! ```
 
+#![forbid(unsafe_code)]
+
 mod comments; // --- comments --- `/* … */` notes to self
 mod embeds;
 mod emph;

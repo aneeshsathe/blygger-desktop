@@ -94,7 +94,7 @@ impl MainView {
             .id("profile-sheet")
             .debug_selector(|| "profile-sheet".into())
             .track_focus(&focus)
-            .key_context("Profile")
+            .key_context(super::CONTEXT)
             .on_key_down(cx.listener(Self::profile_key_down))
             .occlude()
             .absolute()
