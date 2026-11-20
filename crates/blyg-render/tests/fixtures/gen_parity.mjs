@@ -55,6 +55,18 @@ await esbuild.build({
   logLevel: "warning",
   plugins: [
     {
+      // read-api.ts keeps the thread preview's tangle step private (studio
+      // 0.62); expose it to this bundle only, as mediaHtml below.
+      name: "expose-preview-tangles",
+      setup(b) {
+        b.onLoad({ filter: /[\\/]src[\\/]read-api\.ts$/ }, (a) => {
+          const src = readFileSync(a.path, "utf8");
+          const exported = /export\s+(async\s+)?function\s+previewTangles\b/.test(src);
+          return { contents: exported ? src : src + "\nexport { previewTangles };\n", loader: "ts" };
+        });
+      },
+    },
+    {
       // pages.ts keeps mediaHtml private since studio 0.10; expose it to
       // this bundle only (the Worker's source is read, never changed).
       name: "expose-media-html",
@@ -89,11 +101,22 @@ const input = {
 const cwd = process.cwd();
 const runDir = mkdtempSync(join(tmpdir(), "blyg-parity-run-"));
 process.chdir(runDir);
+// Miniflare 4 (studio 0.59 on) takes each Worker as `workers: [{ config }]`,
+// its code as a module manifest; the
+// compatibility date and flags are the studio's own (wrangler.jsonc).
+const wrangler = readFileSync(join(workerDir, "wrangler.jsonc"), "utf8");
+const compatibilityDate = /"compatibility_date"\s*:\s*"([^"]+)"/.exec(wrangler)?.[1] ?? "2025-01-01";
 const mf = new Miniflare({
-  modules: true,
-  script,
-  compatibilityDate: "2025-01-01",
-  compatibilityFlags: ["nodejs_compat"],
+  workers: [
+    {
+      config: {
+        name: "parity",
+        compatibilityDate,
+        compatibilityFlags: ["nodejs_compat"],
+        manifest: { mainModule: "worker-render.mjs", modules: { "worker-render.mjs": { type: "esm", contents: script } } },
+      },
+    },
+  ],
 });
 let out;
 try {

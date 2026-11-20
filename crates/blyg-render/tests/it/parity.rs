@@ -1,56 +1,88 @@
 //! Parity with the reference Worker: every fixture in `tests/fixtures/parity`
 //! was produced by the Worker's own TypeScript renderer (`gen_parity.mjs`).
-//! HTML is compared after collapsing whitespace between tags.
+//! HTML is compared after collapsing whitespace between tags, and formulas
+//! by shape (`math_shape.rs`).
 
 use crate::common::{FakeStore, fixtures_dir, normalize};
+use crate::math_shape;
 use blyg_render::{Attachment, Kind, RenderOpts, media_html, preview_media, render_preview};
 use serde_json::Value;
 
-/// Fixtures whose output is known to differ, with the reason. Keep this
-/// list honest and short; `docs/RENDER.md` explains each entry.
-const KNOWN_DIVERGENCES: &[(&str, &str)] = &[
-    // Decision #60: an own-line `![[id]]` in a block scope's output is a
-    // quote at publish. The studio's preview (and its publish, for a scope
-    // with recorded provenance) renders the block on its own and shows the
-    // directive as text; this preview bakes it, as the decision says publish
-    // does. `tests/it/preview.rs` pins the output.
-    (
-        "tr_block_tk_directive_output",
-        "decision #60: directive in block TK output is a quote",
-    ),
-    (
-        "tr_block_tk_directive_split",
-        "decision #60: directive in block TK output is a quote",
-    ),
-    (
-        "tr_block_tk_directive_attached",
-        "decision #60: directive in block TK output is a quote",
-    ),
-    (
-        "tr_in_tk_block",
-        "decision #60: directive in block TK output is a quote",
-    ),
+/// Fixtures whose output is known to differ for good, with the reason. Keep
+/// this list honest and short; `docs/RENDER.md` explains each entry.
+const KNOWN_DIVERGENCES: &[(&str, &str)] = &[];
+
+/// Cases that wait for a work package being built alongside this re-sync
+/// (studio 0.64.1 parity): WP1 tangling, WP2 maths. Each is expected to
+/// fail until its package lands; once it passes, the test says so and the
+/// entry must go. Empty this list after merging WP1 and WP2.
+const PENDING: &[(&str, &str)] = &[
+    // WP2: `$…$` / `$$…$$` are formulas outside code (studio `math.ts`,
+    // pandoc's rule), drawn as MathML or refused as `code.math-error`.
+    ("tk_inline_dollar", "WP2: maths"),
+    ("math_inline", "WP2: maths"),
+    ("math_display", "WP2: maths"),
+    ("math_display_in_text", "WP2: maths"),
+    ("math_money_spaces", "WP2: maths"),
+    ("math_escaped_dollar", "WP2: maths"),
+    ("math_bad_tex", "WP2: maths"),
+    ("math_refused", "WP2: maths"),
+    ("math_emphasis", "WP2: maths"),
+    ("math_in_tk", "WP2: maths"),
+    ("math_with_link", "WP2: maths"),
+    ("math_thread_own", "WP2: maths"),
+    // WP2: the sanitizer redraws a quoted `<math>` from its x-tex
+    // annotation, or shows the TeX as `code.math-source`; one without it goes.
+    ("math_sanitize_redraw", "WP2: sanitizer maths"),
+    ("math_sanitize_display_and_bare", "WP2: sanitizer maths"),
+    ("math_sanitize_hostile", "WP2: sanitizer maths"),
+    ("math_sanitize_bad_tex", "WP2: sanitizer maths"),
+    // WP1: `![[+ …]]` spans preview as a "new item" quote and `[[+ …]]`
+    // placeholders as a linked span (studio `read-api.ts` previewTangles).
+    ("tangle_span", "WP1: tangle preview"),
+    ("tangle_span_with_quote", "WP1: tangle preview"),
+    ("tangle_span_with_link", "WP1: tangle preview"),
+    ("tangle_placeholder", "WP1: tangle preview"),
+    ("tangle_placeholder_escape", "WP1: tangle preview"),
+    ("tangle_after_quote", "WP1: tangle preview"),
 ];
 
-/// Where protocol 0.4's fifteenth revision (decision #102, 2026-11-12) and
-/// #81's label bake differ from the fixtures (stock studio 0.49.1), the
-/// expected output is rewritten here, so the rest of each case is still
-/// compared byte for byte. `docs/RENDER.md` ("Decision #102") explains each.
+/// Studio changes since 0.49.1 that this crate has not followed yet and no
+/// package in the 0.64.1 cohort owns. Expected to fail; each passing entry
+/// must go. `docs/RENDER.md` ("Studio 0.64.1") describes each.
+const TO_ADOPT: &[(&str, &str)] = &[
+    // A labelled quote's provenance line takes the label as its anchor and
+    // keeps the old anchor beside it: `<a>label ↗</a> · fragment · snapshot
+    // of vN` (decision #81, studio `pages.ts` labelledProvenance).
+    ("label_directive_forms", "labelled provenance line"),
+    ("label_directive_in_code", "labelled provenance line"),
+    ("label_directive_partial", "labelled provenance line"),
+    ("label_directive_quote", "labelled provenance line"),
+    ("label_directive_remote", "labelled provenance line"),
+    ("label_tk_output_directive", "labelled provenance line"),
+    // A quote nested inside a quote gets its own `p.provenance.nested`
+    // line (studio 0.49 `injectNestedProvenance`, now in the preview).
+    ("tr_found_local_thread", "nested provenance"),
+    ("tr_provenance_order", "nested provenance"),
+    // A partial quote's `>` run takes lazy continuation lines, as publish
+    // does (`directives.ts` attachedQuote).
+    (
+        "tr_partial_unknown_consumes",
+        "lazy continuation in a partial quote",
+    ),
+    // A generated block's HTML in a thread preview is sanitized like the
+    // rest (`previewTransclusions` sanitizes `blockReplacements`).
+    ("tr_sanitize_tk_block", "generated blocks sanitized"),
+    // Comments to self (`/* … */`) are left out of the preview
+    // (`comments.ts` previewComments).
+    ("comment_to_self", "comments to self"),
+];
+
+/// Where protocol 0.4's fifteenth revision (decision #102, 2026-11-12)
+/// differs from the fixtures (stock studio), the expected output is
+/// rewritten here, so the rest of each case is still compared byte for
+/// byte. `docs/RENDER.md` ("Decision #102") explains each.
 ///
-/// #81: a directive's label is baked as `data-blyg-label` (escaped), in
-/// the order of the case's top-level quotes; `""` is no label.
-const SPEC_LABELS: &[(&str, &[&str])] = &[
-    (
-        "label_directive_forms",
-        &["tight", "padded", "", "either | or"],
-    ),
-    ("label_directive_in_code", &["real"]),
-    ("label_directive_partial", &["the tools line"]),
-    ("label_directive_quote", &["note to self"]),
-    ("label_directive_remote", &["a friend&#39;s line"]),
-    ("label_tk_output_directive", &["echoed"]),
-];
-
 /// #102 (9): a baked quote is never inside a `blyg-tk-gen` wrapper; an
 /// inline span that a quote interrupts closes before it and reopens after.
 const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
@@ -88,6 +120,16 @@ const SPEC_REWRITES: &[(&str, &[(&str, &str)])] = &[
     ),
 ];
 
+/// #102 (9) for a block scope (decision #60): the studio (0.59 on) bakes a
+/// quote in a generated block inside the block's `div.blyg-tk-gen`; the
+/// spec puts it between two wrappers, and drops a wrapper left empty.
+const SPEC_BLOCK_SPLIT: &[&str] = &[
+    "tr_block_tk_directive_output",
+    "tr_block_tk_directive_split",
+    "tr_block_tk_directive_attached",
+    "tr_in_tk_block",
+];
+
 /// #102 (1) and (2): publish errors the fixtures (which publish both) lack.
 const SPEC_ERRORS: &[(&str, &[(&str, &str)])] = &[
     (
@@ -113,8 +155,8 @@ const FRAGMENT_DIRECTIVE: &str = "a fragment cannot carry a transclusion directi
 fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {
     let mut out = normalize(html);
     // #102 (5): a link to an imported item with no `page` names its item
-    // document. The provenance line (`from …`) is presentation and keeps
-    // the convention.
+    // document. The provenance line is presentation and keeps the
+    // convention.
     for url in no_page {
         let (base, id) = url
             .rsplit_once("/f/")
@@ -126,33 +168,11 @@ fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {
         let mut rebuilt = String::new();
         let mut rest = out.as_str();
         while let Some(i) = rest.find(&from) {
-            let after = &rest[i + from.len()..];
             rebuilt.push_str(&rest[..i]);
-            rebuilt.push_str(if after.starts_with("from ") {
-                &from
-            } else {
-                &to
-            });
-            rest = after;
-        }
-        rebuilt.push_str(rest);
-        out = rebuilt;
-    }
-    if let Some((_, labels)) = SPEC_LABELS.iter().find(|(n, _)| *n == name) {
-        let open = "<blockquote class=\"blyg-transclusion";
-        let mut rebuilt = String::new();
-        let mut rest = out.as_str();
-        let mut labels = labels.iter();
-        while let Some(i) = rest.find(open) {
-            let gt = i + rest[i..].find('>').unwrap();
-            rebuilt.push_str(&rest[..gt]);
-            match labels.next() {
-                Some(l) if !l.is_empty() => {
-                    rebuilt.push_str(&format!(" data-blyg-label=\"{l}\""));
-                }
-                _ => {}
-            }
-            rest = &rest[gt..];
+            let provenance = rebuilt.ends_with("<p class=\"provenance\">")
+                || rebuilt.ends_with("<p class=\"provenance nested\">");
+            rebuilt.push_str(if provenance { &from } else { &to });
+            rest = &rest[i + from.len()..];
         }
         rebuilt.push_str(rest);
         out = rebuilt;
@@ -163,7 +183,76 @@ fn spec_expected(name: &str, html: &str, no_page: &[String]) -> String {
             out = out.replacen(from, to, 1);
         }
     }
+    if SPEC_BLOCK_SPLIT.contains(&name) {
+        let split = split_block_quotes(&out);
+        assert_ne!(split, out, "{name}: no quote inside a generated block");
+        out = split;
+    }
     out
+}
+
+/// Every top-level quote inside a `div.blyg-tk-gen` moved out between two
+/// wrappers, whitespace-only wrappers dropped (normalised HTML in and out).
+fn split_block_quotes(html: &str) -> String {
+    const OPEN: &str = "<div class=\"blyg-tk-gen\">";
+    const QUOTE: &str = "<blockquote class=\"blyg-transclusion";
+    let mut out = String::new();
+    let mut rest = html;
+    while let Some(at) = rest.find(OPEN) {
+        out.push_str(&rest[..at]);
+        let body = &rest[at + OPEN.len()..];
+        let end = body.find("</div>").expect("a closed generated block");
+        let mut inner = &body[..end];
+        let wrap = |prose: &str, out: &mut String| {
+            if !prose.trim().is_empty() {
+                out.push_str(OPEN);
+                out.push_str(prose);
+                out.push_str("</div>");
+            }
+        };
+        while let Some(q) = inner.find(QUOTE) {
+            wrap(&inner[..q], &mut out);
+            let len = blockquote_len(&inner[q..]);
+            out.push_str(&inner[q..q + len]);
+            inner = &inner[q + len..];
+        }
+        wrap(inner, &mut out);
+        rest = &body[end + "</div>".len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The length of the blockquote at the start of `s`, nested ones included.
+fn blockquote_len(s: &str) -> usize {
+    let mut depth = 0usize;
+    let mut i = 0;
+    while i < s.len() {
+        if s[i..].starts_with("<blockquote") {
+            depth += 1;
+        } else if s[i..].starts_with("</blockquote>") {
+            depth -= 1;
+            if depth == 0 {
+                return i + "</blockquote>".len();
+            }
+        }
+        i += s[i..].chars().next().unwrap().len_utf8();
+    }
+    panic!("an unclosed blockquote");
+}
+
+#[test]
+fn split_block_quotes_moves_quotes_out_of_wrappers() {
+    let q = "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"x\"><p>q</p><blockquote><p>n</p></blockquote></blockquote>";
+    let html = format!(
+        "<p>a</p><div class=\"blyg-tk-gen\"><p>one</p>{q}<p>two</p></div><div class=\"blyg-tk-gen\">{q}</div>"
+    );
+    assert_eq!(
+        split_block_quotes(&html),
+        format!(
+            "<p>a</p><div class=\"blyg-tk-gen\"><p>one</p></div>{q}<div class=\"blyg-tk-gen\"><p>two</p></div>{q}"
+        )
+    );
 }
 
 fn load_fixtures() -> Vec<Value> {
@@ -179,6 +268,31 @@ fn load_fixtures() -> Vec<Value> {
         .into_iter()
         .map(|p| serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap())
         .collect()
+}
+
+/// Which expected-to-fail list names `name`, if any.
+fn expected_to_fail(name: &str) -> Option<&'static str> {
+    [
+        ("KNOWN_DIVERGENCES", KNOWN_DIVERGENCES),
+        ("PENDING", PENDING),
+        ("TO_ADOPT", TO_ADOPT),
+    ]
+    .into_iter()
+    .find(|(_, list)| list.iter().any(|(n, _)| *n == name))
+    .map(|(list, _)| list)
+}
+
+#[test]
+fn expected_to_fail_lists_name_real_cases_once() {
+    let names: Vec<String> = load_fixtures()
+        .iter()
+        .map(|f| f["name"].as_str().unwrap().to_string())
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    for (n, _) in KNOWN_DIVERGENCES.iter().chain(PENDING).chain(TO_ADOPT) {
+        assert!(names.iter().any(|x| x == n), "{n}: no such fixture");
+        assert!(seen.insert(*n), "{n}: listed twice");
+    }
 }
 
 #[test]
@@ -213,10 +327,12 @@ fn parity_with_worker() {
         })
         .collect();
     let mut exact = 0;
-    let mut normalized = 0;
+    let mut matched = 0;
     let mut rewritten = 0;
+    let mut formulas = 0;
     let mut failures = Vec::new();
     let mut unexpected_passes = Vec::new();
+    let mut expected_fails = 0;
     for f in &fixtures {
         let name = f["name"].as_str().unwrap();
         let kind = if f["kind"] == "thread" {
@@ -227,7 +343,7 @@ fn parity_with_worker() {
         let md = f["md"].as_str().unwrap();
         let expected = f["html"].as_str().unwrap();
         let got = render_preview(md, kind, &store, &opts);
-        let known = KNOWN_DIVERGENCES.iter().any(|(n, _)| *n == name);
+        let mut problems = Vec::new();
         if got.html == expected {
             exact += 1;
         }
@@ -235,15 +351,21 @@ fn parity_with_worker() {
         if spec != normalize(expected) {
             rewritten += 1;
         }
-        if normalize(&got.html) == spec {
-            normalized += 1;
-            if known {
-                unexpected_passes.push(name.to_string());
-            }
-        } else if !known {
-            failures.push(format!(
-                "--- {name}\n  md:       {md:?}\n  expected: {spec}\n  got:      {}",
-                normalize(&got.html)
+        let (spec, studio_math) = math_shape::shape(&spec);
+        assert!(
+            studio_math.is_empty(),
+            "{name}: the studio's own formulas fail the shape check: {studio_math:?}"
+        );
+        if expected.contains("<math") {
+            formulas += 1;
+        }
+        let (got_html, got_math) = math_shape::shape(&normalize(&got.html));
+        for p in got_math {
+            problems.push(format!("--- {name}: formula\n  {p}"));
+        }
+        if got_html != spec {
+            problems.push(format!(
+                "--- {name}\n  md:       {md:?}\n  expected: {spec}\n  got:      {got_html}"
             ));
         }
 
@@ -272,11 +394,11 @@ fn parity_with_worker() {
             .map(|u| (u.directive.clone(), u.reason.to_string()))
             .collect();
         if got_errors != errors {
-            failures.push(format!(
+            problems.push(format!(
                 "--- {name}: unresolved\n  expected: {errors:?}\n  got:      {got_errors:?}"
             ));
         }
-        if kind == Kind::Thread && !known {
+        if kind == Kind::Thread {
             let ids: Vec<String> = f["transclusions"]
                 .as_array()
                 .unwrap()
@@ -290,27 +412,36 @@ fn parity_with_worker() {
                 .map(|t| t.id.clone())
                 .collect();
             if got_ids != ids {
-                failures.push(format!(
+                problems.push(format!(
                     "--- {name}: transclusions\n  expected: {ids:?}\n  got:      {got_ids:?}"
                 ));
             }
         }
         let tk_errors = f["tk"]["errors"].as_array().unwrap().len();
         if got.stats.tk_errors.len() != tk_errors {
-            failures.push(format!(
+            problems.push(format!(
                 "--- {name}: TK errors\n  expected: {tk_errors}\n  got:      {}",
                 got.stats.tk_errors.len()
             ));
         }
+
+        match (expected_to_fail(name), problems.is_empty()) {
+            (None, true) => matched += 1,
+            (None, false) => failures.extend(problems),
+            (Some(list), true) => unexpected_passes.push(format!("{name} (in {list})")),
+            (Some(_), false) => expected_fails += 1,
+        }
     }
     eprintln!(
-        "parity: {normalized}/{} match after whitespace normalisation ({exact} byte-identical, {rewritten} rewritten to protocol 0.4 r15); {} known divergences",
+        "parity: {matched}/{} match ({exact} byte-identical, {rewritten} rewritten to protocol 0.4 r15, {formulas} with formulas compared by shape); {expected_fails} expected to fail ({} known, {} pending WP1/WP2, {} to adopt)",
         fixtures.len(),
-        KNOWN_DIVERGENCES.len()
+        KNOWN_DIVERGENCES.len(),
+        PENDING.len(),
+        TO_ADOPT.len()
     );
     assert!(
         unexpected_passes.is_empty(),
-        "now passing, remove from KNOWN_DIVERGENCES: {unexpected_passes:?}"
+        "now passing, remove from its list: {unexpected_passes:?}"
     );
     assert!(
         failures.is_empty(),
@@ -319,6 +450,11 @@ fn parity_with_worker() {
         failures.join("\n")
     );
 }
+
+/// The stub chooser's `![[+ …]]` vectors (`withStubQuote`), expected to
+/// fail until WP1 lands; then set this to `None`.
+const STUB_SPANS_PENDING: Option<&str> =
+    Some("WP1: tangle spans are out of bounds for a stub's quote");
 
 /// Attachments: `mediaHtml`, which public pages put after the content. The
 /// desktop preview's strip wraps exactly that (the Worker's own strip,
@@ -414,15 +550,29 @@ fn grammar_parity_with_worker() {
         );
     }
     // Studio 0.48: choosing a passage keeps the directive line as written.
+    // Studio 0.62: a directive inside a `![[+ …]]` span is out of bounds, as
+    // code is (those vectors wait for WP1, `STUB_SPANS_PENDING`).
     let stubs = g["stubs"].as_array().unwrap();
     assert!(!stubs.is_empty(), "expected the stub vectors");
+    let mut span_misses = 0;
     for s in stubs {
         let md = s["md"].as_str().unwrap();
         let passage = s["passage"].as_str();
+        let got = blyg_render::stub_quote::with_stub_quote(md, id, passage);
+        if STUB_SPANS_PENDING.is_some() && md.contains("![[+") {
+            span_misses += usize::from(got != s["out"].as_str().unwrap());
+            continue;
+        }
         assert_eq!(
-            blyg_render::stub_quote::with_stub_quote(md, id, passage),
+            got,
             s["out"].as_str().unwrap(),
             "withStubQuote({md:?}, {passage:?})"
+        );
+    }
+    if let Some(why) = STUB_SPANS_PENDING {
+        assert!(
+            span_misses > 0,
+            "the span stub vectors pass now: set STUB_SPANS_PENDING to None ({why})"
         );
     }
     // Studio 0.48: an own-line directive in TK output takes the same

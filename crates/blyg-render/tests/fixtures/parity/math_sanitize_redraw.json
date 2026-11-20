@@ -1,0 +1,17 @@
+{
+  "name": "math_sanitize_redraw",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vm1]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vm1\" data-blyg-version=\"1\">\n<p>Euler: <math><semantics><mrow><msup><mi>e</mi><mrow class=\"tml-sml-pad\"><mi>i</mi><mi>π</mi></mrow></msup><mo>+</mo><mn>1</mn><mo>=</mo><mn>0</mn></mrow><annotation encoding=\"application/x-tex\">e^{i\\pi}+1=0</annotation></semantics></math> holds.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm1/\">fragment ↗</a> · snapshot of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm1",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

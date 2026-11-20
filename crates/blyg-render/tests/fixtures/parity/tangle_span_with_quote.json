@@ -1,0 +1,12 @@
+{
+  "name": "tangle_span_with_quote",
+  "kind": "thread",
+  "md": "![[+ Inside, quoting:\n![[01j9zq3k4m5n6p7q8r9s0t1v2w]]\n]]\n\nAfter.",
+  "html": "<blockquote class=\"blyg-tangle-new\"><p class=\"blyg-tangle-label\">new item</p><p>Inside, quoting:</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1v2w\" data-blyg-version=\"3\">\n<p>Small tools, used daily, beat big tools used rarely.</p>\n\n</blockquote></blockquote>\n<p>After.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
