@@ -5,6 +5,14 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.27.2
+
+A speed update. Searching from the omnibar reads only which posts match
+instead of reading each match in full again, so results come back several
+times sooner on a large reading list. Opening an unread post updates just
+that post's read mark, instead of rebuilding the whole reading list. Nothing
+else changes in how Burrow looks or works.
+
 ## Burrow 0.27.1
 
 A security update. Burrow cleans the HTML of posts from blygs you follow

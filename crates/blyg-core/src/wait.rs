@@ -91,6 +91,19 @@ pub fn wall_clock(d: Duration) {
 /// timing`) and reports without blocking. This is the one place a budget is
 /// scaled; `blyg-core/tests/it/timing_scan.rs` refuses any other.
 ///
+/// How a budget is set, so the job stays green and turns red only on a real
+/// slowdown:
+/// - About 1.5x the worst figure CI's macOS runner printed for it, release
+///   build, over several runs (the timing job prints every report's
+///   figures), rounded up: to 0.5 ms under 10, 5 under 50, 10 above.
+/// - Never under 5 ms: below that a scheduler hiccup is the figure.
+/// - One figure per report, written where the report is. No CI-only factor
+///   and no detecting CI; a local Mac passes it by a wide margin.
+/// - Where the runner's figures vary by more than about 2x between runs,
+///   the report's comment says so, and the budget is from the worst.
+/// - What's timed is the work alone: a fixed pause (`settle`'s) or a first
+///   run's warm-up inside the timed region is fixed there, not budgeted.
+///
 /// ```ignore
 /// let mut budget = Budget::default();
 /// let rows = budget.time("reading()", 60.0, || store.reading());
@@ -104,9 +117,9 @@ pub struct Budget {
 }
 
 impl Budget {
-    /// `ms`, what a release build takes on a Mac, scaled once: a debug build
-    /// gets 15x, Windows 4x on top (its runners are several times slower at
-    /// anything that touches the disk).
+    /// `ms`, a release build's budget on CI's macOS runner (see above),
+    /// scaled once: a debug build gets 15x, Windows 4x on top (its runners
+    /// are several times slower at anything that touches the disk).
     pub fn limit(ms: f64) -> Duration {
         let debug = if cfg!(debug_assertions) { 15.0 } else { 1.0 };
         let os = if cfg!(windows) { 4.0 } else { 1.0 };

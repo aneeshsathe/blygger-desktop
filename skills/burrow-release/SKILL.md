@@ -48,6 +48,8 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
     reports, `scripts/check.sh timing`, macOS only) is green, or the PR
     explains each overrun it logs (which step, by how much, and why it's
     the runner and not the code). The job never fails the run, so this is
-    where its numbers get read.
+    where its numbers get read. Recalibrate any budget whose comment says
+    it is an estimate, from the figures the job printed (the rule is in
+    `blyg_core::wait::Budget`'s doc).
 11. After merge: watch the Release run; confirm the release has the macOS,
     Windows assets, plus signed sums.

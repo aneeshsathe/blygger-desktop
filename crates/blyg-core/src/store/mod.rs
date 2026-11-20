@@ -61,6 +61,15 @@ impl From<rusqlite::Error> for CoreError {
 /// What the WAL is truncated to after a checkpoint (`journal_size_limit`).
 const WAL_LIMIT: i64 = 16 * 1024 * 1024;
 
+/// The `items()` snapshot: every post in list order, the stamp it was
+/// read at, and each row id's place in it (for `Store::fts_in`).
+#[derive(Clone)]
+struct Snapshot {
+    stamp: u64,
+    items: Arc<Vec<Item>>,
+    at: Arc<HashMap<i64, usize>>,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     /// A second, read-only connection to the same file (WAL: its reads
@@ -72,7 +81,7 @@ pub struct Store {
     read: Option<Mutex<Connection>>,
     /// `items()` snapshot, stamped (`Store::stamp`) when it was built: any
     /// commit since invalidates it.
-    items_cache: Mutex<Option<(u64, Arc<Vec<Item>>)>>,
+    items_cache: Mutex<Option<Snapshot>>,
     /// `public_origin()`, stamped the same way.
     origin_cache: Mutex<Option<(u64, Option<String>)>>,
     /// The reading rows, parsed, patched row by row as they're written
@@ -387,26 +396,48 @@ impl Store {
     }
 
     fn items_snapshot(&self) -> Result<Arc<Vec<Item>>> {
+        Ok(self.snapshot()?.items)
+    }
+
+    /// Your posts in list order, read once per stamp (`Store::stamp`) and
+    /// shared, with where each row id sits in them.
+    fn snapshot(&self) -> Result<Snapshot> {
         let c = self.rconn();
         let stamp = self.stamp(&c);
         let mut cache = self.items_cache.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some((s, v)) = cache.as_ref()
-            && *s == stamp
+        if let Some(s) = cache.as_ref()
+            && s.stamp == stamp
         {
-            return Ok(v.clone());
+            return Ok(s.clone());
         }
         let mut st = c.prepare_cached(&format!(
-            "SELECT {ITEM_COLS} FROM items ORDER BY updated DESC, rid DESC"
+            "SELECT {ITEM_COLS}, rid FROM items ORDER BY updated DESC, rid DESC"
         ))?;
+        let mut rids = HashMap::new();
         let mut v = st
-            .query_map([], row_to_item)?
+            .query_map([], |r| Ok((row_to_item(r)?, r.get::<_, i64>(21)?)))?
+            .map(|r| {
+                r.map(|(item, rid)| {
+                    rids.insert(item.local_id.clone(), rid);
+                    item
+                })
+            })
             .collect::<rusqlite::Result<Vec<_>>>()?;
         // The list's order is `crate::order`'s (dates as instants, then the
         // server id); `rid DESC` only settles posts it can't tell apart.
         crate::order::sort_own(&mut v);
-        let v = Arc::new(v);
-        *cache = Some((stamp, v.clone()));
-        Ok(v)
+        let at = v
+            .iter()
+            .enumerate()
+            .filter_map(|(i, item)| Some((*rids.get(&item.local_id)?, i)))
+            .collect();
+        let s = Snapshot {
+            stamp,
+            items: Arc::new(v),
+            at: Arc::new(at),
+        };
+        *cache = Some(s.clone());
+        Ok(s)
     }
 
     /// Case-insensitive substring match over content, in the list's order
@@ -431,7 +462,81 @@ impl Store {
         self.try_fts(q).unwrap_or_default()
     }
 
+    /// The trigram search: against the snapshot when it's current, else
+    /// reading the matching rows (reading every post to make a snapshot
+    /// would cost more than the search).
     fn try_fts(&self, q: &str) -> Result<Vec<Item>> {
+        match self.current_snapshot() {
+            Some(snap) => self.fts_in(q, &snap),
+            None => self.fts_rows(q),
+        }
+    }
+
+    /// The snapshot, if one was read at the current stamp.
+    fn current_snapshot(&self) -> Option<Snapshot> {
+        let c = self.rconn();
+        let stamp = self.stamp(&c);
+        let cache = self.items_cache.lock().unwrap_or_else(|p| p.into_inner());
+        cache.as_ref().filter(|s| s.stamp == stamp).cloned()
+    }
+
+    /// The trigram search, as row ids resolved against `snap` (which
+    /// holds every post, in list order): only the ids are read, not each
+    /// match's columns. The hits come out in `snap`'s order, which is what
+    /// sorting the matching rows themselves gives (`snap` is that sort of
+    /// all of them, and `sort_own` is stable over the same SQL order).
+    ///
+    /// `snap` must be the store as the query sees it. When it isn't (a
+    /// commit came between them, so the stamp differs, or an id isn't in
+    /// it), nothing is dropped: the search reads the matching rows
+    /// themselves instead (`fts_rows`).
+    fn fts_in(&self, q: &str, snap: &Snapshot) -> Result<Vec<Item>> {
+        let phrase = format!("\"{}\"", q.replace('"', "\"\""));
+        let needle = q.to_lowercase();
+        let c = self.rconn();
+        let mut hits = Vec::new();
+        let mut whole = true;
+        {
+            let mut st = c.prepare_cached(
+                "SELECT rowid, rowid IN (SELECT rid FROM items_fts_stale) FROM items_fts \
+                 WHERE items_fts MATCH ?1",
+            )?;
+            for r in st.query_map([&phrase], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, bool>(1)?))
+            })? {
+                let (rid, stale) = r?;
+                // A stale row is decided below, by what it says now.
+                if stale {
+                    continue;
+                }
+                match snap.at.get(&rid) {
+                    Some(&i) => hits.push(i),
+                    None => whole = false,
+                }
+            }
+            let mut st = c.prepare_cached("SELECT rid FROM items_fts_stale")?;
+            for r in st.query_map([], |r| r.get::<_, i64>(0))? {
+                let rid = r?;
+                match snap.at.get(&rid) {
+                    // Indexed under its old text: what it says now decides.
+                    Some(&i) if lower_contains(&snap.items[i].content_md, &needle) => hits.push(i),
+                    Some(_) => {}
+                    None => whole = false,
+                }
+            }
+        }
+        if !whole || self.stamp(&c) != snap.stamp {
+            drop(c);
+            return self.fts_rows(q);
+        }
+        hits.sort_unstable();
+        hits.dedup();
+        Ok(hits.into_iter().map(|i| snap.items[i].clone()).collect())
+    }
+
+    /// The trigram search reading each matching row (`fts_in` when its
+    /// snapshot doesn't match the store).
+    fn fts_rows(&self, q: &str) -> Result<Vec<Item>> {
         let phrase = format!("\"{}\"", q.replace('"', "\"\""));
         let needle = q.to_lowercase();
         let c = self.rconn();

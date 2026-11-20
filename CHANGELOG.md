@@ -22,6 +22,30 @@ teaches something new in the tour, set the newest entry's `version` in
 Pending changes are fragments in `changes/unreleased/`; the release stitches
 them in here.
 
+## [0.27.2] - 2026-11-20
+
+A speed update: searching from the omnibar and opening an unread post do much less work at large reading lists. Nothing changes in what you see. The rest is development process.
+
+### Changed
+- **Typing a search in the omnibar asks the database less.** A search of three or more characters now reads only which posts match and takes them from the posts already loaded, instead of reading every matching post again; what is found, and in what order, is the same.
+- **Reading: opening a post no longer rebuilds the reading list.** Opening
+  an unread post (or a stream card counting as seen) marks that one row
+  read in place: its dot, the header's "N to read", the status bar and the
+  sources pane's counts follow at once, without reading every post again
+  (about 43 ms at 10,000 posts before). All unread still drops a post read
+  elsewhere; in the Stream, a card counted as seen stays listed (the Stream
+  lists every post, whatever source the Reader last had); a read mark is
+  applied only as this blyg's own store holds it, so one from a blyg just
+  switched away from changes nothing; a read state from another device
+  still refreshes the list.
+  A local read mark is now `CoreEvent::ReadMarked` with the rows it raised
+  (`blyg-core/src/model.rs`); `crates/blyg-app/src/reading/read_mark.rs`.
+
+### Development
+- **`scripts/pr-watch.sh` reads non-blocking jobs as non-blocking.** A failed job with `continue-on-error: true` (the timing reports) is listed when the run finishes but doesn't fail the watch or stop `--merge`, as GitHub doesn't fail the run for it.
+- **Timing budgets are set from CI's runner.** Each `timing_…` report's budget is now about 1.5x the worst figure CI's macOS runner printed for it, so the `timing` job is green until something really slows down (the rule is in `wait::Budget`'s doc). The job prints every report's figures, passing ones too (`--show-output`), and the reading report's "open a post" no longer times `settle`'s fixed pauses.
+- **Tests count work instead of timing it.** Tests that guard an algorithm now assert on SQLite steps (a test-only counter behind blyg-core's `test-support` feature) instead of wall-clock budgets, so a slow or loaded machine no longer fails them. The remaining timings go through one `wait::Budget` helper and run in CI's non-blocking `timing` job (`scripts/check.sh timing`, release build, macOS only). A scan refuses new hand-rolled time asserts.
+
 ## [0.27.1] - 2026-11-20
 
 A security update: the library that cleans HTML from blygs you follow is updated past four advisories. The rest is development process.
