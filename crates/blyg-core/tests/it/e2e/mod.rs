@@ -21,6 +21,13 @@
 //! Run with `--test-threads=1`: the offline test takes the Worker down.
 //! Never point these at a real blyg: they publish, withdraw and pin.
 
+// Studio 0.64 parity: one file per work package (each may `use super::*`;
+// the helpers below are visible to them).
+mod background;
+mod links;
+mod maths;
+mod tangle;
+
 use std::collections::HashSet;
 use std::path::Path;
 use std::process::Command;
@@ -1228,7 +1235,7 @@ fn discover_seen_at_round_trips_and_leaves_other_settings() {
     // A visit: the directory (the fixture, from localhost), and the mark
     // moves to the newest listing it holds.
     let blygs = discover::fetch(&serve_json_once(include_str!(
-        "../fixtures/discover/blygs.json"
+        "../../fixtures/discover/blygs.json"
     )))
     .unwrap();
     assert_eq!(blygs.len(), 5);
