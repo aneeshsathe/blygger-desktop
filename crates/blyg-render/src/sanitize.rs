@@ -10,9 +10,12 @@
 //! - Active, foreign, raw-text and RCDATA elements go with their content.
 //! - Any other element is unwrapped: its text and listed children stay.
 //!
+//! - A `math` element is redrawn from its TeX annotation (`math.rs`).
+//!
 //! One addition: `data-line`, the desktop preview's own source-line
 //! attribute, is kept (the Worker's preview has none).
 
+use lol_html::html_content::ContentType;
 use lol_html::{RewriteStrSettings, element, rewrite_str};
 
 const TAGS: &[&str] = &[
@@ -140,13 +143,23 @@ fn safe_url(raw: &str, image: bool) -> bool {
     }
 }
 
-/// `sanitizeHtml`.
+/// `sanitizeHtml`. A `math` element is never kept: each top-level formula
+/// is redrawn from its TeX annotation, or dropped without one (`math.rs`).
 pub(crate) fn sanitize_html(html: &str) -> String {
+    let (marked, formulas) = crate::math::Formulas::collect(html);
+    let math = formulas.as_ref();
     // workerd treats `<esi:include>` as an ordinary tag (no compat flag).
     let settings = RewriteStrSettings::new()
         .with_enable_esi_tags(false)
         .append_element_content_handler(element!("*", |el| {
             let tag = el.tag_name();
+            if tag == "math" {
+                match crate::math::Formulas::token_for(math, el) {
+                    Some(token) => el.replace(&token, ContentType::Text),
+                    None => el.remove(),
+                }
+                return Ok(());
+            }
             if DROP.contains(&tag.as_str()) {
                 el.remove();
                 return Ok(());
@@ -179,7 +192,13 @@ pub(crate) fn sanitize_html(html: &str) -> String {
         }));
     // The rewriter fails only on its memory limits; then nothing of the
     // input is trusted.
-    rewrite_str(html, settings).unwrap_or_else(|_| crate::util::escape_html(html))
+    match rewrite_str(&marked, settings) {
+        Ok(out) => match &formulas {
+            Some(f) => f.fill(&out, false),
+            None => out,
+        },
+        Err(_) => crate::util::escape_html(html),
+    }
 }
 
 #[cfg(test)]
@@ -210,5 +229,20 @@ mod tests {
             ),
             "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"x\" data-line=\"2\">q</blockquote>"
         );
+    }
+
+    #[test]
+    fn math_is_redrawn_or_dropped() {
+        // No annotation: dropped, as before.
+        assert_eq!(
+            sanitize_html("<p>a<math><mi onclick=\"x()\">x</mi></math>b</p>"),
+            "<p>ab</p>"
+        );
+        let out = sanitize_html(
+            "<blockquote><p>a <math><semantics><mi>x</mi><annotation encoding=\"application/x-tex\">x&lt;/annotation&gt;&lt;script&gt;</annotation></semantics><script>alert(1)</script></math></p></blockquote>",
+        );
+        assert!(out.starts_with("<blockquote><p>a "), "{out}");
+        assert!(!out.contains("<script") && !out.contains("<mi"), "{out}");
+        assert!(out.contains("&lt;script&gt;"), "{out}");
     }
 }

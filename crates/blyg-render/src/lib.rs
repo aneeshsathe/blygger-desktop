@@ -23,6 +23,7 @@ mod linemap;
 mod linkify;
 mod links;
 mod markdown;
+pub mod math;
 mod native;
 mod punycode;
 mod sanitize;

@@ -7,6 +7,8 @@
 //! `blyg-tk-gen`, `blyg-yt`, `data-ytid`). Everything else goes: scripts,
 //! styles, event handlers, `javascript:` and other odd URLs, forms, objects,
 //! embeds, SVG, and every `<iframe>` that isn't a youtube-nocookie embed.
+//! A `<math>` formula is redrawn from its TeX annotation, never passed
+//! through (`blyg_render::math`).
 //! Every image gets `referrerpolicy="no-referrer"`.
 //!
 //! The page's CSP (`blyg_render::reader_csp`) is the backstop, not the
@@ -97,7 +99,15 @@ fn allowlist() -> Builder<'static> {
 
 /// Clean `html` for the reading view.
 pub fn sanitize(html: &str) -> String {
-    drop_empty_iframes(&builder().clean(html).to_string())
+    clean_with(builder(), html)
+}
+
+/// Clean with `b`. A `math` element never reaches ammonia: each top-level
+/// formula is taken out first and redrawn afterwards from its TeX
+/// annotation, or dropped without one (spec §14, `blyg_render::math`).
+fn clean_with(b: &Builder<'_>, html: &str) -> String {
+    let holes = blyg_render::math::hole_math(html);
+    holes.fill(&drop_empty_iframes(&b.clean(holes.html()).to_string()))
 }
 
 /// [`sanitize`], with relative `src`/`href` made absolute against `base`
@@ -114,7 +124,7 @@ pub fn sanitize_at(html: &str, base: &str) -> String {
         Ok(u) if matches!(u.scheme(), "http" | "https") => {
             let mut b = allowlist();
             b.url_relative(UrlRelative::RewriteWithBase(u));
-            drop_empty_iframes(&b.clean(html).to_string())
+            clean_with(&b, html)
         }
         _ => sanitize(html),
     }
@@ -311,6 +321,41 @@ mod tests {
         );
         // No usable base: relative URLs are left as they are.
         assert!(sanitize_at(html, "not a url").contains(r#"src="/blyg/media/a.png""#));
+    }
+
+    #[test]
+    fn formulas_are_redrawn_never_passed_through() {
+        let tex = |t: &str| {
+            format!(
+                "<math display=\"block\"><semantics><mi>x</mi><annotation encoding=\"application/x-tex\">{t}</annotation></semantics></math>"
+            )
+        };
+        let out = sanitize_at(
+            &format!("<p>Before</p>{}<p>after</p>", tex("\\frac{a}{b}")),
+            "https://ada.blyg.example.com/",
+        );
+        assert!(out.starts_with("<p>Before</p>"), "{out}");
+        assert!(out.ends_with("<p>after</p>"), "{out}");
+        assert!(out.contains("frac{a}{b}"), "the formula survives: {out}");
+        // Hostile TeX and markup inside the formula never become markup.
+        for hostile in [
+            tex("x&lt;/annotation&gt;&lt;script&gt;alert(1)&lt;/script&gt;"),
+            tex("x\" onmouseover=\"alert(1)"),
+            "<math><annotation encoding=\"application/x-tex\">x</annotation><script>alert(1)</script><mi onclick=\"alert(2)\">y</mi><a href=\"javascript:alert(3)\">z</a></math>".into(),
+            "<math><mi onclick=\"alert(1)\">x</mi><script>alert(2)</script></math>".into(),
+            "<p title=\"<math><annotation encoding='application/x-tex'>t</annotation></math>\">p</p>".into(),
+        ] {
+            let out = sanitize(&hostile);
+            assert!(!out.contains("<script"), "{hostile} → {out}");
+            assert!(
+                !out.contains("onmouseover=\"") && !out.contains("onclick=\""),
+                "{hostile} → {out}"
+            );
+            assert!(!out.contains("javascript:"), "{hostile} → {out}");
+            assert!(!out.contains("<mi"), "publisher MathML never kept: {hostile} → {out}");
+        }
+        // No annotation: the formula is dropped.
+        assert_eq!(sanitize("<p>a<math><mi>x</mi></math>b</p>"), "<p>ab</p>");
     }
 
     #[test]
