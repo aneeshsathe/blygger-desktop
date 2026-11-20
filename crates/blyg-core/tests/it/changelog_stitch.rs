@@ -240,8 +240,29 @@ fn entries_written_under_unreleased_are_refused() {
     refuses(&d, STITCH, "[Unreleased] has entries");
 }
 
-/// The repo's own fragments are well-formed, so the release stitch won't
-/// stop on one.
+/// `check` (run on every PR through the test below) refuses an entry
+/// written into CHANGELOG.md by hand, with or without fragments; a prose
+/// note under [Unreleased] stays allowed (`Dir::new`'s, checked in
+/// `no_fragments_is_refused`).
+#[test]
+fn check_refuses_entries_under_unreleased() {
+    for line in ["- Written by hand.\n", "### Added\n- Written by hand.\n"] {
+        let d = Dir::new();
+        d.write(
+            "CHANGELOG.md",
+            &CHANGELOG.replace(
+                "Pending changes are fragments in `changes/unreleased/`.\n",
+                line,
+            ),
+        );
+        refuses(&d, &["check"], "[Unreleased] has entries");
+        d.fragment("one", "section: Added\n\n- One.\n");
+        refuses(&d, &["check"], "[Unreleased] has entries");
+    }
+}
+
+/// The repo's own fragments are well-formed, and CHANGELOG.md has no
+/// entries under [Unreleased], so the release stitch won't stop on either.
 #[test]
 fn the_repos_fragments_pass_check() {
     let out = Command::new("python3")
