@@ -11,8 +11,14 @@
 //!   `blyg-ai`, `blyg-embed` or another crate's UI.
 //!
 //! A new crate fails here until it's given a place in [`ALLOWED`].
+//!
+//! It reads `cargo metadata --no-deps` (the workspace's own manifests), so it
+//! needs no downloads: a full resolve wants every platform's packages, which
+//! CI's cache doesn't hold. "Reaches" is followed through workspace crates;
+//! a non-app crate may not name a UI crate directly, and no third-party crate
+//! here pulls one in.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
 use serde_json::Value;
@@ -48,7 +54,13 @@ fn allowed(name: &str) -> Option<&'static [&'static str]> {
 fn metadata() -> Value {
     let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
     let out = Command::new(env!("CARGO"))
-        .args(["metadata", "--format-version", "1", "--offline"])
+        .args([
+            "metadata",
+            "--format-version",
+            "1",
+            "--no-deps",
+            "--offline",
+        ])
         .args(["--manifest-path", manifest])
         .output()
         .expect("cargo metadata runs");
@@ -62,38 +74,25 @@ fn metadata() -> Value {
 
 /// Every broken rule, as lines naming the crate and the dependency.
 fn violations(m: &Value) -> Vec<String> {
-    let names: HashMap<&str, &str> = m["packages"]
+    // Each workspace crate and the names of everything it depends on (any
+    // kind, any platform).
+    let deps: BTreeMap<&str, Vec<&str>> = m["packages"]
         .as_array()
         .unwrap()
         .iter()
-        .map(|p| (p["id"].as_str().unwrap(), p["name"].as_str().unwrap()))
-        .collect();
-    let members: BTreeMap<&str, &str> = m["workspace_members"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|id| {
-            let id = id.as_str().unwrap();
-            (names[id], id)
-        })
-        .collect();
-    let edges: HashMap<&str, Vec<&str>> = m["resolve"]["nodes"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|n| {
-            let deps = n["deps"]
+        .map(|p| {
+            let names = p["dependencies"]
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|d| d["pkg"].as_str().unwrap())
+                .map(|d| d["name"].as_str().unwrap())
                 .collect();
-            (n["id"].as_str().unwrap(), deps)
+            (p["name"].as_str().unwrap(), names)
         })
         .collect();
 
     let mut bad = Vec::new();
-    for (&name, &id) in &members {
+    for (&name, direct) in &deps {
         let Some(ok) = allowed(name) else {
             bad.push(format!(
                 "{name}: a new workspace crate; give it a place in ALLOWED"
@@ -101,26 +100,25 @@ fn violations(m: &Value) -> Vec<String> {
             continue;
         };
         // Direct dependencies on other workspace crates.
-        for &dep in &edges[id] {
-            let dep = names[dep];
-            if members.contains_key(dep) && !ok.contains(&"*") && !ok.contains(&dep) {
+        for &dep in direct {
+            if deps.contains_key(dep) && !ok.contains(&"*") && !ok.contains(&dep) {
                 bad.push(format!("{name} depends on {dep}"));
             }
         }
         if ok.contains(&"*") {
             continue;
         }
-        // Anything it reaches, through any crate.
+        // Anything it reaches, through workspace crates.
         let mut seen = BTreeSet::new();
-        let mut todo = vec![id];
+        let mut todo = vec![name];
         while let Some(at) = todo.pop() {
-            for &dep in &edges[at] {
-                if seen.insert(dep) {
+            for &dep in deps.get(at).into_iter().flatten() {
+                if seen.insert(dep) && deps.contains_key(dep) {
                     todo.push(dep);
                 }
             }
         }
-        let ui: Vec<&str> = seen.iter().map(|d| names[d]).filter(|n| is_ui(n)).collect();
+        let ui: Vec<&str> = seen.into_iter().filter(|n| is_ui(n)).collect();
         if !ui.is_empty() {
             bad.push(format!("{name} reaches UI crates: {}", ui.join(", ")));
         }
