@@ -174,6 +174,8 @@ scenes! {
         // --- maths --- a post with formulas in the reader; a draft's preview
         RdMaths = "rd-maths",
         RdMathsPreview = "rd-maths-preview",
+        // Reply to it, then select a passage that takes in a formula.
+        RdMathsQuote = "rd-maths-quote",
     }
     /// profiles/demo.rs
     Profiles {

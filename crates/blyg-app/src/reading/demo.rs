@@ -347,6 +347,19 @@ impl MainView {
             // WebView: MathML redrawn from each formula's TeX).
             (Scene::RdMaths, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdMaths, 1) => open(self, crate::fake::maths_seed::ADA_MATHS, window, cx),
+            // Reply to Ada's maths post, then select her first paragraph,
+            // formula and all: the note that a passage can't take one in.
+            (Scene::RdMathsQuote, 0) => {
+                self.show_view(View::Reading, window, cx);
+                open(self, crate::fake::maths_seed::ADA_MATHS, window, cx);
+            }
+            (Scene::RdMathsQuote, 1) => {
+                if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
+                    self.item_action(item, "Reply", window, cx);
+                }
+                self.stub_choose_passage(window, cx);
+            }
+            (Scene::RdMathsQuote, 2) => self.studio_demo_select_paragraph(),
             // A draft with formulas in the full editor's preview, one that
             // doesn't parse shown red.
             (Scene::RdMathsPreview, 0) => {

@@ -481,3 +481,7 @@ fn the_list_crossfades_when_the_blyg_changes(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(view.read_with(cx, |v, _| v.delight_list_gen()), before + 1);
 }
+
+// --- user testing --- the writer's studio 0.64 journeys.
+#[path = "writer_flow_tests.rs"]
+mod writer;
