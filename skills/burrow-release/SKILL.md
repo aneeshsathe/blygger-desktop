@@ -39,5 +39,10 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
 9. Before merging (merging tags the release): the latest weekly CI run (the
    scheduled deny advisories job) is green. The weekly run blocks nothing,
    so this is where it gets looked at.
-10. After merge: watch the Release run; confirm the release has the macOS,
+10. Before merging: the release PR's `timing` job (the wall-clock timing
+    reports, `scripts/check.sh timing`, macOS only) is green, or the PR
+    explains each overrun it logs (which step, by how much, and why it's
+    the runner and not the code). The job never fails the run, so this is
+    where its numbers get read.
+11. After merge: watch the Release run; confirm the release has the macOS,
     Windows assets, plus signed sums.
