@@ -603,3 +603,7 @@ fn turning_the_burst_rule_off_brings_the_parts_back(cx: &mut TestAppContext) {
     crate::test_wait::settle_drawn(cx);
     assert_eq!(shown(&view, cx), (true, 0), "the part is back");
 }
+
+// --- user testing --- the writer's studio 0.64 journeys.
+#[path = "writer_flow_tests.rs"]
+mod writer;
