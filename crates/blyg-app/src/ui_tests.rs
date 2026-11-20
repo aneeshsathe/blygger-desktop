@@ -539,9 +539,9 @@ fn reload_applies_the_file_live(cx: &mut TestAppContext) {
         assert_eq!(v.prefs.theme, "dark");
         assert!(v.palette.dark);
         assert_eq!(v.prefs.writing().family, CHARTER);
-        assert_eq!(v.config_problems.len(), 1, "{:?}", v.config_problems);
-        assert_eq!(v.config_problems[0].line, 6);
-        assert!(!v.problems_dismissed);
+        assert_eq!(v.config.problems.len(), 1, "{:?}", v.config.problems);
+        assert_eq!(v.config.problems[0].line, 6);
+        assert!(!v.config.problems_dismissed);
         assert!(
             v.toast
                 .as_ref()
@@ -558,15 +558,15 @@ fn config_problems_show_until_dismissed(cx: &mut TestAppContext) {
         Arc::new(MemoryTokenStore::default()),
     );
     view.read_with(cx, |v, _| {
-        assert_eq!(v.config_problems.len(), 1);
-        assert!(v.config_problems[0].short().contains(":2: theme:"));
+        assert_eq!(v.config.problems.len(), 1);
+        assert!(v.config.problems[0].short().contains(":2: theme:"));
     });
     view.update(cx, |v, cx| {
-        v.problems_dismissed = true;
+        v.config.problems_dismissed = true;
         cx.notify();
     });
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.problems_dismissed));
+    assert!(view.read_with(cx, |v, _| v.config.problems_dismissed));
 }
 
 /// The action the keymap picks for `key` where focus is right now.

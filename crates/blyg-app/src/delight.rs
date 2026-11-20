@@ -296,7 +296,7 @@ impl MainView {
             self.show_toast(e, None, cx);
             return;
         }
-        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
+        self.config.restamp(cx);
         if on {
             play(Sound::Publish, cx);
         }
