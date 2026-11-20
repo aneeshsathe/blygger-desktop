@@ -133,14 +133,17 @@ jobs:
   # "timing: run by the CI timing job"; their budgets go through
   # blyg_core::wait::Budget). A budget measures the runner as much as the
   # code, so this job reports and never blocks a merge: continue-on-error
-  # keeps the run green, and its log holds the numbers. Tests that guard an
+  # keeps the run green, and its log holds the numbers. It builds the tests
+  # in release, which is what the budgets mean (one extra build, on a job
+  # that blocks nothing). macOS only: Windows timing isn't measured (the
+  # budgets' 4x Windows factor is untested). Tests that guard an
   # algorithm count work instead, in the check job.
   timing:
     name: timing reports (never blocks)
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
