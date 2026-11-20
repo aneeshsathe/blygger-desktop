@@ -169,6 +169,11 @@ pub fn placed_toast(placement: Option<Placement>) -> &'static str {
 }
 
 impl MainView {
+    /// Why `r` is in Background, as its badge says it.
+    pub(crate) fn background_why(&self, r: &ReadingItem) -> Option<String> {
+        why(r)
+    }
+
     /// The reading pane's Background chips for the open post.
     pub(crate) fn background_chips(&self, r: &ReadingItem) -> Vec<ActionChip> {
         chips(r, self.reading.background.served)
