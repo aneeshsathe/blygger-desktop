@@ -221,13 +221,14 @@ fn writer_publishes_formulas_with_a_broken_one_and_money(cx: &mut TestAppContext
         "UT: maths publish warning = {:?}",
         publish_warning(&view, cx)
     );
+    // ⏎ waits until the formula parses (W2): the sheet stays, nothing sent.
     keys(cx, "enter");
-    settle(cx, "an answer", |cx| !toast(&view, cx).is_empty());
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<PublishSheet>()));
     eprintln!(
-        "UT: broken formula publish → toast {:?}, v{} (was v{v0})",
-        toast(&view, cx),
+        "UT: broken formula publish → v{} (was v{v0})",
         version(&fake, DRAFT)
     );
+    assert_eq!(version(&fake, DRAFT), v0);
 }
 
 #[gpui_kit::test]

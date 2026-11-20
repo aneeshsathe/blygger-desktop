@@ -3,6 +3,10 @@
 
 use super::*;
 
+/// A publish failure longer than this (in characters) stays until it's
+/// dismissed: 2.6 seconds is too short to read it.
+const LONG_TOAST: usize = 72;
+
 impl MainView {
     pub(super) fn on_publish(&mut self, _: &Publish, window: &mut Window, cx: &mut Context<Self>) {
         // Under a sheet, ⌘⏎ is the sheet's own (`SheetView::submit`): it
@@ -100,6 +104,13 @@ impl MainView {
     }
 
     pub(super) fn do_publish(&mut self, note: String, window: &mut Window, cx: &mut Context<Self>) {
+        // A formula that doesn't parse, or a span in a fragment: the sheet
+        // says why, and ⏎ waits (the blyg would refuse it).
+        if self.sheet.is::<PublishSheet>() && self.studio_publish_block(cx).is_some() {
+            self.shake_gen += 1;
+            cx.notify();
+            return;
+        }
         let Some(PublishSheet { id, ai, .. }) = self.sheet.take() else {
             return;
         };
@@ -226,8 +237,14 @@ impl MainView {
     }
 
     /// A publish the blyg refused: say why.
+    /// A long one (a formula and its reason) stays until it's dismissed.
     pub(crate) fn publish_failed(&mut self, e: &CoreError, cx: &mut Context<Self>) {
-        self.show_toast(format!("Publish failed: {e}"), None, cx);
+        let text = format!("Publish failed: {e}");
+        if text.chars().count() > LONG_TOAST {
+            self.show_toast_until_dismissed(text, cx);
+        } else {
+            self.show_toast(text, None, cx);
+        }
     }
 
     /// --- tangle --- The confirm step's `⏎` (publish all): the same publish
