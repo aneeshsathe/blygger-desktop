@@ -151,7 +151,10 @@ pub trait PreviewSurface {
 }
 
 /// Reports the page's geometry and what it rendered, as one JSON line.
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(
+    test,
+    expect(dead_code, reason = "the app web view uses it; tests build none")
+)]
 pub const PROBE_JS: &str = r#"JSON.stringify({
   w: window.innerWidth, h: window.innerHeight,
   quotes: document.querySelectorAll("blockquote.blyg-transclusion:not(.unresolved)").length,
@@ -328,7 +331,6 @@ pub fn nudge_js(down: bool) -> String {
 }
 
 /// Host-side helpers, injected at document start (main frame only).
-#[cfg_attr(test, allow(dead_code))]
 pub const HOST_SCRIPT: &str = r#"
 (function () {
   "use strict";
@@ -589,6 +591,7 @@ pub fn peek_click_modifiers() -> Option<(bool, bool)> {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSEvent.modifierFlags")]
 fn note_click_modifiers() {
     // SAFETY: `+[NSEvent modifierFlags]` is a plain class getter of the
     // keys held right now; main thread (WebKit's delegate callbacks).
@@ -603,6 +606,7 @@ fn note_click_modifiers() {
 }
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(unsafe_code, reason = "WebKit through objc2: the preview's WKWebView")]
 mod wry_surface {
     use super::*;
     use wry::{NewWindowResponse, WebView, WebViewBuilder, WebViewExtMacOS, WryWebView};

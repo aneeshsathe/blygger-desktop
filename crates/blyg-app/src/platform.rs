@@ -2,11 +2,17 @@
 //! Windows the icon comes from the executable's resources (`build.rs`).
 
 /// `packaging/icon.svg` rendered at 512 px (`scripts/make-icon.sh`).
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "the macOS app uses it, and tests")
+)]
 static ICON_PNG: &[u8] = include_bytes!("../../../packaging/icon-512.png");
 
 /// Whether this process runs from inside an `.app` bundle.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(dead_code, reason = "the macOS app uses it, and tests")
+)]
 pub fn is_bundled(exe: &std::path::Path) -> bool {
     exe.to_string_lossy().contains(".app/Contents/MacOS/")
 }
@@ -15,6 +21,7 @@ pub fn is_bundled(exe: &std::path::Path) -> bool {
 /// icon. Give it ours. Launched from Burrow.app, the bundle's .icns is
 /// already in use and this does nothing.
 #[cfg(target_os = "macos")]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSApplication's dock icon")]
 pub fn set_dock_icon_unless_bundled() {
     if std::env::current_exe().is_ok_and(|p| is_bundled(&p)) {
         return;
@@ -95,6 +102,7 @@ pub fn key_button(
 /// macOS, where the reader's navigation delegate records them.
 pub fn held_link_modifiers() -> Option<(bool, bool)> {
     #[cfg(target_os = "windows")]
+    #[expect(unsafe_code, reason = "Win32 FFI: GetAsyncKeyState")]
     {
         #[link(name = "user32")]
         unsafe extern "system" {

@@ -28,5 +28,16 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
 7. A user-testing pass ran on the integration branch (`user-testing-pass`):
    its blockers and top irritants are fixed, and the rest are listed as
    follow-ups.
-8. After merge: watch the Release run; confirm the release has the macOS,
-   Windows assets, plus signed sums.
+8. Every mapped feature still runs live: for each row of
+   `skills/verify-burrow/features/README.md`, run
+   `scripts/verify/burrow-verify.sh run <scene>` with its starting scene and
+   look at the screenshot. The user-testing pass covers only what the update
+   touched, so this catches a feature the update broke from the side. List
+   each feature's run directory and screenshot path in the release PR's
+   Verification section (add the heading if the body has none), so the check
+   leaves a record.
+9. Before merging (merging tags the release): the latest weekly CI run (the
+   scheduled deny advisories job) is green. The weekly run blocks nothing,
+   so this is where it gets looked at.
+10. After merge: watch the Release run; confirm the release has the macOS,
+    Windows assets, plus signed sums.

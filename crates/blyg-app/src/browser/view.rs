@@ -37,8 +37,7 @@ gpui_kit::actions!(
 );
 use crate::scenes::Scene;
 
-/// The key context inside the pane (keymap `Scope::Browser`).
-pub const CONTEXT: &str = "Browser";
+use super::CONTEXT;
 
 /// The slide-over's share of the window width.
 pub const SLIDE_WIDTH: f32 = 0.66;

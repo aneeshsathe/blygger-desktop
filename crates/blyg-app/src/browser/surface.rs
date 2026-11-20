@@ -29,7 +29,10 @@ use gpui_kit::{Bounds, Pixels, Window};
 
 /// What the view reports to the pane.
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(test, allow(dead_code))]
+#[cfg_attr(
+    test,
+    expect(dead_code, reason = "the app web view uses it; tests build none")
+)]
 pub enum BrowserEvent {
     /// A load started, committed, finished, or the title changed: read
     /// [`PageState`] again.
@@ -133,7 +136,10 @@ pub trait BrowserSurface {
 /// string, so that string arrives encoded a second time (in quotes, with
 /// escapes): decode it once. Anything that isn't a JSON string (`null` from
 /// a script that threw, a number) is `"null"`, as on WebKit.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "the WebView2 side (Windows), and tests")
+)]
 pub fn decode_eval_result(json: &str) -> String {
     serde_json::from_str::<String>(json).unwrap_or_else(|_| "null".into())
 }
@@ -148,7 +154,10 @@ pub fn decode_eval_result(json: &str) -> String {
 /// fails before it commits still finishes (as WebKit's `didFail` ends a
 /// load); a redirect keeps its id.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "the WebView2 side (Windows), and tests")
+)]
 pub struct NavCounter {
     /// Allowed navigations not finished yet, oldest first.
     open: Vec<u64>,
@@ -158,7 +167,10 @@ pub struct NavCounter {
     pub finishes: u64,
 }
 
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "the WebView2 side (Windows), and tests")
+)]
 impl NavCounter {
     /// `NavigationStarting`, after the policy decided (`allowed`: not
     /// cancelled).
@@ -207,7 +219,10 @@ impl NavCounter {
 
 /// [`PageState`] from what WebView2 answers (the view's URL, the core
 /// view's title and history flags) and the navigations counted so far.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+#[cfg_attr(
+    not(any(target_os = "windows", test)),
+    expect(dead_code, reason = "the WebView2 side (Windows), and tests")
+)]
 pub fn page_state(
     url: String,
     title: String,
@@ -267,10 +282,20 @@ pub fn default_factory() -> Factory {
 /// A fixed identifier for the browser's own persistent website data store
 /// (cookies, local storage): "blygger-browser" padded, as a UUID.
 // macOS only (WebKit's data store); Windows names a folder instead.
-#[cfg_attr(not(all(target_os = "macos", not(test))), allow(dead_code))]
+#[cfg_attr(
+    all(not(target_os = "macos"), not(test)),
+    expect(
+        dead_code,
+        reason = "the WebKit data store: macOS app builds (and tests) only"
+    )
+)]
 pub const DATA_STORE_ID: [u8; 16] = *b"blygger-browser\0";
 
 #[cfg(all(target_os = "macos", not(test)))]
+#[expect(
+    unsafe_code,
+    reason = "WebKit through objc2: the browser pane's WKWebView"
+)]
 mod wry_browser {
     use std::cell::Cell;
     use std::rc::Rc;
@@ -765,6 +790,10 @@ mod wry_browser {
 /// the scripts `eval_json` runs are each one function expression that
 /// leaves no globals behind (`automation/js.rs`, `capture.rs`).
 #[cfg(all(target_os = "windows", not(test)))]
+#[expect(
+    unsafe_code,
+    reason = "WebView2 COM calls: the browser pane's web view"
+)]
 mod wry_browser_windows {
     use std::cell::{Cell, RefCell};
     use std::path::PathBuf;

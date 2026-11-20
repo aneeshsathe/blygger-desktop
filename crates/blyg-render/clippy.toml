@@ -1,0 +1,16 @@
+# Clippy reads this file for blyg-render only (the crate's own directory wins).
+# `cargo clippy --workspace --all-targets -- -D warnings` (the gate and CI)
+# fails on any use of these.
+
+disallowed-methods = [
+    # Fixed sleeps that "let something finish" pass on an idle machine and
+    # fail under load. blyg-render is a leaf (pure rendering: nothing in it
+    # waits) and can't reach blyg_core::wait.
+    { path = "std::thread::sleep", reason = "rendering never waits; a test checks a result, not a moment (if a wait is ever needed, poll a condition with a deadline, as blyg_core::wait::until does)" },
+]
+
+disallowed-types = [
+    # Spawning a process is a review item for outside contributions: a new
+    # spawn site fails here until its module says why it needs one.
+    { path = "std::process::Command", reason = "process spawning is reviewed: put it in a module that already spawns (or add #[expect(clippy::disallowed_types, reason = \"…\")] on the item that needs it)" },
+]

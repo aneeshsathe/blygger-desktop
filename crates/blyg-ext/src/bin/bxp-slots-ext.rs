@@ -8,6 +8,8 @@
 //! - action `echo`: a sheet whose fields are the entry's ids and the
 //!   record's keys, and whose code is the record; action `fail`: an error.
 
+#![forbid(unsafe_code)]
+
 use blyg_ext::ext::{Extension, HostClient, serve};
 use blyg_ext::protocol::*;
 use blyg_ext::reading::*;

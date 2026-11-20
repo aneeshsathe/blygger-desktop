@@ -95,7 +95,7 @@ fn render() -> String {
 fn shortcut_reference_is_up_to_date() {
     let want = render();
     let path = doc_path();
-    if std::env::var_os("BLYGGER_UPDATE_DOCS").is_some() {
+    if crate::dev_flags::TestEnv::from_env().update_docs {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &want).unwrap();
         return;

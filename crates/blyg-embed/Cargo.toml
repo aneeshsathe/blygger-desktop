@@ -1,5 +1,6 @@
 [package]
 name = "blyg-embed"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -16,3 +17,6 @@ ureq = { version = "2.12", default-features = false, features = ["tls"] }
 
 [dev-dependencies]
 tempfile = "3"
+
+[lints]
+workspace = true

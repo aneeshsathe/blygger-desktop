@@ -149,6 +149,9 @@ pub struct TestEnv {
     /// test thread starts with (`platform_text::spelled_as` still picks one
     /// for a test). Unset: this machine's.
     pub spelling: Option<crate::platform_text::Platform>,
+    /// `BLYGGER_UPDATE_DOCS`: the generated-docs tests rewrite their file
+    /// instead of comparing (`scripts/gen-docs.sh`).
+    pub update_docs: bool,
 }
 
 type Lookup<'a> = &'a dyn Fn(&str) -> Option<OsString>;
@@ -226,7 +229,10 @@ impl DevFlags {
     }
 
     /// The process environment, parsed. The only reader of it in blyg-app.
-    #[allow(clippy::disallowed_methods)]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one reader of the environment"
+    )]
     fn from_env() -> Result<Self, String> {
         Self::parse(&|k| std::env::var_os(k))
     }
@@ -234,7 +240,10 @@ impl DevFlags {
 
 #[cfg(test)]
 impl TestEnv {
-    #[allow(clippy::disallowed_methods)]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the one reader of the tests' environment"
+    )]
     pub fn from_env() -> Self {
         let get = |k: &str| std::env::var(k).ok();
         Self {
@@ -252,6 +261,7 @@ impl TestEnv {
                     other => panic!("BLYGGER_TEST_SPELLING={other}: say windows or mac"),
                 }
             }),
+            update_docs: std::env::var_os("BLYGGER_UPDATE_DOCS").is_some(),
         }
     }
 }
@@ -277,7 +287,14 @@ pub fn get() -> &'static DevFlags {
 /// would cover the WebView2 child window that shows posts. Its plain
 /// swap-chain path leaves child windows visible above the app.
 #[cfg(target_os = "windows")]
-#[allow(clippy::disallowed_methods)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "GPUI reads this variable, so it is set here, before GPUI starts"
+)]
+#[expect(
+    unsafe_code,
+    reason = "std::env::set_var is unsafe in edition 2024; called first thing in main, before other threads"
+)]
 pub fn prefer_swap_chain() {
     if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_none() {
         // SAFETY: first thing in main, before any other thread exists.

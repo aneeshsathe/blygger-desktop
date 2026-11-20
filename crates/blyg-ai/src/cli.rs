@@ -3,6 +3,8 @@
 //! too), and running it with the prompt on stdin, streaming stdout lines,
 //! killing the child when the cancel flag is set.
 
+#![expect(clippy::disallowed_types, reason = "the CLI providers' shared runner")]
+
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -114,7 +116,6 @@ impl CliLocator {
 
 /// A `.cmd`/`.bat` shim (how npm installs CLIs on Windows). These run
 /// through cmd.exe, which can't carry a multi-line argument.
-#[cfg_attr(not(any(windows, test)), allow(dead_code))]
 pub(crate) fn is_batch_shim(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())

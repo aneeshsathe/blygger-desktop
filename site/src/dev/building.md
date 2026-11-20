@@ -33,11 +33,14 @@ dmg. `scripts/sign.sh` documents the variables.
 Every commit must pass:
 
 ```sh
-cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+scripts/check.sh --fix        # on Windows, from Git Bash: bash scripts/check.sh --fix
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same on every pull request, on
-macOS and on Windows, and builds this documentation site. The Windows job
+It formats the code, then runs clippy with warnings as errors, the tests, and
+blyg-app's tests with UI text spelled as Windows shows it. Add the `docs` step
+to build this site; `--help` lists every step. CI (`.github/workflows/ci.yml`)
+calls the same script on every pull request, on macOS and on Windows, and
+builds this documentation site. The Windows job
 also builds the release zip and keeps it on the run's page for a week, so a
 pull request can be tried on a real Windows machine.
 

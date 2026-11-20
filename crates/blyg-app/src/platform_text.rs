@@ -133,7 +133,7 @@ impl Text {
 
     /// As `p` shows it, on any platform: the tests read Windows' wording on
     /// macOS.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "tests use it"))]
     pub fn on(self, p: Platform) -> String {
         match p {
             Platform::Mac => self.mac.to_string(),
@@ -150,7 +150,7 @@ impl Text {
     }
 
     /// The Windows wording, when it's its own.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "tests use it"))]
     pub fn windows_source(self) -> Option<&'static str> {
         self.windows
     }

@@ -18,6 +18,8 @@
 //! Every initialize is appended to `<storageDir>/starts.log`; notifications
 //! to `<storageDir>/events.jsonl`.
 
+#![forbid(unsafe_code)]
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;

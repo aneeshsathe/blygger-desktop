@@ -391,7 +391,10 @@ pub mod fake {
 }
 
 #[cfg(test)]
-#[allow(clippy::single_range_in_vec_init)]
+#[expect(
+    clippy::single_range_in_vec_init,
+    reason = "misspelled ranges: a list that holds one range"
+)]
 mod tests {
     use super::*;
 

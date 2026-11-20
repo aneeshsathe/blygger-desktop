@@ -679,7 +679,6 @@ pub(crate) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
 }
 
 // `blygger_snap` is a local --cfg for screenshot builds only.
-#[allow(unexpected_cfgs)]
 pub(crate) mod snap {
     use gpui_kit::Window;
 

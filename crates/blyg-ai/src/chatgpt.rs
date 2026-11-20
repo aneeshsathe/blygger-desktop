@@ -591,7 +591,7 @@ impl ChatGptAccount {
         }
     }
 
-    #[allow(clippy::result_large_err)] // ureq 2's own error type
+    #[expect(clippy::result_large_err, reason = "ureq 2's own error type")]
     fn post(
         &self,
         creds: &Credentials,

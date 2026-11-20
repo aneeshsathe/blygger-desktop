@@ -26,7 +26,10 @@ pub fn thread_key() -> Key {
     (SubId::from("sub-lin"), RemoteId::from(LIN_BURST))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 fn row(
     sub: &str,
     title: &str,

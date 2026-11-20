@@ -304,7 +304,10 @@ pub fn entries(
 
 /// [`entries`], counting only what [`counts_as_unread`] counts: the rows
 /// only a hopper holds (`hopper_only`) are in no count but their hopper's.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 pub fn entries_skipping(
     hoppers: &[Hopper],
     folders: &[Folder],

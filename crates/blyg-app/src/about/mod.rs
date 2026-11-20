@@ -173,6 +173,7 @@ pub fn macos_version() -> &'static str {
 
 /// `15.6.1 (Build 24G90)`, from NSProcessInfo.
 #[cfg(target_os = "macos")]
+#[expect(unsafe_code, reason = "Cocoa FFI: NSProcessInfo's version string")]
 pub fn macos_version() -> &'static str {
     static V: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     V.get_or_init(|| {
@@ -201,6 +202,7 @@ pub fn macos_version() -> &'static str {
 
 /// Finder (Explorer on Windows), with `path` selected (or its folder, if it
 /// doesn't exist yet).
+#[expect(clippy::disallowed_types, reason = "Finder or Explorer shows the file")]
 fn reveal(path: &Path) {
     if cfg!(target_os = "windows") {
         let mut cmd = std::process::Command::new("explorer.exe");

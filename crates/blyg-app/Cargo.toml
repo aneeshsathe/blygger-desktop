@@ -1,5 +1,6 @@
 [package]
 name = "blyg-app"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -117,3 +118,6 @@ proc-macro2 = "1"
 # --- full editor ---
 tempfile = "3"
 gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }
+
+[lints]
+workspace = true

@@ -1,5 +1,6 @@
 [package]
 name = "blyg-ext"
+publish = false
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -29,3 +30,6 @@ name = "bxp-slots-ext"
 path = "src/bin/bxp-slots-ext.rs"
 test = false
 doc = false
+
+[lints]
+workspace = true

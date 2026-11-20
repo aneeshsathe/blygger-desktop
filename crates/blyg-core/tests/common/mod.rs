@@ -23,7 +23,10 @@
 //! `set_down(true)` makes it accept and immediately drop connections, which
 //! the client sees as a transport failure (= offline).
 
-#![allow(dead_code)]
+#![expect(
+    dead_code,
+    reason = "helpers for every suite; no one suite uses them all"
+)]
 
 pub mod contract;
 
@@ -870,7 +873,10 @@ fn fingerprint(v: &impl Hash) -> u64 {
 /// collection and its filters), its position, and the fingerprint of the
 /// collection (`basis`, else `all`) when it was issued. `cap` lowers
 /// every page size (`State::reading_page_size`).
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one argument per field it fills; a struct would only rename them"
+)]
 fn page(
     req: &Req,
     s: &State,

@@ -2577,7 +2577,6 @@ pub(super) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
     .detach();
 }
 
-#[allow(unexpected_cfgs)]
 mod snap {
     use gpui_kit::Window;
 

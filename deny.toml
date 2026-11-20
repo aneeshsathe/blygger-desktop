@@ -1,0 +1,66 @@
+# cargo-deny policy: what a new dependency may bring in. CI runs it with
+# `scripts/check.sh deny`; that step needs cargo-deny installed
+# (`cargo install cargo-deny --locked`). A change here is a policy change:
+# say why in the PR.
+
+[graph]
+# Every platform Burrow ships on.
+targets = [
+  "aarch64-apple-darwin",
+  "x86_64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+all-features = true
+
+[advisories]
+# Every RustSec vulnerability, unsoundness and yanked release fails, except
+# the ones listed below, each with its reason.
+yanked = "deny"
+# Unmaintained crates fail only when a workspace crate depends on them
+# directly; deep GPUI dependencies are out of our hands.
+unmaintained = "workspace"
+# Known gaps, each with the fix it waits for. They need a Cargo.toml change
+# or an upstream release; fix one, then delete its line (cargo-deny warns
+# about an entry that no longer matches).
+ignore = [
+  { id = "RUSTSEC-2026-0459", reason = "libsqlite3-sys 0.38 bundles SQLite < 3.54: needs rusqlite 0.41" },
+  { id = "RUSTSEC-2024-0421", reason = "idna 0.3 via markdown-it and mdurl: needs an upstream release" },
+  { id = "RUSTSEC-2026-0543", reason = "chrono is unmaintained and blyg-app uses it directly: move to jiff or time" },
+]
+
+[licenses]
+# Licences compatible with shipping Burrow as an MIT binary. Crates that
+# offer a choice (such as "Apache-2.0 OR GPL-2.0-only") pass on the
+# permissive option.
+allow = [
+  "0BSD",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "BSL-1.0",
+  "CC0-1.0",
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "MIT-0",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unlicense",
+  "Zlib",
+  "bzip2-1.0.6",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are common in a GPUI tree: shown, not failed.
+multiple-versions = "warn"
+# Every crate is `publish = false`, so path dependencies between workspace
+# crates aren't counted as wildcards; any other wildcard version fails.
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+# crates.io only: a git or other-registry dependency is a new trust root.
+unknown-registry = "deny"
+unknown-git = "deny"

@@ -24,10 +24,13 @@
 //! The web view is made on first use and dropped (freeing its WebContent
 //! process) [`TEARDOWN_AFTER`] after the pane closes.
 
+/// The key context inside the pane (keymap `Scope::Browser`; user keybinding
+/// configs may name it).
+pub const CONTEXT: &str = "Browser";
+
 pub mod automation;
 // The lists are fetched and compiled only where blocking exists (macOS,
 // `driver`); the parsing is tested everywhere.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub mod blocklist;
 pub mod capture;
 #[cfg(all(target_os = "macos", not(test)))]
