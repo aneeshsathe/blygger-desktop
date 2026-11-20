@@ -131,9 +131,28 @@ fn insert_quote(md: &str, block: &str, at: usize) -> String {
             .find(|&i| i == last || starts[i + 1] > at)
             .unwrap_or(last)
     };
+    // Step past a directive's attached quote the caret sits in, by the
+    // extent publish uses (lazy continuation included), so the new block
+    // never lands mid-quote (studio 0.64 `addStubQuote`).
+    let spans = crate::tangle::quote_span_ranges(md);
+    let mut inert = crate::markdown::code_ranges(md);
+    inert.extend(spans.iter().copied());
+    let mut i = 0;
+    while i <= line {
+        if crate::markdown::in_ranges(&inert, starts[i]) || directive_id(lines[i]).is_none() {
+            i += 1;
+            continue;
+        }
+        let (_, next) = attached_quote(&lines, i);
+        if line < next {
+            line = next - 1;
+            break;
+        }
+        i = next;
+    }
     // Step past a `![[+ …]]` span the caret sits in, to its closer's line
     // (studio 0.64: the quote belongs after the span, not in its new item).
-    for (start, end) in crate::tangle::quote_span_ranges(md) {
+    for (start, end) in spans {
         if starts[line] >= start && starts[line] <= end {
             line = (0..lines.len())
                 .find(|&i| i == last || starts[i + 1] > end)
@@ -303,11 +322,18 @@ mod tests {
     }
 
     #[test]
-    fn an_unmarked_line_right_under_the_quote_is_the_authors() {
-        let md = format!("![[{ID}]]\n> old\nmy words");
+    fn a_lazy_line_is_the_quotes_and_a_new_block_the_authors() {
+        // Decision #76: an unmarked line continuing the quote's paragraph
+        // belongs to the quote, so choosing again replaces it too.
+        let md = format!("![[{ID}]]\n> old\nlazy words\n\nmine");
         assert_eq!(
             with_stub_quote(&md, ID, None),
-            format!("![[{ID}]]\nmy words")
+            format!("![[{ID}]]\n\nmine")
+        );
+        let md = format!("![[{ID}]]\n> old\n# My heading");
+        assert_eq!(
+            with_stub_quote(&md, ID, None),
+            format!("![[{ID}]]\n# My heading")
         );
     }
 
@@ -365,6 +391,12 @@ mod tests {
         assert_eq!(
             add_stub_quote(&md, ID, "x", 0),
             format!("{md}\n\n![[{ID}]]\n> x\n\n")
+        );
+        // A caret in the quote never splits it, lazy lines included.
+        let md = format!("![[{ID}]]\n> first\nlazy line\n> more\nlast lazy\n\nMine.");
+        assert_eq!(
+            add_stub_quote(&md, ID, "x", md.find("first").unwrap()),
+            format!("![[{ID}]]\n> first\nlazy line\n> more\nlast lazy\n\n![[{ID}]]\n> x\n\nMine.")
         );
     }
 

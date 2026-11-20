@@ -15,6 +15,7 @@
 //! assert_eq!(out.html, "<p data-line=\"0\">Hello <em>world</em></p>\n");
 //! ```
 
+mod comments; // --- comments --- `/* … */` notes to self
 mod embeds;
 mod emph;
 mod grammar;
@@ -50,7 +51,7 @@ pub use shell::{
 };
 pub use tk::{TkError, TkScope, parse_scopes, unrequested_output_directives};
 pub use transclusion::{
-    Found, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
+    Found, NestedSource, NoResolver, Quote, Resolution, Resolver, SELECTOR_CONTEXT, TextQuoteSelector,
     Unresolved, UnresolvedReason, locate_selection, selection_from_quote,
 };
 pub use util::{absolutize_html, escape_html, is_js_ws, item_document_url};
@@ -177,6 +178,11 @@ pub fn render_preview(
         .then(|| tangle::preview(md))
         .flatten();
     let md = tangles.as_ref().map_or(md, |t| t.doc.text.as_str());
+    // --- comments --- comments to self (`/* … */`) are left out, as the
+    // studio's preview does (`previewComments`).
+    let commented = comments::preview(md, tangles.as_ref().map(|t| &t.doc));
+    let mapped = commented.as_ref().or(tangles.as_ref().map(|t| &t.doc));
+    let md = mapped.map_or(md, |d| d.text.as_str());
     // --- contacts --- `@handle` becomes its contact's link first, as the
     // studio's preview and publish do (`consumeHandles`); the links become
     // h-cards with the `[[id]]` tokens below (`withMentionCards`).
@@ -184,10 +190,8 @@ pub fn render_preview(
     let md = handles.text.as_str();
 
     let (scopes, tk_errors) = tk::parse_scopes(md);
-    let src = match &tangles {
-        Some(t) if t.doc.lines.len() == markdown::line_starts(md).len() => {
-            t.doc.with_text(md.to_string())
-        }
+    let src = match mapped {
+        Some(d) if d.lines.len() == markdown::line_starts(md).len() => d.with_text(md.to_string()),
         _ => linemap::Mapped::identity(md),
     };
     let (stripped, spans) = tk::preview_strip(&src, &scopes);
@@ -268,8 +272,12 @@ pub fn render_preview(
             stats.unresolved = w.unresolved;
             stats.unresolved.extend(link_errors);
             stats.transclusions = w.quotes.iter().map(|(q, _)| q.clone()).collect();
-            // previewTransclusions sanitizes the walked HTML, markers and all.
+            // previewTransclusions sanitizes the walked HTML, markers and
+            // all, and the generated blocks spliced into it (studio 0.64).
             let html = sanitize::sanitize_html(&w.html);
+            for b in &mut blocks {
+                b.html = sanitize::sanitize_html(&b.html);
+            }
             let html = tk::apply_wrappers(html, &blocks, annotated.has_inline);
             let mut html = splice(html);
             if opts.provenance {
@@ -281,6 +289,7 @@ pub fn render_preview(
                     })
                     .collect();
                 html = transclusion::inject_provenance(&html, &lines);
+                html = transclusion::inject_nested_provenance(&html, resolver, &opts.mount);
             }
             let mut html = util::absolutize_html(&html, &our_origin(&opts.mount));
             if let Some(t) = &tangles {

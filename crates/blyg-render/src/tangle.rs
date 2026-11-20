@@ -140,83 +140,6 @@ fn find_bytes(hay: &[u8], needle: &[u8]) -> Option<usize> {
     hay.windows(needle.len()).position(|w| w == needle)
 }
 
-/// A token escaped by an odd run of backslashes (`comments.ts` `escaped`).
-fn escaped(text: &str, at: usize) -> bool {
-    text.as_bytes()[..at]
-        .iter()
-        .rev()
-        .take_while(|&&b| b == b'\\')
-        .count()
-        % 2
-        == 1
-}
-
-/// Where comments to self (`/* … */`) sit (`comments.ts` `parseComments`'s
-/// ranges). A comment opens at a line's start or after whitespace, never as
-/// `/**`, and not in code; it closes at the first `*/` outside code and
-/// outside a whole TK scope. An unclosed one runs to the end. Code is read
-/// on the source rather than on the text with earlier comments removed,
-/// which differs only for a comment holding a stray backtick.
-fn comment_ranges(md: &str) -> Vec<(usize, usize)> {
-    let mut out = Vec::new();
-    if !md.contains("/*") {
-        return out;
-    }
-    let code = markdown::code_ranges(md);
-    let opens = |at: usize| {
-        let before_ok = at == 0
-            || md[..at]
-                .chars()
-                .next_back()
-                .is_some_and(char::is_whitespace);
-        before_ok && md.as_bytes().get(at + 2) != Some(&b'*')
-    };
-    let mut from = 0;
-    loop {
-        let mut open = md[from..].find("/*").map(|i| from + i);
-        while let Some(at) = open {
-            if opens(at) && !in_ranges(&code, at) && !escaped(md, at) {
-                break;
-            }
-            open = md[at + 2..].find("/*").map(|i| at + 2 + i);
-        }
-        let Some(open) = open else { break };
-        let body = &md[open + 2..];
-        match find_closer(body) {
-            None => {
-                out.push((open, md.len()));
-                break;
-            }
-            Some(close) => {
-                let end = open + 2 + close + 2;
-                out.push((open, end));
-                from = end;
-            }
-        }
-    }
-    out
-}
-
-/// `findCloser`: where a comment body ends, or `None`.
-fn find_closer(body: &str) -> Option<usize> {
-    let code = markdown::code_ranges(body);
-    let mut at = 0;
-    loop {
-        let close = at + body[at..].find("*/")?;
-        if let Some(scope) = body[at..].find("[TK]").map(|i| at + i)
-            && scope < close
-            && !in_ranges(&code, scope)
-            && let Some(end) = body[scope..].find("[/TK]")
-        {
-            at = scope + end + 5;
-            continue;
-        }
-        if !in_ranges(&code, close) && !escaped(body, close) {
-            return Some(close);
-        }
-        at = close + 2;
-    }
-}
 
 /// `parseTangles`: every span in a working copy, and every reason it can't
 /// publish (tangling plan §1.4), in the studio's words.
@@ -236,7 +159,7 @@ pub fn parse_tangles(md: &str) -> Tangles {
     };
     let mut inert = markdown::code_ranges(md);
     inert.extend(scopes.iter().copied());
-    inert.extend(comment_ranges(md));
+    inert.extend(crate::comments::ranges(md));
     let issue = |t: &mut Tangles, at: usize, reason: &str| {
         t.issues.push(TangleIssue {
             at,

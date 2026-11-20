@@ -109,6 +109,9 @@ fn adversarial_inputs_stay_fast() {
         ("emphasis soup", "*_".repeat(10_000)),
         ("brackets", "[".repeat(20_000)),
         ("tk tokens", "[TK]a[=]b[/TK] ".repeat(1400)),
+        ("comments", "/* note */ word\n".repeat(1300)),
+        ("stray closers", "*/ ".repeat(2000)),
+        ("attached openers", "a/*b ".repeat(4000)),
     ];
     for (name, doc) in cases {
         let t = Instant::now();

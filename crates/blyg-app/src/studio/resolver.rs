@@ -14,7 +14,8 @@ use std::sync::Arc;
 
 use blyg_core::{Backend, Item, Kind, ReadingItem, RemoteId, Status, SubId, SubscriptionKind};
 use blyg_render::{
-    Found, ItemKind, RenderOpts, Resolution, Resolver, UnresolvedReason, render_preview,
+    Found, ItemKind, NestedSource, RenderOpts, Resolution, Resolver, UnresolvedReason,
+    render_preview,
 };
 
 /// How deep a quoted thread's own quotes are baked (a quote of a quote of a
@@ -182,9 +183,11 @@ impl StoreResolver {
             ));
         }
         self.stack.borrow_mut().push(id.to_string());
+        // As publish bakes it: no provenance lines (presentation only). The
+        // outer render names every nested layer (`p.provenance.nested`).
         let opts = RenderOpts {
             data_line: false,
-            provenance: true,
+            provenance: false,
             mount: self.mount.clone(),
             self_id: Some(id.to_string()),
         };
@@ -268,6 +271,31 @@ impl Resolver for StoreResolver {
             url: c.origin.clone(),
             ids: c.checked_ids().into_iter().map(str::to_string).collect(),
         })
+    }
+
+    /// A nested quote's provenance line, from what the store holds: no
+    /// render and no cycle guard, as `resolve` would have.
+    fn nested_source(&self, origin: Option<&str>, id: &str) -> NestedSource {
+        match origin {
+            None => NestedSource {
+                kind: self.own_item(id).map(|i| item_kind(i.kind)),
+                ..NestedSource::default()
+            },
+            Some(origin) => self
+                .remote_rows(id)
+                .into_iter()
+                .find(|(r, _)| r.origin == origin)
+                .map(|(r, _)| NestedSource {
+                    kind: Some(item_kind(r.kind)),
+                    page: r.page,
+                    // The subscription's name, as the studio's line has it.
+                    title: Some(r.subscription_title)
+                        .filter(|n| !n.trim().is_empty())
+                        .or_else(|| r.author.and_then(|a| a.name))
+                        .filter(|n| !n.trim().is_empty()),
+                })
+                .unwrap_or_default(),
+        }
     }
 
     /// A `[[id]]` link bakes nothing, so the cycle and depth guards that
@@ -382,6 +410,40 @@ mod tests {
             r,
             &RenderOpts::default(),
         )
+    }
+
+    #[test]
+    fn a_quoted_threads_own_quotes_get_one_nested_line_each() {
+        const THREAD: &str = "0123456789abcdefghjkmnpqrv";
+        let mut thread = item(
+            THREAD,
+            Status::Public,
+            &format!("Mine.\n\n![[{OWN}]]\n\n![[{THEIRS}]]\n"),
+        );
+        thread.kind = Kind::Thread;
+        let r = StoreResolver::new(
+            vec![thread, item(OWN, Status::Public, "Soil matters.")],
+            vec![reading(THEIRS, "https://blyg.example.com/", "s1")],
+            &[],
+            "/blyg",
+        );
+        let opts = RenderOpts {
+            mount: "/blyg".into(),
+            ..RenderOpts::default()
+        };
+        let html = render_preview(
+            &format!("![[{THREAD}]]"),
+            blyg_render::Kind::Thread,
+            &r,
+            &opts,
+        )
+        .html;
+        assert_eq!(html.matches("<p class=\"provenance\">").count(), 1, "{html}");
+        assert_eq!(html.matches("<p class=\"provenance nested\">").count(), 2, "{html}");
+        assert!(html.contains(&format!(
+            "<a href=\"/blyg/f/{OWN}/\">fragment ↗</a> · snapshot of v2"
+        )));
+        assert!(html.contains("from <em>Field Notes</em> ↗</a> · snapshot of v4"));
     }
 
     #[test]

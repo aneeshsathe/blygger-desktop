@@ -23,6 +23,17 @@ impl Mapped {
         }
     }
 
+    /// `text` with `lines[i]` the source line of its line `i`.
+    pub fn from_lines(text: String, lines: Vec<usize>) -> Self {
+        let starts = line_starts(&text);
+        debug_assert_eq!(starts.len(), lines.len());
+        Mapped {
+            text,
+            lines,
+            starts,
+        }
+    }
+
     /// The same line map over new text with the same number of lines.
     pub fn with_text(&self, text: String) -> Self {
         let starts = line_starts(&text);
