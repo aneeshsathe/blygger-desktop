@@ -231,8 +231,8 @@ impl LiveBackend {
     }
 
     /// Start counting the store's work (tests that guard an algorithm:
-    /// `Store::count_work`).
-    #[doc(hidden)]
+    /// `Store::count_work`; the `test-support` feature).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn count_store_work(&self) -> crate::store::Work {
         self.engine.store.count_work()
     }

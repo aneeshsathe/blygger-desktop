@@ -42,7 +42,8 @@ use serde_json::Value;
 const ALLOWED: &[(&str, &[&str])] = &[
     ("blyg-render", &[]),
     ("blyg-embed", &[]),
-    ("blyg-core", &["blyg-render"]),
+    // Itself: its `test-support` feature, for its integration tests.
+    ("blyg-core", &["blyg-core", "blyg-render"]),
     ("blyg-ai", &["blyg-core", "blyg-render"]),
     ("blyg-ext", &["blyg-core", "blyg-render"]),
     ("blyg-ext-*", &["blyg-ext", "blyg-core", "blyg-render"]),

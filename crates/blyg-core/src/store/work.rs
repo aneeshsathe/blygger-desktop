@@ -4,7 +4,10 @@
 //! shows it on a quiet one.
 //!
 //! The count is SQLite's virtual-machine steps (its progress handler, on
-//! every step), on both connections. Nothing counts until a test asks.
+//! every step), on both connections. Nothing counts until a test asks,
+//! and nothing outside tests can ask: this module is only built for
+//! blyg-core's own tests and under its `test-support` feature, which
+//! crates enable only in `[dev-dependencies]` (`tests/it/crate_graph.rs`).
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -39,9 +42,8 @@ fn count_on(c: &Connection, n: &Arc<AtomicU64>) {
 }
 
 impl Store {
-    /// Start counting the store's work (tests only: a progress handler on
-    /// every VM step slows every query).
-    #[doc(hidden)]
+    /// Start counting the store's work (tests only, the `test-support`
+    /// feature: a progress handler on every VM step slows every query).
     pub fn count_work(&self) -> Work {
         let n = Arc::new(AtomicU64::new(0));
         count_on(&self.conn(), &n);

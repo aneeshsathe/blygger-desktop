@@ -34,7 +34,11 @@ mod read_sync;
 mod reading;
 mod remote;
 mod schema;
-mod work; // counting work, for tests that guard an algorithm
+// Counting work, for tests that guard an algorithm: only in blyg-core's
+// own tests and under the `test-support` feature (dev-dependencies only).
+#[cfg(any(test, feature = "test-support"))]
+mod work;
+#[cfg(any(test, feature = "test-support"))]
 pub use work::Work;
 
 use std::collections::{HashMap, HashSet};

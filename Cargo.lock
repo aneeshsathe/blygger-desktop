@@ -850,6 +850,7 @@ name = "blyg-core"
 version = "0.27.0"
 dependencies = [
  "base64 0.22.1",
+ "blyg-core",
  "blyg-render",
  "flate2",
  "getrandom 0.2.17",

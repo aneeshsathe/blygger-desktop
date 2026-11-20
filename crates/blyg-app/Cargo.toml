@@ -115,6 +115,8 @@ quote = "1"
 proc-macro2 = "1"
 
 [dev-dependencies]
+# Test-only hooks (`LiveBackend::count_store_work`), for the perf tests.
+blyg-core = { path = "../blyg-core", features = ["test-support"] }
 # --- full editor ---
 tempfile = "3"
 gpui-kit = { version = "=0.6.6", default-features = false, features = ["test-support"] }
