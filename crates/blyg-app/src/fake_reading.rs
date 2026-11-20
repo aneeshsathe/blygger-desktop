@@ -646,6 +646,9 @@ pub fn seed(now: DateTime<Utc>) -> Seed {
         mention("m2", "01J9M2A", "transclusion", ADA, "Ada", d(3), false),
         mention("m3", "01J9K7T", "fork", LIN, "Lin", d(5), false),
         mention("m4", "01J9K7T", "transclusion", OMAR, "Omar", d(8), true),
+        // Studio 0.64: Lin's post links to "On friction" with `[[id]]`, a
+        // notice listed under "Linked from", never a response.
+        mention("m5", "01J9M2A", "link", LIN, "Lin", d(1), false),
     ];
 
     let settings = Settings {

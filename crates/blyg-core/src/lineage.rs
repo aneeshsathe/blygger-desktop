@@ -339,7 +339,9 @@ fn own_refs<R: Borrow<ReadingItem>>(i: &Item, own_origin: &str, rows: &[R]) -> V
     }))
 }
 
-/// The relation a mention names (`stub` | `transclusion` | `fork`).
+/// The relation a mention names (`stub` | `transclusion` | `fork`). Any
+/// other is no lineage: `source` (generated text drew on it) and `link`
+/// (a link notice, studio 0.64: a link isn't a quote, stub or fork).
 pub fn mention_relation(rel: Option<&str>) -> Option<Relation> {
     match rel? {
         "stub" => Some(Relation::Stubs),

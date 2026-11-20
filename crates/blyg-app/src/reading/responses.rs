@@ -63,6 +63,9 @@ fn mention_what(rel: Option<&str>) -> &'static str {
         Some("transclusion") => "quoted this",
         // Studio 0.41+: generated text drew on this post.
         Some("source") => "drew on this",
+        // Studio 0.64: a link notice. Never listed as a response (see
+        // `response_rows`); named here so it never reads "mentioned".
+        Some("link") => "linked to this",
         _ => "mentioned this",
     }
 }
@@ -76,6 +79,8 @@ fn ts(s: &str) -> i64 {
 /// The list for the post `target_id`: verified, unhidden mentions of it
 /// (your own posts) and the network's responses, one row per responding
 /// post (its strongest relation, wherever it was seen), newest first.
+/// A link notice (studio 0.64) is not a response (spec 0.4 §15.5), so it
+/// isn't listed: the Mentions screen lists notices apart.
 pub fn response_rows(
     network: &[Response],
     mentions: &[Mention],
@@ -84,7 +89,10 @@ pub fn response_rows(
 ) -> Vec<ResponseRow> {
     let mut rows: Vec<ResponseRow> = Vec::new();
     for m in mentions.iter().filter(|m| {
-        m.status == "verified" && !m.hidden && m.target_item_id.eq_ignore_ascii_case(target_id)
+        m.status == "verified"
+            && !m.hidden
+            && !blyg_core::outbound::is_link_notice(m.relation.as_deref())
+            && m.target_item_id.eq_ignore_ascii_case(target_id)
     }) {
         let origin = m.source_origin.clone().unwrap_or_else(|| m.source.clone());
         let when = m
@@ -300,6 +308,20 @@ mod tests {
             assert!(!words.chars().any(|c| c.is_ascii_digit()), "{words}");
         }
         assert!(response_rows(&[], &[], "x", now).is_empty());
+    }
+
+    #[test]
+    fn a_link_notice_is_never_a_response() {
+        let now = chrono::Utc::now();
+        let mentions = vec![
+            mention("m1", "01OWN", "link", "verified", false, 1),
+            mention("m2", "01OWN", "stub", "verified", false, 2),
+        ];
+        let rows = response_rows(&[], &mentions, "01own", now);
+        let got: Vec<&str> = rows.iter().map(|r| r.what).collect();
+        assert_eq!(got, ["replied to this"]);
+        assert!(response_rows(&[], &mentions[..1], "01own", now).is_empty());
+        assert_eq!(super::mention_what(Some("link")), "linked to this");
     }
 
     #[test]

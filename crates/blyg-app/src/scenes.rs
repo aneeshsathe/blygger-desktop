@@ -275,6 +275,10 @@ scenes! {
         RdTangle = "rd-tangle",
         RdTanglePreview = "rd-tangle-preview",
     }
+    /// reading/demo.rs: studio 0.64 link notices on Responses
+    Reading {
+        RdLinkedFrom = "rd-linked-from",
+    }
 }
 
 impl Scene {

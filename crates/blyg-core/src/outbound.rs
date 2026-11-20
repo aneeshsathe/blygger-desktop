@@ -7,7 +7,8 @@
 //!   (contract 5.2). Burrow shows no count from it: responses are a list,
 //!   never a number, so the summary only says whether a side is empty.
 //! - `GET /api/mention-groups`: the posts that have responses, newest
-//!   first (contract 5.2).
+//!   first (contract 5.2). Since 5.13 a group also says how many of its
+//!   mentions are link notices (`links`).
 //! - `GET /api/mentions/{id}/source`: whether a response's source post is
 //!   held here (`holder`, so you can stub back) or its blyg subscribed.
 
@@ -25,7 +26,8 @@ pub struct OutboundMention {
     pub item_id: String,
     /// The version of your post that sent it.
     pub version: u32,
-    /// The target post's version, when it's a blyg post.
+    /// The target post's version, when it's a blyg post. Always `None` for
+    /// a link (studio 0.64): a link names a page, not a version.
     pub target_version: Option<u32>,
     /// The page your post links to.
     pub target: String,
@@ -79,11 +81,33 @@ pub struct MentionSummary {
 #[serde(rename_all = "camelCase", default)]
 pub struct MentionGroup {
     pub target_item_id: String,
+    /// Every verified or gone mention, link notices included.
     pub total: u64,
+    /// The verified, unhidden responses the public page shows now; never
+    /// a link notice.
     pub visible: u64,
+    /// Verified link notices (contract 5.13, studio 0.64). Absent before,
+    /// read as 0: older studios had no notices.
+    pub links: u64,
     pub verified_at: String,
     pub last_seen: String,
     pub first_id: String,
+}
+
+impl MentionGroup {
+    /// The responses, without the link notices (Studio's counts line says
+    /// `total - links`).
+    pub fn responses(&self) -> u64 {
+        self.total.saturating_sub(self.links)
+    }
+}
+
+/// A mention's relation is a link notice (studio 0.64, spec 0.4 §15.5):
+/// another blyg's post links to yours with `[[id]]`. A notice is never a
+/// response: it is never listed among a post's responses and never counted
+/// in `visible`.
+pub fn is_link_notice(relation: Option<&str>) -> bool {
+    relation == Some("link")
 }
 
 /// `GET /api/mentions/{id}/source`: where a response came from, as this
@@ -158,6 +182,44 @@ mod tests {
             MentionSource::parse(&json!({"holder": null, "subscription": null})),
             MentionSource::default()
         );
+    }
+
+    #[test]
+    fn groups_read_links_and_older_studios_have_none() {
+        let g: MentionGroup = serde_json::from_value(json!({
+            "targetItemId": "it1", "total": 3, "visible": 1, "links": 2,
+            "verifiedAt": "2030-01-01T00:00:00Z", "lastSeen": "2030-01-01T00:00:00Z",
+            "firstId": "m1"
+        }))
+        .unwrap();
+        assert_eq!((g.links, g.responses(), g.visible), (2, 1, 1));
+        // Before contract 5.13 there's no `links`: every mention responds.
+        let old: MentionGroup =
+            serde_json::from_value(json!({"targetItemId": "it1", "total": 2, "visible": 2}))
+                .unwrap();
+        assert_eq!((old.links, old.responses()), (0, 2));
+        assert!(is_link_notice(Some("link")));
+        for r in [
+            None,
+            Some("stub"),
+            Some("transclusion"),
+            Some("fork"),
+            Some("source"),
+        ] {
+            assert!(!is_link_notice(r), "{r:?}");
+        }
+    }
+
+    #[test]
+    fn a_link_names_a_page_not_a_version() {
+        let o: OutboundMention = serde_json::from_value(json!({
+            "id": "o2", "itemId": "it1", "version": 1, "targetVersion": null,
+            "target": "https://lin.example.org/f/x/", "status": "pending",
+            "attempts": 0, "created": "2030-01-01T00:00:00Z"
+        }))
+        .unwrap();
+        assert_eq!(o.target_version, None);
+        assert_eq!(o.detail(), "not tried yet");
     }
 
     #[test]

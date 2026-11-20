@@ -461,7 +461,9 @@ impl MainView {
                 self.toggle_versions(window, cx);
             }
             (Scene::RdPin, 2) => self.ask_pin(window, cx),
-            (Scene::RdMentions, 0) => self.show_view(View::Mentions, window, cx),
+            (Scene::RdMentions, 0) | (Scene::RdLinkedFrom, 0) => {
+                self.show_view(View::Mentions, window, cx)
+            }
             (Scene::RdSubs, 0) => self.show_view(View::Subscriptions, window, cx),
             // --- discover --- the sheet over Subscriptions, the second row
             // picked (the fake's sample directory, no network).
