@@ -140,6 +140,7 @@ fn action_namespaces() {
 #[test]
 fn env_var_names() {
     const NAMES: &[&str] = &[
+        "BLYGGER_REDUCE_MOTION",
         "BLYGGER_BROWSER_EPHEMERAL",
         "BLYGGER_BROWSER_TEARDOWN_MS",
         "BLYGGER_DATA_DIR",
