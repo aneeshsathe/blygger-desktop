@@ -1,5 +1,6 @@
 //! No personal data in the repo (it's public, and history can't be taken
-//! back): every file git tracks is scanned for
+//! back): every file git tracks, or would add (untracked, not ignored), is
+//! scanned for
 //!
 //! - home folders: `/Users/<name>`, `C:\Users\<name>`;
 //! - email addresses, other than at reserved example domains and GitHub's
@@ -240,12 +241,19 @@ fn scan(path: &str, text: &str, allow: &Allow) -> Vec<(Kind, String)> {
 /// content only).
 const NOT_SCANNED: &[&str] = &["docs/screenshots/", "docs/prototype/"];
 
-/// The files git lists under `root`; `None` without git or a checkout.
+/// The files git lists under `root`, tracked or not yet added (but not
+/// ignored); `None` without git or a checkout.
 fn files_to_scan(root: &Path) -> Option<Vec<String>> {
     let out = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["ls-files", "-z"])
+        .args([
+            "ls-files",
+            "-z",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
         .output()
         .ok()
         .filter(|o| o.status.success())?;
@@ -267,7 +275,7 @@ fn allowlist() -> Allow {
 }
 
 #[test]
-fn no_personal_data_in_tracked_files() {
+fn no_personal_data_in_the_repo() {
     let Some(files) = files_to_scan(&root()) else {
         eprintln!("skipped: no git checkout");
         return;
@@ -291,7 +299,7 @@ fn no_personal_data_in_tracked_files() {
     }
     assert!(
         bad.is_empty(),
-        "personal data in tracked files (tests/it/personal_data.rs). Use invented \
+        "personal data in the repo's files (tests/it/personal_data.rs). Use invented \
          values (blyg.example.com, someone@example.com); list an invented one that \
          has to stay in tests/fixtures/personal-data-allow.txt:\n  {}",
         bad.join("\n  ")
