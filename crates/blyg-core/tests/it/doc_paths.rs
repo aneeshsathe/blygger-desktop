@@ -77,8 +77,17 @@ fn docs(paths: &BTreeSet<String>) -> Vec<String> {
         .collect()
 }
 
-/// Inline code spans on each line outside fenced blocks: (line number, line, span).
-fn spans(text: &str) -> Vec<(usize, &str, &str)> {
+/// An inline code span, with its line number and whether the
+/// `(other repo: …)` marker exempts it.
+#[derive(Debug, PartialEq)]
+struct Span<'a> {
+    line: usize,
+    code: &'a str,
+    other_repo: bool,
+}
+
+/// Inline code spans on each line outside fenced blocks.
+fn spans(text: &str) -> Vec<Span<'_>> {
     let mut out = Vec::new();
     let mut fenced = false;
     for (i, line) in text.lines().enumerate() {
@@ -92,7 +101,12 @@ fn spans(text: &str) -> Vec<(usize, &str, &str)> {
         let mut parts = line.split('`');
         parts.next();
         while let (Some(code), Some(_)) = (parts.next(), parts.next()) {
-            out.push((i + 1, line, code));
+            let other_repo = line.contains(OTHER_REPO);
+            out.push(Span {
+                line: i + 1,
+                code,
+                other_repo,
+            });
         }
         // An unclosed span's text is dropped by the pairing above.
     }
@@ -159,12 +173,17 @@ fn every_path_a_dev_doc_names_exists() {
     let mut missing = Vec::new();
     for doc in docs(&paths) {
         let text = std::fs::read_to_string(root().join(&doc)).expect("doc reads");
-        for (n, line, span) in spans(&text) {
-            if line.contains(OTHER_REPO) || !is_path(span, &top_level) {
+        for Span {
+            line,
+            code,
+            other_repo,
+        } in spans(&text)
+        {
+            if other_repo || !is_path(code, &top_level) {
                 continue;
             }
-            if !resolves(span, &doc, &paths) && !ignored(span) {
-                missing.push(format!("{doc}:{n}: `{span}`"));
+            if !resolves(code, &doc, &paths) && !ignored(code) {
+                missing.push(format!("{doc}:{line}: `{code}`"));
             }
         }
     }
@@ -228,4 +247,32 @@ fn a_path_resolves_from_the_root_the_doc_or_as_a_tail() {
         "a tail starts at a /"
     );
     assert!(!resolves("crates/blyg-core/tests/it/e2e.rs", doc, &paths));
+}
+
+#[test]
+fn the_marker_exempts_only_the_span_it_follows() {
+    let exempt = |text| -> Vec<(&str, bool)> {
+        spans(text)
+            .into_iter()
+            .map(|s| (s.code, s.other_repo))
+            .collect()
+    };
+    assert_eq!(
+        exempt("Check `crates/a.rs` against `feeds/` (other repo: spec)."),
+        [("crates/a.rs", false), ("feeds/", true)]
+    );
+    assert_eq!(
+        exempt("an adapter (`schemas/A.md`) (other repo: spec) and `b/c.rs`"),
+        [("schemas/A.md", true), ("b/c.rs", false)]
+    );
+    assert_eq!(
+        exempt("`a/b.md`, then words, then (other repo: spec)"),
+        [("a/b.md", false)],
+        "words between the span and the marker break the link"
+    );
+    assert_eq!(
+        exempt("mark it with `(other repo: <name>)` after `a/b.md`"),
+        [("(other repo: <name>)", false), ("a/b.md", false)],
+        "a marker inside a code span is an example, not a marker"
+    );
 }
