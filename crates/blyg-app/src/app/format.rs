@@ -154,15 +154,42 @@ pub fn emphasis(text: &str, from: usize, to: usize, kind: Emphasis) -> FormatEdi
 /// `formulaEdit`: the selection between dollars, or an empty pair with the
 /// caret inside. A selection over a line break is displayed (`$$…$$`); a
 /// word or two is inline.
+///
+/// Displayed maths goes on lines of its own: `$$`, the formula, `$$`, with
+/// the selection's surrounding breaks and spaces kept outside it, so a
+/// line picked with ⇧↓ keeps the text after it (user testing, R4; the
+/// studio's `formulaEdit` writes `$$…$$` inline and takes the break in).
 pub fn formula_edit(text: &str, from: usize, to: usize) -> FormatEdit {
     let picked = &text[from..to];
-    let mark = if picked.contains('\n') { "$$" } else { "$" };
     let inner = picked.trim();
-    let start = from + mark.len();
+    if !picked.contains('\n') || inner.is_empty() {
+        let mark = if picked.contains('\n') { "$$" } else { "$" };
+        let start = from + mark.len();
+        return FormatEdit {
+            from,
+            to,
+            insert: format!("{mark}{inner}{mark}"),
+            start,
+            end: start + inner.len(),
+        };
+    }
+    let a = from + (picked.len() - picked.trim_start().len());
+    let b = to - (picked.len() - picked.trim_end().len());
+    let before = if a == 0 || text[..a].ends_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    let after = if b == text.len() || text[b..].starts_with('\n') {
+        ""
+    } else {
+        "\n"
+    };
+    let start = a + before.len() + "$$\n".len();
     FormatEdit {
-        from,
-        to,
-        insert: format!("{mark}{inner}{mark}"),
+        from: a,
+        to: b,
+        insert: format!("{before}$$\n{inner}\n$${after}"),
         start,
         end: start + inner.len(),
     }
