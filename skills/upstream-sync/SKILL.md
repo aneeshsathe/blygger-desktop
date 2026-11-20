@@ -40,6 +40,20 @@ needs server, route or header changes.
 
 ## In Burrow
 
+Start with the contract, then tests, then code:
+
+1. Copy the new studio's `openapi.json` over
+   `crates/blyg-core/tests/fixtures/openapi-current.json` and move `[target]`
+   in `contract-coverage.toml` beside it (studio and contract version; the
+   test `the_vendored_contract_is_the_targets` names the docs that quote the
+   pair).
+2. `cargo test -p blyg-core --test it contract_coverage` lists every new
+   operation, property, enum value, parameter and header no test names.
+   Write those tests (e2e against the new studio, `real-server-testing`) and
+   commit them red; exempt what Burrow won't use, with a reason; mark what a
+   work package is building `pending`.
+3. Then build, until they pass.
+
 - Rendering parity: regenerate the fixtures with
   `node crates/blyg-render/tests/fixtures/gen_parity.mjs <studio dir>` (in a
   scratch copy with `npm ci`), drop any bug emulation upstream has fixed, and
