@@ -347,6 +347,19 @@ impl MainView {
             // WebView: MathML redrawn from each formula's TeX).
             (Scene::RdMaths, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdMaths, 1) => open(self, crate::fake::maths_seed::ADA_MATHS, window, cx),
+            // Reply to Ada's maths post, then select her first paragraph,
+            // formula and all: the note that a passage can't take one in.
+            (Scene::RdMathsQuote, 0) => {
+                self.show_view(View::Reading, window, cx);
+                open(self, crate::fake::maths_seed::ADA_MATHS, window, cx);
+            }
+            (Scene::RdMathsQuote, 1) => {
+                if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
+                    self.item_action(item, "Reply", window, cx);
+                }
+                self.stub_choose_passage(window, cx);
+            }
+            (Scene::RdMathsQuote, 2) => self.studio_demo_select_paragraph(),
             // A draft with formulas in the full editor's preview, one that
             // doesn't parse shown red.
             (Scene::RdMathsPreview, 0) => {
@@ -357,6 +370,16 @@ impl MainView {
                     self.open(&id, window, cx);
                 }
                 self.studio_set_view(crate::app::studio::ViewMode::Studio, cx);
+            }
+            // --- render --- a thread with labelled, nested and partial
+            // quotes and comments to self, source beside its preview.
+            (Scene::RdProvenance, 0) => {
+                if let Some(id) = crate::fake::render_seed::seed(self.backend.as_ref()) {
+                    let results = self.backend.search("");
+                    self.list.refresh(results);
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(crate::app::studio::ViewMode::Split, cx);
             }
             // The list with an edited post open: notes + pinned diff.
             (Scene::RdReading, 0) => self.show_view(View::Reading, window, cx),
@@ -584,6 +607,33 @@ impl MainView {
             ) => self.browse_demo(s, n, window, cx),
             // --- background --- a thread's "+N parts" (studio 0.64).
             (Scene::RdBurst, n) => self.burst_demo(n, window, cx),
+            // The burst rule turned off (what Settings' chip calls), then
+            // Lin's first part opened from the main list.
+            (Scene::RdBackgroundRuleOff, 0) => {
+                self.show_view(View::Reading, window, cx);
+                self.background_rules_refresh(cx);
+            }
+            (Scene::RdBackgroundRuleOff, 1) => {
+                self.save_background_rule(blyg_core::background::BURST, false, cx)
+            }
+            (Scene::RdStreamBurst, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamBurst, 1) => {
+                let thread = crate::fake::background_seed::thread_key();
+                if let Some(ix) = self.reading.shown_pos(&thread) {
+                    for _ in 0..=ix {
+                        self.stream_move(1, window, cx);
+                    }
+                }
+            }
+            (Scene::RdBackgroundRuleOff, 2) => {
+                let part = (
+                    blyg_core::SubId::from("sub-lin"),
+                    blyg_core::RemoteId::from(crate::fake::background_seed::LIN_PART_1),
+                );
+                if self.reading.shown_pos(&part).is_some() {
+                    self.open_reading(part, window, cx);
+                }
+            }
             _ => {}
         }
         if n == 2 {

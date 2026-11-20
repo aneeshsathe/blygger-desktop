@@ -21,36 +21,11 @@ const PENDING: &[(&str, &str)] = &[
     // placeholders as a linked span (studio `read-api.ts` previewTangles).
 ];
 
-/// Studio changes since 0.49.1 that this crate has not followed yet and no
-/// package in the 0.64.1 cohort owns. Expected to fail; each passing entry
-/// must go. `docs/RENDER.md` ("Studio 0.64.1") describes each.
-const TO_ADOPT: &[(&str, &str)] = &[
-    // A labelled quote's provenance line takes the label as its anchor and
-    // keeps the old anchor beside it: `<a>label ↗</a> · fragment · snapshot
-    // of vN` (decision #81, studio `pages.ts` labelledProvenance).
-    ("label_directive_forms", "labelled provenance line"),
-    ("label_directive_in_code", "labelled provenance line"),
-    ("label_directive_partial", "labelled provenance line"),
-    ("label_directive_quote", "labelled provenance line"),
-    ("label_directive_remote", "labelled provenance line"),
-    ("label_tk_output_directive", "labelled provenance line"),
-    // A quote nested inside a quote gets its own `p.provenance.nested`
-    // line (studio 0.49 `injectNestedProvenance`, now in the preview).
-    ("tr_found_local_thread", "nested provenance"),
-    ("tr_provenance_order", "nested provenance"),
-    // A partial quote's `>` run takes lazy continuation lines, as publish
-    // does (`directives.ts` attachedQuote).
-    (
-        "tr_partial_unknown_consumes",
-        "lazy continuation in a partial quote",
-    ),
-    // A generated block's HTML in a thread preview is sanitized like the
-    // rest (`previewTransclusions` sanitizes `blockReplacements`).
-    ("tr_sanitize_tk_block", "generated blocks sanitized"),
-    // Comments to self (`/* … */`) are left out of the preview
-    // (`comments.ts` previewComments).
-    ("comment_to_self", "comments to self"),
-];
+/// Studio changes this crate has not followed yet. Expected to fail; each
+/// passing entry must go. Empty since the 0.64.1 re-sync adopted labelled
+/// and nested provenance, lazy continuation, sanitized generated blocks and
+/// comments to self (`docs/RENDER.md`, "Studio 0.64.1").
+const TO_ADOPT: &[(&str, &str)] = &[];
 
 /// Where protocol 0.4's fifteenth revision (decision #102, 2026-11-12)
 /// differs from the fixtures (stock studio), the expected output is
