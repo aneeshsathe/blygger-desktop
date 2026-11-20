@@ -15,6 +15,10 @@
 //! Only the crates in [`NETWORK`] may depend on an HTTP client: a new
 //! network caller anywhere else fails here, so it gets looked at.
 //!
+//! Every crate but blyg-app forbids unsafe code at each crate root (its
+//! lib and bins): `#![forbid(unsafe_code)]`, which no `expect` or `allow`
+//! further in can undo. blyg-app's platform glue is the only unsafe code.
+//!
 //! Every crate also takes the shared lint config: its own `clippy.toml`
 //! (clippy reads the bans per crate, so a crate without one has none) and
 //! `[lints] workspace = true` (the root's `[workspace.lints]`). Every crate
@@ -224,6 +228,55 @@ fn every_crate_takes_the_lint_config() {
     assert!(
         bad.is_empty(),
         "lint config missing (tests/it/crate_graph.rs):\n  {}",
+        bad.join("\n  ")
+    );
+}
+
+/// The crates whose unsafe code is reviewed item by item (`expect`), not
+/// forbidden.
+const UNSAFE_ALLOWED: &[&str] = &["blyg-app"];
+
+/// Each lib or bin root, outside [`UNSAFE_ALLOWED`], without
+/// `#![forbid(unsafe_code)]`.
+fn unforbidden_roots(m: &Value) -> Vec<String> {
+    let root = Path::new(m["workspace_root"].as_str().unwrap());
+    let mut bad = Vec::new();
+    for p in m["packages"].as_array().unwrap() {
+        let name = p["name"].as_str().unwrap();
+        if UNSAFE_ALLOWED.contains(&name) {
+            continue;
+        }
+        for t in p["targets"].as_array().unwrap() {
+            let kinds: Vec<&str> = t["kind"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|k| k.as_str().unwrap())
+                .collect();
+            if !kinds
+                .iter()
+                .any(|k| matches!(*k, "lib" | "bin" | "proc-macro"))
+            {
+                continue;
+            }
+            let src = Path::new(t["src_path"].as_str().unwrap());
+            let text = std::fs::read_to_string(src).unwrap();
+            if !text.lines().any(|l| l.trim() == "#![forbid(unsafe_code)]") {
+                let shown = src.strip_prefix(root).unwrap_or(src);
+                bad.push(format!("{name}: {}", shown.display()));
+            }
+        }
+    }
+    bad
+}
+
+#[test]
+fn crate_roots_forbid_unsafe_code() {
+    let bad = unforbidden_roots(&metadata());
+    assert!(
+        bad.is_empty(),
+        "crate roots without #![forbid(unsafe_code)] (tests/it/crate_graph.rs; only {} may have unsafe code):\n  {}",
+        UNSAFE_ALLOWED.join(", "),
         bad.join("\n  ")
     );
 }
