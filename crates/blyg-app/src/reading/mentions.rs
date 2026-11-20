@@ -407,10 +407,10 @@ impl MainView {
 /// The one control's label: what it decides.
 const ON_PAGE: &str = "On the post's page:";
 
-/// The heading over a post's link notices, and what they are (Studio's
-/// words).
+/// The heading over a post's link notices, and who sees them (Studio says
+/// "notices, never shown on the page"; this says it plainly).
 const LINKED_FROM: &str = "Linked from";
-const NOTICES: &str = "notices, never shown on the page";
+const NOTICES: &str = "only you see these";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).
