@@ -3,6 +3,8 @@
 //! too), and running it with the prompt on stdin, streaming stdout lines,
 //! killing the child when the cancel flag is set.
 
+#![expect(clippy::disallowed_types, reason = "the CLI providers' shared runner")]
+
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};

@@ -3,6 +3,8 @@
 //! through the real host and over raw stdio, `+ext` with a wrong name, and
 //! `+list-extensions`.
 
+#![expect(clippy::disallowed_types, reason = "tests run the real blygger binary")]
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};

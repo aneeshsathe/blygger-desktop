@@ -16,6 +16,11 @@
 //! Not `--bare`: bare mode ignores the subscription login, which is the
 //! point of this bridge.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "this provider is the claude CLI: it runs it"
+)]
+
 use std::process::Command;
 
 use serde_json::Value;

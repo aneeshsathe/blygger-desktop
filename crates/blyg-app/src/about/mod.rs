@@ -202,6 +202,7 @@ pub fn macos_version() -> &'static str {
 
 /// Finder (Explorer on Windows), with `path` selected (or its folder, if it
 /// doesn't exist yet).
+#[expect(clippy::disallowed_types, reason = "Finder or Explorer shows the file")]
 fn reveal(path: &Path) {
     if cfg!(target_os = "windows") {
         let mut cmd = std::process::Command::new("explorer.exe");

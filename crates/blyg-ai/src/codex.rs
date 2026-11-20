@@ -14,6 +14,11 @@
 //! Codex has no system-prompt flag, so the system prompt is prepended to
 //! the stdin prompt under a heading.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "this provider is the codex CLI: it runs it"
+)]
+
 use std::collections::HashMap;
 use std::process::Command;
 

@@ -1,6 +1,11 @@
 //! The crate's integration tests in one binary (one link instead of one
 //! per file): one module per suite.
 
+#![expect(
+    clippy::disallowed_types,
+    reason = "tests run git, cargo, scripts and the e2e studio"
+)]
+
 #[path = "../common/mod.rs"]
 mod common;
 

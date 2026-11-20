@@ -39,6 +39,10 @@ enum Job {
 /// Run `blygger +convert-blocklists` (this same executable) so the
 /// conversion's memory goes back to the system when it exits; in-process if
 /// the child can't be started.
+#[expect(
+    clippy::disallowed_types,
+    reason = "block lists compile in a child process (blygger +convert)"
+)]
 fn convert_in_child(
     data_dir: &Path,
     out: &Path,

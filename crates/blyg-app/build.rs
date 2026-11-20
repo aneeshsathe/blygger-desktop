@@ -20,6 +20,10 @@
 
 // A build script reads Cargo's variables; the app's own go through `dev_flags`.
 #![allow(clippy::disallowed_methods)]
+#![expect(
+    clippy::disallowed_types,
+    reason = "a build script asks git for the commit it embeds"
+)]
 
 #[path = "build_forwarding.rs"]
 mod forwarding;
