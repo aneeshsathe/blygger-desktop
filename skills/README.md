@@ -40,6 +40,7 @@ what earlier ones learned.
 | `client-security` | remote content, network calls, tokens, `innerHTML` |
 | `conformance-run` | rendering, parsing, order or wire-format changes |
 | `upstream-sync` | a new studio release or spec revision |
+| `user-testing-pass` | an update's features are merged: agents act as users and report pain points before the release |
 
 ## Writing one
 
