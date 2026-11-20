@@ -36,6 +36,12 @@ pub mod discover_seed;
 // --- tangle --- `![[+ …]]` answered as studio 0.63 does
 #[path = "fake_tangle.rs"]
 pub mod tangle_seed;
+// --- background --- (studio 0.64's rules and "+N parts")
+#[path = "fake_background.rs"]
+pub mod background_seed;
+// --- maths ---
+#[path = "fake_maths.rs"]
+pub mod maths_seed;
 
 type Sink = Arc<dyn Fn(CoreEvent) + Send + Sync>;
 
@@ -198,14 +204,14 @@ struct State {
     shelf_reading: Vec<blyg_core::shelf::Entry>,
     /// --- background --- the sample blyg serves Background (studio 0.61):
     /// the owner's choices in order (key, withdrawn, placement), the blygs
-    /// moved there, and the minor-change rule.
+    /// moved there, and the rules (rule → on).
     bg_choices: Vec<(
         blyg_core::background::Key,
         bool,
         Option<blyg_core::background::Placement>,
     )>,
     bg_blygs: Vec<SubId>,
-    bg_minor: bool,
+    bg_rules: Vec<(String, bool)>,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
     trail_seq: u64,
@@ -325,7 +331,9 @@ impl FakeBackend {
                 "Marginalia were comment threads before paper had a word for it.",
             ),
         ];
-        let rd = reading_seed::seed(now);
+        let mut rd = reading_seed::seed(now);
+        rd.reading.extend(background_seed::rows(now)); // --- background ---
+        maths_seed::add(&mut rd, now); // --- maths ---
         let mut items = Vec::new();
         let mut versions = HashMap::new();
         for (id, kind, status, version, age, body) in seed {
@@ -404,7 +412,7 @@ impl FakeBackend {
                 shelf_reading: Vec::new(),
                 bg_choices: Vec::new(), // --- background ---
                 bg_blygs: Vec::new(),
-                bg_minor: true,
+                bg_rules: background_seed::rules(),
                 trails: Vec::new(), // --- trails ---
                 trail_seq: 0,
                 access_ai: access_ai_seed::Seed::default(), // --- access-ai ---
@@ -2706,7 +2714,7 @@ impl Backend for FakeBackend {
         }
         let mut rows = self.background_reading();
         rows.extend(self.reading());
-        let (blygs, choices, own_withdrawn) = {
+        let (blygs, choices, own_withdrawn, rules) = {
             let st = self.lock();
             let own: Vec<blyg_core::background::Key> = st
                 .items
@@ -2720,7 +2728,12 @@ impl Backend for FakeBackend {
                     )
                 })
                 .collect();
-            (st.bg_blygs.clone(), st.bg_choices.clone(), own)
+            (
+                st.bg_blygs.clone(),
+                st.bg_choices.clone(),
+                own,
+                st.bg_rules.clone(),
+            )
         };
         let mut set = BackgroundSet::default();
         let mut seen = std::collections::HashSet::new();
@@ -2739,6 +2752,12 @@ impl Backend for FakeBackend {
                         ..Default::default()
                     },
                 ));
+            }
+        }
+        // Studio 0.64's rules: a burst's parts, wordless, maintenance.
+        for (key, e) in background_seed::entries(&rules) {
+            if seen.insert(key.clone()) {
+                set.entries.push((key, e));
             }
         }
         for sub in &blygs {
@@ -2774,9 +2793,8 @@ impl Backend for FakeBackend {
     }
 
     fn background_rules(&self) -> Result<Option<blyg_core::background::BackgroundRules>> {
-        let on = self.lock().bg_minor;
         Ok(Some(blyg_core::background::BackgroundRules {
-            rules: vec![("minor".into(), on)],
+            rules: self.lock().bg_rules.clone(),
         }))
     }
 
@@ -2786,8 +2804,8 @@ impl Backend for FakeBackend {
         on: bool,
     ) -> Result<blyg_core::background::BackgroundRules> {
         self.remote_guard()?;
-        if rule == "minor" {
-            self.lock().bg_minor = on;
+        if let Some(r) = self.lock().bg_rules.iter_mut().find(|(r, _)| r == rule) {
+            r.1 = on;
         }
         Ok(self.background_rules()?.unwrap_or_default())
     }

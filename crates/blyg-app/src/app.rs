@@ -261,6 +261,8 @@ enum Mode {
 mod publish;
 mod upload;
 mod writing;
+// --- format --- bold, italic and formulas
+pub(crate) mod format;
 
 /// --- sheets --- one main-window sheet at a time; each kind in `sheet/`.
 #[path = "sheet/mod.rs"]
@@ -1001,6 +1003,7 @@ impl Render for MainView {
             .map(|d| self.ext_actions(d, cx)) // --- extensions ---
             .map(|d| self.switcher_actions(d, cx)) // --- blyg switcher ---
             .map(|d| self.shelf_actions(d, cx)) // --- shelf ---
+            .map(|d| self.format_actions(d, cx)) // --- format ---
             .map(|d| self.access_actions(d, cx)) // --- access-ai ---
             .map(|d| self.server_ai_actions(d, cx)) // --- access-ai ---
             .map(|d| self.note_ai_actions(d, cx)) // --- access-ai ---

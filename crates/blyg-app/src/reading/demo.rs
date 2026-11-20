@@ -343,6 +343,21 @@ impl MainView {
             // New Folder…
             (Scene::RdNewFolder, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdNewFolder, 1) => self.open_folder_sheet(None, None, window, cx),
+            // --- maths --- Ada's post with formulas, in the reader (the
+            // WebView: MathML redrawn from each formula's TeX).
+            (Scene::RdMaths, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdMaths, 1) => open(self, crate::fake::maths_seed::ADA_MATHS, window, cx),
+            // A draft with formulas in the full editor's preview, one that
+            // doesn't parse shown red.
+            (Scene::RdMathsPreview, 0) => {
+                let md = crate::fake::maths_seed::DRAFT_MATHS;
+                if let Ok(id) = self.backend.create_draft(blyg_core::Kind::Fragment, md) {
+                    let results = self.backend.search("");
+                    self.list.refresh(results);
+                    self.open(&id, window, cx);
+                }
+                self.studio_set_view(crate::app::studio::ViewMode::Studio, cx);
+            }
             // The list with an edited post open: notes + pinned diff.
             (Scene::RdReading, 0) => self.show_view(View::Reading, window, cx),
             (Scene::RdReading, 1) => open(self, RUE_TRUST, window, cx),
@@ -461,7 +476,9 @@ impl MainView {
                 self.toggle_versions(window, cx);
             }
             (Scene::RdPin, 2) => self.ask_pin(window, cx),
-            (Scene::RdMentions, 0) => self.show_view(View::Mentions, window, cx),
+            (Scene::RdMentions, 0) | (Scene::RdLinkedFrom, 0) => {
+                self.show_view(View::Mentions, window, cx)
+            }
             (Scene::RdSubs, 0) => self.show_view(View::Subscriptions, window, cx),
             // --- discover --- the sheet over Subscriptions, the second row
             // picked (the fake's sample directory, no network).
@@ -565,6 +582,8 @@ impl MainView {
                 | Scene::RdStreamNested),
                 n,
             ) => self.browse_demo(s, n, window, cx),
+            // --- background --- a thread's "+N parts" (studio 0.64).
+            (Scene::RdBurst, n) => self.burst_demo(n, window, cx),
             _ => {}
         }
         if n == 2 {

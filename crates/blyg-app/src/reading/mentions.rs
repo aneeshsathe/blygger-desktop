@@ -77,6 +77,9 @@ impl MainView {
         for (title, _, show, rows) in self.mention_groups() {
             out.push(format!("On “{title}”"));
             out.push(show.label());
+            if rows.iter().any(|r| r.notice) {
+                out.extend([LINKED_FROM.to_string(), NOTICES.to_string()]);
+            }
             for r in rows {
                 out.extend([r.who, r.origin, r.relation, r.when]);
                 out.push(if r.hidden { "Unhide" } else { "Hide" }.into());
@@ -86,7 +89,7 @@ impl MainView {
     }
 
     fn mentions_hint(&self) -> String {
-        "who quoted, replied to or forked your posts · esc back".into()
+        "who quoted, replied to, forked or linked to your posts · esc back".into()
     }
 
     fn hide_mention(&mut self, id: String, hidden: bool, cx: &mut Context<Self>) {
@@ -225,9 +228,7 @@ impl MainView {
                                                 )
                                             }),
                                     )
-                                    .children(
-                                        rows.into_iter().map(|r| self.render_mention_row(r, cx)),
-                                    )
+                                    .children(self.render_group_rows(gi, rows, cx))
                             },
                         ))
                         .into_any_element()
@@ -291,6 +292,45 @@ impl MainView {
                     }),
             )
             .into_any_element()
+    }
+
+    /// A post's rows: its responses, then its link notices under "Linked
+    /// from" (Studio's responses page: a notice is never one of the page's
+    /// responses, so it's listed apart).
+    fn render_group_rows(
+        &self,
+        gi: usize,
+        rows: Vec<MentionRow>,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
+        let p = self.palette.on_page();
+        let mut out = Vec::with_capacity(rows.len() + 1);
+        let mut headed = false;
+        for r in rows {
+            if r.notice && !headed {
+                headed = true;
+                out.push(
+                    div()
+                        .id(SharedString::from(format!("linked-from-{gi}")))
+                        .debug_selector(move || format!("linked-from-{gi}"))
+                        .flex()
+                        .items_baseline()
+                        .gap(px(6.))
+                        .pt(px(8.))
+                        .pb(px(2.))
+                        .child(div().font_weight(FontWeight::MEDIUM).child(LINKED_FROM))
+                        .child(
+                            div()
+                                .text_size(px(11.5))
+                                .text_color(p.muted)
+                                .child(format!("· {NOTICES}")),
+                        )
+                        .into_any_element(),
+                );
+            }
+            out.push(self.render_mention_row(r, cx));
+        }
+        out
     }
 
     fn render_mention_row(&self, r: MentionRow, cx: &mut Context<Self>) -> AnyElement {
@@ -366,6 +406,11 @@ impl MainView {
 
 /// The one control's label: what it decides.
 const ON_PAGE: &str = "On the post's page:";
+
+/// The heading over a post's link notices, and what they are (Studio's
+/// words).
+const LINKED_FROM: &str = "Linked from";
+const NOTICES: &str = "notices, never shown on the page";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).

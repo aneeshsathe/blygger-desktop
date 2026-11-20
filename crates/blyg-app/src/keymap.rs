@@ -78,6 +78,8 @@ use crate::app::notes::{QuoteToDraft, ToggleNotes};
 use crate::app::extensions::ShowExtensions;
 // --- shelf ---
 use crate::app::shelf::{ShowShelf, ToggleShelf};
+// --- format ---
+use crate::app::format::{FormatBold, FormatItalic, InsertFormula};
 // --- access-ai ---
 use crate::app::access::ShowClientAccess;
 use crate::app::note_ai::DraftChangeNote;
@@ -304,6 +306,31 @@ pub fn mac_table() -> Vec<Keybind> {
             "Edit › Spelling › Check Spelling While Typing"
         ),
         // --- end composer ---
+        // --- format --- (studio `format-shortcuts.ts`; ⌘B is the Shelf and
+        // ⌘I the Profile, so the studio's ⌘B / ⌘I are ⌃⌘B / ⌃⌘I here, and
+        // the Σ button is ⌃⌘M. Alt+B, Alt+I, Alt+M on Windows.)
+        kb!(
+            "ctrl-cmd-b",
+            MainInput,
+            FormatBold,
+            "Bold: **the selection** (again: plain)",
+            Some("Edit › Format › Bold")
+        ),
+        kb!(
+            "ctrl-cmd-i",
+            MainInput,
+            FormatItalic,
+            "Italic: *the selection* (again: plain)",
+            Some("Edit › Format › Italic")
+        ),
+        kb!(
+            "ctrl-cmd-m",
+            MainInput,
+            InsertFormula,
+            "Formula: LaTeX between dollars, $x^2$ inline, $$…$$ on its own lines",
+            Some("Edit › Format › Formula")
+        ),
+        // --- end format ---
         kb!(
             "cmd-o",
             Main,
@@ -1297,6 +1324,10 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     ("alt-cmd-1", "alt-1"),
     ("alt-cmd-2", "alt-2"),
     ("alt-cmd-s", "alt-s"),
+    // --- format --- Ctrl+B is the Shelf there; Alt alone, as above.
+    ("ctrl-cmd-b", "alt-b"),
+    ("ctrl-cmd-i", "alt-i"),
+    ("ctrl-cmd-m", "alt-m"),
     // BLYGGER_FAKE's two (Polish ó and ć): function keys type nothing.
     ("ctrl-alt-cmd-o", "ctrl-shift-f11"),
     ("ctrl-alt-cmd-c", "ctrl-shift-f12"),

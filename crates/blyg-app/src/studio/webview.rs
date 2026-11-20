@@ -72,6 +72,9 @@ pub struct StubPick {
     pub index: usize,
     /// The selection's text, as the page gives it (not yet normalized).
     pub text: String,
+    /// --- maths --- The selection takes in part of a formula, which a
+    /// passage can't (studio 0.62, `acrossFormula`): nothing to quote.
+    pub across_formula: bool,
 }
 
 /// The most quote boxes a page may claim, and the longest selection taken
@@ -92,7 +95,13 @@ fn parse_stub_selection(m: &str) -> Option<Option<StubPick>> {
             .flatten()
     };
     let gen_ = num(parts.next()?)?;
-    let index = usize::try_from(num(parts.next()?)?).ok()?;
+    // --- maths --- `f<index>`: the selection cuts through a formula.
+    let index = parts.next()?;
+    let (index, across_formula) = match index.strip_prefix('f') {
+        Some(i) => (i, true),
+        None => (index, false),
+    };
+    let index = usize::try_from(num(index)?).ok()?;
     let text = parts.next()?;
     let ok = index < STUB_MAX_BOXES && text.len() <= STUB_MAX_TEXT && !text.trim().is_empty();
     ok.then(|| {
@@ -100,6 +109,7 @@ fn parse_stub_selection(m: &str) -> Option<Option<StubPick>> {
             gen_,
             index,
             text: text.to_string(),
+            across_formula,
         })
     })
 }
@@ -500,7 +510,12 @@ pub const HOST_SCRIPT: &str = r#"
     var q = stubBox(s.anchorNode, r);
     if (!q || q !== stubBox(s.focusNode, r) || stubProv(s.anchorNode) || stubProv(s.focusNode)) return "";
     var index = Array.prototype.indexOf.call(r.querySelectorAll(BOX), q);
-    return index < 0 ? "" : stubG + "\u001f" + index + "\u001f" + String(s);
+    // --- maths --- A passage can't take in any part of a formula.
+    var range = s.rangeCount ? s.getRangeAt(0) : null;
+    var formula = !!range && Array.prototype.some.call(q.querySelectorAll("math"), function (m) {
+      return range.intersectsNode(m);
+    });
+    return index < 0 ? "" : stubG + "\u001f" + (formula ? "f" : "") + index + "\u001f" + String(s);
   }
   function stubReport() {
     var m = stubPick();
@@ -1086,6 +1101,17 @@ mod tests {
                 gen_: 7,
                 index: 1,
                 text: "A line.\n\nAnd \u{1f} more.".into(),
+                across_formula: false,
+            })))
+        );
+        // --- maths --- `f<index>`: across a formula.
+        assert_eq!(
+            parse_ipc("stubsel:7\u{1f}f2\u{1f}x y"),
+            Some(SurfaceEvent::StubSelection(Some(StubPick {
+                gen_: 7,
+                index: 2,
+                text: "x y".into(),
+                across_formula: true,
             })))
         );
         for bad in [

@@ -768,6 +768,7 @@ impl MainView {
         let r = &mut self.reading;
         r.own_posts = own_posts;
         r.own_origin = own_origin;
+        r.background.set_rows(&r.rows); // --- background --- "+N parts"
         r.refilter();
         self.refresh_lineage_counts(cx); // --- lineage counts ---
         let r = &mut self.reading;
@@ -820,6 +821,8 @@ impl MainView {
                 self.reload_reading_shelf(); // --- shelf sync ---
                 self.load_kept_reading_mentions(); // --- contacts ---
                 (self.reading.own_posts, self.reading.own_origin) = self.own_lineage();
+                let r = &mut self.reading;
+                r.background.set_rows(&r.rows); // --- background --- "+N parts"
                 self.reading.refilter();
                 self.refresh_lineage_counts(cx); // --- lineage counts ---
                 self.ensure_reading_search(window, cx);

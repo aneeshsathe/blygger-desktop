@@ -500,6 +500,7 @@ pub(crate) fn walk(
             let (html, stats) = markdown::render(&chunk, if lines_on { Some(&map) } else { None });
             md.images += stats.images;
             md.videos += stats.videos;
+            md.math_errors.extend(stats.math_errors); // --- maths ---
             block_lines.extend(stats.block_lines);
             parts.push(html);
         }

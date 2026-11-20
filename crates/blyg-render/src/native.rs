@@ -380,6 +380,15 @@ fn walk_inline(n: &Node, style: &Span, out: &mut Vec<Span>) {
         push(out, "\n");
         return;
     }
+    if let Some(m) = n.cast::<crate::math::MathFormula>() {
+        // A formula shows as its TeX, in code (the GPUI stream draws no MathML).
+        out.push(Span {
+            text: crate::math::written(&m.tex, m.display),
+            code: true,
+            ..style.clone()
+        });
+        return;
+    }
     if n.is::<Image>() {
         // Inside a link or a heading: a word-sized placeholder.
         let alt = inline_text(&n.children);

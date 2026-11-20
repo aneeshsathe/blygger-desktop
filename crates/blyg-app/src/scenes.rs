@@ -170,6 +170,10 @@ scenes! {
         RdBrowseHistory = "rd-browse-history",
         RdBrowsePeek = "rd-browse-peek",
         RdStreamNested = "rd-stream-nested",
+        RdBurst = "rd-burst",
+        // --- maths --- a post with formulas in the reader; a draft's preview
+        RdMaths = "rd-maths",
+        RdMathsPreview = "rd-maths-preview",
     }
     /// profiles/demo.rs
     Profiles {
@@ -273,6 +277,10 @@ scenes! {
     Main {
         RdTangle = "rd-tangle",
         RdTanglePreview = "rd-tangle-preview",
+    }
+    /// reading/demo.rs: studio 0.64 link notices on Responses
+    Reading {
+        RdLinkedFrom = "rd-linked-from",
     }
 }
 

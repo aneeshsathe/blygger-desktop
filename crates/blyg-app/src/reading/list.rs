@@ -943,6 +943,7 @@ impl MainView {
         let when = vm::when_label(r, self.now);
         // --- read/unread --- picked rows (⌘-click, ⇧-click, ⌘A).
         let picked = self.reading.picked.contains(&key);
+        let parts = self.render_parts_count(&key); // --- background ---
         let menu_key = key.clone();
         div()
             .id(("reading-row", ix))
@@ -1045,6 +1046,10 @@ impl MainView {
                             .bg(bg)
                             .child(t)
                     }))
+                    // --- background --- why it's in Background, and a
+                    // thread's "+N parts" (listed when it's open).
+                    .children(self.render_background_why(r))
+                    .children(parts)
                     // --- lineage --- which kinds, and how many.
                     .children(self.render_lineage_glyph(r, cx))
                     .child(div().flex_1())
@@ -1159,6 +1164,7 @@ impl MainView {
             .children(self.render_pill(o, cx))
             .children(self.render_lineage_glyph(item, cx)) // --- lineage ---
             .children(self.slots_byline(item, cx)) // --- reading slots ---
+            .children(self.render_background_why(item)) // --- background ---
             .child(div().flex_1())
             .children(self.render_site_toggle(o, cx)) // --- reader view ---
             .when(
@@ -1285,6 +1291,11 @@ impl MainView {
             .child(div().px(px(32.)).flex_none().child(header))
             .child(notes)
             .child(body)
+            // --- background --- a thread's parts, listed (studio 0.64).
+            .children(
+                self.render_burst_parts(item, true, cx)
+                    .map(|e| div().px(px(32.)).pt(px(8.)).flex_none().child(e)),
+            )
             // --- responses --- a list, never a count.
             .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
             .child(self.render_post_actions(o, cx))

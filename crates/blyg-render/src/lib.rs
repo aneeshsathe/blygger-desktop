@@ -24,6 +24,7 @@ mod linemap;
 mod linkify;
 mod links;
 mod markdown;
+pub mod math;
 mod native;
 mod punycode;
 mod sanitize;
@@ -141,6 +142,9 @@ pub struct Stats {
     pub images: usize,
     /// The resolved quotes in directive order (the wire's `transclusions[]`).
     pub transclusions: Vec<Quote>,
+    /// Formulas that don't draw, in document order: publish refuses each
+    /// with this reason (studio 0.62, a 400 naming the formula).
+    pub math_errors: Vec<math::MathError>,
 }
 
 /// A rendered preview.
@@ -210,6 +214,7 @@ pub fn render_preview(
         let (html, md_stats) = markdown::render(text, None);
         stats.images += md_stats.images;
         stats.videos += md_stats.videos;
+        stats.math_errors.extend(md_stats.math_errors);
         blocks.push(tk::Block {
             token: token.clone(),
             html: format!("<div class=\"blyg-tk-gen\">{html}</div>"),
@@ -262,12 +267,14 @@ pub fn render_preview(
                 markdown::render(&doc.text, if opts.data_line { Some(&map) } else { None });
             stats.images += md_stats.images;
             stats.videos += md_stats.videos;
+            stats.math_errors.extend(md_stats.math_errors);
             (html, md_stats.block_lines)
         }
         Kind::Thread => {
             let w = transclusion::walk(doc, resolver, opts.self_id.as_deref(), opts.data_line);
             stats.images += w.md.images;
             stats.videos += w.md.videos;
+            stats.math_errors.extend(w.md.math_errors);
             stats.quotes = w.quotes.len();
             stats.unresolved = w.unresolved;
             stats.unresolved.extend(link_errors);
