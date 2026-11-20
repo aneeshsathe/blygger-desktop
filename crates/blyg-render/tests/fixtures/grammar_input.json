@@ -115,6 +115,18 @@
   {
    "md": "just words",
    "passage": null
+  },
+  {
+   "md": "![[+ draft\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n]]\n\nMy reply.",
+   "passage": "a passage"
+  },
+  {
+   "md": "![[+ draft\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n]]\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n\nReply.",
+   "passage": "chosen"
+  },
+  {
+   "md": "![[+ draft\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n> inside\n]]\n\n![[7c9wk2n4h6q1x8v0z3m5rjy2ke]]\n> outside\n\nReply.",
+   "passage": null
   }
  ],
  "outputs": [

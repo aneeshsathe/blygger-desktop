@@ -1,0 +1,12 @@
+{
+  "name": "math_emphasis",
+  "kind": "fragment",
+  "md": "*$a$* and $*b*$ and **$c$**",
+  "html": "<p><em><math><semantics><mi>a</mi><annotation encoding=\"application/x-tex\">a</annotation></semantics></math></em> and <math><semantics><mrow><mo form=\"prefix\" stretchy=\"false\">∗</mo><mi>b</mi><mo>∗</mo></mrow><annotation encoding=\"application/x-tex\">*b*</annotation></semantics></math> and <strong><math><semantics><mi>c</mi><annotation encoding=\"application/x-tex\">c</annotation></semantics></math></strong></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

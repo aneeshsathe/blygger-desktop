@@ -1,0 +1,12 @@
+{
+  "name": "math_in_code",
+  "kind": "fragment",
+  "md": "`$x$` stays.\n\n```\n$$y$$\n```\n\n    $z$ indented",
+  "html": "<p><code>$x$</code> stays.</p>\n<pre><code>$$y$$\n</code></pre>\n<pre><code>$z$ indented\n</code></pre>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

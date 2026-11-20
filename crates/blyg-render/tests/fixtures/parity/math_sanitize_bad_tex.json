@@ -1,0 +1,17 @@
+{
+  "name": "math_sanitize_bad_tex",
+  "kind": "thread",
+  "md": "![[01j9zq3k4m5n6p7q8r9s0t1vm4]]",
+  "html": "<blockquote class=\"blyg-transclusion\" data-blyg-id=\"01j9zq3k4m5n6p7q8r9s0t1vm4\" data-blyg-version=\"1\">\n<p>Bad <code class=\"math-source\">$\\frac{$</code> and <code class=\"math-source\">$\\cancel{x}$</code> end.</p>\n\n\n<p class=\"provenance\"><a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1vm4/\">fragment ↗</a> · snapshot of v1</p></blockquote>",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm4",
+      "version": 1
+    }
+  ],
+  "errors": []
+}

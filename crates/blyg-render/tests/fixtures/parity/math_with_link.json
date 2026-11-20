@@ -1,0 +1,12 @@
+{
+  "name": "math_with_link",
+  "kind": "fragment",
+  "md": "$x$ beside [[01j9zq3k4m5n6p7q8r9s0t1v2w]].",
+  "html": "<p><math><semantics><mi>x</mi><annotation encoding=\"application/x-tex\">x</annotation></semantics></math> beside <a href=\"/blyg/f/01j9zq3k4m5n6p7q8r9s0t1v2w/\">“Small tools, used daily, beat big tools used rarely.”</a>.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

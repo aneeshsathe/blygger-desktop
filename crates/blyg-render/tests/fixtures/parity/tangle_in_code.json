@@ -1,0 +1,12 @@
+{
+  "name": "tangle_in_code",
+  "kind": "thread",
+  "md": "```\n![[+ not a span]]\n```\n\n`[[+ nor this]]`",
+  "html": "<pre><code>![[+ not a span]]\n</code></pre>\n<p><code>[[+ nor this]]</code></p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

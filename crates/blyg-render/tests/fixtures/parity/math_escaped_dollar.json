@@ -1,0 +1,12 @@
+{
+  "name": "math_escaped_dollar",
+  "kind": "fragment",
+  "md": "\\$5 and \\$x\\$ and $a\\$b$ here.",
+  "html": "<p>$5 and $x$ and <math><semantics><mrow><mi>a</mi><mi>$</mi><mi>b</mi></mrow><annotation encoding=\"application/x-tex\">a\\$b</annotation></semantics></math> here.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
