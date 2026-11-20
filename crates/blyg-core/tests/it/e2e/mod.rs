@@ -24,6 +24,7 @@
 // Studio 0.64 parity: one file per work package (each may `use super::*`;
 // the helpers below are visible to them).
 mod background;
+mod conditional;
 mod links;
 mod maths;
 mod tangle;
