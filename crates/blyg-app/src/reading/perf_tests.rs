@@ -95,7 +95,7 @@ impl Meter {
     }
 }
 
-use crate::test_wait::{settle, until};
+use crate::test_wait::{poll, settle};
 
 fn setup<'a>(
     dir: &std::path::Path,
@@ -195,6 +195,7 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     meter.step(cx, "unread count", cost(10.0, 0.25), |_| {
         live.unread_count()
     });
+    // CI: 5.6, 7.1, 9.7, 10.3 ms; 1.5x 10.3 is 15.4, up to 20.
     meter.step(cx, "sources pane entries", cost(20.0, 0.25), |cx| {
         view.read_with(cx, |v, _| v.source_entries().len())
     });
@@ -218,12 +219,23 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
         // that refresh was 218 ms at worst on CI.
         cost(650.0, 4.0),
         |cx| {
+            let t = Instant::now();
             view.update_in(cx, |v, window, cx| v.open_reading(key.clone(), window, cx));
+            let mut awake = t.elapsed();
             // Until the post's versions are in and the list has caught up
             // with its read mark; not `settle`, whose twenty fixed pauses
             // (60 ms here, several hundred on a CI runner) would be timed.
-            until(cx, "the opened post's read mark and versions", |cx| {
-                view.read_with(cx, |v, _| {
+            // Polling still pauses 2 ms (plus the timer's overshoot) after
+            // each round that finds it unfinished, so the rounds and the
+            // time this thread spent outside those pauses are printed too:
+            // they tell work from sleep. (The read mark is written on
+            // another thread, partly during the pauses.)
+            let mut rounds = 0;
+            poll("the opened post's read mark and versions", || {
+                let t = Instant::now();
+                rounds += 1;
+                cx.run_until_parked();
+                let done = view.read_with(cx, |v, _| {
                     let r = &v.reading;
                     let read = r
                         .rows
@@ -234,8 +246,14 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
                         .as_ref()
                         .is_some_and(|o| !matches!(o.changelog, super::Load::Loading));
                     r.refreshes > before && read && loaded
-                })
+                });
+                awake += t.elapsed();
+                done
             });
+            eprintln!(
+                "  {rounds} poll rounds; {:.2} ms on this thread outside the pauses",
+                awake.as_secs_f64() * 1e3
+            );
         },
     );
     meter.step(
@@ -246,6 +264,8 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
     );
 
     // Typing a search, a keystroke at a time: the list in memory, filtered.
+    // CI: 28-49 ms for the short queries, 54-64 for "author 0", 45-81 for
+    // "author 07"; 1.5x 80.7 is 121, up to 130.
     for q in ["a", "au", "aut", "author", "author 0", "author 07"] {
         let what = format!("search keystroke {q:?}");
         meter.step(cx, &what, cost(130.0, 0.25), |cx| {

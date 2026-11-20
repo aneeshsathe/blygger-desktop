@@ -146,10 +146,14 @@ fn timing_reading_list_at_scale() {
     let mut budget = Budget::default();
 
     // Warm (statement cache, first parse).
-    // Budgets from CI's macOS runner, three runs (`Budget` says how): warm
-    // 75-126 ms, after a mark 20-23, after the pull 16-28, the merge
-    // 195-273. mark_read (3-8, varying 3x) and responses_to (under 1) keep
-    // theirs: 1.5x is under the 5 ms floor or at what they had.
+    // Budgets from CI's macOS runner, three runs (`Budget` says how), as
+    // 1.5x the worst, rounded up (to 5 under 50, to 10 above):
+    // - warm 74.5-126.5 ms: 189.7, so 190
+    // - after a mark 20.1-23.5: 35.2, so 40
+    // - after the pull 16.2-27.7: 41.6, so 45
+    // - the merge 195.1-272.6: 408.9, so 410
+    // mark_read (2.6-8.4, varying 3x: 12.6, so 15) and responses_to
+    // (0.2-0.7, so the 5 ms floor) keep what they had.
     let (all, _) = time("reading() cold", || store.reading());
     budget.time("reading() warm", 190.0, || store.reading());
     let first = &all[10];
