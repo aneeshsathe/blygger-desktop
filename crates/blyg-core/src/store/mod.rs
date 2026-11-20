@@ -34,6 +34,8 @@ mod read_sync;
 mod reading;
 mod remote;
 mod schema;
+mod work; // counting work, for tests that guard an algorithm
+pub use work::Work;
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;

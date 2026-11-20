@@ -230,6 +230,13 @@ impl LiveBackend {
             .map(|(r, _)| r)
     }
 
+    /// Start counting the store's work (tests that guard an algorithm:
+    /// `Store::count_work`).
+    #[doc(hidden)]
+    pub fn count_store_work(&self) -> crate::store::Work {
+        self.engine.store.count_work()
+    }
+
     /// Pull from the server without pushing first (`sync_now` pushes, then pulls).
     pub fn pull_now(&self) -> Result<()> {
         self.engine.pull()
