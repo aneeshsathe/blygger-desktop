@@ -25,8 +25,9 @@ section: Added
 - The slug is short and names the change (`tangling.md`, `sync-304.md`).
   Within a section, the release lists fragments in file-name order.
 
-`scripts/changelog-stitch.py check` validates them; the workspace tests run
-it too, so a malformed fragment fails `cargo test`.
+`scripts/changelog-stitch.py check` validates them, and refuses an entry
+(a `- ` or `### ` line) written under `[Unreleased]` in `CHANGELOG.md`. The
+workspace tests run it, so either fails `cargo test`.
 
 The release notes in `site/src/releases.md` are written by hand at release,
 from the stitched section: they tell a user what the release brings, grouped

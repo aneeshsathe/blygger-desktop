@@ -8,7 +8,8 @@ release stitches them into a new section.
     scripts/changelog-stitch.py check
     scripts/changelog-stitch.py stitch VERSION [--date YYYY-MM-DD] [--dry-run]
 
-`check` validates every fragment (none at all is fine). `stitch` validates,
+`check` validates every fragment (none at all is fine), and refuses entries
+under `[Unreleased]` as `stitch` does; the workspace tests run it. `stitch` validates,
 then writes `## [VERSION] - DATE` (today by default) under `## [Unreleased]`,
 with one `### <section>` per section that has entries, in SECTIONS order;
 within a section, fragments go in file-name order. Then it deletes the
@@ -122,22 +123,18 @@ def section_text(version, date, found):
     return "\n".join(out) + "\n"
 
 
-def stitch(root, version, date, dry_run):
-    if not VERSION.match(version):
-        raise Refused(f"'{version}' isn't a version (x.y.z)")
-    found = fragments(root)
-    if not found:
-        raise Refused(f"no fragments in {FRAGMENTS}/: nothing to release")
-    path = os.path.join(root, "CHANGELOG.md")
-    with open(path, encoding="utf-8") as f:
-        lines = f.read().splitlines()
+def read_changelog(root):
+    with open(os.path.join(root, "CHANGELOG.md"), encoding="utf-8") as f:
+        return f.read().splitlines()
+
+
+def unreleased_end(lines):
+    """Index of the line after [Unreleased]'s section; refuses when it holds
+    entries (a `- ` or `### ` line): they belong in fragments."""
     try:
         start = lines.index("## [Unreleased]")
     except ValueError:
         raise Refused("CHANGELOG.md has no '## [Unreleased]' heading")
-    for line in lines:
-        if line == f"## [{version}]" or line.startswith(f"## [{version}] "):
-            raise Refused(f"CHANGELOG.md already has a section for [{version}]")
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
     held = [l for l in lines[start + 1 : end] if l.startswith("- ") or l.startswith("### ")]
     if held:
@@ -145,6 +142,38 @@ def stitch(root, version, date, dry_run):
             "CHANGELOG.md's [Unreleased] has entries; move them into fragments first:\n  "
             + "\n  ".join(held)
         )
+    return end
+
+
+def check(root):
+    """Fragments well-formed, and no entries under [Unreleased]; refuses
+    listing every problem."""
+    problems = []
+    try:
+        n = len(fragments(root))
+    except Refused as e:
+        problems.append(str(e))
+    try:
+        unreleased_end(read_changelog(root))
+    except Refused as e:
+        problems.append(str(e))
+    if problems:
+        raise Refused("\n".join(problems))
+    return n
+
+
+def stitch(root, version, date, dry_run):
+    if not VERSION.match(version):
+        raise Refused(f"'{version}' isn't a version (x.y.z)")
+    found = fragments(root)
+    if not found:
+        raise Refused(f"no fragments in {FRAGMENTS}/: nothing to release")
+    path = os.path.join(root, "CHANGELOG.md")
+    lines = read_changelog(root)
+    end = unreleased_end(lines)
+    for line in lines:
+        if line == f"## [{version}]" or line.startswith(f"## [{version}] "):
+            raise Refused(f"CHANGELOG.md already has a section for [{version}]")
     text = section_text(version, date, found)
     if dry_run:
         sys.stdout.write(text)
@@ -173,8 +202,8 @@ def main():
     a = p.parse_args()
     try:
         if a.cmd == "check":
-            n = len(fragments(a.root))
-            print(f"{n} fragment(s) in {FRAGMENTS}/ are well-formed", file=sys.stderr)
+            n = check(a.root)
+            print(f"{n} fragment(s) in {FRAGMENTS}/ are well-formed; [Unreleased] holds no entries", file=sys.stderr)
         else:
             if not re.match(r"^\d{4}-\d{2}-\d{2}$", a.date):
                 raise Refused(f"'{a.date}' isn't a date (YYYY-MM-DD)")
