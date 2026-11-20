@@ -79,6 +79,34 @@
       "status": "public",
       "version": 1,
       "content_html": "<header>Not a heading tag</header>\n<p>Body.</p>\n"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm1",
+      "kind": "fragment",
+      "status": "public",
+      "version": 1,
+      "content_html": "<p>Euler: <math><semantics><mrow><mi>e</mi></mrow><annotation encoding=\"application/x-tex\">e^{i\\pi}+1=0</annotation></semantics></math> holds.</p>\n"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm2",
+      "kind": "fragment",
+      "status": "public",
+      "version": 1,
+      "content_html": "<p>Shown:</p>\n<math display=\"block\"><semantics><mrow><mi>x</mi></mrow><annotation encoding=\"application/x-tex\">\\frac{a}{b}</annotation></semantics></math>\n<p>Bare <math><mi>y</mi></math> gone, and <math><semantics><mi>q</mi><annotation encoding=\" TEXT/X-TEX \">q_1</annotation></semantics></math> kept.</p>\n"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm3",
+      "kind": "fragment",
+      "status": "public",
+      "version": 1,
+      "content_html": "<p>Hostile <math><semantics><mi>z</mi><annotation encoding=\"application/x-tex\">x&lt;/annotation&gt;&lt;script&gt;alert(1)&lt;/script&gt;</annotation></semantics></math> and <math><annotation encoding=\"application/x-tex\">a</annotation><script>alert(2)</script><mtext><img src=x onerror=alert(3)></mtext></math> and <math><mrow><math><annotation encoding=\"application/x-tex\">n</annotation></math></mrow></math> end.</p>\n"
+    },
+    {
+      "id": "01j9zq3k4m5n6p7q8r9s0t1vm4",
+      "kind": "fragment",
+      "status": "public",
+      "version": 1,
+      "content_html": "<p>Bad <math><annotation encoding=\"application/x-tex\">\\frac{</annotation></math> and <math><annotation encoding=\"application/x-tex\">\\cancel{x}</annotation></math> end.</p>\n"
     }
   ],
   "imported": [

@@ -1,0 +1,12 @@
+{
+  "name": "math_inline",
+  "kind": "fragment",
+  "md": "Area $\\pi r^2$ and $x_i$ here.",
+  "html": "<p>Area <math><semantics><mrow><mi>π</mi><msup><mi>r</mi><mn class=\"tml-sml-pad\">2</mn></msup></mrow><annotation encoding=\"application/x-tex\">\\pi r^2</annotation></semantics></math> and <math><semantics><msub><mi>x</mi><mi>i</mi></msub><annotation encoding=\"application/x-tex\">x_i</annotation></semantics></math> here.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}

@@ -2,7 +2,7 @@
   "name": "label_tk_output_directive",
   "kind": "thread",
   "md": "Start [TK]sum ![[01j9zq3k4m5n6p7q8r9s0t1v2w | src]][=]one\n![[02abcdefghjkmnpqrstvwxyz01 | echoed]]\ntwo[/TK] end",
-  "html": "<p>Start <span class=\"blyg-tk-gen\">one</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz01\" data-blyg-version=\"5\" data-blyg-origin=\"https://blyg.example.com/\">\n<p>Writing is thinking with a pencil.</p>\n\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">from <em>Example Notes</em> ↗</a> · snapshot of v5</p></blockquote>\n<p>two</span> end</p>\n",
+  "html": "<p>Start <span class=\"blyg-tk-gen\">one</p>\n\n<blockquote class=\"blyg-transclusion\" data-blyg-id=\"02abcdefghjkmnpqrstvwxyz01\" data-blyg-version=\"5\" data-blyg-origin=\"https://blyg.example.com/\" data-blyg-label=\"echoed\">\n<p>Writing is thinking with a pencil.</p>\n\n\n<p class=\"provenance\"><a href=\"https://blyg.example.com/f/02abcdefghjkmnpqrstvwxyz01/\">echoed ↗</a> · from <em>Example Notes</em> · snapshot of v5</p></blockquote>\n<p>two</span> end</p>\n",
   "tk": {
     "scopes": [
       {

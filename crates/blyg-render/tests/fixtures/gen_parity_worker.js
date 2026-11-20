@@ -12,7 +12,10 @@ import { renderMarkdown } from "worker-src/markdown.ts";
 import { parseScopes, unrequestedOutputDirectives } from "worker-src/tk.ts";
 import { annotateTkPreview } from "worker-src/authoring.ts";
 import { applyInternalLinks, previewInternalLinks, previewTransclusions, resolveBlockLinks } from "worker-src/transclusion.ts";
-import { injectProvenance, transclusionProvenance, mediaHtml } from "worker-src/pages.ts";
+import { injectNestedProvenance, injectProvenance, transclusionProvenance, mediaHtml } from "worker-src/pages.ts";
+import { previewComments } from "worker-src/comments.ts";
+import { consumeHandles, withMentionCards } from "worker-src/contacts.ts";
+import { previewTangles } from "worker-src/read-api.ts";
 import { DIRECTIVE_LINE, label, labelText, linkInline, linkSource, stripGeneratedGrammar } from "worker-src/grammar.ts";
 import { linkLabel } from "worker-src/link-label.ts";
 import { withStubQuote } from "worker-src/ui/stub-quote.ts";
@@ -57,36 +60,47 @@ function fakeDb(store) {
 }
 
 // --- The preview pipeline (read-api.ts, POST /api/preview) -------------------------
+// previewOperation (fragment) and threadPreview (thread) as of studio 0.64,
+// step for step. `[[id]]` resolves against siteOrigin; here the mount plus
+// "/", which is what the Rust side derives from `mount`.
 async function render(store, c) {
   const db = fakeDb(store);
-  const tk = annotateTkPreview(c.md);
+  const origin = store.mount + "/";
+  // A thread's `![[+ …]]` spans and `[[+ …]]` placeholders (studio 0.62).
+  const tangles = c.kind === "fragment" ? { md: c.md, finish: (h) => h, errors: [] } : await previewTangles(db, c.md, origin);
+  // Comments to self are dropped and @handles resolved before anything else.
+  const handles = await consumeHandles(db, previewComments(tangles.md));
+  const tk = annotateTkPreview(handles.text);
   const tkOut = {
     scopes: tk.scopes.map((s) => ({ instruction: s.instruction, generated: s.output !== null, block: s.block, source_ids: s.sourceIds })),
     errors: parseScopes(c.md).errors,
   };
-  // `[[id]]` resolves against siteOrigin; here the mount plus "/", which is
-  // what the Rust side derives from `mount`.
-  const origin = store.mount + "/";
-  const links = await previewInternalLinks(db, tk.text, origin);
-  const blocks = await resolveBlockLinks(tk, (md) => previewInternalLinks(db, md, origin));
+  const links = withMentionCards(await previewInternalLinks(db, tk.text, origin), handles.cards);
+  const blocks = await resolveBlockLinks(tk, async (md) => withMentionCards(await previewInternalLinks(db, md, origin), handles.cards));
   const splice = (html) => [links, ...blocks.docs].reduce((acc, doc) => applyInternalLinks(acc, doc), tk.finish(html));
   const linkErrors = [...links.errors, ...blocks.errors];
   if (c.kind === "fragment") {
     // Fragments never resolve transclusions, and are not sanitized.
     return { html: splice(renderMarkdown(links.text)), tk: tkOut, transclusions: [], errors: linkErrors };
   }
-  // threadPreview() + the public page's injectProvenance().
-  // The Worker never makes this combination: its previews show no provenance,
-  // and injectProvenance only ever sees published HTML, which can't hold an
-  // unresolved marker. The desktop preview makes it on purpose, so the marker
-  // is hidden from injectProvenance here, as it would be absent on the page.
-  const resolved = await previewTransclusions(db, links.text, store.self_id);
+  // threadPreview(): the generated blocks go to the walk, which bakes their
+  // quotes inside the block (#105).
+  const resolved = await previewTransclusions(db, links.text, store.self_id, tk);
   const preview = splice(resolved.html);
+  // The studio's thread preview adds the provenance lines (injectProvenance,
+  // then injectNestedProvenance) only when every quote resolved. The desktop
+  // preview adds them always, so the generator does too, hiding unresolved
+  // markers from them as they would be absent on the published page.
   const provenance = await transclusionProvenance(db, resolved.transclusions, store.mount);
   const MARKER = 'class="blyg-transclusion unresolved"';
   const HIDDEN = 'class="\u0000unresolved-marker"';
-  const injected = injectProvenance(preview.split(MARKER).join(HIDDEN), provenance).split(HIDDEN).join(MARKER);
-  return { html: injected, tk: tkOut, transclusions: resolved.transclusions, errors: [...resolved.errors, ...linkErrors] };
+  const injected = await injectNestedProvenance(db, injectProvenance(preview.split(MARKER).join(HIDDEN), provenance), store.mount);
+  return {
+    html: tangles.finish(injected.split(HIDDEN).join(MARKER)),
+    tk: tkOut,
+    transclusions: resolved.transclusions,
+    errors: [...resolved.errors, ...linkErrors, ...tangles.errors],
+  };
 }
 
 export default {

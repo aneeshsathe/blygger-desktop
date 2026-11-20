@@ -1,0 +1,12 @@
+{
+  "name": "tangle_placeholder_fragment",
+  "kind": "fragment",
+  "md": "See [[+ later]] in a fragment.",
+  "html": "<p>See [[+ later]] in a fragment.</p>\n",
+  "tk": {
+    "scopes": [],
+    "errors": []
+  },
+  "transclusions": [],
+  "errors": []
+}
