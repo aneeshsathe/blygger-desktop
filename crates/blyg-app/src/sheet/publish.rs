@@ -103,6 +103,9 @@ pub(crate) struct TangleSheet {
     /// The new items' names as the blyg gave them (a placeholder's ends
     /// " (linked)").
     pub(crate) parts: Vec<String>,
+    /// The same text as the last tangle of this post: publishing it again
+    /// would make the new items twice.
+    pub(crate) repeat: bool,
     pub(crate) focus: FocusHandle,
 }
 
@@ -114,6 +117,20 @@ pub(crate) fn tangle_heading(count: usize) -> String {
     )
 }
 
+/// Item `i` of the confirm step's list. The blyg's label for a passage cut
+/// at eight words ends "…" even after a full stop; shown, a sentence's own
+/// end needs none (user testing, W5). The label itself stays the blyg's.
+pub(crate) fn part_line(i: usize, label: &str) -> String {
+    let label = match label.strip_suffix('…') {
+        Some(cut) if cut.ends_with(['.', '!', '?']) => cut,
+        _ => label,
+    };
+    format!("{}. {label}", i + 1)
+}
+
+/// The confirm step's warning when the text is the one just tangled.
+pub(crate) const TANGLE_REPEAT: &str = "⚠ You just published these as new items. Publishing them again makes a second copy of each. Press esc and check the text first.";
+
 /// The studio's hint under the list.
 pub(crate) const TANGLE_HINT: &str = "Each new item is a thread of its own, published first: this thread quotes each ![[+ …]] and links each [[+ …]]. To change one later, open that item.";
 
@@ -123,6 +140,7 @@ impl SheetView for TangleSheet {
         let TangleSheet {
             count,
             parts,
+            repeat,
             focus,
             ..
         } = self;
@@ -141,6 +159,18 @@ impl SheetView for TangleSheet {
                     cx.stop_propagation();
                 }))
                 .child(kit.heading(tangle_heading(*count)))
+                .when(*repeat, |d| {
+                    d.child(
+                        div()
+                            .id("tangle-repeat")
+                            .debug_selector(|| "tangle-repeat".into())
+                            .mb(px(8.))
+                            .text_size(px(12.5))
+                            .text_color(p.warn_text())
+                            .line_height(relative(1.45))
+                            .child(TANGLE_REPEAT),
+                    )
+                })
                 .child(
                     div()
                         .mb(px(8.))
@@ -152,7 +182,7 @@ impl SheetView for TangleSheet {
                             parts
                                 .iter()
                                 .enumerate()
-                                .map(|(i, label)| div().child(format!("{}. {label}", i + 1))),
+                                .map(|(i, label)| div().child(part_line(i, label))),
                         ),
                 )
                 .child(
@@ -220,5 +250,30 @@ impl SheetView for HeldLabelsSheet {
                 )
                 .into_any_element(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::part_line;
+
+    /// User testing (W5, R12): the studio's label for a cut passage ends
+    /// "…" even after a full stop; the list doesn't show ".…".
+    #[test]
+    fn a_part_ending_in_punctuation_shows_no_ellipsis() {
+        assert_eq!(
+            part_line(0, "The tide tables were wrong by an hour.…"),
+            "1. The tide tables were wrong by an hour."
+        );
+        assert_eq!(part_line(1, "Ready? Then go!…"), "2. Ready? Then go!");
+        // A cut mid-sentence keeps its ellipsis.
+        assert_eq!(
+            part_line(0, "one two three four five six seven eight…"),
+            "1. one two three four five six seven eight…"
+        );
+        assert_eq!(
+            part_line(1, "the ferry timetable (linked)"),
+            "2. the ferry timetable (linked)"
+        );
     }
 }

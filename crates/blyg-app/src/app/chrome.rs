@@ -25,6 +25,9 @@ impl MainView {
                 .timer(Duration::from_millis(ms))
                 .await;
             let _ = this.update(cx, |v, cx| {
+                if v.studio.guards.sticky_toast == Some(id) {
+                    return; // until it's clicked
+                }
                 if let Some(t) = v.toast.as_mut().filter(|t| t.id == id) {
                     t.leaving = true;
                     cx.notify();
@@ -34,13 +37,25 @@ impl MainView {
                 .timer(Duration::from_millis(220))
                 .await;
             let _ = this.update(cx, |v, cx| {
-                if v.toast.as_ref().is_some_and(|t| t.id == id) {
+                if v.toast.as_ref().is_some_and(|t| t.id == id)
+                    && v.studio.guards.sticky_toast != Some(id)
+                {
                     v.toast = None;
                     cx.notify();
                 }
             });
         })
         .detach();
+    }
+
+    /// A toast that stays until it's clicked (or another replaces it).
+    pub(super) fn show_toast_until_dismissed(
+        &mut self,
+        text: impl Into<SharedString>,
+        cx: &mut Context<Self>,
+    ) {
+        self.show_toast(text, Some("Click to dismiss".into()), cx);
+        self.studio.guards.sticky_toast = Some(self.toast_seq);
     }
 
     pub(super) fn render_titlebar(
@@ -384,12 +399,21 @@ impl MainView {
         crate::ornament::StatusData { activity }
     }
 
-    pub(super) fn render_toast(&self) -> Option<AnyElement> {
+    pub(super) fn render_toast(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let t = self.toast.as_ref()?;
         let p = self.palette;
         let leaving = t.leaving;
+        let sticky = self.studio.guards.sticky_toast == Some(t.id);
         let el = div()
+            .id("toast")
             .absolute()
+            .when(sticky, |d| {
+                d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
+                    this.studio.guards.sticky_toast = None;
+                    this.toast = None;
+                    cx.notify();
+                }))
+            })
             // --- full editor: clear of the native preview ---
             .right(self.studio_toast_right())
             .bottom(px(STATUS_H + 12.))

@@ -184,8 +184,35 @@ pub fn post_title(r: &ReadingItem) -> String {
     }
     match r.stub_of.as_ref().and_then(|s| s.target()) {
         Some(target) => format!("In response to {}", host(target)),
-        None => "…".into(),
+        // Only quotes: named by what it quotes, as the blyg baked it (user
+        // testing, R6), rather than "…".
+        None => quoted_words(&r.content_html)
+            .map(|q| format!("Quotes: {q}"))
+            .unwrap_or_else(|| "…".into()),
     }
+}
+
+/// The first eight words of the first quote baked into `html` (its
+/// provenance line left out), "…" when cut.
+fn quoted_words(html: &str) -> Option<String> {
+    let start = html.find("<blockquote class=\"blyg-transclusion\"")?;
+    let rest = &html[start..];
+    let inner = &rest[rest.find('>')? + 1..];
+    let end = ["<p class=\"provenance\"", "</blockquote>"]
+        .iter()
+        .filter_map(|m| inner.find(m))
+        .min()
+        .unwrap_or(inner.len());
+    let text = html_text(&inner[..end]);
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return None;
+    }
+    let mut out = words[..words.len().min(8)].join(" ");
+    if words.len() > 8 {
+        out.push('…');
+    }
+    Some(out)
 }
 
 /// `rue.blyg.example.com` from an origin, for display: an internationalized
