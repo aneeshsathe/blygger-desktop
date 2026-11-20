@@ -13,6 +13,7 @@ pub mod contacts; // --- contacts --- (studio 0.56)
 pub mod discover; // --- discover --- (studio 0.60, desktop only)
 pub mod floor;
 pub mod grammar;
+pub mod ids; // SubId, RemoteId: a reading post's two ids, typed apart
 pub mod lineage; // --- lineage counts ---
 pub mod live;
 pub mod loose; // --- loose ends ---
@@ -40,6 +41,7 @@ pub mod tk;
 pub mod trails; // --- trails ---
 pub mod upkeep; // --- upkeep --- stale quotes, signals
 mod util;
+pub mod wait; // the one sleep (crates' clippy.toml)
 
 pub use backend::{
     Backend, CoreError, MediaRef, Promote, Promoted, PublicItem, PublishOutcome, Result,

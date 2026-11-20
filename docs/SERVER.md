@@ -78,8 +78,10 @@ the list is exhausted; the cursor is opaque and passed back verbatim. `limit` is
 
 - **One coherent acquisition.** Burrow reads a list from its first page to
   `nextCursor: null` before it acts on what's missing: **local rows are pruned only
-  after a walk reached its end.** A walk stopped early (the reading list's page budget,
-  20 pages of 100 a pull) is merged without pruning and read again next pull.
+  after a walk reached its end.** The reading list is merged page by page as it's read,
+  20 pages of 100 a pull; a whole walk of a longer list goes on from its cursor in the
+  next pull, and prunes only once it reaches `nextCursor: null` (see
+  [The reading list](#the-reading-list)).
 - **`409 cursor-expired`** (the list changed between two pages): every page read so far
   is thrown away and the walk starts again from the first page; a restarted page is
   never appended to the old prefix. After three restarts the list is left as held for
@@ -161,6 +163,46 @@ camelCase (`subscriptionId`, `remoteId`, `withdrawn`, `l0`, `version`, `readVers
 `observedAt`, `contentMd`, `contentHtml` (sanitized), `author` `{name, url}`, `page`,
 `sourceUrl`, `thumb`, `hoppers`, `transclusions`, `stubOf`, `forkedFrom`, `generated`);
 dates are ISO 8601 UTC or null. Each row's lineage is the origin's own (null when none).
+
+**How Burrow pulls it.** Each page is merged as it arrives, so new posts show after the
+first one; a pull reads at most 20 pages.
+
+- **Head reads.** When the `reading` counter moved, Burrow reads newest-first until the
+  first page that changes nothing it holds, or one that reaches back past what its last
+  read covered (an hour before that read's newest row). The studio stamps an import, an
+  edit or a withdrawal with a new `observedAt`, so they come back at the head. A head
+  read removes nothing and accepts the `reading` revision: a new post costs a page or
+  two, not the whole list.
+- **Whole walks.** The safety net, a first sync, a real change to the subscription list
+  (one added, removed or renamed), and a head read that found nothing for a moved counter
+  or a row written late (an edit that kept its stamp, another device's read mark on an
+  old post) walk the list from the first page to `nextCursor: null`, the last of these
+  at most every `full_pull_every`. A list longer than 20 pages is walked over several
+  pulls, from the cursor; a `cursor-expired` restarts the walk. Only a walk that reached
+  the end removes the rows it didn't read.
+
+One pull's read (`walk::Read` in `crates/blyg-core/src/sync/walk.rs`; property tests
+against a model of this list in `walk_model_tests.rs`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> Head: counter moved, mark known
+    [*] --> Whole: safety net, first sync, subscription change, deep walk due
+    [*] --> Whole: walk under way (from its cursor)
+    Head --> Head: page changed rows, inside the last read
+    Head --> Accepted: page changed nothing, or reached past the mark
+    Head --> Whole: page budget spent (kept for the next pull)
+    Whole --> Whole: next page
+    Whole --> Kept: page budget spent
+    Whole --> Whole: cursor-expired (from page 1, nothing read counts)
+    Whole --> Pruned: nextCursor null
+    Pruned --> Accepted
+    Kept --> [*]: next pull carries on
+    Accepted --> [*]: revision accepted, mark set
+```
+
+A head read that found nothing for a moved counter, or wrote a row no newer than the
+mark, asks for a whole walk once the last one is `full_pull_every` old.
 
 `GET /api/reading` (the studio's own list, also your own posts) leaves withdrawn entries
 out unless `background=true`, which lists only them. Burrow reads it only for its
@@ -301,7 +343,9 @@ publishing and deleting a hopper are direct calls that need the blyg to answer.
   [How Burrow checks the contract](#how-burrow-checks-the-contract).
 - **Change counters (`GET /api/changes`):** each sync first reads the counters and
   fetches only the collections whose domains moved, so the app syncs every 15 s. The
-  reading list is walked again only when `reading` or `subscriptions` moved: a moved
+  reading list is read again only when `reading` moved (its head; see
+  [The reading list](#the-reading-list)) or the subscription list really changed (the
+  studio moves `subscriptions` on every feed poll, which changes no row): a moved
   thumb reads `GET /api/signals`, a moved hopper reads the hoppers. As a safety net
   everything is read whole after 10 minutes; each such pass that finds nothing the
   counters hadn't said doubles the wait, up to 2 hours. See
@@ -337,8 +381,10 @@ sync costs depends on the studio as much as on Burrow:
   reading list at most every 10 minutes when only it moved (new imports, read marks),
   and the safety net hourly at first, up to every 6 hours.
 
-The studio has no "changed since" read of the reading list yet: when `reading` moves
-(an import, a read mark from any device), Burrow walks the whole list again.
+The studio has no "changed since" read of the reading list yet. When `reading` moves
+(an import, a read mark from any device), Burrow reads its head instead (usually one or
+two pages; see [The reading list](#the-reading-list)), and walks it whole only for the
+safety net, a real subscription change, or a change the head couldn't show.
 
 ## Updating an older server
 

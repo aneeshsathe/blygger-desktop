@@ -10,7 +10,7 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 
 | Operator | Lists |
 |---|---|
-| `is:orphan` | published posts nothing points at: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
+| `is:orphan` | published posts, a week old or more, that nothing points at yet: no post you read quotes or replies to it, no verified mention, and none of your own posts links to it |
 | `is:draft` / `is:stale` | drafts / drafts untouched for a month |
 | `is:stale-quote` | threads that quote an older version of a post (see [Stale quotes](#stale-quotes)) |
 | `is:leaf` | posts that quote nothing (no `![[id]]`, reply or fork) |
@@ -21,8 +21,11 @@ comes back to the omnibar from anywhere, and so does esc from the editor.
 
 `is:draft tide` lists drafts that mention tides. ⏎ never starts a post from
 operators alone. With the search empty, a quiet line over the list says
-what's loose, in words ("2 orphans · 1 ungenerated TK"); click a part to list
-those posts.
+what's loose, in plain words ("2 posts not linked yet · 1 ungenerated TK ·
+1 thread with outdated quotes"). Hover a part for what it counts; click it to
+list those posts (it puts the operator in the search). A post made in the last
+seven days isn't counted as not linked yet, by the line or by `is:orphan`:
+nobody has had the time to link to it.
 
 **A web address.** Paste one into the search and, when no post has it, ⏎
 starts a fragment with that link, titled from the page (fetched once, without
@@ -45,8 +48,8 @@ starts with.
 
 Some posts you keep coming back to: a /now page, a reading log, a running
 list of links. Put them on your **shelf** so you never have to search for
-them. **⌥⌘B** (Post › Put on Shelf / Take Off) shelves the open post, or
-takes it off. Shelved posts are marked 📚 and stay at the top of the list, in
+them. **⌥⌘B** (Post › Add to Shelf / Remove from Shelf) adds the open post to
+your shelf, or removes it. Shelved posts are marked 📚 and stay at the top of the list, in
 your order, above a thin rule. When you search, the shelved posts that match
 come first.
 
@@ -60,7 +63,7 @@ Reading (or on its card), and the **Shelf** lens in Reading's sources lists
 everything on it, in your order.
 
 With a blyg on studio 0.61 or later, the shelf syncs with your blyg, so the
-studio, the web app and your other computers share it. Changes made in two
+studio and your other computers share it. Changes made in two
 places at once are merged rather than lost. With an older blyg, the shelf is
 kept on this Mac (on Windows, this computer); the ⌘B sheet says which. The
 keys on Windows are Ctrl+B and Ctrl+Shift+A. It's not the same as pinning a
@@ -100,7 +103,7 @@ paragraph.
   how wide.
 
 On Windows the keys are Alt+Up/Alt+Down, Alt+Enter, Alt+Shift+Enter and
-Ctrl+Alt+U. Posts you already link or quote aren't offered again, and
+Ctrl+Shift+U. Posts you already link or quote aren't offered again, and
 withdrawn posts never are. Nothing is fetched to make a suggestion: only
 what this computer already holds.
 
@@ -123,6 +126,31 @@ it points at: the title, who wrote it, the version and its first lines. A
 link without a label offers **label it**, which writes the post's title in as
 the label. **⌘-click** (Ctrl-click on Windows) opens the post. A withdrawn
 post says so. The card only shows what this Mac already holds.
+
+### Quiet writing
+
+Three things sit around the editor on their own: the lineage line under it,
+the loose-ends line over the list, and Nearby thoughts. **Quiet writing**
+hides all three at once, for a plainer page: turn it on in **Settings ›
+Quiet writing**, with **View › Quiet Writing** (also in the command
+palette), or with `quiet-writing = true` in the config file. It's off by
+default.
+
+While it's on, each is still a key away:
+
+- **⌘J** opens the lineage lists on a draft (and the line with them; a click
+  folds them away again), and the full lineage view on a published post.
+- The omnibar still reads `is:orphan`, `has:tk`, `is:stale` and the other
+  operators; only the summary line over the list is gone.
+- **⌥⌘U** (View › Nearby Thoughts) opens Nearby **for this sitting**: its tab
+  comes back while it's open, and it's gone again after you close it, quit,
+  or change the setting. Whether Nearby was open is still remembered for
+  when quiet writing is off.
+
+Nothing hidden does any work: the lineage line isn't built, loose ends aren't
+counted and Nearby matches nothing. Hover cards, the quote tray and focus
+mode don't change, since they only appear when you ask. On Windows the keys
+are Ctrl+J and Ctrl+Shift+U.
 
 ### Serendipity
 
@@ -165,7 +193,10 @@ fit 1000** (⇧⌘G) is the other way out; see [AI helpers](ai.md).
 ## Publishing and versions
 
 ⌘⏎ publishes. A sheet drops from the title bar, "Publish … as v2", with an
-optional **version note**; ⏎ publishes and esc cancels. A toast shows the
+optional **version note**; ⏎ publishes and esc cancels. A post's first
+publish (v1) adds one quiet line: "This goes public at blyg.example.com.
+Published posts can be withdrawn, not deleted." That's how blygs work: a
+published post stays on the record, and withdrawing it says so visibly. A toast shows the
 result and its address, and ⌘O opens the post on the web.
 
 | | |
@@ -272,8 +303,7 @@ composer closes (Bluesky's and Farcaster's "posted" notices). When it
 doesn't (Substack Notes shows none), the browser pane's bar shows **＋ Record
 copy**: open the copy in the pane (for a Substack note, its own page,
 `…/note/…`) and click it. Either way the copy is listed at the version you
-cross-posted. In the web app, the
-post's **⋯ › Copies elsewhere…** does the same, and asks before removing one.
+cross-posted.
 
 ### Delete and withdraw
 
@@ -346,7 +376,7 @@ quote it. It's never put in for you.
   where you pasted it, and the preview shows it. Burrow then asks what the
   image shows: type it and press ⏎ to add it as alt text
   (`![two crabs at dusk](…)`), or esc to skip. Until a published post shows
-  it, an upload is private on studio 0.28 or later: only you (and Burrow,
+  it, an upload is private: only you (and Burrow,
   signed in as you) can see it.
 - **Spellcheck** with the macOS spell checker, your languages and learned
   words: a red wavy underline, and right-click for suggestions, Learn Spelling
@@ -416,7 +446,7 @@ isn't in the quoted post, and publishing refuses it. In the stream, a partial
 quote shows only its passage.
 
 The easy way to write one is to select the passage while reading and press
-⇧⌘D, or to reply and select it inside the stub's quote in the preview; see
+⇧⌘D, or to reply and select it inside the reply's quote in the preview; see
 [Reading, quoting and responses](reading.md#universal-quoting).
 
 ### `[[id]]` links
@@ -489,10 +519,10 @@ respond.
 ### Replying to, quoting and linking your own posts
 
 A published post of yours has a row of chips above its text in Posts: "Your
-post · v3 ·" then **Reply · new stub** (⌥⌘R), **Quote into a thread** (⌥⌘Q)
+post · v3 ·" then **Reply** (⌥⌘R), **Quote into a thread** (⌥⌘Q)
 and **Link post · new fragment** (⌥⌘L). They're in the Post menu too, and do
-what the same actions do on a post you're reading: Reply starts a stub thread
-of your own post, Quote puts `![[id | label]]` in a thread, and Link post
+what the same actions do on a post you're reading: Reply starts a thread replying
+to your own post, Quote puts `![[id | label]]` in a thread, and Link post
 makes a fragment holding `[[id]]`. Drafts and scratch notes have no row.
 
 There's no Fork there: your own post forks only from a pin. Open ⌘Y, pick a
@@ -523,26 +553,8 @@ the quote publishing will make, and the publish sheet warns before you
 publish. Delete the line, or name the post in the instruction if you meant
 it.
 
-**Highlighting generated text** (studio 0.27 or later): the blyg's public
+**Highlighting generated text**: the blyg's public
 pages can tint generated passages and mark them with a small robot that says
 what you disclosed. Your blyg's settings (in the Reader's site settings) set
 the default; the ⌘G palette sets it per post (default, on or off; **H** cycles
 it), and the preview shows the post as its page will.
-
-## Filters in the web app
-
-In the web app, the Posts list has the studio's filters over it: **All**,
-**Drafts** (never published, notes included), **Changes** (published, with
-unpublished changes), **Public** and **Withdrawn**, each with how many it
-holds. ⌃⌥F steps to the next on a desk. A search always looks through
-every post.
-
-## Updates in the web app
-
-⚙ Blyg › **Updates** in the web app is the studio's Updates tab: your
-threads whose quotes have newer versions, stalest first. **Quotes** shows
-what changed in each, and **Refresh** publishes the same words with the
-quotes brought up to date (a new version, with the note above it);
-**Refresh all** does every thread that can be. A thread with unpublished
-edits, or a quote that no longer matches its post, says why it can't.
-

@@ -26,5 +26,4 @@ Never tag by hand. Never merge on red CI (macOS, Windows and the docs site).
    regenerated if keys or config changed.
 6. The gate passes (`burrow-pr-gate`).
 7. After merge: watch the Release run; confirm the release has the macOS,
-   Windows and web assets, plus signed sums.
-8. If a web build is going to a deployment, do `burrow-web-handoff`.
+   Windows assets, plus signed sums.

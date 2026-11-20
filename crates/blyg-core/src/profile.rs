@@ -14,7 +14,7 @@
 //! Connections (the origins a blyg quotes, stubs and forks) are computed
 //! from what's already held locally, plus the quote origins baked into the
 //! feed's HTML. Nothing crawls item documents. Counts there are the author's
-//! own data ("stubbed 2 posts"), never a social metric: there are no follower
+//! own data ("replied to 2 posts"), never a social metric: there are no follower
 //! or subscriber counts anywhere.
 //!
 //! Parsing here is pure and tolerant (tolerance rule: ignore the unknown,
@@ -141,7 +141,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    /// "stubbed 2 posts", "forked 1 pin", "quoted 3 times".
+    /// "replied to 2 posts", "forked 1 pin", "quoted 3 times".
     pub fn label(&self) -> String {
         let n = self.count;
         let s = if n == 1 { "" } else { "s" };
@@ -153,7 +153,7 @@ impl Connection {
                     format!("quoted {n} times")
                 }
             }
-            Relation::Stubs => format!("stubbed {n} post{s}"),
+            Relation::Stubs => format!("replied to {n} post{s}"),
             Relation::Forks => format!("forked {n} pin{s}"),
         }
     }
@@ -1119,7 +1119,10 @@ mod tests {
         assert_eq!(
             labels,
             [
-                ("https://ada.example.net/".into(), "stubbed 2 posts".into()),
+                (
+                    "https://ada.example.net/".into(),
+                    "replied to 2 posts".into()
+                ),
                 ("https://lin.example.org/".into(), "quoted 2 times".into()),
                 ("https://rue.example.com/".into(), "forked 1 pin".into()),
             ]
@@ -1177,7 +1180,7 @@ mod tests {
             labels,
             [
                 "https://ada.example.net/ quoted once",
-                "https://ada.example.net/ stubbed 1 post",
+                "https://ada.example.net/ replied to 1 post",
                 "https://rue.example.com/ forked 1 pin"
             ]
         );

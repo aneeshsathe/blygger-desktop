@@ -27,6 +27,10 @@ pub struct Release {
 
 pub const RELEASES: &[Release] = &[
     Release {
+        version: "0.26.0",
+        first_step: Some("quiet-writing"),
+    },
+    Release {
         version: "0.25.0",
         first_step: Some("mentions-feed"),
     },
@@ -116,10 +120,10 @@ pub fn running_version() -> String {
         return v.to_string();
     }
     if cfg!(debug_assertions)
-        && let Ok(v) = std::env::var("BLYGGER_VERSION_AS")
-        && parse(&v).is_some()
+        && let Some(v) = &crate::dev_flags::get().version_as
+        && parse(v).is_some()
     {
-        return v;
+        return v.clone();
     }
     env!("CARGO_PKG_VERSION").to_string()
 }

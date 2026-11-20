@@ -84,6 +84,7 @@ impl Provider for AnthropicApi {
             .request("POST", "/v1/messages")
             .set("content-type", "application/json")
             .set("accept", "text/event-stream")
+            .set("accept-encoding", crate::http::SSE_ENCODING)
             .send_json(body)
             .map_err(|e| http::map_err("Anthropic", e))?;
 

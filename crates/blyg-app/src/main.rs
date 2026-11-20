@@ -24,16 +24,23 @@ mod capture_service; // --- capture --- Services (macOS), clipboard chip (Window
 mod cli;
 mod composer; // --- composer --- (@-mentions and spellcheck)
 mod connection;
+mod dev_flags;
 mod fake;
 mod fonts;
 mod images;
 mod keymap;
+// Its `BLYGGER_UPDATE_DOCS` read predates `dev_flags` (another change owns the file).
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod keymap_docs;
 mod ornament; // --- themes ---
 mod platform;
+mod platform_text;
 mod prefs;
+mod scenes;
 mod settings;
+#[cfg(test)]
+mod test_wait;
 mod theme;
 mod theme_ext; // --- themes --- (chrome surfaces: sheets, popovers, fields)
 mod update;
@@ -58,16 +65,17 @@ use fake::FakeBackend;
 use prefs::Prefs;
 
 fn main() -> ExitCode {
-    // GPUI draws through a topmost DirectComposition visual on Windows, which
-    // would cover the WebView2 child window that shows posts. Its plain
-    // swap-chain path leaves child windows visible above the app.
     #[cfg(target_os = "windows")]
-    if std::env::var_os("GPUI_DISABLE_DIRECT_COMPOSITION").is_none() {
-        // SAFETY: first thing in main, before any other thread exists.
-        unsafe { std::env::set_var("GPUI_DISABLE_DIRECT_COMPOSITION", "1") };
-    }
+    dev_flags::prefer_swap_chain();
     #[cfg(target_os = "windows")]
     install_crash_log();
+    let flags = match dev_flags::init() {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("blygger: {e}");
+            return ExitCode::from(2);
+        }
+    };
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(code) = cli::run(&args) {
         return code;
@@ -90,12 +98,12 @@ fn main() -> ExitCode {
     let mut prefs = Prefs::from_config(store.config());
     prefs.apply_theme_override();
     // Fake mode never touches the real Keychain.
-    let fake_mode = std::env::var_os("BLYGGER_FAKE").is_some();
+    let fake_mode = flags.fake.on;
     // BLYGGER_TEST_TOKEN (automation against a local `wrangler dev`): an
     // in-memory token for the configured blyg-url, and no Keychain at all.
     let tokens: Arc<dyn TokenStore> = if fake_mode {
         Arc::new(MemoryTokenStore::default())
-    } else if let Ok(t) = std::env::var("BLYGGER_TEST_TOKEN") {
+    } else if let Some(t) = &flags.test_token {
         let m = MemoryTokenStore::default();
         if let Some(u) = store.config().blyg_url() {
             let _ = m.set(u, t.trim());
@@ -113,7 +121,7 @@ fn main() -> ExitCode {
     // BLYGGER_FAKE_NO_PROVENANCE=1: act like a Worker without the provenance
     // extension (to see the publish-without-disclosure warning).
     if let Some(f) = &fake
-        && std::env::var_os("BLYGGER_FAKE_NO_PROVENANCE").is_some()
+        && flags.fake.no_provenance
     {
         f.set_provenance_available(false);
     }
@@ -134,7 +142,7 @@ fn main() -> ExitCode {
         }
         (None, None) => (Arc::new(Disconnected), Mode::Disconnected),
     };
-    if std::env::var_os("BLYGGER_TIMING").is_some() {
+    if flags.timing {
         println!("backend={mode:?}");
     }
     // --- blyg switcher --- fake mode: each blyg its own sample backend.
@@ -259,8 +267,8 @@ fn open_main(
             if no_activate() {
                 let _ = handle.update(cx, |_, window, _| order_front_regardless(window));
             }
-            if let Ok(scenario) = std::env::var("BLYGGER_DEMO") {
-                let _ = handle.update(cx, |view, window, cx| view.run_demo(&scenario, window, cx));
+            if let Some(scenario) = dev_flags::get().demo.scene {
+                let _ = handle.update(cx, |view, window, cx| view.run_demo(scenario, window, cx));
             } else {
                 // --- reading compose --- launch on the reading screen.
                 let _ = handle.update(cx, |view, window, cx| view.launch_into_reading(window, cx));
@@ -318,7 +326,7 @@ pub(crate) fn guarded<T>(f: impl FnOnce() -> blyg_core::Result<T>) -> blyg_core:
 /// `BLYGGER_NO_ACTIVATE=1`: never take focus from the frontmost app (used by
 /// automated screenshot runs so they can't swallow the user's keystrokes).
 pub fn no_activate() -> bool {
-    std::env::var_os("BLYGGER_NO_ACTIVATE").is_some()
+    dev_flags::get().no_activate
 }
 
 /// Show a window without activating the app (automation only): an app that
@@ -374,6 +382,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Reload Config", app::ReloadConfig),
                 MenuItem::action("Quick Capture", app::ShowCapture),
                 MenuItem::separator(),
+                MenuItem::action("Connect…", app::switcher::ConnectBlyg),
                 MenuItem::action("Disconnect…", app::Disconnect),
                 MenuItem::separator(),
                 MenuItem::action("Quit Burrow", app::Quit),
@@ -426,7 +435,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Catch Up…", app::reading::catchup::CatchUp), // --- catch up ---
                 MenuItem::action("Quote…", app::reading::QuotePicker),
                 // --- own posts ---
-                MenuItem::action("Reply · New Stub", app::reading::own::ReplyToPost),
+                MenuItem::action("Reply", app::reading::own::ReplyToPost),
                 MenuItem::action("Quote into a Thread", app::reading::own::QuotePost),
                 MenuItem::action("Link Post · New Fragment", app::reading::own::LinkToPost),
                 // --- hoppers ---
@@ -438,17 +447,12 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 ),
                 // --- shelf ---
                 MenuItem::action("Shelf…", app::shelf::ShowShelf),
-                MenuItem::action("Put on Shelf / Take Off", app::shelf::ToggleShelf),
+                MenuItem::action("Add to Shelf / Remove from Shelf", app::shelf::ToggleShelf),
                 // --- tangles --- the quote tray, split view
                 MenuItem::action("Put on Quote Tray", app::tray::AddToTray),
                 MenuItem::action("Open Beside", app::split::OpenBeside),
                 MenuItem::action("Quote Selection in Draft", app::notes::QuoteToDraft),
                 MenuItem::action("Clip Page to Draft", app::browser::ClipPage), // --- capture ---
-                // --- terminal ---
-                MenuItem::action(
-                    "Send Selection to Terminal",
-                    app::terminal::SendSelectionToTerminal,
-                ),
                 // --- extensions ---
                 MenuItem::action("Extensions…", app::extensions::ShowExtensions),
                 // --- delete & withdraw ---
@@ -486,17 +490,16 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("New Hopper…", app::reading::hoppers::NewHopper), // --- hoppers ---
                 MenuItem::action("Publish Trail…", app::trails::PublishTrail),     // --- trails ---
                 MenuItem::action("Check All Feeds Now", app::reading::sources::CheckFeeds),
+                MenuItem::action("Mark All Read…", app::reading::sources::MarkAllRead),
                 // --- browse ---
                 MenuItem::action("Back", app::reading::browse::ReaderBack),
                 MenuItem::action(
                     "Browsing History",
                     app::reading::browse::ToggleBrowseHistory,
                 ),
-                MenuItem::action("Mentions", app::reading::ShowMentions),
+                MenuItem::action("Responses", app::reading::ShowMentions),
                 MenuItem::action("Subscriptions", app::reading::ShowSubscriptions),
                 MenuItem::action("Contacts…", app::reading::contacts::ShowContacts), // --- contacts ---
-                // --- chat ---
-                MenuItem::action("#thicket Chat (Experimental)", app::chat::ShowChat),
                 MenuItem::separator(),
                 MenuItem::action("Subscribe…", app::reading::SubscribeTo),
                 // --- OPML ---
@@ -535,6 +538,7 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Full Editor", app::studio::ViewStudio),
                 MenuItem::action("Preview", app::TogglePreview),
                 MenuItem::action("Focus", app::focus::ToggleFocus), // --- focus ---
+                MenuItem::action("Quiet Writing", app::quiet::ToggleQuietWriting), // --- quiet ---
                 MenuItem::separator(),
                 // --- palette ---
                 MenuItem::action("Command Palette…", app::command_palette::ShowPalette),
@@ -552,8 +556,6 @@ fn menus_with(spellcheck: bool, blygs: &[app::switcher::Entry]) -> Vec<Menu> {
                 MenuItem::action("Open Browser…", app::browser::OpenBrowser),
                 MenuItem::action("Show/Hide Browser Pane", app::browser::ToggleBrowser),
                 MenuItem::action("Notes", app::notes::ToggleNotes), // --- notes ---
-                // --- terminal ---
-                MenuItem::action("Terminal (Experimental)", app::terminal::ToggleTerminal),
             ],
             disabled: false,
         },

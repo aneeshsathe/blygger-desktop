@@ -14,11 +14,14 @@
 //!   [`MainView::restore_working_copy`], which keeps the editor from saving
 //!   the old text back while the blyg replaces it.
 //!
-//! A child module of `app` so it can extend `MainView`; `app.rs` keeps only
-//! the two `Sheet` variants (drawn in `render_sheet`) and the action hook,
-//! marked `// --- delete & withdraw ---`.
+//! A child module of `app` so it can extend `MainView`; its three sheets
+//! (state, keys, render) are at the end of this file, registered in
+//! `sheet/mod.rs`; `app.rs` keeps only the action hook, marked
+//! `// --- delete & withdraw ---`.
 
 use super::*;
+use crate::app::sheet::{Kit, SheetView, Shown};
+use crate::scenes::Scene;
 
 gpui_kit::actions!(
     blygger,
@@ -51,11 +54,11 @@ impl MainView {
     /// The post both actions work on: the current one, on the Posts screen,
     /// with no sheet up.
     fn discard_target(&mut self, cx: &mut Context<Self>) -> Option<Item> {
-        if self.sheet.is_some() || self.reading.sheet.is_some() {
+        if self.sheet.is_open() || self.reading.sheet.is_some() {
             return None;
         }
         if self.reading.view != reading::View::Posts {
-            self.show_toast(crate::keymap::hint(toolbar::NEED_POSTS), None, cx);
+            self.show_toast(toolbar::NEED_POSTS.get(), None, cx);
             return None;
         }
         if self.current.is_none() {
@@ -72,8 +75,7 @@ impl MainView {
             vm::Discard::Delete => {
                 let focus = cx.focus_handle();
                 window.focus(&focus, cx);
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::DeleteDraft {
+                self.sheet.open(DeleteDraftSheet {
                     title: vm::truncate_chars(&item.title(), 48),
                     noun: vm::discard_noun(&item),
                     id: item.local_id,
@@ -109,8 +111,7 @@ impl MainView {
                 });
                 self._subs.push(sub);
                 note.update(cx, |s, cx| s.focus(window, cx));
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::Withdraw {
+                self.sheet.open(WithdrawSheet {
                     id: item.local_id.clone(),
                     title: vm::truncate_chars(&item.title(), 48),
                     note,
@@ -134,7 +135,7 @@ impl MainView {
 
     /// The delete sheet's ⏎ (or its Delete button).
     pub(super) fn confirm_delete(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::DeleteDraft { id, noun, .. }) = self.sheet.take() else {
+        let Some(DeleteDraftSheet { id, noun, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
@@ -185,7 +186,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::Withdraw { id, .. }) = self.sheet.take() else {
+        let Some(WithdrawSheet { id, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
@@ -253,8 +254,7 @@ impl MainView {
             Ok(version) => {
                 let focus = cx.focus_handle();
                 window.focus(&focus, cx);
-                self.sheet_gen += 1;
-                self.sheet = Some(Sheet::DiscardChanges {
+                self.sheet.open(DiscardChangesSheet {
                     id: item.local_id.clone(),
                     title: vm::truncate_chars(&item.title(), 48),
                     version,
@@ -271,7 +271,7 @@ impl MainView {
 
     /// The discard sheet's ⏎ (or its Discard button).
     pub(super) fn confirm_discard_changes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::DiscardChanges { id, version, .. }) = self.sheet.take() else {
+        let Some(DiscardChangesSheet { id, version, .. }) = self.sheet.take() else {
             return;
         };
         self.focus_after_sheet(window, cx);
@@ -377,20 +377,20 @@ impl MainView {
     /// published post / that post with an edit.
     pub(super) fn discard_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match scenario {
-            "tb-delete" => {
+            Scene::TbDelete => {
                 self.open(&LocalId("01J9QK3".into()), window, cx);
                 self.on_delete_draft(&DeleteDraft, window, cx);
             }
-            "tb-withdraw" => {
+            Scene::TbWithdraw => {
                 self.open(&LocalId("01J9PX1".into()), window, cx);
                 self.on_withdraw(&Withdraw, window, cx);
             }
-            "tb-discard" => {
+            Scene::TbDiscard => {
                 let id = LocalId("01J9PX1".into());
                 self.open(&id, window, cx);
                 self.editor.update(cx, |s, cx| {
@@ -407,9 +407,206 @@ impl MainView {
 /// The toast's second line when the blyg keeps a discarded post marked
 /// unpublished, as upstream does when v`version` disclosed generated text.
 pub(crate) fn still_unpublished(version: u32, next: u32) -> String {
-    format!("Still marked unpublished: v{version} has generated text. ⌘⏎ publishes it as v{next}")
+    crate::keymap::hint_owned(format!(
+        "Still marked unpublished: v{version} has generated text. ⌘⏎ publishes it as v{next}"
+    ))
 }
 
 #[cfg(test)]
 #[path = "discard_tests.rs"]
 mod tests;
+
+// The three sheets (`sheet/`): the keys are buttons too.
+
+/// ⇧⌘⌫ on a draft or scratch note: `⏎` deletes it, `esc` keeps it.
+pub(crate) struct DeleteDraftSheet {
+    pub(crate) id: LocalId,
+    pub(crate) title: String,
+    pub(crate) noun: &'static str,
+    pub(crate) focus: FocusHandle,
+}
+
+/// Post › Withdraw… on a published post, with an optional note.
+pub(crate) struct WithdrawSheet {
+    pub(crate) id: LocalId,
+    pub(crate) title: String,
+    pub(crate) note: Entity<InputState>,
+}
+
+/// ⌥⌘Z on a published post with unpublished edits: `⏎` restores the
+/// published `version`, `esc` keeps the edits.
+pub(crate) struct DiscardChangesSheet {
+    pub(crate) id: LocalId,
+    pub(crate) title: String,
+    pub(crate) version: u32,
+    pub(crate) focus: FocusHandle,
+}
+
+impl SheetView for DeleteDraftSheet {
+    fn render(&self, _: &MainView, kit: &Kit, cx: &mut Context<MainView>) -> Shown {
+        let p = kit.p;
+        let DeleteDraftSheet {
+            title, noun, focus, ..
+        } = self;
+        Shown::from((
+            440.,
+            div()
+                .track_focus(focus)
+                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                    match ev.keystroke.key.as_str() {
+                        "enter" => this.confirm_delete(window, cx),
+                        "escape" => this.close_sheet(window, cx),
+                        _ => return,
+                    }
+                    cx.stop_propagation();
+                }))
+                .child(kit.heading(format!("Delete this {noun}?")))
+                .child(
+                    div()
+                        .text_color(p.muted)
+                        .line_height(relative(1.45))
+                        .child(div().text_color(p.ink).child(format!("“{title}”")))
+                        .child(DELETE_NOTE),
+                )
+                .child(
+                    kit.keys_row(vec![])
+                        .child(
+                            kit.key_hint("⏎", "delete")
+                                .id("sheet-delete")
+                                .debug_selector(|| "sheet-delete".into())
+                                .cursor_pointer()
+                                .text_color(p.over_text())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_delete(window, cx)
+                                })),
+                        )
+                        .child(
+                            kit.key_hint("esc", "cancel")
+                                .id("sheet-cancel")
+                                .debug_selector(|| "sheet-cancel".into())
+                                .cursor_pointer()
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+        ))
+    }
+}
+
+impl SheetView for WithdrawSheet {
+    fn render(&self, _: &MainView, kit: &Kit, cx: &mut Context<MainView>) -> Shown {
+        let p = kit.p;
+        let WithdrawSheet { title, note, .. } = self;
+        Shown::from({
+            let note = note.clone();
+            (
+                460.,
+                div()
+                    .capture_action(cx.listener(|this, _: &Escape, window, cx| {
+                        cx.stop_propagation();
+                        this.close_sheet(window, cx);
+                    }))
+                    .child(kit.heading(format!("Withdraw “{title}”?")))
+                    .child(
+                        div()
+                            .mb(px(8.))
+                            .text_color(p.muted)
+                            .line_height(relative(1.45))
+                            .child(WITHDRAW_NOTE),
+                    )
+                    .child(
+                        kit.input_box(gpui_kit::base::input::Input::new(&note).into_any_element()),
+                    )
+                    .child(
+                        kit.keys_row(vec![])
+                            .child(
+                                kit.key_hint("⏎", "withdraw")
+                                    .id("sheet-withdraw")
+                                    .debug_selector(|| "sheet-withdraw".into())
+                                    .cursor_pointer()
+                                    .text_color(p.over_text())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        let text = note.read(cx).value().to_string();
+                                        this.confirm_withdraw(text, window, cx)
+                                    })),
+                            )
+                            .child(
+                                kit.key_hint("esc", "cancel")
+                                    .id("sheet-cancel")
+                                    .debug_selector(|| "sheet-cancel".into())
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.close_sheet(window, cx)
+                                    })),
+                            ),
+                    )
+                    .into_any_element(),
+            )
+        })
+    }
+
+    fn inputs(&self) -> Vec<&Entity<InputState>> {
+        vec![&self.note]
+    }
+}
+
+impl SheetView for DiscardChangesSheet {
+    fn render(&self, _: &MainView, kit: &Kit, cx: &mut Context<MainView>) -> Shown {
+        let p = kit.p;
+        let DiscardChangesSheet {
+            title,
+            version,
+            focus,
+            ..
+        } = self;
+        Shown::from((
+            440.,
+            div()
+                .track_focus(focus)
+                .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
+                    match ev.keystroke.key.as_str() {
+                        "enter" => this.confirm_discard_changes(window, cx),
+                        "escape" => this.close_sheet(window, cx),
+                        _ => return,
+                    }
+                    cx.stop_propagation();
+                }))
+                .child(kit.heading("Discard unpublished changes?".to_string()))
+                .child(
+                    div()
+                        .text_color(p.muted)
+                        .line_height(relative(1.45))
+                        .child(div().text_color(p.ink).child(format!("“{title}”")))
+                        .child(format!(
+                            "The editor goes back to v{version} as published. {}",
+                            DISCARD_NOTE
+                        )),
+                )
+                .child(
+                    kit.keys_row(vec![])
+                        .child(
+                            kit.key_hint("⏎", "discard changes")
+                                .id("sheet-discard")
+                                .debug_selector(|| "sheet-discard".into())
+                                .cursor_pointer()
+                                .text_color(p.over_text())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.confirm_discard_changes(window, cx)
+                                })),
+                        )
+                        .child(
+                            kit.key_hint("esc", "keep them")
+                                .id("sheet-cancel")
+                                .debug_selector(|| "sheet-cancel".into())
+                                .cursor_pointer()
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.close_sheet(window, cx)),
+                                ),
+                        ),
+                )
+                .into_any_element(),
+        ))
+    }
+}

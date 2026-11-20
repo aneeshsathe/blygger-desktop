@@ -299,12 +299,12 @@ pub mod tests_support {
                     if req.cancel.is_cancelled() {
                         return Err(AiError::Cancelled);
                     }
-                    std::thread::sleep(Duration::from_millis(5));
+                    crate::fake::simulate_latency(Duration::from_millis(5));
                 }
                 return Err(AiError::Cancelled);
             }
             if !self.delay.is_zero() {
-                std::thread::sleep(self.delay);
+                crate::fake::simulate_latency(self.delay);
             }
             req.cancel.check()?;
             let mut r = self.replies.lock().unwrap();

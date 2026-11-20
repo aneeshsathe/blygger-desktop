@@ -73,13 +73,10 @@ impl MainView {
     /// Every string the Mentions screen shows (tests: no digits as counts).
     #[cfg(test)]
     pub(crate) fn mentions_screen_strings(&self) -> Vec<String> {
-        let mut out = vec!["Mentions".to_string(), self.mentions_hint()];
+        let mut out = vec!["Responses".to_string(), self.mentions_hint()];
         for (title, _, show, rows) in self.mention_groups() {
             out.push(format!("On “{title}”"));
             out.push(show.label());
-            if show.can_follow_default() {
-                out.push(FOLLOW_DEFAULT.into());
-            }
             for r in rows {
                 out.extend([r.who, r.origin, r.relation, r.when]);
                 out.push(if r.hidden { "Unhide" } else { "Hide" }.into());
@@ -187,12 +184,12 @@ impl MainView {
         if available && !sent {
             actions.push(toggle_hidden);
         }
-        let header = self.screen_header("Mentions", hint, actions);
+        let header = self.screen_header("Responses", hint, actions);
         let body: AnyElement = match &self.reading.mentions {
             _ if !available => self.unavailable(),
             _ if sent => self.render_sent(cx), // --- contacts ---
-            Load::Idle | Load::Loading => self.muted_note("Loading mentions…"),
-            Load::Failed(e) => self.muted_note(format!("Couldn't load mentions: {e}")),
+            Load::Idle | Load::Loading => self.muted_note("Loading responses…"),
+            Load::Failed(e) => self.muted_note(format!("Couldn't load responses: {e}")),
             _ => {
                 let groups = self.mention_groups();
                 if groups.is_empty() {
@@ -223,38 +220,9 @@ impl MainView {
                                                     .child(format!("On “{title}”")),
                                             )
                                             .when_some(id, |d, id| {
-                                                let flip = id.clone();
                                                 d.child(
-                                                    self.chip(
-                                                        format!("responses-{gi}"),
-                                                        show.label(),
-                                                    )
-                                                    .when(show.show, |d| d.text_color(p.accent))
-                                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                                        this.set_responses(
-                                                            flip.clone(),
-                                                            show.flipped(),
-                                                            cx,
-                                                        )
-                                                    })),
+                                                    self.render_responses_control(gi, id, show, cx),
                                                 )
-                                                .when(show.can_follow_default(), |d| {
-                                                    d.child(
-                                                        self.chip(
-                                                            format!("responses-default-{gi}"),
-                                                            FOLLOW_DEFAULT,
-                                                        )
-                                                        .on_click(cx.listener(
-                                                            move |this, _, _, cx| {
-                                                                this.set_responses(
-                                                                    id.clone(),
-                                                                    ResponsesMode::Default,
-                                                                    cx,
-                                                                )
-                                                            },
-                                                        )),
-                                                    )
-                                                })
                                             }),
                                     )
                                     .children(
@@ -275,6 +243,53 @@ impl MainView {
             .text_size(px(13.))
             .child(header)
             .child(body)
+            .into_any_element()
+    }
+
+    /// One post's "On the post's page: Show | Hide | Site default" control:
+    /// a muted label and one segment per choice, the chosen one in the
+    /// accent; clicking another makes it the post's choice.
+    fn render_responses_control(
+        &self,
+        gi: usize,
+        id: blyg_core::LocalId,
+        show: Responses,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let p = self.palette.on_page();
+        div()
+            .id(SharedString::from(format!("responses-{gi}")))
+            .debug_selector(move || format!("responses-{gi}"))
+            .flex()
+            .flex_none()
+            .items_center()
+            .gap(px(4.))
+            .child(
+                div()
+                    .text_size(px(11.5))
+                    .text_color(p.muted)
+                    .mr(px(2.))
+                    .child(ON_PAGE),
+            )
+            .children(
+                show.options()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, (label, mode, chosen))| {
+                        let id = id.clone();
+                        self.chip(format!("responses-{gi}-{i}"), label)
+                            .when(chosen, |d| {
+                                d.border_color(p.accent)
+                                    .text_color(p.accent)
+                                    .cursor_default()
+                            })
+                            .when(!chosen, |d| {
+                                d.on_click(cx.listener(move |this, _, _, cx| {
+                                    this.set_responses(id.clone(), mode, cx)
+                                }))
+                            })
+                    }),
+            )
             .into_any_element()
     }
 
@@ -349,7 +364,8 @@ impl MainView {
     }
 }
 
-const FOLLOW_DEFAULT: &str = "follow site setting";
+/// The one control's label: what it decides.
+const ON_PAGE: &str = "On the post's page:";
 
 /// One post's responses control: what its page shows now, and the post's own
 /// choice (`None` on a server older than studio 0.8, which has no default).
@@ -360,30 +376,82 @@ pub(crate) struct Responses {
 }
 
 impl Responses {
-    fn label(self) -> String {
-        let base = if self.show {
-            "responses shown on the page"
-        } else {
-            "responses hidden from the page"
+    /// The control's choices, as one labelled segmented control: Show,
+    /// Hide and (where the server has one) Site default, which says what
+    /// the site setting does when it's the one chosen. `(label, mode,
+    /// chosen)`.
+    pub(crate) fn options(self) -> Vec<(String, ResponsesMode, bool)> {
+        let chose = |m: ResponsesMode| match self.mode {
+            Some(own) => own == m,
+            // No default on the server: what the page shows is the choice.
+            None => (m == ResponsesMode::Show) == self.show,
         };
-        if self.mode == Some(ResponsesMode::Default) {
-            format!("{base} · site setting")
-        } else {
-            base.into()
+        let mut out = vec![
+            (
+                "Show".to_string(),
+                ResponsesMode::Show,
+                chose(ResponsesMode::Show),
+            ),
+            (
+                "Hide".to_string(),
+                ResponsesMode::Hide,
+                chose(ResponsesMode::Hide),
+            ),
+        ];
+        if self.mode.is_some() {
+            let default = chose(ResponsesMode::Default);
+            let label = if !default {
+                "Site default".to_string()
+            } else if self.show {
+                "Site default (shown)".to_string()
+            } else {
+                "Site default (hidden)".to_string()
+            };
+            out.push((label, ResponsesMode::Default, default));
         }
+        out
     }
 
-    /// The main chip flips what the page shows, as the post's own choice.
-    fn flipped(self) -> ResponsesMode {
-        if self.show {
-            ResponsesMode::Hide
-        } else {
-            ResponsesMode::Show
-        }
+    /// The control read as one line: "On the post's page: Hide".
+    #[cfg(test)]
+    fn label(self) -> String {
+        let chosen = self
+            .options()
+            .into_iter()
+            .find(|o| o.2)
+            .map(|o| o.0)
+            .unwrap_or_default();
+        format!("{ON_PAGE} {chosen}")
     }
+}
 
-    /// A post with its own choice can hand it back to the site setting.
-    fn can_follow_default(self) -> bool {
-        matches!(self.mode, Some(ResponsesMode::Show | ResponsesMode::Hide))
+#[cfg(test)]
+mod responses_control_tests {
+    use super::{Responses, ResponsesMode};
+
+    #[test]
+    fn one_labelled_control_names_the_choice() {
+        let r = |show, mode| Responses { show, mode };
+        assert_eq!(
+            r(true, Some(ResponsesMode::Show)).label(),
+            "On the post's page: Show"
+        );
+        assert_eq!(
+            r(false, Some(ResponsesMode::Default)).label(),
+            "On the post's page: Site default (hidden)"
+        );
+        // An older studio has no site default: two choices.
+        let old = r(false, None).options();
+        assert_eq!(old.len(), 2);
+        assert_eq!(r(false, None).label(), "On the post's page: Hide");
+        // Exactly one choice is chosen.
+        for o in [
+            ResponsesMode::Show,
+            ResponsesMode::Hide,
+            ResponsesMode::Default,
+        ] {
+            let n = r(true, Some(o)).options().iter().filter(|x| x.2).count();
+            assert_eq!(n, 1, "{o:?}");
+        }
     }
 }

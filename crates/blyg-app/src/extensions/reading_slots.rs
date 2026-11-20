@@ -19,7 +19,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
-use blyg_core::ReadingItem;
+use blyg_core::{ReadingItem, RemoteId, SubId};
 use blyg_ext::reading::{EntryActionSpec, EntryByline, EntrySheet, ReadingEntry};
 use blyg_ext::{ExtError, Installed};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -28,6 +28,7 @@ use gpui_kit::*;
 use super::Launch;
 use crate::app::reading::Tip;
 use crate::app::{MainView, TITLEBAR_H};
+use crate::scenes::Scene;
 
 #[cfg(test)]
 #[path = "reading_slots_tests.rs"]
@@ -48,8 +49,8 @@ pub(crate) type MarkerKey = (String, String, String, u32);
 fn marker_key(ext: &str, r: &ReadingItem) -> MarkerKey {
     (
         ext.to_string(),
-        r.subscription_id.clone(),
-        r.remote_id.clone(),
+        r.subscription_id.to_string(),
+        r.remote_id.to_string(),
         r.version,
     )
 }
@@ -210,7 +211,9 @@ impl MainView {
                     // A marker can wrap the byline: the stream measures
                     // that post again.
                     if m.is_some()
-                        && let Some(ix) = v.reading.shown_pos(&(key.1.clone(), key.2.clone()))
+                        && let Some(ix) = v
+                            .reading
+                            .shown_pos(&(SubId::from(&key.1), RemoteId::from(&key.2)))
                     {
                         v.reading.stream.list.remeasure_items(ix..ix + 1);
                     }
@@ -408,7 +411,7 @@ impl MainView {
     /// runs.
     pub(crate) fn slots_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -418,7 +421,7 @@ impl MainView {
                 self.show_view(crate::app::reading::View::Reading, window, cx);
                 self.stream_move(1, window, cx);
             }
-            2 if scenario == "ext-slots-inspect" => {
+            2 if scenario == Scene::ExtSlotsInspect => {
                 let item = self.reading.sel.as_ref().and_then(|k| {
                     self.reading
                         .rows
@@ -707,7 +710,9 @@ impl MainView {
                                 .on_click(cx.listener(|this, _, _, cx| this.slots_copy(cx))),
                         )
                     })
-                    .when(copyable, |d| d.child(self.slot_key_hint(COPY_KEY, "copy")))
+                    .when(copyable, |d| {
+                        d.child(self.slot_key_hint(COPY_KEY.get(), "copy"))
+                    })
                     .child(self.slot_key_hint("esc", "close")),
             )
             .into_any_element()
@@ -716,11 +721,7 @@ impl MainView {
 
 const DIGITS: [&str; 9] = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 
-const COPY_KEY: &str = if cfg!(target_os = "windows") {
-    "Ctrl+C"
-} else {
-    "⌘C"
-};
+const COPY_KEY: crate::platform_text::Text = crate::platform_text::ui_text("⌘C");
 
 // The extension sheets' small parts, as `sheets.rs` draws them.
 impl MainView {

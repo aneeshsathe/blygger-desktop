@@ -75,6 +75,16 @@ impl ActivityLevel {
             ActivityLevel::Low => "low",
         }
     }
+
+    /// The badge's words: what the level measures ("high activity"), not a
+    /// bare "high".
+    pub fn label(self) -> &'static str {
+        match self {
+            ActivityLevel::High => "high activity",
+            ActivityLevel::Medium => "medium activity",
+            ActivityLevel::Low => "low activity",
+        }
+    }
 }
 
 /// How active the directory measured a blyg.
@@ -368,7 +378,19 @@ pub fn activity_line(blyg: &DirectoryBlyg, now_ms: i64) -> String {
     match (blyg.activity.level, &blyg.activity.last_post) {
         (None, _) => "activity not measured yet".into(),
         (Some(_), Some(p)) => format!("last post {}", ago(p, now_ms)),
-        (Some(l), None) => format!("{} activity", l.as_str()),
+        // The badge already says the level ("high activity").
+        (Some(_), None) => "last post not reported".into(),
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::ActivityLevel;
+
+    #[test]
+    fn the_badge_says_what_it_measures() {
+        assert_eq!(ActivityLevel::High.label(), "high activity");
+        assert_eq!(ActivityLevel::Low.label(), "low activity");
     }
 }
 

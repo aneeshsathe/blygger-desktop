@@ -10,22 +10,23 @@ use gpui_kit::*;
 
 use super::super::View;
 use crate::app::MainView;
+use crate::scenes::Scene;
 
 impl MainView {
     pub(crate) fn contacts_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("ct-book", 0) => self.toggle_contacts_sheet(window, cx),
-            ("ct-author", 0) => {
+            (Scene::CtBook, 0) => self.toggle_contacts_sheet(window, cx),
+            (Scene::CtAuthor, 0) => {
                 self.reading.mode = super::super::stream_vm::ReadMode::Reader;
                 self.show_view(View::Reading, window, cx);
             }
-            ("ct-author", 1) => {
+            (Scene::CtAuthor, 1) => {
                 let k = self
                     .reading
                     .rows
@@ -36,10 +37,10 @@ impl MainView {
                     self.open_reading(k, window, cx);
                 }
             }
-            ("ct-author", 2) => self.add_author_to_contacts(window, cx),
-            ("ct-sent", 0) => self.show_view(View::Mentions, window, cx),
-            ("ct-sent", 1) => self.set_mentions_side(true, cx),
-            ("ct-subs", 0) => self.show_view(View::Subscriptions, window, cx),
+            (Scene::CtAuthor, 2) => self.add_author_to_contacts(window, cx),
+            (Scene::CtSent, 0) => self.show_view(View::Mentions, window, cx),
+            (Scene::CtSent, 1) => self.set_mentions_side(true, cx),
+            (Scene::CtSubs, 0) => self.show_view(View::Subscriptions, window, cx),
             _ => {}
         }
     }

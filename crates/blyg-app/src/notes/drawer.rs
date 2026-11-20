@@ -15,6 +15,7 @@ use super::{CONTEXT, PostRef, SLIDE_MS, TITLE};
 use crate::app::scratch::MakeDraft;
 use crate::app::{MainView, Publish, TITLEBAR_H};
 use crate::composer::AssistKey;
+use crate::scenes::Scene;
 use crate::theme::Rule;
 use crate::vm; // --- themes --- dividers
 
@@ -59,7 +60,8 @@ pub(crate) enum Fallback {
 }
 
 /// The footer while a passage is selected in the notes (a click quotes it).
-pub const QUOTE_HINT: &str = "⇧⌘D quotes the selection in your draft";
+pub const QUOTE_HINT: crate::platform_text::Text =
+    crate::platform_text::ui_text("⇧⌘D quotes the selection in your draft");
 
 /// The script that reads the selection (the result comes back as JSON).
 pub const SELECTION_JS: &str =
@@ -95,7 +97,7 @@ impl MainView {
         .detach();
     }
 
-    /// ⇧⌘N / View › Notes, as ⌃` is for the terminal: closed, or open
+    /// ⇧⌘N / View › Notes: closed, or open
     /// without the keyboard, it opens (or stays) and takes the keyboard;
     /// with the keyboard in it, it closes.
     pub(crate) fn toggle_notes(
@@ -875,7 +877,7 @@ impl MainView {
                     .child(
                         chip(
                             "notes-draft",
-                            "⌘D → draft",
+                            crate::keymap::hint("⌘D → draft"),
                             "Make these notes a draft on your blyg (the drawer starts a new page)",
                         )
                         .on_click(
@@ -961,7 +963,7 @@ impl MainView {
                         .cursor_pointer()
                         .text_color(p.accent_text())
                         .hover(|s| s.underline())
-                        .child(QUOTE_HINT)
+                        .child(QUOTE_HINT.get())
                         .on_click(cx.listener(|this, _, window, cx| {
                             if let Some((sel, source)) = this.notes_selected_passage(cx) {
                                 this.quote_into_draft(sel, source, window, cx);
@@ -1182,7 +1184,7 @@ impl MainView {
     /// the browser pane, its page added), `notes-posts` (over the editor).
     pub(crate) fn notes_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -1192,9 +1194,9 @@ impl MainView {
         let typed = "Trust is a ledger nobody keeps on paper. Rue's post and Lin's garden \
                      note both circle it: write the one about benches.";
         // --- themes --- `notes-menu`: the drawer with its ⋯ menu open.
-        if scenario == "notes-menu" {
+        if scenario == Scene::NotesMenu {
             if n < 2 {
-                self.notes_demo("notes-open", n, window, cx);
+                self.notes_demo(Scene::NotesOpen, n, window, cx);
             }
             if n == 1 {
                 self.notes.menu = true;
@@ -1203,11 +1205,11 @@ impl MainView {
             return;
         }
         match (scenario, n) {
-            ("notes-open", 0) | ("notes-after-add", 0) => {
+            (Scene::NotesOpen, 0) | (Scene::NotesAfterAdd, 0) => {
                 self.reading.mode = ReadMode::Stream;
                 self.show_view(View::Reading, window, cx);
             }
-            ("notes-open", 1) => {
+            (Scene::NotesOpen, 1) => {
                 self.stream_move(1, window, cx);
                 self.open_notes(window, cx);
                 let text = format!("{}{typed}\n", super::page_seed(TITLE));
@@ -1216,7 +1218,7 @@ impl MainView {
                 }
                 self.notes_save(window, cx);
             }
-            ("notes-after-add", 1) => {
+            (Scene::NotesAfterAdd, 1) => {
                 use crate::fake::reading_seed::{LIN_GARDENS, RUE_TRUST};
                 let rows = self.reading.rows.clone();
                 for id in [RUE_TRUST, LIN_GARDENS] {
@@ -1235,18 +1237,21 @@ impl MainView {
                     self.notes_add_post(r, false, window, cx);
                 }
             }
-            ("notes-over-browser", 0) => {
+            (Scene::NotesOverBrowser, 0) => {
                 self.reading.mode = ReadMode::Reader;
-                self.reading_demo("rd-reading", 0, window, cx);
+                self.reading_demo(Scene::RdReading, 0, window, cx);
             }
-            ("notes-over-browser", 1) => {
-                let url = std::env::var("BLYGGER_DEMO_URL")
-                    .unwrap_or_else(|_| "https://blyg.example.com/".into());
+            (Scene::NotesOverBrowser, 1) => {
+                let url = crate::dev_flags::get()
+                    .demo
+                    .url
+                    .clone()
+                    .unwrap_or_else(|| "https://blyg.example.com/".into());
                 self.open_url_in_app(&url, crate::app::browser::OpenMode::Slide, window, cx);
                 self.browser_send_to_notes(window, cx);
             }
-            ("notes-posts", 0) => self.open(&LocalId("01J9QK3".into()), window, cx),
-            ("notes-posts", 1) => {
+            (Scene::NotesPosts, 0) => self.open(&LocalId("01J9QK3".into()), window, cx),
+            (Scene::NotesPosts, 1) => {
                 self.open_notes(window, cx);
                 if let Some(e) = self.notes.editor.clone() {
                     e.update(cx, |s, cx| s.insert(typed.to_string(), window, cx));
@@ -1290,7 +1295,7 @@ pub(crate) fn post_ref(r: &ReadingItem, blyg: bool) -> PostRef {
         Kind::Fragment => lines.first().cloned().unwrap_or_default(),
     };
     PostRef {
-        blyg_id: blyg.then(|| r.remote_id.clone()),
+        blyg_id: blyg.then(|| r.remote_id.to_string()),
         title: post_title(r),
         first_line,
         url: crate::app::reading::vm::web_url(r),

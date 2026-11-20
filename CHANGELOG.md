@@ -16,6 +16,59 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-19
+
+### Added
+- **Desktop: try themes, fonts and sizes before keeping them.** In Settings, hovering an option (90 ms) or moving along a row with the arrows applies it to the window without writing config; ⏎/click keeps, esc or leaving reverts. A Preview specimen at the top of Settings is drawn with the real list row, editor paper, quote frame, chips and status bar. The palette previews theme and font rows as the selection moves. The theme row gains a Light/Dark slot switch for `theme` / `theme-dark` (and fixes choosing a theme in dark mode writing `theme` with no visible change). `crates/blyg-app/src/pref_preview.rs`.
+- **Desktop: Quiet writing** (`quiet-writing = true`, Settings, View › Quiet Writing, the palette). It hides the lineage line, the loose-ends line and Nearby thoughts together, and stops their background work. ⌘J still opens lineage, the omnibar's `is:`/`has:` operators still filter, and ⌥⌘U opens Nearby for the sitting without changing the saved layout. It's off by default. There's a new Writing-tour step (`quiet-writing`). ⌘J on a draft no longer misses its first press while the line is being built.
+- **Reading: Mark All Read…** for a source (⇧R on the reading screen, Blyg › Mark All Read…, a subscription's, folder's or hopper's menu, the sources menu, the palette). It confirms with the count, skips your own posts, sends one `set_read` batch (synced via `reading:state`), and with a search covers what's shown.
+- **Reading: a 3-second hold before the Reading compose box posts** ("Posting in 3 s · esc cancels · ⌘⏎ posts now"); esc, Cancel or an edit stops it before anything is sent.
+- **Burrow › Connect…** in the menu and palette; after skipping setup, the empty list offers Connect and sample data, and the status bar's "not connected" opens Connect.
+- **Tour: `more-menu`**, a 0.26.0 Reading step on ⋯ More; the author's-site and compose captions are updated.
+- **Config: retired keys load quietly.** A removed key (`chat-*`, `terminal*`) in the config file is skipped with no warning and no typo hint.
+
+### Changed
+- **Reading: one row of chips under an open post.** Quote, Reply, Catch up and Background/Foreground stay in the row. Hopper, Add to shelf, Add to trail (new as a menu item), Fork, Link post, AI reply, Open on web, → Notes, Clear my choice and the whole-blyg moves are under **⋯ More**. Keys are unchanged. The Stream uses the same grouping. reading.md gains "Which one do I use?".
+- **Reading: the author's site takes the whole reading pane**, under the browser pane's own toolbar (back, forward, reload, address, shields, open in browser), instead of sitting between Burrow's header and the chips. It's still a separate web view of the browser's kind, so links set to open in the app still use the slide-over. Windows now docks it too (WebView2), where it used to open the default browser.
+
+- **Reading: one unread number.** The list header, All unread and the status bar all count posts never read or edited since read, outside Background and not held only by a hopper (`ReadingItem::to_read`, `Store::unread_count`).
+- **Plain labels** (from a usability review): Reply / AI reply instead of "· new stub"; "replied to this", "↳ reply to"; the Mentions tab is now **Responses** (Reading's Mentions source keeps its name); one "On the post's page: Show · Hide · Site default" control; Add to Shelf / Remove from Shelf everywhere; ⋯ More shows each item's key; Discover's "high activity"; Stale Quotes names the quoted post; the Reply hint says "Write your reply below the quote"; Settings' Quiet writing text is plainer.
+- **Loose ends** say "posts not linked yet" and "threads with outdated quotes", with a tooltip each; posts younger than 7 days don't count, for the line and for `is:orphan`.
+- **Stream search** marks matches and shows "N found · esc clears"; in the Stream's side pane 👍👎 stay at the right of the chips and the post title is a heading.
+- **Getting started:** the Welcome card explains what a blyg is (blygger.org) and offers sample data; Connect, setup, About and server notices take the studio floor from `MIN_STUDIO` (0.49.12), with a test against stale floors in the UI and docs; the first publish says the post goes public and can be withdrawn, not deleted.
+
+### Fixed
+- **Windows: nine shortcuts no longer type AltGr characters** on German, Polish, French or Hungarian layouts: Quote into a thread is Ctrl+Shift+Q, Link post Ctrl+Shift+I, Quote tray Ctrl+Shift+T, Nearby Ctrl+Shift+U, Stream Alt+1, Reader Alt+2, Sources pane Alt+S (and in fake mode, offline Ctrl+Shift+F11, conflict Ctrl+Shift+F12). About 70 toasts, tooltips and hints that showed Mac key glyphs on Windows now spell Windows keys.
+- **Sync: reading lists over 2,000 posts no longer re-download every pull.** The walk stopped at its 20-page budget, never completed, so the reading revision was never accepted and every pull (~40 s) re-read the newest 2,000 rows (~24 MB) before merging, and pruning never ran. Pulls now read the head newest-first, merge each page as it arrives and stop at known posts (`sync/walk.rs`); whole walks continue past the budget from their cursor and prune only when complete (`Store::prune_reading_except`); the reading walk keys on the `reading` counter alone, since the studio bumps `subscriptions` on every feed poll. A real-studio e2e with 2,150 posts covers it.
+- **API responses are compressed** (ureq `gzip` + `brotli`; AI streams ask for `identity`). A 100-row reading page drops from ~528 KB to ~81–107 KB.
+- **Search indexes stay compact:** the writer's idle tick weighs each FTS index every 6 h and compacts it in bounded steps once it passes 3.5× its text (`store/fts.rs`).
+- **`blygger --version` (and `-V`, `--help`, `-h`) no longer starts the app**: they print and exit before any config, data or window work, and any other `--option` is refused with exit code 2.
+
+### Development
+- **`SwitchBackend` forwarding is generated** from the `Backend` trait at build time (`crates/blyg-app/build_forwarding.rs`), so a new backend method can't silently fall back to its default in the real app.
+- **Tests wait for conditions, not fixed sleeps:** one test-only `crate::test_wait` module replaces about 20 local `settle` helpers and counted loops; `std::thread::sleep` is banned in blyg-app by `clippy.toml`.
+- **`skills/verify-burrow`** and `scripts/verify/burrow-verify.sh`: launch a demo scene on sample data in a throwaway dir, check it's ready, capture only its own window, stop it by PID; a feature map for writing, reading, notes, Settings and the switcher.
+- **`skills/burrow-code-shape`** and a rule → enforcer table in CLAUDE.md: how a correction becomes a check, and how to shape code so a change needs little context.
+- **Typed dev flags:** every `BLYGGER_*` variable is parsed once into `DevFlags` (`dev_flags.rs`); `clippy.toml` bans `std::env::var` elsewhere in blyg-app. A bad value exits with code 2.
+- **Demo scene registry** (`scenes.rs`): 171 scenes plus the tour families named once; handlers match enum variants; an unknown `BLYGGER_DEMO` exits with near matches; `blygger +scenes` feeds the verify script.
+- **The reading walk is a pure step machine** (`walk::Read`) with a proptest model of the studio's reading list (`walk_model_tests.rs`); it found that a 1-page budget could starve a walk behind a 409, now fixed (every pull gets at least 2 page requests). docs/SERVER.md has its statechart.
+- **The sleep ban covers blyg-core, blyg-ai and `blyg-ext*`**, through one reviewed `blyg_core::wait` module.
+- **Sheets are one module** (`sheet/`): each of the 20 sheets owns its state, keys and render behind one dispatch; the enum is private, so matching a sheet kind elsewhere doesn't compile (236 scattered matches removed).
+- **The disconnected backend is generated** from the `Backend` trait, like `SwitchBackend`; 18 defaults that could hide a missing implementation (writes, read marks, sync flags, shelf reads) are now required.
+- **A post's subscription id and remote id are separate types** (`SubId`, `RemoteId` in `blyg-core/src/ids.rs`) through the `Backend` trait, the store and the reading UI, so swapping them doesn't compile; wire and database forms are unchanged (tested byte for byte).
+- **`app.rs` is split by feature** (3,617 → 1,160 lines): connect, looks (config, theme, fonts), chrome (title bar, status bar, toasts), writing, publish, upload, and the Posts list live in `app/<feature>.rs`; a test caps `app.rs` at 1,170 lines.
+- **Crate boundaries are a test** (`crate_graph.rs`): GPUI and blyg-app only in blyg-app; each crate depends only on what its runtime allows.
+- **Platform wording is checked:** UI text is built through `keymap::hint` / `platform_text::Text`; a scan fails on bare ⌘ ⌥ ⇧ ⌃ (it found about 70 that Windows showed as Mac glyphs, now fixed). Windows key tables are tested for AltGr characters and clashes, and tour captions for real keys, menu items and labels.
+- **Tests check both platforms' wording on any machine:** `platform_text::spelled_as(Platform::Windows, …)` spells one test's text as Windows does, and CI's macOS job runs blyg-app's suite again with `BLYGGER_TEST_SPELLING=windows`, so a test that expects Mac glyphs fails before Windows CI does.
+
+### Removed
+- **#thicket chat** (the experimental Libera.Chat tab, crate `blyg-irc`): not enough use.
+- **The terminal pane** (experimental, crate `blyg-term`, ⌃` and ⇧⌘T): it needs more work before it ships again.
+- **The web app ("Burrow in a browser")**: crate `blyg-web`, the `Burrow-web-<version>.zip` / `Burrow-web.zip` release assets (and their lines in the signed `SHA256SUMS`), the "Burrow on your own blyg" self-host page and the web developer page, CI's wasm build, the web browser checks (`scripts/browser-web-*-check.*`), the web e2e in `scripts/e2e-local.sh` and the `burrow-web-handoff` skill. It wasn't working well; the desktop app on Mac and Windows is Burrow. Older releases' signed sums, which list the web zip, still verify.
+
+### Not verified
+- The docked author's site and the reading chips on a real Windows machine.
+
 ## [0.25.1] - 2026-11-16
 
 ### Changed

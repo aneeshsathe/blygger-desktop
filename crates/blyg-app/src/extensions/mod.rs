@@ -43,6 +43,7 @@ use blyg_ext::{
 use gpui_kit::*;
 
 use crate::app::MainView;
+use crate::scenes::Scene;
 
 pub(crate) use library::Library;
 pub(crate) use sheets::Overlay;
@@ -650,8 +651,7 @@ impl MainView {
             self.show_toast(e, None, cx);
             return false;
         }
-        // Our own write isn't an edit to reload.
-        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
+        self.config.restamp(cx);
         self.refresh_problems(cx);
         if self.ext.started {
             self.ext_reload(window, cx);
@@ -674,7 +674,7 @@ impl MainView {
         let cfg = crate::settings::get(cx).store.config().clone();
         let (changes, keys) = vault_add_changes(&cfg, &texts);
         // From Settings: out of the way, so the consent sheet can follow.
-        if self.sheet.is_some() {
+        if self.sheet.is_open() {
             self.close_sheet(window, cx);
         }
         if keys.is_empty() {
@@ -805,8 +805,8 @@ impl MainView {
                 .map(ItemRef::of),
             selection: None,
             reading: self.reading.opened.as_ref().map(|o| ReadingRef {
-                subscription_id: o.item.subscription_id.clone(),
-                remote_id: o.item.remote_id.clone(),
+                subscription_id: o.item.subscription_id.to_string(),
+                remote_id: o.item.remote_id.to_string(),
             }),
             screen,
         }
@@ -1045,7 +1045,7 @@ impl MainView {
 
     /// Something else is on screen that a sheet mustn't cover.
     fn ext_blocked(&self) -> bool {
-        self.sheet.is_some()
+        self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()
@@ -1101,19 +1101,21 @@ impl MainView {
     /// note open: `BLYGGER_DEMO_NOTE`, default the first in the folder).
     pub(crate) fn ext_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
             (_, 0) => self.ext_start(window, cx),
-            (s, n) if s.starts_with("ext-slots") => self.slots_demo(s, n, window, cx), // --- reading slots ---
-            ("ext-palette", 1) => self.ext_toggle_palette(window, cx),
-            ("ext-manage", 1) => self.ext_open_manage(window, cx),
-            ("ext-notes", 1) => self.ext_lib_show(window, cx),
-            ("ext-notes", 2) => {
-                let id = std::env::var("BLYGGER_DEMO_NOTE").ok().or_else(|| {
+            (s @ (Scene::ExtSlots | Scene::ExtSlotsInspect), n) => {
+                self.slots_demo(s, n, window, cx)
+            } // --- reading slots ---
+            (Scene::ExtPalette, 1) => self.ext_toggle_palette(window, cx),
+            (Scene::ExtManage, 1) => self.ext_open_manage(window, cx),
+            (Scene::ExtNotes, 1) => self.ext_lib_show(window, cx),
+            (Scene::ExtNotes, 2) => {
+                let id = crate::dev_flags::get().demo.note.clone().or_else(|| {
                     self.ext
                         .lib
                         .entries

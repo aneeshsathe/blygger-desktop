@@ -9,6 +9,7 @@ use blyg_core::LocalId;
 use gpui_kit::*;
 
 use super::MainView;
+use crate::scenes::Scene;
 
 const DEMO_POST: &str = "01J9H4C";
 const TYPO_LINE: &str =
@@ -17,22 +18,22 @@ const TYPO_LINE: &str =
 impl MainView {
     pub(super) fn composer_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("cm-mention", 0) => {
+            (Scene::CmMention, 0) => {
                 self.composer_demo_open(window, cx);
                 self.demo_type("\n\nWith thanks to ", window, cx);
             }
             // One keystroke per step: the popup reacts to each edit event.
-            ("cm-mention", 1) => self.demo_type("@", window, cx),
-            ("cm-mention", 2) => self.demo_type("a", window, cx),
-            ("cm-link" | "cm-quote", 0) => {
+            (Scene::CmMention, 1) => self.demo_type("@", window, cx),
+            (Scene::CmMention, 2) => self.demo_type("a", window, cx),
+            (Scene::CmLink | Scene::CmQuote, 0) => {
                 self.composer_demo_open(window, cx);
-                let lead = if scenario == "cm-link" {
+                let lead = if scenario == Scene::CmLink {
                     "\n\nSee also ["
                 } else {
                     "\n\n!["
@@ -41,17 +42,17 @@ impl MainView {
             }
             // The second bracket is its own keystroke: that opens the picker.
             // (A plain insert, as a keystroke: the edit event does the rest.)
-            ("cm-link" | "cm-quote", 1) => self
+            (Scene::CmLink | Scene::CmQuote, 1) => self
                 .editor
                 .update(cx, |s, cx| s.insert("[".to_string(), window, cx)),
-            ("cm-link", 2) => self
+            (Scene::CmLink, 2) => self
                 .editor
                 .update(cx, |s, cx| s.insert("gar".to_string(), window, cx)),
-            ("cm-spell" | "cm-spell-menu", 0) => {
+            (Scene::CmSpell | Scene::CmSpellMenu, 0) => {
                 self.composer_demo_open(window, cx);
                 self.demo_type(TYPO_LINE, window, cx);
             }
-            ("cm-spell-menu", 1) => {
+            (Scene::CmSpellMenu, 1) => {
                 let text = self.editor.read(cx).value().to_string();
                 if let Some(at) = text.rfind("tabels") {
                     self.assist

@@ -50,10 +50,10 @@ fn ri(sub: &str, rid: &str, state: &str, body: &str) -> ReadingItem {
     }
 }
 
-fn kinds() -> HashMap<String, SubscriptionKind> {
+fn kinds() -> HashMap<SubId, SubscriptionKind> {
     [
-        ("lin".to_string(), SubscriptionKind::Blyg),
-        ("feed".to_string(), SubscriptionKind::Rss),
+        ("lin".into(), SubscriptionKind::Blyg),
+        ("feed".into(), SubscriptionKind::Rss),
     ]
     .into_iter()
     .collect()
@@ -109,7 +109,7 @@ fn vectors_round_trip_and_are_replaced_per_post() {
     let (s, mine1) = seeded();
     assert_eq!(s.schema_version().unwrap(), super::schema::latest());
     let own = own_key(&mine1.0);
-    let held = reading_key("lin", "R1");
+    let held = reading_key(&SubId::from("lin"), &RemoteId::from("R1"));
     s.put_nearby_vectors(
         "m1",
         &[own.clone(), held.clone()],
@@ -125,7 +125,7 @@ fn vectors_round_trip_and_are_replaced_per_post() {
         .unwrap();
     assert_eq!(docs(&s, "m1").iter().filter(|d| **d == own).count(), 1);
     // A post the store doesn't offer gets none: an unknown one, an RSS one.
-    let rss = reading_key("feed", "R2");
+    let rss = reading_key(&SubId::from("feed"), &RemoteId::from("R2"));
     s.put_nearby_vectors("m1", std::slice::from_ref(&rss), &[v(&rss, 0, 1.0)])
         .unwrap();
     s.put_nearby_vectors("m1", &["own:nope".into()], &[v("own:nope", 0, 1.0)])
@@ -137,7 +137,7 @@ fn vectors_round_trip_and_are_replaced_per_post() {
 fn withdrawn_or_deleted_posts_lose_their_vectors() {
     let (s, mine1) = seeded();
     let own = own_key(&mine1.0);
-    let held = reading_key("lin", "R1");
+    let held = reading_key(&SubId::from("lin"), &RemoteId::from("R1"));
     s.put_nearby_vectors(
         "m1",
         &[own.clone(), held.clone()],
@@ -156,7 +156,7 @@ fn withdrawn_or_deleted_posts_lose_their_vectors() {
 fn retain_drops_other_models_and_posts_no_longer_offered() {
     let (s, mine1) = seeded();
     let own = own_key(&mine1.0);
-    let held = reading_key("lin", "R1");
+    let held = reading_key(&SubId::from("lin"), &RemoteId::from("R1"));
     s.put_nearby_vectors("old", std::slice::from_ref(&own), &[v(&own, 0, 0.5)])
         .unwrap();
     s.put_nearby_vectors(
@@ -181,7 +181,7 @@ fn phrase_hits_use_the_indexes_and_offer_only_what_publish_takes() {
     let set: HashSet<(String, usize)> = hits.into_iter().collect();
     let want: HashSet<(String, usize)> = [
         (own_key(&mine2.0), 0),
-        (reading_key("lin", "R1"), 0),
+        (reading_key(&SubId::from("lin"), &RemoteId::from("R1")), 0),
         (own_key(&mine1.0), 1),
     ]
     .into_iter()

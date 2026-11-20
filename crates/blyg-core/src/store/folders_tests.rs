@@ -74,17 +74,21 @@ fn a_subscription_is_in_at_most_one_folder() {
     let s = store();
     let a = s.create_folder("A").unwrap();
     let b = s.create_folder("B").unwrap();
-    s.set_subscription_folder("sub-1", Some(&a.id)).unwrap();
-    s.set_subscription_folder("sub-2", Some(&a.id)).unwrap();
-    s.set_subscription_folder("sub-1", Some(&b.id)).unwrap();
+    s.set_subscription_folder(&SubId::from("sub-1"), Some(&a.id))
+        .unwrap();
+    s.set_subscription_folder(&SubId::from("sub-2"), Some(&a.id))
+        .unwrap();
+    s.set_subscription_folder(&SubId::from("sub-1"), Some(&b.id))
+        .unwrap();
     let filed = s.subscription_folders();
     assert_eq!(filed.get("sub-1"), Some(&b.id), "moved, not copied");
     assert_eq!(filed.get("sub-2"), Some(&a.id));
-    s.set_subscription_folder("sub-2", None).unwrap();
+    s.set_subscription_folder(&SubId::from("sub-2"), None)
+        .unwrap();
     assert!(!s.subscription_folders().contains_key("sub-2"));
     // Filing into a folder that doesn't exist is refused.
     assert!(matches!(
-        s.set_subscription_folder("sub-3", Some("fld-nope")),
+        s.set_subscription_folder(&SubId::from("sub-3"), Some("fld-nope")),
         Err(CoreError::NotFound)
     ));
 }
@@ -95,9 +99,12 @@ fn deleting_a_folder_unfiles_its_subscriptions() {
     let a = s.create_folder("A").unwrap();
     let b = s.create_folder("B").unwrap();
     let c = s.create_folder("C").unwrap();
-    s.set_subscription_folder("sub-1", Some(&b.id)).unwrap();
-    s.set_subscription_folder("sub-2", Some(&b.id)).unwrap();
-    s.set_subscription_folder("sub-3", Some(&c.id)).unwrap();
+    s.set_subscription_folder(&SubId::from("sub-1"), Some(&b.id))
+        .unwrap();
+    s.set_subscription_folder(&SubId::from("sub-2"), Some(&b.id))
+        .unwrap();
+    s.set_subscription_folder(&SubId::from("sub-3"), Some(&c.id))
+        .unwrap();
     s.delete_folder(&b.id).unwrap();
     assert_eq!(names(&s), ["A", "C"]);
     let pos: Vec<u32> = s.folders().iter().map(|f| f.position).collect();
@@ -127,7 +134,8 @@ fn folders_survive_a_subscriptions_refresh() {
         poll: Default::default(),
     };
     s.replace_subscriptions(std::slice::from_ref(&sub)).unwrap();
-    s.set_subscription_folder("sub-rue", Some(&f.id)).unwrap();
+    s.set_subscription_folder(&SubId::from("sub-rue"), Some(&f.id))
+        .unwrap();
     let mut renamed = sub.clone();
     renamed.title = "Rue's notes".into();
     s.replace_subscriptions(&[renamed]).unwrap();
@@ -159,7 +167,8 @@ fn migration_to_v7_adds_empty_folders_and_keeps_data() {
     assert!(s.subscription_folders().is_empty());
     assert_eq!(s.subscriptions().len(), 1, "existing data kept");
     let f = s.create_folder("New").unwrap();
-    s.set_subscription_folder("sub-a", Some(&f.id)).unwrap();
+    s.set_subscription_folder(&SubId::from("sub-a"), Some(&f.id))
+        .unwrap();
     drop(s);
     // And it's all still there after reopening.
     let s = Store::open(&path).unwrap();

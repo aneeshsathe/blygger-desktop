@@ -30,7 +30,7 @@ use std::rc::Rc;
 
 use blyg_core::lineage::{Local, Peer, Via};
 use blyg_core::profile::{Relation, same_origin};
-use blyg_core::{Mention, ReadingItem, Status};
+use blyg_core::{Mention, ReadingItem, RemoteId, Status, SubId};
 
 use super::reading::lineage_vm::{self, Glyph, Kinds};
 use super::reading::neighbourhood::Index;
@@ -402,7 +402,17 @@ impl MainView {
     /// ⌘J on Posts with no published post to centre on: open or close the
     /// lists instead. False when there's nothing to list either.
     pub(crate) fn lineage_strip_toggle(&mut self, cx: &mut Context<Self>) -> bool {
-        let has = self.lineage_strip_now(cx).is_some_and(|s| !s.is_empty());
+        let now = self.lineage_strip_now(cx);
+        // --- quiet --- Not built yet (quiet writing never drew the line):
+        // its build is running, so open the lists for when it lands.
+        let pending = now.is_none()
+            && self
+                .lineage_strip
+                .building
+                .borrow()
+                .as_ref()
+                .is_some_and(|k| self.current.as_ref().is_some_and(|c| c.local_id == k.id));
+        let has = pending || now.is_some_and(|s| !s.is_empty());
         if has {
             self.lineage_strip.open = !self.lineage_strip.open;
             cx.notify();
@@ -454,9 +464,13 @@ impl MainView {
     }
 
     /// Hook: the line under the editor (nothing when there's nothing to
-    /// show, or on a new empty post).
+    /// show, or on a new empty post). --- quiet --- With quiet writing on,
+    /// only while ⌘J has its lists open (and nothing is built until then).
     pub(super) fn render_lineage_strip(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         if self.reading.view != reading::View::Posts {
+            return None;
+        }
+        if !self.lineage_strip.open && self.quiet_now(cx) {
             return None;
         }
         let strip = self.lineage_strip_now(cx)?;
@@ -543,9 +557,12 @@ impl MainView {
                         id: e.id.clone(),
                         title: e.title.clone(),
                         label: None,
-                        key: e
-                            .own
-                            .then(|| (blyg_core::OWN_SUBSCRIPTION.to_string(), e.id.clone())),
+                        key: e.own.then(|| {
+                            (
+                                SubId::from(blyg_core::OWN_SUBSCRIPTION),
+                                RemoteId::from(&e.id),
+                            )
+                        }),
                         from_tray: false,
                     };
                     div()

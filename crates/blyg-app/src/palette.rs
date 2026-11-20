@@ -12,7 +12,11 @@
 //! commands come first (`state.json`'s `palette_recent`).
 //!
 //! ⏎ runs the highlighted row, ⌘⏎ runs it and keeps the palette open, ↑/↓
-//! move, esc closes. A child module of `app`; `app.rs` keeps small hooks
+//! move, esc closes. --- preview --- Highlighting a theme or font row tries
+//! it on the whole window at once (`pref_preview.rs`, like Emacs's
+//! consult-theme): ⏎ keeps it, and esc, or moving to another row, puts the
+//! kept one back. Theme rows choose for the slot in effect (`theme-dark`
+//! while macOS is dark and it's set, else `theme`). A child module of `app`; `app.rs` keeps small hooks
 //! marked `// --- palette ---`.
 
 use std::path::Path;
@@ -47,6 +51,9 @@ pub(crate) enum Cmd {
     Post(LocalId),
     /// An extension's command, library or Manage extensions.
     Ext(ExtAction),
+    /// --- mark all read --- Mark All Read… for the current reading source
+    /// (`reading/marks.rs`; asks first, with the count).
+    MarkAllRead,
 }
 
 /// One row.
@@ -117,9 +124,9 @@ pub fn aliases(action: &str) -> &'static [&'static str] {
         "DraftChangeNote" => &["version note", "changelog", "ai note"],
         "ShowContacts" => &["address book", "people", "handles", "mention"], // --- contacts ---
         "ShowBlygSwitcher" => &["switch", "account", "blogs"],
-        "ShowChat" => &["irc", "thicket"],
         "FocusSearch" => &["find", "search", "omnibar"],
         "ToggleFocus" => &["zen", "typewriter", "distraction free"],
+        "ToggleQuietWriting" => &["minimal", "calm", "hide lineage", "hide nearby"], // --- quiet ---
         "FontBigger" => &["zoom in", "larger"],
         "FontSmaller" => &["zoom out"],
         "Quit" => &["exit", "close"],
@@ -134,6 +141,8 @@ fn skipped(action: &str, fake: bool) -> bool {
     matches!(
         action,
         "ShowPalette"
+            // marks.rs adds its own, richer row (the source by name).
+            | "MarkAllRead"
             | "TutorialNext"
             | "TutorialBack"
             | "SwitchBlyg1"
@@ -179,7 +188,7 @@ pub(crate) fn action_entries(
                 let leaf = m.rsplit(" › ").next().unwrap_or(m);
                 (menu_group(group), leaf.to_string())
             }
-            None => ("Commands", row.label.to_string()),
+            None => ("Commands", crate::keymap::hint(row.label).to_string()),
         };
         let key = table
             .iter()
@@ -190,7 +199,7 @@ pub(crate) fn action_entries(
             cmd: Cmd::Action(k.action),
             group,
             label,
-            detail: row.label.to_string(),
+            detail: crate::keymap::hint(row.label).to_string(),
             aliases: aliases(k.action),
             key,
             disabled: disabled(k.action),
@@ -337,7 +346,14 @@ impl MainView {
         let disabled = |a: &str| crate::app::toolbar::rule(a, &facts).0;
         let table = crate::keymap::table();
         let mut out = action_entries(&table, self.fake.is_some(), &disabled);
-        // Themes.
+        // Themes, for the slot in effect (--- preview ---).
+        let kept = self.committed_prefs();
+        let dark_slot = self.palette_theme_dark(window, cx);
+        let kept_theme = if dark_slot {
+            kept.theme_dark.clone().unwrap_or_default()
+        } else {
+            kept.theme.clone()
+        };
         for (_, list) in crate::theme::themes(cx).grouped() {
             for t in list {
                 let name = match t.id.as_str() {
@@ -345,16 +361,16 @@ impl MainView {
                     "dark" => "Dark (Ink)".to_string(),
                     _ => t.name.clone(),
                 };
-                let on = self.prefs.theme == t.id;
+                let on = kept_theme == t.id;
                 out.push(Entry {
                     id: format!("theme:{}", t.id),
                     cmd: Cmd::Theme(t.id.clone()),
                     group: "Themes",
                     label: format!("Theme: {name}"),
-                    detail: if on {
-                        "The theme you're using".into()
-                    } else {
-                        "Colour theme (the theme config key)".into()
+                    detail: match (on, dark_slot) {
+                        (true, _) => "The theme you're using".into(),
+                        (false, false) => "Colour theme (the theme config key)".into(),
+                        (false, true) => "While macOS is dark (the theme-dark config key)".into(),
                     },
                     aliases: &["colour", "color", "appearance"],
                     key: None,
@@ -362,7 +378,22 @@ impl MainView {
                 });
             }
         }
-        if self.prefs.theme != "system" {
+        if dark_slot {
+            // The dark slot's "System": no theme-dark line.
+            out.push(Entry {
+                id: "theme:system".into(),
+                cmd: Cmd::Theme("system".into()),
+                group: "Themes",
+                label: "Theme: Same as Light".into(),
+                detail: format!(
+                    "Use {} while macOS is dark too (no theme-dark)",
+                    crate::app::pref_preview::theme_label(Some(&kept.theme), cx)
+                ),
+                aliases: &["colour", "color", "appearance", "auto", "system"],
+                key: None,
+                disabled: None,
+            });
+        } else if kept.theme != "system" {
             out.push(Entry {
                 id: "theme:system".into(),
                 cmd: Cmd::Theme("system".into()),
@@ -376,7 +407,7 @@ impl MainView {
         }
         // Fonts.
         for f in crate::prefs::WRITING_FONTS {
-            let on = self.prefs.writing().label == f.label;
+            let on = kept.writing().label == f.label;
             out.push(Entry {
                 id: format!("wfont:{}", f.label),
                 cmd: Cmd::WritingFont(f.label),
@@ -389,7 +420,7 @@ impl MainView {
             });
         }
         for f in crate::prefs::UI_FONTS {
-            let on = self.prefs.ui().label == f.label;
+            let on = kept.ui().label == f.label;
             out.push(Entry {
                 id: format!("ufont:{}", f.label),
                 cmd: Cmd::UiFont(f.label),
@@ -430,6 +461,8 @@ impl MainView {
                 disabled: None,
             });
         }
+        // --- mark all read --- (no keymap row: ⇧R is the reading screen's own key)
+        out.push(self.mark_all_palette_entry());
         // Extensions.
         for r in self.ext_palette_rows(window, cx) {
             let id = match &r.action {
@@ -479,7 +512,7 @@ impl MainView {
         if self.cmd_palette.open.is_some() {
             return self.close_palette(window, cx);
         }
-        if self.sheet.is_some()
+        if self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()
@@ -499,7 +532,7 @@ impl MainView {
             &input,
             window,
             |this, _, ev: &InputEvent, window, cx| match ev {
-                InputEvent::Change => this.palette_query_changed(cx),
+                InputEvent::Change => this.palette_query_changed(window, cx),
                 InputEvent::PressEnter { secondary, .. } => {
                     this.palette_run_selected(*secondary, window, cx)
                 }
@@ -525,6 +558,8 @@ impl MainView {
         let Some(open) = self.cmd_palette.open.take() else {
             return;
         };
+        // --- preview --- closing without choosing puts the kept one back.
+        self.end_preview_from(crate::app::pref_preview::Origin::Palette, window, cx);
         match open.before {
             Some(f) => window.focus(&f, cx),
             None => self.focus_after_sheet(window, cx),
@@ -532,7 +567,7 @@ impl MainView {
         cx.notify();
     }
 
-    fn palette_query_changed(&mut self, cx: &mut Context<Self>) {
+    fn palette_query_changed(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let recent = self.cmd_palette.recent.clone();
         if let Some(o) = self.cmd_palette.open.as_mut() {
             let q = o.input.read(cx).value().to_string();
@@ -540,9 +575,15 @@ impl MainView {
             o.sel = 0;
             cx.notify();
         }
+        self.palette_preview_selected(window, cx); // --- preview ---
     }
 
-    pub(crate) fn palette_move(&mut self, delta: isize, cx: &mut Context<Self>) {
+    pub(crate) fn palette_move(
+        &mut self,
+        delta: isize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(o) = self.cmd_palette.open.as_mut() {
             let n = o.shown.len() as isize;
             if n > 0 {
@@ -550,6 +591,7 @@ impl MainView {
             }
             cx.notify();
         }
+        self.palette_preview_selected(window, cx); // --- preview ---
     }
 
     /// ⏎ (or ⌘⏎, `keep`): run the highlighted row.
@@ -584,6 +626,10 @@ impl MainView {
         }
         push_recent(&mut self.cmd_palette.recent, &e.id);
         save_recent(data_dir(cx).as_deref(), &self.cmd_palette.recent);
+        // --- preview --- a theme or font row keeps what it was trying.
+        if let Some(pick) = self.palette_pick(&e.cmd, window, cx) {
+            self.commit_pick(pick, window, cx);
+        }
         if !keep {
             self.close_palette(window, cx);
         }
@@ -600,20 +646,8 @@ impl MainView {
                     window.dispatch_action(make(), cx);
                 }
             }
-            Cmd::Theme(id) => {
-                self.prefs.theme = id;
-                self.apply_prefs(window, cx);
-            }
-            Cmd::WritingFont(label) => {
-                self.prefs.writing_font = label.to_string();
-                self.prefs.writing_font_set = true;
-                self.apply_prefs(window, cx);
-            }
-            Cmd::UiFont(label) => {
-                self.prefs.ui_font = label.to_string();
-                self.prefs.ui_font_set = true;
-                self.apply_prefs(window, cx);
-            }
+            // Kept above (`commit_pick`).
+            Cmd::Theme(_) | Cmd::WritingFont(_) | Cmd::UiFont(_) => {}
             Cmd::Blyg(url) => self.switch_blyg(url, window, cx),
             Cmd::Hopper(id) => {
                 self.set_read_mode(reading::stream_vm::ReadMode::Reader, window, cx);
@@ -624,6 +658,7 @@ impl MainView {
                 self.open(&id, window, cx);
             }
             Cmd::Ext(action) => self.ext_run(action, window, cx),
+            Cmd::MarkAllRead => self.ask_mark_all_read(None, window, cx), // --- mark all read ---
         }
         // Kept open: the rows' states (a theme now in use) follow.
         if keep && self.cmd_palette.open.is_some() {
@@ -773,13 +808,13 @@ impl MainView {
             .flex()
             .flex_col()
             .gap(px(6.))
-            .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
+            .capture_action(cx.listener(|this, _: &MoveUp, window, cx| {
                 cx.stop_propagation();
-                this.palette_move(-1, cx);
+                this.palette_move(-1, window, cx);
             }))
-            .capture_action(cx.listener(|this, _: &MoveDown, _, cx| {
+            .capture_action(cx.listener(|this, _: &MoveDown, window, cx| {
                 cx.stop_propagation();
-                this.palette_move(1, cx);
+                this.palette_move(1, window, cx);
             }))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 cx.stop_propagation();
@@ -826,7 +861,7 @@ impl MainView {
                     .px(px(4.))
                     .text_size(px(11.))
                     .text_color(p.muted)
-                    .child(hint("↑↓", "choose"))
+                    .child(hint("↑↓", "choose (themes and fonts show at once)"))
                     .child(hint("⏎", "run"))
                     .child(hint("⌘⏎", "run, keep open"))
                     .child(hint("esc", "close")),

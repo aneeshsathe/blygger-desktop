@@ -10,7 +10,7 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::super::View;
 use super::{AddAuthorToContacts, ShowContacts};
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 use crate::fake::reading_seed::*;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
@@ -46,25 +46,24 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 /// The open Contacts sheet's handles (`None`: not open).
 fn sheet_handles(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<Vec<String>> {
-    view.read_with(cx, |v, cx| match &v.sheet {
-        Some(Sheet::Contacts(s)) => Some(s.shown(cx).iter().map(|c| c.handle.clone()).collect()),
-        _ => None,
+    view.read_with(cx, |v, cx| {
+        v.sheet
+            .get::<crate::app::reading::contacts::ContactsSheet>()
+            .map(|s| s.shown(cx).iter().map(|c| c.handle.clone()).collect())
     })
 }
 
 /// Fill the open form's fields.
 fn fill(view: &Entity<MainView>, cx: &mut VisualTestContext, handle: &str, name: &str, url: &str) {
     view.update_in(cx, |v, window, cx| {
-        let Some(Sheet::Contacts(s)) = v.sheet.as_ref() else {
+        let Some(s) = v
+            .sheet
+            .get::<crate::app::reading::contacts::ContactsSheet>()
+        else {
             panic!("no contacts sheet");
         };
         let f = s.form.as_ref().expect("a form");
@@ -76,8 +75,11 @@ fn fill(view: &Entity<MainView>, cx: &mut VisualTestContext, handle: &str, name:
 }
 
 fn form_error(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Contacts(s)) => s.form.as_ref().and_then(|f| f.error.clone()),
+    view.read_with(cx, |v, _| match v
+        .sheet
+        .get::<crate::app::reading::contacts::ContactsSheet>()
+    {
+        Some(s) => s.form.as_ref().and_then(|f| f.error.clone()),
         _ => None,
     })
 }
@@ -86,8 +88,11 @@ fn form_values(
     view: &Entity<MainView>,
     cx: &mut VisualTestContext,
 ) -> Option<(String, String, String)> {
-    view.read_with(cx, |v, cx| match &v.sheet {
-        Some(Sheet::Contacts(s)) => s.form.as_ref().map(|f| {
+    view.read_with(cx, |v, cx| match v
+        .sheet
+        .get::<crate::app::reading::contacts::ContactsSheet>()
+    {
+        Some(s) => s.form.as_ref().map(|f| {
             let i = f.input(cx);
             (i.handle, i.name, i.url)
         }),
@@ -152,7 +157,10 @@ fn the_book_opens_from_its_action_and_adds_edits_and_removes(cx: &mut TestAppCon
 
     // Search narrows the list.
     view.update_in(cx, |v, window, cx| {
-        if let Some(Sheet::Contacts(s)) = v.sheet.as_ref() {
+        if let Some(s) = v
+            .sheet
+            .get::<crate::app::reading::contacts::ContactsSheet>()
+        {
             let search = s.search.clone();
             search.update(cx, |s, cx| s.set_value("ru", window, cx));
         }
@@ -225,8 +233,11 @@ fn checking_a_page_that_cant_be_read_says_why(cx: &mut TestAppContext) {
         .id;
     view.update_in(cx, |v, _, cx| v.check_contact(id, cx));
     settle(cx);
-    let err = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Contacts(s)) => s.error.clone(),
+    let err = view.read_with(cx, |v, _| match v
+        .sheet
+        .get::<crate::app::reading::contacts::ContactsSheet>()
+    {
+        Some(s) => s.error.clone(),
         _ => None,
     });
     assert_eq!(
@@ -306,13 +317,17 @@ fn subscribing_to_a_blyg_offers_to_add_it(cx: &mut TestAppContext) {
     settle(cx);
     view.update_in(cx, |v, window, cx| v.subscribe_enter(window, cx));
     settle(cx);
-    let (heading, question) = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Contacts(s)) => {
-            let o = s.offer.clone().expect("an offer");
-            (o.heading, o.question)
-        }
-        _ => panic!("no offer"),
-    });
+    let (heading, question) =
+        view.read_with(cx, |v, _| match v
+            .sheet
+            .get::<crate::app::reading::contacts::ContactsSheet>()
+        {
+            Some(s) => {
+                let o = s.offer.clone().expect("an offer");
+                (o.heading, o.question)
+            }
+            _ => panic!("no offer"),
+        });
     assert_eq!(heading, "Subscribed to Kit");
     assert_eq!(question.as_deref(), Some("Add this blyg to your contacts?"));
     assert_eq!(

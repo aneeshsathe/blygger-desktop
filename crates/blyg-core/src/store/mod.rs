@@ -13,6 +13,8 @@
 mod background; // --- background ---
 mod browse; // --- browse ---
 mod folders; // --- reader folders ---
+mod fts; // text-index upkeep
+pub use fts::FtsUpkeep;
 mod hoppers; // --- hoppers ---
 pub use hoppers::{FetchedHopper, HOPPERS_KNOWN, HopperOp, hopper_key};
 mod lineage; // --- lineage counts ---
@@ -1524,3 +1526,6 @@ mod nearby_tests; // --- nearby ---
 
 #[cfg(test)]
 mod loose_tests; // --- loose ends ---
+
+#[cfg(test)]
+mod fts_tests; // text-index upkeep

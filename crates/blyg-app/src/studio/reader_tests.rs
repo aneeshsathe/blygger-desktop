@@ -174,14 +174,7 @@ fn setup_with<'a>(extra: &str, cx: &'a mut TestAppContext) -> Setup<'a> {
     (view, fake, log, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
+use crate::test_wait::settle_drawn as settle;
 
 fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
     let key = view.read_with(cx, |v, _| {
@@ -439,7 +432,7 @@ fn one_webview_on_screen_at_a_time(cx: &mut TestAppContext) {
     assert!(log.borrow().visible(Which::Reader));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     settle(cx);
-    assert!(view.read_with(cx, |v, _| v.sheet.is_some()));
+    assert!(view.read_with(cx, |v, _| v.sheet.is_open()));
     assert!(!log.borrow().visible(Which::Reader));
     assert!(!log.borrow().visible(Which::Studio));
 

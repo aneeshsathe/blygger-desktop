@@ -189,6 +189,12 @@ impl Connection {
         }
     }
 
+    /// Requests waiting for an answer.
+    #[cfg(test)]
+    fn waiting(&self) -> usize {
+        self.pending().len()
+    }
+
     fn pending(&self) -> std::sync::MutexGuard<'_, HashMap<u64, Waiter>> {
         self.inner.pending.lock().unwrap_or_else(|p| p.into_inner())
     }
@@ -325,7 +331,7 @@ mod tests {
         std::thread::spawn(move || {
             while let Ok(m) = rx.recv() {
                 if let Incoming::Request { id, method, params } = m {
-                    std::thread::sleep(delay);
+                    blyg_core::wait::wall_clock(delay);
                     let r = if method == "fail" {
                         Err(RpcError::new(-1, "no"))
                     } else {
@@ -411,7 +417,7 @@ mod tests {
             let a = a.clone();
             std::thread::spawn(move || a.request("never", json!({}), T))
         };
-        std::thread::sleep(Duration::from_millis(50));
+        blyg_core::wait::until("the request to be waiting", || a.waiting() == 1);
         drop(feed);
         let e = waiter.join().unwrap().unwrap_err();
         assert_eq!(e.code, codes::TIMEOUT);

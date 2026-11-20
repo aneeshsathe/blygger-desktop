@@ -46,7 +46,7 @@ pub struct SignalRow {
     pub origin: String,
     pub at: String,
     /// (subscription, remote id), while you follow it.
-    pub key: Option<(String, String)>,
+    pub key: Option<crate::app::reading::vm::Key>,
 }
 
 impl SignalRow {
@@ -101,6 +101,17 @@ pub(crate) struct SignalsSheet {
     pub more: bool,
 }
 
+impl crate::app::sheet::SheetView for SignalsSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_signals_sheet(self, cx).into()
+    }
+}
+
 impl SignalsSheet {
     pub fn list(&self, tab: Tab) -> Option<&Fetch<Listed>> {
         match tab {
@@ -129,13 +140,12 @@ impl SignalsSheet {
 impl MainView {
     /// Blyg › Signals…: open the sheet on your likes, or close it.
     pub(crate) fn toggle_signals_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::Signals(_))) {
+        if self.sheet.is::<SignalsSheet>() {
             return self.close_sheet(window, cx);
         }
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Signals(SignalsSheet {
+        self.sheet.open(SignalsSheet {
             focus,
             tab: Tab::Liked,
             sel: 0,
@@ -143,16 +153,13 @@ impl MainView {
             disliked: None,
             activity: None,
             more: false,
-        }));
+        });
         self.load_signals(Tab::Liked, None, cx);
         cx.notify();
     }
 
     fn signals_sheet(&mut self) -> Option<&mut SignalsSheet> {
-        match &mut self.sheet {
-            Some(Sheet::Signals(s)) => Some(s),
-            _ => None,
-        }
+        self.sheet.get_mut::<SignalsSheet>()
     }
 
     /// Read `tab`'s first page (`cursor` None) or its next one.
@@ -257,7 +264,7 @@ impl MainView {
                 cx,
             );
         };
-        self.sheet = None;
+        self.sheet.close();
         if self.reading.view != reading::View::Reading {
             self.show_view(reading::View::Reading, window, cx);
         }

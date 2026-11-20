@@ -100,7 +100,8 @@ while text is selected on the page), and **✂ Clip**.
 opens the pane), and `content-blocking = false` turns blocking off
 everywhere. See [Configuration](config.md).
 
-With **Open posts on the author's site** on, an opened post's own page shows
-in the reading layout, in a web view like this pane's (the same cookies,
-blocking and shields), and the pane stays free for links. See
+With **Open posts on the author's site** on, an opened post's own page takes
+the reading pane, with this pane's toolbar (back, forward, reload, address,
+🛡, ↗) docked along its top and the same cookies, blocking and shields. The
+slide-over stays free for links. See
 [Read it on the author's site](reading.md#read-it-on-the-authors-site).

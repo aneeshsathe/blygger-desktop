@@ -400,7 +400,7 @@ impl FailKind {
 pub enum Outcome {
     /// 201: subscribed (and filed in the import folder).
     Added {
-        id: String,
+        id: crate::model::SubId,
         title: String,
     },
     /// 409: already following it.
@@ -506,17 +506,7 @@ fn with_details(message: String, details: &[String]) -> String {
 
 /// Sleep `d`, waking early when `cancel` is set. False when cancelled.
 fn nap(d: Duration, cancel: &AtomicBool) -> bool {
-    let until = Instant::now() + d;
-    loop {
-        if cancel.load(Ordering::Relaxed) {
-            return false;
-        }
-        let now = Instant::now();
-        if now >= until {
-            return true;
-        }
-        std::thread::sleep((until - now).min(Duration::from_millis(100)));
-    }
+    crate::wait::nap(d, || cancel.load(Ordering::Relaxed))
 }
 
 /// Subscribe to `feeds` (blocking; run it off the UI thread). Each one is
@@ -563,7 +553,7 @@ pub(crate) fn run_paced(
     pace: &Pace,
     cancel: &AtomicBool,
     subscribe: &(dyn Fn(&str) -> crate::Result<Subscription> + Sync),
-    file: &(dyn Fn(&str) + Sync),
+    file: &(dyn Fn(&crate::model::SubId) + Sync),
     on: &(dyn Fn(Progress) + Sync),
 ) -> Vec<Option<Outcome>> {
     let results: Mutex<Vec<Option<Outcome>>> = Mutex::new(vec![None; feeds.len()]);

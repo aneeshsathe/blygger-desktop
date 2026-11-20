@@ -60,14 +60,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     setup_with(cx, CONNECTED)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
+use crate::test_wait::settle_drawn as settle;
 
 fn to_reading(cx: &mut VisualTestContext) {
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
@@ -89,6 +82,14 @@ fn click(cx: &mut VisualTestContext, selector: &'static str) {
         .debug_bounds(selector)
         .unwrap_or_else(|| panic!("{selector} isn't on screen"));
     cx.simulate_click(b.center(), Modifiers::none());
+    settle(cx);
+}
+
+/// Let a post's hold run out (`compose::HOLD_SECS`), then settle.
+fn pass_hold(cx: &mut VisualTestContext) {
+    cx.executor().advance_clock(Duration::from_secs(
+        u64::from(super::compose::HOLD_SECS) + 1,
+    ));
     settle(cx);
 }
 
@@ -133,7 +134,7 @@ fn c_focuses_the_box_and_typing_never_fires_the_lists_keys(cx: &mut TestAppConte
     let reads = |fake: &FakeBackend| -> Vec<(String, Option<u32>)> {
         fake.reading()
             .into_iter()
-            .map(|r| (r.remote_id, r.read_version))
+            .map(|r| (r.remote_id.into_string(), r.read_version))
             .collect()
     };
     let read_before = reads(&fake);
@@ -160,7 +161,7 @@ fn c_focuses_the_box_and_typing_never_fires_the_lists_keys(cx: &mut TestAppConte
     cx.simulate_keystrokes("j");
     settle(cx);
     assert_eq!(
-        view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.clone())),
+        view.read_with(cx, |v, _| v.reading.sel.as_ref().map(|k| k.1.to_string())),
         Some(RUE_TRUST.to_string())
     );
 }
@@ -185,6 +186,10 @@ fn cmd_enter_posts_a_fragment_and_clears_the_box(cx: &mut TestAppContext) {
     settle(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
     settle(cx);
+    // It waits first, saying how to stop it; nothing has gone out.
+    assert_eq!(fake.items().len(), before, "held, not sent");
+    assert!(cx.debug_bounds("compose-hold").is_some(), "the hold shows");
+    pass_hold(cx);
     let it = made(&fake, before).expect("a post");
     assert_eq!(it.content_md, "posted while reading");
     assert_eq!(
@@ -200,6 +205,55 @@ fn cmd_enter_posts_a_fragment_and_clears_the_box(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn esc_or_an_edit_during_the_hold_sends_nothing(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    to_reading(cx);
+    let before = fake.items().len();
+    cx.simulate_keystrokes("c");
+    cx.simulate_input("second thoughts");
+    settle(cx);
+    // esc cancels the waiting post; the text and the caret stay.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_some()));
+    cx.simulate_keystrokes("escape");
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_none()));
+    assert!(box_has_keys(&view, cx), "the caret stays in the box");
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "nothing posted, nothing made");
+    assert_eq!(box_text(&view, cx), "second thoughts");
+    // An edit during the hold cancels it too.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    cx.simulate_input("!");
+    settle(cx);
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "an edit cancels");
+    assert_eq!(box_text(&view, cx), "second thoughts!");
+    // The Cancel button (the Post button while it waits) cancels.
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    click(cx, "compose-post");
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before, "Cancel cancels");
+    // ⌘⏎ again while it waits posts at once.
+    view.update_in(cx, |v, window, cx| v.focus_compose(window, cx));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    assert!(view.read_with(cx, |v, _| v.reading.compose.holding.is_some()));
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
+    settle(cx);
+    let it = made(&fake, before).expect("posted at once");
+    assert_eq!(
+        (it.status, it.content_md.as_str()),
+        (Status::Public, "second thoughts!")
+    );
+    pass_hold(cx);
+    assert_eq!(fake.items().len(), before + 1, "and only once");
+}
+
+#[gpui_kit::test]
 fn the_post_button_posts_too(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     to_reading(cx);
@@ -210,6 +264,7 @@ fn the_post_button_posts_too(cx: &mut TestAppContext) {
     cx.simulate_input("by a click");
     settle(cx);
     click(cx, "compose-post");
+    pass_hold(cx);
     assert_eq!(made(&fake, before).expect("a post").status, Status::Public);
     assert_eq!(box_text(&view, cx), "");
 }
@@ -248,7 +303,7 @@ fn a_failed_post_keeps_the_text_and_the_retry_reuses_its_draft(cx: &mut TestAppC
     cx.simulate_input("on a train");
     settle(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-    settle(cx);
+    pass_hold(cx);
     assert_eq!(box_text(&view, cx), "on a train", "kept");
     let err = view.read_with(cx, |v, _| v.reading.compose.error.clone());
     assert!(err.is_some_and(|e| e.starts_with("Couldn't post")));
@@ -257,7 +312,7 @@ fn a_failed_post_keeps_the_text_and_the_retry_reuses_its_draft(cx: &mut TestAppC
     // Back online, the same draft goes out: no second item.
     fake.set_offline(false);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
-    settle(cx);
+    pass_hold(cx);
     let it = made(&fake, before).expect("one item");
     assert_eq!((it.status, it.version), (Status::Public, 1));
     assert_eq!(box_text(&view, cx), "");
@@ -347,6 +402,6 @@ fn launch_without_a_blyg_stays_with_the_connect_sheet(cx: &mut TestAppContext) {
     settle(cx);
     view.read_with(cx, |v, _| {
         assert_eq!(v.reading.view, View::Posts);
-        assert!(v.sheet.is_some(), "the Connect sheet");
+        assert!(v.sheet.is_open(), "the Connect sheet");
     });
 }

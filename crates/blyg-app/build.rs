@@ -13,6 +13,16 @@
 //! crate on every build.
 //!
 //! On Windows it also embeds the exe's icon (`windows_icon`).
+//!
+//! It also writes the `Backend` impls of `SwitchBackend` (forwarding) and
+//! `Disconnected` (not-connected answers) from the trait
+//! (`build_forwarding.rs`).
+
+// A build script reads Cargo's variables; the app's own go through `dev_flags`.
+#![allow(clippy::disallowed_methods)]
+
+#[path = "build_forwarding.rs"]
+mod forwarding;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -50,6 +60,8 @@ fn main() {
     println!("cargo:rustc-env=BLYGGER_BUILD_EPOCH={epoch}");
 
     windows_icon(&manifest);
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    forwarding::generate(&manifest, &out);
 }
 
 fn git(dir: &Path, args: &[&str]) -> Option<String> {

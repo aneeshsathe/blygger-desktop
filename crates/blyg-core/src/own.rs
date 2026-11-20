@@ -1,5 +1,5 @@
 //! Your own published posts as reading rows, for every client's Reading
-//! list (the app's `reading/own.rs`, and Burrow in a browser). A row is
+//! list (the app's `reading/own.rs`). A row is
 //! keyed `("~own", server id)` ([`OWN_SUBSCRIPTION`], blygger-studio 0.45's
 //! own-items marker). It is never a subscription: read at its version (so
 //! never unread), never thumbed, and nothing about it is sent as read state
@@ -7,7 +7,7 @@
 
 use std::cmp::Ordering;
 
-use crate::model::{Item, OWN_SUBSCRIPTION, ReadingItem, Status, StubOf};
+use crate::model::{Item, OWN_SUBSCRIPTION, ReadingItem, RemoteId, Status, StubOf};
 use crate::order;
 
 /// One of your own rows (never sent anywhere as a reading row).
@@ -34,7 +34,7 @@ pub fn row(item: &Item, origin: &str) -> Option<ReadingItem> {
     let sid = item.server_id.as_ref()?.0.clone();
     Some(ReadingItem {
         subscription_id: OWN_SUBSCRIPTION.into(),
-        remote_id: sid,
+        remote_id: RemoteId::from(sid),
         subscription_title: "You".into(),
         origin: citation_origin(origin),
         kind: item.kind,

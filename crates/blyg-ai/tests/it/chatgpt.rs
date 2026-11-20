@@ -91,6 +91,8 @@ fn streams_with_codex_headers_and_body() {
     assert_eq!(r.header("openai-beta"), Some("responses=experimental"));
     assert_eq!(r.header("originator"), Some(chatgpt::ORIGINATOR));
     assert_eq!(r.header("accept"), Some("text/event-stream"));
+    // A stream asks for no compression (`http::SSE_ENCODING`).
+    assert_eq!(r.header("accept-encoding"), Some("identity"));
     let b = r.json();
     assert_eq!(b["store"], false);
     assert_eq!(b["stream"], true);
@@ -241,7 +243,7 @@ fn browser_login_via_localhost_callback() {
             let _ = s.read_to_string(&mut out);
             out
         };
-        std::thread::sleep(Duration::from_millis(50));
+        blyg_core::wait::wall_clock(Duration::from_millis(50));
         let bad = hit("/auth/callback?code=nope&state=wrong".into());
         let good = hit(format!("/auth/callback?code=the-code&state={state}"));
         (bad, good)
@@ -275,7 +277,7 @@ fn browser_login_can_be_cancelled() {
     let c = CancelFlag::new();
     let c2 = c.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(100));
+        blyg_core::wait::wall_clock(Duration::from_millis(100));
         c2.cancel();
     });
     let e = o

@@ -27,16 +27,17 @@ what earlier ones learned.
 | Skill | Use it when |
 |---|---|
 | `burrow-pr-gate` | before committing a feature, or opening, merging or reviewing a PR |
+| `burrow-code-shape` | you're corrected, fix something twice, add a rule, or build on a module |
+| `verify-burrow` | proving a UI change works in the running app, with a screenshot |
 | `burrow-release` | cutting a release, or merging anything that bumps the version |
 | `burrow-tutorial-update` | a release changes something a user sees |
-| `burrow-cross-platform` | touching keys, menus, paths, web views, the terminal or native APIs |
+| `burrow-cross-platform` | touching keys, menus, paths, web views or native APIs |
 | `burrow-agent-cohort` | running several agents at once |
-| `burrow-web-handoff` | a web build is going to whoever deploys it |
 | `spec-client-build` | implementing something the spec or studio defines |
 | `capability-gating` | calling a server feature not every studio has |
 | `real-server-testing` | writing tests that talk to a blyg |
 | `list-order-and-refresh` | showing lists, sorting, polling, caching or paging |
-| `client-security` | remote content, network calls, tokens, `innerHTML`, the service worker |
+| `client-security` | remote content, network calls, tokens, `innerHTML` |
 | `conformance-run` | rendering, parsing, order or wire-format changes |
 | `upstream-sync` | a new studio release or spec revision |
 
@@ -44,5 +45,7 @@ what earlier ones learned.
 
 - Give each skill one job, and phrase its description in the words a task would use.
 - Base every rule on a real failure, and say why in a sentence.
+- Before writing a rule, try to make it a check instead (`burrow-code-shape`);
+  once a check enforces it, delete the rule.
 - Name real files and commands. Update the skill in the same change that renames them.
 - This repo is public: no personal data, no real blyg URLs, no tokens.

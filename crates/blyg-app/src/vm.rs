@@ -302,10 +302,11 @@ pub fn has_unpublished_edits(item: &Item) -> bool {
 /// names the menu item. `None` without unpublished edits.
 pub fn edits_tip(item: &Item) -> Option<String> {
     has_unpublished_edits(item).then(|| {
-        let discard = if crate::keymap::keyless_here("DiscardChanges") {
+        let spelling = crate::platform_text::Platform::spelling();
+        let discard = if crate::keymap::keyless_on("DiscardChanges", spelling) {
             "Discard Changes in the Post menu"
         } else {
-            "⌥⌘Z discards them"
+            crate::keymap::hint("⌥⌘Z discards them")
         };
         crate::keymap::hint_owned(format!(
             "⌘⏎ publishes them as v{} · {discard}",
@@ -480,8 +481,9 @@ pub fn discard_noun(item: &Item) -> &'static str {
 
 /// Why Discard changes can't run, when it can't. In the order checked, so
 /// the reason names what's actually in the way.
-pub const DISCARD_NOT_PUBLISHED: &str =
-    "Not published, so there's no version to go back to. ⇧⌘⌫ deletes a draft";
+pub const DISCARD_NOT_PUBLISHED: crate::platform_text::Text = crate::platform_text::ui_text(
+    "Not published, so there's no version to go back to. ⇧⌘⌫ deletes a draft",
+);
 pub const DISCARD_WITHDRAWN: &str = "Withdrawn, so there's no published version to go back to";
 pub const DISCARD_CLEAN: &str = "No unpublished changes to discard";
 pub const DISCARD_OFFLINE: &str = "Discard needs the blyg";
@@ -493,10 +495,10 @@ pub const DISCARD_OFFLINE: &str = "Discard needs the blyg";
 /// version the editor goes back to.
 pub fn discard_changes(item: &Item, offline: bool) -> std::result::Result<u32, &'static str> {
     match item.status {
-        Status::Scratch | Status::Draft => Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED)),
+        Status::Scratch | Status::Draft => Err(DISCARD_NOT_PUBLISHED.get()),
         Status::Withdrawn => Err(DISCARD_WITHDRAWN),
         Status::Public if item.version == 0 || item.server_id.is_none() => {
-            Err(crate::keymap::hint(DISCARD_NOT_PUBLISHED))
+            Err(DISCARD_NOT_PUBLISHED.get())
         }
         Status::Public if !item.dirty => Err(DISCARD_CLEAN),
         Status::Public if offline => Err(DISCARD_OFFLINE),
@@ -1235,30 +1237,31 @@ mod tests {
         it.version = 1;
         assert_eq!(edits_tip(&it), None, "clean");
         it.dirty = true;
-        // Windows' spelling (there Discard has no key), not blyg-web's, which
-        // shares this file and keeps the Mac's keys on every platform.
-        let want = if crate::keymap::keyless_here("DiscardChanges") {
-            "Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu"
-        } else {
-            "⌘⏎ publishes them as v2 · ⌥⌘Z discards them"
-        };
-        assert_eq!(edits_tip(&it).as_deref(), Some(want));
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Mac, || edits_tip(&it)).as_deref(),
+            Some("⌘⏎ publishes them as v2 · ⌥⌘Z discards them")
+        );
+        // Windows' spelling (there Discard has no key).
+        assert_eq!(
+            spelled_as(Platform::Windows, || edits_tip(&it)).as_deref(),
+            Some("Ctrl+Enter publishes them as v2 · Discard Changes in the Post menu")
+        );
     }
 
     /// Discard changes: only a published post with unpublished edits, and
     /// only online; drafts and scratch notes are Delete's.
     #[test]
     fn discard_changes_needs_a_published_post_with_edits() {
-        let hint = crate::keymap::hint;
         let mut it = item("a", "x");
         assert_eq!(
             discard_changes(&it, false),
-            Err(hint(DISCARD_NOT_PUBLISHED))
+            Err(DISCARD_NOT_PUBLISHED.get())
         );
         it.status = Status::Scratch;
         assert_eq!(
             discard_changes(&it, false),
-            Err(hint(DISCARD_NOT_PUBLISHED))
+            Err(DISCARD_NOT_PUBLISHED.get())
         );
         it.status = Status::Public;
         it.version = 3;
@@ -1283,7 +1286,7 @@ mod tests {
         it.status = Status::Draft;
         assert_eq!(
             discard_changes(&it, false),
-            Err(hint(DISCARD_NOT_PUBLISHED))
+            Err(DISCARD_NOT_PUBLISHED.get())
         );
     }
 

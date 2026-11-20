@@ -20,7 +20,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use super::{OpKind, Store};
 use crate::backend::Result;
-use crate::model::{Hopper, LocalId, ReadingItem};
+use crate::model::{Hopper, LocalId, ReadingItem, RemoteId, SubId};
 use crate::util::{now_iso, now_ms};
 
 /// `meta` key: the hoppers have been read from this blyg at least once, so
@@ -31,14 +31,14 @@ pub const HOPPERS_KNOWN: &str = "hoppers_known";
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HopperOp {
     pub hopper: String,
-    pub sub: String,
-    pub remote_id: String,
+    pub sub: SubId,
+    pub remote_id: RemoteId,
     /// In (`PUT`) or out (`DELETE`).
     pub on: bool,
 }
 
 /// Outbox key for one (hopper, post) membership.
-pub fn hopper_key(hopper: &str, sub: &str, remote_id: &str) -> LocalId {
+pub fn hopper_key(hopper: &str, sub: &SubId, remote_id: &RemoteId) -> LocalId {
     LocalId(format!("hopper\u{1f}{hopper}\u{1f}{sub}\u{1f}{remote_id}"))
 }
 
@@ -104,15 +104,15 @@ fn bump_count(c: &Connection, id: &str, by: i64) -> rusqlite::Result<()> {
 }
 
 /// (sub, remote id) → the hoppers holding it, sorted.
-fn members(c: &Connection) -> rusqlite::Result<HashMap<(String, String), Vec<String>>> {
+fn members(c: &Connection) -> rusqlite::Result<HashMap<(SubId, RemoteId), Vec<String>>> {
     let mut st = c.prepare_cached(
         "SELECT subscription_id, remote_id, hopper_id FROM hopper_items ORDER BY hopper_id",
     )?;
-    let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+    let mut out: HashMap<(SubId, RemoteId), Vec<String>> = HashMap::new();
     for r in st.query_map([], |r| {
         Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
+            r.get::<_, SubId>(0)?,
+            r.get::<_, RemoteId>(1)?,
             r.get::<_, String>(2)?,
         ))
     })? {
@@ -150,7 +150,7 @@ fn sync_rows(
         st.query_map([], |r| r.get(0))?
             .collect::<rusqlite::Result<_>>()?
     };
-    let rows: Vec<(String, String, String)> = {
+    let rows: Vec<(SubId, RemoteId, String)> = {
         let (sql, args): (&str, Vec<&str>) = match only {
             Some((s, r)) => (
                 "SELECT subscription_id, remote_id, json FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
@@ -218,7 +218,7 @@ impl Store {
 
     /// (sub, remote id) → the ids of the hoppers holding that post, yours
     /// (`~own`) included.
-    pub fn hopper_members(&self) -> HashMap<(String, String), Vec<String>> {
+    pub fn hopper_members(&self) -> HashMap<(SubId, RemoteId), Vec<String>> {
         members(&self.conn()).unwrap_or_default()
     }
 
@@ -229,7 +229,7 @@ impl Store {
     /// The studio keeps whole seconds (`…:05Z`) where Burrow keeps
     /// milliseconds (`…:05.123Z`), so times compare to the second and
     /// posts added in the same second follow the studio's tie order.
-    pub fn hopper_order(&self) -> HashMap<String, Vec<(String, String)>> {
+    pub fn hopper_order(&self) -> HashMap<String, Vec<(SubId, RemoteId)>> {
         let c = self.conn();
         let Ok(mut st) = c.prepare_cached(
             "SELECT hopper_id, subscription_id, remote_id FROM hopper_items \
@@ -237,12 +237,12 @@ impl Store {
         ) else {
             return HashMap::new();
         };
-        let mut out: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut out: HashMap<String, Vec<(SubId, RemoteId)>> = HashMap::new();
         if let Ok(rows) = st.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
+                r.get::<_, SubId>(1)?,
+                r.get::<_, RemoteId>(2)?,
             ))
         }) {
             for (h, s, rid) in rows.filter_map(|r| r.ok()) {
@@ -267,8 +267,8 @@ impl Store {
         let mut seen = HashSet::new();
         st.query_map([], |r| {
             Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
+                r.get::<_, SubId>(0)?,
+                r.get::<_, RemoteId>(1)?,
                 r.get::<_, String>(2)?,
             ))
         })
@@ -443,16 +443,16 @@ impl Store {
     pub fn set_hopper_member(
         &self,
         hopper: &str,
-        sub: &str,
-        remote_id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
         on: bool,
     ) -> Result<bool> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         let op = HopperOp {
             hopper: hopper.into(),
-            sub: sub.into(),
-            remote_id: remote_id.into(),
+            sub: sub.clone(),
+            remote_id: remote_id.clone(),
             on,
         };
         if !apply(&tx, &op)? {
@@ -477,7 +477,7 @@ impl Store {
         let json: Option<String> = tx
             .query_row(
                 "SELECT json FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
-                [sub, remote_id],
+                params![sub, remote_id],
                 |r| r.get(0),
             )
             .optional()?;

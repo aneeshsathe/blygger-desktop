@@ -2,10 +2,18 @@
 
 ## First launch
 
-The first launch opens a short setup: a welcome, **Connect your blyg** (or
+The first launch opens a short setup: a welcome (which says what a blyg is,
+with a link to [blygger.org](https://blygger.org)), **Connect your blyg** (or
 *Skip, just try it with sample data*), **AI** (off until you switch a provider
 on; installed `claude` / `codex` CLIs are detected), and **Buttons or
-keyboard?** (`show-buttons`). esc skips it at any step.
+keyboard?** (`show-buttons`). esc skips it at any step. If you skip
+connecting, **Burrow › Connect…** (or "Connect" in the command palette) opens
+the Connect sheet whenever you're ready.
+
+Skipped it without connecting? The empty list says **⏎ Connect your blyg… ·
+try sample data**: ⏎ (or a click) opens Connect, and the other half runs the
+session on sample data. **not connected** in the status bar opens Connect
+too.
 
 Then comes an optional **interactive tour** of the real window: each step
 highlights a part of it and waits for you to press the key (⌘N, ⌘T, ⌘⏎, ⌘3,
@@ -147,6 +155,11 @@ Burrow comes with a Tufte-style light and dark look that follows macOS (see
 Inter, Source Serif 4, iA Writer Quattro and ET Book are bundled, and system
 fonts such as New York, Charter, SF Pro and Menlo work too
 (`blygger +list-fonts` lists them). ⌘+ and ⌘− change the text size.
+
+You can try a font, size or theme before keeping it: rest the pointer on it,
+or move with ⇥ and the arrow keys, and the whole window and the Preview at
+the top of Settings take it on. A click or ⏎ keeps it; esc puts yours back
+(see [Themes](themes.md#choosing-a-theme)).
 
 ![Settings](screenshots/settings.png)
 

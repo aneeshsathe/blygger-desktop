@@ -122,7 +122,7 @@ fn settings_lists_themes_and_writes_the_choice(cx: &mut TestAppContext) {
         assert!(cx.debug_bounds(sel).is_some(), "{sel} isn't in Settings");
     }
     crate::app::toolbar::tests::scroll_into_view(cx, "th-aizome");
-    let b = crate::app::toolbar::tests::settled_bounds(cx, "th-aizome");
+    let b = crate::test_wait::still(cx, "th-aizome");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
@@ -161,7 +161,7 @@ fn a_user_theme_with_svg_ornaments_renders(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         assert_eq!(v.theme.id, "mine");
         assert!(!v.theme.builtin);
-        assert!(v.config_problems.is_empty(), "{:?}", v.config_problems);
+        assert!(v.config.problems.is_empty(), "{:?}", v.config.problems);
     });
     frame(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));

@@ -39,7 +39,7 @@ fn ids(rows: &[ReadingItem], source: &Source) -> Vec<String> {
     let now = chrono::Utc::now();
     rows.iter()
         .filter(|r| in_source(r, source, &Default::default(), now))
-        .map(|r| r.remote_id.clone())
+        .map(|r| r.remote_id.to_string())
         .collect()
 }
 

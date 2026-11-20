@@ -7,7 +7,7 @@ use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, LocalId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -74,9 +74,10 @@ fn current(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<LocalI
 }
 
 fn sheet_rows(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<Vec<String>> {
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Shelf(s)) => Some(s.posts.iter().map(|p| p.local_id.0.clone()).collect()),
-        _ => None,
+    view.read_with(cx, |v, _| {
+        v.sheet
+            .get::<crate::app::shelf::ShelfSheet>()
+            .map(|s| s.posts.iter().map(|p| p.local_id.0.clone()).collect())
     })
 }
 
@@ -94,7 +95,20 @@ fn shelving_puts_the_post_on_top_and_the_shelf_opens_it(cx: &mut TestAppContext)
         assert_eq!(v.list.selected(), Some(&id(PUBLIC)), "still selected");
         assert_eq!(
             v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
-            Some("On your shelf · ⌘B")
+            Some(crate::keymap::hint("On your shelf · ⌘B"))
+        );
+    });
+    // The same toast in Windows' wording (the keys stay this platform's):
+    // off the shelf and back on.
+    crate::platform_text::spelled_as(crate::platform_text::Platform::Windows, || {
+        keys(cx, "alt-cmd-b");
+        keys(cx, "alt-cmd-b");
+    });
+    assert_eq!(fake.shelf(), [id(PUBLIC)], "back on the shelf");
+    view.read_with(cx, |v, _| {
+        assert_eq!(
+            v.toast.as_ref().map(|t| t.text.to_string()).as_deref(),
+            Some("On your shelf · Ctrl+B")
         );
     });
 

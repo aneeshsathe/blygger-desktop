@@ -221,7 +221,7 @@ pub fn candidates(
             let created = r.created.clone().unwrap_or_else(|| r.observed_at.clone());
             out.push(Candidate {
                 key: format!("held:{} {}", r.origin, r.remote_id),
-                id: r.remote_id.clone(),
+                id: r.remote_id.to_string(),
                 title: blyg_core::model::plain_title(&r.content_md)
                     .unwrap_or_else(|| "Untitled".into()),
                 excerpt: excerpt(&r.content_md),
@@ -592,7 +592,7 @@ impl MainView {
             self.show_toast(e, None, cx);
             return;
         }
-        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
+        self.config.restamp(cx);
         cx.notify();
     }
 }

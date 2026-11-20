@@ -22,6 +22,7 @@ use blyg_core::access_ai::{
 };
 
 use super::*;
+use crate::scenes::Scene;
 
 gpui_kit::actions!(
     blygger,
@@ -63,6 +64,21 @@ pub struct ClientAccessSheet {
     pub sel: usize,
     pub busy: bool,
     pub error: Option<String>,
+}
+
+impl crate::app::sheet::SheetView for ClientAccessSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_access_sheet(self, cx).into()
+    }
+
+    fn inputs(&self) -> Vec<&Entity<InputState>> {
+        self.inputs()
+    }
 }
 
 impl ClientAccessSheet {
@@ -143,7 +159,7 @@ impl MainView {
 
     /// Blyg › Client Access…: open it (or close it).
     pub(crate) fn open_client_access(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::ClientAccess(_))) {
+        if self.sheet.is::<ClientAccessSheet>() {
             return self.close_sheet(window, cx);
         }
         let gate = self.backend.access_gate();
@@ -178,8 +194,7 @@ impl MainView {
         } else {
             window.focus(&focus, cx);
         }
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::ClientAccess(Box::new(ClientAccessSheet {
+        self.sheet.open(ClientAccessSheet {
             focus,
             password,
             name,
@@ -193,7 +208,7 @@ impl MainView {
             sel: 0,
             busy: false,
             error: None,
-        })));
+        });
         cx.notify();
         if !need {
             self.access_reload(window, cx);
@@ -201,10 +216,7 @@ impl MainView {
     }
 
     fn access_sheet(&mut self) -> Option<&mut ClientAccessSheet> {
-        match self.sheet.as_mut() {
-            Some(Sheet::ClientAccess(s)) => Some(s),
-            _ => None,
-        }
+        self.sheet.get_mut::<ClientAccessSheet>()
     }
 
     /// A failure on the sheet. A refused session goes back to the password.
@@ -227,10 +239,7 @@ impl MainView {
                 s.error = Some("Offline. Try again when you're back online.".into())
             }
             CoreError::NotFound => {
-                s.error = Some(
-                    "This blyg has no client access to manage (its studio is older than 0.28)."
-                        .into(),
-                )
+                s.error = Some("This blyg has no client access to manage.".into())
             }
             e => s.error = Some(format!("{e}")),
         }
@@ -386,7 +395,7 @@ impl MainView {
 
     /// Copy the token just made; it stays on screen until the sheet moves on.
     pub(crate) fn access_copy_token(&mut self, cx: &mut Context<Self>) {
-        let Some(Sheet::ClientAccess(s)) = &self.sheet else {
+        let Some(s) = self.sheet.get::<ClientAccessSheet>() else {
             return;
         };
         let Stage::Token { token, .. } = &s.stage else {
@@ -530,38 +539,38 @@ impl MainView {
     /// and the publish sheet with the blyg's AI.
     pub(crate) fn access_ai_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let sign_in = |v: &mut Self, window: &mut Window, cx: &mut Context<Self>| {
             v.open_client_access(window, cx);
-            if let Some(Sheet::ClientAccess(s)) = &v.sheet {
+            if let Some(s) = v.sheet.get::<ClientAccessSheet>() {
                 let pw = s.password.clone();
                 pw.update(cx, |e, cx| e.set_value("studio password", window, cx));
             }
             v.access_sign_in(window, cx);
         };
         match (scenario, n) {
-            ("aa-access" | "aa-confirm" | "aa-token", 0) => sign_in(self, window, cx),
-            ("aa-confirm", 1) => self.access_confirm(Some(0), window, cx),
-            ("aa-token", 1) => {
+            (Scene::AaAccess | Scene::AaConfirm | Scene::AaToken, 0) => sign_in(self, window, cx),
+            (Scene::AaConfirm, 1) => self.access_confirm(Some(0), window, cx),
+            (Scene::AaToken, 1) => {
                 self.access_new_token(window, cx);
-                if let Some(Sheet::ClientAccess(s)) = &self.sheet {
+                if let Some(s) = self.sheet.get::<ClientAccessSheet>() {
                     let name = s.name.clone();
                     name.update(cx, |e, cx| e.set_value("Deploy script", window, cx));
                 }
                 self.access_toggle_scope(1, cx);
             }
-            ("aa-token", 2) => self.access_create(window, cx),
-            ("aa-ai", 0) => self.open_server_ai(window, cx),
-            ("aa-publish", 0) => {
+            (Scene::AaToken, 2) => self.access_create(window, cx),
+            (Scene::AaAi, 0) => self.open_server_ai(window, cx),
+            (Scene::AaPublish, 0) => {
                 self.open(&LocalId("01J9PX1".into()), window, cx);
                 self.demo_type(" Then the rain came.", window, cx);
             }
-            ("aa-publish", 1) => self.publish(window, cx),
-            ("aa-publish", 2) => self.draft_change_note(window, cx),
+            (Scene::AaPublish, 1) => self.publish(window, cx),
+            (Scene::AaPublish, 2) => self.draft_change_note(window, cx),
             _ => {}
         }
     }
@@ -624,10 +633,10 @@ impl MainView {
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| this.access_key(ev, window, cx)))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
                 cx.stop_propagation();
-                let back = matches!(
-                    &this.sheet,
-                    Some(Sheet::ClientAccess(s)) if matches!(s.stage, Stage::NewToken { .. })
-                );
+                let back = this
+                    .sheet
+                    .get::<ClientAccessSheet>()
+                    .is_some_and(|s| matches!(s.stage, Stage::NewToken { .. }));
                 if back {
                     this.access_done(window, cx)
                 } else {
@@ -774,14 +783,14 @@ impl MainView {
                                     .hover(|d| d.text_color(p.over))
                                     .child("Revoke…")
                                     .on_click(cx.listener(move |this, _, window, cx| {
-                                        if let Some(Sheet::ClientAccess(s)) = this.sheet.as_mut() {
+                                        if let Some(s) = this.sheet.get_mut::<ClientAccessSheet>() {
                                             s.sel = i;
                                         }
                                         this.access_confirm(Some(i), window, cx)
                                     })),
                             )
                             .on_click(cx.listener(move |this, _, _, cx| {
-                                if let Some(Sheet::ClientAccess(s)) = this.sheet.as_mut() {
+                                if let Some(s) = this.sheet.get_mut::<ClientAccessSheet>() {
                                     s.sel = i;
                                     cx.notify();
                                 }

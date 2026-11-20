@@ -896,8 +896,8 @@ mod tests {
     #[test]
     #[ignore]
     fn real_lists_convert_under_the_limit() {
-        let dir = match std::env::var_os("BLYGGER_LISTS_DIR") {
-            Some(d) => PathBuf::from(d),
+        let dir = match crate::dev_flags::TestEnv::from_env().lists_dir {
+            Some(d) => d,
             None => {
                 let t = tempfile::tempdir().unwrap().keep();
                 assert!(download_all(&t) > 0, "no network?");

@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 
-use crate::model::{Author, Kind, ReadingItem, Subscription, SubscriptionKind};
+use crate::model::{Author, Kind, ReadingItem, RemoteId, SubId, Subscription, SubscriptionKind};
 
 /// How many subscriptions the list spreads over.
 pub const SUBSCRIPTIONS: usize = 34;
@@ -55,8 +55,8 @@ fn body(rng: &mut Lcg, target: usize) -> String {
     md
 }
 
-fn sub_id(i: usize) -> String {
-    format!("S{i:02}")
+fn sub_id(i: usize) -> SubId {
+    SubId::from(format!("S{i:02}"))
 }
 
 fn origin(i: usize) -> String {
@@ -90,7 +90,7 @@ pub fn subscriptions() -> Vec<Subscription> {
 }
 
 /// `subscription id → kind`, as `Store::merge_reading` takes it.
-pub fn kinds() -> HashMap<String, SubscriptionKind> {
+pub fn kinds() -> HashMap<SubId, SubscriptionKind> {
     (0..SUBSCRIPTIONS)
         .map(|i| (sub_id(i), kind_of(i)))
         .collect()
@@ -121,7 +121,7 @@ pub fn reading(n: usize, seed: u64) -> Vec<ReadingItem> {
             let version = 1 + rng.below(3) as u32;
             ReadingItem {
                 subscription_id: sub_id(s),
-                remote_id: format!("r{i:06}"),
+                remote_id: RemoteId::from(format!("r{i:06}")),
                 subscription_title: format!("Blyg {s:02}"),
                 origin: origin(s),
                 kind: if i % 5 == 0 {

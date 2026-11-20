@@ -133,15 +133,6 @@ mod tests {
     }
 
     #[test]
-    fn the_web_self_host_page_trusts_the_same_key() {
-        let page = include_str!("../../../../site/src/web-self-host.md");
-        assert!(
-            page.contains(&format!("PUB={RELEASE_PUBLIC_KEY_B64}\n")),
-            "site/src/web-self-host.md's PUB must match RELEASE_PUBLIC_KEY_B64"
-        );
-    }
-
-    #[test]
     fn signatures_verify_only_with_the_right_key_and_bytes() {
         let sk = test_key();
         let sums = b"abc  Blygger-9.9.9-macos-universal.zip\n";
@@ -200,5 +191,23 @@ mod tests {
         let dup = format!("{h}  a.zip\n{h}  a.zip\n");
         assert!(verify_hash(&dup, "a.zip", zip).is_err());
         assert!(verify_hash("xyz  a.zip\n", "a.zip", zip).is_err());
+    }
+
+    /// Releases up to 0.25.x listed the web zips in SHA256SUMS; 0.26.0 and
+    /// later don't. The updater reads only its own zip's line, so both verify.
+    #[test]
+    fn sums_with_or_without_the_old_web_zip_verify() {
+        let zip = b"mac zip";
+        let mac = format!("{}  Burrow-0.26.0-macos-universal.zip\n", hex(&sha256(zip)));
+        let win = format!("{}  Burrow-windows-x64.zip\n", hex(&sha256(b"win")));
+        let web = format!(
+            "{h}  Burrow-web-0.25.1.zip\n{h}  Burrow-web.zip\n",
+            h = hex(&sha256(b"web"))
+        );
+        let old = format!("{mac}{win}{web}");
+        let new = format!("{mac}{win}");
+        for sums in [old, new] {
+            verify_hash(&sums, "Burrow-0.26.0-macos-universal.zip", zip).unwrap();
+        }
     }
 }

@@ -1,11 +1,14 @@
 //! --- loose ends --- The muted summary above the Posts list, in words
-//! (proposal 10): "2 orphans · 1 ungenerated TK · 1 draft older than a
-//! month". Each part is a one-click `is:orphan` / `has:tk` / `is:stale`.
+//! (proposal 10): "2 posts not linked yet · 1 ungenerated TK · 1 draft
+//! older than a month". Each part is a one-click `is:orphan` / `has:tk` /
+//! `is:stale`, with a tooltip saying what it counts (`Summary::tip`). A
+//! post made in the last week isn't counted as not linked yet.
 //! It describes your own text, never anyone's attention: no social count.
 //! Worked out on a background thread after the list changes.
 //!
 //! The operators themselves live in `blyg_core::loose`; `Backend::search`
-//! reads them.
+//! reads them. --- quiet --- Quiet writing hides the line and skips the
+//! work; the operators still filter.
 
 use blyg_core::loose::{Facts, Summary};
 use gpui_kit::*;
@@ -21,6 +24,14 @@ pub(crate) struct LooseEnds {
 impl MainView {
     /// Work the summary out again, off this thread.
     pub(crate) fn loose_ends_refresh(&mut self, cx: &mut Context<Self>) {
+        if crate::app::quiet::on(cx) {
+            self.loose_ends.task = None;
+            if !self.loose_ends.summary.parts().is_empty() {
+                self.loose_ends.summary = Summary::default();
+                cx.notify();
+            }
+            return;
+        }
         let backend = self.backend.clone();
         let task = cx.background_spawn(async move {
             let items = backend.items();
@@ -42,6 +53,9 @@ impl MainView {
     /// The summary line over the list, when the omnibar is empty and
     /// something is loose.
     pub(crate) fn render_loose_ends(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if crate::app::quiet::on(cx) {
+            return None;
+        }
         let parts = self.loose_ends.summary.parts();
         if parts.is_empty() || !self.list.trimmed_query().is_empty() {
             return None;
@@ -71,6 +85,10 @@ impl MainView {
                     .debug_selector(move || format!("loose-{query}"))
                     .cursor_pointer()
                     .hover(|s| s.text_color(p.ink))
+                    .tooltip(move |_, cx| {
+                        cx.new(|_| crate::app::reading::Tip(Summary::tip(query).into()))
+                            .into()
+                    })
                     .child(words)
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.set_query_text(query, window, cx);

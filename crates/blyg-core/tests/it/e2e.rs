@@ -205,12 +205,16 @@ fn server_rev(sid: &str) -> u64 {
         .expect("contract 5 items carry a revision")
 }
 
-fn wait_until(what: &str, timeout: Duration, mut f: impl FnMut() -> bool) {
-    let t0 = Instant::now();
-    while !f() {
-        assert!(t0.elapsed() < timeout, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(50));
-    }
+fn wait_until(what: &str, timeout: Duration, f: impl FnMut() -> bool) {
+    wait_every(what, timeout, Duration::from_millis(50), f);
+}
+
+/// [`wait_until`], looking every `step` (a slow server-side job).
+fn wait_every(what: &str, timeout: Duration, step: Duration, f: impl FnMut() -> bool) {
+    assert!(
+        wait::poll_until(timeout, step, f),
+        "timed out waiting for {what}"
+    );
 }
 
 fn sid_of(b: &LiveBackend, id: &LocalId) -> String {
@@ -440,7 +444,7 @@ fn discard_changes_goes_back_to_the_published_version() {
     }
 
     // Past the debounce and a pull: the old text never comes back.
-    std::thread::sleep(Duration::from_millis(600));
+    wait::wall_clock(Duration::from_millis(600));
     b.sync_now().unwrap();
     assert_eq!(server_item(&sid)["contentMd"], v1_text);
     let it = b.item(&id).unwrap();
@@ -1675,7 +1679,8 @@ fn sync_until_held(b: &LiveBackend, rids: &[&str]) {
 fn poll(subscriber: &LiveBackend, sub_id: &str, rid: &str, want_version: u32) -> bool {
     let e = e2e();
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     subscriber.sync_now().unwrap();
     if reading_item(subscriber, rid).is_some_and(|r| r.version >= want_version) {
         return true;
@@ -1725,7 +1730,7 @@ fn subscriptions_reading_and_pinned_versions() {
         Some(format!("{src_url}/f/{rid}/").as_str()),
         "page resolved against the origin"
     );
-    me.mark_read(&sub.id, &rid).unwrap();
+    me.mark_read(&sub.id, &RemoteId::from(&rid)).unwrap();
     assert_eq!(reading_item(&me, &rid).unwrap().read_version, Some(1));
 
     // The author edits and republishes; the subscriber's Worker polls.
@@ -1742,8 +1747,11 @@ fn subscriptions_reading_and_pinned_versions() {
         "one entry per post"
     );
     // v1 wasn't pinned: the changelog notes only, no diff base.
-    assert!(me.pinned_diff_base(&sub.id, &rid).is_none());
-    let full = me.remote_versions(&sub.id, &rid).unwrap();
+    assert!(
+        me.pinned_diff_base(&sub.id, &RemoteId::from(&rid))
+            .is_none()
+    );
+    let full = me.remote_versions(&sub.id, &RemoteId::from(&rid)).unwrap();
     assert_eq!(
         full.iter().map(|v| v.note.clone()).collect::<Vec<_>>(),
         vec![Some("first".to_string()), Some("second".to_string())]
@@ -1755,7 +1763,9 @@ fn subscriptions_reading_and_pinned_versions() {
     source.save(&sid, &format!("{t} v3")).unwrap();
     source.publish(&sid, None).unwrap();
     poll(&me, &sub.id, &rid, 3);
-    let shown = me.remote_shown_versions(&sub.id, &rid).unwrap();
+    let shown = me
+        .remote_shown_versions(&sub.id, &RemoteId::from(&rid))
+        .unwrap();
     assert_eq!(
         shown
             .iter()
@@ -1763,23 +1773,24 @@ fn subscriptions_reading_and_pinned_versions() {
             .collect::<Vec<_>>(),
         vec![(1, true, false), (3, false, true)]
     );
-    let pin = me.remote_pinned(&sub.id, &rid, 1).unwrap();
+    let pin = me.remote_pinned(&sub.id, &RemoteId::from(&rid), 1).unwrap();
     assert_eq!(pin.content_md, format!("{t} v1"));
     assert!(!pin.hash_mismatch);
     assert_eq!(pin.url().unwrap(), format!("{src_url}/items/{rid}/v1.json"));
     assert!(matches!(
-        me.remote_pinned(&sub.id, &rid, 2),
+        me.remote_pinned(&sub.id, &RemoteId::from(&rid), 2),
         Err(CoreError::Rejected { status: 404, .. })
     ));
     // Read at v1 (pinned) → the diff base is that pin.
     assert_eq!(
-        me.pinned_diff_base(&sub.id, &rid).map(|p| p.version),
+        me.pinned_diff_base(&sub.id, &RemoteId::from(&rid))
+            .map(|p| p.version),
         Some(1)
     );
 
     // Signals and withdrawal: a thumbed post stays visible as a tombstone,
     // and only the pinned version's content may be kept.
-    me.signal(&sub.id, &rid, Some(1)).unwrap();
+    me.signal(&sub.id, &RemoteId::from(&rid), Some(1)).unwrap();
     source.withdraw(&sid, Some("gone")).unwrap();
     poll(&me, &sub.id, &rid, 4);
     let r = reading_item(&me, &rid).expect("thumbed tombstones stay listed");
@@ -1856,11 +1867,11 @@ fn reading_items_carry_the_published_html() {
         "{html}"
     );
 
-    let pin = me.remote_pinned(&sub.id, &rid, 1).unwrap();
+    let pin = me.remote_pinned(&sub.id, &RemoteId::from(&rid), 1).unwrap();
     eprintln!("pinned content_html = {}", pin.content_html);
     assert_eq!(&pin.content_html, html, "the pin serves the same bytes");
     assert!(!html.contains(&att.url), "attachments aren't in the HTML");
-    let vs = me.remote_versions(&sub.id, &rid).unwrap();
+    let vs = me.remote_versions(&sub.id, &RemoteId::from(&rid)).unwrap();
     let cur = vs.iter().find(|v| v.current).unwrap();
     eprintln!("current media = {:?}", cur.media);
     assert_eq!(
@@ -1903,7 +1914,7 @@ fn read_state_syncs_between_two_macs() {
     assert!(reading_item(&mac1, &rid).unwrap().is_unread());
     assert!(reading_item(&mac2, &rid).unwrap().is_unread());
 
-    mac1.mark_read(&sub.id, &rid).unwrap();
+    mac1.mark_read(&sub.id, &RemoteId::from(&rid)).unwrap();
     mac1.sync_now().unwrap(); // flushes the read op
     mac2.sync_now().unwrap();
     let r = reading_item(&mac2, &rid).unwrap();
@@ -1914,9 +1925,10 @@ fn read_state_syncs_between_two_macs() {
     source.save(&sid, &format!("{t} v2")).unwrap();
     source.publish(&sid, None).unwrap();
     poll(&mac2, &sub.id, &rid, 2);
-    mac2.mark_read(&sub.id, &rid).unwrap();
+    mac2.mark_read(&sub.id, &RemoteId::from(&rid)).unwrap();
     mac2.sync_now().unwrap();
-    api.put_read(&sub.id, &rid, 1, None).unwrap();
+    api.put_read(&sub.id, &RemoteId::from(&rid), 1, None)
+        .unwrap();
     mac1.sync_now().unwrap();
     assert_eq!(reading_item(&mac1, &rid).unwrap().read_version, Some(2));
     let page = api.reading(100, None).unwrap().unwrap();
@@ -2213,7 +2225,7 @@ fn reading_is_walked_only_when_reading_moves() {
     };
 
     // A thumb set on another device.
-    me.signal(&sub.id, &rid, Some(1)).unwrap();
+    me.signal(&sub.id, &RemoteId::from(&rid), Some(1)).unwrap();
     other.pull_now().unwrap();
     let signal = proxy.take_full();
     assert_eq!(
@@ -2225,7 +2237,8 @@ fn reading_is_walked_only_when_reading_moves() {
     // A hopper membership made on another device.
     let h = me.create_hopper(&format!("{t} box")).unwrap();
     let _gone = DropHopper(&me, h.id.clone());
-    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.set_in_hopper(&h.id, &sub.id, &RemoteId::from(&rid), true)
+        .unwrap();
     me.sync_now().unwrap();
     other.pull_now().unwrap();
     let hopper = proxy.take_full();
@@ -2240,7 +2253,7 @@ fn reading_is_walked_only_when_reading_moves() {
     while start.elapsed() < Duration::from_secs(10) {
         other.pull_now().unwrap();
         pulls += 1;
-        std::thread::sleep(Duration::from_millis(250));
+        wait::wall_clock(Duration::from_millis(250));
     }
     let idle = proxy.take_full();
     eprintln!(
@@ -2263,7 +2276,344 @@ fn reading_is_walked_only_when_reading_moves() {
     // 1 s, then 2 s, then 4 s (the cap): at most 4 safety-net passes in
     // 10 s where a fixed 1 s net made about 10.
     assert!(walks(&idle) <= 4, "{idle:?}");
-    me.signal(&sub.id, &rid, None).unwrap();
+    me.signal(&sub.id, &RemoteId::from(&rid), None).unwrap();
+}
+
+// ------------------------------------- a reading list past the page budget
+
+/// A plain RSS feed of `n` invented posts, plus `fresh` newer ones on top.
+fn many_rss(title: &str, link: &str, n: usize, fresh: usize) -> String {
+    let mut items = String::new();
+    let mut item = |guid: String, text: &str| {
+        items.push_str(&format!(
+            "<item><title>{text}</title><link>{guid}</link><guid>{guid}</guid>\
+             <pubDate>Mon, 02 Nov 2026 10:00:00 GMT</pubDate>\
+             <description>An invented post, {text}.</description></item>"
+        ));
+    };
+    for i in (0..fresh).rev() {
+        item(format!("{link}fresh-{i}"), &format!("Fresh {i}"));
+    }
+    for i in 0..n {
+        item(format!("{link}p-{i}"), &format!("Post {i}"));
+    }
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>{title}</title><link>{link}</link><description>Invented sample feed</description>{items}</channel></rss>"#
+    )
+}
+
+/// The whole imported reading list as served now: walked again from the
+/// first page while it changes under the walk.
+fn served_reading(api: &Api) -> Vec<(SubId, RemoteId)> {
+    'walk: for _ in 0..20 {
+        let mut out = Vec::new();
+        let mut cursor: Option<String> = None;
+        loop {
+            let page = match api.reading(100, cursor.as_deref()) {
+                Ok(p) => p.expect("the server has /api/reading/imported"),
+                Err(CoreError::CursorExpired) => continue 'walk,
+                Err(e) => panic!("GET /api/reading/imported: {e}"),
+            };
+            out.extend(
+                page.items
+                    .iter()
+                    .map(|i| (i.subscription_id.clone(), i.remote_id.clone())),
+            );
+            match page.next {
+                Some(n) => cursor = Some(n),
+                None => return out,
+            }
+        }
+    }
+    panic!("the reading list never held still");
+}
+
+/// A value from a data folder's store, read beside the app (read-only).
+fn stored(dir: &Path, sql: &str, arg: &str) -> Option<String> {
+    let c = rusqlite::Connection::open_with_flags(
+        dir.join("blygger.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    c.query_row(sql, [arg], |r| r.get::<_, rusqlite::types::Value>(0))
+        .ok()
+        .map(|v| match v {
+            rusqlite::types::Value::Integer(n) => n.to_string(),
+            rusqlite::types::Value::Text(s) => s,
+            other => format!("{other:?}"),
+        })
+}
+
+/// Reading rows held for one subscription.
+fn held_rows(dir: &Path, sub: &str) -> usize {
+    stored(
+        dir,
+        "SELECT COUNT(*) FROM reading WHERE subscription_id = ?1",
+        sub,
+    )
+    .and_then(|n| n.parse().ok())
+    .unwrap_or(0)
+}
+
+/// The `reading` revision the reading list was last accepted under.
+fn accepted_reading(dir: &Path) -> Option<u64> {
+    let seen = stored(
+        dir,
+        "SELECT value FROM meta WHERE key = ?1",
+        "changes_seen:reading",
+    )?;
+    serde_json::from_str::<Value>(&seen).ok()?["reading"].as_u64()
+}
+
+fn counter(api: &Api, domain: &str) -> u64 {
+    api.changes().unwrap().expect("GET /api/changes").domains[domain]
+}
+
+/// "Resync all feeds" (the studio polls every subscription, in the
+/// background), then wait until the polls are done: the `subscriptions`
+/// counter has moved and then held still for two seconds.
+fn poll_all_feeds(api: &Api) {
+    let before = counter(api, "subscriptions");
+    let (st, v) = owner("POST", &e2e().url, "/api/subscriptions/poll", None);
+    assert_eq!(st, 200, "{v}");
+    let mut last = before;
+    let mut still = Instant::now();
+    wait_every(
+        "the polls to settle",
+        Duration::from_secs(120),
+        Duration::from_millis(250),
+        || {
+            let now = counter(api, "subscriptions");
+            if now != last {
+                (last, still) = (now, Instant::now());
+                false
+            } else {
+                last != before && still.elapsed() >= Duration::from_secs(2)
+            }
+        },
+    );
+}
+
+/// A reading list longer than one pull's page budget (20 pages of 100):
+/// the first sync walks it whole across two pulls, merging each page as it
+/// comes and accepting the revision at the end; after that a new post costs
+/// a head read of a page or two, an idle blyg none, feed-poll noise on the
+/// `subscriptions` counter none, and a removed subscription a whole walk
+/// that prunes only once it reaches the end. (Burrow 0.25.1 walked the same
+/// 20 pages on every pull, never accepted the revision and never pruned.)
+#[test]
+#[ignore = "needs a local Worker: scripts/e2e-local.sh"]
+fn a_reading_list_past_the_page_budget_is_read_by_its_head() {
+    if !has_changes() {
+        return;
+    }
+    const BIG: usize = 2_150;
+    let e = e2e();
+    let t = tag("longlist");
+    let api = Api::new(&e.url, e.cred.clone());
+    let (small_link, big_link) = (
+        "https://small.blyg.example.com/",
+        "https://big.blyg.example.com/",
+    );
+    let feeds: LiveFeeds = std::sync::Arc::new(std::sync::Mutex::new(vec![
+        ("/small.xml", many_rss("Walk small", small_link, 3, 0)),
+        ("/big.xml", many_rss("Walk big", big_link, BIG, 0)),
+    ]));
+    let host = serve_live_feeds(feeds.clone());
+    let d1 = tempfile::tempdir().unwrap();
+    let me = manual(d1.path());
+    let count = |sub: &str| {
+        served_reading(&api)
+            .iter()
+            .filter(|(s, _)| s == sub)
+            .count()
+    };
+    // The small feed first: its rows sort below the big one's, past the
+    // first pull's 20 pages.
+    let small = me
+        .subscribe(&format!("{host}/small.xml?run={t}"), Some("Walk small"))
+        .expect("subscribe to a local feed");
+    let _small = Unsub(&me, small.id.clone());
+    wait_every(
+        "the small feed's import",
+        Duration::from_secs(60),
+        Duration::from_millis(500),
+        || count(&small.id) >= 3,
+    );
+    // The studio stamps a poll's rows to the second: the big feed's later.
+    wait::wall_clock(Duration::from_millis(1_100));
+    let seeding = Instant::now();
+    let big = me
+        .subscribe(&format!("{host}/big.xml?run={t}"), Some("Walk big"))
+        .expect("subscribe to a local feed");
+    let _big = Unsub(&me, big.id.clone());
+    wait_every(
+        "the big feed's import",
+        Duration::from_secs(600),
+        Duration::from_secs(1),
+        || count(&big.id) >= BIG,
+    );
+    let total = served_reading(&api).len();
+    eprintln!(
+        "long list: {BIG} posts imported in {:.1} s; {total} rows on the blyg",
+        seeding.elapsed().as_secs_f64()
+    );
+    assert!(total > 2_000, "more than one pull's 20 pages: {total}");
+    let page_bytes = {
+        let (st, v) = owner("GET", &e.url, "/api/reading/imported?limit=100", None);
+        assert_eq!(st, 200);
+        v.to_string().len()
+    };
+
+    let proxy = Proxy::start(&e.url);
+    let d3 = tempfile::tempdir().unwrap();
+    let other = LiveBackend::open_with(
+        d3.path(),
+        &proxy.url,
+        e.cred.clone(),
+        SyncOptions {
+            reading_pages: 20,
+            ..opts(false)
+        },
+    )
+    .expect("open LiveBackend");
+    let pages = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported"))
+            .count()
+    };
+    let firsts = |seen: &[String]| {
+        seen.iter()
+            .filter(|r| r.starts_with("GET /api/reading/imported") && !r.contains("cursor="))
+            .count()
+    };
+
+    // The first sync: a whole walk, 20 pages in the first pull, each
+    // merged as it came; nothing accepted until the end.
+    let started = Instant::now();
+    other.sync_now().unwrap();
+    let first = proxy.take_full();
+    let first_pull = started.elapsed();
+    assert_eq!(pages(&first), 20, "{first:?}");
+    assert!(
+        held_rows(d3.path(), &big.id) >= 1_900,
+        "the pages read so far are held: {}",
+        held_rows(d3.path(), &big.id)
+    );
+    assert_eq!(held_rows(d3.path(), &small.id), 0, "past the first pull");
+    assert_eq!(
+        accepted_reading(d3.path()),
+        None,
+        "accepted only at the end"
+    );
+    // The second pull carries on from its cursor (no new first page) to
+    // the end, and accepts the revision.
+    other.pull_now().unwrap();
+    let rest = proxy.take_full();
+    assert_eq!(firsts(&rest), 0, "carried on, not restarted: {rest:?}");
+    assert_eq!(pages(&rest), total.div_ceil(100) - 20, "{rest:?}");
+    assert_eq!(held_rows(d3.path(), &big.id), BIG);
+    assert_eq!(held_rows(d3.path(), &small.id), 3);
+    assert_eq!(
+        accepted_reading(d3.path()),
+        Some(counter(&api, "reading")),
+        "the reading revision is accepted"
+    );
+    eprintln!(
+        "long list: first sync {} pages over 2 pulls ({:.1} s for the first 20)",
+        pages(&first) + pages(&rest),
+        first_pull.as_secs_f64()
+    );
+
+    // Idle: nothing moved, nothing read (0.25.1 walked 20 pages a pull).
+    for _ in 0..3 {
+        other.pull_now().unwrap();
+    }
+    let idle = proxy.take_full();
+    assert_eq!(pages(&idle), 0, "{idle:?}");
+
+    // One new post: a head read of a page or two shows it.
+    feeds.lock().unwrap()[1].1 = many_rss("Walk big", big_link, BIG, 1);
+    poll_all_feeds(&api);
+    assert_eq!(count(&big.id), BIG + 1, "the new post was imported");
+    let before = accepted_reading(d3.path()).unwrap();
+    let started = Instant::now();
+    other.pull_now().unwrap();
+    let head = proxy.take_full();
+    let head_pull = started.elapsed();
+    assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "the new post shows");
+    assert_eq!(firsts(&head), 1, "{head:?}");
+    assert!(pages(&head) <= 2, "a head read: {head:?}");
+    let now = counter(&api, "reading");
+    assert!(now > before);
+    assert_eq!(accepted_reading(d3.path()), Some(now), "and accepted");
+    assert_eq!(
+        held_rows(d3.path(), &small.id),
+        3,
+        "a head read prunes nothing"
+    );
+    eprintln!(
+        "long list: steady-state pull with one new post: {} reading page(s), ~{} KB, \
+         {:.2} s, {} requests (0.25.1: 20 pages, ~{} KB, every pull)",
+        pages(&head),
+        pages(&head) * page_bytes / 1024,
+        head_pull.as_secs_f64(),
+        head.len(),
+        20 * page_bytes / 1024
+    );
+    other.pull_now().unwrap();
+    let after = proxy.take_full();
+    assert_eq!(pages(&after), 0, "nothing new: nothing read: {after:?}");
+
+    // Feed polls move `subscriptions` (when each feed was polled), not
+    // `reading`: no reading walk, one read of the subscription list.
+    let mut noise_seen = false;
+    for _ in 0..3 {
+        let reading0 = counter(&api, "reading");
+        poll_all_feeds(&api);
+        if counter(&api, "reading") != reading0 {
+            // Another test's subscription brought something: read it, and
+            // try again.
+            other.pull_now().unwrap();
+            proxy.take_full();
+            continue;
+        }
+        other.pull_now().unwrap();
+        let noise = proxy.take_full();
+        assert_eq!(
+            pages(&noise),
+            0,
+            "subscription noise walks nothing: {noise:?}"
+        );
+        assert!(
+            noise
+                .iter()
+                .any(|r| r.starts_with("GET /api/subscriptions")),
+            "{noise:?}"
+        );
+        noise_seen = true;
+        break;
+    }
+    if !noise_seen {
+        eprintln!("long list: no poll moved only `subscriptions` here; noise case skipped");
+    }
+
+    // A subscription removed elsewhere: a whole walk, which removes its
+    // rows only once it has read the whole list.
+    me.unsubscribe(&small.id).unwrap();
+    other.pull_now().unwrap();
+    let part = proxy.take_full();
+    assert_eq!(pages(&part), 20, "a whole walk: {part:?}");
+    assert_eq!(
+        held_rows(d3.path(), &small.id),
+        3,
+        "nothing removed before the walk's end"
+    );
+    other.pull_now().unwrap();
+    let end = proxy.take_full();
+    assert_eq!(firsts(&end), 0, "{end:?}");
+    assert_eq!(held_rows(d3.path(), &small.id), 0, "pruned at the end");
+    assert_eq!(held_rows(d3.path(), &big.id), BIG + 1, "and nothing else");
 }
 
 // ------------------------------------------------------ TK generate (0.27)
@@ -2451,7 +2801,7 @@ fn studio_login(base: &str, password: &str) -> String {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
             {
-                std::thread::sleep(Duration::from_secs(5))
+                wait::wall_clock(Duration::from_secs(5))
             }
             r => break r.expect("studio sign-in"),
         }
@@ -2841,7 +3191,7 @@ fn read_state_needs_its_own_scope() {
 
     // The API names the missing scope, never the token.
     let scoped = Api::new(&e.url, Credential::Token(old.clone()));
-    match scoped.put_read(&sub.id, &a, 1, None) {
+    match scoped.put_read(&sub.id, &RemoteId::from(&a), 1, None) {
         Err(CoreError::Rejected {
             status: 403,
             message,
@@ -2863,7 +3213,11 @@ fn read_state_needs_its_own_scope() {
         }
     }));
     sync_until_held(&b, &[&a]);
-    assert_eq!(b.set_read(&[(sub.id.clone(), a.clone())], true).unwrap(), 1);
+    assert_eq!(
+        b.set_read(&[(sub.id.clone(), RemoteId::from(a.clone()))], true)
+            .unwrap(),
+        1
+    );
     let text = tag("goes-anyway");
     let id = b.create_draft(Kind::Fragment, &text).unwrap();
     b.sync_now().expect("other sync keeps working");
@@ -2956,7 +3310,12 @@ fn signing_in_again_with_a_kept_client_adds_reading_state() {
         &e.url,
         Credential::OAuth(oauth::OAuthSession::new(grant.clone())),
     );
-    match api.put_read("no-such-sub", "no-such-item", 1, None) {
+    match api.put_read(
+        &SubId::from("no-such-sub"),
+        &RemoteId::from("no-such-item"),
+        1,
+        None,
+    ) {
         Ok(_) => {}
         Err(e) => panic!("a reading:state grant may write read state: {e:?}"),
     }
@@ -2971,7 +3330,7 @@ fn source_name(me: &LiveBackend, src_url: &str) -> String {
 
 /// Unsubscribes when dropped, so a failing test doesn't leave the next
 /// one "already subscribed".
-struct Unsub<'a>(&'a LiveBackend, String);
+struct Unsub<'a>(&'a LiveBackend, SubId);
 
 impl Drop for Unsub<'_> {
     fn drop(&mut self) {
@@ -3052,25 +3411,25 @@ fn subscription_rename_and_revert_to_source() {
     // record an index sync over it, and the manifest then waits a day. So
     // hand the name back again, and poll, every few seconds until it shows.
     me.poll_subscriptions().unwrap();
-    let t0 = Instant::now();
     let mut asked = Instant::now();
-    loop {
+    let mut s = sub_of(&me, &sub.id);
+    let named = wait::poll_until(Duration::from_secs(30), Duration::from_millis(50), || {
         me.sync_now().unwrap();
-        let s = sub_of(&me, &sub.id);
+        s = sub_of(&me, &sub.id);
         if s.title == own {
-            break;
+            return true;
         }
         if asked.elapsed() >= Duration::from_secs(4) {
             me.rename_subscription(&sub.id, None).unwrap();
             me.poll_subscriptions().unwrap();
             asked = Instant::now();
         }
-        assert!(
-            t0.elapsed() < Duration::from_secs(30),
-            "timed out waiting for the source's name {own:?}; still {s:?}"
-        );
-        std::thread::sleep(Duration::from_millis(50));
-    }
+        false
+    });
+    assert!(
+        named,
+        "timed out waiting for the source's name {own:?}; still {s:?}"
+    );
     me.unsubscribe(&sub.id).unwrap();
 }
 
@@ -3106,7 +3465,8 @@ fn check_all_feeds_and_check_one_now() {
             .unwrap_or(Value::Null)
     };
     let before = polled_at();
-    std::thread::sleep(Duration::from_millis(1100));
+    // `lastPollAt` keeps whole seconds.
+    wait::wall_clock(Duration::from_millis(1100));
     let n = me.poll_subscriptions().unwrap();
     assert!(n >= 1, "polling {n} subscriptions");
     wait_until("the background poll", Duration::from_secs(20), || {
@@ -3264,7 +3624,10 @@ fn read_and_unread_sync_through_upstreams_read_state() {
     let _unsub = Unsub(&mac1, sub.id.clone());
     sync_until_held(&mac1, &[&a, &b]);
     sync_until_held(&mac2, &[&a, &b]);
-    let both = vec![(sub.id.clone(), a.clone()), (sub.id.clone(), b.clone())];
+    let both = vec![
+        (sub.id.clone(), RemoteId::from(&a)),
+        (sub.id.clone(), RemoteId::from(&b)),
+    ];
 
     if !page.read_sync() {
         // No read state on the server (studio 0.32.1): all of it is local,
@@ -3330,7 +3693,7 @@ fn read_and_unread_sync_through_upstreams_read_state() {
     mac1.sync_now().unwrap();
     assert_eq!(server_read_version(&b), Some(Value::Null));
     mac1.set_read(&both[1..], true).unwrap(); // queued, not sent yet
-    std::thread::sleep(Duration::from_millis(30));
+    wait::wall_clock(Duration::from_millis(30));
     // Another device clears it after that read happened.
     let (st, v) = owner(
         "DELETE",
@@ -3433,7 +3796,10 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
     let off = manual(d1.path());
     let sub = off.subscribe(&src_url, Some("Lineage source")).unwrap();
     sync_until_held(&off, &[&frag, &thread]);
-    let keys = vec![imported_key(&sub.id, &frag), imported_key(&sub.id, &thread)];
+    let keys = vec![
+        imported_key(&sub.id, &RemoteId::from(&frag)),
+        imported_key(&sub.id, &RemoteId::from(&thread)),
+    ];
 
     // Off: the route is a 404, taken silently as "count here", and remembered.
     let (st, _) = owner(
@@ -3477,7 +3843,7 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
         "/api/ext/lineage-glyph/lineage?{}",
         Centre::Imported {
             sub: sub.id.clone(),
-            id: frag.clone()
+            id: RemoteId::from(&frag)
         }
         .query()
     ));
@@ -3485,7 +3851,7 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
         .lineage_graph(
             &Centre::Imported {
                 sub: sub.id.clone(),
-                id: frag.clone(),
+                id: RemoteId::from(&frag),
             },
             0,
         )
@@ -3511,10 +3877,16 @@ fn lineage_counts_come_from_the_node_when_it_serves_them() {
 /// A tiny static feed server on 127.0.0.1 (never the internet): `path →
 /// body`, 404 for anything else. Lives as long as the test process.
 fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
+    serve_live_feeds(std::sync::Arc::new(std::sync::Mutex::new(files)))
+}
+
+/// [`serve_feeds`] with bodies the test may change while it runs.
+type LiveFeeds = std::sync::Arc<std::sync::Mutex<Vec<(&'static str, String)>>>;
+
+fn serve_live_feeds(files: LiveFeeds) -> String {
     use std::io::{BufRead, BufReader, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
-    let files = std::sync::Arc::new(files);
     std::thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             let files = files.clone();
@@ -3532,7 +3904,13 @@ fn serve_feeds(files: Vec<(&'static str, String)>) -> String {
                 // The path without the query.
                 let target = line.split_whitespace().nth(1).unwrap_or("/");
                 let path = target.split('?').next().unwrap_or("/");
-                let (status, ctype, body) = match files.iter().find(|(p, _)| *p == path) {
+                let found = files
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .cloned();
+                let (status, ctype, body) = match found {
                     Some((p, b)) => (
                         "200 OK",
                         if p.ends_with(".atom") {
@@ -3640,7 +4018,7 @@ fn opml_import_and_export() {
         &std::sync::atomic::AtomicBool::new(false),
         &|_| {},
     );
-    let ids: Vec<String> = results[..2]
+    let ids: Vec<SubId> = results[..2]
         .iter()
         .map(|r| match r {
             Some(Outcome::Added { id, .. }) => id.clone(),
@@ -3773,7 +4151,7 @@ fn opml_import_and_export() {
 
 /// Every row of `GET /api/reading/imported`, walked `limit` at a time with
 /// the server's own cursor: (sub, remote id) in the order served.
-fn walk_feed(api: &Api, limit: u32) -> Vec<(String, String)> {
+fn walk_feed(api: &Api, limit: u32) -> Vec<(SubId, RemoteId)> {
     let mut out = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
@@ -3916,7 +4294,7 @@ fn a_refused_token_stops_sync_and_keeps_the_change() {
     });
     let _ = proxy.take();
     // The worker's backoff here is 200–800 ms: a retry loop would show.
-    std::thread::sleep(Duration::from_secs(3));
+    wait::wall_clock(Duration::from_secs(3));
     assert_eq!(
         proxy.take(),
         Vec::<String>::new(),
@@ -4438,10 +4816,11 @@ fn withdrawn_posts_are_background() {
     source.withdraw(&local, Some("retracted")).unwrap();
     // The reading list hides the tombstone, so `poll` can't see it.
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     me.sync_now().unwrap();
     let gone = |me: &LiveBackend| {
-        me.reading_row(&sub.id, &rid)
+        me.reading_row(&sub.id, &RemoteId::from(&rid))
             .is_some_and(|r| r.state == "tombstone")
     };
     if !gone(&me) {
@@ -4451,7 +4830,7 @@ fn withdrawn_posts_are_background() {
         me.sync_now().unwrap();
     }
     let row = me
-        .reading_row(&sub.id, &rid)
+        .reading_row(&sub.id, &RemoteId::from(&rid))
         .expect("the tombstone is held");
     assert_eq!(row.state, "tombstone");
     assert!(
@@ -4494,7 +4873,7 @@ fn withdrawn_posts_are_background() {
 /// --- background --- The studio's Background set, as its own lens lists it
 /// (`GET /api/reading?background=true`, every page): `(sub, id)` keys,
 /// your own posts as `("~own", id)`.
-fn studio_background(base: &str) -> HashSet<(String, String)> {
+fn studio_background(base: &str) -> HashSet<(SubId, RemoteId)> {
     let mut out = HashSet::new();
     let mut cursor: Option<String> = None;
     loop {
@@ -4520,7 +4899,7 @@ fn studio_background(base: &str) -> HashSet<(String, String)> {
 /// withdrawn ones, as the app builds them), placed by what it read of the
 /// studio, filtered by `ReadingItem::is_background`, the one rule every
 /// list uses.
-fn burrow_background(me: &LiveBackend) -> HashSet<(String, String)> {
+fn burrow_background(me: &LiveBackend) -> HashSet<(SubId, RemoteId)> {
     let mut rows = me.reading();
     rows.extend(me.background_reading());
     let origin = me.base_url().expect("connected");
@@ -4571,12 +4950,18 @@ fn burrows_background_is_the_studios() {
     // Withdrawn on `b`: always Background.
     source.withdraw(&gone_local, Some("retracted")).unwrap();
     trigger_scheduled(&e.url);
-    std::thread::sleep(Duration::from_millis(300));
+    // The cron handler's own work (wrangler's waitUntil) has no signal.
+    wait::wall_clock(Duration::from_millis(300));
     Api::new(&e.url, e.cred.clone())
         .resync_subscription(&sub.id)
         .unwrap();
     me.sync_now().unwrap();
-    assert_eq!(me.reading_row(&sub.id, &gone).unwrap().state, "tombstone");
+    assert_eq!(
+        me.reading_row(&sub.id, &RemoteId::from(&gone))
+            .unwrap()
+            .state,
+        "tombstone"
+    );
 
     // Your own minor change: v2 published with the category the author
     // confirmed (`changeCategory: typo`), as the studio's publish dialog
@@ -4601,14 +4986,14 @@ fn burrows_background_is_the_studios() {
     assert_eq!(st, 200, "{v}");
 
     // A post moved to Background by hand.
-    let theirs = |id: &str| (sub.id.clone(), id.to_string());
-    let own = |id: &str| (OWN_SUBSCRIPTION.to_string(), id.to_string());
+    let theirs = |id: &str| (sub.id.clone(), RemoteId::from(id));
+    let own = |id: &str| (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(id));
     me.set_reading_placement(&theirs(&moved), false, Some(Placement::Background))
         .unwrap();
     me.sync_now().unwrap();
 
     let ours = [theirs(&moved), theirs(&plain), theirs(&gone), own(&mine)];
-    let check = |what: &str, want: &[(String, String)]| {
+    let check = |what: &str, want: &[(SubId, RemoteId)]| {
         let studio = studio_background(&e.url);
         let burrow = burrow_background(&me);
         for k in &ours {
@@ -4624,7 +5009,7 @@ fn burrows_background_is_the_studios() {
             );
         }
         // Everything held here that the studio lists, and nothing more.
-        let held: HashSet<(String, String)> = me
+        let held: HashSet<(SubId, RemoteId)> = me
             .reading()
             .into_iter()
             .chain(me.background_reading())
@@ -4733,8 +5118,8 @@ fn a_refused_credential_never_passes_the_contract_check() {
 
 /// The server's memberships of hopper `id` (`GET /api/hoppers/{id}/
 /// memberships`, walked to its end), as sorted (sub, remote id) pairs.
-fn server_members(id: &str) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = Vec::new();
+fn server_members(id: &str) -> Vec<(SubId, RemoteId)> {
+    let mut out: Vec<(SubId, RemoteId)> = Vec::new();
     let mut cursor: Option<String> = None;
     loop {
         let path = match &cursor {
@@ -4744,8 +5129,8 @@ fn server_members(id: &str) -> Vec<(String, String)> {
         let v = conforms("GET", &e2e().url, &path);
         out.extend(v["items"].as_array().expect("memberships").iter().map(|m| {
             (
-                m["subscriptionId"].as_str().unwrap().to_string(),
-                m["remoteId"].as_str().unwrap().to_string(),
+                m["subscriptionId"].as_str().unwrap().into(),
+                m["remoteId"].as_str().unwrap().into(),
             )
         }));
         match v["page"]["nextCursor"].as_str() {
@@ -4973,17 +5358,23 @@ fn posts_go_in_and_out_of_hoppers_theirs_and_yours() {
     let (_, own) = published(&me, Kind::Fragment, &format!("{t} mine"), None);
     let h = me.create_hopper(&format!("{t} box")).unwrap();
     let _gone = DropHopper(&me, h.id.clone());
-    let own_key = (OWN_SUBSCRIPTION.to_string(), own.clone());
+    let own_key = (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(&own));
 
     // In: here at once (the row, the members and the count), then sent.
-    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
-    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, true)
+    me.set_in_hopper(&h.id, &sub.id, &RemoteId::from(&rid), true)
         .unwrap();
+    me.set_in_hopper(
+        &h.id,
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from(&own),
+        true,
+    )
+    .unwrap();
     assert!(reading_item(&me, &rid).unwrap().hoppers.contains(&h.id));
     assert_eq!(me.hopper_members().get(&own_key), Some(&vec![h.id.clone()]));
     assert_eq!(held_hopper(&me, &h.id).unwrap().count, 2);
     me.sync_now().unwrap();
-    let mut want = vec![own_key.clone(), (sub.id.clone(), rid.clone())];
+    let mut want = vec![own_key.clone(), (sub.id.clone(), RemoteId::from(&rid))];
     want.sort();
     assert_eq!(server_members(&h.id), want);
     // A pull agrees with what's here.
@@ -5004,9 +5395,15 @@ fn posts_go_in_and_out_of_hoppers_theirs_and_yours() {
     );
 
     // Out: both, and the server forgets them; the posts stay.
-    me.set_in_hopper(&h.id, &sub.id, &rid, false).unwrap();
-    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, false)
+    me.set_in_hopper(&h.id, &sub.id, &RemoteId::from(&rid), false)
         .unwrap();
+    me.set_in_hopper(
+        &h.id,
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from(&own),
+        false,
+    )
+    .unwrap();
     assert!(!reading_item(&me, &rid).unwrap().hoppers.contains(&h.id));
     me.sync_now().unwrap();
     assert!(server_members(&h.id).is_empty());
@@ -5017,7 +5414,8 @@ fn posts_go_in_and_out_of_hoppers_theirs_and_yours() {
     assert!(!other.hopper_members().contains_key(&own_key));
 
     // Deleting a hopper with a post in it leaves the post alone.
-    me.set_in_hopper(&h.id, &sub.id, &rid, true).unwrap();
+    me.set_in_hopper(&h.id, &sub.id, &RemoteId::from(&rid), true)
+        .unwrap();
     me.sync_now().unwrap();
     me.delete_hopper(&h.id).unwrap();
     assert!(reading_item(&me, &rid).unwrap().hoppers.is_empty());
@@ -5036,13 +5434,18 @@ fn a_hopper_add_made_offline_is_sent_later() {
     let (_, own) = published(&b, Kind::Fragment, &format!("{t} mine"), None);
     let h = b.create_hopper(&format!("{t} later")).unwrap();
     let _gone = DropHopper(&b, h.id.clone());
-    let own_key = (OWN_SUBSCRIPTION.to_string(), own.clone());
+    let own_key = (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(&own));
 
     ctl(&["stop", "a"]);
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         // Offline: the add is here at once and waits; a new hopper can't be made.
-        b.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &own, true)
-            .unwrap();
+        b.set_in_hopper(
+            &h.id,
+            &SubId::from(OWN_SUBSCRIPTION),
+            &RemoteId::from(&own),
+            true,
+        )
+        .unwrap();
         assert!(
             b.hopper_members()
                 .get(&own_key)
@@ -5080,14 +5483,24 @@ fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
     let (_, second) = published(&me, Kind::Fragment, &format!("{t} two"), None);
     let h = me.create_hopper(&format!("{t} box")).unwrap();
     let _gone = DropHopper(&me, h.id.clone());
-    let own = |rid: &str| (OWN_SUBSCRIPTION.to_string(), rid.to_string());
-    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &second, true)
-        .unwrap();
+    let own = |rid: &str| (SubId::from(OWN_SUBSCRIPTION), RemoteId::from(rid));
+    me.set_in_hopper(
+        &h.id,
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from(&second),
+        true,
+    )
+    .unwrap();
     me.sync_now().unwrap();
     // The studio keeps whole seconds; within one, ties go by id.
-    std::thread::sleep(Duration::from_millis(1100));
-    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &first, true)
-        .unwrap();
+    wait::wall_clock(Duration::from_millis(1100));
+    me.set_in_hopper(
+        &h.id,
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from(&first),
+        true,
+    )
+    .unwrap();
     me.sync_now().unwrap();
     let want = vec![own(&first), own(&second)];
     assert_eq!(
@@ -5114,8 +5527,13 @@ fn a_hopper_keeps_its_own_order_and_is_read_only_when_it_changed() {
         "an unchanged pull reads no hopper: {seen:?}"
     );
     // A membership changed elsewhere: read again, in order.
-    me.set_in_hopper(&h.id, OWN_SUBSCRIPTION, &second, false)
-        .unwrap();
+    me.set_in_hopper(
+        &h.id,
+        &SubId::from(OWN_SUBSCRIPTION),
+        &RemoteId::from(&second),
+        false,
+    )
+    .unwrap();
     me.sync_now().unwrap();
     other.pull_now().unwrap();
     assert!(
@@ -5449,7 +5867,7 @@ fn the_reading_list_advertises_read_state_in_camel_case() {
     let _unsub = Unsub(&me, sub.id.clone());
     sync_until_held(&me, &[&rid]);
     assert!(me.read_state_sync());
-    me.mark_read(&sub.id, &rid).unwrap();
+    me.mark_read(&sub.id, &RemoteId::from(&rid)).unwrap();
     me.sync_now().unwrap();
     let rows = walk_feed(&api, 100);
     assert!(rows.iter().any(|(s, r)| *s == sub.id && *r == rid));
@@ -5559,7 +5977,7 @@ fn client_access_lists_makes_and_revokes_a_token() {
             Err(CoreError::Rejected { status: 429, .. })
                 if t0.elapsed() < Duration::from_secs(90) =>
             {
-                std::thread::sleep(Duration::from_secs(5))
+                wait::wall_clock(Duration::from_secs(5))
             }
             r => break r.expect("list"),
         }
@@ -5822,7 +6240,10 @@ fn changelog_display_settings_and_summaries() {
     let doc = public_json(&format!("{}/items/{sid}.json", e.url));
     assert!(!doc.to_string().contains("summary"), "{doc}");
     // An imported item of a subscription that isn't there: not found.
-    match b.summarize_reading_changelog("no-such-subscription", "01aaaaaaaaaaaaaaaaaaaaaaaa") {
+    match b.summarize_reading_changelog(
+        &SubId::from("no-such-subscription"),
+        &RemoteId::from("01aaaaaaaaaaaaaaaaaaaaaaaa"),
+    ) {
         Err(CoreError::NotFound) | Err(CoreError::Rejected { status: 404, .. }) => {}
         other => panic!("no subscription: {other:?}"),
     }
@@ -6392,7 +6813,7 @@ fn signals_list_thumbs_and_activity() {
     let sub = b.subscribe(&src_url, Some("Signals source")).unwrap();
     let _unsub = Unsub(&b, sub.id.clone());
     sync_until_held(&b, &[&rid]);
-    b.signal(&sub.id, &rid, Some(-1)).unwrap();
+    b.signal(&sub.id, &RemoteId::from(&rid), Some(-1)).unwrap();
 
     let mut down = Vec::new();
     let mut cursor: Option<String> = None;
@@ -6425,7 +6846,7 @@ fn signals_list_thumbs_and_activity() {
         "{:?}",
         log.items
     );
-    b.signal(&sub.id, &rid, None).unwrap();
+    b.signal(&sub.id, &RemoteId::from(&rid), None).unwrap();
 }
 
 /// Decision #103: what Burrow publishes is text (no C0 controls but tab,
@@ -6570,7 +6991,7 @@ fn syndication_is_written_in_place_and_read_by_a_second_client() {
         Duration::from_secs(20),
         || {
             me.sync_now().unwrap();
-            me.reading_syndication(&sub.id, &sid) == std::slice::from_ref(&copy)
+            me.reading_syndication(&sub.id, &RemoteId::from(&sid)) == std::slice::from_ref(&copy)
         },
     );
     assert_eq!(reading_item(&me, &sid).unwrap().version, 1);

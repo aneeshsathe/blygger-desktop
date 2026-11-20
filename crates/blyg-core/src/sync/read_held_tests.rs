@@ -43,13 +43,18 @@ fn row(rid: &str) -> ReadingItem {
 /// network (the API points at a closed port).
 fn engine() -> Engine {
     let store = Store::open_in_memory().unwrap();
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     store
         .merge_reading(&[row("A"), row("B")], true, &kinds)
         .unwrap();
     store.set_meta(READ_SYNC, "1").unwrap();
-    assert_eq!(store.mark_read_rows("s1", "A", true).unwrap().len(), 1);
+    assert_eq!(
+        store
+            .mark_read_rows(&SubId::from("s1"), &RemoteId::from("A"), true)
+            .unwrap()
+            .len(),
+        1
+    );
     store.create_draft(Kind::Fragment, "a draft", 0).unwrap();
     let api = Api::new("http://127.0.0.1:9", Credential::Token("t".into()));
     Engine::new(store, api, SyncOptions::default())
@@ -86,7 +91,9 @@ fn a_held_read_stays_queued_and_lets_the_rest_through() {
 
     // Marks made meanwhile still queue, for a later sign-in to send.
     assert!(e.read_sync_on());
-    e.store.mark_read_rows("s1", "B", true).unwrap();
+    e.store
+        .mark_read_rows(&SubId::from("s1"), &RemoteId::from("B"), true)
+        .unwrap();
     assert_eq!(kinds_queued(&e), vec![OpKind::Read, OpKind::Read]);
     assert!(e.next_op(None, true).unwrap().is_none());
 

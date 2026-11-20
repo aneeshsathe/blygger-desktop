@@ -1,9 +1,9 @@
 //! The one list order for every client (SPEC "Reading order"): the reading
-//! list and your own posts are ordered here, by the SQLite store, by the
-//! app, and by Burrow in a browser alike. No client keeps the order a
-//! backend or a server answered in: `/api/reading/imported` comes in fetch
-//! order (`observed_at`, the same second for a whole backfill), and the
-//! studio's own timestamps tie to the second.
+//! list and your own posts are ordered here, by the SQLite store and by the
+//! app alike. No client keeps the order a backend or a server answered in:
+//! `/api/reading/imported` comes in fetch order (`observed_at`, the same
+//! second for a whole backfill), and the studio's own timestamps tie to the
+//! second.
 //!
 //! - **Reading rows** ([`reading_cmp`]): newest first by the post's own date,
 //!   [`ReadingItem::sort_at`] (updated, else created, else when your blyg

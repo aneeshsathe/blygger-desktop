@@ -7,11 +7,12 @@ use gpui_kit::*;
 use super::View;
 use crate::app::MainView;
 use crate::fake::reading_seed::{ADA_REPLY, LIN_GARDENS, LIN_REREAD, RUE_TRUST, TALK_D};
+use crate::scenes::Scene;
 
 impl MainView {
     pub(crate) fn reading_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -28,9 +29,10 @@ impl MainView {
             }
         };
         // The list + post scenarios below predate the stream: show them on
-        // the Reader layout. `rd-stream*` use the stream.
+        // the Reader layout. `rd-stream*` use the stream (the registry's
+        // names say which).
         if n == 0 {
-            self.reading.mode = if scenario.starts_with("rd-stream") {
+            self.reading.mode = if scenario.to_string().starts_with("rd-stream") {
                 super::stream_vm::ReadMode::Stream
             } else {
                 super::stream_vm::ReadMode::Reader
@@ -38,14 +40,14 @@ impl MainView {
         }
         match (scenario, n) {
             // --- stream --- the default reading view, a thread selected.
-            ("rd-stream", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream", 1) => {
+            (Scene::RdStream, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStream, 1) => {
                 self.stream_move(1, window, cx);
                 self.stream_move(1, window, cx);
             }
             // Scrolled to Ada's stub (lineage line + a quote box).
-            ("rd-stream-quote", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-quote", 1) => {
+            (Scene::RdStreamQuote, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamQuote, 1) => {
                 let ix = self
                     .reading
                     .shown_rows()
@@ -57,8 +59,8 @@ impl MainView {
                 }
             }
             // Lin's reread: a cited quote not held here, and an `[[id]]` link.
-            ("rd-stream-link", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-link", 1) => {
+            (Scene::RdStreamLink, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamLink, 1) => {
                 let ix = self
                     .reading
                     .shown_rows()
@@ -72,10 +74,10 @@ impl MainView {
             // --- catch up --- Rue's "Back to links, then" selected (the
             // end of a four-deep quote chain), then its Catch up sheet;
             // `-whole` with the side branches on.
-            ("rd-stream-catchup" | "rd-stream-catchup-whole", 0) => {
+            (Scene::RdStreamCatchup | Scene::RdStreamCatchupWhole, 0) => {
                 self.show_view(View::Reading, window, cx)
             }
-            ("rd-stream-catchup" | "rd-stream-catchup-whole", 1) => {
+            (Scene::RdStreamCatchup | Scene::RdStreamCatchupWhole, 1) => {
                 let ix = self
                     .reading
                     .shown_rows()
@@ -86,29 +88,45 @@ impl MainView {
                     }
                 }
             }
-            ("rd-stream-catchup" | "rd-stream-catchup-whole", 2) => {
+            (Scene::RdStreamCatchup | Scene::RdStreamCatchupWhole, 2) => {
                 if let Some(r) = self.reading.rows.iter().find(|r| r.remote_id == TALK_D) {
-                    let (o, i) = (r.origin.clone(), r.remote_id.clone());
+                    let (o, i) = (r.origin.clone(), r.remote_id.to_string());
                     self.open_catch_up(o, i, window, cx);
                 }
-                if scenario.ends_with("-whole") {
+                if scenario == Scene::RdStreamCatchupWhole {
                     self.catch_up_toggle_whole(cx);
                 }
             }
             // "Read more": the side pane beside the stream.
-            ("rd-stream-pane", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-pane", 1) => open(self, LIN_GARDENS, window, cx),
+            (Scene::RdStreamPane, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamPane, 1) => open(self, LIN_GARDENS, window, cx),
             // The search filtering the stream.
-            ("rd-stream-search", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-search", 1) => {
+            (Scene::RdStreamSearch, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamSearch, 1) => {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("bench", window, cx);
             }
             // --- reading compose --- the compose box under the stream, a
             // thought half typed; `rd-compose-reader`: the Reader with a
             // post open and its quote in the box.
-            ("rd-stream-compose", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-compose", 1) => {
+            // --- mark all read --- the question, in the Stream and in the
+            // Reader (Rue picked).
+            (Scene::RdStreamMarkAll | Scene::RdMarkAllReader, 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            (Scene::RdStreamMarkAll, 1) => self.ask_mark_all_read(None, window, cx),
+            (Scene::RdMarkAllReader, 1) => {
+                self.set_read_mode(super::stream_vm::ReadMode::Reader, window, cx);
+                self.select_source(super::sources_vm::Source::Sub("sub-rue".into()), cx);
+            }
+            (Scene::RdMarkAllReader, 2) => self.ask_mark_all_read(None, window, cx),
+            // --- reading compose --- `rd-stream-compose-hold`: Post pressed, the
+            // hold counting down.
+            (Scene::RdStreamComposeHold, 2) => self.compose_post(window, cx),
+            (Scene::RdStreamCompose | Scene::RdStreamComposeHold, 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            (Scene::RdStreamCompose | Scene::RdStreamComposeHold, 1) => {
                 self.stream_move(1, window, cx);
                 self.focus_compose(window, cx);
                 if let Some(e) = self.reading.compose.editor.clone() {
@@ -121,8 +139,8 @@ impl MainView {
                     });
                 }
             }
-            ("rd-compose-reader", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-compose-reader", 1) => {
+            (Scene::RdComposeReader, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdComposeReader, 1) => {
                 open(self, RUE_TRUST, window, cx);
                 self.compose_quote_open(window, cx);
                 if let Some(e) = self.reading.compose.editor.clone() {
@@ -137,26 +155,26 @@ impl MainView {
             }
             // --- quote targets --- a held quote's original opens at once;
             // one nobody here follows is fetched, at its quoted pinned v1.
-            ("rd-stream-original", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-original", 1) => {
+            (Scene::RdStreamOriginal, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamOriginal, 1) => {
                 use crate::fake::reading_seed::{ADA, ADA_TIDES};
                 self.open_original(ADA.into(), ADA_TIDES.into(), Some(2), window, cx)
             }
-            ("rd-stream-fetch", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-fetch", 1) => {
+            (Scene::RdStreamFetch, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamFetch, 1) => {
                 use crate::fake::reading_seed::{KIT, KIT_TIDES};
                 self.open_original(KIT.into(), KIT_TIDES.into(), Some(1), window, cx)
             }
             // --- responses --- Lin's bench note: Ada stubbed and quoted it.
-            ("rd-stream-responses", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-responses", 1) => {
+            (Scene::RdStreamResponses, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamResponses, 1) => {
                 open(self, crate::fake::reading_seed::LIN_BENCH, window, cx)
             }
             // --- lineage --- ⌘J on the bench post; `-ring`: Space, then R.
-            ("rd-stream-lineage" | "rd-stream-lineage-ring", 0) => {
+            (Scene::RdStreamLineage | Scene::RdStreamLineageRing, 0) => {
                 self.show_view(View::Reading, window, cx)
             }
-            ("rd-stream-lineage" | "rd-stream-lineage-ring", 1) => {
+            (Scene::RdStreamLineage | Scene::RdStreamLineageRing, 1) => {
                 let bench = crate::fake::reading_seed::LIN_BENCH;
                 let origin = self
                     .reading
@@ -168,13 +186,13 @@ impl MainView {
                     self.open_lineage(origin, bench.into(), window, cx);
                 }
             }
-            ("rd-stream-lineage-ring", 2) => {
+            (Scene::RdStreamLineageRing, 2) => {
                 self.lineage_open_ring(cx);
                 self.lineage_preview(super::lineage_vm::Act::Reply, cx);
             }
             // --- reader folders --- the three panes: a folder picked, a post open.
-            ("rd-three-pane", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-three-pane", 1) => {
+            (Scene::RdThreePane, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdThreePane, 1) => {
                 use super::sources_vm::Source;
                 use crate::fake::reading_seed::FOLDER_FRIENDS;
                 self.select_source(Source::Folder(FOLDER_FRIENDS.into()), cx);
@@ -182,8 +200,10 @@ impl MainView {
             }
             // --- hoppers --- a hopper picked, its first post open; then
             // the Hopper picker on that post.
-            ("rd-hoppers" | "rd-hopper-picker", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-hoppers" | "rd-hopper-picker", 1) => {
+            (Scene::RdHoppers | Scene::RdHopperPicker, 0) => {
+                self.show_view(View::Reading, window, cx)
+            }
+            (Scene::RdHoppers | Scene::RdHopperPicker, 1) => {
                 use super::sources_vm::Source;
                 use crate::fake::reading_seed::HOPPER_SLOW;
                 self.select_source(Source::Hopper(HOPPER_SLOW.into()), cx);
@@ -192,10 +212,10 @@ impl MainView {
                     self.open_reading(k, window, cx);
                 }
             }
-            ("rd-hopper-picker", 2) => self.open_hopper_picker(window, cx),
+            (Scene::RdHopperPicker, 2) => self.open_hopper_picker(window, cx),
             // --- read/unread --- three posts picked, then the row menu.
-            ("rd-picks" | "rd-post-menu", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-picks" | "rd-post-menu", 1) => {
+            (Scene::RdPicks | Scene::RdPostMenu, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdPicks | Scene::RdPostMenu, 1) => {
                 let keys = self.shown_keys();
                 open(self, &keys[0].1, window, cx);
                 let cur = self.reading.sel.clone();
@@ -204,17 +224,29 @@ impl MainView {
                 }
                 cx.notify();
             }
-            ("rd-post-menu", 2) => {
+            (Scene::RdPostMenu, 2) => {
                 let k = self.shown_keys()[1].clone();
                 self.open_post_menu(k, point(px(420.), px(200.)), cx);
             }
+            // The open post's ⋯ More menu, with its key column.
+            (Scene::RdMoreMenu, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdMoreMenu, 1) => {
+                let keys = self.shown_keys();
+                open(self, &keys[0].1, window, cx);
+            }
+            (Scene::RdMoreMenu, 2) => self.open_source_menu(
+                super::sources::MenuTarget::PostMore,
+                point(px(700.), px(330.)),
+                false,
+                cx,
+            ),
             // --- subscription names --- a renamed subscription's menu.
-            ("rd-sub-menu", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-sub-menu", 1) => {
+            (Scene::RdSubMenu, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdSubMenu, 1) => {
                 use super::sources::MenuTarget;
                 let _ = self
                     .backend
-                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                    .rename_subscription(&"sub-omar".into(), Some("Omar's field notes"));
                 self.reading.subs = self.backend.subscriptions();
                 self.set_pane(super::sources_vm::Pane::Sources, cx);
                 self.open_source_menu(
@@ -224,11 +256,11 @@ impl MainView {
                     cx,
                 );
             }
-            ("rd-sub-rename", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-sub-rename", 1) => {
+            (Scene::RdSubRename, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdSubRename, 1) => {
                 let _ = self
                     .backend
-                    .rename_subscription("sub-omar", Some("Omar's field notes"));
+                    .rename_subscription(&"sub-omar".into(), Some("Omar's field notes"));
                 self.reading.subs = self.backend.subscriptions();
                 self.open_sub_name_sheet("sub-omar".into(), window, cx);
             }
@@ -236,19 +268,19 @@ impl MainView {
             // the editor preview with a passage selected in the quote box
             // (`rd-stub-select`, "quote only this" offered); then that passage
             // quoted (`rd-stub-passage`).
-            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 0) => {
+            (Scene::RdStub | Scene::RdStubSelect | Scene::RdStubPassage, 0) => {
                 self.show_view(View::Reading, window, cx);
                 open(self, LIN_GARDENS, window, cx);
             }
-            ("rd-stub" | "rd-stub-select" | "rd-stub-passage", 1) => {
+            (Scene::RdStub | Scene::RdStubSelect | Scene::RdStubPassage, 1) => {
                 if let Some(item) = self.reading.opened.as_ref().map(|o| o.item.clone()) {
                     self.item_action(item, "Reply", window, cx);
                 }
                 self.stub_choose_passage(window, cx);
             }
-            ("rd-stub-select" | "rd-stub-passage", 2) => {
+            (Scene::RdStubSelect | Scene::RdStubPassage, 2) => {
                 self.studio_demo_select_passage();
-                if scenario == "rd-stub-passage" {
+                if scenario == Scene::RdStubPassage {
                     cx.spawn_in(window, async move |this, cx| {
                         cx.background_executor()
                             .timer(std::time::Duration::from_millis(900))
@@ -261,8 +293,8 @@ impl MainView {
                 }
             }
             // A subscription's context menu, on its "Move to folder ›" list.
-            ("rd-folder-menu", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-folder-menu", 1) => {
+            (Scene::RdFolderMenu, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdFolderMenu, 1) => {
                 use super::sources::MenuTarget;
                 self.set_pane(super::sources_vm::Pane::Sources, cx);
                 self.open_source_menu(
@@ -274,30 +306,32 @@ impl MainView {
             }
             // --- contacts --- the Mentions feed: the lens's posts and the
             // ones worked out here together, each tagged with why.
-            ("rd-mentions-feed", 0) => {
+            (Scene::RdMentionsFeed, 0) => {
                 if let Some(f) = &self.fake {
                     f.add_mentions_sample();
                 }
                 self.show_view(View::Reading, window, cx)
             }
-            ("rd-mentions-feed", 1) => self.select_source(super::sources_vm::Source::Mentions, cx),
+            (Scene::RdMentionsFeed, 1) => {
+                self.select_source(super::sources_vm::Source::Mentions, cx)
+            }
             // The "Today" smart feed, the first post open, keys in the post.
-            ("rd-smart-today", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-smart-today", 1) => {
+            (Scene::RdSmartToday, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdSmartToday, 1) => {
                 use super::sources_vm::{Pane, Smart, Source};
                 self.select_source(Source::Smart(Smart::Today), cx);
                 self.move_reading(1, window, cx);
                 self.set_pane(Pane::Post, cx);
             }
             // The sources pane hidden (⌥⌘S): list + post as before.
-            ("rd-sources-hidden", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-sources-hidden", 1) => {
+            (Scene::RdSourcesHidden, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdSourcesHidden, 1) => {
                 self.toggle_sources(window, cx);
                 open(self, LIN_GARDENS, window, cx);
             }
             // The Subscriptions screen's folder chooser.
-            ("rd-subs-folder", 0) => self.show_view(View::Subscriptions, window, cx),
-            ("rd-subs-folder", 1) => {
+            (Scene::RdSubsFolder, 0) => self.show_view(View::Subscriptions, window, cx),
+            (Scene::RdSubsFolder, 1) => {
                 use super::sources::MenuTarget;
                 self.open_source_menu(
                     MenuTarget::Sub("sub-omar".into()),
@@ -307,20 +341,26 @@ impl MainView {
                 );
             }
             // New Folder…
-            ("rd-new-folder", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-new-folder", 1) => self.open_folder_sheet(None, None, window, cx),
+            (Scene::RdNewFolder, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdNewFolder, 1) => self.open_folder_sheet(None, None, window, cx),
             // The list with an edited post open: notes + pinned diff.
-            ("rd-reading", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-reading", 1) => open(self, RUE_TRUST, window, cx),
+            (Scene::RdReading, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdReading, 1) => open(self, RUE_TRUST, window, cx),
             // --- reader view / changelog --- the same post on its author's
             // site (`BLYGGER_DEMO_SITE_URL`: the page to show, since the
             // sample blygs don't exist), and in the reader with the full
             // history (`rd-changelog`) or a summary (`rd-summary`).
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 0) => {
+            (
+                Scene::RdAuthorSite
+                | Scene::RdStreamAuthorSite
+                | Scene::RdChangelog
+                | Scene::RdSummary,
+                0,
+            ) => {
                 use blyg_core::changelog::{ChangelogDisplay, ChangelogSettings};
                 let mode = match scenario {
-                    "rd-changelog" => ChangelogDisplay::History,
-                    "rd-summary" => ChangelogDisplay::Summary,
+                    Scene::RdChangelog => ChangelogDisplay::History,
+                    Scene::RdSummary => ChangelogDisplay::Summary,
                     _ => ChangelogDisplay::Latest,
                 };
                 self.reading.changelogs.settings = super::Load::Ready(ChangelogSettings {
@@ -328,13 +368,20 @@ impl MainView {
                     page: Some(ChangelogDisplay::Latest),
                     summary_prompt: None,
                 });
-                self.prefs.author_site = scenario == "rd-author-site";
+                self.prefs.author_site =
+                    matches!(scenario, Scene::RdAuthorSite | Scene::RdStreamAuthorSite);
                 self.show_view(View::Reading, window, cx)
             }
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 1) => {
+            (
+                Scene::RdAuthorSite
+                | Scene::RdStreamAuthorSite
+                | Scene::RdChangelog
+                | Scene::RdSummary,
+                1,
+            ) => {
                 open(self, RUE_TRUST, window, cx);
                 if let Some(o) = self.reading.opened.as_mut()
-                    && scenario == "rd-summary"
+                    && scenario == Scene::RdSummary
                 {
                     let at = (o.key.clone(), o.item.version);
                     self.reading.changelogs.summaries.insert(
@@ -354,11 +401,17 @@ impl MainView {
             // A window a screenshot run never activates may not redraw by
             // itself (nor load the page into its web view): draw it a few
             // times so a capture of the window shows the last step.
-            ("rd-author-site" | "rd-changelog" | "rd-summary", 2) => {
+            (
+                Scene::RdAuthorSite
+                | Scene::RdStreamAuthorSite
+                | Scene::RdChangelog
+                | Scene::RdSummary,
+                2,
+            ) => {
                 // Set once the post has loaded (opening it reloads the item).
-                if let (Some(o), Ok(u)) = (
+                if let (Some(o), Some(u)) = (
                     self.reading.opened.as_mut(),
-                    std::env::var("BLYGGER_DEMO_SITE_URL"),
+                    crate::dev_flags::get().demo.site_url.clone(),
                 ) && !u.is_empty()
                 {
                     o.item.page = Some(u);
@@ -375,54 +428,54 @@ impl MainView {
                 .detach();
             }
             // The reading search, with the first match open (#6).
-            ("rd-search", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-search", 1) => {
+            (Scene::RdSearch, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdSearch, 1) => {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("garden", window, cx);
                 self.move_reading(1, window, cx);
             }
             // A search that matches nothing.
-            ("rd-nomatch", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-nomatch", 1) => {
+            (Scene::RdNomatch, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdNomatch, 1) => {
                 self.focus_reading_search(window, cx);
                 self.set_reading_query("zeppelin", window, cx);
             }
-            ("rd-notes", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-notes", 1) => open(self, LIN_GARDENS, window, cx),
+            (Scene::RdNotes, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdNotes, 1) => open(self, LIN_GARDENS, window, cx),
             // Someone else's post on a pinned version, dropdown open.
-            ("rd-pill", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-pill", 1) => open(self, RUE_TRUST, window, cx),
-            ("rd-pill", 2) => {
+            (Scene::RdPill, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdPill, 1) => open(self, RUE_TRUST, window, cx),
+            (Scene::RdPill, 2) => {
                 self.step_version(-1, cx);
                 if let Some(o) = self.reading.opened.as_mut() {
                     o.dropdown = true;
                 }
             }
             // Your own post's history, then the pin sheet.
-            ("rd-versions", 0) => {
+            (Scene::RdVersions, 0) => {
                 self.open(&LocalId("01J9M2A".into()), window, cx);
                 self.toggle_versions(window, cx);
             }
-            ("rd-pin", 0) => {
+            (Scene::RdPin, 0) => {
                 self.open(&LocalId("01J9M2A".into()), window, cx);
                 self.toggle_versions(window, cx);
             }
-            ("rd-pin", 2) => self.ask_pin(window, cx),
-            ("rd-mentions", 0) => self.show_view(View::Mentions, window, cx),
-            ("rd-subs", 0) => self.show_view(View::Subscriptions, window, cx),
+            (Scene::RdPin, 2) => self.ask_pin(window, cx),
+            (Scene::RdMentions, 0) => self.show_view(View::Mentions, window, cx),
+            (Scene::RdSubs, 0) => self.show_view(View::Subscriptions, window, cx),
             // --- discover --- the sheet over Subscriptions, the second row
             // picked (the fake's sample directory, no network).
-            ("rd-discover", 0) => self.show_view(View::Subscriptions, window, cx),
-            ("rd-discover", 1) => self.open_discover(window, cx),
-            ("rd-discover", 2) => {
+            (Scene::RdDiscover, 0) => self.show_view(View::Subscriptions, window, cx),
+            (Scene::RdDiscover, 1) => self.open_discover(window, cx),
+            (Scene::RdDiscover, 2) => {
                 if let Some(super::RSheet::Discover(s)) = self.reading.sheet.as_mut() {
                     s.step(1);
                 }
                 cx.notify();
             }
             // --- themes --- the subscribe sheet with a preview.
-            ("rd-subscribe", 0) => self.show_view(View::Subscriptions, window, cx),
-            ("rd-subscribe", 1) => {
+            (Scene::RdSubscribe, 0) => self.show_view(View::Subscriptions, window, cx),
+            (Scene::RdSubscribe, 1) => {
                 self.open_subscribe(window, cx);
                 if let Some(super::RSheet::Subscribe { input, .. }) = &self.reading.sheet {
                     let input = input.clone();
@@ -431,10 +484,10 @@ impl MainView {
                     });
                 }
             }
-            ("rd-subscribe", 2) => self.subscribe_enter(window, cx),
+            (Scene::RdSubscribe, 2) => self.subscribe_enter(window, cx),
             // --- themes --- the empty states: nothing held, nothing unread,
             // no subscriptions (the fake's data is cleared on screen only).
-            ("rd-empty" | "rd-stream-empty", 0) => {
+            (Scene::RdEmpty | Scene::RdStreamEmpty, 0) => {
                 self.show_view(View::Reading, window, cx);
                 self.reading.rows.clear();
                 self.reading.subs.clear();
@@ -442,24 +495,24 @@ impl MainView {
                 self.reading.sel = None;
                 self.reading.refilter();
             }
-            ("rd-all-read", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-all-read", 1) => {
+            (Scene::RdAllRead, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdAllRead, 1) => {
                 use super::sources_vm::{Smart, Source};
                 for r in &mut self.reading.rows {
                     r.read_version = Some(r.version);
                 }
                 self.select_source(Source::Smart(Smart::Unread), cx);
             }
-            ("rd-subs-empty", 0) => {
+            (Scene::RdSubsEmpty, 0) => {
                 self.show_view(View::Subscriptions, window, cx);
                 self.reading.subs.clear();
             }
-            ("rd-site", 0) => self.open_site_settings(window, cx),
+            (Scene::RdSite, 0) => self.open_site_settings(window, cx),
             // --- own posts --- "Your blyg" in the Reader, your "On friction"
             // open with the reading actions; and the same post in Posts with
             // its chips above the editor.
-            ("rd-own", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-own", 1) => {
+            (Scene::RdOwn, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdOwn, 1) => {
                 self.select_source(super::sources_vm::Source::Own, cx);
                 if let Some(k) = self
                     .reading
@@ -471,10 +524,12 @@ impl MainView {
                     self.open_reading(k, window, cx);
                 }
             }
-            ("rd-own-post" | "rd-own-fork", 0) => self.open(&LocalId("01J9M2A".into()), window, cx),
+            (Scene::RdOwnPost | Scene::RdOwnFork, 0) => {
+                self.open(&LocalId("01J9M2A".into()), window, cx)
+            }
             // ⌘Y on your post, its 📌 v2 picked: "Fork this pin".
-            ("rd-own-fork", 1) => self.toggle_versions(window, cx),
-            ("rd-own-fork", 2) => {
+            (Scene::RdOwnFork, 1) => self.toggle_versions(window, cx),
+            (Scene::RdOwnFork, 2) => {
                 if let Some(own) = self.reading.own.as_mut() {
                     own.sel = Some(2);
                 }
@@ -482,14 +537,14 @@ impl MainView {
             }
             // --- background --- the Background feed, Rue's withdrawn post
             // open; and the stream at Ada's tide tables, "V2: one word".
-            ("rd-background", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-background", 1) => {
+            (Scene::RdBackground, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdBackground, 1) => {
                 use super::sources_vm::{Smart, Source};
                 self.select_source(Source::Smart(Smart::Background), cx);
                 self.move_reading(1, window, cx);
             }
-            ("rd-stream-lead", 0) => self.show_view(View::Reading, window, cx),
-            ("rd-stream-lead", 1) => {
+            (Scene::RdStreamLead, 0) => self.show_view(View::Reading, window, cx),
+            (Scene::RdStreamLead, 1) => {
                 let ix = self
                     .reading
                     .shown_rows()
@@ -500,12 +555,16 @@ impl MainView {
                     }
                 }
             }
-            ("rd-quote", 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
-            ("rd-quote", 1) => self.open_quote_picker(window, cx),
+            (Scene::RdQuote, 0) => self.open(&LocalId("01J9H4C".into()), window, cx),
+            (Scene::RdQuote, 1) => self.open_quote_picker(window, cx),
             // --- browse --- the walk, the history pane, a peek, nested quotes.
-            (s, n) if s.starts_with("rd-browse") || s == "rd-stream-nested" => {
-                self.browse_demo(s, n, window, cx)
-            }
+            (
+                s @ (Scene::RdBrowse
+                | Scene::RdBrowseHistory
+                | Scene::RdBrowsePeek
+                | Scene::RdStreamNested),
+                n,
+            ) => self.browse_demo(s, n, window, cx),
             _ => {}
         }
         if n == 2 {
@@ -520,7 +579,7 @@ impl MainView {
 /// `RUSTFLAGS="--cfg blygger_snap" cargo build -p blyg-app --features gpui-kit/test-support`
 /// (GPUI's `render_to_image` is a test-support API); a no-op otherwise.
 pub(crate) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
-    let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") else {
+    let Some(path) = crate::dev_flags::get().snapshot.path.clone() else {
         return;
     };
     cx.spawn_in(window, async move |_, cx| {

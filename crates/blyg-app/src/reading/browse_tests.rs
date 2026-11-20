@@ -200,7 +200,7 @@ fn history_groups_walks_newest_first_as_trees() {
         [(2, 0), (3, 1), (4, 2), (5, 2)]
     );
     assert_eq!(browse::via_word(BrowseVia::Quote), "quoted layer");
-    assert_eq!(browse::via_word(BrowseVia::Stub), "stubbed source");
+    assert_eq!(browse::via_word(BrowseVia::Stub), "replied-to post");
     assert_eq!(browse::label("", "01k2abcdefgh"), "01k2abcd");
     assert!(browse::walks(&[]).is_empty());
 }
@@ -274,12 +274,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
     let key = view.read_with(cx, |v, _| {
@@ -296,7 +291,10 @@ fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
 
 fn opened_id(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Option<String> {
     view.read_with(cx, |v, _| {
-        v.reading.opened.as_ref().map(|o| o.item.remote_id.clone())
+        v.reading
+            .opened
+            .as_ref()
+            .map(|o| o.item.remote_id.to_string())
     })
 }
 

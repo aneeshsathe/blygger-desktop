@@ -117,6 +117,9 @@ struct Shared {
 pub struct State {
     /// The drawer is open (⌥⌘U, its tab; remembered in state.json).
     pub open: bool,
+    /// --- quiet --- Opened for this sitting while quiet writing is on
+    /// (⌥⌘U, the menu): never saved, and `open` is left as it was.
+    pub sitting: bool,
     /// The width the user chose (dragged).
     pub width: f32,
     /// The latest drag of its edge (the width is saved once it stops).
@@ -344,13 +347,27 @@ impl MainView {
 
     /// The rail is on screen: it's open and [`Self::nearby_available`].
     pub(crate) fn nearby_shown(&self, cx: &App) -> bool {
-        self.nearby.open && self.nearby_available(cx)
+        self.nearby_open_now(cx) && self.nearby_available(cx)
+    }
+
+    /// The drawer is open: as remembered, or, while quiet writing is on,
+    /// only when it was opened for this sitting.
+    pub(crate) fn nearby_open_now(&self, cx: &App) -> bool {
+        if super::quiet::on(cx) {
+            self.nearby.sitting
+        } else {
+            self.nearby.open
+        }
     }
 
     /// The rail can show (its tab is in the tab bar): Posts, a post open,
-    /// `nearby` not off.
+    /// `nearby` not off, and not hidden by quiet writing (unless opened for
+    /// this sitting).
     pub(crate) fn nearby_available(&self, cx: &App) -> bool {
-        self.reading.view == reading::View::Posts && self.current.is_some() && mode(cx) != "off"
+        self.reading.view == reading::View::Posts
+            && self.current.is_some()
+            && mode(cx) != "off"
+            && (!super::quiet::on(cx) || self.nearby.sitting)
     }
 
     /// --- side --- The width the drawer takes this frame (0 when it's not
@@ -399,7 +416,7 @@ impl MainView {
     /// Hook (editor change): look again after a pause. One timer, re-armed
     /// by every keystroke; nothing else happens on the keystroke.
     pub(super) fn nearby_typed(&mut self, cx: &mut Context<Self>) {
-        if !self.nearby.open {
+        if !self.nearby_open_now(cx) {
             return;
         }
         self.nearby.timer = Some(cx.spawn(async move |this, cx| {
@@ -418,7 +435,7 @@ impl MainView {
             CoreEvent::ReadingChanged => self.nearby.stamp_held += 1,
             _ => return,
         }
-        if self.nearby.embedder.is_none() || !self.nearby.open {
+        if self.nearby.embedder.is_none() || !self.nearby_open_now(cx) {
             return;
         }
         self.nearby.reindex = Some(cx.spawn(async move |this, cx| {
@@ -968,14 +985,28 @@ impl MainView {
             );
             return;
         }
-        self.nearby_set_open(!self.nearby.open, cx);
+        let open = !self.nearby_open_now(cx);
+        self.nearby_set_open(open, cx);
+        // --- quiet --- say why it will be gone next time.
+        if open && super::quiet::on(cx) {
+            self.show_toast(
+                "Nearby thoughts, for this sitting",
+                Some("Quiet writing is on: it stays hidden otherwise".into()),
+                cx,
+            );
+        }
     }
 
-    /// Open or close the drawer (and remember it).
+    /// Open or close the drawer (and remember it). While quiet writing is
+    /// on it's only for this sitting: nothing is remembered.
     pub(crate) fn nearby_set_open(&mut self, open: bool, cx: &mut Context<Self>) {
-        self.nearby.open = open;
         self.nearby.hover = None;
-        self.nearby_save_layout(cx);
+        if super::quiet::on(cx) {
+            self.nearby.sitting = open;
+        } else {
+            self.nearby.open = open;
+            self.nearby_save_layout(cx);
+        }
         if open {
             self.nearby_query(cx);
         }
@@ -992,7 +1023,7 @@ impl MainView {
 
     fn nearby_move(&mut self, delta: isize, cx: &mut Context<Self>) {
         let n = self.nearby.rows.len();
-        if n == 0 || !self.nearby.open {
+        if n == 0 || !self.nearby_open_now(cx) {
             cx.propagate();
             return;
         }
@@ -1117,7 +1148,7 @@ impl MainView {
             self.show_toast(e, None, cx);
             return;
         }
-        self.watch_stamp = crate::settings::watch_stamp(&crate::settings::watched(cx));
+        self.config.restamp(cx);
         if key == "nearby-embedder" {
             // Chosen again: try again (a failed download, say).
             self.nearby.source = None;
@@ -1266,7 +1297,16 @@ impl MainView {
                             ),
                         ),
                 )
-                .child(crate::app::settings_page::note(&p, note)),
+                .child(crate::app::settings_page::note(&p, note))
+                // --- quiet --- why the drawer and its tab are gone.
+                .when(super::quiet::on(cx) && m != "off", |d| {
+                    d.child(crate::app::settings_page::note(
+                        &p,
+                        crate::keymap::hint(
+                            "Hidden by Quiet writing: ⌥⌘U opens it for this sitting.",
+                        ),
+                    ))
+                }),
         )
         .into_any_element()
     }

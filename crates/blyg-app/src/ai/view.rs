@@ -31,6 +31,7 @@ use crate::theme::Rule; // --- themes --- dividers
 #[cfg(test)]
 #[path = "view_tests.rs"]
 mod tests;
+use crate::scenes::Scene;
 
 /// Per-window AI state (a field of `MainView`).
 #[derive(Default)]
@@ -319,7 +320,7 @@ impl MainView {
         };
         let of = blyg_core::RemoteRef {
             origin: item.origin.clone(),
-            id: item.remote_id.clone(),
+            id: item.remote_id.to_string(),
             version: item.version,
             cited: None,
         };
@@ -362,18 +363,18 @@ impl MainView {
     /// makes, for screenshots and smoke tests without synthetic OS input.
     pub(super) fn ai_demo_step(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("ai-fill" | "ai-palette" | "ai-shorten", 0) => {
+            (Scene::AiFill | Scene::AiPalette | Scene::AiShorten, 0) => {
                 self.open(&LocalId("01J9QK3".into()), window, cx);
                 let old = self.editor.read(cx).value().to_string();
-                let new = if scenario == "ai-fill" {
+                let new = if scenario == Scene::AiFill {
                     format!("{old} [TK]one short sentence about fog, in my voice[/TK]")
-                } else if scenario == "ai-shorten" {
+                } else if scenario == Scene::AiShorten {
                     format!(
                         "{old} {}",
                         "The log records wind, swell and visibility, hour after hour. ".repeat(18)
@@ -381,16 +382,16 @@ impl MainView {
                 } else {
                     old.clone()
                 };
-                let caret = if scenario == "ai-fill" {
+                let caret = if scenario == Scene::AiFill {
                     new.len() - 5
                 } else {
                     new.len()
                 };
                 self.splice_editor(&old, &new, Some(caret), window, cx);
             }
-            ("ai-fill" | "ai-palette", 1) => self.ai_generate(&AiGenerate, window, cx),
-            ("ai-shorten", 1) => self.ai_shorten(&AiShorten, window, cx),
-            ("ai-settings", 0) => self.ai_open_settings(window, cx),
+            (Scene::AiFill | Scene::AiPalette, 1) => self.ai_generate(&AiGenerate, window, cx),
+            (Scene::AiShorten, 1) => self.ai_shorten(&AiShorten, window, cx),
+            (Scene::AiSettings, 0) => self.ai_open_settings(window, cx),
             _ => {}
         }
     }
@@ -1201,7 +1202,7 @@ impl MainView {
     }
 
     pub(super) fn ai_open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         let input =
             |masked: bool, ph: &'static str, window: &mut Window, cx: &mut Context<Self>| {
                 cx.new(|cx| InputState::new(window, cx).masked(masked).placeholder(ph))
@@ -2005,7 +2006,7 @@ fn save_chip(t: &crate::theme::Theme, id: &'static str) -> Option<Stateful<Div>>
 
 /// `BLYGGER_TIMING`: print what AI did (automation; never any secret).
 fn timing() -> bool {
-    std::env::var_os("BLYGGER_TIMING").is_some()
+    crate::dev_flags::get().timing
 }
 
 /// `H` in the palette: default → on → off → default.

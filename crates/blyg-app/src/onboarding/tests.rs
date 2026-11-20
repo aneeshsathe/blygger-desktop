@@ -13,8 +13,8 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::FlowStep;
 use super::steps::{self, Pick, Region, STEPS, TOURS};
+use crate::app::MainView;
 use crate::app::studio::webview::{FactoryGlobal, PreviewSurface};
-use crate::app::{MainView, Sheet};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
@@ -66,10 +66,10 @@ impl Backend for Recording {
     fn rewrites_handles(&self) -> bool {
         self.inner.rewrites_handles()
     }
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.inner.reading_mentions()
     }
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.inner.reading_mentions_cached()
     }
     fn page_title(&self, url: &str) -> Option<String> {
@@ -193,19 +193,19 @@ impl Backend for Recording {
         self.rec("subscribe");
         self.inner.subscribe(url, title)
     }
-    fn unsubscribe(&self, sub: &str) -> Result<()> {
+    fn unsubscribe(&self, sub: &SubId) -> Result<()> {
         self.rec("unsubscribe");
         self.inner.unsubscribe(sub)
     }
-    fn set_subscription(&self, sub: &str, b: Option<bool>, t: Option<&str>) -> Result<()> {
+    fn set_subscription(&self, sub: &SubId, b: Option<bool>, t: Option<&str>) -> Result<()> {
         self.rec("set_subscription");
         self.inner.set_subscription(sub, b, t)
     }
-    fn pause_subscription(&self, sub: &str, paused: bool) -> Result<()> {
+    fn pause_subscription(&self, sub: &SubId, paused: bool) -> Result<()> {
         self.rec("pause_subscription");
         self.inner.pause_subscription(sub, paused)
     }
-    fn signal(&self, sub: &str, id: &str, thumb: Option<i8>) -> Result<()> {
+    fn signal(&self, sub: &SubId, id: &RemoteId, thumb: Option<i8>) -> Result<()> {
         self.rec("signal");
         self.inner.signal(sub, id, thumb)
     }
@@ -239,6 +239,67 @@ impl Backend for Recording {
     ) -> Option<(String, Vec<Option<ScopeProvenance>>)> {
         self.rec("tracked_tk_provenance");
         self.inner.tracked_tk_provenance(id)
+    }
+    fn refresh_subscriptions(&self) -> Result<()> {
+        self.rec("refresh_subscriptions");
+        self.inner.refresh_subscriptions()
+    }
+    fn mark_read(&self, sub: &SubId, id: &RemoteId) -> Result<()> {
+        self.rec("mark_read");
+        self.inner.mark_read(sub, id)
+    }
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
+        self.rec("set_read");
+        self.inner.set_read(rows, read)
+    }
+    fn server_outdated(&self) -> bool {
+        self.rec("server_outdated");
+        self.inner.server_outdated()
+    }
+    fn read_state_sync(&self) -> bool {
+        self.rec("read_state_sync");
+        self.inner.read_state_sync()
+    }
+    fn shelf(&self) -> Vec<LocalId> {
+        self.rec("shelf");
+        self.inner.shelf()
+    }
+    fn shelf_entries(&self) -> Vec<blyg_core::shelf::Entry> {
+        self.rec("shelf_entries");
+        self.inner.shelf_entries()
+    }
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        self.rec("shelf_state");
+        self.inner.shelf_state()
+    }
+    fn clear_browse(&self, trail: Option<&str>) -> Result<()> {
+        self.rec("clear_browse");
+        self.inner.clear_browse(trail)
+    }
+    fn background_set(&self) -> Option<blyg_core::background::BackgroundSet> {
+        self.rec("background_set");
+        self.inner.background_set()
+    }
+    fn conflict_texts(&self, id: &LocalId) -> Option<(String, String)> {
+        self.rec("conflict_texts");
+        self.inner.conflict_texts(id)
+    }
+    fn put_nearby_vectors(
+        &self,
+        model: &str,
+        docs: &[String],
+        rows: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        self.rec("put_nearby_vectors");
+        self.inner.put_nearby_vectors(model, docs, rows)
+    }
+    fn retain_nearby_vectors(
+        &self,
+        model: &str,
+        keep: &std::collections::HashSet<String>,
+    ) -> Result<()> {
+        self.rec("retain_nearby_vectors");
+        self.inner.retain_nearby_vectors(model, keep)
     }
 }
 
@@ -388,22 +449,14 @@ fn real_is_back(e: &Env) -> bool {
 /// Run the window until `done`: the tour's extensions answer from other
 /// processes, in real time.
 fn wait(e: &mut Env, what: &str, mut done: impl FnMut(&mut Env) -> bool) {
-    let t = std::time::Instant::now();
-    loop {
+    crate::test_wait::poll(what, || {
         e.cx.run_until_parked();
         e.view
             .update_in(e.cx, |v, window, cx| v.ext_pump(window, cx));
         e.cx.update(|window, _| window.refresh());
         e.cx.run_until_parked();
-        if done(e) {
-            return;
-        }
-        assert!(
-            t.elapsed() < Duration::from_secs(30),
-            "timed out waiting for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(15));
-    }
+        done(e)
+    });
 }
 
 /// The tour's sample extensions are up: both notes folders listed and the
@@ -441,7 +494,7 @@ fn first_launch_without_a_blyg_shows_onboarding(cx: &mut TestAppContext) {
     let mut e = setup(cx, "# fresh\n", false);
     assert_eq!(flow_step(&mut e), Some(FlowStep::Welcome));
     assert!(
-        e.view.read_with(e.cx, |v, _| v.sheet.is_none()),
+        e.view.read_with(e.cx, |v, _| !v.sheet.is_open()),
         "the Connect sheet waits for its step"
     );
     // ⏎ goes on to "Connect your blyg"; ⏎ there opens the existing sheet.
@@ -452,13 +505,13 @@ fn first_launch_without_a_blyg_shows_onboarding(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Connect { .. })))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::ConnectSheet>())
     );
     // esc on the sheet comes back to the step.
     e.cx.simulate_keystrokes("escape");
     e.cx.run_until_parked();
     assert_eq!(flow_step(&mut e), Some(FlowStep::Connect));
-    assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
+    assert!(e.view.read_with(e.cx, |v, _| !v.sheet.is_open()));
 }
 
 #[gpui_kit::test]
@@ -727,10 +780,6 @@ fn do_step(e: &mut Env, id: &str) {
                 .expect("the sample quotes a post");
             v.hover_show(d, cx)
         }),
-        "chat" => {
-            e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-i"))
-        } // --- chat ---
-        "terminal" => e.cx.dispatch_action(crate::app::terminal::ToggleTerminal), // --- terminal ---
         // --- flow ---
         "palette" => {
             e.cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-p"))
@@ -782,6 +831,25 @@ fn do_step(e: &mut Env, id: &str) {
                 .map(crate::app::reading::vm::key)
                 .expect("the sample post is held");
             v.toggle_reading_shelf(key, cx)
+        }),
+        // --- 0.26.0 --- a click on On (the chip's own call).
+        "quiet-writing" => e.view.update(e.cx, |v, cx| {
+            v.set_quiet_writing(true, cx);
+        }),
+        // A click on ⋯ More (the chip's own call, at the chip).
+        "more-menu" => e.view.update(e.cx, |v, cx| {
+            let at = v
+                .onboarding
+                .more_chip
+                .get()
+                .expect("the chip is drawn")
+                .bottom_left();
+            v.open_source_menu(
+                crate::app::reading::sources::MenuTarget::PostMore,
+                at,
+                false,
+                cx,
+            )
         }),
         "mentions-feed" => e.view.update(e.cx, |v, cx| {
             v.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
@@ -865,15 +933,10 @@ fn do_step(e: &mut Env, id: &str) {
         "hopper-several" => e.cx.simulate_keystrokes("h"),
         "conflict" => {
             // The sheet opens through the fake's Conflict event.
-            for _ in 0..50 {
-                e.cx.run_until_parked();
-                if e.view.read_with(e.cx, |v, _| {
-                    matches!(v.sheet, Some(crate::app::Sheet::Conflict { .. }))
-                }) {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
+            let view = e.view.clone();
+            crate::test_wait::until(e.cx, "the conflict sheet", |cx| {
+                view.read_with(cx, |v, _| v.sheet.is::<crate::app::ConflictSheet>())
+            });
             e.cx.simulate_keystrokes("1");
         }
         other => panic!("no way to do step {other}"),
@@ -1044,6 +1107,8 @@ fn steps_ring_something_on_screen(cx: &mut TestAppContext, which: impl Fn(&str) 
             Region::MacroRun => &["browser-macro-stop", "browser-close"],
             Region::ScreenHeader => &["opml-import-chip"],
             Region::NotesDrawer => &["notes-tab-library", "lib-vault-0", "lib-vault-add"],
+            Region::QuietSetting => &["quiet-writing-off", "quiet-writing-on"], // --- 0.26.0 ---
+            Region::MoreChip => &["act-more"],
             _ => &[],
         };
         // The drawer's folders come from the extension: wait for them.
@@ -1468,13 +1533,13 @@ fn replay_from_settings(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Settings { .. })))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::SettingsSheet>())
     );
     e.view
         .update_in(e.cx, |v, window, cx| v.help_replay(window, cx));
     e.cx.run_until_parked();
     assert!(chooser_up(&mut e), "Take a tour… opens the chooser");
-    assert!(e.view.read_with(e.cx, |v, _| v.sheet.is_none()));
+    assert!(e.view.read_with(e.cx, |v, _| !v.sheet.is_open()));
     // Mid-tour, it's the chooser again.
     e.cx.simulate_keystrokes("4");
     e.cx.run_until_parked();
@@ -1837,10 +1902,7 @@ fn the_0_12_steps_show_the_warning_and_the_note(cx: &mut TestAppContext) {
     do_step(&mut e, "echoed-quote");
     assert!(tour_done(&mut e));
     let warning = e.view.update_in(e.cx, |v, _, cx| {
-        assert!(
-            matches!(v.sheet, Some(Sheet::Publish { .. })),
-            "the sheet is up"
-        );
+        assert!(v.sheet.is::<crate::app::PublishSheet>(), "the sheet is up");
         v.studio_publish_warning(cx)
     });
     let warning = warning.expect("the sheet warns");
@@ -1921,7 +1983,7 @@ fn the_0_13_steps_show_discard_own_posts_and_links(cx: &mut TestAppContext) {
     do_step(&mut e, "discard");
     assert!(tour_done(&mut e));
     let asked = e.view.read_with(e.cx, |v, _| {
-        matches!(v.sheet, Some(Sheet::DiscardChanges { .. }))
+        v.sheet.is::<crate::app::discard::DiscardChangesSheet>()
     });
     assert!(asked, "the confirm sheet is up");
     e.cx.simulate_keystrokes("enter");
@@ -2046,7 +2108,7 @@ fn the_0_14_steps_land_on_their_features(cx: &mut TestAppContext) {
     assert!(tour_done(&mut e));
     assert!(
         e.view
-            .read_with(e.cx, |v, _| matches!(v.sheet, Some(Sheet::Blygs(_))))
+            .read_with(e.cx, |v, _| v.sheet.is::<crate::app::switcher::BlygSheet>())
     );
     e.view
         .update_in(e.cx, |v, window, cx| v.switch_nth(1, window, cx));

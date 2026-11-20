@@ -22,6 +22,28 @@ In Settings (⌘,), under Theme, the themes are grouped into Plain, Woody and
 Oceanic, each with a small swatch. Clicking one writes `theme = <name>` to the
 config file.
 
+**Try before you keep.** Rest the pointer on a theme, a font or the size for
+a moment, or move through them with the keyboard (⇥ goes from row to row:
+Writing font, Interface font, Size, Theme; the arrow keys move along a row),
+and the whole window takes it on at once, nothing written yet. The Preview at
+the top of Settings is a small sample of the window drawn with the real
+pieces: the title bar, a posts list with the selected row and an unread mark,
+a post's title, a paragraph with a link and a code span, a quote box, chips
+and the status bar. A click or ⏎ keeps the option and writes it to the config
+file; esc, moving away, or closing Settings puts yours back. The option you
+keep is marked in the accent colour, the one under the keyboard with a ring.
+
+**Light and dark.** Theme has a **For: ☀ Light | ☾ Dark** switch, and the one
+in use now says so. Light writes `theme`; Dark writes `theme-dark` (its
+**Same as light** removes the line). Trying a dark-mode theme while macOS is
+light (or a light one while it's dark and `theme-dark` is set) shows it
+anyway, so you always see what you're choosing.
+
+The command palette (⇧⌘P) works the same way: highlighting a `Theme:` or
+font row, with ↑/↓ or by typing, shows it at once; ⏎ keeps it and esc puts
+yours back. Its theme rows choose for the slot in use (`theme-dark` while
+macOS is dark and it's set).
+
 In the config file (`~/.config/blygger/config`):
 
 ```

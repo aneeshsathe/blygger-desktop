@@ -61,7 +61,7 @@ fn search_is_case_insensitive_substring() {
     assert_eq!(s.search("  ").len(), 3);
     // edits are reindexed (a tick later: `updated` has millisecond precision,
     // and a tie with _c's creation would put _c first)
-    std::thread::sleep(std::time::Duration::from_millis(3));
+    crate::wait::wall_clock(std::time::Duration::from_millis(3));
     s.save(&b, "renamed entirely", 0).unwrap();
     assert_eq!(ids("mont"), vec![a.clone()]);
     assert_eq!(ids("entire"), vec![b.clone()]);

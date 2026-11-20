@@ -14,7 +14,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::{Backend, ConfigStore, Kind, Status};
@@ -268,20 +268,11 @@ fn wait(
     what: &str,
     mut done: impl FnMut(&mut VisualTestContext) -> bool,
 ) {
-    let t = Instant::now();
-    loop {
-        cx.run_until_parked();
+    crate::test_wait::until(cx, what, |cx| {
         view.update_in(cx, |v, window, cx| v.ext_pump(window, cx));
         cx.run_until_parked();
-        if done(cx) {
-            return;
-        }
-        assert!(
-            t.elapsed() < Duration::from_secs(20),
-            "timed out waiting for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(15));
-    }
+        done(cx)
+    });
 }
 
 fn config_text(cx: &mut VisualTestContext) -> String {
@@ -741,7 +732,6 @@ mod macros {
     use gpui_kit::{Bounds, Pixels};
 
     use super::*;
-    use crate::app::Sheet;
     use crate::app::browser::surface::{BrowserSurface, FactoryGlobal, PageState};
 
     const XP: &str = blyg_ext_crosspost::NAME;
@@ -959,7 +949,10 @@ mod macros {
         view.read_with(cx, |v, _| assert!(v.macro_cross_post_hint()));
         choose_macro(&view, cx);
         wait(&view, cx, "the Preview sheet", |cx| {
-            view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::MacroPreview(_))))
+            view.read_with(cx, |v, _| {
+                v.sheet
+                    .is::<crate::app::browser::automation::PreviewSheet>()
+            })
         });
         // The extension's own template and limit shaped it (macro.prepare
         // ran), from the post as published.
@@ -974,7 +967,10 @@ mod macros {
             "",
         );
         view.read_with(cx, |v, cx| {
-            let Some(Sheet::MacroPreview(s)) = &v.sheet else {
+            let Some(s) = v
+                .sheet
+                .get::<crate::app::browser::automation::PreviewSheet>()
+            else {
                 unreachable!()
             };
             assert_eq!(s.info.payload, want.text);
@@ -1054,7 +1050,7 @@ mod macros {
         assert_eq!(text, "Publish it first to cross-post it to Substack Notes");
         assert!(sub.contains("published post"), "{sub}");
         view.read_with(cx, |v, _| {
-            assert!(v.sheet.is_none() && !v.browser.automation.running())
+            assert!(!v.sheet.is_open() && !v.browser.automation.running())
         });
         // A macro that isn't granted (or doesn't exist) runs nothing.
         view.update_in(cx, |v, window, cx| {
@@ -1081,7 +1077,7 @@ mod macros {
         });
         assert_eq!(toast(&view, cx).1, "Nothing was posted to Substack Notes");
         view.read_with(cx, |v, _| {
-            assert!(v.sheet.is_none(), "no Preview sheet");
+            assert!(!v.sheet.is_open(), "no Preview sheet");
             assert!(!v.browser.automation.running());
             assert!(!v.browser.open);
         });
@@ -1567,24 +1563,7 @@ fn turning_off_removes_only_the_extension_line() {
 /// Click `selector` once the sheet has stopped sliding in (its animation
 /// runs in real time, so the bounds move until it's done).
 fn click(cx: &mut VisualTestContext, selector: &'static str) {
-    let t = Instant::now();
-    let mut last = None;
-    let b = loop {
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-        let b = cx
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("{selector} isn't drawn"));
-        if last == Some(b) {
-            break b;
-        }
-        assert!(
-            t.elapsed() < Duration::from_secs(5),
-            "{selector} kept moving"
-        );
-        last = Some(b);
-        std::thread::sleep(Duration::from_millis(40));
-    };
+    let b = crate::test_wait::still(cx, selector);
     cx.simulate_click(b.center(), gpui_kit::Modifiers::none());
     cx.run_until_parked();
 }

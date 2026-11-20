@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::{Backend, ConfigStore};
+use blyg_core::{Backend, ConfigStore, RemoteId, SubId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::RSheet;
@@ -54,12 +54,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn shown(view: &Entity<MainView>, cx: &mut VisualTestContext) -> Vec<String> {
     view.read_with(cx, |v, _| v.reading_shown_ids())
@@ -77,14 +72,14 @@ fn menu(view: &Entity<MainView>, cmd: MenuCmd, cx: &mut VisualTestContext) {
 
 fn open(view: &Entity<MainView>, key: (&str, &str), cx: &mut VisualTestContext) {
     view.update_in(cx, |v, window, cx| {
-        v.open_reading((key.0.to_string(), key.1.to_string()), window, cx)
+        v.open_reading((SubId::from(key.0), RemoteId::from(key.1)), window, cx)
     });
     settle(cx);
 }
 
 fn members_of(fake: &FakeBackend, sub: &str, rid: &str) -> Vec<String> {
     fake.hopper_members()
-        .get(&(sub.to_string(), rid.to_string()))
+        .get(&(SubId::from(sub), RemoteId::from(rid)))
         .cloned()
         .unwrap_or_default()
 }
@@ -267,7 +262,7 @@ fn new_hopper_from_the_picker_makes_it_with_the_post_in_it(cx: &mut TestAppConte
 #[gpui_kit::test]
 fn the_row_menu_and_the_chip_offer_hopper(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    let key = ("sub-rue".to_string(), RUE_TRUST.to_string());
+    let key = (SubId::from("sub-rue"), RemoteId::from(RUE_TRUST));
     view.update(cx, |v, cx| {
         v.open_source_menu(
             MenuTarget::Posts(key.clone()),
@@ -304,15 +299,17 @@ fn the_row_menu_and_the_chip_offer_hopper(cx: &mut TestAppContext) {
     );
     assert!(members_of(&fake, "sub-rue", RUE_TRUST).is_empty());
 
-    // The reading pane's chip.
+    // The reading pane's "⋯ More" menu (no longer a chip in the row).
     open(&view, ("sub-rue", RUE_TRUST), cx);
-    let chips: Vec<String> = view.read_with(cx, |v, _| {
-        v.reading_action_chips()
-            .into_iter()
-            .map(|c| c.label)
-            .collect()
+    let (row, more): (Vec<String>, Vec<String>) = view.read_with(cx, |v, _| {
+        let (row, _) = v.reading_chip_rows();
+        (
+            row.into_iter().map(|c| c.label).collect(),
+            v.post_more_items().into_iter().map(|(l, _, _)| l).collect(),
+        )
     });
-    assert!(chips.contains(&"Hopper ›".to_string()), "{chips:?}");
+    assert!(!row.contains(&"Hopper ›".to_string()), "{row:?}");
+    assert!(more.contains(&"Hopper ›".to_string()), "{more:?}");
     view.update_in(cx, |v, window, cx| {
         v.reading_action_for_test("Hopper", window, cx)
     });
@@ -369,7 +366,8 @@ fn a_hoppers_menu_renames_describes_publishes_and_deletes(cx: &mut TestAppContex
             "Description…",
             "Make Public…",
             "Delete Hopper…",
-            "New Hopper…"
+            "New Hopper…",
+            "Mark All Read…" // --- mark all read ---
         ]
     );
 
@@ -461,7 +459,7 @@ fn offline_a_new_hopper_waits_but_membership_does_not(cx: &mut TestAppContext) {
     // Putting a post in a hopper is local, and queued.
     view.update(cx, |v, cx| {
         v.toggle_hopper(
-            &[("sub-ada".to_string(), ADA_TIDES.to_string())],
+            &[(SubId::from("sub-ada"), RemoteId::from(ADA_TIDES))],
             HOPPER_SLOW,
             cx,
         )
@@ -502,7 +500,7 @@ fn a_hopper_lists_its_posts_newest_added_first(cx: &mut TestAppContext) {
     // One put in now goes on top.
     view.update(cx, |v, cx| {
         v.toggle_hopper(
-            &[("sub-omar".to_string(), OMAR_YEAR.to_string())],
+            &[(SubId::from("sub-omar"), RemoteId::from(OMAR_YEAR))],
             HOPPER_SLOW,
             cx,
         )
@@ -517,8 +515,8 @@ fn a_hopper_lists_its_posts_newest_added_first(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn the_picker_acts_on_the_picked_posts(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
-    let omar = ("sub-omar".to_string(), OMAR_YEAR.to_string());
-    let ada = ("sub-ada".to_string(), ADA_TIDES.to_string());
+    let omar = (SubId::from("sub-omar"), RemoteId::from(OMAR_YEAR));
+    let ada = (SubId::from("sub-ada"), RemoteId::from(ADA_TIDES));
     open(&view, ("sub-omar", OMAR_YEAR), cx);
     // ⌘-click: the open post and Ada's are picked.
     view.update(cx, |v, cx| {

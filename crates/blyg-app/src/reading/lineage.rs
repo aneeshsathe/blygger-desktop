@@ -153,11 +153,11 @@ impl MainView {
     pub(super) fn lineage_target(&self) -> Option<(String, String)> {
         if self.reading.view == super::View::Reading {
             if let Some(o) = &self.reading.opened {
-                return Some((o.item.origin.clone(), o.item.remote_id.clone()));
+                return Some((o.item.origin.clone(), o.item.remote_id.to_string()));
             }
             let sel = self.reading.sel.as_ref()?;
             let r = self.reading.rows.iter().find(|r| &vm::key(r) == sel)?;
-            return Some((r.origin.clone(), r.remote_id.clone()));
+            return Some((r.origin.clone(), r.remote_id.to_string()));
         }
         let base = self.base_url.clone()?;
         let item = self.backend.item(&self.current.as_ref()?.local_id)?;
@@ -554,7 +554,9 @@ impl MainView {
         // stub_of names your origin); your own pins fork from ⌘Y.
         let blyg = blyg || c.own;
         match act {
-            Act::Fork if c.own => Some("Yours forks from ⌘Y: Fork this pin, on a pinned version."),
+            Act::Fork if c.own => Some(crate::keymap::hint(
+                "Yours forks from ⌘Y: Fork this pin, on a pinned version.",
+            )),
             Act::Fork if !blyg => Some("Feed posts can't be forked."),
             Act::Fork => match s.pin {
                 Pin::Unknown | Pin::Looking => Some("Looking for a pinned version…"),
@@ -600,7 +602,7 @@ impl MainView {
                 let Pin::Found(version) = pin else { return };
                 let of = RemoteRef {
                     origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
+                    id: item.remote_id.to_string(),
                     version,
                     cited: None,
                 };
@@ -1549,7 +1551,7 @@ impl MainView {
                 .tooltip(move |_, cx| cx.new(|_| super::Tip(tip.clone())).into())
                 .on_click(cx.listener(move |this, _, window, cx| {
                     cx.stop_propagation();
-                    this.open_lineage(origin.clone(), id.clone(), window, cx)
+                    this.open_lineage(origin.clone(), id.to_string(), window, cx)
                 }))
                 .into_any_element(),
         )

@@ -18,14 +18,18 @@ use rusqlite::{OptionalExtension, params};
 use super::{OpKind, Store};
 use crate::api::wire::WireItem;
 use crate::backend::{CoreError, Result};
-use crate::model::LocalId;
+use crate::model::{LocalId, RemoteId, SubId};
 use crate::syndication::{
     SyndicationEntry, SyndicationOp, from_column, normalize, op_key, to_column,
 };
 use crate::util::now_ms;
 
 /// One reading row's served list: (subscription id, remote id, entries).
-pub type ReadingSyndication = (String, String, Vec<SyndicationEntry>);
+pub type ReadingSyndication = (
+    crate::model::SubId,
+    crate::model::RemoteId,
+    Vec<SyndicationEntry>,
+);
 
 impl Store {
     /// Your post's copies elsewhere, as last left here. Local, instant.
@@ -164,13 +168,16 @@ impl Store {
     }
 
     /// An imported post's copies elsewhere, as its blyg served them.
-    pub fn reading_syndication(&self, sub: &str, remote_id: &str) -> Vec<SyndicationEntry> {
+    pub fn reading_syndication(&self, sub: &SubId, remote_id: &RemoteId) -> Vec<SyndicationEntry> {
         let c = self.rconn();
         let s: Option<Option<String>> = c
             .prepare_cached(
                 "SELECT syndication FROM reading WHERE subscription_id = ?1 AND remote_id = ?2",
             )
-            .and_then(|mut st| st.query_row([sub, remote_id], |r| r.get(0)).optional())
+            .and_then(|mut st| {
+                st.query_row(params![sub, remote_id], |r| r.get(0))
+                    .optional()
+            })
             .ok()
             .flatten();
         from_column(s.flatten().as_deref())

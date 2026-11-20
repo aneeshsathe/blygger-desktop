@@ -18,6 +18,7 @@
 use std::collections::HashSet;
 
 use super::*;
+use crate::scenes::Scene;
 
 pub(crate) mod alt;
 pub(crate) mod diff;
@@ -82,36 +83,36 @@ pub fn link_of(permalink: Option<&str>) -> Option<String> {
 
 impl MainView {
     /// `BLYGGER_DEMO=upkeep-stale|upkeep-signals|upkeep-diff|upkeep-alt`
-    /// (screenshots, no OS input): the steps call what a key would. True
-    /// when the scenario is one of these.
+    /// (screenshots, no OS input): the steps call what a key would.
     pub(crate) fn upkeep_demo_step(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> bool {
+    ) {
         const FRICTION: &str = "01J9M2A";
         match (scenario, n) {
-            ("upkeep-stale", 1) => self.toggle_stale_sheet(window, cx),
-            ("upkeep-stale", 2) => self.probe_selected(cx),
-            ("upkeep-signals", 1) => self.toggle_signals_sheet(window, cx),
-            ("upkeep-activity", 1) => self.toggle_signals_sheet(window, cx),
-            ("upkeep-activity", 2) => self.signals_tab(signals::Tab::Activity, cx),
-            ("upkeep-diff" | "upkeep-alt", 0) => self.open(&LocalId(FRICTION.into()), window, cx),
-            ("upkeep-diff", 1) => {
+            (Scene::UpkeepStale, 1) => self.toggle_stale_sheet(window, cx),
+            (Scene::UpkeepStale, 2) => self.probe_selected(cx),
+            (Scene::UpkeepSignals, 1) => self.toggle_signals_sheet(window, cx),
+            (Scene::UpkeepActivity, 1) => self.toggle_signals_sheet(window, cx),
+            (Scene::UpkeepActivity, 2) => self.signals_tab(signals::Tab::Activity, cx),
+            (Scene::UpkeepDiff | Scene::UpkeepAlt, 0) => {
+                self.open(&LocalId(FRICTION.into()), window, cx)
+            }
+            (Scene::UpkeepDiff, 1) => {
                 window.dispatch_action(super::reading::ShowVersions.boxed_clone(), cx)
             }
-            ("upkeep-diff", 2) => self.toggle_version_diff(LocalId(FRICTION.into()), 2, 3, cx),
-            ("upkeep-alt", 1) => self.upkeep_ask_alt(
+            (Scene::UpkeepDiff, 2) => self.toggle_version_diff(LocalId(FRICTION.into()), 2, 3, cx),
+            (Scene::UpkeepAlt, 1) => self.upkeep_ask_alt(
                 LocalId(FRICTION.into()),
                 "https://blyg.example.com/media/tide.png".into(),
                 window,
                 cx,
             ),
-            (s, _) => return s.starts_with("upkeep-"),
+            _ => {}
         }
-        true
     }
 }
 

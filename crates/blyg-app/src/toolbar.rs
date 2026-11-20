@@ -22,6 +22,7 @@ use super::reading::View as Screen;
 use super::studio::ViewMode;
 use super::*;
 use crate::keymap::{self, Keybind};
+use crate::scenes::Scene;
 
 macro_rules! icon {
     ($name:literal) => {
@@ -111,10 +112,12 @@ pub struct Facts<'a> {
     pub restoring: bool,
 }
 
-pub const NEED_POSTS: &str = "Back to Posts first (⌘L)";
+pub const NEED_POSTS: crate::platform_text::Text =
+    crate::platform_text::ui_text("Back to Posts first (⌘L)");
 pub const NEED_POST: &str = "Select a post first";
 pub const CLOSE_SHEET: &str = "Close the sheet first (esc)";
-pub const TOO_LONG: &str = "Too long for a fragment. ⌘T makes it a thread";
+pub const TOO_LONG: crate::platform_text::Text =
+    crate::platform_text::ui_text("Too long for a fragment. ⌘T makes it a thread");
 pub const NEED_AI: &str = "Enable AI in Settings › AI accounts";
 pub const NOT_SCRATCH: &str = "Make draft is for scratch notes";
 pub const ALREADY_WITHDRAWN: &str = "Already withdrawn";
@@ -140,7 +143,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
         if f.sheet_open {
             Some(CLOSE_SHEET.into())
         } else if !posts {
-            Some(crate::keymap::hint(NEED_POSTS).into())
+            Some(NEED_POSTS.get().into())
         } else {
             r
         }
@@ -166,7 +169,7 @@ pub fn rule(action: &str, f: &Facts) -> (Option<String>, bool) {
                     return Some("Publishing…".into());
                 }
                 match vm::publish_decision(i) {
-                    PublishDecision::Shake => Some(crate::keymap::hint(TOO_LONG).into()),
+                    PublishDecision::Shake => Some(TOO_LONG.get().into()),
                     PublishDecision::Empty => Some("Nothing to publish yet".into()),
                     PublishDecision::AlreadyPublished(v) => {
                         Some(format!("Already published as v{v}, with no edits since"))
@@ -453,7 +456,7 @@ impl MainView {
             versions_open: self.reading.own.is_some(),
             ai_enabled,
             publishing: self.publishing,
-            sheet_open: self.sheet.is_some() || self.reading.sheet.is_some(),
+            sheet_open: self.sheet.is_open() || self.reading.sheet.is_some(),
             new_note: self.prefs.new_post,
             offline: matches!(self.sync, blyg_core::SyncStatus::Offline { .. }),
             restoring: self
@@ -538,19 +541,7 @@ impl MainView {
             })
             .sum::<f32>()
             + 2. * (Screen::ALL.len() as f32 - 1.)
-            + 12.
-            // --- chat --- the #thicket tab after the views: its name, the
-            // "experimental" badge (8.5 px, 4 px a side) and room for a mark.
-            + if self.chat_tab_on(cx) {
-                self.text_width("#thicket", 11.5, FontWeight::NORMAL, "Inter", window)
-                    + self.text_width("experimental", 8.5, FontWeight::NORMAL, "Inter", window)
-                    + 18.
-                    + 8.
-                    + 4.
-                    + 30.
-            } else {
-                0.
-            };
+            + 12.;
         let title = self.text_width(&self.title, 12., FontWeight::MEDIUM, ui, window)
             + super::switcher::title_extra(cx); // --- blyg switcher ---
         let w = f32::from(window.viewport_size().width);
@@ -700,47 +691,45 @@ impl MainView {
     /// button (an in-app event, not an OS one) so its tooltip shows.
     pub(crate) fn toolbar_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         if n == 0
-            && let Some(w) = std::env::var("BLYGGER_SNAPSHOT_WIDTH")
-                .ok()
-                .and_then(|w| w.parse::<f32>().ok())
+            && let Some(w) = crate::dev_flags::get().snapshot.width
         {
             let h = window.viewport_size().height;
             window.resize(size(px(w), h));
         }
         match (scenario, n) {
-            ("tb-long", 0) => {
+            (Scene::TbLong, 0) => {
                 self.open(&LocalId("01J9QK3".into()), window, cx);
                 let extra = " The log keeps the weather so the keeper doesn't have to.".repeat(18);
                 self.editor.update(cx, |s, cx| s.insert(extra, window, cx));
                 self.after_edit(cx);
             }
-            ("tb-settings", 0) => self.open_settings(&OpenSettings, window, cx),
+            (Scene::TbSettings, 0) => self.open_settings(&OpenSettings, window, cx),
             // --- delete & withdraw --- the confirmation sheets (discard.rs)
-            ("tb-delete" | "tb-withdraw" | "tb-discard", 0) => {
+            (Scene::TbDelete | Scene::TbWithdraw | Scene::TbDiscard, 0) => {
                 self.discard_demo(scenario, window, cx)
             }
-            ("tb-capture", 0) => crate::capture::toggle(cx),
-            ("tb-capture", 1) => crate::capture::demo_fill(
+            (Scene::TbCapture, 0) => crate::capture::toggle(cx),
+            (Scene::TbCapture, 1) => crate::capture::demo_fill(
                 "An idea on the stairs: tide tables as a writing prompt.",
                 cx,
             ),
-            ("tb-capture", 2) => {
-                if let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") {
-                    crate::capture::demo_snapshot(&path, cx);
+            (Scene::TbCapture, 2) => {
+                if let Some(path) = &crate::dev_flags::get().snapshot.path {
+                    crate::capture::demo_snapshot(path, cx);
                 }
                 return;
             }
             _ => {}
         }
         if n == 2 {
-            if let Ok(action) = std::env::var("BLYGGER_DEMO_HOVER") {
-                self.demo_hover(&action, window, cx);
+            if let Some(action) = &crate::dev_flags::get().demo.hover {
+                self.demo_hover(action, window, cx);
             }
             super::reading::demo::snapshot_later(window, cx);
         }

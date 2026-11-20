@@ -55,7 +55,7 @@ fn item(sid: Option<&str>, updated: &str) -> Item {
 }
 
 fn ids(rows: &[ReadingItem]) -> Vec<String> {
-    rows.iter().map(|r| r.remote_id.clone()).collect()
+    rows.iter().map(|r| r.remote_id.to_string()).collect()
 }
 
 #[test]

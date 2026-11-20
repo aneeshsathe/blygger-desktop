@@ -8,6 +8,8 @@ adler2	2.0.1	Jonas Schievink <jonasschievink@gmail.com>|oyvindln <oyvindln@users
 aho-corasick	1.1.5	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/aho-corasick	MIT OR Unlicense		Fast multiple substring searching.
 aligned	0.4.3		https://github.com/rust-embedded-community/aligned	Apache-2.0 OR MIT		A newtype with alignment of at least `A` bytes
 aligned-vec	0.6.4	sarah <>	https://github.com/sarah-ek/aligned-vec/	MIT		Aligned vector and box containers
+alloc-no-stdlib	2.0.4	Daniel Reiter Horn <danielrh@dropbox.com>	https://github.com/dropbox/rust-alloc-no-stdlib	BSD-3-Clause		A dynamic allocator that may be used with or without the stdlib. This allows a package with nostd to allocate memory dynamically and be used either with a custom allocator, items on the stack, or by a package that wishes to simply use Box<>. It also provides options to use calloc or a mutable global variable for pre-zeroed memory
+alloc-stdlib	0.2.4	Daniel Reiter Horn <danielrh@dropbox.com>	https://github.com/dropbox/rust-alloc-no-stdlib	BSD-3-Clause		A dynamic allocator example that may be used with the stdlib
 allocator-api2	0.2.21	Zakarum <zaq.dev@icloud.com>	https://github.com/zakarumych/allocator-api2	Apache-2.0 OR MIT		Mirror of Rust's allocator API
 ammonia	4.2.0	Michael Howell <michael@notriddle.com>	https://github.com/rust-ammonia/ammonia	Apache-2.0 OR MIT		HTML Sanitization
 annotate-snippets	0.12.16		https://github.com/rust-lang/annotate-snippets-rs	Apache-2.0 OR MIT		Format diagnostic reports, including highlighting snippets of text
@@ -57,6 +59,7 @@ blyg-app	0.9.0			MIT
 blyg-core	0.9.0			MIT		
 blyg-render	0.9.0			MIT		Studio preview renderer: Markdown, TK and transclusion to HTML, as a blyg publishes it
 borsh	1.8.1	Near Inc <hello@near.org>	https://github.com/near/borsh-rs	Apache-2.0 OR MIT		Binary Object Representation Serializer for Hashing
+brotli-decompressor	4.0.3	Daniel Reiter Horn <danielrh@dropbox.com>|The Brotli Authors	https://github.com/dropbox/rust-brotli-decompressor	BSD-3-Clause OR MIT		A brotli decompressor that with an interface avoiding the rust stdlib. This makes it suitable for embedded devices and kernels. It is designed with a pluggable allocator so that the standard lib's allocator may be employed. The default build also includes a stdlib allocator and stream interface. Disable this with --features=no-stdlib. Alternatively, --features=unsafe turns off array bounds checks and memory initialization but provides a safe interface for the caller.  Without adding the --features=unsafe argument, all included code is safe. For compression in addition to this library, download https://github.com/dropbox/rust-brotli
 bstr	1.13.1	Andrew Gallant <jamslam@gmail.com>	https://github.com/BurntSushi/bstr	Apache-2.0 OR MIT		A string type that is not required to be valid UTF-8.
 bumpalo	3.20.3	Nick Fitzgerald <fitzgen@gmail.com>	https://github.com/fitzgen/bumpalo	Apache-2.0 OR MIT		A fast bump allocation arena for Rust.
 bytemuck	1.25.2	Lokathor <zefria@gmail.com>	https://github.com/Lokathor/bytemuck	Apache-2.0 OR MIT OR Zlib		A crate for mucking around with piles of bytes.

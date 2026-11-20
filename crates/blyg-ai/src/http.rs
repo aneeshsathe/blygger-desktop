@@ -10,6 +10,13 @@ use serde_json::Value;
 use crate::error::{AiError, Result};
 use crate::provider::CancelFlag;
 
+/// `accept-encoding` for a streamed (Server-Sent Events) answer. Burrow's
+/// ureq asks for gzip and brotli by default (blyg-core turns them on, for
+/// the blyg API's big JSON pages), but a stream should arrive as it's
+/// written: a compressing server or proxy may hold events back to fill a
+/// block. So streams ask for none.
+pub(crate) const SSE_ENCODING: &str = "identity";
+
 pub(crate) fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .timeout_connect(Duration::from_secs(15))
