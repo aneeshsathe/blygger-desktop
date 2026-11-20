@@ -30,6 +30,10 @@ blockquote.blyg-transclusion.unresolved {
   border-left: 3px solid var(--alert, #b3261e); background: var(--alert-wash, rgba(179,38,30,0.08));
   color: var(--alert, #b3261e); font-style: italic;
 }
+/* Formulas (studio 0.62): one that doesn't parse is red, and none draws
+   outside its own box. */
+.math-error { color: var(--alert, #b3261e); background: var(--alert-wash, rgba(179,38,30,0.08)); border-radius: 4px; }
+@supports (overflow-clip-margin: 0.25em) { math { overflow: clip; overflow-clip-margin: 0.25em; } }
 @media (prefers-color-scheme: dark) {
   blockquote.blyg-transclusion.unresolved { --alert: #f0a19a; --alert-wash: rgba(240,161,154,0.12); }
 }

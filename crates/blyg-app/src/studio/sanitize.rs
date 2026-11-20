@@ -346,13 +346,24 @@ mod tests {
             "<p title=\"<math><annotation encoding='application/x-tex'>t</annotation></math>\">p</p>".into(),
         ] {
             let out = sanitize(&hostile);
+            // Only our own drawing, on the allowlist, ever reaches the page
+            // (its annotation holds the TeX as text, quotes and all).
+            let mut outside = String::new();
+            let mut rest = out.as_str();
+            while let Some(at) = rest.find("<math") {
+                let end = rest[at..].find("</math>").expect("closed") + at + 7;
+                assert!(blyg_render::math::allowed_math(&rest[at..end]), "{hostile} → {out}");
+                outside.push_str(&rest[..at]);
+                rest = &rest[end..];
+            }
+            outside.push_str(rest);
             assert!(!out.contains("<script"), "{hostile} → {out}");
             assert!(
-                !out.contains("onmouseover=\"") && !out.contains("onclick=\""),
+                !outside.contains("onmouseover=") && !outside.contains("onclick="),
                 "{hostile} → {out}"
             );
             assert!(!out.contains("javascript:"), "{hostile} → {out}");
-            assert!(!out.contains("<mi"), "publisher MathML never kept: {hostile} → {out}");
+            assert!(!out.contains(">y<") && !out.contains(">z<"), "{hostile} → {out}");
         }
         // No annotation: the formula is dropped.
         assert_eq!(sanitize("<p>a<math><mi>x</mi></math>b</p>"), "<p>ab</p>");

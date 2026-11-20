@@ -242,7 +242,13 @@ mod tests {
             "<blockquote><p>a <math><semantics><mi>x</mi><annotation encoding=\"application/x-tex\">x&lt;/annotation&gt;&lt;script&gt;</annotation></semantics><script>alert(1)</script></math></p></blockquote>",
         );
         assert!(out.starts_with("<blockquote><p>a "), "{out}");
-        assert!(!out.contains("<script") && !out.contains("<mi"), "{out}");
+        assert!(!out.contains("<script"), "{out}");
+        assert!(
+            crate::math::allowed_math(
+                &out[out.find("<math").unwrap()..out.find("</math>").unwrap() + 7]
+            ),
+            "{out}"
+        );
         assert!(out.contains("&lt;script&gt;"), "{out}");
     }
 }
