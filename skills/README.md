@@ -49,8 +49,8 @@ what earlier ones learned.
 - Before writing a rule, try to make it a check instead (`burrow-code-shape`);
   once a check enforces it, delete the rule.
 - Name real files and commands. `doc_paths.rs` (in `blyg-core`'s tests) fails
-  on a backticked path the repo doesn't have; mark a path in another repo on
-  its line with `(other repo: <name>)`.
+  on a backticked path the repo doesn't have; follow a path in another repo
+  with `(other repo: <name>)`, which exempts that path only.
 - A change to what a skill says ships in its own PR, so a reviewer sees the
   new instruction on its own. A rename still updates the skill in the same
   change that renames the file or command.

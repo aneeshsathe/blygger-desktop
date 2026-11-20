@@ -14,14 +14,14 @@
 //!   folder, or as the tail of a repo path (`blyg-core/src/order.rs` for
 //!   `crates/blyg-core/src/order.rs`).
 //! - A path git ignores (local-only, such as `docs/private/`) is skipped.
-//! - A path in another repo is marked on its line with `(other repo: <name>)`,
-//!   which exempts that line.
+//! - A path in another repo is followed by `(other repo: <name>)`, which
+//!   exempts that span only (spaces and closing punctuation may come between).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The marker that exempts a line's paths: they live in another repo.
+/// The marker that exempts the span before it: it lives in another repo.
 const OTHER_REPO: &str = "(other repo:";
 
 /// Extensions that make a slash-separated span a file path.
@@ -100,8 +100,12 @@ fn spans(text: &str) -> Vec<Span<'_>> {
         }
         let mut parts = line.split('`');
         parts.next();
-        while let (Some(code), Some(_)) = (parts.next(), parts.next()) {
-            let other_repo = line.contains(OTHER_REPO);
+        while let (Some(code), Some(after)) = (parts.next(), parts.next()) {
+            // The marker belongs to the span it follows, with only spaces
+            // and closing punctuation between them.
+            let other_repo = after
+                .trim_start_matches(|c: char| c.is_whitespace() || ")],;:.".contains(c))
+                .starts_with(OTHER_REPO);
             out.push(Span {
                 line: i + 1,
                 code,
@@ -190,7 +194,7 @@ fn every_path_a_dev_doc_names_exists() {
     assert!(
         missing.is_empty(),
         "these docs name paths the repo doesn't have. Fix the path, or, if it lives \
-         in another repo, add `{OTHER_REPO} <name>)` to the line:\n{}",
+         in another repo, add `{OTHER_REPO} <name>)` right after it:\n{}",
         missing.join("\n")
     );
 }
