@@ -29,7 +29,6 @@ import sys
 SKIP = [
     "docs/screenshots/",
     "docs/prototype/",
-    "site/",
 ]
 
 # Files allowed to call `git ls-files`, and why that doesn't read SKIP.

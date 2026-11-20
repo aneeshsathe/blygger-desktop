@@ -18,6 +18,7 @@
 #               Skipped by default on Windows, where it is the normal spelling.
 #   extensions  format check of extensions/community.toml (no network)
 #   docs        the docs site with the pinned mdBook (scripts/build-site.sh)
+#   ci-skip     no code reads a path CI may skip (scripts/ci-skip.py check)
 #   deny        cargo deny --locked check (deny.toml): advisories, licences, sources;
 #               needs cargo-deny (`cargo install cargo-deny --locked`)
 #
@@ -38,8 +39,8 @@ for arg in "$@"; do
   case "$arg" in
     --fix) fix=1 ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
-    all) steps+=(fmt clippy test wording extensions docs deny) ;;
-    fmt|clippy|test|wording|extensions|docs|deny) steps+=("$arg") ;;
+    all) steps+=(fmt clippy test wording extensions ci-skip docs deny) ;;
+    fmt|clippy|test|wording|extensions|ci-skip|docs|deny) steps+=("$arg") ;;
     *) echo "check.sh: unknown step '$arg' (try --help)" >&2; exit 2 ;;
   esac
 done
@@ -65,6 +66,7 @@ for step in "${steps[@]}"; do
     test) run cargo test --workspace --locked ;;
     wording) run env BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app --locked ;;
     extensions) run python3 scripts/community-extensions.py check ;;
+    ci-skip) run python3 scripts/ci-skip.py check ;;
     docs) run scripts/build-site.sh ;;
     deny) run cargo deny --locked check ;;
   esac
