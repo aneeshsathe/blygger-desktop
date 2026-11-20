@@ -95,7 +95,7 @@ impl Meter {
     }
 }
 
-use crate::test_wait::settle;
+use crate::test_wait::{settle, until};
 
 fn setup<'a>(
     dir: &std::path::Path,
@@ -192,17 +192,40 @@ fn reading_screen_steps(cx: &mut TestAppContext, meter: impl FnOnce(&LiveBackend
         view.read_with(cx, |v, _| v.source_entries().len())
     });
 
-    // Open a post: read mark, the event, the list catching up.
+    // Open a post: read mark, the event, the list catching up. An unread
+    // one, so the read mark is stored and the list refreshes.
     let key = view.read_with(cx, |v, _| {
-        v.reading.shown_rows().nth(5).map(super::vm::key).unwrap()
+        v.reading
+            .shown_rows()
+            .filter(|r| r.read_version.is_none())
+            .nth(5)
+            .map(super::vm::key)
+            .unwrap()
     });
+    let before = view.read_with(cx, |v, _| v.reading.refreshes);
     meter.step(
         cx,
         "open a post (mark read, refresh)",
         cost(120.0, 4.0),
         |cx| {
-            view.update_in(cx, |v, window, cx| v.open_reading(key, window, cx));
-            settle(cx);
+            view.update_in(cx, |v, window, cx| v.open_reading(key.clone(), window, cx));
+            // Until the post's versions are in and the list has caught up
+            // with its read mark; not `settle`, whose twenty fixed pauses
+            // (60 ms here, several hundred on a CI runner) would be timed.
+            until(cx, "the opened post's read mark and versions", |cx| {
+                view.read_with(cx, |v, _| {
+                    let r = &v.reading;
+                    let read = r
+                        .rows
+                        .iter()
+                        .any(|row| super::vm::key(row) == key && row.read_version.is_some());
+                    let loaded = r
+                        .opened
+                        .as_ref()
+                        .is_some_and(|o| !matches!(o.changelog, super::Load::Loading));
+                    r.refreshes > before && read && loaded
+                })
+            });
         },
     );
     meter.step(
