@@ -193,6 +193,9 @@ impl<T> Load<T> {
     }
 }
 
+/// The key context of the reading body (user keybinding configs may name it).
+pub const CONTEXT: &str = "Reading";
+
 pub const NOT_AVAILABLE: &str = "Not available on this server";
 pub const NOT_AVAILABLE_SUB: &str = "This blyg doesn't have the owner-API read extensions \
      (GET /api/reading/imported, /api/mentions, /api/settings). See docs/SERVER.md.";
@@ -959,7 +962,7 @@ impl MainView {
         Some(
             div()
                 .id("reading-body")
-                .key_context("Reading")
+                .key_context(CONTEXT)
                 .track_focus(&self.reading.focus)
                 .on_key_down(cx.listener(Self::reading_key_down))
                 .flex_1()

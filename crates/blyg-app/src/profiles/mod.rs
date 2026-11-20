@@ -21,6 +21,10 @@
 
 mod demo;
 mod view;
+
+/// The key context of the profile sheet (user keybinding configs may name it).
+pub const CONTEXT: &str = "Profile";
+
 pub(crate) mod vm;
 
 #[cfg(test)]
