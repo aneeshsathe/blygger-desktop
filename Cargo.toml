@@ -28,6 +28,13 @@ idna = "1"
 # `#[expect(unsafe_code, reason = "…")]`. Anywhere else it fails the build.
 unsafe_code = "deny"
 
+[workspace.lints.clippy]
+# A lint is silenced with #[expect(lint, reason = "…")]: it says why, and
+# fails once the code it excuses is gone. #[allow] is left for code where
+# expect can't hold on every target or build (each one says why).
+allow_attributes = "warn"
+allow_attributes_without_reason = "warn"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1
