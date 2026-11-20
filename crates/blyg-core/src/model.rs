@@ -1220,6 +1220,15 @@ pub enum Resolution {
     KeepBoth,
 }
 
+/// One reading row a local read mark raised (`CoreEvent::ReadMarked`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadMarked {
+    pub sub: SubId,
+    pub remote_id: RemoteId,
+    /// The version it's now read at (its current one).
+    pub version: u32,
+}
+
 /// Pushed from the core to the UI (from a background thread).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CoreEvent {
@@ -1232,6 +1241,12 @@ pub enum CoreEvent {
         theirs: String,
     },
     ReadingChanged,
+    /// A local read mark (`Backend::mark_read`: a post opened, a stream card
+    /// seen) raised these rows' read state to these versions; nothing else
+    /// in the reading list changed. The UI updates the rows in place rather
+    /// than reading the list again. A read state from sync (another device)
+    /// is a `ReadingChanged`.
+    ReadMarked(Vec<ReadMarked>),
     /// A background operation failed; human-readable.
     Error(String),
     /// The server turned out to be older than blygger-studio 0.47 (sent

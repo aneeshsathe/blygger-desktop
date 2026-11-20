@@ -1113,7 +1113,16 @@ impl Backend for LiveBackend {
         let sync = self.e().read_sync_on();
         let marked = self.e().store.mark_read_rows(sub_id, remote_id, sync)?;
         if !marked.is_empty() {
-            self.e().emit(CoreEvent::ReadingChanged);
+            // Only these rows changed: the UI updates them in place.
+            let rows = marked
+                .into_iter()
+                .map(|m| crate::model::ReadMarked {
+                    sub: m.sub,
+                    remote_id: m.remote_id,
+                    version: m.version,
+                })
+                .collect();
+            self.e().emit(CoreEvent::ReadMarked(rows));
             if sync {
                 self.wake();
             }

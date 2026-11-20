@@ -1462,20 +1462,26 @@ impl Backend for FakeBackend {
         let changed = {
             let mut st = self.lock();
             st.reading_sends.push(format!("read:{sub_id}:{remote_id}"));
-            let mut changed = false;
+            let mut changed = Vec::new();
             for r in st.rd.reading.iter_mut() {
                 if r.subscription_id == *sub_id
                     && r.remote_id == *remote_id
                     && r.read_version != Some(r.version)
                 {
                     r.read_version = Some(r.version);
-                    changed = true;
+                    changed.push(blyg_core::ReadMarked {
+                        sub: r.subscription_id.clone(),
+                        remote_id: r.remote_id.clone(),
+                        version: r.version,
+                    });
                 }
             }
             changed
         };
-        if changed {
-            self.reading_changed();
+        // As the live backend: only these rows changed.
+        if !changed.is_empty() {
+            let sink = self.lock().sink.clone();
+            Self::emit(&sink, CoreEvent::ReadMarked(changed));
         }
         Ok(())
     }
