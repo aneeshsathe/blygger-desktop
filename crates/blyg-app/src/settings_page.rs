@@ -451,7 +451,7 @@ const KEEP_HINT: &str = if cfg!(target_os = "windows") {
 
 /// The keyboard cursor's mark on a chip or the size: a ring in the accent
 /// just outside its edge, apart from the kept option's accent edge.
-fn focus_ring(p: &Palette) -> Vec<BoxShadow> {
+pub(crate) fn focus_ring(p: &Palette) -> Vec<BoxShadow> {
     vec![
         BoxShadow {
             color: p.bg,
@@ -969,6 +969,7 @@ impl MainView {
             Pick::WritingFont(l) => format!("Trying {l} for writing"),
             Pick::UiFont(l) => format!("Trying {l} for the interface"),
             Pick::Size(s) => format!("Trying {s} px"),
+            Pick::Rule(_) => String::new(), // never tried
         });
         let caption = div()
             .debug_selector(|| "settings-specimen-caption".into())
