@@ -20,8 +20,8 @@ pub struct Trail {
 /// of yours.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrailStop {
-    pub subscription_id: String,
-    pub remote_id: String,
+    pub subscription_id: crate::model::SubId,
+    pub remote_id: crate::model::RemoteId,
     pub origin: String,
     /// Why it's on the trail, in the user's words (may be empty).
     pub why: String,
@@ -33,7 +33,7 @@ pub struct TrailStop {
 }
 
 impl TrailStop {
-    pub fn key(&self) -> (String, String) {
+    pub fn key(&self) -> (crate::model::SubId, crate::model::RemoteId) {
         (self.subscription_id.clone(), self.remote_id.clone())
     }
 }

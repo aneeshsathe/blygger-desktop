@@ -4,19 +4,30 @@ Burrow is keyboard-first. Every toolbar button's tooltip shows its key, and
 `blygger +list-keybinds` prints this list from the app itself.
 
 **On Windows**, read every ⌘ as **Ctrl** (⌘⏎ is Ctrl+Enter, ⇧⌘, is
-Ctrl+Shift+,), with two exceptions: Versions is Ctrl+Shift+Y, because Ctrl+Y
-is Redo there, and Discard changes has no key (Ctrl+Alt+Z is AltGr+Z, which types
-a letter on some layouts): use Menu › Post › Discard Changes… or the toolbar.
+Ctrl+Shift+,), with some exceptions. Versions is Ctrl+Shift+Y, because Ctrl+Y
+is Redo there. Ctrl+Alt is AltGr on Windows, which types a character on many
+layouts, so the ⌥⌘ keys that would type one move: focus mode Ctrl+Shift+F,
+shelving Ctrl+Shift+A, a change note Ctrl+Shift+E, Quote into a thread
+Ctrl+Shift+Q, Link post Ctrl+Shift+I, the quote tray Ctrl+Shift+T, Nearby
+Ctrl+Shift+U, Stream and Reader Alt+1 and Alt+2, the sources pane Alt+S; the
+blyg switcher is Ctrl+Shift+L and the blygs Ctrl+Shift+1…9. Discard changes
+has no key: use Menu › Post › Discard Changes… or the toolbar.
 The app's tooltips, menu and `+list-keybinds` show the Windows
 keys.
 
 **⇧⌘P** opens the command palette: every action below, plus themes, fonts,
 blygs, hoppers, extension commands and your posts, found by typing part of a
 name. Each row shows its key, so it's also a way to learn them. ⏎ runs a row,
-⌘⏎ runs it and keeps the palette open. Focus mode (⌥⌘F) is Ctrl+Shift+F on
+⌘⏎ runs it and keeps the palette open. Highlighting a theme or font row
+shows it on the whole window at once; ⏎ keeps it, esc puts yours back.
+
+**In Settings** (⌘,), ⇥ and ⇧⇥ move between Writing font, Interface font,
+Size and Theme, and the arrow keys try each option on the whole window. ⏎ or
+Space keeps it; esc puts yours back (a second esc leaves the row, a third
+closes Settings). Focus mode (⌥⌘F) is Ctrl+Shift+F on
 Windows, because Ctrl+Alt is AltGr there.
 
-⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply · new stub, Quote into a thread, Link post) act on
+⌥⌘R, ⌥⌘Q and ⌥⌘L (Reply, Quote into a thread, Link post) act on
 the post in front of you: in Reading the open post, else the selected one; in
 Posts your own published post.
 
@@ -60,6 +71,7 @@ These belong to one screen or sheet, so they aren't in the table above.
 | ⏎, Space | Open the post (stream); Space pages through it, then the next unread one (Reader) |
 | ⌘-click, ⇧-click, ⌘A | Pick posts in the Reader's list (esc lets go) |
 | r / u | Mark the picked posts, or the open one, read / unread |
+| ⇧R | Mark all read in this source… (asks first, with the count; also Blyg › Mark All Read…) |
 | ← / → | Move between the Reader's panes |
 | [ / ] | Step through a post's versions (current and pinned) |
 | ⌘F, / | Search what you're reading |

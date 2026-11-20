@@ -1,0 +1,16 @@
+# Clippy reads this file for blyg-app only (the crate's own directory wins).
+# `cargo clippy --workspace --all-targets -- -D warnings` (the gate and CI)
+# fails on any use of these.
+
+disallowed-methods = [
+    # Fixed sleeps and counted retry loops in GPUI tests pass on an idle
+    # machine and fail under load (the notes drawer, pacing and reading perf
+    # tests, clicks on sliding sheets).
+    { path = "std::thread::sleep", reason = "tests: wait with crate::test_wait (until, poll, still, settle); fake mode: crate::fake::simulate_latency; app code: a timer on the executor (cx.background_executor().timer)" },
+    # Environment variables were read ad hoc in ~30 files (63 reads), each
+    # parsing them its own way. They're parsed once, typed, in one place.
+    { path = "std::env::var", reason = "read the environment through crate::dev_flags::get() (add a typed field to DevFlags in src/dev_flags.rs)" },
+    { path = "std::env::var_os", reason = "read the environment through crate::dev_flags::get() (add a typed field to DevFlags in src/dev_flags.rs)" },
+    { path = "std::env::vars", reason = "read the environment through crate::dev_flags::get() (src/dev_flags.rs)" },
+    { path = "std::env::vars_os", reason = "read the environment through crate::dev_flags::get() (src/dev_flags.rs)" },
+]

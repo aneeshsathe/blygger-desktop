@@ -1,6 +1,6 @@
 ---
 name: client-security
-description: Security review for a Blygger client before merge or deploy. Use when a change renders remote content, adds a network call, touches tokens or the owner session, adds an innerHTML sink, changes a service worker, or prepares a web build for deployment.
+description: Security review for a Blygger client before merge or deploy. Use when a change renders remote content, adds a network call, touches tokens or the owner session, or adds an innerHTML sink.
 ---
 
 # Client security checklist
@@ -33,14 +33,6 @@ people's HTML. Treat every remote byte as hostile.
 - **Confirm destructive actions** (withdraw, delete, revoke, mark all read).
 - Embedded browsers/web views get no IPC bridge to the app unless reviewed.
 
-## Web builds
-
-- The service worker is scoped to the app path and **never caches `/api/`**
-  (or the studio's own paths).
-- For each deploy, write down: new network calls, new `innerHTML` sinks,
-  service-worker changes, files needing new headers or content types (e.g.
-  pre-compressed `.br`/`.gz`). Whoever deploys audits against that list.
-
 ## Repos
 
 - Public repos carry no personal data: no names, emails, real blyg URLs,
@@ -51,8 +43,6 @@ people's HTML. Treat every remote byte as hostile.
 - Reader HTML: `crates/blyg-app/src/studio/sanitize.rs` (`sanitize_at`, ammonia);
   rendered Markdown: `crates/blyg-render/src/sanitize.rs` (mirrors the studio's
   sanitizer). Both drop `math` today, which §14 allows.
-- `blyg-web` has owner rights: remote HTML only through `sanitize_at`, calls
-  only to same-origin `/api/`, destructive actions confirmed.
 - The browser pane has no IPC handler or init script; keep it that way.
 - Secrets live in the macOS Keychain (Credential Manager on Windows), config in
   `~/.config/blygger/config`; neither is ever in the repo.

@@ -224,7 +224,7 @@ mod tests {
     use blyg_core::{Backend, ConfigStore, Kind, LocalId, Status};
     use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-    use crate::app::{MainView, Mode, Sheet};
+    use crate::app::{MainView, Mode};
     use crate::fake::{FakeBackend, Timing};
     use crate::prefs::Prefs;
     use crate::vm;
@@ -361,7 +361,7 @@ mod tests {
         cx.simulate_keystrokes(&crate::keymap::keys("cmd-enter"));
         cx.run_until_parked();
         view.read_with(cx, |v, _| {
-            assert!(matches!(v.sheet, Some(Sheet::Publish { .. })));
+            assert!(v.sheet.is::<super::PublishSheet>());
         });
         cx.simulate_keystrokes("enter");
         cx.run_until_parked();
@@ -417,12 +417,7 @@ mod tests {
         cx.run_until_parked();
     }
 
-    fn settle(cx: &mut VisualTestContext) {
-        for _ in 0..20 {
-            cx.run_until_parked();
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-    }
+    use crate::test_wait::settle;
 
     #[gpui_kit::test]
     fn an_image_pasted_into_scratch_is_kept_locally(cx: &mut TestAppContext) {

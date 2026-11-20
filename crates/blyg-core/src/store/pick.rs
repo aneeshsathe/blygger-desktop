@@ -74,7 +74,7 @@ impl Store {
             let mut binds = Vec::new();
             let sub = match &q.sub {
                 Some(s) => {
-                    binds.push(s.clone());
+                    binds.push(s.to_string());
                     " AND subscription_id = ?1"
                 }
                 None => "",

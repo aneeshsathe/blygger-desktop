@@ -577,7 +577,8 @@ pub fn demo(step: usize, cx: &mut App) {
     match step {
         0 => open(cx),
         2 => {
-            let (Some(h), Ok(path)) = (window(cx), std::env::var("BLYGGER_SNAPSHOT")) else {
+            let (Some(h), Some(path)) = (window(cx), crate::dev_flags::get().snapshot.path.clone())
+            else {
                 return;
             };
             let _ = h.update(cx, |_, window, cx| {

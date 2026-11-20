@@ -103,11 +103,10 @@ fn setup() -> Env {
 }
 
 fn eventually(what: &str, f: impl Fn() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(20);
-    while !f() {
-        assert!(Instant::now() < deadline, "timed out waiting for {what}");
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    assert!(
+        blyg_core::wait::poll_until(Duration::from_secs(20), Duration::from_millis(100), f),
+        "timed out waiting for {what}"
+    );
 }
 
 #[test]

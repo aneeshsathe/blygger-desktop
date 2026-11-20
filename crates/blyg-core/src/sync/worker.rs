@@ -78,6 +78,9 @@ fn run(engine: Arc<Engine>, rx: Receiver<Msg>) {
             next_pull = match engine.pull_background() {
                 // Offline: try again when the backoff expires, not a full interval later.
                 Err(e) if is_transient(&e) => engine.retry_at().unwrap_or_else(Instant::now),
+                // A whole walk of the reading list part-way through: carry
+                // it on soon (sync/walk.rs).
+                Ok(()) if engine.reading_walk_pending() => Instant::now() + super::walk::WALK_PAUSE,
                 // 15 s with `/api/changes` (an unchanged pull is one small
                 // read), else the full interval.
                 _ => Instant::now() + engine.pull_every(),

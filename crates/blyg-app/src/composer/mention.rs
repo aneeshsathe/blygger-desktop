@@ -589,7 +589,7 @@ mod tests {
 
     fn sub(origin: &str, title: &str, kind: SubscriptionKind, blogroll: bool) -> Subscription {
         Subscription {
-            id: format!("sub-{title}"),
+            id: format!("sub-{title}").into(),
             kind,
             origin: origin.into(),
             feed_url: format!("{origin}feed.json"),

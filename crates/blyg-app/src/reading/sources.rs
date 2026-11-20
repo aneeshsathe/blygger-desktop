@@ -17,7 +17,7 @@
 //! to the list. [ / ] step through the versions (←/→ did that before the
 //! panes). ⌥⌘S shows or hides the pane; its right edge drags to resize.
 
-use blyg_core::Backend;
+use blyg_core::{Backend, SubId};
 use gpui_kit::base::input::{Escape, InputEvent, InputState};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -28,7 +28,7 @@ use super::{RSheet, View};
 use crate::app::MainView;
 use crate::theme::Rule; // --- themes --- dividers
 
-gpui_kit::actions!(blygger, [ToggleSources, NewFolder, CheckFeeds]);
+gpui_kit::actions!(blygger, [ToggleSources, NewFolder, CheckFeeds, MarkAllRead]);
 
 pub const SOURCES_W: f32 = 210.;
 const MIN_W: f32 = 150.;
@@ -78,12 +78,16 @@ pub enum MenuTarget {
     /// The pane's background or a heading.
     Pane,
     Folder(String),
-    Sub(String),
+    Sub(SubId),
     /// --- read/unread --- a post in the list (and the picks, when it's
     /// among them).
     Posts(super::vm::Key),
     /// --- hoppers --- a hopper in the pane.
     Hopper(String),
+    /// "⋯ More" under the open post: its less common actions.
+    PostMore,
+    /// "⋯ More" under a post in the stream.
+    StreamMore(super::vm::Key),
 }
 
 /// A context menu, at a window position.
@@ -107,17 +111,17 @@ pub enum MenuCmd {
     /// Show the folder list of a subscription's menu.
     MoveToFolder,
     /// File a subscription (`None` = no folder).
-    File(String, Option<String>),
+    File(SubId, Option<String>),
     /// A new folder, then file the subscription in it.
-    NewFolderFor(String),
+    NewFolderFor(SubId),
     Profile(String),
     // --- subscription names & checks --- (studio 0.30)
     /// Rename… a subscription (a name of your own).
-    RenameSub(String),
+    RenameSub(SubId),
     /// "Use the blyg's own name": the name follows the source again.
-    FollowSource(String),
+    FollowSource(SubId),
     /// Check one subscription now.
-    CheckNow(String),
+    CheckNow(SubId),
     /// Check all feeds now (⇧⌘R).
     CheckAll,
     // --- read/unread ---
@@ -140,13 +144,33 @@ pub enum MenuCmd {
     DeleteHopper(String),
     /// --- reader view --- A subscription's posts open on the author's
     /// site always (`Some(true)`), never, or as Settings says (`None`).
-    SiteFor(String, Option<bool>),
+    SiteFor(SubId, Option<bool>),
+    /// "⋯ More": one of the open post's actions (`reading_action`'s id).
+    PostAction(&'static str),
+    /// "⋯ More": the open post onto the current trail (`t`).
+    AddToTrail,
+    /// A stream post's "⋯ More": one of its actions (`stream_action`).
+    StreamAction(super::vm::Key, &'static str),
+    /// A stream post's "⋯ More": select it, then onto the trail (`t`).
+    StreamTrail(super::vm::Key),
+    /// --- mark all read --- Mark All Read… for this source (`None`: the
+    /// one on screen), asked first with the count (`reading/marks.rs`).
+    MarkAllRead(Option<Source>),
+}
+
+/// --- mark all read --- a source menu's "Mark All Read…" row.
+fn mark_all_item(source: Source) -> (String, Option<MenuCmd>, bool) {
+    (
+        "Mark All Read…".into(),
+        Some(MenuCmd::MarkAllRead(Some(source))),
+        false,
+    )
 }
 
 /// A subscription being dragged onto a folder.
 #[derive(Debug, Clone)]
 pub struct DraggedSub {
-    pub id: String,
+    pub id: SubId,
     pub name: String,
 }
 
@@ -228,6 +252,12 @@ impl MainView {
         .on_action(
             cx.listener(|this, _: &CheckFeeds, window, cx| this.check_feeds(None, window, cx)),
         )
+        // Blyg › Mark All Read… (⇧R on the reading screen).
+        .on_action(
+            cx.listener(|this, _: &MarkAllRead, window, cx| {
+                this.ask_mark_all_read(None, window, cx)
+            }),
+        )
     }
 
     /// ⌥⌘S: show or hide the sources pane (and go to the Reader).
@@ -253,13 +283,14 @@ impl MainView {
 
     /// Everything the pane lists now.
     pub(crate) fn source_entries(&self) -> Vec<Entry> {
-        let mut e = sources_vm::entries(
+        let mut e = sources_vm::entries_skipping(
             &self.reading.hoppers,
             &self.reading.folders,
             &self.reading.filed,
             &self.reading.subs,
             &self.reading.rows,
             &self.reading.collapsed,
+            &self.reading.hopper_only, // --- unread counts --- one rule
             self.now,
         );
         // --- contacts --- Mentions, right under All unread.
@@ -329,7 +360,7 @@ impl MainView {
     /// File a subscription in a folder (`None`: no folder).
     pub(crate) fn file_subscription(
         &mut self,
-        sub_id: &str,
+        sub_id: &SubId,
         folder: Option<&str>,
         cx: &mut Context<Self>,
     ) {
@@ -342,7 +373,7 @@ impl MainView {
                     .reading
                     .subs
                     .iter()
-                    .find(|s| s.id == sub_id)
+                    .find(|s| s.id == *sub_id)
                     .map(sources_vm::sub_name)
                     .unwrap_or_default();
                 let msg = match folder.and_then(|f| self.reading.folders.iter().find(|x| x.id == f))
@@ -424,6 +455,26 @@ impl MainView {
             MenuCmd::CheckAll => self.check_feeds(None, window, cx),
             MenuCmd::SiteFor(sub, on) => self.set_site_for_sub(sub, on, cx), // --- reader view ---
             MenuCmd::Mark(keys, read) => self.mark_posts(keys, read, cx),
+            MenuCmd::MarkAllRead(source) => return self.ask_mark_all_read(source, window, cx),
+            // Fork is greyed in the row's sense: it says where forking lives,
+            // unless the current version is itself a pin (then it forks).
+            MenuCmd::PostAction("Fork") => {
+                let chip = self
+                    .reading_action_chips()
+                    .into_iter()
+                    .find(|c| c.id == "Fork");
+                match chip {
+                    Some(c) if c.enabled => self.reading_action("Fork", window, cx),
+                    c => self.show_toast(c.map(|c| c.tip).unwrap_or_default(), None, cx),
+                }
+            }
+            MenuCmd::PostAction(id) => self.reading_action(id, window, cx),
+            MenuCmd::AddToTrail => self.add_to_trail(window, cx), // --- trails ---
+            MenuCmd::StreamAction(key, id) => self.stream_action(key, id, window, cx),
+            MenuCmd::StreamTrail(key) => {
+                self.reading.sel = Some(key);
+                self.add_to_trail(window, cx)
+            }
             // --- hoppers ---
             MenuCmd::HopperMenu => {}
             MenuCmd::NewHopper => self.open_hopper_name_sheet(
@@ -466,10 +517,23 @@ impl MainView {
                 ("New Hopper…".into(), Some(MenuCmd::NewHopper), false),
                 sep(),
                 ("Check All Feeds Now".into(), Some(MenuCmd::CheckAll), false),
+                // --- mark all read --- the source on screen.
+                (
+                    format!("Mark All Read in {}…", self.mark_all_name(None)),
+                    Some(MenuCmd::MarkAllRead(None)),
+                    false,
+                ),
             ],
             // --- hoppers --- a post's "Hopper ›" list.
             MenuTarget::Posts(key) if m.folders => self.hopper_menu_items(key),
-            MenuTarget::Hopper(id) => self.hopper_items_for(id),
+            MenuTarget::Hopper(id) => {
+                let mut v = self.hopper_items_for(id);
+                v.push(sep()); // --- mark all read ---
+                v.push(mark_all_item(Source::Hopper(id.clone())));
+                v
+            }
+            MenuTarget::PostMore => self.post_more_items(),
+            MenuTarget::StreamMore(key) => self.stream_more_items(key),
             MenuTarget::Posts(key) => {
                 let mut v: Vec<_> = self
                     .post_menu_items(key)
@@ -502,6 +566,7 @@ impl MainView {
                     false,
                 ));
                 v.push(sep());
+                v.push(mark_all_item(Source::Folder(id.clone()))); // --- mark all read ---
                 v.push(("New Folder…".into(), Some(MenuCmd::NewFolder), false));
                 v
             }
@@ -562,6 +627,7 @@ impl MainView {
                     Some(MenuCmd::CheckNow(sub.clone())),
                     false,
                 ));
+                v.push(mark_all_item(Source::Sub(sub.clone()))); // --- mark all read ---
                 // --- reader view --- where this subscription's posts open.
                 let site = self.reading.site.subs.get(sub).copied();
                 v.push(sep());
@@ -608,7 +674,7 @@ impl MainView {
     /// what the background poll brings.
     pub(crate) fn check_feeds(
         &mut self,
-        sub: Option<String>,
+        sub: Option<SubId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -670,7 +736,7 @@ impl MainView {
     /// poll.
     pub(crate) fn follow_source_name(
         &mut self,
-        sub: String,
+        sub: SubId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -702,7 +768,7 @@ impl MainView {
     /// Rename… a subscription: a sheet like the folders' (⏎ renames).
     pub(crate) fn open_sub_name_sheet(
         &mut self,
-        sub: String,
+        sub: SubId,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -866,7 +932,7 @@ impl MainView {
     pub(crate) fn open_folder_sheet(
         &mut self,
         rename: Option<String>,
-        then_file: Option<String>,
+        then_file: Option<SubId>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
@@ -1225,10 +1291,10 @@ impl MainView {
             })
             .tooltip(move |_, cx| {
                 cx.new(|_| {
-                    super::Tip(format!(
+                    super::Tip(crate::keymap::hint_owned(format!(
                         "{} the sources pane · ⌥⌘S",
                         if on { "Hide" } else { "Show" }
-                    ))
+                    )))
                 })
                 .into()
             })
@@ -1683,6 +1749,7 @@ impl MainView {
                 let Some(cmd) = cmd else {
                     return div().my(px(4.)).h(px(1.)).bg(p.line).into_any_element();
                 };
+                let key = menu_key(&cmd);
                 div()
                     .id(("src-menu-item", i))
                     .debug_selector(move || format!("src-menu-{i}"))
@@ -1700,7 +1767,20 @@ impl MainView {
                             .flex_none()
                             .child(if checked { "✓" } else { "" }),
                     )
-                    .child(label)
+                    .child(div().flex_1().child(label))
+                    // The key that does the same, right-aligned, as a menu
+                    // bar shows it: dimmed, in the row's own colour, so it
+                    // follows the hover highlight.
+                    .when_some(key, |d, key| {
+                        d.child(
+                            div()
+                                .flex_none()
+                                .pl(px(16.))
+                                .text_size(px(11.5))
+                                .opacity(0.6)
+                                .child(key),
+                        )
+                    })
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.run_menu_cmd(cmd.clone(), window, cx)
                     }))
@@ -1740,6 +1820,28 @@ impl MainView {
             .with_priority(2)
             .into_any_element(),
         )
+    }
+}
+
+/// The key that does what a "⋯ More" item does, for the menu's key column:
+/// the reading screen's own single keys (h, b, t, ⇧C) and the Post menu's
+/// bound keys, spelled for this platform. `None` for an item with no key.
+pub(crate) fn menu_key(cmd: &MenuCmd) -> Option<String> {
+    let id = match cmd {
+        MenuCmd::PostAction(id) | MenuCmd::StreamAction(_, id) => *id,
+        MenuCmd::AddToTrail | MenuCmd::StreamTrail(_) => return Some("t".into()),
+        _ => return None,
+    };
+    let bound = |action: &str| crate::keymap::action_glyphs(action);
+    match id {
+        "Reply" => bound("ReplyToPost"),
+        "Quote" => bound("QuotePost"),
+        "Link post" => bound("LinkToPost"),
+        "Shelf" => bound("ToggleShelf"),
+        "Hopper" => Some("h".into()),
+        "Catch up" => Some(crate::keymap::glyphs("shift-c")),
+        super::background::PLACE => Some("b".into()),
+        _ => None,
     }
 }
 

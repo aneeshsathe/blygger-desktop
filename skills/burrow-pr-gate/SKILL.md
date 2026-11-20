@@ -11,11 +11,16 @@ These are the checks reviewers used to catch in PRs. Run them while writing.
 
 ```sh
 cargo fmt && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
+BLYGGER_TEST_SPELLING=windows cargo test -p blyg-app
 ```
 
+The second run spells every UI string as Windows does (`Ctrl+B`, not `⌘B`),
+so a test that expects Mac glyphs fails on your Mac instead of on Windows CI
+(CI's macOS job runs it too).
+
 Server-facing changes also run the real-studio e2e
-(`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); web changes
-run `scripts/browser-*-check.sh`.
+(`BLYG_WORKER_DIR=<scratch studio build> scripts/e2e-local.sh`); browser pane
+changes run `scripts/browser-*-check.sh`.
 
 ## Judgement (answer each in the PR body)
 
@@ -24,9 +29,7 @@ run `scripts/browser-*-check.sh`.
 2. **Naming:** display name is Burrow; never renamed: bundle ID, Keychain
    service/accounts, data dir and db names, config path, `BLYGGER_*` env vars,
    the `blygger` binary, key contexts, action namespaces, crates.
-3. **Contract:** the UI talks only to `Arc<dyn Backend>`. A new `Backend`
-   method is forwarded by every wrapper (e.g. `SwitchBackend`); defaults answer
-   silently otherwise.
+3. **Contract:** the UI talks only to `Arc<dyn Backend>`.
 4. **Typing budget:** nothing new on the UI thread per keystroke; SQLite and
    network stay off it.
 5. **Studio parity:** does the studio have this feature? Match its behaviour;
@@ -35,7 +38,7 @@ run `scripts/browser-*-check.sh`.
    fake-backend tests.
 7. **Cross-platform:** `burrow-cross-platform`.
 8. **Security:** `client-security` for remote content,
-   network or web changes.
+   network or web view changes.
 9. **Docs:** SPEC paragraph, site docs, CHANGELOG `[Unreleased]` entry; tour
    at release time (`burrow-tutorial-update`).
 10. **Merging conflicting union edits:** after a "keep both sides" merge, run

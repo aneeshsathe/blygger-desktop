@@ -1,0 +1,9 @@
+# Clippy reads this file for blyg-ext-reading-time only (the crate's own directory wins).
+# `cargo clippy --workspace --all-targets -- -D warnings` (the gate and CI)
+# fails on any use of these.
+
+disallowed-methods = [
+    # Fixed sleeps that "let something finish" pass on an idle machine and
+    # fail under load. The one reviewed sleep is in blyg-core's `wait`.
+    { path = "std::thread::sleep", reason = "use blyg_ext::wait: tests wait with until / poll_until (wall_clock only when the code under test measures time); production pauses with pace / nap / poll_until" },
+]

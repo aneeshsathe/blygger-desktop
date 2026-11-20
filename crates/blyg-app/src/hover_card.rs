@@ -223,7 +223,7 @@ pub fn row_card(
         (excerpt_of(&r.content_md, &r.content_html), note)
     };
     Card {
-        id: r.remote_id.clone(),
+        id: r.remote_id.to_string(),
         title: super::reading::vm::post_title(r),
         meta: meta.join(" · "),
         excerpt,

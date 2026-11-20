@@ -2,7 +2,7 @@
 //! updating (a /now page, a reading log), at the top of the Write list in
 //! your order, and one key away.
 //!
-//! - ⌥⌘B (Post › Put on Shelf / Take off Shelf) shelves the open post or
+//! - ⌥⌘B (Post › Add to Shelf / Remove from Shelf) shelves the open post or
 //!   takes it off. Any post of yours: thread, fragment, draft or scratch note.
 //! - ⌘B (Post › Shelf…) opens the shelf: 1–9 or ⏎ opens a post, ↑/↓ move,
 //!   ⌥↑/⌥↓ reorder, ⌫ takes the highlighted post off, esc closes.
@@ -37,10 +37,21 @@ pub struct ShelfSheet {
     pub sel: usize,
 }
 
+impl crate::app::sheet::SheetView for ShelfSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_shelf_sheet(self, cx).into()
+    }
+}
+
 /// The toast after ⌥⌘B.
 pub fn toggled_toast(on: bool) -> &'static str {
     if on {
-        "On your shelf · ⌘B"
+        crate::keymap::hint("On your shelf · ⌘B")
     } else {
         "Taken off your shelf"
     }
@@ -73,22 +84,21 @@ impl MainView {
 
     /// ⌘B: open the shelf, or close it.
     pub(crate) fn toggle_shelf_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.sheet, Some(Sheet::Shelf(_))) {
+        if self.sheet.is::<ShelfSheet>() {
             return self.close_sheet(window, cx);
         }
         let posts = posts(&*self.backend);
         let cur = self.current.as_ref().map(|c| c.local_id.clone());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::Shelf(ShelfSheet {
+        self.sheet.open(ShelfSheet {
             sel: posts
                 .iter()
                 .position(|p| Some(&p.local_id) == cur.as_ref())
                 .unwrap_or(0),
             focus,
             posts,
-        }));
+        });
         cx.notify();
     }
 
@@ -124,7 +134,7 @@ impl MainView {
             self.list_scroll.scroll_to_item(ix, ScrollStrategy::Nearest);
         }
         let fresh = posts(&*self.backend);
-        if let Some(Sheet::Shelf(s)) = &mut self.sheet {
+        if let Some(s) = self.sheet.get_mut::<ShelfSheet>() {
             s.posts = fresh;
             s.sel = s.sel.min(s.posts.len().saturating_sub(1));
         }
@@ -134,7 +144,7 @@ impl MainView {
     /// Open a shelved post. If the omnibar's search hides it, the search is
     /// cleared so the post shows in the list.
     fn open_from_shelf(&mut self, id: LocalId, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         if !self.list.results().iter().any(|i| i.local_id == id) {
             self.set_query_text("", window, cx);
         }
@@ -145,7 +155,7 @@ impl MainView {
     }
 
     fn shelf_sheet_key(&mut self, ev: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::Shelf(s)) = &mut self.sheet else {
+        let Some(s) = self.sheet.get_mut::<ShelfSheet>() else {
             return;
         };
         let key = ev.keystroke.key.as_str();
@@ -318,9 +328,11 @@ impl MainView {
             );
         }
         let hints = if s.posts.is_empty() {
-            "⌥⌘B shelves the open post · esc closes"
+            crate::keymap::hint("⌥⌘B shelves the open post · esc closes")
         } else {
-            "1–9 or ⏎ opens · ⌥↑/⌥↓ reorder · ⌫ takes off · ⌥⌘B shelves the open post · esc"
+            crate::keymap::hint(
+                "1–9 or ⏎ opens · ⌥↑/⌥↓ reorder · ⌫ takes off · ⌥⌘B shelves the open post · esc",
+            )
         };
         body = body.child(div().my(px(6.)).h(px(1.)).bg(p.line)).child(
             div()
@@ -339,8 +351,18 @@ mod tests {
 
     #[test]
     fn the_toast_says_where_it_went() {
-        assert_eq!(toggled_toast(true), "On your shelf · ⌘B");
+        assert_eq!(
+            toggled_toast(true),
+            crate::keymap::hint("On your shelf · ⌘B")
+        );
         assert_eq!(toggled_toast(false), "Taken off your shelf");
+        use crate::platform_text::{Platform, spelled_as};
+        spelled_as(Platform::Windows, || {
+            assert_eq!(toggled_toast(true), "On your shelf · Ctrl+B");
+        });
+        spelled_as(Platform::Mac, || {
+            assert_eq!(toggled_toast(true), "On your shelf · ⌘B");
+        });
     }
 }
 

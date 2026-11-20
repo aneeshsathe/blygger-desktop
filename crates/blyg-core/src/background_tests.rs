@@ -16,7 +16,7 @@ fn own(id: &str, background: Value) -> Value {
 }
 
 fn k(sub: &str, id: &str) -> Key {
-    (sub.to_string(), id.to_string())
+    (sub.into(), id.into())
 }
 
 fn row(sub: &str, id: &str, state: &str) -> ReadingItem {
@@ -144,13 +144,13 @@ fn a_whole_blyg_moves_except_its_entries_with_a_choice() {
     ];
     let mut set = BackgroundSet::default();
     set.place(&k("s", "b"), false, Some(Placement::Foreground));
-    set.place_blyg("s", true, &rows);
+    set.place_blyg(&SubId::from("s"), true, &rows);
     assert!(set.of(&k("s", "a")).on && set.of(&k("s", "a")).blyg);
     assert!(!set.of(&k("s", "b")).on, "its own Foreground choice wins");
     assert!(!set.of(&k("t", "c")).on);
-    assert!(set.blyg_on("s"));
-    set.place_blyg("s", false, &rows);
-    assert!(!set.of(&k("s", "a")).on && !set.blyg_on("s"));
+    assert!(set.blyg_on(&SubId::from("s")));
+    set.place_blyg(&SubId::from("s"), false, &rows);
+    assert!(!set.of(&k("s", "a")).on && !set.blyg_on(&SubId::from("s")));
 }
 
 #[test]

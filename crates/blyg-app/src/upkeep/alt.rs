@@ -17,6 +17,17 @@ pub(crate) struct AltSheet {
     pub input: Entity<InputState>,
 }
 
+impl crate::app::sheet::SheetView for AltSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_alt_sheet(self, cx).into()
+    }
+}
+
 /// Alt text as Markdown needs it inside `![…]`: one line, brackets escaped.
 pub fn clean_alt(alt: &str) -> String {
     let one_line = alt.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -50,7 +61,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.sheet.is_some() || self.current.as_ref().map(|c| &c.local_id) != Some(&id) {
+        if self.sheet.is_open() || self.current.as_ref().map(|c| &c.local_id) != Some(&id) {
             return;
         }
         let input = cx.new(|cx| {
@@ -63,19 +74,18 @@ impl MainView {
         });
         self._subs.push(sub);
         input.update(cx, |s, cx| s.focus(window, cx));
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::AltText(AltSheet { id, url, input }));
+        self.sheet.open(AltSheet { id, url, input });
         cx.notify();
     }
 
     /// ⏎: write the alt text into the post.
     pub(crate) fn confirm_alt(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(Sheet::AltText(s)) = &self.sheet else {
+        let Some(s) = self.sheet.get::<AltSheet>() else {
             return;
         };
         let alt = s.input.read(cx).value().to_string();
         let (id, url) = (s.id.clone(), s.url.clone());
-        self.sheet = None;
+        self.sheet.close();
         let editing = self.current.as_ref().is_some_and(|c| c.local_id == id);
         let text = if editing {
             self.editor.read(cx).value().to_string()

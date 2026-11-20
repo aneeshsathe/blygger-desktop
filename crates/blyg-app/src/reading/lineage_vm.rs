@@ -171,7 +171,7 @@ impl Glyph {
                 d.join(", ")
             ));
         }
-        lines.push("⌘J or a click: see who".into());
+        lines.push(crate::keymap::hint("⌘J or a click: see who").into());
         lines.join("\n")
     }
 }
@@ -317,7 +317,7 @@ fn centre_of(origin: &str, id: &str, src: &Sources) -> Centre {
     match (&held, own) {
         (Some(r), _) => Centre {
             origin: r.origin.clone(),
-            id: r.remote_id.clone(),
+            id: r.remote_id.to_string(),
             title: vm::post_title(r),
             who: who_of(r),
             kind: Some(r.kind),
@@ -703,10 +703,10 @@ impl Act {
         match self {
             Act::Fork => "Start your own copy of this post.",
             Act::Reply => "Respond to this post.",
-            Act::Quote => "Quote it in a thread you're writing (⌘K).",
+            Act::Quote => crate::keymap::hint("Quote it in a thread you're writing (⌘K)."),
             Act::Link => "Write something of your own that links to this.",
             Act::Versions => "See how this post has changed.",
-            Act::Open => "Read it on the author's own site (⌘O).",
+            Act::Open => crate::keymap::hint("Read it on the author's own site (⌘O)."),
         }
     }
 
@@ -752,7 +752,7 @@ impl Act {
             ],
             Act::Reply => [
                 ("yes", true),
-                ("yes, as a reply (stub)", true),
+                ("yes, as a reply", true),
                 (
                     if passage {
                         "just the passage you selected"
@@ -865,7 +865,14 @@ mod tests {
         assert_eq!(g.label(), "0 · 6");
         assert_eq!(
             g.tip(),
-            "6 known here draw on it: 2 replies, 4 quotes (of passages)\n⌘J or a click: see who"
+            crate::keymap::hint(
+                "6 known here draw on it: 2 replies, 4 quotes (of passages)\n⌘J or a click: see who"
+            )
+        );
+        use crate::platform_text::{Platform, spelled_as};
+        assert_eq!(
+            spelled_as(Platform::Windows, || g.tip()),
+            "6 known here draw on it: 2 replies, 4 quotes (of passages)\nCtrl+J or a click: see who"
         );
     }
 

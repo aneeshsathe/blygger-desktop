@@ -28,7 +28,9 @@ config-file = ?optional/extra.config
 - An empty value (`key =`) resets a key to its default, and a repeatable key
   to an empty list.
 - Unknown keys are warnings; malformed lines and bad values are errors.
-  Neither stops the rest of the file from loading.
+  Neither stops the rest of the file from loading. Keys of features Burrow
+  no longer has (`chat-tab`, `chat-nick`, `chat-server`, `chat-notifications`,
+  `terminal`, `terminal-shell`) are ignored quietly; you can delete them.
 
 Files are loaded in this order, later ones overriding earlier ones:
 
@@ -57,8 +59,8 @@ standard install, it's `/Applications/Burrow.app/Contents/MacOS/blygger`.
 | `+list-keybinds` | every keyboard shortcut, and the ones reserved |
 | `+import-opml <file> [--dry-run]` | subscribes to every feed in an OPML file you don't follow yet ([Import and export subscriptions](reading.md#import-and-export-subscriptions-opml)); `--dry-run` only lists them |
 | `+export-opml <file>` | saves every subscription as an OPML file |
-| `+version` | the version |
-| `+help` | this list |
+| `+version` (or `--version`, `-V`) | the version |
+| `+help` (or `--help`, `-h`) | this list |
 
 ## Every option
 

@@ -529,7 +529,7 @@ fn the_relauncher_waits_for_the_process_to_exit() {
     let mut relauncher = install::relaunch_command(child.id(), &marker, &["/usr/bin/touch"])
         .spawn()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    crate::test_wait::wall_clock(std::time::Duration::from_millis(200));
     assert!(!marker.exists(), "still waiting for the process");
     child.wait().unwrap();
     relauncher.wait().unwrap();

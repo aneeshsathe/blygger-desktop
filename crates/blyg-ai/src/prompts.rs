@@ -572,7 +572,7 @@ pub fn reply_draft(
 ) -> Result<HelperOutput> {
     let instruction = reply_instruction(item);
     let sources = vec![Source {
-        id: item.remote_id.clone(),
+        id: item.remote_id.to_string(),
         content_md: item.content_md.clone(),
     }];
     let prompt = helper_prompt("", 0, 0, &instruction, None, sources, style);

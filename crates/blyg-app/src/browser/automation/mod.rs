@@ -35,7 +35,7 @@ pub use runner::{MacroRun, Outcome, PostChoice};
 use self::js::{Op, Reply};
 use self::runner::{Confirm, Pacing, Page, Preview};
 use super::surface::PageState;
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 
 /// How long one in-page operation may take to answer.
 const EVAL_TIMEOUT: Duration = Duration::from_secs(3);
@@ -138,11 +138,33 @@ pub struct PreviewSheet {
     reply: async_channel::Sender<Option<String>>,
 }
 
+impl crate::app::sheet::SheetView for PreviewSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_macro_preview(self, cx).into()
+    }
+}
+
 /// The Post sheet: what the composer holds, before `submit`.
 pub struct PostSheet {
     pub info: Confirm,
     pub focus: FocusHandle,
     reply: async_channel::Sender<PostChoice>,
+}
+
+impl crate::app::sheet::SheetView for PostSheet {
+    fn render(
+        &self,
+        v: &crate::app::MainView,
+        _: &crate::app::sheet::Kit,
+        cx: &mut Context<crate::app::MainView>,
+    ) -> crate::app::sheet::Shown {
+        v.render_macro_post(self, cx).into()
+    }
 }
 
 /// Run `run` in the browser pane: what the ⇧⌘P palette calls for a macro
@@ -173,7 +195,10 @@ pub fn append_log(data_dir: &Path, ext: &str, line: &str) {
 /// (the smoke test). Never in a release build.
 pub(crate) fn demo_auto() -> bool {
     cfg!(debug_assertions)
-        && std::env::var("BLYGGER_DEMO").is_ok_and(|d| d == "br-macro" || d == "br-macro-ext")
+        && matches!(
+            crate::dev_flags::get().demo.scene,
+            Some(crate::scenes::Scene::BrMacro | crate::scenes::Scene::BrMacroExt)
+        )
 }
 
 /// The pane, the sheets and the clipboard, as the runner's [`Page`].
@@ -193,7 +218,7 @@ struct UiPage<'a> {
 /// `BLYGGER_MACRO_TRACE=1`: `macro.log` gets the page's outline after every
 /// step (tags, classes, roles, aria labels, button labels; never the text).
 pub(crate) fn tracing() -> bool {
-    std::env::var("BLYGGER_MACRO_TRACE").is_ok_and(|v| v == "1")
+    crate::dev_flags::get().browser.macro_trace
 }
 
 impl Page for UiPage<'_> {
@@ -348,7 +373,7 @@ impl Page for UiPage<'_> {
     }
 
     fn progress(&mut self, index: usize, step: &blyg_ext::recipe::Step) {
-        if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
+        if demo_auto() || crate::dev_flags::get().timing {
             println!(
                 "macro-step {} {} {}",
                 index + 1,
@@ -442,10 +467,7 @@ impl MainView {
             r.stop.set(true);
         }
         self.browser.automation.tour_sample(false); // --- onboarding ---
-        if matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if self.macro_sheet_open() {
             self.close_sheet(window, cx);
         }
     }
@@ -458,10 +480,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         let ran = self.browser.automation.running.take();
-        if matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if self.macro_sheet_open() {
             self.close_sheet(window, cx);
         }
         if let Some(host) = super::host_of(&run.site.origin)
@@ -504,7 +523,7 @@ impl MainView {
             let time = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
             append_log(&dir, &run.ext, &runner::log_line(&time, run, &out));
         }
-        if demo_auto() || std::env::var_os("BLYGGER_TIMING").is_some() {
+        if demo_auto() || crate::dev_flags::get().timing {
             match &out {
                 Outcome::Posted { message, via } => {
                     println!("macro-posted via={} {message:?}", via.name())
@@ -623,12 +642,11 @@ impl MainView {
         // The sheet's keys, not the page's (it may sit beside the pane).
         self.browser.with(|s| s.focus_parent());
         editor.update(cx, |s, cx| s.focus(window, cx));
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::MacroPreview(PreviewSheet {
+        self.sheet.open(PreviewSheet {
             info,
             editor,
             reply,
-        }));
+        });
         cx.notify();
         if demo_auto() {
             self.macro_demo_answer("preview", window, cx);
@@ -642,7 +660,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::MacroPreview(s)) = self.sheet.take() else {
+        let Some(s) = self.sheet.take::<PreviewSheet>() else {
             return;
         };
         let text = s.editor.read(cx).value().to_string();
@@ -664,8 +682,7 @@ impl MainView {
         self.browser.with(|s| s.focus_parent());
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        self.sheet_gen += 1;
-        self.sheet = Some(Sheet::MacroPost(PostSheet { info, focus, reply }));
+        self.sheet.open(PostSheet { info, focus, reply });
         cx.notify();
         if demo_auto() {
             self.macro_demo_answer("post", window, cx);
@@ -679,7 +696,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let Some(Sheet::MacroPost(s)) = self.sheet.take() else {
+        let Some(s) = self.sheet.take::<PostSheet>() else {
             return;
         };
         let _ = s.reply.try_send(choice);
@@ -698,7 +715,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let dir = std::env::var("BLYGGER_SNAPSHOT_DIR").ok();
+        let dir = crate::dev_flags::get().snapshot.dir.clone();
         cx.spawn_in(window, async move |this, cx| {
             cx.background_executor()
                 .timer(Duration::from_millis(700))
@@ -706,11 +723,8 @@ impl MainView {
             // `BLYGGER_DEMO_HOLD_MS`: the sheet stays up longer (a window
             // screenshot); with `BLYGGER_DEMO_FOLD=1`, the Post sheet's pane
             // is folded for that time and unfolded again (⇧⌘B both ways).
-            let hold = std::env::var("BLYGGER_DEMO_HOLD_MS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
-            let fold = which == "post" && std::env::var_os("BLYGGER_DEMO_FOLD").is_some();
+            let hold = crate::dev_flags::get().demo.hold_ms;
+            let fold = which == "post" && crate::dev_flags::get().demo.fold;
             if hold > 0 {
                 println!("macro-hold {which}");
                 cx.background_executor()
@@ -753,11 +767,13 @@ impl MainView {
             }
             let _ = this.update_in(cx, |v, window, cx| {
                 println!("macro-sheet {which}");
-                match (which, &v.sheet) {
-                    ("preview", Some(Sheet::MacroPreview(_))) => {
-                        v.macro_preview_answer(true, window, cx)
-                    }
-                    ("post", Some(Sheet::MacroPost(s))) => {
+                match (
+                    which,
+                    v.sheet.is::<PreviewSheet>(),
+                    v.sheet.get::<PostSheet>(),
+                ) {
+                    ("preview", true, _) => v.macro_preview_answer(true, window, cx),
+                    ("post", _, Some(s)) => {
                         println!(
                             "macro-readback differs={} {:?}",
                             s.info.differs, s.info.read_back
@@ -998,16 +1014,18 @@ impl MainView {
 pub const SHEET_ROOM_MIN: f32 = 360.;
 
 impl MainView {
+    /// The Preview or the Post sheet is up.
+    pub(crate) fn macro_sheet_open(&self) -> bool {
+        self.sheet.is::<PreviewSheet>() || self.sheet.is::<PostSheet>()
+    }
+
     /// Where the Preview or Post sheet sits: beside the open side pane, over
     /// the app's content, so the page stays in view (`Some(the pane's
     /// width)`, the sheet's right margin). `None`: centred over the window
     /// as other sheets are (the pane full width, folded, or the window too
     /// narrow); the web view then hides under it.
     pub(crate) fn macro_sheet_right(&self) -> Option<Pixels> {
-        if !matches!(
-            self.sheet,
-            Some(Sheet::MacroPreview(_)) | Some(Sheet::MacroPost(_))
-        ) {
+        if !self.macro_sheet_open() {
             return None;
         }
         let b = &self.browser;
@@ -1100,7 +1118,7 @@ impl MainView {
         if !demo_auto() {
             return;
         }
-        let Ok(base) = std::env::var("BLYGGER_DEMO_URL") else {
+        let Some(base) = crate::dev_flags::get().demo.url.clone() else {
             eprintln!("br-macro: set BLYGGER_DEMO_URL to the fixture site");
             return;
         };

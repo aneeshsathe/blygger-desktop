@@ -147,15 +147,15 @@ impl ItemDoc {
     /// (`subscription_id` empty), for showing a post fetched on demand.
     /// `origin` is the origin that was fetched, not the one it claims.
     pub fn reading_item(&self, origin: &str, id: &str) -> crate::model::ReadingItem {
-        use crate::model::{Kind, ReadingItem};
+        use crate::model::{Kind, ReadingItem, RemoteId, SubId};
         let withdrawn = self.kind.as_deref() == Some("withdrawn");
         let host = url::Url::parse(origin)
             .ok()
             .and_then(|u| u.host_str().map(str::to_string))
             .unwrap_or_else(|| origin.to_string());
         ReadingItem {
-            subscription_id: String::new(),
-            remote_id: id.to_string(),
+            subscription_id: SubId::default(),
+            remote_id: RemoteId::from(id),
             subscription_title: self
                 .author
                 .as_ref()

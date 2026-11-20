@@ -106,6 +106,17 @@ pub fn studio_sample() -> String {
     )
 }
 
+/// Block this (background) thread for `d`, standing in for a network or
+/// disk round trip in fake mode and the fake AI providers. Fake code only;
+/// tests wait with `crate::test_wait`.
+pub(crate) fn simulate_latency(d: Duration) {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "simulated latency is the fake backend's job"
+    )]
+    thread::sleep(d);
+}
+
 #[derive(Clone)]
 pub struct Timing {
     pub debounce: Duration,
@@ -190,7 +201,7 @@ struct State {
         bool,
         Option<blyg_core::background::Placement>,
     )>,
-    bg_blygs: Vec<String>,
+    bg_blygs: Vec<SubId>,
     bg_minor: bool,
     // --- trails --- (trail, its stops in order), in order.
     trails: Vec<(blyg_core::Trail, Vec<blyg_core::TrailStop>)>,
@@ -375,7 +386,7 @@ impl FakeBackend {
                 prov_unavailable: false,
                 rd,
                 // BLYGGER_FAKE_NO_READ=1: a server without the read extensions.
-                read_ext: std::env::var_os("BLYGGER_FAKE_NO_READ").is_none(),
+                read_ext: !crate::dev_flags::get().fake.no_read,
                 discover_seen: discover_seed::seen_at(), // --- discover ---
                 outdated: false,
                 uploads: 0,
@@ -430,7 +441,7 @@ impl FakeBackend {
         else {
             return;
         };
-        let key = (sub_id.to_string(), remote_id.to_string());
+        let key: (SubId, RemoteId) = (sub_id.to_string().into(), remote_id.to_string().into());
         if let Some(log) = st.rd.changelogs.get_mut(&key) {
             for v in log.iter_mut().filter(|v| v.current) {
                 v.pinned = true;
@@ -446,7 +457,7 @@ impl FakeBackend {
                 content_md: it.content_md.clone(),
                 content_html: it.content_html.clone(),
                 origin: it.origin.clone(),
-                id: it.remote_id.clone(),
+                id: it.remote_id.to_string(),
                 author: None,
                 hash_mismatch: false,
             },
@@ -616,7 +627,7 @@ impl FakeBackend {
         let state = self.state.clone();
         let timing = self.timing.clone();
         thread::spawn(move || {
-            thread::sleep(timing.debounce);
+            simulate_latency(timing.debounce);
             if gen_ref.load(Ordering::SeqCst) != generation {
                 return; // superseded by a newer keystroke
             }
@@ -632,7 +643,7 @@ impl FakeBackend {
             if let Some((sink, s)) = fire {
                 sink(CoreEvent::SyncStatus(s));
             }
-            thread::sleep(timing.network);
+            simulate_latency(timing.network);
             if gen_ref.load(Ordering::SeqCst) != generation {
                 return;
             }
@@ -778,7 +789,7 @@ impl FakeBackend {
     }
     /// Serve the blyg's Mentions lens (`None`: not served).
     #[cfg(test)]
-    pub fn set_mentions_lens(&self, keys: Option<Vec<(String, String)>>) {
+    pub fn set_mentions_lens(&self, keys: Option<Vec<(SubId, RemoteId)>>) {
         self.lock().book.lens = keys;
     }
 
@@ -1031,8 +1042,8 @@ impl Backend for FakeBackend {
     }
     fn reading_syndication(
         &self,
-        _sub_id: &str,
-        remote_id: &str,
+        _sub_id: &SubId,
+        remote_id: &RemoteId,
     ) -> Vec<blyg_core::syndication::SyndicationEntry> {
         if remote_id == reading_seed::KIT_TIDES {
             vec![blyg_core::syndication::SyndicationEntry::new(
@@ -1049,6 +1060,30 @@ impl Backend for FakeBackend {
         self.lock().book.contacts.clone()
     }
 
+    /// The book is in memory: nothing to fetch again.
+    fn refresh_contacts(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Subscriptions are in memory: nothing to read again.
+    fn refresh_subscriptions(&self) -> Result<()> {
+        Ok(())
+    }
+
+    /// Keeps no Nearby vectors: the app embeds again each run.
+    fn put_nearby_vectors(
+        &self,
+        _: &str,
+        _: &[String],
+        _: &[blyg_core::nearby::NearbyVector],
+    ) -> Result<()> {
+        Ok(())
+    }
+
+    fn retain_nearby_vectors(&self, _: &str, _: &std::collections::HashSet<String>) -> Result<()> {
+        Ok(())
+    }
+
     fn rewrites_handles(&self) -> bool {
         self.lock().book.rewrites
     }
@@ -1057,11 +1092,11 @@ impl Backend for FakeBackend {
         true
     }
 
-    fn reading_mentions(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.lock().book.lens.clone()
     }
 
-    fn reading_mentions_cached(&self) -> Option<Vec<(String, String)>> {
+    fn reading_mentions_cached(&self) -> Option<Vec<(SubId, RemoteId)>> {
         self.reading_mentions()
     }
 
@@ -1069,7 +1104,7 @@ impl Backend for FakeBackend {
         &self,
         c: &blyg_core::contacts::ContactInput,
     ) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.create(c)
     }
 
@@ -1078,17 +1113,17 @@ impl Backend for FakeBackend {
         id: &str,
         c: &blyg_core::contacts::ContactInput,
     ) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.update(id, c)
     }
 
     fn delete_contact(&self, id: &str) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.delete(id)
     }
 
     fn resolve_contact(&self, id: &str) -> Result<blyg_core::contacts::Contact> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.lock().book.resolve(id)
     }
 
@@ -1101,7 +1136,7 @@ impl Backend for FakeBackend {
     }
 
     fn outbound_mentions(&self) -> Result<Option<Vec<blyg_core::outbound::OutboundMention>>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(Some(self.lock().book.outbound.clone()))
     }
@@ -1445,14 +1480,14 @@ impl Backend for FakeBackend {
         v
     }
 
-    fn mark_read(&self, sub_id: &str, remote_id: &str) -> Result<()> {
+    fn mark_read(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<()> {
         let changed = {
             let mut st = self.lock();
             st.reading_sends.push(format!("read:{sub_id}:{remote_id}"));
             let mut changed = false;
             for r in st.rd.reading.iter_mut() {
-                if r.subscription_id == sub_id
-                    && r.remote_id == remote_id
+                if r.subscription_id == *sub_id
+                    && r.remote_id == *remote_id
                     && r.read_version != Some(r.version)
                 {
                     r.read_version = Some(r.version);
@@ -1475,7 +1510,7 @@ impl Backend for FakeBackend {
                 .published
                 .ok_or_else(|| CoreError::Other("not published".into()));
         }
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
         if self.item(id).is_some_and(|i| i.conflict) {
@@ -1535,7 +1570,7 @@ impl Backend for FakeBackend {
     }
 
     fn withdraw(&self, id: &LocalId, note: Option<&str>) -> Result<u32> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         // As LiveBackend's `ensure_on_server`: a conflict blocks the push.
         if self.item(id).is_some_and(|i| i.conflict) {
@@ -1566,7 +1601,7 @@ impl Backend for FakeBackend {
     }
 
     fn pin(&self, id: &LocalId, version: u32) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         let v = st
@@ -1579,13 +1614,13 @@ impl Backend for FakeBackend {
     }
 
     fn versions(&self, id: &LocalId) -> Result<Vec<Version>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(self.lock().versions.get(id).cloned().unwrap_or_default())
     }
 
     fn restore(&self, id: &LocalId, version: u32) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let sink = {
             let mut st = self.lock();
@@ -1635,7 +1670,7 @@ impl Backend for FakeBackend {
         _item: Option<&LocalId>,
         _alt: Option<&str>,
     ) -> Result<MediaRef> {
-        thread::sleep(self.timing.upload);
+        simulate_latency(self.timing.upload);
         self.remote_guard()?;
         let n = {
             let mut st = self.lock();
@@ -1668,7 +1703,7 @@ impl Backend for FakeBackend {
     }
 
     fn fork(&self, of: &RemoteRef) -> Result<LocalId> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         // --- own posts --- your own pin forks as the studio does: its kind
         // and text, `forked_from` naming your origin.
@@ -1710,7 +1745,7 @@ impl Backend for FakeBackend {
     }
 
     fn set_highlight(&self, id: &LocalId, mode: HighlightMode) -> Result<bool> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         let default = st.rd.settings.highlight_generated_default.unwrap_or(false);
@@ -1733,13 +1768,13 @@ impl Backend for FakeBackend {
     }
 
     fn preview_subscription(&self, url: &str) -> Result<SubscribePreview> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         fake_preview(url)
     }
 
     fn subscribe(&self, url: &str, title: Option<&str>) -> Result<Subscription> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let p = fake_preview(url)?;
         let sub = {
@@ -1759,7 +1794,7 @@ impl Backend for FakeBackend {
             }
             st.next_id += 1;
             let sub = Subscription {
-                id: format!("sub-{}", st.next_id),
+                id: format!("sub-{}", st.next_id).into(),
                 kind: p.kind,
                 origin: p.origin.clone().unwrap_or_else(|| url.to_string()),
                 feed_url: p.feed_url.clone().unwrap_or_else(|| url.to_string()),
@@ -1781,7 +1816,7 @@ impl Backend for FakeBackend {
     }
 
     // --- subscription names & checks --- (studio 0.30)
-    fn rename_subscription(&self, sub_id: &str, title: Option<&str>) -> Result<()> {
+    fn rename_subscription(&self, sub_id: &SubId, title: Option<&str>) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1789,7 +1824,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             match title.map(str::trim) {
                 Some("") => {
@@ -1820,14 +1855,14 @@ impl Backend for FakeBackend {
         Ok(st.rd.subs.iter().filter(|s| s.status != "paused").count() as u32 + 1)
     }
 
-    fn check_subscription(&self, sub_id: &str) -> Result<bool> {
+    fn check_subscription(&self, sub_id: &SubId) -> Result<bool> {
         self.remote_guard()?;
         let _ = sub_id;
         Ok(false)
     }
 
     // --- read/unread ---
-    fn set_read(&self, rows: &[(String, String)], read: bool) -> Result<usize> {
+    fn set_read(&self, rows: &[(SubId, RemoteId)], read: bool) -> Result<usize> {
         let n = {
             let mut st = self.lock();
             for (s, id) in rows {
@@ -1855,12 +1890,12 @@ impl Backend for FakeBackend {
         Ok(n)
     }
 
-    fn unsubscribe(&self, sub_id: &str) -> Result<()> {
+    fn unsubscribe(&self, sub_id: &SubId) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
-            st.rd.subs.retain(|s| s.id != sub_id);
-            st.rd.reading.retain(|r| r.subscription_id != sub_id);
+            st.rd.subs.retain(|s| s.id != *sub_id);
+            st.rd.reading.retain(|r| r.subscription_id != *sub_id);
         }
         self.reading_changed();
         Ok(())
@@ -1868,7 +1903,7 @@ impl Backend for FakeBackend {
 
     fn set_subscription(
         &self,
-        sub_id: &str,
+        sub_id: &SubId,
         in_blogroll: Option<bool>,
         title: Option<&str>,
     ) -> Result<()> {
@@ -1879,7 +1914,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             if let Some(b) = in_blogroll {
                 s.in_blogroll = b;
@@ -1892,7 +1927,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn pause_subscription(&self, sub_id: &str, paused: bool) -> Result<()> {
+    fn pause_subscription(&self, sub_id: &SubId, paused: bool) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1900,7 +1935,7 @@ impl Backend for FakeBackend {
                 .rd
                 .subs
                 .iter_mut()
-                .find(|s| s.id == sub_id)
+                .find(|s| s.id == *sub_id)
                 .ok_or(CoreError::NotFound)?;
             s.status = if paused { "paused" } else { "active" }.into();
         }
@@ -1908,7 +1943,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn signal(&self, sub_id: &str, remote_id: &str, thumb: Option<i8>) -> Result<()> {
+    fn signal(&self, sub_id: &SubId, remote_id: &RemoteId, thumb: Option<i8>) -> Result<()> {
         self.remote_guard()?;
         {
             let mut st = self.lock();
@@ -1918,7 +1953,7 @@ impl Backend for FakeBackend {
                 .rd
                 .reading
                 .iter_mut()
-                .filter(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+                .filter(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)
             {
                 r.thumb = thumb;
             }
@@ -1928,7 +1963,7 @@ impl Backend for FakeBackend {
     }
 
     fn mentions(&self) -> Result<Vec<Mention>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(self.lock().rd.mentions.clone())
     }
@@ -1947,7 +1982,7 @@ impl Backend for FakeBackend {
     }
 
     fn settings(&self) -> Result<Settings> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.read_guard()?;
         Ok(self.lock().rd.settings.clone())
     }
@@ -1955,7 +1990,7 @@ impl Backend for FakeBackend {
     // --- discover --- the sample directory; the fake never reaches the
     // network.
     fn discover_directory(&self) -> Result<Vec<blyg_core::discover::DirectoryBlyg>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(discover_seed::directory())
     }
@@ -1973,7 +2008,7 @@ impl Backend for FakeBackend {
     // --- end discover ---
 
     fn save_settings(&self, settings: &Settings) -> Result<()> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         st.rd.settings = settings.clone();
@@ -1991,22 +2026,18 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn remote_versions(&self, sub_id: &str, remote_id: &str) -> Result<Vec<RemoteVersion>> {
-        thread::sleep(self.timing.network);
+    fn remote_versions(&self, sub_id: &SubId, remote_id: &RemoteId) -> Result<Vec<RemoteVersion>> {
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let st = self.lock();
-        if let Some(log) = st
-            .rd
-            .changelogs
-            .get(&(sub_id.to_string(), remote_id.to_string()))
-        {
+        if let Some(log) = st.rd.changelogs.get(&(sub_id.clone(), remote_id.clone())) {
             return Ok(log.clone());
         }
         let it = st
             .rd
             .reading
             .iter()
-            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)
+            .find(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)
             .ok_or(CoreError::NotFound)?;
         Ok(vec![RemoteVersion {
             version: it.version,
@@ -2019,13 +2050,18 @@ impl Backend for FakeBackend {
         }])
     }
 
-    fn remote_pinned(&self, sub_id: &str, remote_id: &str, version: u32) -> Result<PinnedVersion> {
-        thread::sleep(self.timing.network);
+    fn remote_pinned(
+        &self,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        version: u32,
+    ) -> Result<PinnedVersion> {
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         self.lock()
             .rd
             .pins
-            .get(&(sub_id.to_string(), remote_id.to_string(), version))
+            .get(&(sub_id.clone(), remote_id.clone(), version))
             .cloned()
             .ok_or(CoreError::Rejected {
                 status: 404,
@@ -2034,13 +2070,13 @@ impl Backend for FakeBackend {
             })
     }
 
-    fn pinned_diff_base(&self, sub_id: &str, remote_id: &str) -> Option<PinnedVersion> {
+    fn pinned_diff_base(&self, sub_id: &SubId, remote_id: &RemoteId) -> Option<PinnedVersion> {
         let read = self
             .lock()
             .rd
             .reading
             .iter()
-            .find(|r| r.subscription_id == sub_id && r.remote_id == remote_id)?
+            .find(|r| r.subscription_id == *sub_id && r.remote_id == *remote_id)?
             .read_version?;
         self.remote_pinned(sub_id, remote_id, read).ok()
     }
@@ -2079,7 +2115,7 @@ impl Backend for FakeBackend {
         if !refresh && let Some(p) = cached {
             return Ok(self.finish_profile(p));
         }
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         if let Err(e) = self.remote_guard() {
             let cached = self.lock().profiles.get(&key).cloned();
             return match cached {
@@ -2167,6 +2203,11 @@ impl Backend for FakeBackend {
             _ => {}
         }
         Ok(())
+    }
+
+    /// The fake shelf lives on this computer only.
+    fn shelf_state(&self) -> blyg_core::shelf::SyncState {
+        blyg_core::shelf::SyncState::Local
     }
 
     // --- shelf sync --- yours (by server id), then others'.
@@ -2368,7 +2409,7 @@ impl Backend for FakeBackend {
         v
     }
 
-    fn subscription_folders(&self) -> HashMap<String, String> {
+    fn subscription_folders(&self) -> HashMap<SubId, String> {
         self.lock().rd.filed.clone()
     }
 
@@ -2433,7 +2474,7 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+    fn set_subscription_folder(&self, sub_id: &SubId, folder: Option<&str>) -> Result<()> {
         let mut st = self.lock();
         match folder {
             None => {
@@ -2443,7 +2484,7 @@ impl Backend for FakeBackend {
                 if !st.rd.folders.iter().any(|f| f.id == fid) {
                     return Err(CoreError::NotFound);
                 }
-                st.rd.filed.insert(sub_id.to_string(), fid.to_string());
+                st.rd.filed.insert(sub_id.clone(), fid.to_string());
             }
         }
         Ok(())
@@ -2473,7 +2514,7 @@ impl Backend for FakeBackend {
     // --- quote targets --- posts nobody here follows, "served" publicly.
 
     fn public_item(&self, origin: &str, id: &str) -> Result<blyg_core::PublicItem> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let mut st = self.lock();
         st.public_fetches.push(format!("{origin}items/{id}.json"));
@@ -2488,7 +2529,7 @@ impl Backend for FakeBackend {
     }
 
     fn public_pinned(&self, origin: &str, id: &str, version: u32) -> Result<PinnedVersion> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         // --- own posts --- your own pin files.
         if let Some((pin, _)) = Self::own_pin(&self.lock(), origin, id, version) {
@@ -2591,7 +2632,7 @@ impl Backend for FakeBackend {
     // --- site --- the "server" checks what Studio checks, and refuses as it
     // does (400 with its words).
     fn site_config(&self) -> Result<blyg_core::site::SiteConfig> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(self.lock().site.clone())
     }
@@ -2601,7 +2642,7 @@ impl Backend for FakeBackend {
         base: &blyg_core::site::SiteConfig,
         next: &blyg_core::site::SiteConfig,
     ) -> Result<blyg_core::site::SiteConfig> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         let refuse = |message: String| CoreError::Rejected {
             status: 400,
@@ -2703,7 +2744,12 @@ impl Backend for FakeBackend {
                 .iter()
                 .filter(|i| i.status == Status::Withdrawn)
                 .filter_map(|i| i.server_id.as_ref())
-                .map(|s| (blyg_core::OWN_SUBSCRIPTION.to_string(), s.0.clone()))
+                .map(|s| {
+                    (
+                        SubId::from(blyg_core::OWN_SUBSCRIPTION),
+                        RemoteId::from(&s.0),
+                    )
+                })
                 .collect();
             (st.bg_blygs.clone(), st.bg_choices.clone(), own)
         };
@@ -2748,12 +2794,12 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_blyg_background(&self, sub: &str, on: bool) -> Result<()> {
+    fn set_blyg_background(&self, sub: &SubId, on: bool) -> Result<()> {
         self.remote_guard()?;
         let mut st = self.lock();
         st.bg_blygs.retain(|s| s != sub);
         if on {
-            st.bg_blygs.push(sub.to_string());
+            st.bg_blygs.push(sub.clone());
         }
         Ok(())
     }
@@ -2784,9 +2830,9 @@ impl Backend for FakeBackend {
         self.lock().rd.hoppers.clone()
     }
 
-    fn hopper_members(&self) -> HashMap<(String, String), Vec<String>> {
+    fn hopper_members(&self) -> HashMap<(SubId, RemoteId), Vec<String>> {
         let st = self.lock();
-        let mut out: HashMap<(String, String), Vec<String>> = HashMap::new();
+        let mut out: HashMap<(SubId, RemoteId), Vec<String>> = HashMap::new();
         for (h, s, r) in &st.rd.hopper_items {
             out.entry((s.clone(), r.clone()))
                 .or_default()
@@ -2800,9 +2846,9 @@ impl Backend for FakeBackend {
 
     /// The memberships were added in the list's order: the last added
     /// first.
-    fn hopper_order(&self) -> HashMap<String, Vec<(String, String)>> {
+    fn hopper_order(&self) -> HashMap<String, Vec<(SubId, RemoteId)>> {
         let st = self.lock();
-        let mut out: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut out: HashMap<String, Vec<(SubId, RemoteId)>> = HashMap::new();
         for (h, s, r) in st.rd.hopper_items.iter().rev() {
             out.entry(h.clone())
                 .or_default()
@@ -2898,7 +2944,13 @@ impl Backend for FakeBackend {
         Ok(())
     }
 
-    fn set_in_hopper(&self, hopper: &str, sub_id: &str, remote_id: &str, on: bool) -> Result<()> {
+    fn set_in_hopper(
+        &self,
+        hopper: &str,
+        sub_id: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         let changed = {
             let mut st = self.lock();
             let st = &mut *st;
@@ -2914,7 +2966,7 @@ impl Backend for FakeBackend {
                 (None, true) => {
                     st.rd
                         .hopper_items
-                        .push((hopper.into(), sub_id.into(), remote_id.into()));
+                        .push((hopper.into(), sub_id.clone(), remote_id.clone()));
                     h.count += 1;
                     true
                 }
@@ -2948,7 +3000,7 @@ impl Backend for FakeBackend {
     }
 
     fn access_sign_in(&self, password: &str) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         if password.is_empty() || password == "wrong" {
             return Err(CoreError::Unauthorized);
@@ -2974,7 +3026,7 @@ impl Backend for FakeBackend {
         &self,
         new: &blyg_core::access_ai::NewAuthorization,
     ) -> Result<blyg_core::access_ai::NewToken> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -3013,7 +3065,7 @@ impl Backend for FakeBackend {
     }
 
     fn revoke_authorization(&self, id: &str) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -3024,7 +3076,7 @@ impl Backend for FakeBackend {
     }
 
     fn revoke_all_authorizations(&self) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         if !st.access_ai.session {
@@ -3045,7 +3097,7 @@ impl Backend for FakeBackend {
     }
 
     fn save_server_ai_settings(&self, s: &blyg_core::access_ai::ServerAiSettings) -> Result<()> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let mut st = self.lock();
         let ai = &mut st.access_ai.ai;
@@ -3072,7 +3124,7 @@ impl Backend for FakeBackend {
     }
 
     fn draft_note(&self, id: &LocalId) -> Result<blyg_core::access_ai::DraftedNote> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let st = self.lock();
         let model = st.access_ai.ai.model_changelog.clone().unwrap_or_default();
@@ -3103,7 +3155,7 @@ impl Backend for FakeBackend {
     }
 
     fn classify_change(&self, id: &LocalId) -> Result<blyg_core::access_ai::ChangeClass> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let st = self.lock();
         let model = st.access_ai.ai.model_classify.clone().unwrap_or_default();
@@ -3152,13 +3204,13 @@ impl Backend for FakeBackend {
     }
 
     fn stale_quotes(&self) -> Result<Vec<blyg_core::upkeep::ThreadFreshness>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::stale(&self.lock()))
     }
 
     fn quote_freshness(&self, id: &LocalId) -> Result<blyg_core::upkeep::ThreadFreshness> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         upkeep_seed::one(&self.lock(), id)
     }
@@ -3168,7 +3220,7 @@ impl Backend for FakeBackend {
         id: &LocalId,
         note: Option<&str>,
     ) -> Result<blyg_core::upkeep::Refreshed> {
-        thread::sleep(self.timing.publish);
+        simulate_latency(self.timing.publish);
         self.remote_guard()?;
         let (r, sink) = {
             let mut st = self.lock();
@@ -3180,7 +3232,7 @@ impl Backend for FakeBackend {
     }
 
     fn version_text(&self, id: &LocalId, version: u32) -> Result<String> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         upkeep_seed::version_text(&self.lock(), id, version)
     }
@@ -3190,7 +3242,7 @@ impl Backend for FakeBackend {
         thumb: i8,
         _cursor: Option<&str>,
     ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Thumb>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::thumbs(&self.lock(), thumb))
     }
@@ -3199,7 +3251,7 @@ impl Backend for FakeBackend {
         &self,
         _cursor: Option<&str>,
     ) -> Result<blyg_core::upkeep::Page<blyg_core::upkeep::Interaction>> {
-        thread::sleep(self.timing.network);
+        simulate_latency(self.timing.network);
         self.remote_guard()?;
         Ok(upkeep_seed::interactions(&self.lock()))
     }
@@ -3261,12 +3313,16 @@ fn fake_site() -> blyg_core::site::SiteConfig {
 fn fake_studio_update() -> Option<blyg_core::site::StudioUpdate> {
     Some(blyg_core::site::StudioUpdate {
         current: Some("0.56.0".into()),
-        latest: std::env::var("BLYGGER_FAKE_STUDIO_LATEST").unwrap_or_else(|_| "0.56.0".into()),
+        latest: crate::dev_flags::get()
+            .fake
+            .studio_latest
+            .clone()
+            .unwrap_or_else(|| "0.56.0".into()),
         checked_at: "2026-11-07T08:00:00Z".into(),
     })
 }
 
-fn fake_hoppered(items: &[(String, String, String)], rows: &mut [ReadingItem]) {
+fn fake_hoppered(items: &[(String, SubId, RemoteId)], rows: &mut [ReadingItem]) {
     for r in rows {
         r.hoppers = items
             .iter()

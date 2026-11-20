@@ -8,6 +8,7 @@ use rusqlite::params;
 
 use super::Store;
 use crate::backend::Result;
+use crate::model::{RemoteId, SubId};
 use crate::nearby::NearbyVector;
 
 /// `"phrase"` as an FTS5 string (quotes doubled).
@@ -233,7 +234,7 @@ impl Store {
                 out.push((crate::nearby::own_key(&id), i));
             }
             let rows = held.query_map([&q], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                Ok((r.get::<_, SubId>(0)?, r.get::<_, RemoteId>(1)?))
             })?;
             for row in rows {
                 let (s, id) = row?;

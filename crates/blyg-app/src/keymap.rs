@@ -43,7 +43,7 @@ use crate::app::reading::{
 // --- stream --- (the reading screen's Stream | Reader toggle)
 use crate::app::reading::stream::{ReaderMode, StreamMode};
 // --- reader folders ---
-use crate::app::reading::sources::{CheckFeeds, NewFolder, ToggleSources};
+use crate::app::reading::sources::{CheckFeeds, MarkAllRead, NewFolder, ToggleSources};
 // --- OPML ---
 use crate::app::reading::discover::ShowDiscover; // --- discover ---
 use crate::app::reading::opml::{ExportOpml, ImportOpml};
@@ -85,10 +85,6 @@ use crate::app::server_ai::ShowServerAi;
 // --- upkeep ---
 use crate::app::syndication::ShowCopiesElsewhere;
 use crate::app::upkeep::{CopyLink, ShowSignals, ShowStaleQuotes}; // --- syndication ---
-// --- chat ---
-use crate::app::chat::ShowChat;
-// --- terminal ---
-use crate::app::terminal::{SendSelectionToTerminal, ToggleTerminal};
 // --- trails ---
 use crate::app::trails::PublishTrail;
 // --- tray ---
@@ -99,8 +95,8 @@ use crate::app::split::{FocusLeftPost, FocusRightPost, OpenBeside};
 use crate::app::nearby::{NearbyDown, NearbyLink, NearbyQuote, NearbyUp, ToggleNearby};
 // --- blyg switcher ---
 use crate::app::switcher::{
-    AddBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3, SwitchBlyg4,
-    SwitchBlyg5, SwitchBlyg6, SwitchBlyg7, SwitchBlyg8, SwitchBlyg9,
+    AddBlyg, ConnectBlyg, ManageBlygs, ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2, SwitchBlyg3,
+    SwitchBlyg4, SwitchBlyg5, SwitchBlyg6, SwitchBlyg7, SwitchBlyg8, SwitchBlyg9,
 };
 // --- browser ---
 use crate::app::browser::{
@@ -112,6 +108,7 @@ use crate::app::browser::automation::{MacroCancel, MacroContinue, MacroPost};
 // --- flow ---
 use crate::app::command_palette::ShowPalette;
 use crate::app::focus::ToggleFocus;
+use crate::app::quiet::ToggleQuietWriting; // --- quiet ---
 
 pub const MAIN: &str = crate::app::CONTEXT;
 /// Our own inputs inside the main window (deeper than gpui-base's `Input`).
@@ -490,6 +487,11 @@ pub fn mac_table() -> Vec<Keybind> {
             None
         ),
         menu_only!(
+            ConnectBlyg,
+            "Connect your blyg: the Connect sheet (address, then sign in or a token)",
+            "Burrow › Connect…"
+        ),
+        menu_only!(
             AddBlyg,
             "Sign in to another blyg (the others stay signed in)",
             "Blyg › Add a Blyg…"
@@ -576,8 +578,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-m",
             Main,
             ShowMentions,
-            "Mentions & responses",
-            Some("Blyg › Mentions")
+            "Responses: who quoted, replied to or forked your posts",
+            Some("Blyg › Responses")
         ),
         kb!(
             "cmd-shift-s",
@@ -624,8 +626,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-r",
             Main,
             ReplyToPost,
-            "Reply · new stub: a thread of yours that's a stub of this post (yours too)",
-            Some("Post › Reply · New Stub")
+            "Reply: a new thread of yours that replies to this post (yours too)",
+            Some("Post › Reply")
         ),
         kb!(
             "alt-cmd-q",
@@ -638,7 +640,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-l",
             Main,
             LinkToPost,
-            "Link post · new fragment: [[…]] to this post, no stub_of",
+            "Link post · new fragment: [[…]] to this post, not a reply",
             Some("Post › Link Post · New Fragment")
         ),
         // --- hoppers --- (⌥⌘H is the system's Hide Others; `h` on the
@@ -664,8 +666,8 @@ pub fn mac_table() -> Vec<Keybind> {
             "alt-cmd-b",
             Main,
             ToggleShelf,
-            "Put the open post on your shelf, or take it off",
-            Some("Post › Put on Shelf / Take Off")
+            "Add the open post to your shelf, or remove it",
+            Some("Post › Add to Shelf / Remove from Shelf")
         ),
         // --- end own posts ---
         // --- trails --- (`t` / ⇧T on the reading screen are its own keys,
@@ -890,6 +892,13 @@ pub fn mac_table() -> Vec<Keybind> {
             "Check all feeds now (your blyg polls every subscription)",
             Some("Blyg › Check All Feeds Now")
         ),
+        // ⇧R on the reading screen is its own key (reading_key_down): a
+        // single key can't be bound while you type.
+        menu_only!(
+            MarkAllRead,
+            "Mark all read in this source… (⇧R on the reading screen; asks first)",
+            "Blyg › Mark All Read…"
+        ),
         // --- end reader folders ---
         // --- browse --- (studio 0.49) the walk from post to post inside the
         // reader. Its key, ⌘[, is the reading screen's own (handled in
@@ -897,34 +906,8 @@ pub fn mac_table() -> Vec<Keybind> {
         // and the browser pane's ⌘[ is the pane's.
         menu_only!(
             ReaderBack,
-            "Reading pane: back along the quotes, stubs and links you followed (⌘[ on the reading screen)",
+            "Reading pane: back along the quotes, replies and links you followed (⌘[ on the reading screen)",
             "Blyg › Back"
-        ),
-        // --- chat --- the experimental #thicket tab (I for IRC; ⌘I is the
-        // profile sheet).
-        kb!(
-            "cmd-shift-i",
-            Main,
-            ShowChat,
-            "#thicket chat on Libera.Chat (experimental; again: back to posts)",
-            Some("Blyg › #thicket Chat (Experimental)")
-        ),
-        // --- terminal --- the experimental pane: ⌃` as in VS Code and Zed
-        // (⌘` is the system's Cycle Windows). The pane keeps every other key
-        // while it has the keyboard, but for ⌘-keys (Ctrl+Shift on Windows).
-        kb!(
-            "ctrl-`",
-            Main,
-            ToggleTerminal,
-            "Terminal pane: show it and type there (experimental; again: hide it)",
-            Some("View › Terminal (Experimental)")
-        ),
-        kb!(
-            "cmd-shift-t",
-            Main,
-            SendSelectionToTerminal,
-            "Send the editor's selection to the terminal pane, quoted",
-            Some("Post › Send Selection to Terminal")
         ),
         kb!(
             "cmd-shift-h",
@@ -1124,7 +1107,7 @@ pub fn mac_table() -> Vec<Keybind> {
             "cmd-shift-d",
             Main,
             QuoteToDraft,
-            "Quote the highlighted passage (a page, a post, your notes, or a stub's preview quote) in the draft",
+            "Quote the highlighted passage (a page, a post, your notes, or a reply's preview quote) in the draft",
             Some("Post › Quote Selection in Draft")
         ),
         // --- end notes ---
@@ -1166,6 +1149,12 @@ pub fn mac_table() -> Vec<Keybind> {
             "Focus mode: the line you're on stays put, the rest steps back (esc leaves)",
             Some("View › Focus")
         ),
+        // --- quiet --- (no key: Settings and the menu)
+        menu_only!(
+            ToggleQuietWriting,
+            "Quiet writing: hide the lineage line, loose ends and Nearby thoughts (or show them)",
+            "View › Quiet Writing"
+        ),
     ]
 }
 
@@ -1185,6 +1174,31 @@ fn platform_keys(rows: Vec<Keybind>) -> Vec<Keybind> {
     rows
 }
 
+/// The table as `p` binds it, on any platform: the tests check the
+/// Windows keys on macOS too.
+#[cfg(test)]
+pub fn table_for(p: crate::platform_text::Platform) -> Vec<Keybind> {
+    use crate::platform_text::Platform;
+    match p {
+        Platform::Mac => mac_table(),
+        Platform::Windows => {
+            let spell = |k: &str| -> &'static str {
+                if k.is_empty() {
+                    ""
+                } else {
+                    Box::leak(respell_for_windows(k).into_boxed_str())
+                }
+            };
+            let mut rows = drop_windows_keys(mac_table());
+            for k in &mut rows {
+                k.key = spell(k.key);
+                k.menu_key = k.menu_key.map(spell);
+            }
+            rows
+        }
+    }
+}
+
 /// Actions with a key on macOS and none on Windows. Discard changes is
 /// ⌥⌘Z, which Windows would spell Ctrl+Alt+Z, and Windows reports AltGr as
 /// Ctrl+Alt: on layouts where AltGr+Z types a letter (Polish programmer's
@@ -1194,9 +1208,18 @@ fn platform_keys(rows: Vec<Keybind>) -> Vec<Keybind> {
 pub const WINDOWS_KEYLESS: &[&str] = &["DiscardChanges"];
 
 /// `action` has no key on this platform although the table gives it one
-/// (`WINDOWS_KEYLESS`).
+/// (`WINDOWS_KEYLESS`). The tests' question about bindings; app text asks
+/// `keyless_on(action, Platform::spelling())`.
+#[cfg(test)]
 pub fn keyless_here(action: &str) -> bool {
-    cfg!(target_os = "windows") && WINDOWS_KEYLESS.contains(&action)
+    keyless_on(action, crate::platform_text::Platform::HERE)
+}
+
+/// `action` has no key on `p`. Text that names the key or its stand-in
+/// asks with `Platform::spelling()`, so its wording follows the spelling
+/// tests pick (`platform_text::spelled_as`); bindings use `keyless_here`.
+pub fn keyless_on(action: &str, p: crate::platform_text::Platform) -> bool {
+    p == crate::platform_text::Platform::Windows && WINDOWS_KEYLESS.contains(&action)
 }
 
 /// The `WINDOWS_KEYLESS` rows without their key: menu (and button) only.
@@ -1212,7 +1235,7 @@ fn drop_windows_keys(mut rows: Vec<Keybind>) -> Vec<Keybind> {
     rows
 }
 
-/// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-o` → `ctrl-alt-o`).
+/// `cmd-shift-,` → `ctrl-shift-,` (and `ctrl-alt-cmd-t` → `ctrl-alt-t`).
 /// Interned, so the table can keep `&'static str` keys.
 #[cfg(target_os = "windows")]
 pub fn platform_key(key: &'static str) -> &'static str {
@@ -1259,6 +1282,24 @@ const WINDOWS_OVERRIDES: &[(&str, &str)] = &[
     // --- access-ai --- Ctrl+Alt+N is AltGr+N, which types a letter on some
     // layouts (Polish ń): drafting a change note is Ctrl+Shift+E there.
     ("alt-cmd-n", "ctrl-shift-e"),
+    // Ctrl+Alt+<key> is AltGr+<key> on Windows, and these type a character
+    // on a common layout (`ALTGR_TYPES`): German @ (Q), Polish ł and ś (L,
+    // S), Hungarian ł and € (K, U), Hungarian ~ and German ² (1, 2).
+    // --- own posts --- Quote into a thread, Link post.
+    ("alt-cmd-q", "ctrl-shift-q"),
+    ("alt-cmd-l", "ctrl-shift-i"),
+    // --- tray --- (Ctrl+Shift+K is the picker's neighbour, ⇧⌘K compose.)
+    ("alt-cmd-k", "ctrl-shift-t"),
+    // --- nearby ---
+    ("alt-cmd-u", "ctrl-shift-u"),
+    // --- stream --- and --- reader folders --- the reading screen's layout:
+    // Alt alone (Windows has no menu bar for Alt to open).
+    ("alt-cmd-1", "alt-1"),
+    ("alt-cmd-2", "alt-2"),
+    ("alt-cmd-s", "alt-s"),
+    // BLYGGER_FAKE's two (Polish ó and ć): function keys type nothing.
+    ("ctrl-alt-cmd-o", "ctrl-shift-f11"),
+    ("ctrl-alt-cmd-c", "ctrl-shift-f12"),
 ];
 
 /// The pure part of `platform_key`.
@@ -1291,38 +1332,57 @@ pub fn respell_for_windows(key: &str) -> String {
 /// (`⇧⌘G` → `Ctrl+Shift+G`, `⌘Y` → `Ctrl+Shift+Y`). Interned, so it can
 /// stand wherever the literal did.
 pub fn hint(text: &'static str) -> &'static str {
-    #[cfg(target_os = "windows")]
+    // Compiled on Windows, and in tests on every platform (a test can ask
+    // for Windows' spelling: `platform_text::spelled_as`). A macOS build
+    // is just `text`.
+    #[cfg(any(target_os = "windows", test))]
     {
+        use crate::platform_text::Platform;
         use std::collections::HashMap;
         use std::sync::{Mutex, OnceLock};
-        static SPELLED: OnceLock<Mutex<HashMap<&'static str, &'static str>>> = OnceLock::new();
+        type Spelled = HashMap<(Platform, &'static str), &'static str>;
+        let p = Platform::spelling();
+        if p == Platform::Mac {
+            return text;
+        }
+        // Keyed by the spelling as well: a test process asks for both, and
+        // must never get one platform's entry for the other's text.
+        static SPELLED: OnceLock<Mutex<Spelled>> = OnceLock::new();
         let mut spelled = SPELLED
             .get_or_init(Default::default)
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         spelled
-            .entry(text)
+            .entry((p, text))
             .or_insert_with(|| Box::leak(windows_hint(text).into_boxed_str()))
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", test)))]
     text
 }
 
 /// `hint` for text built at runtime (`format!`).
 pub fn hint_owned(text: String) -> String {
-    if cfg!(target_os = "windows") {
+    if crate::platform_text::Platform::spelling() == crate::platform_text::Platform::Windows {
         windows_hint(&text)
     } else {
         text
     }
 }
 
-/// The pure part of `hint`: rewrite each run of macOS modifier glyphs
-/// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
-#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
-pub fn windows_hint(text: &str) -> String {
+/// A piece of app text, read for its keys (`glyph_parts`).
+enum GlyphPart {
+    Char(char),
+    /// Modifiers with no key after them ("⌘-click", "hold ⌘").
+    Mods(Vec<&'static str>),
+    /// A key, as the table spells it (`alt-cmd-b`; `cmd--` for minus).
+    Key(String),
+}
+
+/// Split text into its keys (each run of macOS modifier glyphs `⌃⌥⇧⌘` and
+/// the key after it) and everything else.
+fn glyph_parts(text: &str) -> Vec<GlyphPart> {
     let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len());
+    let mut out = Vec::new();
     let mut i = 0;
     while i < chars.len() {
         let mut mods = Vec::new();
@@ -1337,7 +1397,7 @@ pub fn windows_hint(text: &str) -> String {
             i += 1;
         }
         if mods.is_empty() {
-            out.push(chars[i]);
+            out.push(GlyphPart::Char(chars[i]));
             i += 1;
             continue;
         }
@@ -1364,25 +1424,100 @@ pub fn windows_hint(text: &str) -> String {
                 _ => (None, 0),
             }
         };
-        let Some(key) = key else {
-            // Modifiers alone: name them the Windows way.
-            let names: Vec<&str> = mods
-                .iter()
-                .map(|m| match *m {
-                    "cmd" | "ctrl" => "Ctrl",
-                    "alt" => "Alt",
-                    _ => "Shift",
-                })
-                .collect();
-            out.push_str(&names.join("+"));
-            continue;
-        };
-        // `cmd--` is how the table spells a minus key.
-        let mac = format!("{}-{}", mods.join("-"), key);
-        out.push_str(&windows_label(&respell_for_windows(&mac)));
+        out.push(match key {
+            Some(key) => GlyphPart::Key(format!("{}-{}", mods.join("-"), key)),
+            None => GlyphPart::Mods(mods),
+        });
         i += used;
     }
+    out
+}
+
+/// The pure part of `hint`: rewrite each run of macOS modifier glyphs
+/// (`⌃⌥⇧⌘`) and the key after it as Windows writes the respelled binding.
+#[cfg_attr(not(any(target_os = "windows", test)), allow(dead_code))]
+pub fn windows_hint(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for part in glyph_parts(text) {
+        match part {
+            GlyphPart::Char(c) => out.push(c),
+            // Modifiers alone: name them the Windows way.
+            GlyphPart::Mods(mods) => {
+                let names: Vec<&str> = mods
+                    .iter()
+                    .map(|m| match *m {
+                        "cmd" | "ctrl" => "Ctrl",
+                        "alt" => "Alt",
+                        _ => "Shift",
+                    })
+                    .collect();
+                out.push_str(&names.join("+"));
+            }
+            GlyphPart::Key(mac) => out.push_str(&windows_label(&respell_for_windows(&mac))),
+        }
+    }
     windows_words(&out)
+}
+
+/// The keys `text` (as `p` shows it) names, as `p`'s table spells them:
+/// `alt-cmd-b` for "⌥⌘B" on macOS, `ctrl-shift-a` for "Ctrl+Shift+A" on
+/// Windows. Modifiers with no key ("⌘-click") name none.
+#[cfg(test)]
+pub fn hint_keys(text: &str, p: crate::platform_text::Platform) -> Vec<String> {
+    use crate::platform_text::Platform;
+    if p == Platform::Mac {
+        return glyph_parts(text)
+            .into_iter()
+            .filter_map(|part| match part {
+                GlyphPart::Key(k) => Some(k),
+                _ => None,
+            })
+            .collect();
+    }
+    const MODS: [(&str, &str); 4] = [
+        ("Ctrl+", "ctrl"),
+        ("Alt+", "alt"),
+        ("Shift+", "shift"),
+        ("Win+", "cmd"),
+    ];
+    let mut out = Vec::new();
+    let mut rest = text;
+    while let Some(at) = MODS.iter().filter_map(|(s, _)| rest.find(s)).min() {
+        let boundary = rest[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric());
+        let mut s = &rest[at..];
+        let mut mods = Vec::new();
+        while let Some((name, m)) = MODS.iter().find(|(name, _)| s.starts_with(name)) {
+            mods.push(*m);
+            s = &s[name.len()..];
+        }
+        let word: String = s.chars().take_while(|c| c.is_alphanumeric()).collect();
+        let (key, used) = if word.is_empty() {
+            match s.chars().next() {
+                Some(c) if !c.is_whitespace() => (c.to_string(), c.len_utf8()),
+                _ => (String::new(), 0),
+            }
+        } else {
+            let k = word.to_lowercase();
+            (if k == "esc" { "escape".into() } else { k }, word.len())
+        };
+        if boundary && !key.is_empty() && key != "click" {
+            out.push(format!("{}-{key}", mods.join("-")));
+        }
+        rest = &s[used..];
+    }
+    out
+}
+
+/// A key written in macOS terms, as `p`'s table spells it.
+#[cfg(test)]
+pub fn respell_for(key: &str, p: crate::platform_text::Platform) -> String {
+    match p {
+        crate::platform_text::Platform::Mac => key.to_string(),
+        crate::platform_text::Platform::Windows => respell_for_windows(key),
+    }
 }
 
 /// Mac words in the app's text, as Windows says them, longest first so a
@@ -1497,7 +1632,7 @@ pub fn bind_keys(cx: &mut App) {
     let _ = MyProfile; // --- profiles ---
     let _ = Withdraw; // --- delete & withdraw ---
     let _ = ToggleSpellcheck; // --- composer ---
-    let _ = (AddBlyg, ManageBlygs); // --- blyg switcher ---
+    let _ = (AddBlyg, ConnectBlyg, ManageBlygs); // --- blyg switcher ---
     let _ = ShowExtensions; // --- palette --- (Post › Extensions…)
     let _ = (ShowClientAccess, ShowServerAi); // --- access-ai ---
     let _ = ShowSite; // --- site ---
@@ -1704,7 +1839,9 @@ pub fn clash_with_hotkey(hotkey: &str) -> Option<Keybind> {
 /// Windows shortcuts the system (or every Windows app) owns, in the
 /// respelled form `table()` produces there.
 #[cfg(all(test, target_os = "windows"))]
-pub const RESERVED: &[(&str, &str, Option<&str>)] = &[
+pub const RESERVED: &[(&str, &str, Option<&str>)] = WINDOWS_RESERVED;
+#[cfg(test)]
+pub const WINDOWS_RESERVED: &[(&str, &str, Option<&str>)] = &[
     ("ctrl-q", "Quit", Some("Quit")),
     ("alt-f4", "Close window", None),
     ("alt-tab", "App switcher", None),
@@ -1789,7 +1926,7 @@ pub fn list() -> String {
             glyphs(k.key),
             k.action,
             place,
-            k.label
+            hint(k.label)
         );
         if let Some(m) = k.menu {
             line.push_str(&format!("  [{m}]"));
@@ -1803,7 +1940,149 @@ pub fn list() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::platform_text::Platform;
     use std::collections::HashMap;
+
+    /// Keys that type a character with AltGr on a common Windows layout.
+    /// Windows reports AltGr as Ctrl+Alt, so a Ctrl+Alt+<key> binding eats
+    /// that character there. (key, layout, what AltGr+key types)
+    const ALTGR_TYPES: &[(&str, &str, &str)] = &[
+        // Polish (programmer's), the default Polish layout.
+        ("a", "Polish", "ą"),
+        ("c", "Polish", "ć"),
+        ("e", "Polish", "ę"),
+        ("l", "Polish", "ł"),
+        ("n", "Polish", "ń"),
+        ("o", "Polish", "ó"),
+        ("s", "Polish", "ś"),
+        ("x", "Polish", "ź"),
+        ("z", "Polish", "ż"),
+        // German.
+        ("q", "German", "@"),
+        ("m", "German", "µ"),
+        ("2", "German", "²"),
+        ("3", "German", "³"),
+        ("7", "German", "{"),
+        ("8", "German", "["),
+        ("9", "German", "]"),
+        ("0", "German", "}"),
+        // French (AZERTY).
+        ("4", "French", "{"),
+        ("5", "French", "["),
+        ("6", "French", "|"),
+        // Hungarian.
+        ("1", "Hungarian", "~"),
+        ("b", "Hungarian", "{"),
+        ("f", "Hungarian", "["),
+        ("g", "Hungarian", "]"),
+        ("k", "Hungarian", "ł"),
+        ("u", "Hungarian", "€"),
+        ("v", "Hungarian", "@"),
+        ("w", "Hungarian", "|"),
+    ];
+
+    fn windows_live() -> Vec<Keybind> {
+        table_for(Platform::Windows)
+            .into_iter()
+            .filter(|k| !k.key.is_empty())
+            .collect()
+    }
+
+    /// Checked on every platform, so a Mac-only change can't ship a Windows
+    /// key that eats a character (⌥⌘B shipped as Ctrl+Alt+B, AltGr+B's `{`,
+    /// until 2bbe972; ⌥⌘Z needed WINDOWS_KEYLESS, 4b0b9d9).
+    #[test]
+    fn no_windows_key_is_an_altgr_character() {
+        let mut bad = Vec::new();
+        for k in windows_live() {
+            let (mods, last) = normalize(k.key);
+            if !(mods.contains(&"ctrl") && mods.contains(&"alt")) {
+                continue;
+            }
+            for (key, layout, ch) in ALTGR_TYPES.iter().filter(|(c, _, _)| *c == last) {
+                bad.push(format!(
+                    "  {} ({}) is {} on Windows: AltGr+{} types {ch} on {layout} layouts",
+                    k.action,
+                    mac_glyphs(mac_key(k.action)),
+                    windows_label(k.key),
+                    key.to_uppercase()
+                ));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "Windows keys that AltGr typing would trigger:\n{}\nGive each a Windows key \
+             in keymap::WINDOWS_OVERRIDES (or list the action in WINDOWS_KEYLESS).",
+            bad.join("\n")
+        );
+    }
+
+    fn mac_key(action: &str) -> &'static str {
+        mac_table()
+            .into_iter()
+            .find(|k| k.action == action)
+            .map_or("", |k| k.key)
+    }
+
+    /// The overrides respell keys that exist, and the Windows table they
+    /// make has no clashes: not between our actions, not with the default
+    /// quick-capture hotkey, not with keys Windows keeps for itself.
+    #[test]
+    fn windows_overrides_are_real_and_clash_with_nothing() {
+        let mac = mac_table();
+        for (from, to) in WINDOWS_OVERRIDES {
+            assert!(
+                mac.iter().any(|k| k.key == *from),
+                "WINDOWS_OVERRIDES respells {from}, which no binding has: drop it"
+            );
+            assert!(
+                !to.split('-').any(|p| p == "cmd"),
+                "{from} → {to}: Windows has no ⌘"
+            );
+            let n = WINDOWS_OVERRIDES.iter().filter(|(f, _)| f == from).count();
+            assert_eq!(n, 1, "{from} is overridden {n} times");
+        }
+        for a in WINDOWS_KEYLESS {
+            assert!(
+                mac.iter().any(|k| k.action == *a),
+                "WINDOWS_KEYLESS: no {a}"
+            );
+        }
+        let mut bad = Vec::new();
+        let mut seen: HashMap<(&str, (Vec<&str>, String)), &str> = HashMap::new();
+        let hotkey = normalize(crate::prefs::DEFAULT_HOTKEY);
+        for k in windows_live() {
+            let n = normalize(k.key);
+            let slot = (k.scope.place(), n.clone());
+            if let Some(prev) = seen.get(&slot)
+                && *prev != k.action
+            {
+                bad.push(format!("  {} is both {prev} and {}", k.key, k.action));
+            }
+            seen.insert(slot, k.action);
+            if n == hotkey {
+                bad.push(format!(
+                    "  {} ({}) is quick capture's default hotkey",
+                    k.key, k.action
+                ));
+            }
+            if let Some((r, what, allowed)) =
+                WINDOWS_RESERVED.iter().find(|(r, _, _)| normalize(r) == n)
+                && *allowed != Some(k.action)
+            {
+                bad.push(format!(
+                    "  {} ({}) is Windows' {what} ({r})",
+                    k.key, k.action
+                ));
+            }
+        }
+        assert!(
+            bad.is_empty(),
+            "the Windows key table clashes:\n{}\nPick another Windows key in \
+             keymap::WINDOWS_OVERRIDES.",
+            bad.join("\n")
+        );
+    }
 
     fn live() -> Vec<Keybind> {
         table().into_iter().filter(|k| !k.key.is_empty()).collect()
@@ -1973,7 +2252,7 @@ mod tests {
     fn keys_respell_for_windows() {
         assert_eq!(respell_for_windows("cmd-l"), "ctrl-l");
         assert_eq!(respell_for_windows("cmd-shift-,"), "ctrl-shift-,");
-        assert_eq!(respell_for_windows("ctrl-alt-cmd-o"), "ctrl-alt-o");
+        assert_eq!(respell_for_windows("ctrl-alt-cmd-t"), "ctrl-alt-t");
         assert_eq!(respell_for_windows("cmd--"), "ctrl--");
         assert_eq!(respell_for_windows("cmd-shift--"), "ctrl-shift--");
         assert_eq!(respell_for_windows("alt-up"), "alt-up");
@@ -2022,10 +2301,31 @@ mod tests {
             "Posts you read here still show as unread on your other PCs."
         );
         assert_eq!(windows_hint("Macintosh"), "Macintosh");
-        // macOS text is untouched.
-        if !cfg!(target_os = "windows") {
+        // macOS text is untouched; Windows' is respelled, owned or not.
+        use crate::platform_text::{Platform, spelled_as};
+        spelled_as(Platform::Mac, || {
             assert_eq!(hint("then ⌘G"), "then ⌘G");
-        }
+            assert_eq!(hint_owned("then ⌘G".into()), "then ⌘G");
+        });
+        spelled_as(Platform::Windows, || {
+            assert_eq!(hint("then ⌘G"), "then Ctrl+G");
+            assert_eq!(hint_owned("then ⌘G".into()), "then Ctrl+G");
+        });
+    }
+
+    #[test]
+    fn hint_keys_reads_both_spellings() {
+        assert_eq!(
+            hint_keys("⌥⌘B shelves, ⌘-click picks, ⇧⌘, and ⌘⏎", Platform::Mac),
+            ["alt-cmd-b", "shift-cmd-,", "cmd-enter"]
+        );
+        assert_eq!(
+            hint_keys(
+                "Ctrl+Shift+A shelves, Ctrl-click and Ctrl+click pick, Ctrl+, and Alt+Up, Esc+X",
+                Platform::Windows
+            ),
+            ["ctrl-shift-a", "ctrl-,", "alt-up"]
+        );
     }
 
     /// On Windows every key is respelled, `⌘` never survives, and the

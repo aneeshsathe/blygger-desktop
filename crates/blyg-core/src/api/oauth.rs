@@ -789,7 +789,7 @@ impl Loopback {
                     }
                 }
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                    std::thread::sleep(Duration::from_millis(50));
+                    crate::wait::pace(Duration::from_millis(50));
                 }
                 Err(e) => return Err(CoreError::Other(e.to_string())),
             }

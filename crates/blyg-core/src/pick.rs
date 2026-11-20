@@ -57,7 +57,7 @@ pub struct PickQuery {
     pub text: String,
     pub source: PickSource,
     /// Only posts imported through this subscription (implies imported).
-    pub sub: Option<String>,
+    pub sub: Option<crate::model::SubId>,
     pub sort: PickSort,
     /// The server id of the post being written (it can't name itself).
     pub exclude: Option<String>,
@@ -105,7 +105,7 @@ pub struct Pickable {
     pub version: u32,
     /// The post's date (ISO-8601), what `sort` orders by.
     pub at: String,
-    pub subscription_id: Option<String>,
+    pub subscription_id: Option<crate::model::SubId>,
     /// The subscription's name, else the origin's host; `None` for yours.
     pub source_title: Option<String>,
 }
@@ -242,7 +242,7 @@ pub fn imported(r: &ReadingItem, blyg: bool, q: &PickQuery, words: &[String]) ->
     }
     let title = r.subscription_title.trim();
     Some(Pickable {
-        id: r.remote_id.clone(),
+        id: r.remote_id.to_string(),
         title: crate::model::plain_title(&r.content_md).unwrap_or_else(|| "…".into()),
         excerpt: excerpt(&r.content_md),
         label: pick_label(

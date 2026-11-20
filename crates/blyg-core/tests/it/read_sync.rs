@@ -70,7 +70,8 @@ fn pull_merges_the_max_and_never_lowers_local_state() {
     assert!(env.events().contains(&CoreEvent::ReadingChanged));
 
     // Read `a` here at v2; the server (stale) says v1 afterwards.
-    b.mark_read("S1", "a").unwrap();
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("a"))
+        .unwrap();
     env.mock.state().reads.insert(("S1".into(), "a".into()), 1);
     b.pull_now().unwrap();
     assert_eq!(
@@ -118,7 +119,8 @@ fn mark_read_queues_and_flushes_a_put() {
     );
     env.mock.state().log.clear();
 
-    b.mark_read("S1", "a").unwrap();
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("a"))
+        .unwrap();
     assert_eq!(read_version(&b, "a"), Some(2), "instant and local");
     assert!(read_requests(&env).is_empty(), "nothing sent inline");
     b.sync_now().unwrap();
@@ -139,7 +141,8 @@ fn the_worker_flushes_a_read_promptly() {
         ..fast()
     });
     assert!(wait_until(Duration::from_secs(5), || b.reading().len() == 2));
-    b.mark_read("S1", "b").unwrap();
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("b"))
+        .unwrap();
     assert!(wait_until(Duration::from_secs(5), || server_read(
         &env, "S1", "b"
     ) == Some(1)));
@@ -153,7 +156,8 @@ fn offline_mark_then_flush_and_restart() {
         let b = env.manual();
         b.sync_now().unwrap();
         env.mock.set_down(true);
-        b.mark_read("S1", "a").unwrap();
+        b.mark_read(&SubId::from("S1"), &RemoteId::from("a"))
+            .unwrap();
         assert_eq!(read_version(&b, "a"), Some(2));
         assert!(b.sync_now().is_err(), "offline");
         assert!(matches!(
@@ -164,7 +168,8 @@ fn offline_mark_then_flush_and_restart() {
     // Restart while still offline: the capability is remembered, so a new
     // read queues too.
     let b = env.manual();
-    b.mark_read("S1", "b").unwrap();
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("b"))
+        .unwrap();
     env.mock.set_down(false);
     b.sync_now().unwrap();
     assert_eq!(server_read(&env, "S1", "a"), Some(2));
@@ -177,7 +182,8 @@ fn a_transient_failure_retries_later() {
     let b = env.manual();
     b.sync_now().unwrap();
     env.mock.set_down(true);
-    b.mark_read("S1", "a").unwrap();
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("a"))
+        .unwrap();
     assert!(b.sync_now().is_err());
     env.mock.set_down(false);
     env.mock.state().log.clear();
@@ -208,7 +214,8 @@ fn duplicates_are_marked_and_sent_per_row() {
     let b = env.manual();
     b.sync_now().unwrap();
     assert_eq!(b.reading().len(), 1, "one entry per post");
-    b.mark_read("B", "A1").unwrap();
+    b.mark_read(&SubId::from("B"), &RemoteId::from("A1"))
+        .unwrap();
     b.sync_now().unwrap();
     // Both rows go in one batch (owner write budgets: never a PUT burst).
     assert_eq!(
@@ -243,7 +250,8 @@ fn repeated_reads_coalesce_to_the_highest_version() {
     let b = env.manual();
     b.sync_now().unwrap();
     env.mock.set_down(true);
-    b.mark_read("S1", "b").unwrap(); // v1
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("b"))
+        .unwrap(); // v1
     // The post is edited (v3) and read again, all while offline.
     env.mock.set_down(false);
     env.mock.state().reading = Some(vec![
@@ -252,7 +260,8 @@ fn repeated_reads_coalesce_to_the_highest_version() {
     ]);
     b.pull_now().unwrap();
     env.mock.set_down(true);
-    b.mark_read("S1", "b").unwrap(); // v3
+    b.mark_read(&SubId::from("S1"), &RemoteId::from("b"))
+        .unwrap(); // v3
     env.mock.set_down(false);
     env.mock.state().log.clear();
     b.sync_now().unwrap();

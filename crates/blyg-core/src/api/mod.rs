@@ -50,8 +50,8 @@ use serde_json::{Value, json};
 
 use crate::backend::{CoreError, Result};
 use crate::model::{
-    Hopper, HopperEdit, Kind, Mention, RemoteRef, ResponsesMode, ScopeProvenance, Settings,
-    SubscribePreview, Subscription, SubscriptionKind, Version,
+    Hopper, HopperEdit, Kind, Mention, RemoteId, RemoteRef, ResponsesMode, ScopeProvenance,
+    Settings, SubId, SubscribePreview, Subscription, SubscriptionKind, Version,
 };
 use auth::Credential;
 use wire::*;
@@ -63,8 +63,19 @@ use wire::*;
 /// read as the end of the list and rows would be pruned.
 pub const CONTRACT_MAJOR: u64 = 5;
 
+/// The oldest blygger-studio Burrow syncs with, as a literal, so UI text
+/// can `concat!` it into `&'static str` consts (`blyg_core::min_studio!()`).
+/// Every message that states Burrow's server floor is built from this, never
+/// a typed-out version.
+#[macro_export]
+macro_rules! min_studio {
+    () => {
+        "0.49.12"
+    };
+}
+
 /// The oldest blygger-studio Burrow syncs with, for messages.
-pub const MIN_STUDIO: &str = "0.49.12";
+pub const MIN_STUDIO: &str = crate::min_studio!();
 
 /// Whether a studio's `contractVersion` takes `wholeBlyg` on `POST
 /// /api/subscriptions` (5.1.0, studio 0.50.0). Its body is strict, so a
@@ -820,7 +831,7 @@ impl Api {
     }
 
     /// `POST /api/subscriptions {url, confirm:true, title?}` → new subscription id.
-    pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<String> {
+    pub fn subscribe(&self, url: &str, title: Option<&str>) -> Result<SubId> {
         let mut body = self.subscribe_body(url);
         body["confirm"] = json!(true);
         if let Some(t) = title {
@@ -828,7 +839,8 @@ impl Api {
         }
         Ok(self
             .call_as::<Created>("POST", "/api/subscriptions", Some(body))?
-            .id)
+            .id
+            .into())
     }
 
     /// `PATCH /api/subscriptions/:id`. `title`: `None` leaves the name alone,
@@ -894,7 +906,7 @@ impl Api {
 
     // ---------- signals / mentions ----------
 
-    pub fn set_signal(&self, sub: &str, remote_id: &str, thumb: i8) -> Result<()> {
+    pub fn set_signal(&self, sub: &SubId, remote_id: &RemoteId, thumb: i8) -> Result<()> {
         self.call(
             "PUT",
             &format!("/api/signals/{}/{}", enc(sub), enc(remote_id)),
@@ -923,7 +935,7 @@ impl Api {
         )
     }
 
-    pub fn clear_signal(&self, sub: &str, remote_id: &str) -> Result<()> {
+    pub fn clear_signal(&self, sub: &SubId, remote_id: &RemoteId) -> Result<()> {
         self.call(
             "DELETE",
             &format!("/api/signals/{}/{}", enc(sub), enc(remote_id)),
@@ -1017,7 +1029,8 @@ impl Api {
     /// subscriptionId, remoteId), at most [`IMPORTED_READING_MAX`] a page.
     /// `content_html` is kept as served: the UI sanitizes it before display.
     /// A whole list is one walk from the first page to `nextCursor: null`
-    /// (`Engine::fetch_reading`); on `CursorExpired` the walk starts over.
+    /// (`Engine::read_reading`, which may also read just the head); on
+    /// `CursorExpired` the walk starts over.
     pub fn reading(&self, limit: u32, cursor: Option<&str>) -> Result<Option<ReadingPage>> {
         let limit = limit.clamp(1, IMPORTED_READING_MAX);
         let page: Option<CursorPage<Value>> =
@@ -1063,8 +1076,8 @@ impl Api {
     /// (`stored: false`).
     pub fn put_read(
         &self,
-        sub: &str,
-        remote_id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
         version: u32,
         read_at: Option<&str>,
     ) -> Result<ReadAck> {
@@ -1081,7 +1094,7 @@ impl Api {
 
     /// `DELETE /api/reading/:sub/:remoteId/read`: mark one row unread.
     /// Idempotent; 200 for a row the server doesn't hold.
-    pub fn delete_read(&self, sub: &str, remote_id: &str) -> Result<()> {
+    pub fn delete_read(&self, sub: &SubId, remote_id: &RemoteId) -> Result<()> {
         self.call(
             "DELETE",
             &format!("/api/reading/{}/{}/read", enc(sub), enc(remote_id)),
@@ -1259,7 +1272,13 @@ impl Api {
 
     /// `PUT` (`on`) or `DELETE /api/hoppers/{id}/items/{sub}/{remoteId}`.
     /// `sub` is `~own` for one of your own posts. Both are idempotent.
-    pub fn set_hopper_item(&self, id: &str, sub: &str, remote_id: &str, on: bool) -> Result<()> {
+    pub fn set_hopper_item(
+        &self,
+        id: &str,
+        sub: &SubId,
+        remote_id: &RemoteId,
+        on: bool,
+    ) -> Result<()> {
         self.call(
             if on { "PUT" } else { "DELETE" },
             &format!(
@@ -1666,7 +1685,8 @@ mod tests {
         let out = bounded((0..20).collect(), 4, |i: u32| {
             let n = now.fetch_add(1, Ordering::SeqCst) + 1;
             peak.fetch_max(n, Ordering::SeqCst);
-            std::thread::sleep(Duration::from_millis(5));
+            // Work that takes a while, so the tasks overlap.
+            crate::wait::wall_clock(Duration::from_millis(5));
             now.fetch_sub(1, Ordering::SeqCst);
             Ok(i * 2)
         })
@@ -1746,3 +1766,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod compress_tests;

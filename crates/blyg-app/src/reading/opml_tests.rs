@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use blyg_core::config::MemoryTokenStore;
 use blyg_core::opml::{self, FailKind, IMPORT_FOLDER, Outcome, Pace};
-use blyg_core::{Backend, ConfigStore};
+use blyg_core::{Backend, ConfigStore, SubId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::RSheet;
@@ -68,12 +68,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..30 {
-        cx.run_until_parked();
-        std::thread::sleep(Duration::from_millis(3));
-    }
-}
+use crate::test_wait::settle;
 
 fn open(view: &Entity<MainView>, cx: &mut VisualTestContext) {
     let parsed = opml::parse(FILE).unwrap();
@@ -150,7 +145,7 @@ fn preview_marks_already_followed_and_ticks_with_keys(cx: &mut TestAppContext) {
 fn import_files_new_ones_and_leaves_followed_ones_where_they_are(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     let mine = fake.create_folder("Mine").unwrap();
-    fake.set_subscription_folder("sub-rue", Some(&mine.id))
+    fake.set_subscription_folder(&SubId::from("sub-rue"), Some(&mine.id))
         .unwrap();
     let before = fake.subscriptions().len();
     open(&view, cx);

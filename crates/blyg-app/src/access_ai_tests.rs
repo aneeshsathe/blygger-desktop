@@ -13,7 +13,7 @@ use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 use super::access::{ShowClientAccess, Stage};
 use super::note_ai::DraftChangeNote;
 use super::server_ai::{AiLoad, ShowServerAi};
-use crate::app::{MainView, Sheet};
+use crate::app::MainView;
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -50,14 +50,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
 }
 
 fn settle(cx: &mut VisualTestContext, done: impl Fn(&mut VisualTestContext) -> bool) {
-    for _ in 0..100 {
-        cx.run_until_parked();
-        if done(cx) {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    cx.run_until_parked();
+    crate::test_wait::until(cx, "the access sheet's next state", done);
 }
 
 fn keys(cx: &mut VisualTestContext, k: &str) {
@@ -67,19 +60,21 @@ fn keys(cx: &mut VisualTestContext, k: &str) {
 
 /// The client access sheet's stage, as a word, and its row count.
 fn access(view: &Entity<MainView>, cx: &mut VisualTestContext) -> (&'static str, usize) {
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::ClientAccess(s)) => (
-            match s.stage {
-                Stage::Password => "password",
-                Stage::Loading => "loading",
-                Stage::List => "list",
-                Stage::Confirm(_) => "confirm",
-                Stage::NewToken { .. } => "new",
-                Stage::Token { .. } => "token",
-            },
-            s.rows.len(),
-        ),
-        _ => ("closed", 0),
+    view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::access::ClientAccessSheet>() {
+            Some(s) => (
+                match s.stage {
+                    Stage::Password => "password",
+                    Stage::Loading => "loading",
+                    Stage::List => "list",
+                    Stage::Confirm(_) => "confirm",
+                    Stage::NewToken { .. } => "new",
+                    Stage::Token { .. } => "token",
+                },
+                s.rows.len(),
+            ),
+            _ => ("closed", 0),
+        }
     })
 }
 
@@ -104,7 +99,7 @@ fn client_access_asks_for_the_password_then_lists_makes_and_revokes(cx: &mut Tes
     settle(cx, |cx| {
         view.read_with(
             cx,
-            |v, _| matches!(&v.sheet, Some(Sheet::ClientAccess(s)) if s.error.is_some()),
+            |v, _| matches!(v.sheet.get::<crate::app::access::ClientAccessSheet>(), Some(s) if s.error.is_some()),
         )
     });
     assert_eq!(access(&view, cx).0, "password");
@@ -116,7 +111,7 @@ fn client_access_asks_for_the_password_then_lists_makes_and_revokes(cx: &mut Tes
     keys(cx, "backspace");
     assert_eq!(access(&view, cx).0, "confirm");
     view.read_with(cx, |v, _| {
-        let Some(Sheet::ClientAccess(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::access::ClientAccessSheet>() else {
             panic!()
         };
         let (_, warn) = super::access::confirm_text(&s.rows, Some(0), s.own.as_deref());
@@ -144,15 +139,17 @@ fn client_access_asks_for_the_password_then_lists_makes_and_revokes(cx: &mut Tes
     cx.simulate_input("Deploy script");
     keys(cx, "enter");
     settle(cx, |cx| access(&view, cx).0 == "token");
-    let token = view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::ClientAccess(s)) => match &s.stage {
-            Stage::Token { name, token } => {
-                assert_eq!(name, "Deploy script");
-                token.clone()
-            }
+    let token = view.read_with(cx, |v, _| {
+        match v.sheet.get::<crate::app::access::ClientAccessSheet>() {
+            Some(s) => match &s.stage {
+                Stage::Token { name, token } => {
+                    assert_eq!(name, "Deploy script");
+                    token.clone()
+                }
+                _ => panic!(),
+            },
             _ => panic!(),
-        },
-        _ => panic!(),
+        }
     });
     assert!(token.starts_with("fake-token-"));
     keys(cx, "c");
@@ -188,7 +185,7 @@ fn server_ai_changes_a_model_and_a_switch_and_saves(cx: &mut TestAppContext) {
     settle(cx, |cx| {
         view.read_with(
             cx,
-            |v, _| matches!(&v.sheet, Some(Sheet::ServerAi(s)) if matches!(s.load, AiLoad::Ready)),
+            |v, _| matches!(v.sheet.get::<crate::app::server_ai::ServerAiSheet>(), Some(s) if matches!(s.load, AiLoad::Ready)),
         )
     });
     // TK: sonnet → the next text model (haiku).
@@ -201,14 +198,14 @@ fn server_ai_changes_a_model_and_a_switch_and_saves(cx: &mut TestAppContext) {
     keys(cx, "down");
     keys(cx, "left");
     view.read_with(cx, |v, _| {
-        let Some(Sheet::ServerAi(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::server_ai::ServerAiSheet>() else {
             panic!()
         };
         assert_eq!(s.settings.model(AiFunction::Classify), Some(""));
         assert_eq!(s.other_for, None);
     });
     keys(cx, "cmd-enter");
-    settle(cx, |cx| view.read_with(cx, |v, _| v.sheet.is_none()));
+    settle(cx, |cx| view.read_with(cx, |v, _| !v.sheet.is_open()));
     let s = fake.server_ai_settings().unwrap();
     assert_eq!(s.model(AiFunction::Tk), Some("claude-haiku-4-5"));
     assert_eq!(s.auto_change_notes, Some(true));
@@ -230,8 +227,8 @@ fn edit_public(cx: &mut VisualTestContext) {
 }
 
 fn note_text(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
-    view.read_with(cx, |v, cx| match &v.sheet {
-        Some(Sheet::Publish { note, .. }) => note.read(cx).value().to_string(),
+    view.read_with(cx, |v, cx| match v.sheet.get() {
+        Some(crate::app::PublishSheet { note, .. }) => note.read(cx).value().to_string(),
         _ => String::new(),
     })
 }
@@ -307,8 +304,8 @@ fn an_unedited_draft_publishes_as_generated_and_no_ai_means_a_plain_publish(
     cx.run_until_parked();
     keys(cx, "cmd-enter");
     cx.run_until_parked();
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Publish { ai, .. }) => assert_eq!(ai.helpers, None),
+    view.read_with(cx, |v, _| match v.sheet.get() {
+        Some(crate::app::PublishSheet { ai, .. }) => assert_eq!(ai.helpers, None),
         _ => panic!("no publish sheet"),
     });
     cx.dispatch_action(DraftChangeNote);

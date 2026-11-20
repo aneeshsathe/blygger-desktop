@@ -8,7 +8,7 @@ use blyg_core::config::{MemoryTokenStore, TokenStore};
 use blyg_core::{Backend, ConfigStore, Kind, LocalId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use super::super::{MainView, Sheet, reading};
+use super::super::{MainView, reading};
 use super::{ShowBlygSwitcher, SwitchBlyg1, SwitchBlyg2};
 use crate::connection::{BlygOpener, Connection, Mode, SwitchBackend};
 use crate::fake::{FakeBackend, Timing};
@@ -123,7 +123,7 @@ fn the_switcher_lists_both_blygs_and_switching_reloads_the_views(cx: &mut TestAp
     cx.dispatch_action(ShowBlygSwitcher);
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
-        let Some(Sheet::Blygs(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::switcher::BlygSheet>() else {
             panic!("the switcher sheet is open");
         };
         let hosts: Vec<&str> = s.entries.iter().map(|e| e.host.as_str()).collect();
@@ -134,7 +134,7 @@ fn the_switcher_lists_both_blygs_and_switching_reloads_the_views(cx: &mut TestAp
 
     // The reading screen stays on screen across the switch, reloaded.
     view.update_in(cx, |v, window, cx| {
-        v.sheet = None;
+        v.sheet.close();
         v.show_view(reading::View::Reading, window, cx);
     });
     cx.dispatch_action(ShowBlygSwitcher);
@@ -144,7 +144,7 @@ fn the_switcher_lists_both_blygs_and_switching_reloads_the_views(cx: &mut TestAp
     assert_eq!(active(cx).as_deref(), Some(B));
     assert!(config_text(cx).contains("blyg-url = https://notes.example.org"));
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none(), "the switcher closed");
+        assert!(!v.sheet.is_open(), "the switcher closed");
         assert_eq!(v.reading.view, reading::View::Reading);
         assert_eq!(v.reading.rows.len(), w.b.reading().len());
         assert_eq!(
@@ -222,7 +222,7 @@ fn manage_signs_out_of_another_blyg(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("down enter");
     cx.run_until_parked();
     view.read_with(cx, |v, _| {
-        let Some(Sheet::Blygs(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::switcher::BlygSheet>() else {
             panic!("still open");
         };
         assert!(s.manage);
@@ -233,7 +233,7 @@ fn manage_signs_out_of_another_blyg(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert!(view.read_with(
         cx,
-        |v, _| matches!(&v.sheet, Some(Sheet::Blygs(s)) if s.confirm.is_none())
+        |v, _| matches!(v.sheet.get::<crate::app::switcher::BlygSheet>(), Some(s) if s.confirm.is_none())
     ));
     assert!(w.tokens.get(B).unwrap().is_some());
     cx.simulate_keystrokes("enter 1");
@@ -248,7 +248,7 @@ fn manage_signs_out_of_another_blyg(cx: &mut TestAppContext) {
         "back to one blyg: no list\n{text}"
     );
     view.read_with(cx, |v, _| {
-        let Some(Sheet::Blygs(s)) = &v.sheet else {
+        let Some(s) = v.sheet.get::<crate::app::switcher::BlygSheet>() else {
             panic!("still open");
         };
         assert_eq!(s.entries.len(), 1);
@@ -267,7 +267,7 @@ fn signing_out_of_the_active_blyg_switches_to_the_next(cx: &mut TestAppContext) 
     assert_eq!(active(cx).as_deref(), Some(B));
     assert_eq!(posts(&view, cx), 2, "B's posts");
     assert!(
-        view.read_with(cx, |v, _| !matches!(v.sheet, Some(Sheet::Connect { .. }))),
+        view.read_with(cx, |v, _| !v.sheet.is::<crate::app::ConnectSheet>()),
         "no Connect sheet while a blyg is left"
     );
 }

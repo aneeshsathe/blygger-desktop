@@ -1,0 +1,115 @@
+---
+name: burrow-code-shape
+description: Turn a repeated mistake into a check, and shape Burrow's code so a correct change needs little context. Use when you're corrected, when you fix a bug a second time, when you add a rule to CLAUDE.md or a skill, or before building on a module (a new Backend method, a new sheet, a new list or setting).
+---
+
+# Corrections become checks; code carries its own context
+
+Agents copy what the codebase does, so the code is the strongest instruction
+Burrow has. Prose is the weakest: every checklist line here is a mistake that
+happened at least once and could happen again.
+
+## When a mistake repeats, fix the class at the highest level that works
+
+1. **Make it impossible.** One owner per piece of state, one way to do each
+   thing, the old way deleted. Example: `SwitchBackend` used to forward
+   ~170 `Backend` methods by hand, and missing forwards shipped twice (the
+   shelf methods; `save_typing`). `crates/blyg-app/build.rs` now writes the
+   whole impl from the trait, so there's nothing to forget; it writes the
+   `Disconnected` stub the same way.
+2. **Make the build fail**, with a message that names the replacement:
+   types, `pub(crate)`, `#[must_use]`, clippy `disallowed-methods` with a
+   `reason` (`crates/blyg-app/clippy.toml` bans `std::thread::sleep` and
+   points at `crate::test_wait`; blyg-core's, blyg-ai's and each
+   `blyg-ext*`'s point at `blyg_core::wait`). If the bad pattern is common,
+   block new uses first, then migrate the old ones in the same wave. A rule
+   about the shape of the workspace is a test over `cargo metadata`
+   (`blyg-core/tests/it/crate_graph.rs`: GPUI only in blyg-app, each
+   crate's allowed workspace dependencies).
+3. **A behaviour test** of what a user would see (`tests/cli.rs` runs the
+   real `blygger --version` and fails if it starts the app). For state
+   that lives across many steps (sync, paging, retries), a property test
+   over a model: make the decisions a pure step machine and drive it with
+   random histories (`sync/walk.rs`'s `Read`, driven by
+   `walk_model_tests.rs` with proptest). Examples miss the bug that needs
+   ten pulls and a 409 in the right place; a shrunk history doesn't.
+4. **Prose**, only for a judgement call nothing can check, with the failure
+   that taught it.
+
+Prove the check bites: put the old code back (revert the fixing hunk, or
+paste the old helper), run the same command CI runs, and keep the failure
+output for the PR. Then add a row to the rule → enforcer table in
+`CLAUDE.md` and delete the prose it replaces. If a rule in the table breaks
+again, move its enforcer up a level in the same change.
+
+Don't write comments that justify a workaround ("sleep 250 ms so the
+animation finishes") or state a constraint ("keep in sync with …", "must
+stay in this order"): each is a missing check. Encode it, then delete the
+comment. Comments that record facts we can't change (a WebView2 quirk, a
+spec clause) stay, with a link or clause id.
+
+## Shape code so the answer is near the question
+
+The test: for any value, someone new should find where it comes from and
+what can change it in under 30 seconds.
+
+- **Cut pass-through layers.** A layer that only forwards gets generated or
+  deleted (`SwitchBackend`). No trait, factory or wrapper "for later": add
+  the second implementation first.
+- **Derive, don't sync.** Text that quotes a constant is built from it:
+  `MIN_STUDIO` comes from `min_studio!()` and is `concat!`ed into the UI
+  strings, and `server_notice.rs`'s test fails on any other spelling of the
+  floor in code or docs. Docs generated from the keymap and config keys
+  (`site/src/generated/`) are checked by `keymap_docs.rs` and
+  `blyg-core/tests/it/config_docs.rs`.
+- **Decide once.** One function per rule, called everywhere: list order is
+  `blyg-core/src/order.rs`; "unread" is `ReadingItem::is_unread`
+  (`model.rs`). A second copy is a bug waiting to happen.
+- **Put the domain in one structure.** One `enum` beats several booleans:
+  one sheet slot means only one sheet can be open; `ReadMode` is Stream or
+  Reader. If a feature needs one more `else if` on the same flags in several
+  files, make the states an enum (or a table) instead. Demo scenes were ~170
+  string names routed by `starts_with` prefixes across 18 files; now each is
+  a row in `scenes.rs` (a `Scene` variant and its area), and a typo is a
+  compile error or, in `BLYGGER_DEMO`, a startup error naming near matches.
+- **Keep an enum's matches with the enum.** When files all over match its
+  variants, give each variant's behaviour one home and let callers ask
+  questions. Main-window sheets were a 20-variant `Sheet` enum matched about
+  170 times in 30 files (`if let Some(Sheet::X(s)) = &mut self.sheet`), each
+  sheet's render, keys and fields spread through `app.rs`. Now
+  `crates/blyg-app/src/sheet/mod.rs` holds the one list of kinds (`sheets!`)
+  and the one `match` (`view`); each kind is a struct implementing
+  `SheetView` (render with its esc/⏎ handlers, `inputs`, ⌘⏎ `submit`) beside
+  its feature, and callers ask the slot (`sheet.is::<T>()`, `get::<T>()`,
+  `take::<T>()`, `open(..)`, `inputs()`). The enum is private to `sheet/`,
+  so a variant match anywhere else doesn't compile. A new sheet is a
+  struct, a `SheetView` impl and one registry row.
+- **Give each feature of the main window its own file.** `MainView` is
+  the hotspot: every feature extends it, and `app.rs` grew to 3,600 lines
+  of connect flow, config reloads, status bar and list code side by side,
+  so every change read (and conflicted over) all of it. A feature lives in
+  `crates/blyg-app/src/app/<feature>.rs` (or its own module beside
+  `app.rs`) as an `impl MainView` block, with `pub(super)` methods; a child
+  module sees `MainView`'s private fields. Group the feature's fields into
+  one struct there (`looks::ConfigFile`) rather than adding flat fields.
+  `app.rs` keeps construction, `render`'s top-level layout and the event
+  wiring; `app/size_cap.rs` fails `cargo test` if it grows.
+- **Let types carry knowledge.** Parse config, env vars, CLI args and wire
+  JSON into typed values where they enter (`cli::route`, `Prefs::from_config`,
+  `model.rs`), then trust them. Environment variables are parsed once into
+  `DevFlags` (`crates/blyg-app/src/dev_flags.rs`); clippy refuses
+  `std::env::var` anywhere else in blyg-app. Give ids their own type, not
+  `&str`: your posts have `LocalId` and `ServerId`; a reading post is a
+  `SubId` and a `RemoteId` (`blyg-core/src/ids.rs`). Nine `Backend`
+  methods took that pair as two `&str`s (`mark_read`, `signal`,
+  `set_in_hopper`, …), so a swap compiled; now it's E0308 with "swap these
+  arguments". The types are `#[serde(transparent)]` and TEXT in SQLite,
+  so nothing on the wire or on disk changes; they deref to `str` for
+  reading, and an id enters typed where it's parsed (API rows, DB rows,
+  `From<String>`). Deref also lets a typed id into a `&str` parameter
+  unnoticed, so a new function taking a post's ids takes the types. Keep business rules in plain functions in `blyg-core` or the
+  `*_vm.rs` files, away from GPUI.
+- **Narrow state.** A return value over a field, a field over a global.
+
+Prefer the smallest change that does this. Don't force a structure on code
+that is local, clear and unlikely to grow.

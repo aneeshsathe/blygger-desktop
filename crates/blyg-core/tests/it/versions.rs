@@ -106,7 +106,9 @@ fn public_gets(f: &Mock) -> Vec<String> {
 #[test]
 fn changelog_comes_from_the_public_item_document_at_a_subdirectory_mount() {
     let (_env, f, _origin, b) = setup();
-    let vs = b.remote_versions(SUB, ID).unwrap();
+    let vs = b
+        .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     assert_eq!(
         vs,
         vec![
@@ -141,14 +143,17 @@ fn changelog_comes_from_the_public_item_document_at_a_subdirectory_mount() {
     );
     assert_eq!(public_gets(&f), vec![format!("GET /blyg/items/{ID}.json")]);
     // Cached (short TTL): asking again makes no request.
-    b.remote_versions(SUB, ID).unwrap();
+    b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     assert_eq!(public_gets(&f).len(), 1);
 }
 
 #[test]
 fn the_version_browser_shows_only_current_and_pinned() {
     let (_env, f, _origin, b) = setup();
-    let shown = b.remote_shown_versions(SUB, ID).unwrap();
+    let shown = b
+        .remote_shown_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     assert_eq!(
         shown.iter().map(|v| v.version).collect::<Vec<_>>(),
         vec![1, 3],
@@ -156,14 +161,21 @@ fn the_version_browser_shows_only_current_and_pinned() {
     );
     assert!(shown.iter().all(RemoteVersion::openable));
     // The full changelog is still there for the reading list's notes.
-    assert_eq!(b.remote_versions(SUB, ID).unwrap().len(), 3);
+    assert_eq!(
+        b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+            .unwrap()
+            .len(),
+        3
+    );
     assert_eq!(public_gets(&f).len(), 1, "one fetch serves both");
 }
 
 #[test]
 fn pinned_versions_open_and_are_cached_forever() {
     let (_env, f, origin, b) = setup();
-    let p = b.remote_pinned(SUB, ID, 1).unwrap();
+    let p = b
+        .remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+        .unwrap();
     assert_eq!(p.version, 1);
     assert_eq!(p.content_md, "first");
     assert_eq!(p.content_html, "<p>first</p>");
@@ -180,7 +192,11 @@ fn pinned_versions_open_and_are_cached_forever() {
     let n = public_gets(&f).len();
     // Served from the cache even with the origin unreachable.
     f.set_down(true);
-    assert_eq!(b.remote_pinned(SUB, ID, 1).unwrap(), p);
+    assert_eq!(
+        b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+            .unwrap(),
+        p
+    );
     assert_eq!(public_gets(&f).len(), n);
 }
 
@@ -197,7 +213,9 @@ fn pinned_html_comes_from_the_public_document_without_credentials() {
     f.state()
         .public
         .insert(format!("/blyg/items/{ID}/v1.json"), doc);
-    let p = b.remote_pinned(SUB, ID, 1).unwrap();
+    let p = b
+        .remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+        .unwrap();
     assert_eq!(
         p.content_html, html,
         "the HTML as the author's blyg served it"
@@ -243,7 +261,9 @@ fn attached_images_come_with_the_current_version() {
     f.state()
         .public
         .insert(format!("/blyg/items/{ID}.json"), doc);
-    let vs = b.remote_versions(SUB, ID).unwrap();
+    let vs = b
+        .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     let cur = vs.iter().find(|v| v.current).unwrap();
     assert_eq!(
         cur.media,
@@ -261,7 +281,11 @@ fn attached_images_come_with_the_current_version() {
     assert!(vs.iter().filter(|v| !v.current).all(|v| v.media.is_empty()));
     // Cached with the changelog.
     let n = public_gets(&f).len();
-    assert_eq!(b.remote_versions(SUB, ID).unwrap(), vs);
+    assert_eq!(
+        b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+            .unwrap(),
+        vs
+    );
     assert_eq!(public_gets(&f).len(), n);
 }
 
@@ -282,7 +306,9 @@ fn lineage_comes_from_the_item_document_leniently() {
     f.state()
         .public
         .insert(format!("/blyg/items/{ID}.json"), doc);
-    let vs = b.remote_versions(SUB, ID).unwrap();
+    let vs = b
+        .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     let cur = vs.iter().find(|v| v.current).unwrap();
     let l = &cur.lineage;
     assert_eq!(
@@ -318,7 +344,11 @@ fn lineage_comes_from_the_item_document_leniently() {
     assert_eq!(row.forked_from.as_ref().unwrap().version, 3);
     // Cached with the changelog: no extra request.
     let n = public_gets(&f).len();
-    assert_eq!(b.remote_versions(SUB, ID).unwrap(), vs);
+    assert_eq!(
+        b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+            .unwrap(),
+        vs
+    );
     assert_eq!(public_gets(&f).len(), n);
     // Fetched without credentials.
     let st = f.state();
@@ -363,7 +393,9 @@ fn junk_lineage_shapes_are_tolerated() {
         f.state()
             .public
             .insert(format!("/blyg/items/{ID}.json"), doc);
-        let vs = b.remote_versions(SUB, ID).unwrap();
+        let vs = b
+            .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+            .unwrap();
         assert_eq!(vs.len(), 2);
         assert!(vs.iter().all(|v| v.lineage.is_empty()), "{vs:?}");
         assert!(Lineage::of_changelog(&vs).is_none());
@@ -375,7 +407,9 @@ fn junk_lineage_shapes_are_tolerated() {
     f.state()
         .public
         .insert(format!("/blyg/items/{ID}.json"), doc);
-    let vs = b.remote_versions(SUB, ID).unwrap();
+    let vs = b
+        .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     assert_eq!(
         Lineage::of_changelog(&vs)
             .and_then(|l| l.stub_of.as_ref())
@@ -388,7 +422,7 @@ fn junk_lineage_shapes_are_tolerated() {
 fn unpinned_versions_are_refused_without_a_request() {
     let (_env, f, _origin, b) = setup();
     for v in [2, 3, 9] {
-        match b.remote_pinned(SUB, ID, v) {
+        match b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), v) {
             Err(CoreError::Rejected { status: 404, .. }) => {}
             other => panic!("v{v}: {other:?}"),
         }
@@ -407,7 +441,7 @@ fn a_pin_file_that_404s_means_not_pinned() {
     f.state()
         .public
         .remove(&format!("/blyg/items/{ID}/v1.json"));
-    match b.remote_pinned(SUB, ID, 1) {
+    match b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1) {
         Err(CoreError::Rejected { status: 404, .. }) => {}
         other => panic!("{other:?}"),
     }
@@ -416,7 +450,8 @@ fn a_pin_file_that_404s_means_not_pinned() {
         "the changelog said pinned, so it was asked for"
     );
     // The changelog that promised a pin is no longer trusted: refetched.
-    b.remote_versions(SUB, ID).unwrap();
+    b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     let n = public_gets(&f)
         .iter()
         .filter(|l| l.ends_with(&format!("items/{ID}.json")))
@@ -431,7 +466,9 @@ fn a_hash_mismatch_is_flagged_not_fatal() {
         format!("/blyg/items/{ID}/v1.json"),
         pin_doc(&origin, ID, 1, "first", Some("sha256:0000")),
     );
-    let p = b.remote_pinned(SUB, ID, 1).unwrap();
+    let p = b
+        .remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+        .unwrap();
     assert!(p.hash_mismatch);
     assert_eq!(p.content_md, "first", "content adopted anyway");
     assert_eq!(p.content_hash, "sha256:0000", "as served");
@@ -440,9 +477,11 @@ fn a_hash_mismatch_is_flagged_not_fatal() {
 #[test]
 fn the_owner_token_never_reaches_a_foreign_origin() {
     let (env, f, _origin, b) = setup();
-    b.remote_versions(SUB, ID).unwrap();
-    b.remote_pinned(SUB, ID, 1).unwrap();
-    let _ = b.remote_pinned(SUB, ID, 2);
+    b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
+    b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+        .unwrap();
+    let _ = b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 2);
     let st = f.state();
     assert!(
         !st.public_auth.is_empty(),
@@ -478,21 +517,26 @@ fn rss_items_have_only_their_current_version() {
     }
     let b = env.manual();
     b.sync_now().unwrap();
-    let vs = b.remote_versions("F", "guid-9").unwrap();
+    let vs = b
+        .remote_versions(&SubId::from("F"), &RemoteId::from("guid-9"))
+        .unwrap();
     assert_eq!(vs.len(), 1);
     assert_eq!(vs[0].version, 2);
     assert!(vs[0].current && !vs[0].pinned);
     assert!(matches!(
-        b.remote_pinned("F", "guid-9", 2),
+        b.remote_pinned(&SubId::from("F"), &RemoteId::from("guid-9"), 2),
         Err(CoreError::Rejected { status: 404, .. })
     ));
-    assert!(b.pinned_diff_base("F", "guid-9").is_none());
+    assert!(
+        b.pinned_diff_base(&SubId::from("F"), &RemoteId::from("guid-9"))
+            .is_none()
+    );
     assert!(
         public_gets(&f).is_empty(),
         "L0 has no public item documents"
     );
     assert!(matches!(
-        b.remote_versions("F", "nope"),
+        b.remote_versions(&SubId::from("F"), &RemoteId::from("nope")),
         Err(CoreError::NotFound)
     ));
 }
@@ -500,13 +544,16 @@ fn rss_items_have_only_their_current_version() {
 #[test]
 fn offline_falls_back_to_the_last_changelog() {
     let (env, f, origin, b) = setup();
-    b.remote_versions(SUB, ID).unwrap();
+    b.remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     // The author publishes v4: the cached changelog no longer covers it…
     env.mock.state().reading = Some(vec![reading_row(SUB, ID, &origin, 4, "fourth")]);
     b.sync_now().unwrap();
     // …but the origin is unreachable, so the old one answers.
     f.set_down(true);
-    let vs = b.remote_versions(SUB, ID).unwrap();
+    let vs = b
+        .remote_versions(&SubId::from(SUB), &RemoteId::from(ID))
+        .unwrap();
     assert_eq!(vs.len(), 3);
 }
 
@@ -549,9 +596,15 @@ fn diff_base_only_when_the_version_read_was_pinned() {
     }
     let b = env.manual();
     b.sync_now().unwrap();
-    assert!(b.pinned_diff_base(SUB, "a").is_none(), "unread: no base");
-    b.mark_read(SUB, "a").unwrap(); // read at v1 (pinned)
-    b.mark_read(SUB, "b").unwrap(); // read at v2 (not pinned)
+    assert!(
+        b.pinned_diff_base(&SubId::from(SUB), &RemoteId::from("a"))
+            .is_none(),
+        "unread: no base"
+    );
+    b.mark_read(&SubId::from(SUB), &RemoteId::from("a"))
+        .unwrap(); // read at v1 (pinned)
+    b.mark_read(&SubId::from(SUB), &RemoteId::from("b"))
+        .unwrap(); // read at v2 (not pinned)
     env.mock.state().reading = Some(vec![
         reading_row(SUB, "a", &origin, 3, "a3"),
         reading_row(SUB, "b", &origin, 3, "b3"),
@@ -560,10 +613,13 @@ fn diff_base_only_when_the_version_read_was_pinned() {
 
     let r = b.reading();
     assert!(r.iter().all(|r| r.edited_since_read()));
-    let base = b.pinned_diff_base(SUB, "a").expect("pinned v1 is public");
+    let base = b
+        .pinned_diff_base(&SubId::from(SUB), &RemoteId::from("a"))
+        .expect("pinned v1 is public");
     assert_eq!((base.version, base.content_md.as_str()), (1, "a1"));
     assert!(
-        b.pinned_diff_base(SUB, "b").is_none(),
+        b.pinned_diff_base(&SubId::from(SUB), &RemoteId::from("b"))
+            .is_none(),
         "v2 was never public"
     );
     let log = public_gets(&f);
@@ -576,7 +632,8 @@ fn diff_base_only_when_the_version_read_was_pinned() {
 #[test]
 fn withdrawal_keeps_only_a_cached_pin() {
     let (env, _f, origin, b) = setup();
-    b.remote_pinned(SUB, ID, 1).unwrap(); // cached
+    b.remote_pinned(&SubId::from(SUB), &RemoteId::from(ID), 1)
+        .unwrap(); // cached
     let mut gone = reading_row(SUB, ID, &origin, 4, "");
     gone["state"] = json!("tombstone");
     gone["content_html"] = json!("");

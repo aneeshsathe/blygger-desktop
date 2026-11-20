@@ -27,6 +27,7 @@
 use std::path::PathBuf;
 
 use super::*;
+use crate::scenes::Scene;
 
 /// The tab bar's width.
 pub const TAB_BAR_W: f32 = 34.;
@@ -416,7 +417,7 @@ impl MainView {
                             "≈",
                             "Nearby",
                             nearby_tip,
-                            self.nearby.open,
+                            self.nearby_open_now(cx),
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.nearby_toggle(cx))),
                     )
@@ -431,20 +432,20 @@ impl MainView {
     /// preview beside the editor, its divider moved).
     pub(crate) fn side_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("side-writing", 0) | ("side-preview", 0) => {
+            (Scene::SideWriting, 0) | (Scene::SidePreview, 0) => {
                 self.open(&LocalId("01J9QK3".into()), window, cx)
             }
-            ("side-writing", 1) => {
+            (Scene::SideWriting, 1) => {
                 self.nearby_set_open(true, cx);
                 self.ext_lib_show(window, cx);
             }
-            ("side-writing", 2) => {
+            (Scene::SideWriting, 2) => {
                 let id = self
                     .ext
                     .lib
@@ -467,8 +468,8 @@ impl MainView {
                 })
                 .detach();
             }
-            ("side-preview", 1) => self.studio_set_view(studio::ViewMode::Split, cx),
-            ("side-preview", 2) => self.set_preview_left(0.64, cx),
+            (Scene::SidePreview, 1) => self.studio_set_view(studio::ViewMode::Split, cx),
+            (Scene::SidePreview, 2) => self.set_preview_left(0.64, cx),
             _ => {}
         }
         cx.notify();

@@ -12,7 +12,7 @@ use super::{
     ALREADY_WITHDRAWN, Button, CLOSE_SHEET, Facts, Fit, LEFT, NEED_AI, NEED_POST, NEED_POSTS,
     NOT_SCRATCH, Screen, TOO_LONG, ViewMode, buttons, fit, rule, visible,
 };
-use crate::app::{MainView, Sheet, TITLEBAR_H};
+use crate::app::{MainView, TITLEBAR_H};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -53,7 +53,7 @@ fn publish_on_an_over_limit_fragment_says_thread() {
     assert!(long.over_limit());
     assert_eq!(
         reason("Publish", &facts(Some(&long))).as_deref(),
-        Some(crate::keymap::hint(TOO_LONG))
+        Some(TOO_LONG.get())
     );
     // The same text as a thread publishes.
     long.kind = Kind::Thread;
@@ -195,7 +195,7 @@ fn screens_sheets_views_and_capture() {
     for a in ["NewDraft", "Publish", "ViewWrite", "AiGenerate"] {
         assert_eq!(
             reason(a, &reading).as_deref(),
-            Some(crate::keymap::hint(NEED_POSTS)),
+            Some(NEED_POSTS.get()),
             "{a}"
         );
     }
@@ -338,28 +338,7 @@ fn setup<'a>(
     (view, fake, cx)
 }
 
-/// `selector`'s bounds once it has stopped moving. Sheets and panes slide
-/// in with animations timed on the real clock, so under a loaded test run
-/// an element can still be moving when a test goes to click it.
-pub(crate) fn settled_bounds(
-    cx: &mut VisualTestContext,
-    selector: &'static str,
-) -> gpui_kit::Bounds<gpui_kit::Pixels> {
-    let mut last = None;
-    for _ in 0..100 {
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-        let b = cx
-            .debug_bounds(selector)
-            .unwrap_or_else(|| panic!("{selector} isn't on screen"));
-        if last == Some(b) {
-            return b;
-        }
-        last = Some(b);
-        std::thread::sleep(std::time::Duration::from_millis(16));
-    }
-    last.unwrap()
-}
+use crate::test_wait::still as settled_bounds;
 
 /// Scroll the Settings page until `selector` is inside the window, so a
 /// click lands on it whatever the runner's window height and font metrics.
@@ -412,8 +391,8 @@ fn clicking_publish_opens_the_publish_sheet(cx: &mut TestAppContext) {
     view.read_with(cx, |v, _| {
         assert!(
             matches!(
-                v.sheet,
-                Some(Sheet::Publish {
+                v.sheet.get(),
+                Some(crate::app::PublishSheet {
                     next_version: 1,
                     ..
                 })
@@ -462,7 +441,7 @@ fn disabled_reasons_in_the_window(cx: &mut TestAppContext) {
     cx.run_until_parked();
     assert_eq!(
         button(&view, "Publish", cx).reason.as_deref(),
-        Some(crate::keymap::hint(TOO_LONG))
+        Some(TOO_LONG.get())
     );
     assert!(
         button(&view, "MakeDraft", cx)
@@ -554,8 +533,8 @@ const SETTINGS_ROWS: &[&str] = &[
     "SIZE",
     "THEME",
     "LAYOUT",
+    "QUIET WRITING", // --- quiet ---
     "BUTTONS",
-    "CHAT",
     "SERENDIPITY",
     "SOUNDS",
     "NEARBY",
@@ -573,7 +552,6 @@ const SETTINGS_ROWS: &[&str] = &[
 const SETTINGS_CHIPS: &[&str] = &[
     "th-aizome",
     "show-buttons-off",
-    "chat-notify",
     "sounds-quiet",
     "nearby-local",
     "nearby-rerank",
@@ -602,7 +580,7 @@ fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
     cx.simulate_resize(gpui_kit::size(gpui_kit::px(800.), gpui_kit::px(600.)));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Settings { .. }))));
+    assert!(view.read_with(cx, |v, _| v.sheet.is::<crate::app::SettingsSheet>()));
     // The blyg's changelog choices, as a studio 0.58 or later has them.
     view.update(cx, |v, cx| {
         v.reading.changelogs.settings = crate::app::reading::Load::Ready(Default::default());
@@ -649,12 +627,12 @@ fn settings_is_a_page_and_nothing_runs_past_its_edge(cx: &mut TestAppContext) {
     // esc closes it; ⌘, opens and closes it.
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(cx.debug_bounds("settings-page").is_none());
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
     assert!(cx.debug_bounds("settings-page").is_some());
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-,"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
 }

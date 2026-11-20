@@ -99,15 +99,12 @@ impl Env<'_> {
     }
 
     fn wait(&mut self, what: &str, f: impl Fn(&MainView) -> bool) {
-        for _ in 0..600 {
-            self.cx.executor().advance_clock(Duration::from_millis(30));
-            self.cx.run_until_parked();
-            if self.view.read_with(self.cx, |v, _| f(v)) {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(5));
-        }
-        panic!("timed out waiting for {what}");
+        let view = self.view.clone();
+        crate::test_wait::until(self.cx, what, |cx| {
+            cx.executor().advance_clock(Duration::from_millis(30));
+            cx.run_until_parked();
+            view.read_with(cx, |v, _| f(v))
+        });
     }
 
     fn wait_idle(&mut self) {
@@ -212,7 +209,8 @@ fn esc_cancels_a_running_generation(cx: &mut TestAppContext) {
         );
     });
     assert!(e.toast().contains("cancelled"));
-    std::thread::sleep(Duration::from_millis(30));
+    // The cancelled job's thread would have answered by now.
+    crate::test_wait::wall_clock(Duration::from_millis(30));
     e.cx.executor().advance_clock(Duration::from_millis(100));
     e.cx.run_until_parked();
     assert_eq!(e.text(), "[TK]write something[/TK]", "nothing written");
@@ -331,13 +329,13 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(matches!(v.ai.overlay, Some(Overlay::PublishWarning { .. })));
-        assert!(v.sheet.is_none(), "no publish sheet behind the warning");
+        assert!(!v.sheet.is_open(), "no publish sheet behind the warning");
     });
     // ⏎ is Cancel (the default).
     e.cx.simulate_keystrokes("enter");
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
-        assert!(v.ai.overlay.is_none() && v.sheet.is_none());
+        assert!(v.ai.overlay.is_none() && !v.sheet.is_open());
     });
     assert_eq!(e.fake.item(&LocalId(DRAFT.into())).unwrap().version, 0);
 
@@ -348,7 +346,7 @@ fn publishing_undisclosed_generated_text_warns_first(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(v.ai.overlay.is_none());
-        assert!(matches!(v.sheet, Some(crate::app::Sheet::Publish { .. })));
+        assert!(v.sheet.is::<crate::app::PublishSheet>());
     });
 }
 
@@ -362,7 +360,7 @@ fn publishing_with_the_extension_does_not_warn(cx: &mut TestAppContext) {
     e.cx.run_until_parked();
     e.view.read_with(e.cx, |v, _| {
         assert!(v.ai.overlay.is_none());
-        assert!(matches!(v.sheet, Some(crate::app::Sheet::Publish { .. })));
+        assert!(v.sheet.is::<crate::app::PublishSheet>());
     });
 }
 
@@ -541,10 +539,7 @@ impl Env<'_> {
     }
 
     fn settle(&mut self) {
-        for _ in 0..20 {
-            self.cx.run_until_parked();
-            std::thread::sleep(Duration::from_millis(2));
-        }
+        crate::test_wait::settle(self.cx);
     }
 
     fn stubs(&self) -> Vec<blyg_core::Item> {

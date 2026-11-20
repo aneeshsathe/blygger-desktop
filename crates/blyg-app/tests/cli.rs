@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::Arc;
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
@@ -25,6 +25,27 @@ fn blygger(dir: &Path, args: &[&str]) -> Output {
         .env_remove("BLYGGER_FAKE")
         .output()
         .expect("run blygger")
+}
+
+/// Wait for a child this test started to exit; kill it (by its own handle,
+/// never by name) and fail with `what` when it doesn't in `limit`.
+fn exit_within(child: &mut Child, limit: Duration, what: &str) -> ExitStatus {
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            return s;
+        }
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            let _ = child.wait();
+            panic!("{what}");
+        }
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the one poll interval for waiting on a child process"
+        )]
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn write(p: &Path, text: &str) {
@@ -111,6 +132,48 @@ fn ext_serves_markdown_notes_through_the_host() {
     host.shutdown();
 }
 
+/// `blygger --version` once started the whole app (on the user's live
+/// database). It prints the version and exits, as `+version` does.
+#[test]
+fn dashed_version_and_help_print_and_exit() {
+    let dir = tempfile::tempdir().unwrap();
+    for (args, wanted) in [
+        (&["--version"][..], "blygger "),
+        (&["-V"][..], "blygger "),
+        (&["--help"][..], "Usage: blygger"),
+        (&["-h"][..], "Usage: blygger"),
+    ] {
+        let mut child = Command::new(BLYGGER)
+            .args(args)
+            .env("BLYGGER_CONFIG", dir.path().join("config"))
+            .env("BLYGGER_DATA_DIR", dir.path().join("data"))
+            // Should it start the app anyway: sample data, no focus taken.
+            .env("BLYGGER_FAKE", "1")
+            .env("BLYGGER_NO_ACTIVATE", "1")
+            .env("BLYGGER_NO_UPDATE", "1")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("run blygger");
+        let status = exit_within(
+            &mut child,
+            Duration::from_secs(30),
+            &format!("blygger {args:?} started the app instead of printing"),
+        );
+        let out = child.wait_with_output().unwrap();
+        assert!(status.success(), "{args:?}: {status:?}");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.starts_with(wanted), "{args:?}: {stdout}");
+        assert!(
+            !dir.path().join("data").exists(),
+            "{args:?} made a data dir"
+        );
+    }
+    let o = blygger(dir.path(), &["--frobnicate"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("unknown option --frobnicate"));
+}
+
 #[test]
 fn ext_with_an_unknown_name_exits_2() {
     let dir = tempfile::tempdir().unwrap();
@@ -173,17 +236,11 @@ fn ext_answers_initialize_and_shutdown_on_stdio() {
     assert_eq!(v["result"]["protocolVersion"], PROTOCOL_VERSION, "{line}");
     writeln!(stdin, r#"{{"jsonrpc":"2.0","id":2,"method":"shutdown"}}"#).unwrap();
     drop(stdin);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let status = loop {
-        if let Some(s) = child.try_wait().unwrap() {
-            break s;
-        }
-        if Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("blygger +ext didn't exit after shutdown");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
+    let status = exit_within(
+        &mut child,
+        Duration::from_secs(10),
+        "blygger +ext didn't exit after shutdown",
+    );
     assert!(status.success(), "{status:?}");
 }
 
@@ -385,17 +442,11 @@ fn ext_cross_post_prepares_a_note_on_stdio() {
     let v = read_json(&mut stdout);
     assert_eq!(v["id"], 4, "{v}");
     drop(stdin);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    let status = loop {
-        if let Some(s) = child.try_wait().unwrap() {
-            break s;
-        }
-        if Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("blygger +ext cross-post didn't exit after shutdown");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    };
+    let status = exit_within(
+        &mut child,
+        Duration::from_secs(10),
+        "blygger +ext cross-post didn't exit after shutdown",
+    );
     assert!(status.success(), "{status:?}");
 }
 

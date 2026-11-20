@@ -24,6 +24,29 @@ pub enum EditedBlock {
     Notes { heading: String, notes: Vec<String> },
 }
 
+/// The reading header's line: the picks, else a search's matches, else
+/// how many posts are to read (reader-local, private state: allowed, never
+/// social) and the keys. `found` is the shown count while a search is typed.
+pub fn reading_hint(stream: bool, picked: usize, unread: usize, found: Option<usize>) -> String {
+    let keys = crate::keymap::hint(if stream {
+        "j/k move · ⏎ read more · ⇧R all read · / search · esc back"
+    } else {
+        // --- reader folders ---
+        "←→ panes · j/k posts · space next unread · r/u read/unread · ⌘A picks all · \
+         ⇧R all read · / search"
+    });
+    if picked > 0 {
+        // --- read/unread ---
+        format!("{picked} picked · r marks read · u unread · esc lets go")
+    } else if let Some(n) = found {
+        format!("{n} found · esc clears")
+    } else if unread > 0 {
+        format!("{unread} to read · {keys}")
+    } else {
+        keys.into()
+    }
+}
+
 impl MainView {
     /// Every reading row, in display order (a search doesn't change these).
     #[cfg(test)]
@@ -36,7 +59,7 @@ impl MainView {
     pub(crate) fn reading_shown_ids(&self) -> Vec<String> {
         self.reading
             .shown_rows()
-            .map(|r| r.remote_id.clone())
+            .map(|r| r.remote_id.to_string())
             .collect()
     }
 
@@ -501,7 +524,7 @@ impl MainView {
                 }
                 let of = RemoteRef {
                     origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
+                    id: item.remote_id.to_string(),
                     version,
                     cited: None,
                 };
@@ -571,7 +594,7 @@ impl MainView {
             "Link post" => self.show_toast("Feed posts can't be linked with [[…]]", None, cx),
             // --- catch up --- the conversation leading to it.
             "Catch up" => {
-                self.open_catch_up(item.origin.clone(), item.remote_id.clone(), window, cx)
+                self.open_catch_up(item.origin.clone(), item.remote_id.to_string(), window, cx)
             }
             // --- follow-ups --- a stub with a generated reply, for review.
             "AI reply" if !super::own::is_own_row(&item) => self.ai_reply_to(item, window, cx),
@@ -606,7 +629,7 @@ impl MainView {
         let body = vm::stub_body(&item.remote_id);
         let of = RemoteRef {
             origin: item.origin.clone(),
-            id: item.remote_id.clone(),
+            id: item.remote_id.to_string(),
             version: item.version,
             cited: None,
         };
@@ -621,7 +644,7 @@ impl MainView {
                     vm::host(&item.origin)
                 };
                 self.show_toast(
-                    format!("Reply to {whom} · a stub thread"),
+                    format!("Replying to {whom}"),
                     Some("Quoting the whole post · choose a passage above the editor".into()),
                     cx,
                 );
@@ -700,6 +723,49 @@ impl MainView {
         chips
     }
 
+    /// The chips in the row under the open post, and those behind "⋯ More"
+    /// (`vm::split_chips`).
+    pub(crate) fn reading_chip_rows(&self) -> (Vec<vm::ActionChip>, Vec<vm::ActionChip>) {
+        vm::split_chips(self.reading_action_chips())
+    }
+
+    /// "⋯ More"'s menu: the less common actions on the open post, then
+    /// ⤳ Add to trail for a blyg post (`t`). Fork, greyed in the row before,
+    /// says where forking lives when chosen.
+    pub(crate) fn post_more_items(&self) -> Vec<(String, Option<super::sources::MenuCmd>, bool)> {
+        use super::sources::MenuCmd;
+        let (_, more) = self.reading_chip_rows();
+        let mut v: Vec<_> = more
+            .into_iter()
+            .map(|c| {
+                let label = if c.enabled {
+                    c.label
+                } else {
+                    format!("{} · needs a pinned version", c.label)
+                };
+                (label, Some(MenuCmd::PostAction(c.id)), false)
+            })
+            .collect();
+        // --- trails --- blyg posts only (a trail publishes as quotes).
+        let trail = self.reading.opened.as_ref().is_some_and(|o| {
+            !super::original::is_external(&o.key)
+                && self
+                    .reading
+                    .subs
+                    .iter()
+                    .find(|s| s.id == o.item.subscription_id)
+                    .is_none_or(|s| s.kind == SubscriptionKind::Blyg)
+        });
+        if trail {
+            v.push((
+                format!("{} Add to trail", crate::app::trails::GLYPH),
+                Some(MenuCmd::AddToTrail),
+                false,
+            ));
+        }
+        v
+    }
+
     // ------------------------------------------------------------ render
 
     pub(super) fn render_reading_screen(
@@ -708,25 +774,17 @@ impl MainView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let p = self.palette.on_page();
-        let unread = self.reading.rows.iter().filter(|r| r.is_unread()).count();
+        // --- unread counts --- the one rule (`sources_vm::counts_as_unread`):
+        // the same number as All unread and the status bar.
+        let unread = super::sources_vm::unread_total(&self.reading.rows, &self.reading.hopper_only);
         let stream = self.reading.mode == super::stream_vm::ReadMode::Stream;
-        let keys = if stream {
-            "j/k move · ⏎ read more · / search · esc back"
-        } else {
-            // --- reader folders ---
-            "←→ panes · j/k posts · space next unread · r/u read/unread · / search"
-        };
         let picked = self.reading.picked.set.len();
+        // --- stream search --- "N found · esc clears" while searching.
+        let found = (!self.reading.query.trim().is_empty()).then_some(self.reading.shown.len());
         let hint = if !self.reading.available {
             String::new()
-        } else if picked > 0 {
-            // --- read/unread ---
-            format!("{picked} picked · r marks read · u unread · esc lets go")
-        } else if unread > 0 {
-            // Reader-local, private state: allowed (never social).
-            format!("{unread} to read · {keys}")
         } else {
-            keys.into()
+            crate::keymap::hint_owned(reading_hint(stream, picked, unread, found))
         };
         // --- stream --- the Stream | Reader toggle (⌥⌘1 / ⌥⌘2).
         let mut actions = vec![self.render_mode_toggle(cx)];
@@ -754,6 +812,8 @@ impl MainView {
                 .child(header)
                 .child(self.render_stream_body(body_font, cx))
                 .children(self.render_compose_bar(cx)) // --- reading compose ---
+                // ⋯ More's menu (the Reader draws it with its sources pane).
+                .children(self.render_source_menu(cx))
                 .into_any_element();
         }
         let held = self.reading.rows.len();
@@ -1036,6 +1096,21 @@ impl MainView {
                 })
                 .into_any_element();
         };
+        // --- reader view --- the author's own page takes the reading pane:
+        // the browser pane's chrome (with Burrow reader | Author's site), the
+        // page to the foot of the pane, and the action row.
+        if self.site_view_shown() {
+            return div()
+                .id("reading-detail")
+                .flex_1()
+                .min_w_0()
+                .min_h_0()
+                .flex()
+                .flex_col()
+                .child(self.render_site_pane(o, cx))
+                .child(self.render_post_actions(o, cx))
+                .into_any_element();
+        }
         let item = &o.item;
         let kind = crate::vm::kind_label(item.kind);
         let tombstone = item.state == "tombstone";
@@ -1190,10 +1265,7 @@ impl MainView {
             });
 
         // The body: the post as its blyg published it, in the WebView.
-        let body = if self.site_view_shown() {
-            // --- reader view --- the author's own page instead.
-            self.render_site_pane(cx)
-        } else if self.studio.reader.active() {
+        let body = if self.studio.reader.active() {
             self.reader_pane(&p)
         } else {
             div()
@@ -1202,8 +1274,65 @@ impl MainView {
                 .into_any_element()
         };
 
-        let actions = self.reading_action_chips();
-        let actions_row = div()
+        div()
+            .id("reading-detail")
+            .flex_1()
+            .min_w_0()
+            .min_h_0()
+            .flex()
+            .flex_col()
+            .pt(px(14.))
+            // --- browse --- ‹ back, the breadcrumb, history.
+            .child(
+                div()
+                    .px(px(32.))
+                    .flex_none()
+                    .child(self.render_trail_bar(cx)),
+            )
+            .child(div().px(px(32.)).flex_none().child(header))
+            .child(notes)
+            .child(body)
+            // --- responses --- a list, never a count.
+            .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
+            .child(self.render_post_actions(o, cx))
+            .into_any_element()
+    }
+
+    /// The action row under the open post: the common chips, then ⋯ More.
+    fn render_post_actions(&self, o: &super::Opened, cx: &mut Context<Self>) -> AnyElement {
+        let p = self.palette.on_page();
+        let item = &o.item;
+        // The common chips in the row; the rest behind "⋯ More".
+        let (actions, _) = self.reading_chip_rows();
+        // (Nothing more for a withdrawn post.)
+        let more_chip = (!self.post_more_items().is_empty()).then(|| {
+            self.chip("act-more", "⋯ More")
+                .debug_selector(|| "act-more".into())
+                .tooltip(|_, cx| {
+                    cx.new(|_| {
+                        super::Tip(
+                            "More for this post: AI reply, Link post, → Notes, Hopper ›, \
+                             + Add to shelf, ⤳ Add to trail…"
+                                .into(),
+                        )
+                    })
+                    .into()
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(|this, e: &MouseDownEvent, _, cx| {
+                        cx.stop_propagation();
+                        this.open_source_menu(
+                            super::sources::MenuTarget::PostMore,
+                            e.position,
+                            false,
+                            cx,
+                        )
+                    }),
+                )
+                .into_any_element()
+        });
+        div()
             .flex_none()
             .px(px(32.))
             .pt(px(10.))
@@ -1233,29 +1362,8 @@ impl MainView {
                 })
                 .into_any_element()
             }))
-            .children(self.slots_more_chip(item, cx)); // --- reading slots ---
-
-        div()
-            .id("reading-detail")
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .pt(px(14.))
-            // --- browse --- ‹ back, the breadcrumb, history.
-            .child(
-                div()
-                    .px(px(32.))
-                    .flex_none()
-                    .child(self.render_trail_bar(cx)),
-            )
-            .child(div().px(px(32.)).flex_none().child(header))
-            .child(notes)
-            .child(body)
-            // --- responses --- a list, never a count.
-            .children(self.render_responses(&item.origin, &item.remote_id, &o.responses, cx))
-            .child(actions_row)
+            .children(more_chip.map(|c| self.tour_marked_more(c))) // --- 0.26.0 --- the tour's ring
+            .children(self.slots_more_chip(item, cx)) // --- reading slots ---
             .into_any_element()
     }
 

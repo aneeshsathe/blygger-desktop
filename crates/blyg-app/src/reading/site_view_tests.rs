@@ -21,17 +21,23 @@ use crate::prefs::Prefs;
 struct Log {
     loads: Vec<String>,
     created: usize,
+    frames: Vec<Bounds<Pixels>>,
+    backs: usize,
 }
 
 struct Stub(Rc<RefCell<Log>>);
 
 impl BrowserSurface for Stub {
-    fn set_frame(&mut self, _: Bounds<Pixels>) {}
+    fn set_frame(&mut self, b: Bounds<Pixels>) {
+        self.0.borrow_mut().frames.push(b);
+    }
     fn set_visible(&mut self, _: bool) {}
     fn load_url(&mut self, url: &str) {
         self.0.borrow_mut().loads.push(url.to_string());
     }
-    fn back(&mut self) {}
+    fn back(&mut self) {
+        self.0.borrow_mut().backs += 1;
+    }
     fn forward(&mut self) {}
     fn reload(&mut self) {}
     fn stop(&mut self) {}
@@ -89,12 +95,7 @@ fn setup<'a>(
     (view, fake, cx, log)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
     let key = view.read_with(cx, |v, _| {
@@ -124,6 +125,56 @@ fn off_by_default_the_reader_shows_posts(cx: &mut TestAppContext) {
         assert!(v.reader_doc().is_some(), "Burrow's reader, as before");
     });
     assert_eq!(log.borrow().created, 0, "no web view made");
+}
+
+/// The page takes the reading pane: the browser pane's chrome (with the
+/// toggle) along its top, the web view filling the pane below it, not the
+/// slide-over, and no Burrow header over it.
+#[gpui_kit::test]
+fn the_page_takes_the_reading_pane_with_the_browser_chrome(cx: &mut TestAppContext) {
+    let (view, _, cx, log) = setup(cx, "open-posts-on-site = true\n");
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    cx.run_until_parked();
+    cx.simulate_keystrokes("down");
+    settle(cx);
+    view.read_with(cx, |v, _| {
+        assert!(v.site_view_shown());
+        assert!(!v.browser.open, "not the slide-over");
+    });
+    for id in [
+        "site-author",
+        "site-back",
+        "site-forward",
+        "site-reload",
+        "site-address",
+        "site-shield",
+        "site-open-browser",
+    ] {
+        assert!(cx.debug_bounds(id).is_some(), "{id} in the docked chrome");
+    }
+    let chrome = cx.debug_bounds("site-address").unwrap();
+    let body = cx.debug_bounds("site-body").expect("the docked pane");
+    let frame = *log.borrow().frames.last().expect("placed");
+    assert_eq!(frame.size.width, body.size.width, "as wide as the pane");
+    assert_eq!(frame.origin.x, body.origin.x);
+    assert!(frame.origin.y > chrome.bottom(), "below the chrome");
+    assert!(
+        (body.bottom() - frame.bottom()).abs() < gpui_kit::px(1.),
+        "down to the pane's foot"
+    );
+    // The chrome's ← goes back in the page's own history.
+    let back = cx.debug_bounds("site-back").unwrap();
+    cx.simulate_click(back.center(), gpui_kit::Modifiers::none());
+    settle(cx);
+    assert_eq!(log.borrow().backs, 0, "nothing to go back to yet: disabled");
+    view.update(cx, |v, cx| {
+        v.reading.site.page.can_back = true;
+        cx.notify()
+    });
+    settle(cx);
+    cx.simulate_click(back.center(), gpui_kit::Modifiers::none());
+    settle(cx);
+    assert_eq!(log.borrow().backs, 1);
 }
 
 #[gpui_kit::test]

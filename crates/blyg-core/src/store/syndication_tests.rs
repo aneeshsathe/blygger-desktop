@@ -196,7 +196,7 @@ fn ri(sub: &str, rid: &str) -> ReadingItem {
 #[test]
 fn reading_rows_keep_what_their_blyg_served() {
     let s = store();
-    let kinds: HashMap<String, SubscriptionKind> = HashMap::new();
+    let kinds: HashMap<SubId, SubscriptionKind> = HashMap::new();
     s.merge_reading(&[ri("sub1", "r1"), ri("sub1", "r2")], true, &kinds)
         .unwrap();
     let list = vec![e("https://social.example.net/@them/7", 3)];
@@ -207,14 +207,26 @@ fn reading_rows_keep_what_their_blyg_served() {
         ])
         .unwrap()
     );
-    assert_eq!(s.reading_syndication("sub1", "r1"), list);
-    assert_eq!(s.reading_syndication("sub1", "r2"), vec![]);
-    assert_eq!(s.reading_syndication("sub1", "nope"), vec![]);
+    assert_eq!(
+        s.reading_syndication(&SubId::from("sub1"), &RemoteId::from("r1")),
+        list
+    );
+    assert_eq!(
+        s.reading_syndication(&SubId::from("sub1"), &RemoteId::from("r2")),
+        vec![]
+    );
+    assert_eq!(
+        s.reading_syndication(&SubId::from("sub1"), &RemoteId::from("nope")),
+        vec![]
+    );
     // A re-merge of the same rows keeps the list; the same list again
     // changes nothing.
     s.merge_reading(&[ri("sub1", "r1"), ri("sub1", "r2")], true, &kinds)
         .unwrap();
-    assert_eq!(s.reading_syndication("sub1", "r1"), list);
+    assert_eq!(
+        s.reading_syndication(&SubId::from("sub1"), &RemoteId::from("r1")),
+        list
+    );
     assert!(
         !s.set_reading_syndication(&[("sub1".into(), "r1".into(), list.clone())])
             .unwrap()
@@ -224,5 +236,8 @@ fn reading_rows_keep_what_their_blyg_served() {
         s.set_reading_syndication(&[("sub1".into(), "r1".into(), vec![])])
             .unwrap()
     );
-    assert_eq!(s.reading_syndication("sub1", "r1"), vec![]);
+    assert_eq!(
+        s.reading_syndication(&SubId::from("sub1"), &RemoteId::from("r1")),
+        vec![]
+    );
 }

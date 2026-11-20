@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use crate::ids::{RemoteId, SubId};
+
 /// Client-generated id, stable for the life of the item on this machine.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LocalId(pub String);
@@ -240,7 +242,7 @@ pub enum SubscriptionKind {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Subscription {
-    pub id: String,
+    pub id: SubId,
     pub kind: SubscriptionKind,
     pub origin: String,
     pub feed_url: String,
@@ -310,8 +312,8 @@ pub struct Author {
 /// One item from a subscription (imported_items), for the reading view.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReadingItem {
-    pub subscription_id: String,
-    pub remote_id: String,
+    pub subscription_id: SubId,
+    pub remote_id: RemoteId,
     pub subscription_title: String,
     pub origin: String,
     pub kind: Kind,
@@ -622,6 +624,15 @@ impl ReadingItem {
         self.read_version.is_none()
     }
 
+    /// What "unread" means everywhere a count or a dot says it (the
+    /// reading header, the status bar, All unread, the folder counts, the
+    /// stream's dot): never read, or edited since you read it (SPEC: "All
+    /// unread: never read or edited since you read it"). Background posts
+    /// are left out by the callers, which know the studio's Background.
+    pub fn to_read(&self) -> bool {
+        self.is_unread() || self.edited_since_read()
+    }
+
     /// The post's own date for the reading list (issue #6): when the author
     /// last wrote it (`updated`, else `created`), falling back to when your
     /// blyg first imported it (`observed_at`) only when neither exists or
@@ -861,8 +872,8 @@ pub fn own_responses(items: &[Item], own_origin: &str, origin: &str, id: &str) -
         }
         let Some(r) = refs.pop() else { continue };
         let item = ReadingItem {
-            subscription_id: String::new(),
-            remote_id: sid.0.clone(),
+            subscription_id: SubId::default(),
+            remote_id: RemoteId::from(sid.0.clone()),
             subscription_title: "you".into(),
             origin: own_origin.to_string(),
             kind: it.kind,

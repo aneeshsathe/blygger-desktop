@@ -47,6 +47,9 @@ pub use view::{
     Browser, BrowserAddress, BrowserBack, BrowserForward, BrowserReload, ClipPage, OpenBrowser,
     ToggleBrowser,
 };
+// --- reader view --- the chrome, docked in the reading pane for a post's
+// own page (`reading::site_view`).
+pub(crate) use view::{chrome_address, chrome_bar, chrome_button};
 
 /// The pane exists on this platform: macOS (WKWebView) and Windows
 /// (WebView2), and in tests (a stub surface). Elsewhere links open in the
@@ -74,9 +77,7 @@ pub const TEARDOWN_AFTER: Duration = Duration::from_secs(180);
 /// (smoke tests measure the freed process without waiting minutes).
 pub fn teardown_after() -> Duration {
     if cfg!(debug_assertions)
-        && let Some(ms) = std::env::var("BLYGGER_BROWSER_TEARDOWN_MS")
-            .ok()
-            .and_then(|v| v.parse().ok())
+        && let Some(ms) = crate::dev_flags::get().browser.teardown_ms
     {
         return Duration::from_millis(ms);
     }

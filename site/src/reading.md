@@ -14,8 +14,12 @@ Fragments show in full; threads show a few lines and **Read more** (⏎ or
 Space) opens the whole post in a side pane. j/k (or ↑/↓) move; esc closes
 the pane and the stream keeps its place.
 
-A post counts as read after a second on screen, and unread posts get a dot,
-never a count. Posts are dated by when their author published or last edited
+A post counts as read after a second on screen. A post you haven't read, or
+that changed since you read it, gets a dot; the reading header and the status
+bar say how many posts are to read, and All unread lists them, all by that
+one rule. That count is private to you, about your own reading list: Burrow
+still shows no social counts (followers, responses, mentions). Posts are
+dated by when their author published or last edited
 them, and an edit updates the post in place rather than adding a new one.
 Quotes show as grey boxes with the quoted text (a quote inside a quote
 nests, three layers deep), and `[[id]]` links read as the post they point
@@ -63,22 +67,23 @@ the posts from that source in the middle, and the post on the right.
 
 ### Background and Foreground
 
-On blygger-studio 0.61 and later, an open post has these chips, as the
+On blygger-studio 0.61 and later, an open post has these actions, as the
 studio's ⋯ menu does:
 
-- **↓ Background** (or **b** with the post open or selected) moves it to
-  Background, and keeps it there across later versions. In Background the
-  chip is **↑ Foreground**, which brings it back whatever the rules say.
-- **↺ Clear my choice**, once you've made one, lets the rules decide again.
-- **⇊ Blyg to Background** moves every post of that blyg there, except any
-  you moved to Foreground yourself; **⇈ Blyg to Foreground** brings them back.
+- **↓ Background** (or **b** with the post open or selected), a chip under
+  the post, moves it to Background, and keeps it there across later
+  versions. In Background the chip is **↑ Foreground**, which brings it back
+  whatever the rules say.
+- **↺ Clear my choice**, in **⋯ More** once you've made one, lets the rules
+  decide again.
+- **⇊ Blyg to Background**, in **⋯ More**, moves every post of that blyg
+  there, except any you moved to Foreground yourself; **⇈ Blyg to
+  Foreground** brings them back.
 
 Your choice beats the blyg's, which beats the rules. **Settings › Reading ›
 Background** has the rules, saved on your blyg: withdrawn posts are always
 in Background, and **Your own minor changes** can be turned off. On an older
 studio there are no chips or rules, and Background lists withdrawn posts.
-
-The web app has the same, under an open post and in ⚙ Reading (no key).
 
 - **Hoppers** are your blyg's collections of posts (see
   [Hoppers](#hoppers) below). Picking one lists its posts.
@@ -95,8 +100,8 @@ The web app has the same, under an open post and in ⚙ Reading (no key).
 Your own published posts are in Reading too. They sit among everyone else's
 by date in All, Today and the stream, and alone under **Your blyg** in the
 sources pane (once you've published something). They read as "You", with the
-same reading pane, lineage and actions: Quote into a thread, Reply · new
-stub, Link post, Open on web and → Notes. There's no AI reply to yourself,
+same reading pane, lineage and actions: Quote into a thread, Reply, Link
+post, Open on web and → Notes. There's no AI reply to yourself,
 and no Fork here: your own post forks from a pin in ⌘Y (see
 [Replying to, quoting and linking your own posts](writing.md#replying-to-quoting-and-linking-your-own-posts)).
 
@@ -104,9 +109,6 @@ Your posts are **never unread**: they get no dot, never count in All unread
 or any folder's count, and have no 👍 / 👎. Nothing about them is sent as
 read state. Opening one shows your current version and your pins, and, when
 you have unpublished edits, the text as it's published.
-
-The [web app](web-self-host.md#using-it) shows your posts in Reading the
-same way.
 
 ### Hoppers
 
@@ -118,8 +120,8 @@ hopper's own order: the post put in it most recently comes first, as on your
 blyg. Withdrawn posts aren't listed there; they stay under Background.
 
 **Put a post in a hopper.** With a post open or selected, press **h** (or
-⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from its action chips or
-its right-click menu. Each hopper is listed with a check by the ones the post
+⌥⌘P, Post › Put in Hopper…), or choose **Hopper ›** from **⋯ More** under
+the post or from its right-click menu. Each hopper is listed with a check by the ones the post
 is in. Choosing a hopper (click, ⏎, Space, or its number) puts the post in or
 takes it out, and **New Hopper…** (n) makes one and puts the post in it. Your
 own posts go in hoppers too. A change shows at once and is sent to your blyg
@@ -166,6 +168,15 @@ every post in the list, and esc lets go. **r** marks the picks (or the open
 post) read, **u** unread; the right-click menu says how many (*Mark 3
 Unread*).
 
+**Mark all read.** ⇧R on the reading screen, in the Stream or the Reader,
+marks everything to read in what you're looking at: the source the list
+shows, or the whole stream. A search narrows it to the matches. It asks
+first, with the count (*Mark 37 posts in Rue read?*): ⏎ marks them, esc
+cancels. It's also **Mark All Read…** in a subscription's, folder's or
+hopper's right-click menu, **Mark All Read in …** in the sources pane's own
+menu, **Blyg › Mark All Read…**, and in the command palette (⇧⌘P). **u**
+marks a post unread again.
+
 ![Picking posts in the Reader](screenshots/reader-picks.png)
 
 **Read state syncs** between your Macs through your blyg when your sign-in
@@ -197,6 +208,11 @@ It grows as you write, up to eight lines.
 - **⌘⏎** (or **Post**) publishes it as a fragment, the way quick capture
   does. A post that quotes another, or runs past 1,000 characters, goes as a
   thread; the footer says which.
+- **A moment to change your mind:** Post waits three seconds first, and the
+  footer counts down (*Posting in 3 s · esc cancels · ⌘⏎ posts now*). esc,
+  **Cancel** or any edit stops it, and nothing has left your Mac; ⌘⏎ again
+  posts at once. (⌘⏎ in the editor opens the publish sheet instead; here
+  the wait is the safety net.)
 - **⌘D** (or **Draft**) keeps it as a draft on your blyg.
 - **⤢** moves the text into the full editor as a draft, for longer writing.
 - **❝ Quote**, with a blyg post open, puts that post's `![[id]]` in the box.
@@ -211,12 +227,29 @@ The Posts screen is unchanged.
 Burrow now opens on Reading. It stays on Posts during the first-run setup
 and the tour, and when there's no blyg to read from.
 
+## Which one do I use?
+
+Burrow has several ways to keep a post. In plain words:
+
+- **Shelf**: posts you mean to come back to soon. A short list, in your
+  order, synced with your blyg. (**+ Add to shelf** in ⋯ More, or ⌥⌘B;
+  Ctrl+Shift+A on Windows.)
+- **Hopper**: a named collection on your blyg, yours and others' posts
+  together; make it public and it gets its own page. (**h**.)
+- **Trail**: a path through posts in an order you choose, each with a note
+  on why, which you can publish as one thread. On this Mac only. (**t**.)
+- **Quote tray**: posts you'll quote in what you write next; quoting one
+  takes it off. (**q**.)
+- **Background**: posts you want out of the way without marking them read.
+  (**b**.)
+
 ## Trails
 
 A trail is a path through posts you chose to keep, with a word on why each
 one is there: yours and other people's, in your order.
 
-- **t** adds the post you're reading to the current trail and asks why
+- **t** (or **⤳ Add to trail** in ⋯ More under the post) adds the post
+  you're reading to the current trail and asks why
   (⏎ keeps it, esc skips). With no trail yet, it asks for a name first.
 - **⇧T** starts another trail, with this post as its first stop.
 - The **trail bar** above the post box shows the trail's name (click it for
@@ -250,7 +283,7 @@ its own line, after the line you dropped it on; in a fragment as a link where
 you dropped it. Dropped on the omnibar, it starts a new thread quoting it;
 dropped on the post box under Reading, it's quoted there.
 
-On Windows the key is Ctrl+Alt+K.
+On Windows the key is Ctrl+Shift+T.
 
 ## Import and export subscriptions (OPML)
 
@@ -295,7 +328,8 @@ lists the blygs on [blygger.com](https://blygger.com)'s public directory that
 you don't follow yet, newest listing first, five at a time.
 
 - Each row gives the blyg's name, its address, and how active it is (high,
-  medium or low, and when it last posted, or "activity not measured yet").
+  medium or low activity, and when it last posted, or "activity not measured
+  yet").
 - Blygs listed since you last opened Discover say **new**. The first time,
   nothing does, since everything would be. Your blyg remembers the newest
   listing you've seen, so the studio and Burrow agree on what's new.
@@ -307,19 +341,25 @@ you don't follow yet, newest listing first, five at a time.
 
 Burrow reads the directory only when you open Discover, without signing in
 to anything. It needs a connected blyg, since subscriptions live there.
-Discover is in the desktop app only: Burrow on the web talks to nothing but
-your own blyg.
 
 ## Acting on a post
 
-The selected post shows its actions. Each says what it makes:
+The selected post shows its actions. The common ones are chips under the
+post: **Quote into a thread**, **Reply**, **Catch up** (when the
+post draws on others) and **↓ Background**. The rest are in **⋯ More**, at
+the end of the row: AI reply, Fork, Link post, Open on web, → Notes,
+Hopper ›, + Add to shelf, ⤳ Add to trail and the other Background choices.
+The menu shows each one's key where it has one (**h**, **t**, ⌥⌘B, ⌥⌘L), and
+those keys (and **b** and **q**) work as before. Each says what it
+makes:
 
 - **Quote into a thread**: `![[id | label]]` in a thread of yours, labelled
   with the post's heading or title (see
   [labelled links](writing.md#labelled-links)).
-- **Reply · new stub**: a new thread that responds to the post (a *stub*,
-  Blygger's reply). It starts quoting the whole post. A line above the
-  editor says what the stub is doing. To quote only part of the post, select
+- **Reply**: a new thread that responds to the post (Blygger's protocol
+  calls a reply a *stub*). It starts quoting the whole post, with the caret
+  below the quote, and a line above the editor says "Write your reply below
+  the quote". To quote only part of the post, select
   the text inside its quote in the editor's preview (**select a passage in
   the preview** shows it) and press **❝ quote only this**, or ⇧⌘D: the
   passage goes under that quote's `![[id]]` as `>` lines, whichever of
@@ -328,16 +368,16 @@ The selected post shows its actions. Each says what it makes:
   post** goes back. A quote inside the quote, or a preview that hasn't
   caught up with your typing, offers nothing.
 
-  ![Choosing a passage in the stub's preview](screenshots/stub-passage.png)
+  ![Choosing a passage in the reply's preview](screenshots/stub-passage.png)
 
-- **AI reply · new stub**: the same, with a first draft from AI.
+- **AI reply**: the same, with a first draft from AI.
 - **Link post · new fragment**: a fragment that links to the post (`[[id]]`)
   without responding to it.
 - **Fork**: a new thread from a *pinned* version of the post. Forking only
   descends from pins, so on an unpinned current version Fork is greyed out
   and its tooltip says where to find a pin. When the current version is
-  itself pinned (the pill reads `📌 vN · current`), it says **Fork this pin**
-  and forks it there.
+  itself pinned (the pill reads `📌 vN · current`), ⋯ More lists it as
+  **Fork this pin**, which forks it.
 - **→ Notes**: adds the post to your [notes](notes-and-browser.md).
 - **Open on web**, and 👍 / 👎. Post › Copy Link copies its address.
 
@@ -345,37 +385,33 @@ The selected post shows its actions. Each says what it makes:
 
 Some blygs are worth seeing as their author styled them. Settings (⌘,) ›
 Reading › **Open posts on the author's site** (`open-posts-on-site = true`)
-shows an opened post's own page, the one its author published, where
-Burrow's reader would show it. Nothing else moves: the list or stream stays
-beside it, the header, the version pill and the actions stay above and
-below, and the post counts as read when you open it.
+shows an opened post's own page, the one its author published, in place of
+Burrow's reader: the page takes the whole reading pane, with the browser
+pane's toolbar along its top. The list or stream stays beside it, the pane
+keeps its size and moves with the layout, and the post counts as read when
+you open it.
 
+- The toolbar has **Burrow reader | Author's site** (switches this one
+  view), ← and → (the page's own history), ↻, the page's title and address,
+  🛡 (the browser's shield for that site) and ↗ (opens it in your default
+  browser). The action row stays under the page.
 - **j / k** and ↑ / ↓ still move through posts. Space pages down the page,
   and at its end opens the next post to read. A click in the page hands the
   keys back to the list unless you clicked into a text field.
-- **Burrow reader | Author's site**, above the post, switches that one view.
-  The next post you open follows the setting again.
-- A subscription's menu (right-click it in the sources pane) can **Open
-  Posts on the Author's Site** always, **in Burrow's Reader** always, or **as
-  Settings Says**: some blygs look great, some don't.
+- The next post you open follows the setting again. A subscription's menu
+  (right-click it in the sources pane) can **Open Posts on the Author's
+  Site** always, **in Burrow's Reader** always, or **as Settings Says**:
+  some blygs look great, some don't.
 - A post without a page of its own opens in Burrow's reader, and a quiet line
   says so. A pinned version, a diff and a withdrawn post are always Burrow's.
-- The page is shown by a web view of the [browser pane](notes-and-browser.md#the-browser-pane)'s
-  kind: its own cookies, no access to the app, content blocking and the
-  browser's per-site shields. Links you click in it stay in it. **Open in
-  browser ↗** above the page, or **Open on web**, opens it in your default
-  browser.
-- Elsewhere than macOS, opening a post opens its page in your default browser
-  (not while you move with the keys), and Burrow's reader shows it here.
-
-In the web app, ⚙ Reading has the same choice for that browser: opening a
-post also opens its page in a new tab, and the post stays in Burrow with a
-link back to the page and **Read … here instead** for its blyg.
-
-The web app can also **mark all read**: ✓ Mark all read… in the sources
-pane (⌃⌥A), or ✓ All read on a phone, marks every unread post of the source
-and lens you're looking at, after asking. It needs a blyg that takes read
-marks in bulk (blygger-studio's `markReadBatch`).
+- The page has the [browser pane](notes-and-browser.md#the-browser-pane)'s
+  cookies, content blocking and per-site shields, and no access to the app.
+  Links you click in it stay in it. Links you click in Burrow's reader still
+  open in the browser pane, which slides over as before.
+- On Windows it's the same (without content blocking, as in the browser
+  pane). Where there's no browser pane, opening a post opens its page in
+  your default browser (not while you move with the keys), and Burrow's
+  reader shows it here.
 
 ### The changelog
 
@@ -405,7 +441,7 @@ covers every version so far, ending with this one.
 ### Signals
 
 **Blyg › Signals…** is your private record: the posts you liked, the ones
-you disliked, and an activity log of what you did (thumbs, hoppers, stubs,
+you disliked, and an activity log of what you did (thumbs, hoppers, replies,
 forks and quotes), newest first. Nothing in it is published, and it shows no
 counts. 1–3 switch lists, and ⏎ opens a post in Reading when you still hold
 it.
@@ -432,13 +468,13 @@ pin**, or **Diff vs now**. When an author edits a post you've read, it shows
 
 ## Follow the thicket
 
-Blyg posts quote, stub and link each other, and the reader lets you walk
+Blyg posts quote, reply to and link each other, and the reader lets you walk
 that web without leaving it.
 
 - **Every quoted layer** opens in the reader, quotes inside quotes too. Each
   says whose it is ("quoted from … · v2 · open original"). Clicking the name
   opens the profile, anywhere else in the box the post.
-- **A stub's "responds to" line** opens what it answers.
+- **A reply's "↳ reply to" line** opens what it answers.
 - **An ordinary link to a blyg post** opens it in the reader too. When a post
   opens, Burrow asks your blyg which of its links name blyg posts (the studio
   answers from its own cache), or checks the linked pages itself when it
@@ -492,15 +528,15 @@ button reads **❝ Quote → Draft** while text is selected. In the stream,
 dragging over or double-clicking a post opens it where its text can be
 selected.
 
-## Quotes, stubs and forks you can follow
+## Quotes, replies and forks you can follow
 
 Click a quote's text to open the post it quotes, at the quoted version, or
-its author's name for their profile. The "↳ stub of" and "⑂ forked from"
+its author's name for their profile. The "↳ reply to" and "⑂ forked from"
 lines under a post work the same way.
 
-Each post lists who quoted, stubbed or forked it, from the blygs you follow
-and your own published posts: a list, never a count. A post that both stubs
-and quotes another is one response, listed as the stub, and a reply to a
+Each post lists who quoted, replied to or forked it, from the blygs you follow
+and your own published posts: a list, never a count. A post that both replies to
+and quotes another is one response, listed as the reply, and a reply to a
 passage says so. A post whose generated text used this one as a source is
 listed as **drew on this**.
 
@@ -587,29 +623,32 @@ you turn them on, add to each post: **reading-time** ends its byline with
 actions, with the record Burrow holds for it (ids, versions, references,
 hashes, and its JSON).
 
-## Mentions and responses
+## Responses
 
-**Mentions** (⇧⌘M) lists the verified responses to your own posts: who
-quoted, stubbed or forked which post, and when. You can hide one, and your own
+**Responses** (⇧⌘M, the tab at the top; it was called Mentions) lists the
+verified responses to your own posts, grouped by post: who quoted, replied to
+or forked which post, and when. (Reading's **Mentions** source is different:
+the posts you hold that mention you, to read.) You can hide one, and your own
 posts list their mentions under them in ⌘Y and in the reading pane.
 
 **Sent** beside **Received** lists the Webmentions your blyg sent for your
 posts: which version of which post, the page it pointed at, and where the
 delivery stands (sent, pending with its next try, failed with the reason, or
-no endpoint on the other side). **Reply** on a response opens a stub of it
+no endpoint on the other side). **Reply** on a response opens a reply to it
 when your blyg holds that post, and otherwise offers to subscribe to its
 blyg first. Received mentions are grouped by your post, as your blyg orders
 them.
 
 Your blyg decides whether a post's public page shows its responses. In
 **Site settings** (Blyg › Site Settings…), **Show responses by default** sets
-it for the whole blyg, on blygs that report it. On the Mentions screen, each
-post can **follow site setting** (the default), or **show** or **hide** its
-responses itself. Site settings also hold the site's title, author, bio and
+it for the whole blyg, on blygs that report it. On the Responses screen, each
+post has one control, **On the post's page: Show · Hide · Site default**:
+Site default (the default) follows the site setting and says what it does,
+and Show or Hide is the post's own choice. Site settings also hold the site's title, author, bio and
 links, the time zone for dates on your pages, and **Accept mentions**, on
 blygs that report them.
 
-![Mentions](screenshots/mentions.png)
+![Responses](screenshots/mentions.png)
 
 ## Your blyg's public site
 
@@ -651,10 +690,10 @@ link to that person when your blyg publishes it.
 
 ## Profiles
 
-⌘I on a post (or a click on its author's address, its "↳ stub of" /
+⌘I on a post (or a click on its author's address, its "↳ reply to" /
 "⑂ forked from" line, a mention, or a blogroll entry) shows who wrote it:
 name, bio, links, their blogroll, recent posts, and the blygs they quote,
-stub and fork. **Follow** in one click (private; nobody is told), or **add
+reply to and fork. **Follow** in one click (private; nobody is told), or **add
 them to your own public blogroll**. ⇧⌘O opens any address, and Blyg › My
 Profile shows yours as visitors see it.
 

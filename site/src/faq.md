@@ -19,7 +19,7 @@ rename it while it isn't running. See
 
 ### Can I use Burrow with a stock Blygger blog?
 
-Yes. Burrow 0.16 needs blygger-studio 0.49.12 or later, stock and unpatched.
+Yes. Burrow needs blygger-studio 0.49.12 or later, stock and unpatched.
 Sign in with your browser, an API token from the studio's Client access page
 (or, once connected, Burrow's **Blyg › Client Access…**), or your studio
 password. On an older blyg nothing syncs: your posts stay on
@@ -64,9 +64,10 @@ scratch notes can be deleted (⇧⌘⌫).
 
 Forking descends only from **pinned** versions. Pick a pin in the post's
 version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. When the
-current version is the pin (the pill reads `📌 vN · current`), **Fork this
-pin** is right there under it. If the post has no pins, it can't be forked. Your own posts fork the same way, from ⌘Y: pick
-a pinned version, then **Fork this pin**.
+current version is the pin (the pill reads `📌 vN · current`), ⋯ More offers
+**Fork this pin** right there. If the post has no pins, it can't be forked.
+Your own posts fork the same way, from ⌘Y: pick a pinned version, then **Fork
+this pin**.
 
 ### How do I undo my edits to a published post?
 

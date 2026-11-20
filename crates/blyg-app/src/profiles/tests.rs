@@ -75,15 +75,7 @@ fn setup(cx: &mut TestAppContext) -> Setup<'_> {
     (view, fake, visible, cx)
 }
 
-/// Let background tasks (zero latency) land, and draw.
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-}
+use crate::test_wait::settle_drawn as settle;
 
 fn click(cx: &mut VisualTestContext, selector: &'static str) {
     let b = cx
@@ -249,7 +241,7 @@ fn a_blogroll_entry_opens_its_profile_and_back_returns(cx: &mut TestAppContext) 
         .collect();
     assert!(
         // Lin's Gardens and the catch-up chain's side reply.
-        subs.contains(&("ada.blyg.example.com".into(), "stubbed 2 posts".into())),
+        subs.contains(&("ada.blyg.example.com".into(), "replied to 2 posts".into())),
         "{subs:?}"
     );
     assert!(
@@ -262,7 +254,7 @@ fn a_blogroll_entry_opens_its_profile_and_back_returns(cx: &mut TestAppContext) 
 fn the_lineage_line_opens_the_stubbed_and_forked_origins(cx: &mut TestAppContext) {
     let (view, _, _, cx) = setup(cx);
     open_row(&view, LIN_GARDENS, cx);
-    assert!(cx.debug_bounds("pf-lineage-stub").is_some(), "↳ stub of …");
+    assert!(cx.debug_bounds("pf-lineage-stub").is_some(), "↳ reply to …");
     click(cx, "pf-lineage-stub");
     assert_eq!(top(&view, cx).unwrap().0, ADA);
     cx.simulate_keystrokes("escape");
@@ -299,7 +291,7 @@ fn the_lineage_line_comes_from_the_item_document(cx: &mut TestAppContext) {
             .and_then(|c| blyg_core::Lineage::of_changelog(c).cloned())
     });
     assert!(doc.is_some_and(|l| l.forked_from.is_some()));
-    assert!(cx.debug_bounds("pf-lineage-stub").is_some(), "↳ stub of …");
+    assert!(cx.debug_bounds("pf-lineage-stub").is_some(), "↳ reply to …");
     assert!(
         cx.debug_bounds("pf-lineage-fork").is_some(),
         "⑂ forked from …"

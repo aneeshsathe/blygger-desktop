@@ -73,12 +73,7 @@ impl Keys {
     }
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..10 {
-        cx.run_until_parked();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 /// The thread being typed into: ~20k characters that link and quote held
 /// posts (so the preview has something to resolve).

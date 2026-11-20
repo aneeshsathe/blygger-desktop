@@ -23,7 +23,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use blyg_core::{Backend, LocalId, RemoteMedia, SubscriptionKind};
+use blyg_core::{Backend, LocalId, RemoteMedia, SubId, SubscriptionKind};
 use blyg_render::{RenderOpts, ShellOpts};
 use gpui_kit::*;
 
@@ -291,6 +291,10 @@ ins {{ background: var(--ins, rgba(58, 166, 85, 0.18)); text-decoration: none; }
 del {{ background: var(--del, rgba(210, 60, 42, 0.16)); text-decoration-color: var(--over, #d23c2a); }}
 hr {{ border-top-color: var(--rule); }}
 article {{ max-width: 38em; margin: 0; }}
+/* A thread's first line is its title: a heading here, as the stream shows it. */
+article.thread > .item-content > p:first-child {{
+  font-size: 1.3em; font-weight: 600; line-height: 1.3; margin-top: 0.2em;
+}}
 .blyg-tk-gen {{ background: none; box-shadow: none; padding: 0; border-radius: 0; cursor: help; }}
 .blyg-gen-note {{
   margin-top: 1.6em; color: var(--muted, #888);
@@ -493,7 +497,7 @@ pub fn render_remote_md(
 ) -> String {
     let mount = origin.trim_end_matches('/').to_string();
     let resolver = if md.contains("![[") {
-        let rss: Vec<String> = backend
+        let rss: Vec<SubId> = backend
             .subscriptions()
             .into_iter()
             .filter(|s| s.kind == SubscriptionKind::Rss)
@@ -540,7 +544,7 @@ impl MainView {
                 let kind = render_kind(item.kind);
                 let scope = Scope::Remote {
                     origin: item.origin.clone(),
-                    id: item.remote_id.clone(),
+                    id: item.remote_id.to_string(),
                 };
                 if let Some(v) = o.pinned_on_screen() {
                     if o.diff_vs_now {
@@ -672,7 +676,7 @@ impl MainView {
         }
         let dropdown = self.reading.opened.as_ref().is_some_and(|o| o.dropdown)
             && self.reading.view == View::Reading;
-        let suppressed = self.sheet.is_some()
+        let suppressed = self.sheet.is_open()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()
@@ -704,10 +708,10 @@ impl MainView {
                 // --- selection --- the pill by a selection, for someone
                 // else's post (not your own, shown here from Posts).
                 if self.reader_selection_ui() {
-                    let js = webview::SELECTION_UI_JS;
-                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(js));
+                    let js = webview::selection_ui_js();
+                    self.studio.reader.slot.borrow_mut().with(|s| s.eval(&js));
                 }
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     self.studio.reader.slot.borrow_mut().with(|s| s.probe());
                 }
             }

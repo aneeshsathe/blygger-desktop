@@ -59,12 +59,7 @@ fn setup(cx: &mut TestAppContext) -> (Entity<MainView>, Arc<FakeBackend>, &mut V
     (view, fake, cx)
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..20 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn open_row(view: &Entity<MainView>, id: &str, cx: &mut VisualTestContext) {
     let key = view.read_with(cx, |v, _| {
@@ -108,7 +103,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
         v.reading_rows()
             .iter()
             .filter(|r| r.subscription_id == OWN)
-            .map(|r| r.remote_id.clone())
+            .map(|r| r.remote_id.to_string())
             .collect()
     });
     // Your four published sample posts; drafts aren't reading rows.
@@ -133,7 +128,7 @@ fn your_posts_are_a_source_never_unread_and_nothing_is_sent(cx: &mut TestAppCont
         view.read_with(cx, |v, _| {
             v.reading
                 .shown_rows()
-                .map(|r| r.subscription_id.clone())
+                .map(|r| r.subscription_id.to_string())
                 .collect()
         })
     };
@@ -265,7 +260,13 @@ fn cmd_y_forks_your_pin_and_greys_fork_on_an_unpinned_version(cx: &mut TestAppCo
     assert!(unpinned.contains(&super::vm::OwnAction::ForkNeedsPin));
     assert_eq!(
         super::vm::OwnAction::ForkNeedsPin.tip(1),
-        "Pin one in ⌘Y to fork it"
+        crate::keymap::hint("Pin one in ⌘Y to fork it")
+    );
+    assert_eq!(
+        crate::platform_text::spelled_as(crate::platform_text::Platform::Windows, || {
+            super::vm::OwnAction::ForkNeedsPin.tip(1)
+        }),
+        "Pin one in Ctrl+Shift+Y to fork it"
     );
     let before = fake.items();
     view.update_in(cx, |v, window, cx| v.fork_own_pin(2, window, cx));

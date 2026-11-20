@@ -8,7 +8,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use super::Store;
 use crate::backend::{CoreError, Result};
-use crate::model::Folder;
+use crate::model::{Folder, SubId};
 
 /// A folder name as stored: trimmed, inner whitespace collapsed. Empty and
 /// over-long names are refused.
@@ -92,7 +92,7 @@ impl Store {
     }
 
     /// Subscription id → folder id, for every filed subscription.
-    pub fn subscription_folders(&self) -> HashMap<String, String> {
+    pub fn subscription_folders(&self) -> HashMap<SubId, String> {
         let c = self.conn();
         let Ok(mut st) = c.prepare_cached("SELECT subscription_id, folder_id FROM folder_members")
         else {
@@ -177,7 +177,7 @@ impl Store {
 
     /// File a subscription in a folder (`None` = unfiled). A subscription is
     /// in at most one folder, so this moves it.
-    pub fn set_subscription_folder(&self, sub_id: &str, folder: Option<&str>) -> Result<()> {
+    pub fn set_subscription_folder(&self, sub_id: &SubId, folder: Option<&str>) -> Result<()> {
         let mut c = self.conn();
         let tx = c.transaction()?;
         match folder {

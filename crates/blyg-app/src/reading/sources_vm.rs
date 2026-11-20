@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use blyg_core::{Folder, Hopper, ReadingItem, Subscription};
+use blyg_core::{Folder, Hopper, ReadingItem, SubId, Subscription};
 use chrono::{DateTime, Local, Utc};
 
 use super::vm::Key;
@@ -76,7 +76,7 @@ pub enum Source {
     /// A folder id: the posts of every subscription filed in it.
     Folder(String),
     /// A subscription id.
-    Sub(String),
+    Sub(SubId),
     /// --- own posts --- your own published posts ("Your blyg").
     Own,
     /// --- hoppers --- a hopper id: the posts in it, theirs and yours.
@@ -115,10 +115,28 @@ pub fn pane_step(pane: Pane, right: bool, sources_open: bool, post_open: bool) -
     }
 }
 
-/// Counts as "to read" for the unread smart feed, the folder counts and
-/// the dots: never read, or edited since you read it.
+/// Counts as "to read" for the unread smart feed, the folder counts, the
+/// reading header's "N to read" and the dots: never read, or edited since
+/// you read it (`ReadingItem::to_read`, the same rule the status bar's
+/// count, `Backend::unread_count`, follows), and not in Background.
 pub fn needs_reading(r: &ReadingItem) -> bool {
-    !is_background(r) && (r.is_unread() || r.edited_since_read())
+    !is_background(r) && r.to_read()
+}
+
+/// [`needs_reading`], leaving out the rows held only because a hopper read
+/// returned them (`State::hopper_only`): they're listed under their hopper
+/// alone, so no count outside it may include them. With every count using
+/// this, the header, All unread and the status bar say the same number.
+pub fn counts_as_unread(r: &ReadingItem, hopper_only: &HashSet<Key>) -> bool {
+    needs_reading(r) && (hopper_only.is_empty() || !hopper_only.contains(&super::vm::key(r)))
+}
+
+/// How many of `rows` are to read ([`counts_as_unread`]): the reading
+/// header's "N to read" and All unread's count.
+pub fn unread_total(rows: &[ReadingItem], hopper_only: &HashSet<Key>) -> usize {
+    rows.iter()
+        .filter(|r| counts_as_unread(r, hopper_only))
+        .count()
 }
 
 /// --- background --- In Background (`ReadingItem::is_background`: as the
@@ -154,7 +172,7 @@ pub fn is_today(r: &ReadingItem, now: DateTime<Utc>) -> bool {
 pub fn in_source(
     r: &ReadingItem,
     source: &Source,
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     now: DateTime<Utc>,
 ) -> bool {
     // --- background --- Background posts are there and nowhere else.
@@ -190,7 +208,7 @@ pub fn filter_source(
     rows: &[ReadingItem],
     searched: &[usize],
     source: &Source,
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     sticky: &HashSet<Key>,
     now: DateTime<Utc>,
 ) -> Vec<usize> {
@@ -262,21 +280,49 @@ impl Entry {
 /// Your blyg), your hoppers, each folder with its subscriptions (unless
 /// collapsed), then the subscriptions in no folder. Subscriptions keep the
 /// server's order within a group, hoppers the blyg's.
+#[cfg(test)]
 pub fn entries(
     hoppers: &[Hopper],
     folders: &[Folder],
-    filed: &HashMap<String, String>,
+    filed: &HashMap<SubId, String>,
     subs: &[Subscription],
     rows: &[ReadingItem],
     collapsed: &HashSet<String>,
     now: DateTime<Utc>,
 ) -> Vec<Entry> {
+    entries_skipping(
+        hoppers,
+        folders,
+        filed,
+        subs,
+        rows,
+        collapsed,
+        &HashSet::new(),
+        now,
+    )
+}
+
+/// [`entries`], counting only what [`counts_as_unread`] counts: the rows
+/// only a hopper holds (`hopper_only`) are in no count but their hopper's.
+#[allow(clippy::too_many_arguments)]
+pub fn entries_skipping(
+    hoppers: &[Hopper],
+    folders: &[Folder],
+    filed: &HashMap<SubId, String>,
+    subs: &[Subscription],
+    rows: &[ReadingItem],
+    collapsed: &HashSet<String>,
+    hopper_only: &HashSet<Key>,
+    now: DateTime<Utc>,
+) -> Vec<Entry> {
     let mut unread_by_sub: HashMap<&str, usize> = HashMap::new();
-    for r in rows.iter().filter(|r| needs_reading(r)) {
+    for r in rows.iter().filter(|r| counts_as_unread(r, hopper_only)) {
         *unread_by_sub.entry(r.subscription_id.as_str()).or_default() += 1;
     }
     let unread_of = |pred: &dyn Fn(&ReadingItem) -> bool| {
-        rows.iter().filter(|r| needs_reading(r) && pred(r)).count()
+        rows.iter()
+            .filter(|r| counts_as_unread(r, hopper_only) && pred(r))
+            .count()
     };
     let mut out = vec![Entry::Heading("Smart feeds")];
     for smart in Smart::ALL {
@@ -587,7 +633,7 @@ mod tests {
         let ids = |src: Source, sticky: &HashSet<Key>| -> Vec<String> {
             filter_source(&rows, &all, &src, &sd.filed, sticky, now)
                 .into_iter()
-                .map(|i| rows[i].remote_id.clone())
+                .map(|i| rows[i].remote_id.to_string())
                 .collect()
         };
         let none = HashSet::new();
@@ -605,7 +651,7 @@ mod tests {
         assert!(unread.contains(&RUE_TRUST.to_string()), "edited since read");
         assert!(!unread.contains(&ADA_TIDES.to_string()), "read");
         // A read post stays while it's sticky.
-        let sticky = HashSet::from([("sub-ada".to_string(), ADA_TIDES.to_string())]);
+        let sticky = HashSet::from([("sub-ada".into(), ADA_TIDES.into())]);
         assert!(ids(Source::Smart(Smart::Unread), &sticky).contains(&ADA_TIDES.to_string()));
         assert_eq!(ids(Source::Smart(Smart::All), &none).len(), rows.len() - 1);
         assert!(!ids(Source::Smart(Smart::All), &none).contains(&RUE_KEPT.to_string()));

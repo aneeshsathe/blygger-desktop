@@ -24,9 +24,7 @@ use crate::app::reading::View;
 use crate::app::reading::stream_vm::{self, ReadMode};
 use crate::app::scratch::MakeDraft;
 use crate::app::studio::{ViewMode, ViewSplit, ViewStudio, ViewWrite};
-use crate::app::{
-    MainView, Mode as EditMode, OMNI_H, Publish, STATUS_H, Sheet, TITLEBAR_H, ToggleKind,
-};
+use crate::app::{MainView, Mode as EditMode, OMNI_H, Publish, STATUS_H, TITLEBAR_H, ToggleKind};
 use crate::connection::{Connection, Mode, SwitchBackend};
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
@@ -106,7 +104,7 @@ impl MainView {
             return self.tour_chooser(window, cx);
         }
         self.onboarding.flow = None;
-        self.sheet = None;
+        self.sheet.close();
         self.ai_escape(window, cx);
         self.reading.sheet = None;
         self.leave_reading();
@@ -320,7 +318,7 @@ impl MainView {
         };
         let mut p = t.parked;
         self.ai_escape(window, cx);
-        self.sheet = None;
+        self.sheet.close();
         self.reading.sheet = None;
         self.leave_reading();
         self.close_profile(window, cx);
@@ -548,7 +546,7 @@ impl MainView {
 
     /// A sheet, an AI proposal or a generation is still on screen.
     fn tutorial_busy(&self) -> bool {
-        self.sheet.is_some()
+        self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay()
@@ -706,7 +704,7 @@ impl MainView {
             (Key::StubPassage, passage),
             (
                 Key::BlygSwitcher,
-                matches!(self.sheet, Some(Sheet::Blygs(_))),
+                self.sheet.is::<crate::app::switcher::BlygSheet>(),
             ),
             // --- hoppers ---
             (
@@ -737,6 +735,14 @@ impl MainView {
             (Key::Palette, self.cmd_palette.open.is_some()),
             (Key::Focus, self.focus_on()),
             (Key::Serendipity, self.serendipity_shown(cx)),
+            (Key::QuietWriting, crate::app::quiet::on(cx)), // --- 0.26.0 ---
+            (
+                Key::MoreMenu,
+                reading
+                    && self.reading.src_menu.as_ref().is_some_and(|m| {
+                        m.target == crate::app::reading::sources::MenuTarget::PostMore
+                    }),
+            ),
             // --- tangles ---
             (Key::Trail, self.reading.trails.field.is_some()),
             (Key::Tray, !self.tray.items.is_empty()),
@@ -744,15 +750,16 @@ impl MainView {
             (Key::SiteSheet, self.site.sheet.is_some()),
             (
                 Key::ContactsSheet,
-                matches!(self.sheet, Some(super::Sheet::Contacts(_))),
+                self.sheet
+                    .is::<crate::app::reading::contacts::ContactsSheet>(),
             ),
             (
                 Key::StaleQuotes,
-                matches!(self.sheet, Some(super::Sheet::StaleQuotes(_))),
+                self.sheet.is::<crate::app::upkeep::StaleSheet>(),
             ),
             (
                 Key::ClientAccess,
-                matches!(self.sheet, Some(super::Sheet::ClientAccess(_))),
+                self.sheet.is::<crate::app::access::ClientAccessSheet>(),
             ),
         ]
         .into_iter()
@@ -820,8 +827,6 @@ impl MainView {
         let d = on!(d, crate::app::reading::own::QuotePost, Key::OwnPostAction);
         let d = on!(d, crate::app::reading::own::LinkToPost, Key::OwnPostAction);
         let d = on!(d, crate::app::shelf::ToggleShelf, Key::Shelf); // --- shelf ---
-        let d = on!(d, crate::app::chat::ShowChat, Key::Chat); // --- chat ---
-        let d = on!(d, crate::app::terminal::ToggleTerminal, Key::Terminal); // --- terminal ---
         // --- tangles ---
         let d = on!(d, crate::app::trails::PublishTrail, Key::Trail);
         let d = on!(d, crate::app::tray::AddToTray, Key::Tray);
@@ -835,8 +840,8 @@ impl MainView {
 
     /// Close whatever the last step left open.
     fn tutorial_tidy(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sheet.is_some() {
-            self.sheet = None;
+        if self.sheet.is_open() {
+            self.sheet.close();
         }
         if self.ai.has_overlay() {
             self.ai_escape(window, cx);
@@ -860,8 +865,6 @@ impl MainView {
             self.close_profile(window, cx);
         }
         self.ext_tour_close_sheets(window, cx);
-        self.chat_tour_tidy(); // --- chat ---
-        self.terminal_tour_tidy(window, cx); // --- terminal ---
         // --- flow --- the palette closed, focus mode left.
         if self.cmd_palette.open.is_some() {
             self.close_palette(window, cx);
@@ -904,7 +907,7 @@ impl MainView {
     }
 
     /// The sample reading post `remote_id`'s key.
-    fn tutorial_reading_key(&self, remote_id: &str) -> Option<(String, String)> {
+    fn tutorial_reading_key(&self, remote_id: &str) -> Option<crate::app::reading::vm::Key> {
         self.reading
             .rows
             .iter()
@@ -982,7 +985,7 @@ impl MainView {
                 }
             }
             Setup::PublishSheet => {
-                if !matches!(self.sheet, Some(Sheet::Publish { .. })) {
+                if !self.sheet.is::<crate::app::PublishSheet>() {
                     self.tutorial_tidy(window, cx);
                     if self.current.is_none() {
                         self.tutorial_open(steps::DRAFT, window, cx);
@@ -1282,6 +1285,14 @@ impl MainView {
                 self.tutorial_reading(ReadMode::Reader, window, cx);
                 cx.notify();
             }
+            // --- 0.26.0 --- Settings over the published post, at the row.
+            Setup::QuietWriting => {
+                self.tutorial_setup(Setup::Versioned, window, cx);
+                self.quiet.row.set(None);
+                if !self.sheet.is::<crate::app::SettingsSheet>() {
+                    self.open_settings(&crate::app::OpenSettings, window, cx);
+                }
+            }
         }
     }
 
@@ -1356,6 +1367,10 @@ impl MainView {
                 self.select_source(crate::app::reading::sources_vm::Source::Mentions, cx)
             }
             "discover" => self.open_discover(window, cx),
+            "quiet-writing" => {
+                self.set_quiet_writing(true, cx);
+            } // --- 0.26.0 ---
+            "more-menu" => self.tutorial_open_more(cx),
             "new" => self.start_new_post(window, cx),
             "opml" => self.opml_pick(window, cx),
             "clip" => self.browser_clip(window, cx),
@@ -1478,7 +1493,75 @@ impl MainView {
             | Region::ReaderPost
             | Region::Compose => return self.tutorial_reading_region(region, w, h),
             Region::BrowserChrome => return self.browser_rects(full, h).map(|[_, c]| c),
+            // --- 0.26.0 --- where the reading pane drew ⋯ More, a little
+            // larger than the chip.
+            Region::MoreChip => {
+                if self.reading.view != View::Reading || self.reading.opened.is_none() {
+                    return None;
+                }
+                let b = self.onboarding.more_chip.get()?;
+                let r = (
+                    f32::from(b.left()) - 6.,
+                    f32::from(b.top()) - 6.,
+                    f32::from(b.size.width) + 12.,
+                    f32::from(b.size.height) + 12.,
+                );
+                if r.2 < 20. || r.3 < 20. {
+                    return None;
+                }
+                r
+            }
+            // --- 0.26.0 --- where Settings drew the row.
+            Region::QuietSetting => {
+                if !self.sheet.is::<crate::app::SettingsSheet>() {
+                    return None;
+                }
+                let b = self.quiet.row.get()?;
+                let r = (
+                    f32::from(b.left()),
+                    f32::from(b.top()),
+                    f32::from(b.size.width),
+                    f32::from(b.size.height),
+                );
+                if r.2 < 8. || r.3 < 8. {
+                    return None;
+                }
+                r
+            }
         })
+    }
+
+    /// --- 0.26.0 --- The open post's ⋯ More chip, with a marker that
+    /// records where it's drawn (the tour's ring). The reading pane wraps
+    /// its chip in this.
+    pub(crate) fn tour_marked_more(&self, chip: AnyElement) -> AnyElement {
+        let at = self.onboarding.more_chip.clone();
+        div()
+            .relative()
+            .child(chip)
+            .child(
+                canvas(move |b, _, _| at.set(Some(b)), |_, _, _, _| {})
+                    .absolute()
+                    .inset_0(),
+            )
+            .into_any_element()
+    }
+
+    /// `BLYGGER_DEMO=tut-more-menu+`: ⋯ More's menu, as a click on the
+    /// chip opens it (below the chip, or at the pane's corner before it's
+    /// drawn).
+    fn tutorial_open_more(&mut self, cx: &mut Context<Self>) {
+        let at = self
+            .onboarding
+            .more_chip
+            .get()
+            .map_or(point(px(400.), px(400.)), |b| b.bottom_left());
+        self.open_source_menu(
+            crate::app::reading::sources::MenuTarget::PostMore,
+            at,
+            false,
+            cx,
+        );
     }
 
     /// --- side --- The width the screens get in a window `full` wide: left
@@ -1647,7 +1730,7 @@ impl MainView {
         cx: &App,
     ) -> Option<(f32, f32, f32, f32)> {
         let assist = self.assist.read(cx);
-        let covered = self.sheet.is_some()
+        let covered = self.sheet.is_open()
             || self.reading.sheet.is_some()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions --- its sheets
@@ -1655,7 +1738,8 @@ impl MainView {
             // The editor's @-mention popup and spelling menu.
             || assist.mention_open()
             || assist.menu_open();
-        if covered && region != Region::Sheet {
+        // --- 0.26.0 --- the Quiet writing row is on the Settings page.
+        if covered && region != Region::Sheet && region != Region::QuietSetting {
             return None;
         }
         let rect = self.tutorial_region(region, window)?;
@@ -1694,7 +1778,7 @@ impl MainView {
         let title = match (end_card, pick) {
             (true, Pick::Feature(n)) => format!("That's {}", TOURS[n].title),
             (true, Pick::News) => "That's what's new".to_string(),
-            _ => crate::keymap::hint(step.title).to_string(),
+            _ => step.title.get().to_string(),
         };
         let tour_name = match pick {
             Pick::News => "WHAT'S NEW".to_string(),
@@ -1704,7 +1788,7 @@ impl MainView {
         };
         let buttons = super::show_buttons(cx);
         let hotkey = crate::prefs::hotkey_glyphs(&self.prefs.hotkey);
-        let caption = crate::keymap::hint(step.caption).replace("{hotkey}", &hotkey);
+        let caption = step.caption.get().replace("{hotkey}", &hotkey);
 
         let ring = |(x, y, w, h): (f32, f32, f32, f32), id: &'static str, strong: bool| {
             div()
@@ -1781,12 +1865,12 @@ impl MainView {
                 .gap(px(7.))
                 .text_color(p.muted)
                 // "Press ⌘T", but "Your turn: click" for what isn't a key.
-                .child(if matches!(step.key_label, "type" | "click") {
+                .child(if matches!(step.key_label.get(), "type" | "click") {
                     "Your turn:"
                 } else {
                     "Press"
                 })
-                .child(kbd(crate::keymap::hint(step.key_label).to_string()))
+                .child(kbd(step.key_label.get().to_string()))
                 .into_any_element()
         };
 
@@ -1797,7 +1881,8 @@ impl MainView {
             .absolute()
             // Clear of the lineage sheet's responses row.
             .map(|d| {
-                if self.lineage_open() {
+                // --- 0.26.0 --- and of Settings' chips, at the left.
+                if self.lineage_open() || step.region == Region::QuietSetting {
                     d.right(px(CARD_LEFT))
                 } else {
                     d.left(px(CARD_LEFT))
@@ -2384,7 +2469,7 @@ impl Provider for CannedAi {
         req: GenRequest,
         on_delta: &mut dyn FnMut(&str),
     ) -> blyg_ai::Result<GenResult> {
-        std::thread::sleep(Duration::from_millis(500));
+        crate::fake::simulate_latency(Duration::from_millis(500));
         req.cancel.check()?;
         let text = if req.user.contains("shorten to fit") || req.system.contains("shorten to fit") {
             "A lighthouse keeper's log is mostly weather, and that is the point: wind, swell and \
@@ -2407,7 +2492,7 @@ impl Provider for CannedAi {
 /// window's last frame to a PNG and quit (same as the reading demos; only
 /// in a `--cfg blygger_snap` build with `gpui-kit/test-support`).
 pub(super) fn snapshot_later(window: &mut Window, cx: &mut Context<MainView>) {
-    let Ok(path) = std::env::var("BLYGGER_SNAPSHOT") else {
+    let Some(path) = crate::dev_flags::get().snapshot.path.clone() else {
         return;
     };
     cx.spawn_in(window, async move |_, cx| {

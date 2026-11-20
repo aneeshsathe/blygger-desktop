@@ -61,12 +61,7 @@ impl Over {
     }
 }
 
-fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..10 {
-        cx.run_until_parked();
-        std::thread::sleep(Duration::from_millis(2));
-    }
-}
+use crate::test_wait::settle;
 
 fn setup<'a>(
     dir: &std::path::Path,

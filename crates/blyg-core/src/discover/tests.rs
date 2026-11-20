@@ -22,7 +22,7 @@ fn origins<'a>(v: impl IntoIterator<Item = &'a DirectoryBlyg>) -> Vec<&'a str> {
 
 fn sub(origin: &str, feed: &str) -> Subscription {
     Subscription {
-        id: format!("sub-{origin}"),
+        id: format!("sub-{origin}").into(),
         kind: SubscriptionKind::Blyg,
         origin: origin.into(),
         feed_url: feed.into(),
@@ -265,7 +265,8 @@ fn the_activity_line_says_how_active_and_how_recent() {
     .remove(0);
     assert_eq!(activity_line(&b, now), "last post 2 days ago");
     b.activity.last_post = None;
-    assert_eq!(activity_line(&b, now), "high activity");
+    assert_eq!(activity_line(&b, now), "last post not reported");
+    assert_eq!(b.activity.level.map(|l| l.label()), Some("high activity"));
     b.activity.level = None;
     assert_eq!(activity_line(&b, now), "activity not measured yet");
     let at = |d: &str| ago(d, now);

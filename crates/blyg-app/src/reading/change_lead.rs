@@ -296,7 +296,12 @@ mod tests {
     fn asks_are_once_a_session_a_few_at_a_time_newest_first() {
         let leads = Leads::default();
         let now = Instant::now();
-        let key = |i: usize| ("sub".to_string(), format!("id{i}"));
+        let key = |i: usize| {
+            (
+                blyg_core::SubId::from("sub"),
+                blyg_core::RemoteId::from(format!("id{i}")),
+            )
+        };
         for i in 0..5 {
             assert!(leads.want(&key(i), 2, now));
         }
@@ -320,7 +325,12 @@ mod tests {
     fn a_long_scroll_keeps_only_the_newest_asks() {
         let leads = Leads::default();
         let now = Instant::now();
-        let key = |i: usize| ("sub".to_string(), format!("id{i}"));
+        let key = |i: usize| {
+            (
+                blyg_core::SubId::from("sub"),
+                blyg_core::RemoteId::from(format!("id{i}")),
+            )
+        };
         for i in 0..MAX_QUEUED + 5 {
             leads.want(&key(i), 2, now);
         }

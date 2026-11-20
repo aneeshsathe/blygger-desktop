@@ -260,7 +260,7 @@ pub fn known_blygs(cx: &App) -> Vec<String> {
 pub fn migrate_on_launch(primary: &std::path::Path) -> Option<String> {
     use blyg_core::config::{migrate, paths};
     let data = paths::data_dir();
-    if std::env::var_os("BLYGGER_DATA_DIR").is_none()
+    if !crate::dev_flags::get().data_dir_override
         && let Err(e) = paths::migrate_data_dir(&paths::legacy_data_dir(), &data)
     {
         eprintln!("blygger: couldn't move the old data folder: {e}");

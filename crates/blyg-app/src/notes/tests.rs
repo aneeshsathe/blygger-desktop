@@ -312,33 +312,16 @@ mod ui {
         (view, fake, log, cx)
     }
 
-    fn settle(cx: &mut VisualTestContext) {
-        for _ in 0..10 {
-            cx.run_until_parked();
-            std::thread::sleep(std::time::Duration::from_millis(2));
-        }
-        cx.update(|window, _| window.refresh());
-        cx.run_until_parked();
-    }
+    use crate::test_wait::settle_drawn as settle;
 
-    /// Let the slide-out finish. The slide follows the wall clock, so on a
-    /// slow machine one `settle` can land mid-slide: wait until the drawer
-    /// (and what moves with it) stops moving, for at most about a second.
+    /// Let the slide (out or back) finish: it follows the wall clock, so
+    /// wait until the drawer has come to rest (or stayed gone).
     fn slide_out(cx: &mut VisualTestContext) {
         cx.executor()
             .advance_clock(std::time::Duration::from_millis(
                 crate::app::notes::SLIDE_MS + 50,
             ));
-        let mut last = None;
-        for _ in 0..50 {
-            settle(cx);
-            let now = Some(cx.debug_bounds("notes-drawer"));
-            if now == last {
-                return;
-            }
-            last = now;
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+        crate::test_wait::at_rest(cx, "notes-drawer");
     }
 
     fn reading(view: &Entity<MainView>, mode: ReadMode, cx: &mut VisualTestContext) {
@@ -517,9 +500,7 @@ mod ui {
         slide_out(cx);
         // The dock's grow animation runs on the real clock, and a drag
         // can't start on an element that's still animating in.
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        settle(cx);
-        let edge = cx.debug_bounds("notes-edge").expect("its edge");
+        let edge = crate::test_wait::still(cx, "notes-edge");
         let from = edge.center();
         cx.simulate_mouse_move(from, None, gpui_kit::Modifiers::none());
         settle(cx);
@@ -656,12 +637,17 @@ mod ui {
         cx.simulate_input("why this matters");
         settle(cx);
         assert_eq!(notes_text(&view, cx), format!("{text}why this matters"));
-        // The chip is in the stream's action row.
+        // It's in the stream's action row, under ⋯ More.
         view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
         slide_out(cx);
         view.update_in(cx, |v, window, cx| v.stream_move(1, window, cx));
         settle(cx);
-        assert!(cx.debug_bounds("stream-act-Notes").is_some());
+        assert!(cx.debug_bounds("stream-act-more").is_some());
+        let more = view.read_with(cx, |v, _| {
+            let key = v.reading.sel.clone().expect("selected");
+            v.stream_more_items(&key)
+        });
+        assert!(more.iter().any(|(l, _, _)| l == "→ Notes"), "{more:?}");
     }
 
     #[gpui_kit::test]
@@ -820,15 +806,29 @@ mod ui {
             let close = cx.debug_bounds("browser-close").expect("chrome");
             assert!(close.right() > edge, "flush right without the drawer");
             view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
-            // The pane slides alongside the drawer.
+            // The pane slides alongside the drawer (on the wall clock):
+            // wait for both to come to rest beside each other.
             slide_out(cx);
-            let drawer = cx.debug_bounds("notes-drawer").expect("drawer");
-            for b in [
+            const CHROME: [&str; 4] = [
                 "browser-shield",
                 "browser-external",
                 "browser-notes",
                 "browser-close",
-            ] {
+            ];
+            let clear = |cx: &mut VisualTestContext| {
+                let drawer = cx.debug_bounds("notes-drawer").expect("drawer");
+                CHROME.iter().all(|b| {
+                    cx.debug_bounds(b)
+                        .is_some_and(|r| r.right() <= drawer.left() + px(0.5))
+                })
+            };
+            crate::test_wait::until(cx, "the browser chrome to clear the drawer", |cx| {
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
+                clear(cx)
+            });
+            let drawer = cx.debug_bounds("notes-drawer").expect("drawer");
+            for b in CHROME {
                 let r = cx.debug_bounds(b).expect("a chrome button");
                 assert!(
                     r.right() <= drawer.left() + px(0.5),
@@ -841,8 +841,12 @@ mod ui {
             }
             view.update_in(cx, |v, window, cx| v.close_notes(window, cx));
             slide_out(cx);
-            let close = cx.debug_bounds("browser-close").expect("chrome");
-            assert!(close.right() > edge, "the room is given back");
+            crate::test_wait::until(cx, "the room to be given back", |cx| {
+                cx.update(|window, _| window.refresh());
+                cx.run_until_parked();
+                cx.debug_bounds("browser-close")
+                    .is_some_and(|c| c.right() > edge)
+            });
         }
     }
 
@@ -858,8 +862,20 @@ mod ui {
         view.update_in(cx, |v, window, cx| v.open_notes(window, cx));
         settle(cx);
         let shown = view.read_with(cx, |v, _| v.notes.shown);
-        let chip = cx.debug_bounds("stream-act-Notes").expect("chip");
-        cx.simulate_click(chip.center(), gpui_kit::Modifiers::none());
+        // ⋯ More, then → Notes in its menu.
+        let more = cx.debug_bounds("stream-act-more").expect("⋯ More");
+        cx.simulate_click(more.center(), gpui_kit::Modifiers::none());
+        settle(cx);
+        let ix = view.read_with(cx, |v, _| {
+            v.menu_items()
+                .iter()
+                .position(|(l, _, _)| l == "→ Notes")
+                .expect("→ Notes in ⋯ More")
+        });
+        let item = cx
+            .debug_bounds(format!("src-menu-{ix}").leak())
+            .expect("menu item");
+        cx.simulate_click(item.center(), gpui_kit::Modifiers::none());
         settle(cx);
         view.read_with(cx, |v, cx| {
             assert!(v.notes.open && !v.notes.closing, "stayed out");
@@ -1108,7 +1124,7 @@ mod ui {
         assert!(
             log.borrow()
                 .reader_evals
-                .contains(&webview::SELECTION_UI_JS.to_string()),
+                .contains(&webview::selection_ui_js()),
             "{:?}",
             log.borrow().reader_evals
         );
@@ -1123,10 +1139,7 @@ mod ui {
         open_in_reader(&view, &feed, cx);
         log.borrow_mut().reader_evals.clear();
         reader_event(&view, webview::SurfaceEvent::Ready, cx);
-        assert_eq!(
-            log.borrow().reader_evals,
-            vec![webview::SELECTION_UI_JS.to_string()]
-        );
+        assert_eq!(log.borrow().reader_evals, vec![webview::selection_ui_js()]);
         // Not on your own post (Posts shows it here too).
         view.update_in(cx, |v, window, cx| v.show_view(View::Posts, window, cx));
         settle(cx);
@@ -1237,7 +1250,7 @@ mod ui {
             l.page_keyboard = true;
             l.selection = "High water at 6:12".into();
         }
-        let back = crate::app::toolbar::tests::settled_bounds(cx, "browser-back");
+        let back = crate::test_wait::still(cx, "browser-back");
         cx.simulate_click(back.center(), gpui_kit::Modifiers::none());
         settle(cx);
         assert!(log.borrow().selection.is_empty(), "a chrome click drops it");
@@ -1246,7 +1259,7 @@ mod ui {
             l.page_keyboard = true;
             l.selection = "High water at 6:12".into();
         }
-        let draft = crate::app::toolbar::tests::settled_bounds(cx, "browser-draft");
+        let draft = crate::test_wait::still(cx, "browser-draft");
         cx.simulate_click(draft.center(), gpui_kit::Modifiers::none());
         settle(cx);
         let text = fake.item(&id).unwrap().content_md;

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use blyg_core::config::MemoryTokenStore;
-use blyg_core::{Backend, ConfigStore, Kind, Status};
+use blyg_core::{Backend, ConfigStore, Kind, RemoteId, Status, SubId};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use crate::app::MainView;
@@ -48,12 +48,7 @@ pub(crate) fn setup(
     (view, fake, cx)
 }
 
-pub(crate) fn settle(cx: &mut VisualTestContext) {
-    for _ in 0..10 {
-        cx.run_until_parked();
-        std::thread::sleep(std::time::Duration::from_millis(2));
-    }
-}
+pub(crate) use crate::test_wait::settle;
 
 /// The reading screen, `mode`, with the post `(sub, id)` open.
 pub(crate) fn reading_on(
@@ -67,7 +62,7 @@ pub(crate) fn reading_on(
         if v.reading.view != View::Reading {
             v.show_view(View::Reading, window, cx);
         }
-        let k = (key.0.to_string(), key.1.to_string());
+        let k = (SubId::from(key.0), RemoteId::from(key.1));
         v.reading.sel = Some(k.clone());
         v.open_reading(k, window, cx);
         window.focus(&v.reading.focus, cx);
@@ -89,7 +84,7 @@ fn stops(fake: &FakeBackend) -> Vec<(String, String)> {
     let t = &fake.trails()[0];
     fake.trail_stops(&t.id)
         .into_iter()
-        .map(|s| (s.remote_id, s.why))
+        .map(|s| (s.remote_id.into_string(), s.why))
         .collect()
 }
 
@@ -271,7 +266,7 @@ fn h_on_the_publish_sheet_makes_a_hopper_of_the_stops(cx: &mut TestAppContext) {
     assert!(!h.public, "private, like every new hopper");
     let members = fake
         .hopper_members()
-        .get(&("sub-lin".to_string(), LIN_GARDENS.to_string()))
+        .get(&(SubId::from("sub-lin"), RemoteId::from(LIN_GARDENS)))
         .cloned()
         .unwrap_or_default();
     assert!(members.contains(&h.id));

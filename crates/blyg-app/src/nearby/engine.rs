@@ -392,7 +392,7 @@ pub fn held_docs(reading: &[ReadingItem], subs: &[Subscription]) -> Vec<Doc> {
             let who = r.subscription_title.trim();
             Doc {
                 key: reading_key(&r.subscription_id, &r.remote_id),
-                id: r.remote_id.clone(),
+                id: r.remote_id.to_string(),
                 label: label(&title, || {
                     if r.content_html.trim().is_empty() {
                         pick::link_label_md(&r.content_md, r.kind)

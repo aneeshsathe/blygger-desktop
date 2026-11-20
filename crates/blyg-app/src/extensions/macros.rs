@@ -301,7 +301,7 @@ impl MainView {
         if !automation::demo_auto() {
             return;
         }
-        let Ok(base) = std::env::var("BLYGGER_DEMO_URL") else {
+        let Some(base) = crate::dev_flags::get().demo.url.clone() else {
             eprintln!("br-macro-ext: set BLYGGER_DEMO_URL to the fixture site");
             return;
         };

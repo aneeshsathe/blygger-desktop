@@ -4,11 +4,12 @@
 //! here and in `tests.rs` without pixels.
 
 use blyg_core::{
-    Item, Kind, Mention, ReadingItem, RemoteVersion, Subscription, SubscriptionKind, Version,
+    Item, Kind, Mention, ReadingItem, RemoteId, RemoteVersion, SubId, Subscription,
+    SubscriptionKind, Version,
 };
 
 /// (subscription id, remote id): one reading row.
-pub type Key = (String, String);
+pub type Key = (SubId, RemoteId);
 
 pub fn key(r: &ReadingItem) -> Key {
     (r.subscription_id.clone(), r.remote_id.clone())
@@ -40,8 +41,7 @@ pub fn screen_status(view: super::View, unread: usize) -> ScreenStatus {
             post: false,
             to_read,
         },
-        // --- chat --- (the #thicket tab: the sync state too)
-        super::View::Mentions | super::View::Subscriptions | super::View::Chat => ScreenStatus {
+        super::View::Mentions | super::View::Subscriptions => ScreenStatus {
             post: false,
             to_read: None,
         },
@@ -61,14 +61,6 @@ pub fn visible(r: &ReadingItem) -> bool {
 /// first of any duplicate key wins), and posts edited since you read them
 /// moved to the top. Otherwise the backend's order (newest first) is kept.
 pub fn order(items: Vec<ReadingItem>) -> Vec<ReadingItem> {
-    ordered(items)
-}
-
-/// [`order`] without copying the rows: references into `items`, in the
-/// order shown. Burrow in a browser orders thousands of rows on every
-/// redraw, so it borrows them.
-#[allow(dead_code)]
-pub fn order_refs(items: &[ReadingItem]) -> Vec<&ReadingItem> {
     ordered(items)
 }
 
@@ -398,15 +390,14 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
                 .into(),
         ),
         "Reply" => on(
-            "Reply · new stub",
-            "Starts a new thread of yours that's a stub of this post (stub_of), \
+            "Reply",
+            "Starts a new thread of yours that replies to this post, \
              with the post quoted at the top."
                 .into(),
         ),
         "AI reply" => on(
-            "AI reply · new stub",
-            "A reply stub with an AI-drafted answer for you to review; nothing is published."
-                .into(),
+            "AI reply",
+            "A reply with an AI-drafted answer for you to review; nothing is published.".into(),
         ),
         // A pinned current version is a pin: the pill has no separate
         // 📌 entry to step to, so Fork works here.
@@ -429,7 +420,7 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         "Link post" => on(
             "Link post · new fragment",
             "Starts a new fragment of yours containing [[…]], a plain link to this post: \
-             not a reply, so no stub_of and no mention."
+             not a reply."
                 .into(),
         ),
         "Open on web" => on(
@@ -439,15 +430,19 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         // --- notes ---
         "Notes" if cx.blyg => on(
             "→ Notes",
-            "Adds this post to your notes drawer (![[…]]), or quotes the passage \
-             you selected in it. ⇧⌘N opens the notes."
-                .into(),
+            crate::keymap::hint(
+                "Adds this post to your notes drawer (![[…]]), or quotes the passage \
+                 you selected in it. ⇧⌘N opens the notes.",
+            )
+            .into(),
         ),
         "Notes" => on(
             "→ Notes",
-            "Adds a link to this post to your notes drawer, or quotes the passage \
-             you selected in it. ⇧⌘N opens the notes."
-                .into(),
+            crate::keymap::hint(
+                "Adds a link to this post to your notes drawer, or quotes the passage \
+                 you selected in it. ⇧⌘N opens the notes.",
+            )
+            .into(),
         ),
         // --- hoppers ---
         "Hopper" => on(
@@ -472,9 +467,11 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         // --- catch up --- shown only when the post draws on something.
         "Catch up" => on(
             "Catch up",
-            "Lays out the conversation that leads to this post, oldest first, \
-             each post in its own words (⇧C). Nothing is fetched or sent."
-                .into(),
+            crate::keymap::hint(
+                "Lays out the conversation that leads to this post, oldest first, \
+                 each post in its own words (⇧C). Nothing is fetched or sent.",
+            )
+            .into(),
         ),
         // --- quote targets --- a post shown without a subscription.
         "Subscribe" => on(
@@ -510,6 +507,31 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         ),
         other => on(other, String::new()),
     }
+}
+
+/// Whether a chip stays in the row under an open post. The rest (AI reply,
+/// Fork, Link post, Open on web, → Notes, Hopper ›, + Add to shelf, the
+/// other Background choices) sit behind one "⋯ More" chip, so the row fits on one line. Their
+/// keys (h, t, b, q, …) work as before. A pinned view's chips all stay.
+pub fn primary_chip(id: &str) -> bool {
+    matches!(
+        id,
+        "Quote"
+            | "Reply"
+            | "Catch up"
+            | "Subscribe"
+            // The Background chip itself (`background::PLACE`).
+            | "Background"
+            | "Quote this version"
+            | "Fork this pin"
+            | "Diff vs now"
+            | "Back to current"
+    )
+}
+
+/// The chips in the row, and those behind "⋯ More", in their order.
+pub fn split_chips(chips: Vec<ActionChip>) -> (Vec<ActionChip>, Vec<ActionChip>) {
+    chips.into_iter().partition(|c| primary_chip(c.id))
 }
 
 /// Why Fork is greyed out on the current version, and where to go instead.
@@ -700,7 +722,8 @@ pub enum OwnAction {
 }
 
 /// The tooltip on a greyed "Fork this pin" of your own.
-pub const OWN_FORK_NEEDS_PIN: &str = "Pin one in ⌘Y to fork it";
+pub const OWN_FORK_NEEDS_PIN: crate::platform_text::Text =
+    crate::platform_text::ui_text("Pin one in ⌘Y to fork it");
 
 impl OwnAction {
     pub fn label(self, v: u32) -> String {
@@ -720,7 +743,7 @@ impl OwnAction {
                 "Makes a new draft of yours from 📌 v{v}'s text, recorded as forked from it \
                  (forked_from, naming your own blyg)."
             ),
-            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.into(),
+            OwnAction::ForkNeedsPin => OWN_FORK_NEEDS_PIN.get().into(),
             _ => String::new(),
         }
     }
@@ -1224,7 +1247,10 @@ mod tests {
                 }
                 (false, false) => {
                     assert!(list.contains(&OwnAction::ForkNeedsPin));
-                    assert_eq!(OwnAction::ForkNeedsPin.tip(version), OWN_FORK_NEEDS_PIN);
+                    assert_eq!(
+                        OwnAction::ForkNeedsPin.tip(version),
+                        OWN_FORK_NEEDS_PIN.get()
+                    );
                 }
                 (false, true) => assert!(list.is_empty(), "{list:?}"),
             }

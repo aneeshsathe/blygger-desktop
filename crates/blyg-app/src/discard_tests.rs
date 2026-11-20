@@ -8,7 +8,7 @@ use blyg_core::{Backend, ConfigStore, LocalId, Status};
 use gpui_kit::{Entity, Modifiers, TestAppContext, VisualTestContext};
 
 use super::Withdraw;
-use crate::app::{MainView, Mode, Sheet};
+use crate::app::{MainView, Mode};
 use crate::fake::{FakeBackend, Timing};
 use crate::prefs::Prefs;
 
@@ -51,14 +51,7 @@ fn id(s: &str) -> LocalId {
 
 /// The backend call runs on the background executor; let it land.
 fn settle(cx: &mut VisualTestContext, done: impl Fn() -> bool) {
-    for _ in 0..50 {
-        cx.run_until_parked();
-        if done() {
-            return;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-    cx.run_until_parked();
+    crate::test_wait::until(cx, "the discard to land", |_| done());
 }
 
 fn toast(view: &Entity<MainView>, cx: &mut VisualTestContext) -> String {
@@ -80,8 +73,8 @@ fn delete_asks_then_deletes_and_the_list_moves_on(cx: &mut TestAppContext) {
     assert_eq!(current(&view, cx), Some(id(DRAFT)));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::DeleteDraft {
+    view.read_with(cx, |v, _| match v.sheet.get() {
+        Some(crate::app::discard::DeleteDraftSheet {
             id: sid,
             noun,
             title,
@@ -98,7 +91,7 @@ fn delete_asks_then_deletes_and_the_list_moves_on(cx: &mut TestAppContext) {
     settle(cx, || fake.item(&id(DRAFT)).is_none());
     assert!(fake.item(&id(DRAFT)).is_none(), "deleted");
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none());
+        assert!(!v.sheet.is_open());
         assert_eq!(v.list.results().len(), 5);
         assert_eq!(v.list.selected(), Some(&id(PUBLIC)), "the next row");
         assert_eq!(v.mode, Mode::Search);
@@ -117,13 +110,12 @@ fn esc_cancels_and_keeps_the_draft(cx: &mut TestAppContext) {
     let (view, fake, cx) = setup(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DeleteDraft { .. })
-    )));
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::DeleteDraftSheet>()
+    }));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(fake.item(&id(DRAFT)).is_some());
     assert_eq!(current(&view, cx), Some(id(DRAFT)));
 }
@@ -140,17 +132,16 @@ fn delete_from_the_editor_with_text_selected(cx: &mut TestAppContext) {
     // ⇧⌘⌫ isn't a text-editing key: it asks, and the text is untouched.
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DeleteDraft { .. })
-    )));
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::DeleteDraftSheet>()
+    }));
     assert_eq!(fake.item(&id(DRAFT)).unwrap().content_md, before);
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
     // ⌘⌫ keeps its text meaning (delete to line start) and asks nothing.
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-backspace"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(fake.item(&id(DRAFT)).is_some());
 }
 
@@ -169,8 +160,8 @@ fn a_scratch_note_is_deleted_too(cx: &mut TestAppContext) {
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DeleteDraft {
+        v.sheet.get(),
+        Some(crate::app::discard::DeleteDraftSheet {
             noun: "scratch note",
             ..
         })
@@ -189,7 +180,7 @@ fn published_posts_are_never_deleted(cx: &mut TestAppContext) {
     assert_eq!(current(&view, cx), Some(id(PUBLIC)));
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-shift-backspace"));
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()), "no sheet");
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()), "no sheet");
     assert_eq!(toast(&view, cx), "Published posts can't be deleted");
     assert_eq!(fake.item(&id(PUBLIC)).unwrap().status, Status::Public);
 }
@@ -201,8 +192,8 @@ fn withdraw_asks_with_a_note_then_withdraws(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.dispatch_action(Withdraw);
     cx.run_until_parked();
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::Withdraw { id: sid, title, .. }) => {
+    view.read_with(cx, |v, _| match v.sheet.get() {
+        Some(crate::app::discard::WithdrawSheet { id: sid, title, .. }) => {
             assert_eq!(sid, &id(PUBLIC));
             assert!(title.starts_with("Band on"), "{title}");
         }
@@ -222,7 +213,7 @@ fn withdraw_asks_with_a_note_then_withdraws(cx: &mut TestAppContext) {
     assert_eq!(last.note.as_deref(), Some("no longer accurate"));
     assert_eq!(toast(&view, cx), "Withdrawn as v2 · “no longer accurate”");
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none());
+        assert!(!v.sheet.is_open());
         assert_eq!(v.list.results().len(), 6, "it stays listed");
         assert_eq!(
             v.current.as_ref().map(|c| c.status),
@@ -232,7 +223,7 @@ fn withdraw_asks_with_a_note_then_withdraws(cx: &mut TestAppContext) {
     // Once withdrawn, neither action asks again.
     cx.dispatch_action(Withdraw);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(toast(&view, cx), "Already withdrawn");
 }
 
@@ -242,16 +233,18 @@ fn withdraw_esc_cancels_and_drafts_are_not_withdrawn(cx: &mut TestAppContext) {
     // On a draft, Withdraw points at delete instead.
     cx.dispatch_action(Withdraw);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(toast(&view, cx).contains("nothing to withdraw"));
     cx.simulate_keystrokes("down");
     cx.run_until_parked();
     cx.dispatch_action(Withdraw);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Withdraw { .. }))));
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::WithdrawSheet>()
+    }));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(fake.item(&id(PUBLIC)).unwrap().status, Status::Public);
 }
 
@@ -275,18 +268,14 @@ fn the_toolbar_slot_deletes_or_withdraws(cx: &mut TestAppContext) {
     let b = cx.debug_bounds("tb-DeleteDraft").expect("Delete button");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DeleteDraft { .. })
-    )));
-    // Let the sheet finish dropping in (its animation runs on the wall clock).
-    std::thread::sleep(std::time::Duration::from_millis(300));
-    cx.update(|window, _| window.refresh());
-    cx.run_until_parked();
-    let cancel = cx.debug_bounds("sheet-cancel").expect("Cancel");
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::DeleteDraftSheet>()
+    }));
+    // The sheet drops in on the wall clock: click where it comes to rest.
+    let cancel = crate::test_wait::still(cx, "sheet-cancel");
     cx.simulate_click(cancel.center(), Modifiers::none());
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert!(fake.item(&id(DRAFT)).is_some());
     // A published post: the slot says Withdraw, never Delete.
     cx.simulate_keystrokes("down");
@@ -299,7 +288,9 @@ fn the_toolbar_slot_deletes_or_withdraws(cx: &mut TestAppContext) {
     let b = cx.debug_bounds("tb-Withdraw").expect("Withdraw button");
     cx.simulate_click(b.center(), Modifiers::none());
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(v.sheet, Some(Sheet::Withdraw { .. }))));
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::WithdrawSheet>()
+    }));
 }
 
 // ------------------------------------------------------------ discard changes
@@ -336,8 +327,8 @@ fn discard_changes_asks_then_goes_back_to_the_published_version(cx: &mut TestApp
         cx.simulate_keystrokes(&crate::keymap::keys("alt-cmd-z"));
     }
     cx.run_until_parked();
-    view.read_with(cx, |v, _| match &v.sheet {
-        Some(Sheet::DiscardChanges {
+    view.read_with(cx, |v, _| match v.sheet.get() {
+        Some(crate::app::discard::DiscardChangesSheet {
             id: sid,
             version,
             title,
@@ -359,7 +350,7 @@ fn discard_changes_asks_then_goes_back_to_the_published_version(cx: &mut TestApp
     assert_eq!(editor_text(&view, cx), BAND, "the editor holds v1");
     assert_eq!(toast(&view, cx), "Back to v1 as published");
     view.read_with(cx, |v, _| {
-        assert!(v.sheet.is_none());
+        assert!(!v.sheet.is_open());
         assert!(v.restoring.is_none());
         assert_eq!(v.mode, Mode::Edit, "still writing");
     });
@@ -377,13 +368,12 @@ fn discard_changes_esc_keeps_the_edits(cx: &mut TestAppContext) {
     edit_public(cx);
     cx.dispatch_action(super::DiscardChanges);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DiscardChanges { .. })
-    )));
+    assert!(view.read_with(cx, |v, _| {
+        v.sheet.is::<crate::app::discard::DiscardChangesSheet>()
+    }));
     cx.simulate_keystrokes("escape");
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     let it = fake.item(&id(PUBLIC)).unwrap();
     assert!(it.dirty && it.content_md.ends_with("Then the rain came."));
     assert!(editor_text(&view, cx).ends_with("Then the rain came."));
@@ -405,8 +395,8 @@ fn discard_changes_says_why_not(cx: &mut TestAppContext) {
     // The draft.
     cx.dispatch_action(super::DiscardChanges);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
-    let not_published = crate::keymap::hint(crate::vm::DISCARD_NOT_PUBLISHED);
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
+    let not_published = crate::vm::DISCARD_NOT_PUBLISHED.get();
     assert_eq!(toast(&view, cx), not_published);
     assert_eq!(button(&view, cx).reason.as_deref(), Some(not_published));
     // The published post, clean.
@@ -414,7 +404,7 @@ fn discard_changes_says_why_not(cx: &mut TestAppContext) {
     cx.run_until_parked();
     cx.dispatch_action(super::DiscardChanges);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(toast(&view, cx), crate::vm::DISCARD_CLEAN);
     assert_eq!(
         button(&view, cx).reason.as_deref(),
@@ -445,7 +435,7 @@ fn discard_changes_says_why_not(cx: &mut TestAppContext) {
     );
     cx.dispatch_action(super::DiscardChanges);
     cx.run_until_parked();
-    assert!(view.read_with(cx, |v, _| v.sheet.is_none()));
+    assert!(view.read_with(cx, |v, _| !v.sheet.is_open()));
     assert_eq!(toast(&view, cx), "Offline. Discard needs the blyg.");
     assert!(fake.item(&id(PUBLIC)).unwrap().dirty, "the edit stays");
 }
@@ -518,7 +508,7 @@ fn the_version_browser_discards_changes_on_the_current_version(cx: &mut TestAppC
     let (view, fake, cx) = setup(cx);
     edit_public(cx);
     cx.simulate_keystrokes(&crate::keymap::keys("cmd-y"));
-    settle(cx, || false);
+    crate::test_wait::settle(cx);
     view.update_in(cx, |v, window, cx| {
         let own = v.reading.own.as_mut().expect("the history is open");
         own.sel = Some(1);
@@ -526,8 +516,8 @@ fn the_version_browser_discards_changes_on_the_current_version(cx: &mut TestAppC
     });
     cx.run_until_parked();
     assert!(view.read_with(cx, |v, _| matches!(
-        v.sheet,
-        Some(Sheet::DiscardChanges { version: 1, .. })
+        v.sheet.get(),
+        Some(crate::app::discard::DiscardChangesSheet { version: 1, .. })
     )));
     cx.simulate_keystrokes("enter");
     settle(cx, || !fake.item(&id(PUBLIC)).unwrap().dirty);
@@ -546,8 +536,15 @@ fn the_still_unpublished_line_has_no_runs_of_spaces() {
     let line = super::still_unpublished(1, 2);
     assert_eq!(
         line,
-        "Still marked unpublished: v1 has generated text. ⌘⏎ publishes it as v2"
+        crate::keymap::hint(
+            "Still marked unpublished: v1 has generated text. ⌘⏎ publishes it as v2"
+        )
     );
     assert!(!line.contains("  "), "{line}");
     assert!(!crate::keymap::hint_owned(line).contains("  "));
+    use crate::platform_text::{Platform, spelled_as};
+    assert_eq!(
+        spelled_as(Platform::Windows, || super::still_unpublished(1, 2)),
+        "Still marked unpublished: v1 has generated text. Ctrl+Enter publishes it as v2"
+    );
 }

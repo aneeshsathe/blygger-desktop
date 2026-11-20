@@ -148,8 +148,7 @@ fn a_4xx_is_not_a_server_failure() {
 #[test]
 fn thumbs_are_laid_over_held_rows() {
     let e = engine();
-    let kinds: HashMap<String, SubscriptionKind> =
-        [("s1".to_string(), SubscriptionKind::Blyg)].into();
+    let kinds: HashMap<SubId, SubscriptionKind> = [("s1".into(), SubscriptionKind::Blyg)].into();
     e.store
         .merge_reading(
             &[row("A", Some(1)), row("B", None), row("C", Some(-1))],
@@ -162,7 +161,7 @@ fn thumbs_are_laid_over_held_rows() {
             .store
             .reading()
             .into_iter()
-            .map(|r| (r.remote_id, r.thumb))
+            .map(|r| (r.remote_id.into_string(), r.thumb))
             .collect();
         v.sort();
         v

@@ -16,6 +16,8 @@
 //! always work too. `setup` prepares the sample data for the step when it
 //! is entered, from either direction.
 
+use crate::platform_text::{Text, ui_text, ui_text_per_platform};
+
 /// Something the user does that a step can wait for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Key {
@@ -112,12 +114,6 @@ pub enum Key {
     // --- hover cards ---
     /// A hover card is showing over a `[[…]]` in the editor.
     HoverCard,
-    // --- chat ---
-    /// The #thicket chat tab came to the front (⇧⌘I or the tab).
-    Chat,
-    // --- terminal ---
-    /// The terminal pane was shown or hidden (⌃`).
-    Terminal,
     // --- flow ---
     /// The command palette opened (⇧⌘P, View › Command Palette…).
     Palette,
@@ -160,6 +156,11 @@ pub enum Key {
     // --- nearby ---
     /// The Nearby rail was shown or hidden (⌥⌘U), or a row chosen or linked.
     Nearby,
+    // --- 0.26.0 ---
+    /// Quiet writing is on (Settings › Quiet writing, View › Quiet Writing).
+    QuietWriting,
+    /// The open post's ⋯ More menu is showing.
+    MoreMenu,
     // --- 0.16.0 ---
     /// The sample conflict was answered: its post is no longer in conflict
     /// (1, 2 or 3 on the sheet).
@@ -199,6 +200,11 @@ pub enum Region {
     Compose,
     /// The whole window (no ring).
     Whole,
+    /// --- 0.26.0 --- Settings' Quiet writing row (Settings open).
+    QuietSetting,
+    /// --- 0.26.0 --- The ⋯ More chip under the open post (where the
+    /// reading pane drew it).
+    MoreChip,
 }
 
 /// What a step prepares on the sample data when it's entered.
@@ -298,6 +304,9 @@ pub enum Setup {
     ShelfLens,
     /// Reader on All, with posts that quote, reply to, link to and name you.
     MentionsFeed,
+    /// --- 0.26.0 --- The published sample post open (its lineage line
+    /// under it), with Settings open over it at Quiet writing.
+    QuietWriting,
 }
 
 /// One step of the tour.
@@ -308,13 +317,13 @@ pub struct Step {
     /// entry starts at the first step of its own release (`whats_new`'s
     /// tests check it), so a release with something new adds a step for it.
     pub since: &'static str,
-    pub title: &'static str,
+    pub title: Text,
     /// One or two short sentences. `{hotkey}` becomes the quick-capture key.
-    pub caption: &'static str,
+    pub caption: Text,
     /// Any of these moves on. Empty: only Next does.
     pub keys: &'static [Key],
     /// How the key is shown on the card, e.g. "⌘T".
-    pub key_label: &'static str,
+    pub key_label: Text,
     pub region: Region,
     /// The matching toolbar button's label, pointed at when buttons are on.
     pub button: Option<&'static str>,
@@ -363,11 +372,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "search",
         since: "0.1.0",
-        title: "Search is the interface",
-        caption: "Type to filter every post as you go. ↑ and ↓ move the selection, and the \
+        title: ui_text("Search is the interface"),
+        caption: ui_text(
+            "Type to filter every post as you go. ↑ and ↓ move the selection, and the \
                   editor previews each post as you pass it.",
+        ),
         keys: &[Key::MoveSelection],
-        key_label: "↑ ↓",
+        key_label: ui_text("↑ ↓"),
         region: Region::Search,
         button: None,
         setup: Setup::Search,
@@ -378,11 +389,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "create",
         since: "0.1.0",
-        title: "No match? ⏎ starts writing",
-        caption: "Nothing matches “tide pools”, so ⏎ creates a new draft seeded with it, \
+        title: ui_text("No match? ⏎ starts writing"),
+        caption: ui_text(
+            "Nothing matches “tide pools”, so ⏎ creates a new draft seeded with it, \
                   with the caret at the end.",
+        ),
         keys: &[Key::Enter],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::Omnibar,
         // (The toolbar's New is ⌘N, the next step.)
         button: None,
@@ -394,12 +407,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "new",
         since: "0.10.0",
-        title: "⌘N: a blank page",
-        caption: "⌘N opens an empty editor and leaves your search as it was. What you type is \
+        title: ui_text("⌘N: a blank page"),
+        caption: ui_text(
+            "⌘N opens an empty editor and leaves your search as it was. What you type is \
                   a scratch note, kept on this Mac until ⌘D makes it a draft (⌘⏎ publishes \
                   it). Leave without typing and nothing is kept.",
+        ),
         keys: &[Key::NewPost],
-        key_label: "⌘N",
+        key_label: ui_text("⌘N"),
         region: Region::Editor,
         button: Some("New"),
         setup: Setup::Search,
@@ -410,11 +425,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "autosave",
         since: "0.1.0",
-        title: "Just write",
-        caption: "Every keystroke is saved on this Mac and pushed to your blyg a moment after \
+        title: ui_text("Just write"),
+        caption: ui_text(
+            "Every keystroke is saved on this Mac and pushed to your blyg a moment after \
                   you stop. There's no save button. Type a few words.",
+        ),
         keys: &[Key::Typed],
-        key_label: "type",
+        key_label: ui_text("type"),
         region: Region::Editor,
         button: None,
         setup: Setup::EnsureOpen,
@@ -425,11 +442,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "kinds",
         since: "0.1.0",
-        title: "Fragments and threads",
-        caption: "A fragment is short: 1000 characters at most, counted down here. A thread \
+        title: ui_text("Fragments and threads"),
+        caption: ui_text(
+            "A fragment is short: 1000 characters at most, counted down here. A thread \
                   has no limit and can quote other posts. ⌘T switches between them.",
+        ),
         keys: &[Key::ToggleKind],
-        key_label: "⌘T",
+        key_label: ui_text("⌘T"),
         region: Region::Counter,
         button: None,
         setup: Setup::EnsureOpen,
@@ -440,12 +459,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "capture",
         since: "0.1.0",
-        title: "Quick capture keeps scratch notes",
-        caption: "{hotkey} opens quick capture over any app. What you jot down stays on this \
+        title: ui_text("Quick capture keeps scratch notes"),
+        caption: ui_text(
+            "{hotkey} opens quick capture over any app. What you jot down stays on this \
                   Mac as a scratch note, listed here with its scratch pill and never synced. \
                   ⌘D makes it a draft; ⌘⏎ publishes it.",
+        ),
         keys: &[Key::MakeDraft],
-        key_label: "⌘D",
+        key_label: ui_text("⌘D"),
         region: Region::List,
         button: Some("Make draft"),
         setup: Setup::Scratch(
@@ -458,11 +479,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "publish",
         since: "0.1.0",
-        title: "⌘⏎ publishes",
-        caption: "Publishing asks for an optional version note first. This is sample data, so \
+        title: ui_text("⌘⏎ publishes"),
+        caption: ui_text(
+            "Publishing asks for an optional version note first. This is sample data, so \
                   nothing leaves your Mac.",
+        ),
         keys: &[Key::Publish],
-        key_label: "⌘⏎",
+        key_label: ui_text("⌘⏎"),
         region: Region::Editor,
         button: Some("Publish"),
         setup: Setup::Publishable,
@@ -473,11 +496,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "publish-note",
         since: "0.1.0",
-        title: "Say what changed",
-        caption: "Type a note such as “first version” (or leave it empty) and press ⏎. \
+        title: ui_text("Say what changed"),
+        caption: ui_text(
+            "Type a note such as “first version” (or leave it empty) and press ⏎. \
                   esc would cancel.",
+        ),
         keys: &[Key::Enter, Key::Publish],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::Sheet,
         button: None,
         setup: Setup::PublishSheet,
@@ -488,11 +513,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "full-editor",
         since: "0.1.0",
-        title: "The full editor",
-        caption: "⌘2 adds a live preview beside the list; ⌘3 is the full editor: the source \
+        title: ui_text("The full editor"),
+        caption: ui_text(
+            "⌘2 adds a live preview beside the list; ⌘3 is the full editor: the source \
                   and the page exactly as it will be published.",
+        ),
         keys: &[Key::ViewStudio, Key::ViewSplit],
-        key_label: "⌘3",
+        key_label: ui_text("⌘3"),
         region: Region::Whole,
         button: Some("Full editor"),
         setup: Setup::StudioSample,
@@ -503,10 +530,10 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "write-view",
         since: "0.1.0",
-        title: "Back to writing",
-        caption: "⌘1 brings back the plain list and editor.",
+        title: ui_text("Back to writing"),
+        caption: ui_text("⌘1 brings back the plain list and editor."),
         keys: &[Key::ViewWrite],
-        key_label: "⌘1",
+        key_label: ui_text("⌘1"),
         region: Region::Whole,
         button: Some("Write"),
         setup: Setup::FullEditor,
@@ -517,12 +544,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "tk",
         since: "0.1.0",
-        title: "Fill a gap with AI",
-        caption: "Write [TK]an instruction[/TK] and press ⌘G with the caret inside: the gap is \
+        title: ui_text("Fill a gap with AI"),
+        caption: ui_text(
+            "Write [TK]an instruction[/TK] and press ⌘G with the caret inside: the gap is \
                   filled, tinted as generated, and disclosed when published. (A canned demo: \
                   no AI is called.)",
+        ),
         keys: &[Key::AiGenerate],
-        key_label: "⌘G",
+        key_label: ui_text("⌘G"),
         region: Region::Editor,
         button: Some("Generate"),
         setup: Setup::Tk("one short sentence about fog, in my voice"),
@@ -533,11 +562,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shorten",
         since: "0.1.0",
-        title: "Too long? Shorten to fit",
-        caption: "This fragment is over 1000. ⇧⌘G proposes a shorter version; you accept or \
+        title: ui_text("Too long? Shorten to fit"),
+        caption: ui_text(
+            "This fragment is over 1000. ⇧⌘G proposes a shorter version; you accept or \
                   reject it. (Canned, too.)",
+        ),
         keys: &[Key::AiShorten],
-        key_label: "⇧⌘G",
+        key_label: ui_text("⇧⌘G"),
         region: Region::Counter,
         button: None,
         setup: Setup::Long(
@@ -550,11 +581,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "versions",
         since: "0.1.0",
-        title: "Versions and pins",
-        caption: "⌘Y shows every version of your post here, to compare or restore one. Pinning \
+        title: ui_text("Versions and pins"),
+        caption: ui_text(
+            "⌘Y shows every version of your post here, to compare or restore one. Pinning \
                   a version serves it forever: a pin can't be undone.",
+        ),
         keys: &[Key::ShowVersions],
-        key_label: "⌘Y",
+        key_label: ui_text("⌘Y"),
         region: Region::Editor,
         button: Some("Versions"),
         setup: Setup::Versioned,
@@ -565,23 +598,18 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "discard",
         since: "0.13.0",
-        title: "Changed your mind? Discard",
-        caption: if cfg!(target_os = "windows") {
-            "This published post has unpublished edits: hover “unpublished edits” below. \
-             ⌘⏎ would publish them as v4. Post › Discard Changes… or the toolbar's eraser \
-             goes back to v3 as published, after asking. The public post never changes."
-        } else {
+        title: ui_text("Changed your mind? Discard"),
+        caption: ui_text_per_platform(
             "This published post has unpublished edits: hover “unpublished edits” below. \
              ⌘⏎ would publish them as v4. ⌥⌘Z (or Post › Discard Changes…, or the \
              toolbar's eraser) goes back to v3 as published, after asking. The public post \
-             never changes."
-        },
+             never changes.",
+            "This published post has unpublished edits: hover “unpublished edits” below. \
+             ⌘⏎ would publish them as v4. Post › Discard Changes… or the toolbar's eraser \
+             goes back to v3 as published, after asking. The public post never changes.",
+        ),
         keys: &[Key::DiscardChanges],
-        key_label: if cfg!(target_os = "windows") {
-            "click"
-        } else {
-            "⌥⌘Z"
-        },
+        key_label: ui_text_per_platform("⌥⌘Z", "click"),
         region: Region::Editor,
         button: Some("Discard"),
         setup: Setup::Edited("Then I wrote this down, and thought better of it."),
@@ -593,25 +621,20 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf",
         since: "0.18.0",
-        title: "Keep it on your shelf",
-        caption: if cfg!(target_os = "windows") {
+        title: ui_text("Keep it on your shelf"),
+        caption: ui_text_per_platform(
             "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             Ctrl+Shift+A puts the open post on your shelf: 📚 marks it and it stays at the top \
+             ⌥⌘B adds the open post to your shelf: 📚 marks it and it stays at the top of the \
+             list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
+             the shelf syncs with your blyg; otherwise it's kept on this Mac.",
+            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
+             Ctrl+Shift+A adds the open post to your shelf: 📚 marks it and it stays at the top \
              of the list. Ctrl+B opens the shelf, and 1–9 opens a post on it. With \
              blygger-studio 0.61 the shelf syncs with your blyg; otherwise it's kept on this \
-             computer."
-        } else {
-            "Some posts you keep coming back to: a /now page, a reading log, a running list. \
-             ⌥⌘B puts the open post on your shelf: 📚 marks it and it stays at the top of the \
-             list. ⌘B opens the shelf, and 1–9 opens a post on it. With blygger-studio 0.61 \
-             the shelf syncs with your blyg; otherwise it's kept on this Mac."
-        },
+             computer.",
+        ),
         keys: &[Key::Shelf],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+A"
-        } else {
-            "⌥⌘B"
-        },
+        key_label: ui_text("⌥⌘B"),
         region: Region::List,
         button: None,
         setup: Setup::EnsureOpen,
@@ -623,22 +646,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "lineage-writing",
         since: "0.18.0",
-        title: "Lineage while you write",
-        caption: if cfg!(target_os = "windows") {
+        title: ui_text("Lineage while you write"),
+        caption: ui_text(
             "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
              what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
-             a row opens that post. Ctrl+J opens the full lineage, as in Reading."
-        } else {
-            "Under the editor, one quiet line: this post's lineage glyph, what it draws on and \
-             what draws on it (Rue replied to it, Ada quoted it). A click opens the lists, and \
-             a row opens that post. ⌘J opens the full lineage, as in Reading."
-        },
+             a row opens that post. ⌘J opens the full lineage, as in Reading.",
+        ),
         keys: &[Key::LineageStrip],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+J"
-        } else {
-            "⌘J"
-        },
+        key_label: ui_text("⌘J"),
         region: Region::Editor,
         button: None,
         setup: Setup::Versioned,
@@ -649,13 +664,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "neighbourhood",
         since: "0.18.0",
-        title: "Zoom out to the neighbourhood",
-        caption: "In the lineage sheet, − zooms out two hops: what the neighbours draw on and \
+        title: ui_text("Zoom out to the neighbourhood"),
+        caption: ui_text(
+            "In the lineage sheet, − zooms out two hops: what the neighbours draw on and \
                   what draws on them, coloured fork, reply, quote; a dashed one is a hop \
                   further, a shaded one is yours. Arrows move, ⏎ makes a post the centre, ⌫ \
                   walks back, + returns to the list.",
+        ),
         keys: &[Key::LineageMap],
-        key_label: "−",
+        key_label: ui_text("−"),
         region: Region::Whole,
         button: None,
         setup: Setup::Lineage,
@@ -667,20 +684,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "hover-cards",
         since: "0.18.0",
-        title: "What a link is, on hover",
-        caption: if cfg!(target_os = "windows") {
-            "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
-             author, version, first lines), and an unlabelled link offers “label it”. \
-             Ctrl-click opens the post: yours here, anyone else's in Reading. Quotes and links \
-             in the Stream show the same card."
-        } else {
+        title: ui_text("What a link is, on hover"),
+        caption: ui_text(
             "Rest the pointer on a [[…]] or ![[…]] in the editor: a card says what it is (title, \
              author, version, first lines), and an unlabelled link offers “label it”. ⌘-click \
              opens the post: yours here, anyone else's in Reading. Quotes and links in the \
-             Stream show the same card."
-        },
+             Stream show the same card.",
+        ),
         keys: &[Key::HoverCard],
-        key_label: "hover",
+        key_label: ui_text("hover"),
         region: Region::Editor,
         button: None,
         setup: Setup::StudioSample,
@@ -688,87 +700,25 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
-    // --- chat --- the setup screen only: the tour never connects.
-    Step {
-        id: "chat",
-        since: "0.18.0",
-        title: "#thicket, an experimental chat",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), \
-             beside the views. It's experimental and may be removed. Sign in or create an \
-             account there when you like: nothing connects until you do, and Settings hides \
-             the tab."
-        } else {
-            "⇧⌘I opens #thicket, a chat for Burrow users on Libera.Chat (IRC), beside the \
-             views. It's experimental and may be removed. Sign in or create an account there \
-             when you like: nothing connects until you do, and Settings hides the tab."
-        },
-        keys: &[Key::Chat],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+I"
-        } else {
-            "⇧⌘I"
-        },
-        region: Region::Whole,
-        button: None,
-        setup: Setup::Posts,
-        pause_ms: 1600,
-        settle: false,
-        stay: true,
-    },
-    // --- terminal --- the key showing the pane counts: the tour never
-    // needs a shell to start (none does in the tests).
-    Step {
-        id: "terminal",
-        since: "0.18.0",
-        title: "A terminal at the foot of the window",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+` opens a terminal under your posts (experimental): your own shell, for a \
-             CLI agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
-             token and no BLYGGER_* variable. Ctrl+` again hides it; Ctrl+Shift+T sends the \
-             editor's selection to it, quoted."
-        } else {
-            "⌃` opens a terminal under your posts (experimental): your own shell, for a CLI \
-             agent like claude or codex, git or wrangler. It gets nothing of Burrow's, no \
-             token and no BLYGGER_* variable. ⌃` again hides it; ⇧⌘T sends the editor's \
-             selection to it, quoted."
-        },
-        keys: &[Key::Terminal],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+`"
-        } else {
-            "⌃`"
-        },
-        region: Region::Whole,
-        button: None,
-        setup: Setup::Posts,
-        pause_ms: 1600,
-        settle: false,
-        stay: true,
-    },
-    // --- end terminal ---
     // --- flow ---
     Step {
         id: "palette",
         since: "0.18.0",
-        title: "Every command, by name",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
-             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
-             Changes); each row shows its key. Enter runs it, Ctrl+Enter runs it and keeps \
-             the palette open, and the last ten come first."
-        } else {
+        title: ui_text("Every command, by name"),
+        caption: ui_text_per_platform(
             "⇧⌘P opens the command palette: every action, theme, font, blyg and hopper, and \
              your posts by title. Type a few letters (“undo edits” finds Discard Changes); \
-             each row shows its key. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and \
-             the last ten come first."
-        },
+             each row shows its key, and a theme or font row shows itself on the window as you \
+             move to it. ⏎ runs it, ⌘⏎ runs it and keeps the palette open, and the last ten \
+             come first.",
+            "Ctrl+Shift+P opens the command palette: every action, theme, font, blyg and \
+             hopper, and your posts by title. Type a few letters (“undo edits” finds Discard \
+             Changes); each row shows its key, and a theme or font row shows itself on the window \
+             as you move to it. Enter runs it, Ctrl+Enter runs it and keeps the palette open, \
+             and the last ten come first.",
+        ),
         keys: &[Key::Palette],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+P"
-        } else {
-            "⇧⌘P"
-        },
+        key_label: ui_text("⇧⌘P"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -779,24 +729,19 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "focus",
         since: "0.18.0",
-        title: "Focus: the line stays put",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+F is focus mode: the editor alone, the line you're typing on held \
-             a little above the middle, the paragraphs you're not in dimmed, and a hairline \
-             with the sync dot and this sitting's words. Esc brings everything back; \
-             focus-line and focus-fade in the config file tune it."
-        } else {
+        title: ui_text("Focus: the line stays put"),
+        caption: ui_text_per_platform(
             "⌥⌘F is focus mode: the editor alone, the line you're typing on held a little \
              above the middle, the paragraphs you're not in dimmed, and a hairline with the \
              sync dot and this sitting's words. esc brings everything back; focus-line and \
-             focus-fade in the config file tune it."
-        },
+             focus-fade in the config file tune it.",
+            "Ctrl+Shift+F is focus mode: the editor alone, the line you're typing on held \
+             a little above the middle, the paragraphs you're not in dimmed, and a hairline \
+             with the sync dot and this sitting's words. Esc brings everything back; \
+             focus-line and focus-fade in the config file tune it.",
+        ),
         keys: &[Key::Focus],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+F"
-        } else {
-            "⌥⌘F"
-        },
+        key_label: ui_text("⌥⌘F"),
         region: Region::Whole,
         button: None,
         setup: Setup::EnsureOpen,
@@ -807,26 +752,21 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "serendipity",
         since: "0.18.0",
-        title: "An old thought, if you like",
-        caption: if cfg!(target_os = "windows") {
-            "Serendipity is off until you turn it on: Settings (Ctrl+,) › Serendipity, or \
-             serendipity = own in the config file. Then a new post's empty editor shows one \
-             of your older posts, often one nothing links to yet: q quotes it, l links it, o \
-             opens it, r shows another, and typing sends it away. Press Ctrl+N to see one \
-             from the samples."
-        } else {
+        title: ui_text("An old thought, if you like"),
+        caption: ui_text_per_platform(
             "Serendipity is off until you turn it on: Settings (⌘,) › Serendipity, or \
              serendipity = own in the config file. Then ⌘N's empty editor shows one of your \
              older posts, often one nothing links to yet: q quotes it, l links it, o opens \
              it, r shows another, and typing sends it away. Press ⌘N to see one from the \
-             samples."
-        },
+             samples.",
+            "Serendipity is off until you turn it on: Settings (Ctrl+,) › Serendipity, or \
+             serendipity = own in the config file. Then a new post's empty editor shows one \
+             of your older posts, often one nothing links to yet: q quotes it, l links it, o \
+             opens it, r shows another, and typing sends it away. Press Ctrl+N to see one \
+             from the samples.",
+        ),
         keys: &[Key::Serendipity],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+N"
-        } else {
-            "⌘N"
-        },
+        key_label: ui_text("⌘N"),
         region: Region::Editor,
         button: None,
         setup: Setup::Posts,
@@ -839,20 +779,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "trails",
         since: "0.18.0",
-        title: "Keep a trail",
-        caption: if cfg!(target_os = "windows") {
-            "A trail is a path through posts you chose to keep. t adds the selected post, with a \
-             word on why (⏎ keeps it, esc skips); Shift+T starts another trail. The trail bar \
-             walks it, and Ctrl+Alt+T writes it as a thread of quotes in a new draft: nothing \
-             is published until you publish it."
-        } else {
+        title: ui_text("Keep a trail"),
+        caption: ui_text(
             "A trail is a path through posts you chose to keep. t adds the selected post, with a \
              word on why (⏎ keeps it, esc skips); ⇧T starts another trail. The trail bar walks \
              it, and ⌥⌘T writes it as a thread of quotes in a new draft: nothing is published \
-             until you publish it."
-        },
+             until you publish it.",
+        ),
         keys: &[Key::Trail],
-        key_label: "t",
+        key_label: ui_text("t"),
         region: Region::Whole,
         button: None,
         setup: Setup::StreamQuote,
@@ -863,20 +798,19 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "quote-tray",
         since: "0.18.0",
-        title: "Pick it up, quote it later",
-        caption: if cfg!(target_os = "windows") {
-            "q (or Ctrl+Alt+K) puts the post on the quote tray, the strip above the status bar. \
-             Ctrl+K lists the tray first when you quote, and you can drag a tray chip, a stream \
-             post or a Reader row straight into a post: a quote in a thread, a link in a \
-             fragment. Dropped on the search box, it starts a new thread."
-        } else {
+        title: ui_text("Pick it up, quote it later"),
+        caption: ui_text_per_platform(
             "q (or ⌥⌘K) puts the post on the quote tray, the strip above the status bar. ⌘K \
              lists the tray first when you quote, and you can drag a tray chip, a stream post or \
              a Reader row straight into a post: a quote in a thread, a link in a fragment. \
-             Dropped on the omnibar, it starts a new thread."
-        },
+             Dropped on the omnibar, it starts a new thread.",
+            "q (or Ctrl+Shift+T) puts the post on the quote tray, the strip above the status bar. \
+             Ctrl+K lists the tray first when you quote, and you can drag a tray chip, a stream \
+             post or a Reader row straight into a post: a quote in a thread, a link in a \
+             fragment. Dropped on the search box, it starts a new thread.",
+        ),
         keys: &[Key::Tray],
-        key_label: "q",
+        key_label: ui_text("q"),
         region: Region::Whole,
         button: None,
         setup: Setup::StreamQuote,
@@ -887,22 +821,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "split-view",
         since: "0.18.0",
-        title: "Two posts side by side",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Alt+Enter puts the selected post beside the one you were writing: yours in a \
-             second editor that saves on its own, anyone else's read-only. Ctrl+Alt+[ and \
-             Ctrl+Alt+] move between them, the divider drags, × closes it."
-        } else {
+        title: ui_text("Two posts side by side"),
+        caption: ui_text(
             "⌥⌘⏎ puts the selected post beside the one you were writing: yours in a second \
              editor that saves on its own, anyone else's read-only. ⌥⌘[ and ⌥⌘] move between \
-             them, the divider drags, × closes it."
-        },
+             them, the divider drags, × closes it.",
+        ),
         keys: &[Key::Split],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Alt+Enter"
-        } else {
-            "⌥⌘⏎"
-        },
+        key_label: ui_text("⌥⌘⏎"),
         region: Region::Whole,
         button: None,
         setup: Setup::Pair,
@@ -915,18 +841,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "nearby",
         since: "0.18.0",
-        title: "Nearby thoughts, while you write",
-        caption: if cfg!(target_os = "windows") {
-            "Ctrl+Alt+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words."
-        } else {
-            "⌥⌘U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share, ⌥⇧⏎ quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this Mac that matches meaning, not just words."
-        },
+        title: ui_text("Nearby thoughts, while you write"),
+        caption: ui_text_per_platform(
+            "⌥⌘U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. ⌥↑/⌥↓ choose, ⌥⏎ links the phrase you share, ⌥⇧⏎ quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this Mac that matches meaning, not just words.",
+            "Ctrl+Shift+U, or the Nearby tab at the right edge, opens a drawer beside the editor with your posts, and posts you hold, that say what the paragraph under the caret says. Alt+Up/Alt+Down choose, Alt+Enter links the phrase you share, Alt+Shift+Enter quotes the post (threads). It stays open until you close it; Settings › Nearby can add a small model on this computer that matches meaning, not just words.",
+        ),
         keys: &[Key::Nearby],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Alt+U"
-        } else {
-            "⌥⌘U"
-        },
+        key_label: ui_text("⌥⌘U"),
         region: Region::Editor,
         button: None,
         setup: Setup::StudioSample,
@@ -938,14 +859,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "loose-ends",
         since: "0.18.0",
-        title: "Loose ends",
-        caption: "The search reads operators: is:draft lists your drafts, is:orphan the \
-                  published posts nothing points at, has:tk the ungenerated TKs, is:stale \
+        title: ui_text("Loose ends"),
+        caption: ui_text(
+            "The search reads operators: is:draft lists your drafts, is:orphan the \
+                  published posts (a week old or more) nothing points at, has:tk the ungenerated TKs, is:stale \
                   drafts untouched for a month; links: and quotes: take an id or a host, and \
                   kind:thread, v:2 work too. Other words search as ever. With the search \
                   empty, a quiet line over the list says what's loose, in words.",
+        ),
         keys: &[Key::Enter],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::Omnibar,
         button: None,
         setup: Setup::Query("is:draft"),
@@ -953,24 +876,44 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: true,
     },
+    // --- 0.26.0 --- quiet writing: the setting itself.
+    Step {
+        id: "quiet-writing",
+        since: "0.26.0",
+        title: ui_text("Quiet writing"),
+        caption: ui_text(
+            "The lineage line, the loose-ends line and Nearby thoughts each sit around the \
+                  editor on their own. Quiet writing hides all three, for a plainer page; ⌘J, \
+                  is:orphan and ⌥⌘U (for this sitting) still reach them. Click On, then esc to \
+                  look; Off brings them back. It's a real setting, kept as you leave it, and \
+                  View › Quiet Writing toggles it too.",
+        ),
+        keys: &[Key::QuietWriting],
+        key_label: ui_text("click"),
+        region: Region::QuietSetting,
+        button: None,
+        setup: Setup::QuietWriting,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "capture-link",
         since: "0.18.0",
-        title: "Capture from anywhere",
-        caption: if cfg!(target_os = "windows") {
-            "Paste a web address into the search and ⏎ starts a fragment with that link, \
-             titled from the page (a blyg post you hold is quoted instead). In the quick \
-             capture panel, text you copied in the last ten seconds is offered as a chip, \
-             \"quote clipboard\"; it's never put in for you."
-        } else {
+        title: ui_text("Capture from anywhere"),
+        caption: ui_text_per_platform(
             "Paste a web address into the search and ⏎ starts a fragment with that link, \
              titled from the page (a blyg post you hold is quoted instead). Anywhere on your \
              Mac, select text and choose Services › Capture in Burrow: the quick capture \
              panel opens with it quoted, and the page's address under it when the app gives \
-             one."
-        },
+             one.",
+            "Paste a web address into the search and ⏎ starts a fragment with that link, \
+             titled from the page (a blyg post you hold is quoted instead). In the quick \
+             capture panel, text you copied in the last ten seconds is offered as a chip, \
+             \"quote clipboard\"; it's never put in for you.",
+        ),
         keys: &[Key::Enter],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::Omnibar,
         button: None,
         setup: Setup::Query("https://lin.example.org/t/rock-pools"),
@@ -981,14 +924,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "contacts",
         since: "0.18.0",
-        title: "Your contacts, first",
-        caption: "Type @: the people in your blyg's address book come first, then the blygs \
+        title: ui_text("Your contacts, first"),
+        caption: ui_text(
+            "Type @: the people in your blyg's address book come first, then the blygs \
                   you read. Where your blyg turns @handle into a link when it publishes, \
                   picking a contact writes @handle; elsewhere, the plain link. In Reading, \
                   Mentions under All unread lists the posts that mention you: dots, never a \
                   count.",
+        ),
         keys: &[Key::Mention],
-        key_label: "@",
+        key_label: ui_text("@"),
         region: Region::Editor,
         button: None,
         setup: Setup::Mentions("Tea at the harbour with "),
@@ -1000,13 +945,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "conflict",
         since: "0.16.0",
-        title: "Edited in two places? You choose",
-        caption: "Burrow saves against the version of a post it last saw. When the post \
+        title: ui_text("Edited in two places? You choose"),
+        caption: ui_text(
+            "Burrow saves against the version of a post it last saw. When the post \
                   changed on your blyg as well (in the studio, or on another computer), \
                   nothing is overwritten: Burrow shows both. 1 keeps yours, 2 takes the \
                   server's, 3 keeps both, yours as a new draft.",
+        ),
         keys: &[Key::ConflictAnswered],
-        key_label: "1 2 3",
+        key_label: ui_text("1 2 3"),
         // The sheet is taller than `Region::Sheet`'s ring.
         region: Region::Whole,
         button: None,
@@ -1018,13 +965,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "own-post",
         since: "0.13.0",
-        title: "Reply to yourself",
-        caption: "Your published post has the Reading view's actions above its text: Reply · \
-                  new stub (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment \
+        title: ui_text("Reply to yourself"),
+        caption: ui_text(
+            "Your published post has the Reading view's actions above its text: Reply \
+                  (⌥⌘R), Quote into a thread (⌥⌘Q) and Link post · new fragment \
                   (⌥⌘L). Forking your own post is in ⌘Y: Fork this pin, on a pinned version. \
                   Try Reply.",
+        ),
         keys: &[Key::OwnPostAction],
-        key_label: "⌥⌘R",
+        key_label: ui_text("⌥⌘R"),
         region: Region::Editor,
         button: None,
         setup: Setup::Versioned,
@@ -1035,14 +984,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "quotes",
         since: "0.1.0",
-        title: "Links and quotes",
-        caption: "⌘K links a post you hold; in a thread it (or ![[ on a new line) quotes \
+        title: ui_text("Links and quotes"),
+        caption: ui_text(
+            "⌘K links a post you hold; in a thread it (or ![[ on a new line) quotes \
                   one, a snapshot taken when you publish. Rows lead with each post's title, \
                   and ⏎ writes [[id | label]]: the label is the link's text on the page, so \
                   edit the words after | to rename it. A quote's note is yours only. (A typed \
                   [[ stays text unless bracket-picker = on.)",
+        ),
         keys: &[Key::QuotePicker, Key::Picker],
-        key_label: "⌘K",
+        key_label: ui_text("⌘K"),
         region: Region::Editor,
         button: None,
         setup: Setup::Thread,
@@ -1053,14 +1004,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "echoed-quote",
         since: "0.12.0",
-        title: "A quote the AI added",
-        caption: "This gap's text ends with ![[…]] on its own line, which its instruction \
+        title: ui_text("A quote the AI added"),
+        caption: ui_text(
+            "This gap's text ends with ![[…]] on its own line, which its instruction \
                   never asked for. Publishing makes that a real quote and notifies its \
                   author, so the preview already shows the quote, and ⌘⏎'s sheet warns \
                   before you publish. Delete the line, or name the post in the \
                   instruction.",
+        ),
         keys: &[Key::Publish],
-        key_label: "⌘⏎",
+        key_label: ui_text("⌘⏎"),
         region: Region::Whole,
         button: Some("Publish"),
         setup: Setup::EchoedQuote,
@@ -1071,12 +1024,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "mentions",
         since: "0.4.0",
-        title: "Mentions and spelling",
-        caption: "Type @ and a name to link a blyg you know (↑ ↓ choose, ⏎ inserts). It's a \
+        title: ui_text("Mentions and spelling"),
+        caption: ui_text(
+            "Type @ and a name to link a blyg you know (↑ ↓ choose, ⏎ inserts). It's a \
                   plain link, so it notifies no one. A red underline marks a misspelling: \
                   right-click it for suggestions.",
+        ),
         keys: &[Key::Mention, Key::SpellMenu],
-        key_label: "@",
+        key_label: ui_text("@"),
         region: Region::Editor,
         button: None,
         setup: Setup::Mentions("The fog horn sounded twice this mornign. Ask "),
@@ -1087,23 +1042,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "switcher",
         since: "0.14.0",
-        title: "Your blygs",
-        caption: if cfg!(target_os = "windows") {
-            "The name in the title bar is the blyg you're writing to. Click it, or press \
-             Ctrl+Shift+L, to switch blygs or add another; Ctrl+Shift+1 and Ctrl+Shift+2 jump \
-             straight to them. Each blyg keeps its own posts and reading. (The tour stays on \
-             its sample blyg.)"
-        } else {
+        title: ui_text("Your blygs"),
+        caption: ui_text(
             "The name in the title bar is the blyg you're writing to. Click it, or press ⌃⌘0, \
              to switch blygs or add another; ⌃⌘1 and ⌃⌘2 jump straight to them. Each blyg \
-             keeps its own posts and reading. (The tour stays on its sample blyg.)"
-        },
+             keeps its own posts and reading. (The tour stays on its sample blyg.)",
+        ),
         keys: &[Key::BlygSwitcher],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+L"
-        } else {
-            "⌃⌘0"
-        },
+        key_label: ui_text("⌃⌘0"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1114,14 +1060,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "stream",
         since: "0.4.0",
-        title: "Reading, in the Stream",
-        caption: "Burrow opens here, on Reading (⌘R goes to your posts and back): posts from \
+        title: ui_text("Reading, in the Stream"),
+        caption: ui_text(
+            "Burrow opens here, on Reading (⌘R goes to your posts and back): posts from \
                   the blygs you follow, newest first by their own date. j/k move, and a post a \
                   second on screen counts as read. A revised post leads with what changed, \
                   “V2: …”, from its author's changelog. ⏎, Space, a double-click or Read more \
                   opens it in a side pane.",
+        ),
         keys: &[Key::ReadMore],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::Stream,
         button: None,
         setup: Setup::StreamLead,
@@ -1132,13 +1080,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "compose",
         since: "0.14.0",
-        title: "Post while you read",
-        caption: "The box at the foot of Reading writes a post without leaving the one you're \
-                  reading. c puts the caret in it (⇧⌘K from anywhere), ⌘⏎ posts a fragment, \
-                  ⌘D keeps a draft, and esc goes back to the stream with your text kept. With \
+        title: ui_text("Post while you read"),
+        caption: ui_text(
+            "The box at the foot of Reading writes a post without leaving the one you're \
+                  reading. c puts the caret in it (⇧⌘K from anywhere), ⌘⏎ posts a fragment \
+                  after 3 seconds (esc cancels, ⌘⏎ again posts now), ⌘D keeps a draft, and esc goes back to the stream with your text kept. With \
                   a post open, ❝ Quote quotes it.",
+        ),
         keys: &[Key::Compose],
-        key_label: "c",
+        key_label: ui_text("c"),
         region: Region::Compose,
         button: None,
         setup: Setup::Stream,
@@ -1149,13 +1099,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "slots",
         since: "0.11.0",
-        title: "Reading time, and what's behind a post",
-        caption: "Two bundled extensions, off until you turn them on: reading-time ends a \
+        title: ui_text("Reading time, and what's behind a post"),
+        caption: ui_text(
+            "Two bundled extensions, off until you turn them on: reading-time ends a \
                   post's byline with “· 3 min”, and inspect adds ⋯ to its actions, with the \
                   record Burrow holds for it (ids, versions, references). Click ⋯, then \
                   inspect.",
+        ),
         keys: &[Key::SlotSheet],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::StreamPost,
         button: None,
         setup: Setup::Stream,
@@ -1166,12 +1118,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "generated",
         since: "0.12.0",
-        title: "“Generated” is the publisher's word",
-        caption: "Lin's blyg marks a sentence of this post as AI-generated. Open it (⏎): \
+        title: ui_text("“Generated” is the publisher's word"),
+        caption: ui_text(
+            "Lin's blyg marks a sentence of this post as AI-generated. Open it (⏎): \
                   the marked text is tinted, hovering it says so, and the post ends with a \
                   note that the mark is the publisher's own disclosure, not verified.",
+        ),
         keys: &[Key::ReadMore],
-        key_label: "⏎",
+        key_label: ui_text("⏎"),
         region: Region::StreamPost,
         button: None,
         setup: Setup::StreamGenerated,
@@ -1182,12 +1136,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "original",
         since: "0.4.0",
-        title: "Quotes lead to the original",
-        caption: "The grey box quotes another post: click its text to open the original beside \
-                  it, or the name for the author's profile. Its pane lists who quoted, stubbed \
-                  or forked it.",
+        title: ui_text("Quotes lead to the original"),
+        caption: ui_text(
+            "The grey box quotes another post: click its text to open the original beside \
+                  it, or the name for the author's profile. Its pane lists who quoted, replied \
+                  to or forked it.",
+        ),
         keys: &[Key::OpenOriginal, Key::OpenProfile],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::StreamPost,
         button: None,
         setup: Setup::StreamQuote,
@@ -1199,13 +1155,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "catch-up",
         since: "0.23.0",
-        title: "Catch up on a conversation",
-        caption: "Rue's post quotes Lin, who quotes Ada, who quotes Rue. ⇧C (or the Catch up \
+        title: ui_text("Catch up on a conversation"),
+        caption: ui_text(
+            "Rue's post quotes Lin, who quotes Ada, who quotes Rue. ⇧C (or the Catch up \
                   chip under the post) lays the conversation out oldest first: each post's \
                   author, date and own words. j/k move, ⏎ opens one, w adds the side replies, \
                   and s asks your AI for a short summary, never put in a post.",
+        ),
         keys: &[Key::CatchUp],
-        key_label: "⇧C",
+        key_label: ui_text("⇧C"),
         region: Region::StreamPost,
         button: None,
         setup: Setup::StreamCatchUp,
@@ -1216,14 +1174,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "lineage",
         since: "0.8.0",
-        title: "Lineage: where a post comes from",
-        caption: "The glyph beside a post's name shows the kinds of post it draws on (left) \
+        title: ui_text("Lineage: where a post comes from"),
+        caption: ui_text(
+            "The glyph beside a post's name shows the kinds of post it draws on (left) \
                   and that draw on it (right): fork, reply, quote. “1 · 2” beside it counts \
                   them: up · down. ⌘J, or a click on it, opens the map, with the counts by the \
                   post: arrows move, ⏎ makes a neighbour the centre, ⌫ walks back, and ⇧C \
                   catches up on the conversation.",
+        ),
         keys: &[Key::Lineage],
-        key_label: "⌘J",
+        key_label: ui_text("⌘J"),
         region: Region::StreamPost,
         button: None,
         setup: Setup::StreamQuote,
@@ -1234,13 +1194,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "ring",
         since: "0.8.0",
-        title: "Actions on a ring",
-        caption: "With the post in the middle selected, Space opens its actions in fixed \
+        title: ui_text("Actions on a ring"),
+        caption: ui_text(
+            "With the post in the middle selected, Space opens its actions in fixed \
                   places: F fork, R reply, Q quote, L link post, V versions, O open; “R · 2” \
                   says two replies are known already. A letter previews what it would make; ⏎ \
                   does it, esc backs out. (Sample data: nothing is sent.)",
+        ),
         keys: &[Key::LineageRing],
-        key_label: "Space",
+        key_label: ui_text("Space"),
         region: Region::Whole,
         button: None,
         setup: Setup::Lineage,
@@ -1252,14 +1214,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "author-site",
         since: "0.21.0",
-        title: "Read it as its author made it",
-        caption: "In Reader mode, Settings › Reading › Open posts on the author's site shows \
-                  an opened post's own page, styled by its author, in the post pane. j/k still \
-                  move and Space pages down; Burrow reader | Author's site above the post \
-                  switches one view back, and a subscription's menu can always or never do \
-                  it. Press ⌥⌘2.",
+        title: ui_text("Read it as its author made it"),
+        caption: ui_text(
+            "In Reader mode, Settings › Reading › Open posts on the author's site shows \
+                  an opened post's own page, styled by its author. It fills the reading pane \
+                  under the browser bar: Burrow reader | Author's site, back and forward, the \
+                  address, 🛡 and ↗. j/k still move and Space pages down, and a subscription's \
+                  menu can always or never do it. Press ⌥⌘2.",
+        ),
         keys: &[Key::ReaderMode],
-        key_label: "⌥⌘2",
+        key_label: ui_text("⌥⌘2"),
         region: Region::Reader,
         button: None,
         setup: Setup::Stream,
@@ -1267,17 +1231,39 @@ pub const STEPS: &[Step] = &[
         settle: false,
         stay: false,
     },
+    // --- 0.26.0 --- the open post's less common actions, behind ⋯ More.
+    Step {
+        id: "more-menu",
+        since: "0.26.0",
+        title: ui_text("⋯ More for this post"),
+        caption: ui_text(
+            "Under an open post, one row keeps the actions you use most: quote, reply, \
+                  catch up and Background. The rest wait behind ⋯ More: a hopper, the shelf, \
+                  a trail, fork, link post, an AI reply, → Notes and open on web. Their keys \
+                  haven't changed. Click ⋯ More.",
+        ),
+        keys: &[Key::MoreMenu],
+        key_label: ui_text("click"),
+        region: Region::MoreChip,
+        button: None,
+        setup: Setup::Reader,
+        pause_ms: 1600,
+        settle: false,
+        stay: true,
+    },
     Step {
         id: "reader",
         since: "0.4.0",
-        title: "Reader: sources, posts, post",
-        caption: "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
+        title: ui_text("Reader: sources, posts, post"),
+        caption: ui_text(
+            "⌥⌘2 switches to Reader. On the left: smart feeds (All unread, Today, Thumbed, \
                   All, Shelf, and Background, where set-aside and withdrawn posts go), Your blyg \
                   (your own posts, never unread or counted), your hoppers, your folders, which \
                   stay on this Mac, and subscriptions. [ and ] step through a post's versions; ⌥⌘1 is the \
                   Stream again.",
+        ),
         keys: &[Key::ReaderMode],
-        key_label: "⌥⌘2",
+        key_label: ui_text("⌥⌘2"),
         region: Region::Reader,
         button: None,
         setup: Setup::Stream,
@@ -1289,14 +1275,16 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "background",
         since: "0.24.0",
-        title: "Set a post aside: Background",
-        caption: "b (or ↓ Background under the post) moves it to Background: out of the \
+        title: ui_text("Set a post aside: Background"),
+        caption: ui_text(
+            "b (or ↓ Background under the post) moves it to Background: out of the \
                   stream, the feeds, Mentions and the counts, and nothing is marked read. \
-                  ↑ Foreground brings it back, ↺ Clear my choice lets the rules decide, and \
-                  ⇊ moves a whole blyg. Your blyg keeps the list, so the studio shows the same \
+                  ↑ Foreground brings it back; ⋯ More under the post has ↺ Clear my choice \
+                  (the rules decide again) and ⇊, which moves a whole blyg. Your blyg keeps the list, so the studio shows the same \
                   (blygger-studio 0.61).",
+        ),
         keys: &[Key::Background],
-        key_label: "b",
+        key_label: ui_text("b"),
         region: Region::ReaderPost,
         button: None,
         setup: Setup::Background,
@@ -1307,13 +1295,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-add",
         since: "0.24.0",
-        title: "Anyone's post on your shelf",
-        caption: "+ Add to shelf, among the post's chips, keeps it to hand: someone else's \
+        title: ui_text("Anyone's post on your shelf"),
+        caption: ui_text(
+            "+ Add to shelf, in ⋯ More under the post, keeps it to hand: someone else's \
                   post or yours, up to 50, in your order. With blygger-studio 0.61 the shelf \
-                  syncs with your blyg, so the studio, the web app and your other computers \
-                  share it.",
+                  syncs with your blyg, so the studio and your other computers share it.",
+        ),
         keys: &[Key::ShelfReading],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::ReaderPost,
         button: None,
         setup: Setup::ShelfAdd,
@@ -1324,12 +1313,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "shelf-lens",
         since: "0.24.0",
-        title: "The Shelf lens",
-        caption: "Shelf, in the sources, lists everything on your shelf in your order, as the \
+        title: ui_text("The Shelf lens"),
+        caption: ui_text(
+            "Shelf, in the sources, lists everything on your shelf in your order, as the \
                   studio's Shelf lens does. A shelved post stays here even after it goes to \
                   Background. Click Shelf.",
+        ),
         keys: &[Key::ShelfLens],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::Reader,
         button: None,
         setup: Setup::ShelfLens,
@@ -1341,12 +1332,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "mentions-feed",
         since: "0.25.0",
-        title: "Mentions, and why",
-        caption: "Mentions, under All unread, lists the posts that point at you: the ones \
+        title: ui_text("Mentions, and why"),
+        caption: ui_text(
+            "Mentions, under All unread, lists the posts that point at you: the ones \
                   your blyg says name you, and the ones Burrow finds that quote, reply to, \
                   fork or link to your blyg. A tag on each says which. Click Mentions.",
+        ),
         keys: &[Key::MentionsFeed],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::Reader,
         button: None,
         setup: Setup::MentionsFeed,
@@ -1358,12 +1351,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "hoppers",
         since: "0.15.0",
-        title: "Hoppers: posts you keep together",
-        caption: "Under Hoppers on the left are your blyg's hoppers, collections of posts, yours \
-                  and others'. Pick one to list its posts. h (or Hopper › on a post) puts the \
+        title: ui_text("Hoppers: posts you keep together"),
+        caption: ui_text(
+            "Under Hoppers on the left are your blyg's hoppers, collections of posts, yours \
+                  and others'. Pick one to list its posts. h (or Hopper › in ⋯ More under a post) puts the \
                   open post in a hopper or takes it out; a public one, marked with a globe, has its own page.",
+        ),
         keys: &[Key::HopperPicker],
-        key_label: "h",
+        key_label: ui_text("h"),
         region: Region::Reader,
         button: None,
         setup: Setup::Hoppers,
@@ -1374,13 +1369,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "hopper-several",
         since: "0.17.0",
-        title: "Several posts into a hopper",
-        caption: "Two posts are picked (⌘-click picks one more, ⇧-click a run, ⌘A the whole \
+        title: ui_text("Several posts into a hopper"),
+        caption: ui_text(
+            "Two posts are picked (⌘-click picks one more, ⇧-click a run, ⌘A the whole \
                   list). h now acts on all of them: choosing a hopper puts in the ones it \
                   doesn't hold yet, and a dash marks a hopper holding only some. A hopper lists \
                   its posts as your blyg does, the most recently added first.",
+        ),
         keys: &[Key::HopperSeveral],
-        key_label: "h",
+        key_label: ui_text("h"),
         region: Region::Reader,
         button: None,
         setup: Setup::HopperSeveral,
@@ -1391,13 +1388,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "thicket",
         since: "0.14.0",
-        title: "Follow the thicket",
-        caption: "Ada's reply quotes Lin's note. Click the quote to open it here; quotes inside \
-                  quotes, a stub's “responds to” line and links to blyg posts open the same \
+        title: ui_text("Follow the thicket"),
+        caption: ui_text(
+            "Ada's reply quotes Lin's note. Click the quote to open it here; quotes inside \
+                  quotes, the “↳ reply to” line and links to blyg posts open the same \
                   way. The breadcrumb above the post shows the path, and ⌘[ or ‹ back steps \
                   back.",
+        ),
         keys: &[Key::FollowThicket],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::ReaderPost,
         button: None,
         setup: Setup::Thicket,
@@ -1408,12 +1407,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "history",
         since: "0.14.0",
-        title: "Where you've been",
-        caption: "⇧⌘H, or history above the post, lists this walk and earlier ones beside the \
+        title: ui_text("Where you've been"),
+        caption: ui_text(
+            "⇧⌘H, or history above the post, lists this walk and earlier ones beside the \
                   reader, as the tree they were; each step opens its post. It's private: kept \
                   in your blyg's own browsing log, or on this Mac, and never published.",
+        ),
         keys: &[Key::BrowseHistory],
-        key_label: "⇧⌘H",
+        key_label: ui_text("⇧⌘H"),
         region: Region::ReaderPost,
         button: None,
         setup: Setup::Walked,
@@ -1424,13 +1425,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "stub-passage",
         since: "0.14.0",
-        title: "Reply to a passage",
-        caption: "Reply made this stub, quoting the whole of Lin's post. To answer one passage, \
+        title: ui_text("Reply to a passage"),
+        caption: ui_text(
+            "Reply made this draft, quoting the whole of Lin's post. To answer one passage, \
                   select it inside the quote in the preview on the right, then press ❝ quote \
                   only this (or ⇧⌘D): it goes under that quote. Quote another passage adds one \
                   more to select from.",
+        ),
         keys: &[Key::StubPassage],
-        key_label: "⇧⌘D",
+        key_label: ui_text("⇧⌘D"),
         region: Region::Editor,
         button: None,
         setup: Setup::Stub,
@@ -1441,13 +1444,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "opml",
         since: "0.11.0",
-        title: "Moving from another reader?",
-        caption: "Import OPML… (here on Subscriptions, ⇧⌘S, or Blyg › Import Subscriptions \
+        title: ui_text("Moving from another reader?"),
+        caption: ui_text(
+            "Import OPML… (here on Subscriptions, ⇧⌘S, or Blyg › Import Subscriptions \
                   from OPML…) reads its export: Burrow lists the feeds, ticks the new ones, and \
                   files them in an Imported feeds folder in the Reader, out of your public \
                   blogroll. Export OPML… saves yours. Try the sample file.",
+        ),
         keys: &[Key::OpmlImport],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::ScreenHeader,
         button: None,
         setup: Setup::Subscriptions,
@@ -1459,13 +1464,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "discover",
         since: "0.24.0",
-        title: "Find new blygs to read",
-        caption: "Discover… (here, or Blyg › Discover Blygs…) lists the blygs on blygger.com's \
+        title: ui_text("Find new blygs to read"),
+        caption: ui_text(
+            "Discover… (here, or Blyg › Discover Blygs…) lists the blygs on blygger.com's \
                   public directory that you don't follow yet, newest first, with how active \
                   each is. Ones listed since you last looked say new. j/k move, ⏎ \
                   subscribes, o opens one in your browser. (The tour's list is a sample.)",
+        ),
         keys: &[Key::Discover],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::ScreenHeader,
         button: None,
         setup: Setup::Subscriptions,
@@ -1476,15 +1483,17 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "notes",
         since: "0.4.0",
-        title: "Notes while you read",
-        caption: "⇧⌘N, or the Notes tab at the right edge, opens the notes beside what you're \
+        title: ui_text("Notes while you read"),
+        caption: ui_text(
+            "⇧⌘N, or the Notes tab at the right edge, opens the notes beside what you're \
                   reading or writing; they stay open until you close them, and esc takes you \
                   back to your draft. Reading notes are running notes, kept on this Mac as a \
-                  scratch note; → Notes, at the bottom of a post, adds the post to them. Select \
+                  scratch note; → Notes, in ⋯ More at the bottom of a post, adds the post to them. Select \
                   a passage in a post: ⇧⌘D, or the pill beside it, quotes it in your draft. The \
                   pane's Notes tab is next.",
+        ),
         keys: &[Key::Notes],
-        key_label: "⇧⌘N",
+        key_label: ui_text("⇧⌘N"),
         region: Region::ReaderPost,
         button: None,
         setup: Setup::Reader,
@@ -1495,13 +1504,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "notes-library",
         since: "0.11.0",
-        title: "Your Markdown notes, in the drawer",
-        caption: "With markdown-notes on, the Notes tab opens folders of Markdown notes \
+        title: ui_text("Your Markdown notes, in the drawer"),
+        caption: ui_text(
+            "With markdown-notes on, the Notes tab opens folders of Markdown notes \
                   (Obsidian vaults, say): a chip per folder, Add folder… for more, and Remove \
                   from Burrow, which leaves the folder alone. Open a note to edit it or quote it \
                   into your post. Choose Garden.",
+        ),
         keys: &[Key::NotesVault],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::NotesDrawer,
         button: None,
         setup: Setup::NotesLibrary,
@@ -1512,20 +1523,19 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "browser",
         since: "0.4.0",
-        title: "Links open beside your reading",
+        title: ui_text("Links open beside your reading"),
         // No content blocking on Windows yet: no word about 🛡 there.
-        caption: if cfg!(target_os = "windows") {
-            "A link in a post opens in this pane (a blank sample here); Ctrl+click opens it \
-             over the whole area. ↗, or Alt+click on the link, uses your default browser. \
-             esc closes it; Ctrl+Shift+B brings it back."
-        } else {
+        caption: ui_text_per_platform(
             "A link in a post opens in this pane (a blank sample here); ⌘-click opens it \
              over the whole area. 🛡 turns ad and tracker blocking off for one site; ↗, or \
              ⌥-click on the link, uses your default browser. esc closes it; ⇧⌘B brings it \
-             back."
-        },
+             back.",
+            "A link in a post opens in this pane (a blank sample here); Ctrl+click opens it \
+             over the whole area. ↗, or Alt+click on the link, uses your default browser. \
+             esc closes it; Ctrl+Shift+B brings it back.",
+        ),
         keys: &[Key::CloseBrowser],
-        key_label: "esc",
+        key_label: ui_text("esc"),
         region: Region::BrowserChrome,
         button: None,
         setup: Setup::Browser,
@@ -1537,26 +1547,20 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "browser-windows",
         since: "0.22.0",
-        title: if cfg!(target_os = "windows") {
-            "The browser pane, on Windows"
-        } else {
-            "The browser pane runs on Windows too"
-        },
-        caption: if cfg!(target_os = "windows") {
+        title: ui_text_per_platform(
+            "The browser pane runs on Windows too",
+            "The browser pane, on Windows",
+        ),
+        caption: ui_text_per_platform(
+            "The same pane, and the same cross-post macros, now run on Windows too. Press \
+             ⇧⌘B to hide the pane; it brings it back too.",
             "Links in posts now open in this pane on Windows, and cross-post's macros run \
              here too. Sign-ins are kept in the pane's own profile, so they survive a \
              relaunch. Ad and tracker blocking isn't on Windows yet. Press Ctrl+Shift+B to \
-             hide the pane; it brings it back too."
-        } else {
-            "The same pane, and the same cross-post macros, now run on Windows too. Press \
-             ⇧⌘B to hide the pane; it brings it back too."
-        },
+             hide the pane; it brings it back too.",
+        ),
         keys: &[Key::CloseBrowser],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+B"
-        } else {
-            "⇧⌘B"
-        },
+        key_label: ui_text("⇧⌘B"),
         region: Region::BrowserChrome,
         button: None,
         setup: Setup::Browser,
@@ -1568,11 +1572,13 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "clip",
         since: "0.10.0",
-        title: "✂ Clip a page into your draft",
-        caption: "⇧⌘C, or ✂ Clip in the pane's bar, quotes the page (or the passage you \
+        title: ui_text("✂ Clip a page into your draft"),
+        caption: ui_text(
+            "⇧⌘C, or ✂ Clip in the pane's bar, quotes the page (or the passage you \
                   selected on it) in your draft, with its title and link. Clip the sample.",
+        ),
         keys: &[Key::Clip],
-        key_label: "⇧⌘C",
+        key_label: ui_text("⇧⌘C"),
         region: Region::BrowserChrome,
         button: None,
         setup: Setup::Browser,
@@ -1583,15 +1589,17 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "cross-post",
         since: "0.11.0",
-        title: "cross-post runs beside you",
-        caption: "The bundled cross-post (off until you turn it on) puts a published post on \
+        title: ui_text("cross-post runs beside you"),
+        caption: ui_text(
+            "The bundled cross-post (off until you turn it on) puts a published post on \
                   Substack Notes, Bluesky or Farcaster from this pane: you check the text, it \
                   fills in the composer, and only you click Post. The copy's link goes on the \
                   post's Copies Elsewhere list. esc folds the pane mid-run: the status bar says \
                   “macro running · show pane”. It works on Windows as well. (A sample: nothing \
                   runs.)",
+        ),
         keys: &[Key::MacroFolded],
-        key_label: "esc",
+        key_label: ui_text("esc"),
         region: Region::MacroRun,
         button: None,
         setup: Setup::CrossPost,
@@ -1602,13 +1610,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "extensions",
         since: "0.10.0",
-        title: "Extensions",
-        caption: "Post › Extensions… lists what your extensions offer here: their commands, \
+        title: ui_text("Extensions"),
+        caption: ui_text(
+            "Post › Extensions… lists what your extensions offer here: their commands, \
                   Browse for each notes folder, and Manage extensions…; the command palette \
                   has them too. Burrow asks before one may do anything, and none can publish \
                   or see your sign-in.",
+        ),
         keys: &[Key::ExtPalette],
-        key_label: "Post menu",
+        key_label: ui_text("Post menu"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1619,12 +1629,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "manage",
         since: "0.11.0",
-        title: "Turn off, or forget",
-        caption: "Choose Manage extensions…: what's installed, on and allowed. Turn off stops \
+        title: ui_text("Turn off, or forget"),
+        caption: ui_text(
+            "Choose Manage extensions…: what's installed, on and allowed. Turn off stops \
                   one and keeps its permissions for next time; Forget permissions drops them \
                   too, so it asks again. (The tour changes nothing in your config file.)",
+        ),
         keys: &[Key::ExtManage],
-        key_label: "click",
+        key_label: ui_text("click"),
         region: Region::Whole,
         button: None,
         setup: Setup::Palette,
@@ -1635,12 +1647,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "consent",
         since: "0.11.0",
-        title: "Burrow asks first",
-        caption: "The first time an extension starts, Burrow lists what it wants. ⏎ allows \
+        title: ui_text("Burrow asks first"),
+        caption: ui_text(
+            "The first time an extension starts, Burrow lists what it wants. ⏎ allows \
                   what's ticked (1–9 untick), esc is Not now, and ⌘⌫ turns it off. Try ⌘⌫. \
                   (A sample: nothing is saved.)",
+        ),
         keys: &[Key::ConsentAnswered],
-        key_label: "⌘⌫",
+        key_label: ui_text("⌘⌫"),
         region: Region::Whole,
         button: None,
         setup: Setup::Consent,
@@ -1652,13 +1666,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "site",
         since: "0.19.0",
-        title: "Your blyg's public site",
-        caption: "Your blyg's public pages have their own look. Blyg › Site… picks the \
+        title: ui_text("Your blyg's public site"),
+        caption: ui_text(
+            "Your blyg's public pages have their own look. Blyg › Site… picks the \
                   theme (or designs your own, with a preview), the typeface, a front page, \
                   the menu on every page and your avatar. Nothing changes on your blyg \
                   until you press Save.",
+        ),
         keys: &[Key::SiteSheet],
-        key_label: "Blyg › Site…",
+        key_label: ui_text("Blyg › Site…"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1669,13 +1685,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "contacts-book",
         since: "0.19.0",
-        title: "Your contacts, kept here",
-        caption: "Blyg › Contacts… is your blyg's address book: add, edit, check and \
+        title: ui_text("Your contacts, kept here"),
+        caption: ui_text(
+            "Blyg › Contacts… is your blyg's address book: add, edit, check and \
                   remove the people you write about as @handles. Post › Add Author to \
                   Contacts… adds whoever wrote the post in front of you, and subscribing \
                   to a blyg offers to add it.",
+        ),
         keys: &[Key::ContactsSheet],
-        key_label: "Blyg › Contacts…",
+        key_label: ui_text("Blyg › Contacts…"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1686,12 +1704,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "stale-quotes",
         since: "0.19.0",
-        title: "Quotes that fell behind",
-        caption: "When a post you quoted gets a new version, your thread shows ↻ in the \
+        title: ui_text("Quotes that fell behind"),
+        caption: ui_text(
+            "When a post you quoted gets a new version, your thread shows ↻ in the \
                   list. Blyg › Stale Quotes… lists those threads and refreshes their \
                   quotes: a new version of your thread, with a note you can edit.",
+        ),
         keys: &[Key::StaleQuotes],
-        key_label: "Blyg › Stale Quotes…",
+        key_label: ui_text("Blyg › Stale Quotes…"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1702,13 +1722,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "client-access",
         since: "0.19.0",
-        title: "Who can act as you",
-        caption: "Blyg › Client Access… lists every app and token that can act as you on \
+        title: ui_text("Who can act as you"),
+        caption: ui_text(
+            "Blyg › Client Access… lists every app and token that can act as you on \
                   your blyg, Burrow included. Make a token (shown once) or revoke any of \
                   them. If your blyg has its own AI, Blyg › AI on Your Blyg… sets it up, \
                   and the publish sheet can draft a version note for you to edit.",
+        ),
         keys: &[Key::ClientAccess],
-        key_label: "Blyg › Client Access…",
+        key_label: ui_text("Blyg › Client Access…"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1721,13 +1743,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "copies-elsewhere",
         since: "0.21.0",
-        title: "Copies elsewhere",
-        caption: "Posted it somewhere else too? Post › Copies Elsewhere… keeps that list on \
+        title: ui_text("Copies elsewhere"),
+        caption: ui_text(
+            "Posted it somewhere else too? Post › Copies Elsewhere… keeps that list on \
                   your blyg, with no new version, and a cross-post adds its link for you; the \
                   versions (⌘Y) show it, and readers see “Also posted at …”. (It shows once \
                   your blyg's studio supports it.) Press ⌘Y.",
+        ),
         keys: &[Key::ShowVersions],
-        key_label: "⌘Y",
+        key_label: ui_text("⌘Y"),
         region: Region::Whole,
         button: None,
         setup: Setup::Versioned,
@@ -1740,24 +1764,15 @@ pub const STEPS: &[Step] = &[
     Step {
         id: "side-dock",
         since: "0.20.0",
-        title: "Notes beside your draft",
-        caption: if cfg!(target_os = "windows") {
-            "The tabs at the right edge open your notes and Nearby beside the editor, and \
-             they stay open while you write. Ctrl+Shift+N moves into the notes, esc comes \
-             back to your draft. Drag a pane's edge, or the line between the editor and \
-             the preview, to resize; a double-click resets it. Press Ctrl+Shift+N."
-        } else {
+        title: ui_text("Notes beside your draft"),
+        caption: ui_text(
             "The tabs at the right edge open your notes and Nearby beside the editor, and \
              they stay open while you write. ⇧⌘N moves into the notes, esc comes back to \
              your draft. Drag a pane's edge, or the line between the editor and the \
-             preview, to resize; a double-click resets it. Press ⇧⌘N."
-        },
+             preview, to resize; a double-click resets it. Press ⇧⌘N.",
+        ),
         keys: &[Key::Notes],
-        key_label: if cfg!(target_os = "windows") {
-            "Ctrl+Shift+N"
-        } else {
-            "⇧⌘N"
-        },
+        key_label: ui_text("⇧⌘N"),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1770,12 +1785,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: QUICK_END,
         since: "0.1.0",
-        title: "That's the quick tour",
-        caption: "Everything you did here was on sample data. The feature tours below go \
+        title: ui_text("That's the quick tour"),
+        caption: ui_text(
+            "Everything you did here was on sample data. The feature tours below go \
                   further, a few minutes each: pick one now, or any time from Settings (⌘,) \
                   › Help.",
+        ),
         keys: &[],
-        key_label: "",
+        key_label: ui_text(""),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1786,12 +1803,14 @@ pub const STEPS: &[Step] = &[
     Step {
         id: END,
         since: "0.1.0",
-        title: "That's the tour",
-        caption: "Everything you did here was on sample data. Your own posts and reading come \
+        title: ui_text("That's the tour"),
+        caption: ui_text(
+            "Everything you did here was on sample data. Your own posts and reading come \
                   back when you finish. Back to the tours picks another; Settings (⌘,) › Help \
                   opens them again.",
+        ),
         keys: &[],
-        key_label: "",
+        key_label: ui_text(""),
         region: Region::Whole,
         button: None,
         setup: Setup::Posts,
@@ -1854,6 +1873,7 @@ pub const TOURS: &[Tour] = &[
             "shelf",
             "hover-cards",
             "loose-ends",
+            "quiet-writing",
             "quotes",
             "mentions",
         ],
@@ -1890,6 +1910,7 @@ pub const TOURS: &[Tour] = &[
             "original",
             "catch-up",
             "author-site",
+            "more-menu",
             "reader",
             "background",
             "shelf-add",
@@ -1953,10 +1974,8 @@ pub const TOURS: &[Tour] = &[
     Tour {
         id: "workspace",
         title: "Workspace",
-        blurb: "Palette, chat, terminal, focus, split, dock.",
+        blurb: "Palette, focus, split, dock.",
         steps: &[
-            "chat",
-            "terminal",
             "palette",
             "focus",
             "serendipity",
@@ -2031,7 +2050,11 @@ mod tests {
         ids.dedup();
         assert_eq!(ids.len(), STEPS.len(), "duplicate step id");
         for s in STEPS {
-            assert!(!s.title.is_empty() && !s.caption.is_empty(), "{}", s.id);
+            assert!(
+                !s.title.get().is_empty() && !s.caption.get().is_empty(),
+                "{}",
+                s.id
+            );
             // Each tour ends on its own end card; only those wait for Next.
             let end = s.id == END || s.id == QUICK_END;
             assert_eq!(
@@ -2042,7 +2065,7 @@ mod tests {
             );
             // A step that moves on by itself shows its ✓ first.
             assert!(end || s.stay || s.pause_ms > 0, "{}: pause_ms 0", s.id);
-            assert_eq!(s.key_label.is_empty(), s.keys.is_empty(), "{}", s.id);
+            assert_eq!(s.key_label.get().is_empty(), s.keys.is_empty(), "{}", s.id);
         }
         // Every topic in the spec is covered.
         for k in [
@@ -2089,8 +2112,6 @@ mod tests {
             Key::LineageStrip,
             Key::LineageMap,
             Key::HoverCard,
-            Key::Chat,        // --- chat ---
-            Key::Terminal,    // --- terminal ---
             Key::Palette,     // --- flow ---
             Key::Focus,       // --- flow ---
             Key::Serendipity, // --- flow ---
@@ -2104,9 +2125,42 @@ mod tests {
             Key::ShelfLens,
             Key::Discover,
             Key::MentionsFeed,
+            Key::MoreMenu, // --- 0.26.0 ---
         ] {
             assert!(STEPS.iter().any(|s| s.accepts(k)), "{k:?} isn't taught");
         }
+    }
+
+    /// Windows' wording, read on any platform: no macOS glyph survives the
+    /// respelling, and a step words Windows its own way only when the
+    /// respelling wouldn't already say the same.
+    #[test]
+    fn windows_wording_is_derived_unless_it_differs() {
+        use crate::platform_text::Platform;
+        let mut bad = Vec::new();
+        for s in STEPS {
+            for (field, t) in [
+                ("title", s.title),
+                ("caption", s.caption),
+                ("key_label", s.key_label),
+            ] {
+                let win = t.on(Platform::Windows);
+                if win.contains(['⌘', '⌥', '⌃', '⇧']) {
+                    bad.push(format!("  {}.{field} still has a macOS key: {win}", s.id));
+                }
+                if let Some(own) = t.windows_source()
+                    && crate::keymap::windows_hint(own)
+                        == crate::keymap::windows_hint(t.source(Platform::Mac))
+                {
+                    bad.push(format!(
+                        "  {}.{field}: its Windows wording is the macOS one respelled; \
+                         use ui_text(mac) alone",
+                        s.id
+                    ));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "Windows wording:\n{}", bad.join("\n"));
     }
 
     #[test]
@@ -2154,6 +2208,10 @@ mod tests {
             ["author-site", "copies-elsewhere", END]
         );
         assert_eq!(ids(news_run(&["0.23.0"])), ["catch-up", END]);
+        assert_eq!(
+            ids(news_run(&["0.26.0"])),
+            ["quiet-writing", "more-menu", END]
+        );
         assert_eq!(ids(news_run(&["0.8.0"])), ["lineage", "ring", END]);
         assert_eq!(ids(news_run(&["9.9.9"])), [END]);
         assert_eq!(tour_of("author-site"), Some(3));

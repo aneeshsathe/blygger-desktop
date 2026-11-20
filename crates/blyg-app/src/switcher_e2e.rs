@@ -13,22 +13,23 @@
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use blyg_core::api::Api;
 use blyg_core::api::auth::Credential;
 use blyg_core::config::blygs::{self, DB_OWNER_FILE};
 use blyg_core::config::{MemoryTokenStore, TokenStore};
-use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LocalId, SyncStatus};
+use blyg_core::{Backend, ConfigStore, CoreEvent, Kind, LocalId, SubId, SyncStatus};
 use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
-use super::super::{MainView, Sheet};
+use super::super::MainView;
 use crate::connection::{Connection, Mode, SwitchBackend};
+use crate::dev_flags::TestEnv;
 use crate::prefs::Prefs;
 
-fn env(key: &str) -> String {
-    let v = std::env::var(key)
-        .unwrap_or_else(|_| panic!("{key} not set: run scripts/e2e-local.sh"))
+fn env(key: &str, value: Option<String>) -> String {
+    let v = value
+        .unwrap_or_else(|| panic!("{key} not set: run scripts/e2e-local.sh"))
         .trim_end_matches('/')
         .to_string();
     if key.ends_with("URL") {
@@ -109,18 +110,10 @@ fn wait(
     what: &str,
     mut f: impl FnMut(&mut VisualTestContext) -> bool,
 ) {
-    let t0 = Instant::now();
-    loop {
+    crate::test_wait::poll_within(Duration::from_secs(45), what, || {
         pump(view, cx);
-        if f(cx) {
-            return;
-        }
-        assert!(
-            t0.elapsed() < Duration::from_secs(45),
-            "timed out waiting for {what}"
-        );
-        std::thread::sleep(Duration::from_millis(100));
-    }
+        f(cx)
+    });
 }
 
 fn active(cx: &mut VisualTestContext) -> Option<String> {
@@ -159,13 +152,14 @@ fn owner_of(dir: &Path) -> String {
 #[gpui_kit::test]
 #[ignore = "needs two local blygs: scripts/e2e-local.sh"]
 fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
+    let e = TestEnv::from_env();
     let a = Blyg {
-        url: env("BLYG_E2E_URL"),
-        token: env("BLYG_E2E_TOKEN"),
+        url: env("BLYG_E2E_URL", e.e2e_url.clone()),
+        token: env("BLYG_E2E_TOKEN", e.e2e_token.clone()),
     };
     let s = Blyg {
-        url: env("BLYG_E2E_SWITCH_URL"),
-        token: env("BLYG_E2E_SWITCH_TOKEN"),
+        url: env("BLYG_E2E_SWITCH_URL", e.e2e_switch_url.clone()),
+        token: env("BLYG_E2E_SWITCH_TOKEN", e.e2e_switch_token.clone()),
     };
     assert!(
         !blygs::same(&a.url, &s.url),
@@ -226,7 +220,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
 
     // --- one blyg per host: b at a's host (127.0.0.1, another port) is
     // refused before its sign-in could replace a's in the Keychain ---
-    if let Ok(b_same_host) = std::env::var("BLYG_E2E_URL_B") {
+    if let Some(b_same_host) = e.e2e_url_b.clone() {
         let err = cx
             .update(|_, cx| {
                 crate::settings::connect(
@@ -339,7 +333,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
         b.subscriptions().iter().all(|x| x.id != sub_s.id),
         "s's subscription isn't a's"
     );
-    let subs_a: Vec<String> = b.subscriptions().into_iter().map(|x| x.id).collect();
+    let subs_a: Vec<SubId> = b.subscriptions().into_iter().map(|x| x.id).collect();
     assert!(
         b.reading()
             .iter()
@@ -351,7 +345,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
     assert!(!a.server_hoppers().contains(&hop_s.name));
     assert!(!s.server_hoppers().contains(&hop_a.name));
     // s's queued edit waited in s's own database: it never went to a.
-    std::thread::sleep(Duration::from_secs(2));
+    crate::test_wait::wall_clock(Duration::from_secs(2));
     assert!(!a.server_has("Edited before the switch."));
     let edit_landed_early = s.server_has(&edit_s);
 
@@ -394,7 +388,7 @@ fn two_live_blygs_side_by_side(cx: &mut TestAppContext) {
     assert!(b.item(&id_s).is_some() && b.item(&id_a).is_none());
     view.read_with(cx, |v, _| {
         assert!(
-            !matches!(v.sheet, Some(Sheet::Conflict { .. })),
+            !v.sheet.is::<crate::app::ConflictSheet>(),
             "no conflict sheet from the other blyg"
         );
         assert_eq!(v.base_url.as_deref(), Some(s.url.as_str()));

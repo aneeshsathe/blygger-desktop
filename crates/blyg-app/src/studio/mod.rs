@@ -343,7 +343,7 @@ impl Studio {
             }
         } else if self.ready && self.shown_html.as_deref() != Some(out.html.as_str()) {
             slot.with(|s| s.eval(&webview::patch_js(&out.html)));
-            if std::env::var_os("BLYGGER_TIMING").is_some() {
+            if crate::dev_flags::get().timing {
                 slot.with(|s| s.probe());
             }
             self.shown_html = Some(out.html);
@@ -663,7 +663,7 @@ impl MainView {
                 self.studio.push();
                 self.studio.sync_scroll();
                 self.studio_stub_sync();
-                if std::env::var_os("BLYGGER_TIMING").is_some() {
+                if crate::dev_flags::get().timing {
                     let frame = self.studio.slot.borrow().frame;
                     println!("preview-ready frame={frame:?}");
                     self.studio.slot.borrow_mut().with(|s| s.probe());
@@ -935,7 +935,7 @@ impl MainView {
         // Anything drawn over (or instead of) the preview pane: GPUI sheets, AI
         // overlays, the reading screens and their sheets, and your own post's
         // history (⌘Y), whose body is the reader's WebView.
-        slot.suppressed = self.sheet.is_some()
+        slot.suppressed = self.sheet.is_open()
             || self.ai.has_overlay()
             || self.ext.has_overlay() // --- extensions ---
             || self.reading.sheet.is_some()

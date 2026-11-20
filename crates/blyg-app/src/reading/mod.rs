@@ -39,7 +39,7 @@ pub(crate) mod lineage; // --- lineage --- (the editor's line draws its glyph)
 pub(crate) mod lineage_vm;
 // --- lineage --- the ⌘J sheet zoomed out to two hops (`−`).
 mod list;
-mod marks; // --- read/unread ---
+pub(crate) mod marks; // --- read/unread --- (and Mark All Read…)
 // --- catch up --- the conversation leading to a post, oldest first (⇧C).
 pub(crate) mod catchup;
 mod mentions;
@@ -62,6 +62,8 @@ pub(crate) mod opml; // --- OPML import/export ---
 pub(crate) mod hoppers; // --- hoppers ---
 #[cfg(test)]
 mod hoppers_tests;
+#[cfg(test)]
+mod mark_all_tests; // --- unread counts / mark all read ---
 #[cfg(test)]
 mod opml_tests;
 pub(crate) mod own;
@@ -101,7 +103,7 @@ mod tests;
 use std::collections::{HashMap, HashSet};
 
 use blyg_core::{
-    CoreError, LocalId, Mention, PinnedVersion, ReadingItem, RemoteVersion, Settings,
+    CoreError, LocalId, Mention, PinnedVersion, ReadingItem, RemoteVersion, Settings, SubId,
     SubscribePreview, Subscription, Version,
 };
 use gpui_kit::base::input::{InputState, TextareaState};
@@ -133,9 +135,6 @@ pub enum View {
     Reading,
     Mentions,
     Subscriptions,
-    /// --- chat --- the experimental #thicket tab (not in `ALL`: it's drawn
-    /// after the views, and only while `chat-tab` is on).
-    Chat,
 }
 
 impl View {
@@ -150,19 +149,17 @@ impl View {
         match self {
             View::Posts => "Posts",
             View::Reading => "Reading",
-            View::Mentions => "Mentions",
+            View::Mentions => "Responses",
             View::Subscriptions => "Subscriptions",
-            View::Chat => "#thicket", // --- chat ---
         }
     }
 
     pub fn key(self) -> &'static str {
         match self {
-            View::Posts => "⌘L",
-            View::Reading => "⌘R",
-            View::Mentions => "⇧⌘M",
-            View::Subscriptions => "⇧⌘S",
-            View::Chat => "⇧⌘I", // --- chat ---
+            View::Posts => crate::keymap::hint("⌘L"),
+            View::Reading => crate::keymap::hint("⌘R"),
+            View::Mentions => crate::keymap::hint("⇧⌘M"),
+            View::Subscriptions => crate::keymap::hint("⇧⌘S"),
         }
     }
 }
@@ -292,7 +289,7 @@ pub enum RSheet {
         rename: Option<String>,
         /// File this subscription in the new folder once it's made
         /// ("Move to folder › New Folder…").
-        then_file: Option<String>,
+        then_file: Option<SubId>,
         error: Option<String>,
         /// The name the error is about.
         tried: String,
@@ -300,7 +297,7 @@ pub enum RSheet {
     /// --- subscription names --- Rename… a subscription.
     SubName {
         input: Entity<InputState>,
-        sub: String,
+        sub: SubId,
         error: Option<String>,
         busy: bool,
     },
@@ -335,6 +332,8 @@ pub enum RSheet {
         busy: bool,
         focus: FocusHandle,
     },
+    /// --- mark all read --- "Mark 37 posts in Rue read?", asked first.
+    MarkAll(Box<marks::MarkAll>),
     /// --- OPML --- Import Subscriptions from OPML… (preview, run, summary).
     Opml(Box<opml::Sheet>),
     /// --- discover --- Discover Blygs… (blygger.com's directory).
@@ -366,7 +365,7 @@ pub struct State {
     pub subs: Vec<Subscription>,
     pub sub_sel: usize,
     /// A subscription whose "Unsubscribe" was clicked once (click again).
-    pub unsub_confirm: Option<String>,
+    pub unsub_confirm: Option<SubId>,
     pub mentions: Load<Vec<Mention>>,
     pub mentions_seen: HashSet<String>,
     pub show_hidden: bool,
@@ -409,7 +408,7 @@ pub struct State {
     // --- reader folders --- the Reader's three panes.
     /// Local folders, in order, and subscription id → folder id.
     pub folders: Vec<blyg_core::Folder>,
-    pub filed: HashMap<String, String>,
+    pub filed: HashMap<SubId, String>,
     /// --- hoppers --- the blyg's hoppers, in its order.
     pub hoppers: Vec<blyg_core::Hopper>,
     /// --- hoppers --- rows held only because a hopper read returned them
@@ -846,11 +845,6 @@ impl MainView {
                 }
             }
             View::Mentions => self.load_mentions(cx),
-            // --- chat ---
-            View::Chat => {
-                self.chat_opened(window, cx);
-                return;
-            }
             View::Subscriptions => {
                 self.reading.subs = self.backend.subscriptions();
                 // --- reader folders --- the folder chooser on each row.
@@ -876,7 +870,7 @@ impl MainView {
         if self.onboarding.flow.is_some() || self.onboarding.tutorial.is_some() {
             return;
         }
-        if self.sheet.is_some() || self.reading.sheet.is_some() {
+        if self.sheet.is_open() || self.reading.sheet.is_some() {
             return;
         }
         let mode = crate::connection::mode(cx);
@@ -948,7 +942,6 @@ impl MainView {
             .text_size(px(11.5))
             .text_color(p.muted)
             .children(tabs)
-            .children(self.render_chat_tab(cx)) // --- chat ---
             .into_any_element()
     }
 
@@ -961,8 +954,6 @@ impl MainView {
     ) -> Option<AnyElement> {
         let inner = match self.reading.view {
             View::Posts => return None,
-            // --- chat --- its own screen, outside the reading keys.
-            View::Chat => return Some(self.render_chat_screen(cx)),
             View::Reading => self.render_reading_screen(body_font, cx),
             View::Mentions => self.render_mentions_screen(cx),
             View::Subscriptions => self.render_subscriptions_screen(cx),
@@ -1074,6 +1065,12 @@ impl MainView {
             (View::Reading, "escape") if !self.reading.picked.is_empty() => {
                 self.reading.picked.clear();
                 cx.notify();
+                true
+            }
+            // --- mark all read --- ⇧R: everything the list or stream holds
+            // for the current source, after a question with the count.
+            (View::Reading, "r") if k.modifiers.shift => {
+                self.ask_mark_all_read(None, window, cx);
                 true
             }
             (View::Reading, "r") => {
@@ -1195,6 +1192,7 @@ impl MainView {
             RSheet::HopperPick { .. } => (420., self.render_hopper_pick(sheet, cx)),
             RSheet::HopperName { .. } => (440., self.render_hopper_name_sheet(sheet, cx)),
             RSheet::HopperConfirm { .. } => (460., self.render_hopper_confirm(sheet, cx)),
+            RSheet::MarkAll(m) => (440., self.render_mark_all(m, cx)), // --- mark all read ---
         };
         Some(self.sheet_frame(width, content, cx))
     }

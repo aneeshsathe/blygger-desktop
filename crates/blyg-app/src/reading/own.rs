@@ -30,7 +30,7 @@
 //! blygger-studio's version history offers the same. Your rows here and the
 //! Posts view's chips have no Fork.
 
-use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, Version};
+use blyg_core::{Item, ReadingItem, RemoteRef, RemoteVersion, SubId, Version};
 use gpui_kit::*;
 
 use super::vm::{self, Key};
@@ -202,7 +202,7 @@ impl MainView {
         let members = self.backend.hopper_members();
         if !members.is_empty() {
             for r in &mut v {
-                if let Some(h) = members.get(&(OWN.to_string(), r.remote_id.clone())) {
+                if let Some(h) = members.get(&(SubId::from(OWN), r.remote_id.clone())) {
                     r.hoppers = h.clone();
                 }
             }
@@ -549,7 +549,7 @@ mod tests {
     #[test]
     fn only_published_posts_become_rows_read_and_unthumbed() {
         let r = row(&item(Status::Public, 3, "2026-10-01T10:00:00Z"), ORIGIN).unwrap();
-        assert_eq!(vm::key(&r), (OWN.to_string(), SID.to_string()));
+        assert_eq!(vm::key(&r), (OWN.into(), SID.into()));
         assert!(is_own_row(&r) && is_own(&vm::key(&r)));
         assert_eq!(r.origin, "https://blyg.example.com/");
         assert_eq!(r.read_version, Some(3), "never unread");
@@ -606,7 +606,7 @@ mod tests {
         }
         let ids: Vec<String> = merge(theirs, mine)
             .into_iter()
-            .map(|r| r.remote_id)
+            .map(|r| r.remote_id.into_string())
             .collect();
         assert_eq!(ids, ["m0", "a", "m1", "b", "c", "m2"]);
         assert!(merge(vec![], vec![]).is_empty());
@@ -637,11 +637,7 @@ mod tests {
             .collect();
         assert_eq!(
             labels,
-            [
-                "Reply · new stub",
-                "Quote into a thread",
-                "Link post · new fragment"
-            ]
+            ["Reply", "Quote into a thread", "Link post · new fragment"]
         );
         for (id, _) in POST_ACTIONS {
             let c = post_chip(id);
@@ -694,7 +690,7 @@ mod tests {
     fn your_withdrawn_post_is_a_background_row_without_its_text() {
         let w = item(Status::Withdrawn, 3, "2026-10-01T10:00:00Z");
         let r = withdrawn_row(&w, ORIGIN).unwrap();
-        assert_eq!(vm::key(&r), (OWN.to_string(), SID.to_string()));
+        assert_eq!(vm::key(&r), (OWN.into(), SID.into()));
         assert_eq!(r.state, "tombstone");
         assert!(r.content_md.is_empty() && r.pinned_version_retained.is_none());
         assert_eq!(r.read_version, Some(3), "never unread");

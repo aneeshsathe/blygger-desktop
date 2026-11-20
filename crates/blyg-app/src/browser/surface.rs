@@ -395,8 +395,7 @@ mod wry_browser {
             // Its own cookie jar: persistent on macOS 14+, else in memory.
             // Debug builds: `BLYGGER_BROWSER_EPHEMERAL` keeps a smoke test's
             // fixture cookies out of the persistent store.
-            let ephemeral =
-                cfg!(debug_assertions) && std::env::var_os("BLYGGER_BROWSER_EPHEMERAL").is_some();
+            let ephemeral = cfg!(debug_assertions) && crate::dev_flags::get().browser.ephemeral;
             b = if macos_major() >= 14 && !ephemeral {
                 b.with_data_store_identifier(DATA_STORE_ID)
             } else {
@@ -989,8 +988,7 @@ mod wry_browser_windows {
             // Its own profile, as on macOS. Debug builds:
             // `BLYGGER_BROWSER_EPHEMERAL` keeps a smoke test's fixture
             // cookies out of it (in memory only).
-            let ephemeral =
-                cfg!(debug_assertions) && std::env::var_os("BLYGGER_BROWSER_EPHEMERAL").is_some();
+            let ephemeral = cfg!(debug_assertions) && crate::dev_flags::get().browser.ephemeral;
             let mut context = (!ephemeral).then(|| WebContext::new(Some(profile_dir())));
             let builder = match context.as_mut() {
                 Some(c) => WebViewBuilder::new_with_web_context(c),

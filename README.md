@@ -85,8 +85,8 @@ The people who have contributed are listed on
 ## Skills for coding agents
 
 [`skills/`](skills/) holds Burrow's development checklists as agent skills:
-release, tutorial, Windows + macOS, the pre-PR gate, agent cohorts, web
-hand-off, and spec-level ones (capability gating, real-studio testing, list
+release, tutorial, Windows + macOS, the pre-PR gate, agent cohorts, and
+spec-level ones (capability gating, real-studio testing, list
 order and refresh, client security, conformance, upstream sync). They're plain
 Markdown and work with any agent. Have it read
 [`skills/README.md`](skills/README.md) first and follow each skill whose "use

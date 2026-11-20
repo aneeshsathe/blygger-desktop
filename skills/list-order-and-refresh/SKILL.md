@@ -46,11 +46,16 @@ interaction, and that an idle client stays at a few requests a minute.
 
 ## In Burrow
 
-- The one order is `blyg-core/src/order.rs`; the store, `blyg-app` and
-  `blyg-web` all call it. Change the rule there, with its tests, and nowhere
+- The one order is `blyg-core/src/order.rs`; the store and `blyg-app`
+  both call it. Change the rule there, with its tests, and nowhere
   else.
 - Native sync's dependency map (`ITEMS_DEPS`, `READING_DEPS`, `HOPPERS_DEPS`,
   `SIGNALS_DEPS`) and the safety-net backoff (`next_full_every`) live in
-  `blyg-core/src/sync/mod.rs`; `blyg-web/src/live.rs` uses the same ones.
-- `scripts/browser-web-live-check.sh` and the web e2e
-  (`crates/blyg-web/tests/e2e.rs`) are the regression tests for both bugs.
+  `blyg-core/src/sync/mod.rs`.
+- **A list longer than one pull's page budget.** Burrow 0.25.1 re-walked the
+  newest 2,000 reading rows every ~40 s, forever, on a blyg with 5,000: a walk
+  that never reached its end was never accepted, and never pruned. A moved
+  counter reads the head (`sync/walk.rs`), whole walks go on from their cursor
+  across pulls, and a counter that moves for bookkeeping (`subscriptions` on
+  every feed poll) never walks a list on its own. Test with more rows than the
+  budget (`a_reading_list_past_the_page_budget_is_read_by_its_head`).

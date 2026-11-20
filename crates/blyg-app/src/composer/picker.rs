@@ -11,7 +11,9 @@
 
 use std::rc::Rc;
 
-use blyg_core::{Kind, PickQuery, PickSort, PickSource, Pickable, Subscription, SubscriptionKind};
+use blyg_core::{
+    Kind, PickQuery, PickSort, PickSource, Pickable, SubId, Subscription, SubscriptionKind,
+};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -91,7 +93,7 @@ pub struct Filters {
     pub source: PickSource,
     pub sort: PickSort,
     /// Only this subscription's posts (with `Imported`).
-    pub sub: Option<String>,
+    pub sub: Option<SubId>,
 }
 
 impl Global for Filters {}
@@ -198,7 +200,7 @@ pub fn insert(
 }
 
 /// The blyg subscriptions, for the "from" chip: (id, title).
-pub fn blyg_subs(subs: &[Subscription]) -> Vec<(String, String)> {
+pub fn blyg_subs(subs: &[Subscription]) -> Vec<(SubId, String)> {
     subs.iter()
         .filter(|s| s.kind == SubscriptionKind::Blyg)
         .map(|s| {
@@ -249,7 +251,7 @@ fn chip(p: Palette, id: SharedString, label: String, on: bool) -> Stateful<Div> 
 
 /// Source (all · mine · imported), the subscription under imported (a
 /// click steps through them), and sort.
-pub fn filter_row(p: Palette, f: &Filters, subs: &[(String, String)], set: OnFilters) -> Div {
+pub fn filter_row(p: Palette, f: &Filters, subs: &[(SubId, String)], set: OnFilters) -> Div {
     let mut row = div()
         .flex()
         .flex_wrap()

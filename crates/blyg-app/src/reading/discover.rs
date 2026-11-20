@@ -7,8 +7,7 @@
 //! visit, and moves `discoverSeenAt` to the newest listing shown; rows
 //! listed since the last visit say "new". j/k move, ⏎ subscribes (the same
 //! `Backend::subscribe` as Subscribe…), o opens the blyg's home page in the
-//! browser, m shows more, esc closes. Desktop only: Burrow on the web reads
-//! nothing but its own blyg.
+//! browser, m shows more, esc closes.
 //!
 //! Every text in a row is remote input and is drawn as plain text; links
 //! are https only (`discover::safe_url`).
@@ -319,7 +318,7 @@ impl MainView {
                         let can_subscribe =
                             !followed && state.is_none_or(|r| matches!(r, RowState::Failed(_)));
                         let (o1, o2, home) = (b.origin.clone(), b.origin.clone(), b.home.clone());
-                        let level = b.activity.level.map(|l| l.as_str());
+                        let level = b.activity.level.map(|l| l.label());
                         list = list.child(
                             div()
                                 .id(("discover-row", i))

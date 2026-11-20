@@ -5,6 +5,123 @@ status bar and its "What's new" card link here. Keys are the Mac's; on
 Windows, Ctrl stands in for ⌘ (see [Keyboard shortcuts](keys.md) for the
 exceptions). The [Changelog](changelog.md) lists every change in detail.
 
+## Burrow 0.26.0
+
+A lighter Burrow: two experiments and the web app are gone, the writing
+screen can go quiet, and reading keeps fewer buttons in view.
+
+### Faster sync with long reading lists
+
+With more than 2,000 posts to read, Burrow used to read the newest 2,000
+again every 40 seconds and show new posts only after all of them arrived.
+Now a sync reads from the newest post down and stops once it reaches posts
+it already has, usually one page, and each page shows as it arrives. A full
+read still runs now and then, finishes even on long lists, and only then
+clears out posts your blyg no longer holds. Feed polls on your blyg no longer
+make Burrow read the list again.
+
+Responses from your blyg now arrive compressed (about a fifth of the size),
+and the search index is compacted in the background while you're idle.
+
+### Try a theme or font before you keep it
+
+In **Settings** (⌘,), rest the pointer on a theme, font or size, or move
+along a row with the arrow keys, and the whole window shows it at once. A
+**Preview** at the top of the page shows a post list, a paragraph with a
+link and code, a quote and the status bar in what you're trying. ⏎ or a
+click keeps it; esc, or leaving the row, puts back what you had. Nothing is
+saved until you keep it. The command palette (⇧⌘P) does the same as you
+move through its themes and fonts.
+
+The theme row has **For: ☀ Light | ☾ Dark**, so you can choose a dark-mode
+theme (`theme-dark`) as easily as the main one; the slot in use is marked.
+
+### Quiet writing
+
+**Settings › Quiet writing** (or View › Quiet Writing, or the palette) hides
+the lineage line under the editor, the loose-ends line over the list and
+Nearby thoughts, all at once. ⌘J still opens a post's lineage, the search's
+`is:` and `has:` filters still work, and ⌥⌘U opens Nearby for this sitting.
+It's off unless you turn it on. See [Quiet writing](writing.md#quiet-writing).
+
+### Fewer buttons under a post
+
+The chips under an open post fit on one line again. Quote, Reply, Catch up
+and Background stay in view; Hopper, Add to shelf, Add to trail, Fork, Link
+post, AI reply, Open on web and → Notes are under **⋯ More**. Every key
+works as before (h, t, b, q, ⇧C, ⌥⌘B). The Stream groups them the same
+way. Not sure which of shelf, hopper, trail, tray or
+Background to use? See [Which one do I use?](reading.md#which-one-do-i-use).
+
+### The author's site fills the reading pane
+
+With **Open posts on the author's site** on, the page now takes the whole
+reading pane, under the browser's own bar (back, forward, reload, address,
+🛡 and open in your browser), instead of sitting in a box between Burrow's
+header and the chips. j/k still move through posts and Space still pages
+down. It works on Windows now too, instead of opening your default browser.
+
+### Mark all read, and one unread number
+
+- **Mark All Read…** for the source you're looking at: ⇧R on the reading
+  screen, Blyg › Mark All Read…, a source's menu, or the palette. It asks
+  first ("Mark 37 posts in Rue read?"), never touches your own posts, and
+  syncs like any read mark. With a search, it covers what the search shows.
+- The list's header, **All unread** and the status bar now count the same
+  thing: posts you haven't read, or that changed since you read them, outside
+  Background.
+- **Posting from the box in Reading waits 3 seconds**: "Posting in 3 s · esc
+  cancels · ⌘⏎ posts now". Esc, Cancel or an edit stops it before anything
+  is sent.
+- Searching the Stream marks the matches and says how many it found.
+
+### Plainer words
+
+- **Reply** is just Reply: no more "new stub". Responses say "replied to
+  this", and a reply's line says "↳ reply to".
+- The **Mentions** tab is now **Responses**: who quoted, replied to or forked
+  your posts. Mentions is still a source in Reading, for posts that name you.
+- One control per post for its responses: **On the post's page: Show · Hide
+  · Site default**.
+- The loose-ends line says "posts not linked yet" and "threads with outdated
+  quotes", explains each on hover, and leaves posts younger than a week alone
+  (so does `is:orphan`).
+- **⋯ More** shows each item's key. The shelf is "Add to Shelf / Remove from
+  Shelf" everywhere. Discover says "high activity"; Stale Quotes names the
+  quoted post instead of an id.
+
+### Getting started
+
+- The Welcome card says what a blyg is and where to get one, and that you
+  can try Burrow on sample data first.
+- If you skip setup, the empty list offers **⏎ Connect your blyg… · try
+  sample data**, "not connected" in the status bar opens Connect, and
+  **Burrow › Connect…** is always in the menu.
+- Connect states the blygger-studio version Burrow really needs (0.49.12 or
+  later).
+- Your first publish says the post goes public at your blyg's address, and
+  that published posts can be withdrawn, not deleted.
+- The Reading tour has a step for **⋯ More**.
+
+### On Windows
+
+Nine shortcuts typed characters on German, Polish, French or Hungarian
+keyboards (Ctrl+Alt is AltGr there), so they move: Quote into a thread is
+**Ctrl+Shift+Q**, Link post **Ctrl+Shift+I**, the quote tray
+**Ctrl+Shift+T**, Nearby **Ctrl+Shift+U**, Stream **Alt+1**, Reader
+**Alt+2** and the sources pane **Alt+S**. Hints and messages that showed Mac
+key symbols now spell Windows keys.
+
+### Removed
+
+- **#thicket chat** is gone: not enough people used it.
+- **The terminal pane** is gone until it's ready.
+- **The web app** ("Burrow in a browser") is gone: it wasn't working well.
+  The desktop app on Mac and Windows is Burrow. Releases no longer include
+  `Burrow-web.zip`, and the page on serving it from your blyg is gone.
+- If your [config file](config.md) still sets `chat-tab`, `terminal` or
+  their other keys, Burrow ignores those lines quietly.
+
 ## Burrow 0.25.1
 
 A quieter, quicker release: Burrow does less on the UI thread while you read,
@@ -143,7 +260,7 @@ open, and starts faster than the studio.
   shows as soon as it arrives, in about a third of a second with 3,000
   posts to read.
 - Some of these need a recent studio; until yours offers them they stay
-  hidden or say why. See [Using it](web-self-host.md#using-it).
+  hidden or say why. See Using it.
 
 ### For contributors
 
@@ -256,7 +373,7 @@ starts at the side tabs.
   row over the editor names what you can do with the post.
 - **Serve it from your own blyg.** Each release now includes the web app as
   `Burrow-web-<version>.zip`, covered by the signed checksums.
-  [Burrow on your own blyg](web-self-host.md) walks you, or your AI agent,
+  Burrow on your own blyg walks you, or your AI agent,
   through putting it at `/burrow/` on your blyg.
 
 ## Burrow 0.19.0
@@ -302,7 +419,7 @@ on your Mac or PC and in a browser. The tour's new steps start at Blyg › Site�
 
 The web app does most of what Studio does, and stays fast on a phone. It runs
 from your own blyg at `/burrow/`; Studio doesn't serve it yet, so
-[Burrow on your own blyg](web-self-host.md) shows how to add it:
+Burrow on your own blyg shows how to add it:
 
 - **Reading**: sources (smart feeds, Mentions, hoppers, subscriptions) with a
   Threads / Fragments lens; subscriptions (subscribe with a preview, pause,

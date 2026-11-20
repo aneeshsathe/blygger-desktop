@@ -14,10 +14,12 @@
 //! the window's state; `app.rs` carries only small `// --- onboarding ---`
 //! hooks.
 
-mod steps;
+pub(crate) mod steps;
 mod tutorial;
 pub(crate) mod whats_new;
 
+#[cfg(test)]
+mod caption_tests;
 #[cfg(test)]
 mod tests;
 
@@ -28,11 +30,12 @@ use blyg_core::config::Change;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::{MainView, Sheet};
+use super::MainView;
 use crate::ai::settings as ais;
 use crate::fake::FakeBackend;
 use crate::theme::Rule; // --- themes --- dividers
 
+use crate::scenes::Scene;
 pub(crate) use steps::Key;
 use steps::Pick;
 pub use tutorial::Tutorial;
@@ -46,6 +49,25 @@ gpui_kit::actions!(
 /// work; written through the config edit module either way).
 pub const SHOW_BUTTONS: &str = "show-buttons";
 pub const TUTORIAL_ON_LAUNCH: &str = "tutorial-on-launch";
+
+/// Where the Welcome card sends you to learn what a blyg is.
+pub const BLYGGER_ORG: &str = "https://blygger.org";
+
+/// The Welcome card's second line: what a blyg is, and that you can try
+/// Burrow without one.
+pub const WELCOME_BLYG: &str = "A blyg is a blog you own, on your own domain, that speaks the \
+     open Blygger protocol; blygger.org explains it and how to start one. No blyg yet? The \
+     next step lets you try Burrow with sample data.";
+
+/// The setup's Connect step before a blyg is connected. Burrow's server
+/// floor comes from `blyg_core::api::MIN_STUDIO`.
+pub const SETUP_CONNECT: &str = concat!(
+    "Burrow writes to your own blyg, which needs blygger-studio ",
+    blyg_core::min_studio!(),
+    " or later. You'll need its address; then sign in with your browser, or use an API \
+     token from Studio → More → Client access, or the studio password. The sign-in goes \
+     in your macOS Keychain, the address in your config file."
+);
 
 /// Onboarding's steps, in order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -102,6 +124,9 @@ pub struct State {
     /// --- tours --- The feature tours walked to the end (ids, from
     /// `state.json`'s `tours_done`): ticked in the chooser.
     pub(crate) finished_tours: Vec<String>,
+    /// --- 0.26.0 --- Where the reading pane last drew the open post's
+    /// ⋯ More chip (the tour's ring, `Region::MoreChip`).
+    pub(crate) more_chip: std::rc::Rc<std::cell::Cell<Option<Bounds<Pixels>>>>,
 }
 
 impl State {
@@ -120,6 +145,7 @@ impl State {
                 )
             },
             finished_tours: Vec::new(),
+            more_chip: Default::default(),
         }
     }
 }
@@ -165,7 +191,7 @@ impl MainView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
-        if std::env::var_os("BLYGGER_DEMO").is_some() {
+        if crate::dev_flags::get().demo.scene.is_some() {
             return false;
         }
         // Without a data dir (headless tests) there's no first-run memory:
@@ -250,8 +276,8 @@ impl MainView {
         if self.onboarding.tutorial.is_some() {
             self.finish_tutorial(window, cx);
         }
-        if matches!(self.sheet, Some(Sheet::Settings { .. })) {
-            self.sheet = None;
+        if self.sheet.is::<super::SettingsSheet>() {
+            self.sheet.close();
         }
         self.onboarding.finished_tours = tutorial::finished_tours(cx);
         self.onboarding.flow = Some(Flow {
@@ -323,8 +349,10 @@ impl MainView {
     }
 
     /// "Skip, just try it with sample data": this session runs on the
-    /// FakeBackend (nothing is written to the config).
-    fn onboarding_sample_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    /// FakeBackend (nothing is written to the config). Also the
+    /// disconnected empty list's "try sample data", after setup was skipped
+    /// (no flow then, so nothing steps on).
+    pub(crate) fn onboarding_sample_data(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let fake = (self.onboarding.make_fake)();
         let as_backend: Arc<dyn blyg_core::Backend> = fake.clone();
         if !crate::connection::use_sample_data(as_backend.clone(), cx) {
@@ -371,7 +399,7 @@ impl MainView {
                 // Pick up whatever the prefs make of it (the toolbar), keeping
                 // an unsaved dev theme override.
                 let mut fresh = crate::settings::prefs(cx);
-                self.persisted = fresh.clone();
+                self.config.persisted = fresh.clone();
                 fresh.theme = self.prefs.theme.clone();
                 fresh.theme_dark = self.prefs.theme_dark.clone();
                 self.prefs = fresh;
@@ -389,7 +417,7 @@ impl MainView {
     /// The flow waits behind the Connect sheet and Settings › AI; pick up
     /// when they close.
     fn onboarding_sync(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let connect_open = matches!(self.sheet, Some(Sheet::Connect { .. }));
+        let connect_open = self.sheet.is::<super::ConnectSheet>();
         let ai_open = self.ai.has_overlay();
         let Some(f) = self.onboarding.flow.as_mut() else {
             return;
@@ -510,6 +538,18 @@ impl MainView {
                         )
                         .into(),
                     ))
+                    .child(para(WELCOME_BLYG.into()))
+                    .child(
+                        div()
+                            .id("ob-blygger-org")
+                            .debug_selector(|| "ob-blygger-org".into())
+                            .cursor_pointer()
+                            .text_size(px(12.))
+                            .text_color(p.accent_text())
+                            .hover(|s| s.underline())
+                            .child("blygger.org ↗")
+                            .on_click(|_, _, cx| cx.open_url(BLYGGER_ORG)),
+                    )
                     .child(
                         div()
                             .px(px(10.))
@@ -542,14 +582,7 @@ impl MainView {
                             "Connected to {h}. You can change it later from the Burrow menu."
                         ))
                         .into(),
-                        None => crate::keymap::hint(
-                            "Burrow writes to your own blyg. You'll need its address; then \
-                                 sign in with your browser (blygger-studio 0.28 or later), or \
-                                 use an API token from Studio → More → Client access, or the \
-                                 studio password. The sign-in goes in your macOS Keychain, \
-                                 the address in your config file.",
-                        )
-                        .into(),
+                        None => crate::keymap::hint(SETUP_CONNECT).into(),
                     }))
                     .child(div().mt(px(4.)).flex().flex_wrap().gap(px(8.)).map(|d| {
                         if host.is_some() {
@@ -694,10 +727,12 @@ impl MainView {
                         .flex_col()
                         .gap(px(10.))
                         .child(para(
-                            "Burrow is keyboard-first. A quiet toolbar can show the main actions \
-                             as buttons too, and every button's tooltip teaches its key. You can \
-                             change this in Settings (⌘,)."
-                                .into(),
+                            crate::keymap::hint(
+                                "Burrow is keyboard-first. A quiet toolbar can show the main \
+                                 actions as buttons too, and every button's tooltip teaches its \
+                                 key. You can change this in Settings (⌘,).",
+                            )
+                            .into(),
                         ))
                         .children(
                             f.message
@@ -934,13 +969,13 @@ impl MainView {
     /// Settings › Help › Take a tour…: the chooser (the quick tour and the
     /// feature tours).
     pub(super) fn help_replay(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.start_tutorial(window, cx);
     }
 
     /// Settings › Help › Show onboarding again.
     pub(super) fn help_onboarding(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sheet = None;
+        self.sheet.close();
         self.open_onboarding(FlowStep::Welcome, window, cx);
     }
 
@@ -998,39 +1033,34 @@ impl MainView {
     /// or a key makes.
     pub(super) fn onboarding_demo(
         &mut self,
-        scenario: &str,
+        scenario: Scene,
         n: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
-            ("ob-welcome", 0) => self.open_onboarding(FlowStep::Welcome, window, cx),
-            ("ob-connect", 0) => self.open_onboarding(FlowStep::Connect, window, cx),
-            ("ob-ai", 0) => self.open_onboarding(FlowStep::Ai, window, cx),
-            ("ob-buttons", 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
-            ("ob-tour", 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
+            (Scene::ObWelcome, 0) => self.open_onboarding(FlowStep::Welcome, window, cx),
+            (Scene::ObConnect, 0) => self.open_onboarding(FlowStep::Connect, window, cx),
+            (Scene::ObAi, 0) => self.open_onboarding(FlowStep::Ai, window, cx),
+            (Scene::ObButtons, 0) => self.open_onboarding(FlowStep::Buttons, window, cx),
+            (Scene::ObTour, 0) => self.open_onboarding(FlowStep::Tutorial, window, cx),
             // The first launch after an update: every release, or with
             // `BLYGGER_DEMO_FROM=<version>` what a launch updated from it
             // shows (up to `whats_new::running_version`).
             // `ob-news-go`: then "Show me what's new".
-            ("ob-news" | "ob-news-go", 0) => {
-                let news = match std::env::var("BLYGGER_DEMO_FROM") {
-                    Ok(from) => whats_new::since(Some(&from), &whats_new::running_version()),
-                    Err(_) => whats_new::RELEASES.iter().collect(),
+            (Scene::ObNews | Scene::ObNewsGo, 0) => {
+                let news = match &crate::dev_flags::get().demo.from {
+                    Some(from) => whats_new::since(Some(from), &whats_new::running_version()),
+                    None => whats_new::RELEASES.iter().collect(),
                 };
                 self.start_whats_new(news, window, cx)
             }
-            ("ob-news-go", 1) => self.tutorial_next(window, cx),
+            (Scene::ObNewsGo, 1) => self.tutorial_next(window, cx),
             // --- tours --- `tut-tours`: the chooser; `tut-tour-<id>`: tour
             // `<id>` (`quick`, or a feature tour) from its start;
             // `tut-tour-<id>-end`: at its end card.
-            ("tut-tours", 0) => self.start_tutorial(window, cx),
-            (s, 0) if s.starts_with("tut-tour-") => {
-                let name = s.trim_start_matches("tut-tour-");
-                let (id, end) = match name.strip_suffix("-end") {
-                    Some(id) => (id, true),
-                    None => (name, false),
-                };
+            (Scene::TutTours, 0) => self.start_tutorial(window, cx),
+            (Scene::TutTour { id, end }, 0) => {
                 let pick = if id == steps::QUICK.id {
                     Some(Pick::Quick)
                 } else {
@@ -1057,17 +1087,19 @@ impl MainView {
                 }
             }
             // `tut-<id>`: the step as it begins; `tut-<id>+`: after its key.
-            (s, 0) if s.starts_with("tut-") => {
+            (Scene::TutStep { id, .. }, 0) => {
                 self.start_tutorial(window, cx);
-                let id = s.trim_start_matches("tut-").trim_end_matches('+');
                 if let Some(i) = steps::STEPS.iter().position(|st| st.id == id) {
                     self.tutorial_enter(i, window, cx);
                 }
             }
-            (s, 1) if s.starts_with("tut-") && s.ends_with('+') => {
-                let id = s.trim_start_matches("tut-").trim_end_matches('+');
-                self.tutorial_demo_act(id, window, cx);
-            }
+            (
+                Scene::TutStep {
+                    id,
+                    after_key: true,
+                },
+                1,
+            ) => self.tutorial_demo_act(id, window, cx),
             _ => {}
         }
         if n == 2 {

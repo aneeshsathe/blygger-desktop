@@ -205,7 +205,7 @@ pub struct Report {
     pub macos: String,
     pub update: UpdateInfo,
     pub connection: ConnectionInfo,
-    /// The blyg is older than blygger-studio 0.49.12: nothing syncs
+    /// The blyg is older than blygger-studio `MIN_STUDIO`: nothing syncs
     /// (`server_notice`).
     pub server_outdated: bool,
 }
@@ -231,7 +231,13 @@ impl Report {
             ("Blyg", self.connection.summary()),
         ];
         if self.server_outdated {
-            rows.push(("Server", "needs blygger-studio 0.49.12 or later".into()));
+            rows.push((
+                "Server",
+                format!(
+                    "needs blygger-studio {} or later",
+                    blyg_core::api::MIN_STUDIO
+                ),
+            ));
         }
         for c in self.connection.caps() {
             rows.push((c.label, if c.on { "yes" } else { "no" }.to_string()));
@@ -285,7 +291,10 @@ mod tests {
         r.server_outdated = true;
         let text = r.copy_text();
         assert!(
-            text.contains("Server:            needs blygger-studio 0.49.12 or later\n"),
+            text.contains(&format!(
+                "Server:            needs blygger-studio {} or later\n",
+                blyg_core::api::MIN_STUDIO
+            )),
             "{text}"
         );
     }

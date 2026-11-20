@@ -156,7 +156,7 @@ impl MainView {
 
     /// ⌥⌘F: the editor alone, the caret held at its line.
     pub(crate) fn enter_focus(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.sheet.is_some() {
+        if self.sheet.is_open() {
             return;
         }
         self.leave_reading(); // --- reading & versions --- back to Posts
@@ -295,7 +295,7 @@ impl MainView {
 
     /// Hook (esc in the editor): leave focus mode first. `true` when it did.
     pub(super) fn focus_escape(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
-        if self.focus_mode.on.is_none() || self.sheet.is_some() {
+        if self.focus_mode.on.is_none() || self.sheet.is_open() {
             return false;
         }
         self.leave_focus(window, cx);
