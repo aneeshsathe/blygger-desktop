@@ -1,3 +1,3 @@
 section: Changed
 
-- **Typing a search in the omnibar asks the database less.** Each key narrows what the last key found instead of searching every post again, so its database work no longer grows with your posts (it still checks the last key's matches as you type). What is found, and in what order, is the same.
+- **Typing a search in the omnibar asks the database less.** A search of three or more characters now reads only which posts match and takes them from the posts already loaded, instead of reading every matching post again; what is found, and in what order, is the same.
