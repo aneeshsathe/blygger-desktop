@@ -16,6 +16,12 @@ teaches something new in the tour, set the newest entry's `version` in
 
 ## [Unreleased]
 
+### Changed
+- **Sync: unchanged reads cost almost nothing on Studio 0.65 and later.** Studio 0.65 answers every owner-API read with a validator (an `ETag`), and deprecates the change counters (`GET /api/changes`) Burrow uses to skip reads; 0.67 removes them. Burrow now sends each read's validator back, and a page that hasn't changed comes back as a bodyless `304` that Burrow answers from what it read before. With the counters that trims the reads they let through; without them, the minute-by-minute full pull is mostly `304`s instead of every list's whole body. Older studios send no validator and are read as before.
+
+### Not verified
+- Covered by an end-to-end test against a local Studio 0.65 (unchanged reads are `304`s, a new draft and an edit come back whole). Studio 0.67 isn't out: Burrow still refuses its contract 6.0.0 until that release is checked.
+
 ## [0.26.0] - 2026-11-19
 
 ### Added
