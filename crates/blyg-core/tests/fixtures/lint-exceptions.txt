@@ -37,3 +37,6 @@ blyg-app/tests/verify_script.rs disallowed_types | tests run the verification sc
 
 # Test crates that drive git, cargo, scripts and the e2e studio.
 blyg-core/tests/it/main.rs disallowed_types | the whole integration-test crate (git, cargo, scripts, e2e)
+
+# Extensions run as their own processes.
+blyg-ext/src/host.rs disallowed_types | the extension host launches each extension
