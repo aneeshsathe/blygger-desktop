@@ -349,6 +349,9 @@ pub struct ActionCtx {
     pub current: u32,
     /// Pinned versions the pill can step to, oldest first.
     pub pins: Vec<u32>,
+    /// The current version is itself pinned: the pill shows it once, as
+    /// the current version, so Fork forks it from there.
+    pub current_pinned: bool,
     /// --- shelf sync --- the post is on your shelf.
     pub shelved: bool,
 }
@@ -395,6 +398,16 @@ pub fn action_chip(id: &'static str, cx: &ActionCtx) -> ActionChip {
         "AI reply" => on(
             "AI reply",
             "A reply with an AI-drafted answer for you to review; nothing is published.".into(),
+        ),
+        // A pinned current version is a pin: the pill has no separate
+        // 📌 entry to step to, so Fork works here.
+        "Fork" if cx.current_pinned => on(
+            "Fork this pin",
+            format!(
+                "Makes a new thread draft of yours from 📌 v{}'s text (the current version \
+                 is pinned), recorded as forked from it (forked_from).",
+                cx.current
+            ),
         ),
         "Fork" => ActionChip {
             id,
@@ -559,7 +572,9 @@ pub fn pill(
     let v = shown.get(ix)?;
     let date = |v: &RemoteVersion| crate::vm::relative_time(&v.at, now);
     let pinned_view = !v.current;
-    let label = if v.current {
+    let label = if v.current && v.pinned {
+        format!("📌 v{} · current ▾", v.version)
+    } else if v.current {
         format!("v{} · current ▾", v.version)
     } else {
         format!("📌 v{} · {} ▾", v.version, date(v))
@@ -569,7 +584,9 @@ pub fn pill(
         .enumerate()
         .rev()
         .map(|(i, v)| {
-            let l = if v.current {
+            let l = if v.current && v.pinned {
+                format!("📌 v{} · current", v.version)
+            } else if v.current {
                 format!("v{} · current", v.version)
             } else {
                 format!("📌 v{}", v.version)

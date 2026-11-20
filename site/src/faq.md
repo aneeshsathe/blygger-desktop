@@ -63,9 +63,11 @@ scratch notes can be deleted (⇧⌘⌫).
 ### Why can't I fork this post?
 
 Forking descends only from **pinned** versions. Pick a pin in the post's
-version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. If the post has
-no pins, it can't be forked. Your own posts fork the same way, from ⌘Y: pick
-a pinned version, then **Fork this pin**.
+version pill (`‹ vN ▾ ›`, or press [), then **Fork this pin**. When the
+current version is the pin (the pill reads `📌 vN · current`), ⋯ More offers
+**Fork this pin** right there. If the post has no pins, it can't be forked.
+Your own posts fork the same way, from ⌘Y: pick a pinned version, then **Fork
+this pin**.
 
 ### How do I undo my edits to a published post?
 

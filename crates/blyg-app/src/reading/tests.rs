@@ -899,6 +899,49 @@ fn actions_name_the_primitive_and_fork_waits_for_a_pin(cx: &mut TestAppContext) 
     assert!(!chips(&view, cx).iter().any(|c| c.id == "Link post"));
 }
 
+/// A post whose current version is pinned has no separate 📌 entry in
+/// the pill to step to, so Fork works on the current version itself
+/// (before, it stayed greyed with nowhere to go).
+#[gpui_kit::test]
+fn a_pinned_current_version_forks_from_the_current_view(cx: &mut TestAppContext) {
+    let (view, fake, cx) = setup(cx);
+    // Ada's tide tables: 📌 v1, and v2 current, now pinned as well.
+    fake.pin_current("sub-ada", ADA_TIDES);
+    cx.simulate_keystrokes(&crate::keymap::keys("cmd-r"));
+    open_row(&view, ADA_TIDES, cx);
+    let pill = view.read_with(cx, |v, _| v.pill_model()).expect("a pill");
+    assert!(pill.label.starts_with("📌 v2 · current"), "{}", pill.label);
+    let row = chips(&view, cx);
+    let fork = row.iter().find(|c| c.id == "Fork").expect("Fork");
+    assert!(fork.enabled, "a pinned current version forks");
+    assert_eq!(fork.label, "Fork this pin");
+    assert!(
+        fork.tip.contains("📌 v2") && fork.tip.contains("forked_from"),
+        "{}",
+        fork.tip
+    );
+    // It sits behind ⋯ More, under its live label, and choosing it forks.
+    let more: Vec<String> = view.read_with(cx, |v, _| {
+        v.post_more_items().into_iter().map(|i| i.0).collect()
+    });
+    assert!(more.contains(&"Fork this pin".to_string()), "{more:?}");
+    view.update_in(cx, |v, window, cx| {
+        v.run_menu_cmd(super::sources::MenuCmd::PostAction("Fork"), window, cx)
+    });
+    settle(cx);
+    let forked: Vec<_> = fake
+        .items()
+        .into_iter()
+        .filter_map(|i| i.forked_from)
+        .collect();
+    assert_eq!(forked.len(), 1, "one fork");
+    assert_eq!(
+        (forked[0].id.as_str(), forked[0].version),
+        (ADA_TIDES, 2),
+        "it forks the current pin"
+    );
+}
+
 /// Studio 0.8.0's `link post`: a new fragment holding `[[id]]`, a plain
 /// link, never a stub.
 #[gpui_kit::test]
