@@ -61,6 +61,14 @@ impl From<rusqlite::Error> for CoreError {
 /// What the WAL is truncated to after a checkpoint (`journal_size_limit`).
 const WAL_LIMIT: i64 = 16 * 1024 * 1024;
 
+/// A search's text (trimmed, lowercase) and what it found, stamped
+/// (`Store::stamp`) when it was asked.
+struct LastSearch {
+    stamp: u64,
+    text: String,
+    hits: Vec<Item>,
+}
+
 pub struct Store {
     conn: Mutex<Connection>,
     /// A second, read-only connection to the same file (WAL: its reads
@@ -75,6 +83,8 @@ pub struct Store {
     items_cache: Mutex<Option<(u64, Arc<Vec<Item>>)>>,
     /// `public_origin()`, stamped the same way.
     origin_cache: Mutex<Option<(u64, Option<String>)>>,
+    /// The last `search`, which a search for longer text narrows.
+    last_search: Mutex<Option<LastSearch>>,
     /// The reading rows, parsed, patched row by row as they're written
     /// (`reading::Cache`): parsing every post's JSON on each read cost a
     /// quarter of a second at a few thousand posts.
@@ -326,6 +336,7 @@ impl Store {
             read: None,
             items_cache: Mutex::new(None),
             origin_cache: Mutex::new(None),
+            last_search: Mutex::new(None),
             reading_cache: Mutex::new(reading::Cache::default()),
             reading_dirty,
             conn: Mutex::new(conn),
@@ -414,21 +425,58 @@ impl Store {
     /// Three or more chars uses the FTS5 trigram index; shorter queries (which trigrams
     /// can't index) scan in Rust, as do rows whose text changed since they
     /// were indexed (`flush_fts`).
+    ///
+    /// A search for text that contains the last search's, with nothing
+    /// committed since (typing on in the omnibar), narrows what that one
+    /// found instead of asking SQLite: every post matching the longer text
+    /// matches the shorter, so a keystroke's work doesn't grow with the
+    /// posts held.
     pub fn search(&self, query: &str) -> Vec<Item> {
         let q = query.trim();
         if q.is_empty() {
             return self.items();
         }
-        if q.chars().count() < 3 {
-            let needle = q.to_lowercase();
-            let all = self.items_snapshot().unwrap_or_default();
-            return all
-                .iter()
-                .filter(|i| lower_contains(&i.content_md, &needle))
-                .cloned()
-                .collect();
-        }
-        self.try_fts(q).unwrap_or_default()
+        let needle = q.to_lowercase();
+        let stamp = {
+            let c = self.rconn();
+            self.stamp(&c)
+        };
+        let narrowed = {
+            let last = self.last_search.lock().unwrap_or_else(|p| p.into_inner());
+            match last.as_ref() {
+                Some(l) if l.stamp == stamp && needle.contains(l.text.as_str()) => Some(
+                    l.hits
+                        .iter()
+                        .filter(|i| lower_contains(&i.content_md, &needle))
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            }
+        };
+        let hits = match narrowed {
+            Some(v) => v,
+            None if q.chars().count() < 3 => {
+                let all = self.items_snapshot().unwrap_or_default();
+                all.iter()
+                    .filter(|i| lower_contains(&i.content_md, &needle))
+                    .cloned()
+                    .collect()
+            }
+            None => match self.try_fts(q) {
+                Ok(v) => v,
+                // Not remembered: the next search asks again.
+                Err(_) => return Vec::new(),
+            },
+        };
+        // Read after the stamp: a commit in between only makes the stamp
+        // stale, so the next search asks again.
+        *self.last_search.lock().unwrap_or_else(|p| p.into_inner()) = Some(LastSearch {
+            stamp,
+            text: needle,
+            hits: hits.clone(),
+        });
+        hits
     }
 
     fn try_fts(&self, q: &str) -> Result<Vec<Item>> {
