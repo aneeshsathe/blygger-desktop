@@ -6118,6 +6118,7 @@ fn ai_on_the_blyg_settings_classifier_and_publish_extras() {
             &PublishExtras {
                 note_generated: true,
                 change_category: Some(Some(ChangeCategory::Minor)),
+                ..Default::default()
             },
         )
         .expect("publish with extras");

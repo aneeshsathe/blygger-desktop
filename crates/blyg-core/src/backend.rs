@@ -41,6 +41,13 @@ pub enum CoreError {
     /// again from the start (never appended to the old pages).
     #[error("a list changed on your blyg while Burrow was reading it")]
     CursorExpired,
+    /// --- tangle --- 409 `tangle-confirmation-required` (studio 0.63): the
+    /// thread's `![[+ …]]` spans and `[[+ …]]` placeholders would publish
+    /// `count` new items, named `parts` (a placeholder's name ends
+    /// " (linked)"). Nothing was written. Ask the author, then publish again
+    /// with `PublishExtras::tangle` (tangling plan §2.2).
+    #[error("publishing this thread also publishes {count} new item{}", if *.count == 1 { "" } else { "s" })]
+    TangleConfirm { count: usize, parts: Vec<String> },
     /// Item has never reached the server (still local-only) and the op needs a server id.
     #[error("not on the server yet — still syncing")]
     NotSynced,
@@ -70,10 +77,21 @@ pub fn stale(current_hash: String) -> CoreError {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PublishOutcome {
     pub version: u32,
     pub permalink: String,
     pub warning: Option<String>,
+    /// --- tangle --- the server ids of the new items this publish minted or
+    /// finished, in source order (`parts`, studio 0.63); each was published
+    /// before the thread, and is held here now.
+    pub parts: Vec<String>,
+    /// --- tangle --- the working copy as the server rewrote it (each span
+    /// now `![[id | label]]` or `[[id | text]]`), when this publish tangled.
+    /// It is the post's text and base here already; an editor that kept its
+    /// own text must take this, or it would save the spans back and the next
+    /// publish would mint them again.
+    pub rewritten: Option<String>,
 }
 
 /// Someone's post fetched from its public item document because it isn't

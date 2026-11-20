@@ -454,6 +454,32 @@ impl LiveBackend {
             .ok_or_else(conflict_err)
     }
 
+    /// --- tangle --- After a publish that tangled (studio 0.63, tangling
+    /// plan §2.3): the server's rewritten working copy becomes this copy's
+    /// text and base, dropping any queued save of the old text (which holds
+    /// the spans, and would mint them again on the next publish), and each
+    /// new part is held here. The rewritten text, or `None` when the thread
+    /// couldn't be read back (the publish itself stands).
+    fn take_tangled(
+        &self,
+        id: &LocalId,
+        w: Option<&WireItem>,
+        parts: &[crate::api::wire::PublishedPart],
+    ) -> Option<String> {
+        for part in parts {
+            let Ok(pw) = self.e().api.get_item_full(&part.id) else {
+                continue;
+            };
+            let _ = match self.e().store.local_id_for_server(&part.id) {
+                Some(local) => self.e().store.apply_server(&local, &pw),
+                None => self.e().store.insert_from_server(&pw).map(|_| ()),
+            };
+        }
+        let w = w?;
+        self.e().store.replace_from_server(id, w).ok()?;
+        Some(w.content_md.clone())
+    }
+
     fn permalink_for(&self, kind: Kind, sid: &str) -> String {
         let p = if kind == Kind::Thread { "t" } else { "f" };
         format!("{}/{p}/{sid}", self.e().api.public_base())
@@ -1189,10 +1215,18 @@ impl Backend for LiveBackend {
             }
         })?;
         self.e().store.set_revision(id, p.revision)?;
-        let permalink = self
-            .refresh(id, &sid)
-            .and_then(|w| w.permalink)
+        let w = self.refresh(id, &sid);
+        let permalink = w
+            .as_ref()
+            .and_then(|w| w.permalink.clone())
             .unwrap_or_else(|| self.permalink_for(row.item.kind, &sid));
+        // --- tangle --- the server rewrote the working copy and minted parts.
+        let rewritten = if p.parts.is_empty() {
+            None
+        } else {
+            self.take_tangled(id, w.as_ref(), &p.parts)
+        };
+        let published = rewritten.clone().unwrap_or(published);
         self.e()
             .store
             .after_publish(id, p.version, &permalink, &published)?;
@@ -1209,6 +1243,8 @@ impl Backend for LiveBackend {
             version: p.version,
             permalink,
             warning,
+            parts: p.parts.into_iter().map(|part| part.id).collect(),
+            rewritten,
         })
     }
 

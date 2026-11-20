@@ -268,7 +268,7 @@ pub(crate) mod sheet;
 use settings_page::SettingsSheet;
 use sheet::conflict::ConflictSheet;
 pub(crate) use sheet::connect::{CancelOnDrop, ConnectSheet, ConnectWay, DisconnectSheet};
-use sheet::publish::{HeldLabelsSheet, PublishSheet};
+use sheet::publish::{HeldLabelsSheet, PublishSheet, TangleSheet};
 
 // The main window's features, each a child module extending `MainView`.
 mod chrome; // title bar, config-problems banner, status bar, toasts

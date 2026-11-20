@@ -422,6 +422,16 @@ pub struct Published {
     /// --- contacts --- `@handle`s the publish couldn't resolve (5.7.0).
     #[serde(default, rename = "unresolvedHandles")]
     pub unresolved_handles: Vec<String>,
+    /// --- tangle --- the parts minted or finished, in source order (5.12.0).
+    #[serde(default)]
+    pub parts: Vec<PublishedPart>,
+}
+
+/// One `parts` entry of a publish: a new item, published before the thread.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PublishedPart {
+    pub id: String,
+    pub version: u32,
 }
 
 /// `POST /api/media` → `201 {id, url, mime, revision?}`, or `200 {…,

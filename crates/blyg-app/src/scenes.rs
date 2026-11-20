@@ -269,6 +269,10 @@ scenes! {
         CtSent = "ct-sent",
         CtSubs = "ct-subs",
     }
+    /// app/publish.rs (--- tangle ---)
+    Main {
+        RdTangle = "rd-tangle",
+    }
 }
 
 impl Scene {

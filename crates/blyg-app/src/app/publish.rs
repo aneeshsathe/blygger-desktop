@@ -155,6 +155,11 @@ impl MainView {
                 }
                 match result {
                     Ok(out) => {
+                        // --- tangle --- the editor takes the server's rewrite,
+                        // or its next save would bring the spans back.
+                        if let Some(text) = &out.rewritten {
+                            v.take_rewritten(&id, text, window, cx);
+                        }
                         v.ext_item_published(&id, &out, note_opt.as_deref()); // --- extensions ---
                         v.delight_published(&id, cx); // --- delight ---
                         let head = match &note_opt {
@@ -171,11 +176,29 @@ impl MainView {
                             "{} · ⌘O opens it{cross}",
                             vm::short_permalink(&out.permalink)
                         ));
+                        let head = match out.parts.len() {
+                            0 => head,
+                            1 => format!("{head} · and 1 new item"),
+                            n => format!("{head} · and {n} new items"),
+                        };
                         let head = match out.warning {
                             Some(w) => format!("{head} · {w}"),
                             None => head,
                         };
                         v.show_toast(head, Some(sub.into()), cx);
+                    }
+                    // --- tangle --- new items need the author's yes first.
+                    Err(CoreError::TangleConfirm { count, parts }) => {
+                        let focus = cx.focus_handle();
+                        window.focus(&focus, cx);
+                        v.sheet.open(TangleSheet {
+                            id: id.clone(),
+                            note: note_opt.clone(),
+                            extras,
+                            count,
+                            parts,
+                            focus,
+                        });
                     }
                     Err(CoreError::Offline) => {
                         v.show_toast("Offline. Publish again when you're back online.", None, cx)
@@ -191,6 +214,58 @@ impl MainView {
             });
         })
         .detach();
+    }
+
+    /// --- tangle --- The confirm step's `⏎` (publish all): the same publish
+    /// again, with `tangle: true`.
+    pub(crate) fn publish_tangled(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(TangleSheet {
+            id, note, extras, ..
+        }) = self.sheet.take()
+        else {
+            return;
+        };
+        self.focus_after_sheet(window, cx);
+        let extras = blyg_core::access_ai::PublishExtras {
+            tangle: true,
+            ..extras
+        };
+        self.start_publish_with(id, note, extras, window, cx);
+    }
+
+    /// --- tangle --- After a tangle the open post's text is the server's
+    /// rewrite (each span now `![[id | label]]`); put it in the editor.
+    fn take_rewritten(&mut self, id: &LocalId, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.current.as_ref().map(|c| &c.local_id) != Some(id) {
+            return;
+        }
+        let old = self.editor.read(cx).value().to_string();
+        if old != text {
+            self.loading_editor = true;
+            self.splice_editor(&old, text, None, window, cx);
+            self.loading_editor = false;
+        }
+        self.current = self.backend.item(id);
+        self.refresh_preview(true, cx);
+    }
+
+    /// --- tangle --- The `rd-tangle` scene: a thread with a passage and a
+    /// placeholder, its preview beside it, then publish up to the confirm
+    /// step (the sample backend answers as studio 0.63 does).
+    pub(crate) fn tangle_demo(&mut self, n: usize, window: &mut Window, cx: &mut Context<Self>) {
+        match n {
+            0 => {
+                self.open(&LocalId(crate::fake::tangle_seed::DEMO_THREAD.into()), window, cx);
+                let old = self.editor.read(cx).value().to_string();
+                self.splice_editor(&old, crate::fake::tangle_seed::SAMPLE, None, window, cx);
+                self.after_edit(cx);
+                self.studio_set_view(studio::ViewMode::Split, cx);
+            }
+            1 => self.publish(window, cx),
+            2 => self.do_publish(String::new(), window, cx),
+            _ => {}
+        }
+        cx.notify();
     }
 
     pub(super) fn fake_offline(

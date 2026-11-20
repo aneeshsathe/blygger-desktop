@@ -1558,6 +1558,7 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
             match (code, code_str) {
                 (409, "revision-conflict") => return Err(CoreError::RevisionConflict),
                 (409, "cursor-expired") => return Err(CoreError::CursorExpired),
+                (409, "tangle-confirmation-required") => return Err(tangle_confirm(&body)),
                 _ => {}
             }
             let message = body
@@ -1590,6 +1591,22 @@ fn read_json(res: std::result::Result<ureq::Response, ureq::Error>) -> Result<Va
             })
         }
     }
+}
+
+/// --- tangle --- the 409 `tangle-confirmation-required` body:
+/// `details: {count, parts: [label, …]}`.
+fn tangle_confirm(body: &Value) -> CoreError {
+    let d = body.get("details");
+    let parts: Vec<String> = d
+        .and_then(|d| d.get("parts"))
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default();
+    let count = d
+        .and_then(|d| d.get("count"))
+        .and_then(Value::as_u64)
+        .map_or(parts.len(), |n| n as usize);
+    CoreError::TangleConfirm { count, parts }
 }
 
 /// `errors` entries are strings, `{directive, reason}` (transclusions) or TK issue objects.

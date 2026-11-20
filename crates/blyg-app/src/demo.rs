@@ -99,6 +99,7 @@ impl MainView {
         cx: &mut Context<Self>,
     ) {
         match (scenario, n) {
+            (Scene::RdTangle, n) => self.tangle_demo(n, window, cx), // --- tangle ---
             // Live filter with highlighted matches, ↓ previews the next row.
             (Scene::Search, 0) => self.set_query_text("the", window, cx),
             (Scene::Search, 1) => self.move_selection(1, window, cx),

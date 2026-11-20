@@ -439,6 +439,9 @@ pub struct PublishExtras {
     /// `changeCategory`: `None` leaves the classification alone; `Some(None)`
     /// clears it; `Some(Some(c))` confirms `c`.
     pub change_category: Option<Option<ChangeCategory>>,
+    /// --- tangle --- `tangle: true`: the author confirmed the new items the
+    /// thread's spans make (sent only after `CoreError::TangleConfirm`).
+    pub tangle: bool,
 }
 
 // ------------------------------------------- change categories (pure, ported)
